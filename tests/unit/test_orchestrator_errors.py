@@ -7,10 +7,11 @@ import pytest
 
 from hestia.artifacts.store import ArtifactStore
 from hestia.context.builder import ContextBuilder
-from hestia.core.types import ChatResponse, Message, Session, SessionState, SessionTemperature
+from hestia.core.types import ChatResponse, Message, Session, SessionState, SessionTemperature, ToolCall
 from hestia.orchestrator import Orchestrator, TurnState
 from hestia.persistence.db import Database
 from hestia.persistence.sessions import SessionStore
+from hestia.tools.metadata import tool
 from hestia.tools.registry import ToolRegistry
 
 
@@ -197,3 +198,93 @@ async def test_empty_response_error_on_length_with_empty_content(store, tool_reg
     assert turn.state == TurnState.FAILED
     assert turn.error is not None
     respond_callback.assert_called_once()
+
+
+# Tool requiring confirmation for testing
+@tool(
+    name="dangerous_tool",
+    public_description="A tool that requires confirmation.",
+    parameters_schema={"type": "object", "properties": {}},
+    requires_confirmation=True,
+)
+async def dangerous_tool() -> str:
+    return "Executed dangerous operation"
+
+
+@pytest.mark.asyncio
+async def test_confirm_callback_missing_fails_closed(store, artifact_store):
+    """Tools requiring confirmation should error if no confirm_callback is provided."""
+    fake_policy = FakePolicyEngine()
+    
+    # Register a tool that requires confirmation
+    registry = ToolRegistry(artifact_store)
+    registry.register(dangerous_tool)
+    
+    # Create inference that triggers the dangerous tool
+    tool_call_response = ChatResponse(
+        content="",
+        reasoning_content=None,
+        tool_calls=[
+            ToolCall(id="call_1", name="dangerous_tool", arguments={})
+        ],
+        finish_reason="tool_calls",
+        prompt_tokens=20,
+        completion_tokens=10,
+        total_tokens=30,
+    )
+    final_response = ChatResponse(
+        content="Done.",
+        reasoning_content=None,
+        tool_calls=[],
+        finish_reason="stop",
+        prompt_tokens=30,
+        completion_tokens=5,
+        total_tokens=35,
+    )
+    inference = FakeInferenceClient([tool_call_response, final_response])
+    
+    context_builder = ContextBuilder(inference, fake_policy, body_factor=1.0)
+    
+    session = Session(
+        id="test_session_confirm",
+        platform="test",
+        platform_user="user",
+        started_at=datetime.now(),
+        last_active_at=datetime.now(),
+        slot_id=None,
+        slot_saved_path=None,
+        state=SessionState.ACTIVE,
+        temperature=SessionTemperature.COLD,
+    )
+    
+    # Create orchestrator WITHOUT confirm_callback
+    orchestrator = Orchestrator(
+        inference=inference,
+        session_store=store,
+        context_builder=context_builder,
+        tool_registry=registry,
+        policy=fake_policy,
+        confirm_callback=None,  # No callback!
+        max_iterations=10,
+    )
+    
+    respond_callback = AsyncMock()
+    user_message = Message(role="user", content="Run dangerous tool")
+    
+    turn = await orchestrator.process_turn(
+        session=session,
+        user_message=user_message,
+        respond_callback=respond_callback,
+    )
+    
+    # Turn should complete (not fail) but the tool result should be an error
+    assert turn.state == TurnState.DONE
+    
+    # Verify the tool message in history shows the error
+    messages = await store.get_messages(session.id)
+    tool_messages = [m for m in messages if m.role == "tool"]
+    assert len(tool_messages) == 1
+    assert tool_messages[0].content == (
+        "Tool 'dangerous_tool' requires user confirmation but no "
+        "confirm_callback is configured on this orchestrator."
+    )

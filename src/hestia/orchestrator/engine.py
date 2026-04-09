@@ -281,7 +281,17 @@ class Orchestrator:
                 truncated=False,
             )
 
-        if tool_meta.requires_confirmation and self._confirm_callback:
+        if tool_meta.requires_confirmation:
+            if self._confirm_callback is None:
+                return ToolCallResult(
+                    status="error",
+                    content=(
+                        f"Tool {tc.name!r} requires user confirmation but no "
+                        f"confirm_callback is configured on this orchestrator."
+                    ),
+                    artifact_handle=None,
+                    truncated=False,
+                )
             approved = await self._confirm_callback(tc.name, tc.arguments)
             if not approved:
                 return ToolCallResult(
