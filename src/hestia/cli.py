@@ -2,9 +2,12 @@
 
 import asyncio
 import sys
+import uuid
 from pathlib import Path
 
 import click
+
+from hestia.core.types import Session
 
 from hestia.artifacts.store import ArtifactStore
 from hestia.context.builder import ContextBuilder
@@ -46,6 +49,58 @@ class CliConfirmHandler:
         click.echo(f"\nTool call requested: {tool_name}")
         click.echo(f"Arguments: {arguments}")
         return click.confirm("Execute?", default=True)
+
+
+async def _handle_meta_command(
+    cmd: str,
+    session: Session,
+    session_store: SessionStore,
+) -> tuple[bool, Session]:
+    """Handle a /meta command. Returns (should_exit, possibly_new_session)."""
+    cmd = cmd.strip().lower()
+
+    if cmd in ("/quit", "/exit"):
+        return True, session
+
+    if cmd == "/help":
+        click.echo("Meta-commands:")
+        click.echo("  /quit, /exit     Exit the REPL")
+        click.echo("  /reset           Start a new session")
+        click.echo("  /history         Print the current session message history")
+        click.echo("  /session         Print the current session metadata")
+        click.echo("  /help            Show this help")
+        return False, session
+
+    if cmd == "/session":
+        click.echo(f"Session ID: {session.id}")
+        click.echo(f"Platform: {session.platform}")
+        click.echo(f"Platform User: {session.platform_user}")
+        click.echo(f"State: {session.state.value}")
+        click.echo(f"Temperature: {session.temperature.value}")
+        click.echo(f"Started: {session.started_at}")
+        return False, session
+
+    if cmd == "/history":
+        messages = await session_store.get_messages(session.id)
+        if not messages:
+            click.echo("(empty)")
+        else:
+            for m in messages:
+                role = m.role
+                content = (m.content or "")[:200]
+                click.echo(f"  [{role}] {content}")
+        return False, session
+
+    if cmd == "/reset":
+        new_session = await session_store.get_or_create_session(
+            platform="cli",
+            platform_user=f"default-{uuid.uuid4().hex[:8]}",
+        )
+        click.echo(f"New session: {new_session.id}")
+        return False, new_session
+
+    click.echo(f"Unknown command: {cmd}. Type /help for a list.")
+    return False, session
 
 
 @click.group()
@@ -130,7 +185,7 @@ def chat(ctx: click.Context) -> None:
         # Get or create session for CLI user
         session = await session_store.get_or_create_session("cli", "default")
         click.echo(f"Session: {session.id}")
-        click.echo("Type 'exit' or 'quit' to end the session.\n")
+        click.echo("Type 'exit' or 'quit' to end the session, or /help for commands.\n")
 
         # Create orchestrator
         orchestrator = Orchestrator(
@@ -147,9 +202,16 @@ def chat(ctx: click.Context) -> None:
 
         while True:
             try:
-                user_input = click.prompt("You", type=str)
+                user_input = click.prompt("You", type=str).strip()
                 if user_input.lower() in ("exit", "quit"):
                     break
+                if user_input.startswith("/"):
+                    should_exit, session = await _handle_meta_command(
+                        user_input, session, session_store
+                    )
+                    if should_exit:
+                        break
+                    continue
 
                 user_message = Message(role="user", content=user_input)
 
@@ -160,7 +222,7 @@ def chat(ctx: click.Context) -> None:
                 )
 
             except KeyboardInterrupt:
-                click.echo("\nUse 'exit' or 'quit' to end the session.")
+                click.echo("\nUse /quit or /exit to end the session.")
             except Exception as e:
                 click.echo(f"Error: {e}", err=True)
                 if verbose:
