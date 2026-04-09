@@ -106,17 +106,20 @@ async def test_meta_command_history_empty(store, sample_session):
 
 
 @pytest.mark.asyncio
-async def test_meta_command_reset_creates_new_session(store, sample_session):
-    """/reset should create a new session."""
+async def test_meta_command_reset_creates_new_session_same_user(store, sample_session):
+    """/reset should create a new session for the same user."""
     from hestia.cli import _handle_meta_command
+    
+    original_user = sample_session.platform_user
     
     should_exit, new_session = await _handle_meta_command(
         "/reset", sample_session, store
     )
     
     assert should_exit is False
-    assert new_session.id != sample_session.id
-    assert new_session.platform == "cli"
+    assert new_session.id != sample_session.id  # New session ID
+    assert new_session.platform == sample_session.platform  # Same platform
+    assert new_session.platform_user == original_user  # Same user!
 
 
 @pytest.mark.asyncio

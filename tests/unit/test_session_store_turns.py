@@ -166,3 +166,44 @@ class TestTurnPersistence:
         turns = await store.list_turns_for_session(session1.id)
         assert len(turns) == 1
         assert turns[0].id == "turn_a"
+
+
+class TestCreateSession:
+    """Tests for create_session method."""
+
+    @pytest.mark.asyncio
+    async def test_create_session_always_creates_new(self, store):
+        """create_session always creates a new session, even if one exists."""
+        # First, create a session via get_or_create_session
+        session1 = await store.get_or_create_session("cli", "testuser")
+        original_id = session1.id
+
+        # Now call create_session with the same platform/platform_user
+        session2 = await store.create_session("cli", "testuser")
+
+        # Should be different sessions
+        assert session2.id != original_id
+        assert session2.platform == "cli"
+        assert session2.platform_user == "testuser"
+
+        # Both should exist in the database
+        fetched1 = await store.get_session(session1.id)
+        fetched2 = await store.get_session(session2.id)
+        assert fetched1 is not None
+        assert fetched2 is not None
+        assert fetched1.id == session1.id
+        assert fetched2.id == session2.id
+
+    @pytest.mark.asyncio
+    async def test_create_session_same_user_new_identity(self, store):
+        """create_session preserves user identity while creating fresh session."""
+        # Create initial session
+        session1 = await store.get_or_create_session("matrix", "@user:matrix.org")
+
+        # Reset creates new session for same user
+        session2 = await store.create_session("matrix", "@user:matrix.org")
+
+        # User identity preserved, session is new
+        assert session1.platform_user == session2.platform_user
+        assert session1.id != session2.id
+        assert session1.platform == session2.platform

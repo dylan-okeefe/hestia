@@ -92,9 +92,9 @@ async def _handle_meta_command(
         return False, session
 
     if cmd == "/reset":
-        new_session = await session_store.get_or_create_session(
-            platform="cli",
-            platform_user=f"default-{uuid.uuid4().hex[:8]}",
+        new_session = await session_store.create_session(
+            platform=session.platform,
+            platform_user=session.platform_user,
         )
         click.echo(f"New session: {new_session.id}")
         return False, new_session

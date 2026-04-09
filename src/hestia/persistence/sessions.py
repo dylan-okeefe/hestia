@@ -97,6 +97,48 @@ class SessionStore:
 
         return new_session
 
+    async def create_session(
+        self,
+        platform: str,
+        platform_user: str,
+    ) -> Session:
+        """Create a new session row, regardless of whether an active one exists.
+
+        Used by /reset and similar flows where the caller explicitly wants a
+        fresh session for an existing user.
+        """
+        session_id = _generate_session_id(platform, platform_user)
+        now = datetime.now()
+        new_session = Session(
+            id=session_id,
+            platform=platform,
+            platform_user=platform_user,
+            started_at=now,
+            last_active_at=now,
+            slot_id=None,
+            slot_saved_path=None,
+            state=SessionState.ACTIVE,
+            temperature=SessionTemperature.COLD,
+        )
+
+        insert = sa.insert(sessions).values(
+            id=new_session.id,
+            platform=new_session.platform,
+            platform_user=new_session.platform_user,
+            started_at=new_session.started_at,
+            last_active_at=new_session.last_active_at,
+            slot_id=new_session.slot_id,
+            slot_saved_path=new_session.slot_saved_path,
+            state=new_session.state.value,
+            temperature=new_session.temperature.value,
+        )
+
+        async with self._db.engine.connect() as conn:
+            await conn.execute(insert)
+            await conn.commit()
+
+        return new_session
+
     async def get_session(self, session_id: str) -> Session | None:
         """Get a session by ID."""
         query = sa.select(sessions).where(sessions.c.id == session_id)
