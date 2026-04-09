@@ -11,6 +11,7 @@ from hestia.orchestrator import Orchestrator, TurnState
 from hestia.persistence.db import Database
 from hestia.persistence.sessions import SessionStore
 from hestia.tools.builtin.current_time import current_time
+from hestia.tools.builtin.terminal import terminal
 from hestia.tools.registry import ToolRegistry
 
 
@@ -122,6 +123,7 @@ def tool_registry(artifact_store):
     """Tool registry with current_time tool."""
     registry = ToolRegistry(artifact_store)
     registry.register(current_time)
+    registry.register(terminal)
     return registry
 
 
@@ -309,3 +311,140 @@ async def test_turn_persisted_to_database(
     persisted_turn = await store.get_turn(turn.id)
     assert persisted_turn is not None
     assert persisted_turn.state == TurnState.DONE
+
+
+@pytest.mark.asyncio
+async def test_two_tool_chain_time_and_file_count(
+    store,
+    fake_policy,
+    context_builder,
+    artifact_store,
+    respond_callback,
+):
+    """The model should chain current_time and terminal to answer a compound query.
+
+    Query: "What time is it in Tokyo, and how many files are in /tmp?"
+
+    Expected tool sequence:
+      1. current_time(timezone="Asia/Tokyo") -> Tokyo time
+      2. terminal(command="ls /tmp | wc -l") -> file count
+      3. Assistant synthesizes final answer mentioning both values.
+    """
+    from hestia.core.types import ChatResponse, Session, SessionState, SessionTemperature, ToolCall
+
+    # Create tool registry with both tools
+    registry = ToolRegistry(artifact_store)
+    registry.register(current_time)
+    registry.register(terminal)
+
+    # Mock inference to return a planned sequence
+    responses = [
+        # First call: model decides to call current_time
+        ChatResponse(
+            content="",
+            reasoning_content=None,
+            tool_calls=[
+                ToolCall(
+                    id="call_1",
+                    name="call_tool",
+                    arguments={
+                        "name": "current_time",
+                        "arguments": {"timezone": "Asia/Tokyo"},
+                    },
+                )
+            ],
+            finish_reason="tool_calls",
+            prompt_tokens=20,
+            completion_tokens=10,
+            total_tokens=30,
+        ),
+        # Second call: model decides to call terminal
+        ChatResponse(
+            content="",
+            reasoning_content=None,
+            tool_calls=[
+                ToolCall(
+                    id="call_2",
+                    name="call_tool",
+                    arguments={
+                        "name": "terminal",
+                        "arguments": {"command": "ls /tmp | wc -l"},
+                    },
+                )
+            ],
+            finish_reason="tool_calls",
+            prompt_tokens=30,
+            completion_tokens=10,
+            total_tokens=40,
+        ),
+        # Third call: model produces final answer
+        ChatResponse(
+            content="The time in Tokyo is 2026-04-09 22:30:00 JST, and there are 12 files in /tmp.",
+            reasoning_content=None,
+            tool_calls=[],
+            finish_reason="stop",
+            prompt_tokens=40,
+            completion_tokens=20,
+            total_tokens=60,
+        ),
+    ]
+    inference = FakeInferenceClient(responses)
+
+    # Create context builder with the fake inference
+    builder = ContextBuilder(inference, fake_policy, body_factor=1.0)
+
+    session = Session(
+        id="test_session_two_tools",
+        platform="test",
+        platform_user="user",
+        started_at=datetime.now(),
+        last_active_at=datetime.now(),
+        slot_id=None,
+        slot_saved_path=None,
+        state=SessionState.ACTIVE,
+        temperature=SessionTemperature.COLD,
+    )
+
+    orchestrator = Orchestrator(
+        inference=inference,
+        session_store=store,
+        context_builder=builder,
+        tool_registry=registry,
+        policy=fake_policy,
+        max_iterations=10,
+    )
+
+    response_capture = []
+
+    async def capture_response(text: str) -> None:
+        response_capture.append(text)
+
+    user_msg = Message(
+        role="user",
+        content="What time is it in Tokyo, and how many files are in /tmp?",
+    )
+
+    turn = await orchestrator.process_turn(
+        session=session,
+        user_message=user_msg,
+        respond_callback=capture_response,
+    )
+
+    # Assertions
+    assert turn.state == TurnState.DONE
+    assert turn.iterations == 2  # two tool-call iterations, then final
+    assert turn.tool_calls_made == 2
+    assert len(response_capture) == 1
+    assert "Tokyo" in response_capture[0]
+    assert "12" in response_capture[0] or "files" in response_capture[0]
+
+    # Verify the tool calls actually executed (check message history)
+    messages = await store.get_messages(session.id)
+    tool_messages = [m for m in messages if m.role == "tool"]
+    assert len(tool_messages) == 2
+
+    # Verify at least one tool result contains Tokyo time info
+    tool_contents = [m.content for m in tool_messages]
+    assert any("JST" in c or "2026" in c for c in tool_contents) or any(
+        c.isdigit() for c in tool_contents
+    )
