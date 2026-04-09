@@ -405,12 +405,16 @@ async def test_two_tool_chain_time_and_file_count(
         temperature=SessionTemperature.COLD,
     )
 
+    async def auto_approve(tool_name: str, arguments: dict) -> bool:
+        return True
+
     orchestrator = Orchestrator(
         inference=inference,
         session_store=store,
         context_builder=builder,
         tool_registry=registry,
         policy=fake_policy,
+        confirm_callback=auto_approve,  # Required: terminal has requires_confirmation=True
         max_iterations=10,
     )
 

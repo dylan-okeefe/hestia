@@ -268,6 +268,38 @@ class Orchestrator:
                     artifact_handle=None,
                     truncated=False,
                 )
+
+            # Confirmation enforcement: check the INNER tool's metadata before dispatch
+            try:
+                inner_meta = self._tools.describe(name)
+            except Exception:
+                return ToolCallResult(
+                    status="error",
+                    content=f"Tool not found: {name}",
+                    artifact_handle=None,
+                    truncated=False,
+                )
+
+            if inner_meta.requires_confirmation:
+                if self._confirm_callback is None:
+                    return ToolCallResult(
+                        status="error",
+                        content=(
+                            f"Tool {name!r} requires user confirmation but no "
+                            f"confirm_callback is configured on this orchestrator."
+                        ),
+                        artifact_handle=None,
+                        truncated=False,
+                    )
+                approved = await self._confirm_callback(name, arguments or {})
+                if not approved:
+                    return ToolCallResult(
+                        status="error",
+                        content="Tool execution was cancelled by user.",
+                        artifact_handle=None,
+                        truncated=False,
+                    )
+
             return await self._tools.meta_call_tool(name, arguments)
 
         # Regular tool - check if it requires confirmation

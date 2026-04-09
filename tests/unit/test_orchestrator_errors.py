@@ -212,15 +212,15 @@ async def dangerous_tool() -> str:
 
 
 @pytest.mark.asyncio
-async def test_confirm_callback_missing_fails_closed(store, artifact_store):
-    """Tools requiring confirmation should error if no confirm_callback is provided."""
+async def test_confirm_callback_missing_fails_closed_direct_path(store, artifact_store):
+    """Direct tool path: requires_confirmation should error if no confirm_callback."""
     fake_policy = FakePolicyEngine()
     
     # Register a tool that requires confirmation
     registry = ToolRegistry(artifact_store)
     registry.register(dangerous_tool)
     
-    # Create inference that triggers the dangerous tool
+    # Create inference that triggers the dangerous tool via DIRECT call
     tool_call_response = ChatResponse(
         content="",
         reasoning_content=None,
@@ -246,7 +246,7 @@ async def test_confirm_callback_missing_fails_closed(store, artifact_store):
     context_builder = ContextBuilder(inference, fake_policy, body_factor=1.0)
     
     session = Session(
-        id="test_session_confirm",
+        id="test_session_confirm_direct",
         platform="test",
         platform_user="user",
         started_at=datetime.now(),
@@ -288,3 +288,168 @@ async def test_confirm_callback_missing_fails_closed(store, artifact_store):
         "Tool 'dangerous_tool' requires user confirmation but no "
         "confirm_callback is configured on this orchestrator."
     )
+
+
+@pytest.mark.asyncio
+async def test_meta_tool_confirm_callback_missing_fails_closed(store, artifact_store):
+    """Meta-tool path (call_tool): requires_confirmation should error if no confirm_callback."""
+    fake_policy = FakePolicyEngine()
+    
+    # Register a tool that requires confirmation
+    registry = ToolRegistry(artifact_store)
+    registry.register(dangerous_tool)
+    
+    # Create inference that triggers the dangerous tool via META-TOOL call
+    tool_call_response = ChatResponse(
+        content="",
+        reasoning_content=None,
+        tool_calls=[
+            ToolCall(
+                id="call_1",
+                name="call_tool",  # Meta-tool pattern!
+                arguments={"name": "dangerous_tool", "arguments": {}}
+            )
+        ],
+        finish_reason="tool_calls",
+        prompt_tokens=20,
+        completion_tokens=10,
+        total_tokens=30,
+    )
+    final_response = ChatResponse(
+        content="Done.",
+        reasoning_content=None,
+        tool_calls=[],
+        finish_reason="stop",
+        prompt_tokens=30,
+        completion_tokens=5,
+        total_tokens=35,
+    )
+    inference = FakeInferenceClient([tool_call_response, final_response])
+    
+    context_builder = ContextBuilder(inference, fake_policy, body_factor=1.0)
+    
+    session = Session(
+        id="test_session_confirm_meta",
+        platform="test",
+        platform_user="user",
+        started_at=datetime.now(),
+        last_active_at=datetime.now(),
+        slot_id=None,
+        slot_saved_path=None,
+        state=SessionState.ACTIVE,
+        temperature=SessionTemperature.COLD,
+    )
+    
+    # Create orchestrator WITHOUT confirm_callback
+    orchestrator = Orchestrator(
+        inference=inference,
+        session_store=store,
+        context_builder=context_builder,
+        tool_registry=registry,
+        policy=fake_policy,
+        confirm_callback=None,  # No callback!
+        max_iterations=10,
+    )
+    
+    respond_callback = AsyncMock()
+    user_message = Message(role="user", content="Run dangerous tool")
+    
+    turn = await orchestrator.process_turn(
+        session=session,
+        user_message=user_message,
+        respond_callback=respond_callback,
+    )
+    
+    # Turn should complete (not fail) but the tool result should be an error
+    assert turn.state == TurnState.DONE
+    
+    # Verify the tool message in history shows the error (not the tool's success message)
+    messages = await store.get_messages(session.id)
+    tool_messages = [m for m in messages if m.role == "tool"]
+    assert len(tool_messages) == 1
+    assert "requires user confirmation" in tool_messages[0].content
+    assert "Executed dangerous operation" not in tool_messages[0].content  # Tool did NOT run
+
+
+@pytest.mark.asyncio
+async def test_meta_tool_confirm_callback_denial_respected(store, artifact_store):
+    """Meta-tool path: user denial should cancel the tool."""
+    fake_policy = FakePolicyEngine()
+    
+    # Register a tool that requires confirmation
+    registry = ToolRegistry(artifact_store)
+    registry.register(dangerous_tool)
+    
+    # Create inference that triggers the dangerous tool via META-TOOL call
+    tool_call_response = ChatResponse(
+        content="",
+        reasoning_content=None,
+        tool_calls=[
+            ToolCall(
+                id="call_1",
+                name="call_tool",
+                arguments={"name": "dangerous_tool", "arguments": {}}
+            )
+        ],
+        finish_reason="tool_calls",
+        prompt_tokens=20,
+        completion_tokens=10,
+        total_tokens=30,
+    )
+    final_response = ChatResponse(
+        content="Done.",
+        reasoning_content=None,
+        tool_calls=[],
+        finish_reason="stop",
+        prompt_tokens=30,
+        completion_tokens=5,
+        total_tokens=35,
+    )
+    inference = FakeInferenceClient([tool_call_response, final_response])
+    
+    context_builder = ContextBuilder(inference, fake_policy, body_factor=1.0)
+    
+    session = Session(
+        id="test_session_confirm_denied",
+        platform="test",
+        platform_user="user",
+        started_at=datetime.now(),
+        last_active_at=datetime.now(),
+        slot_id=None,
+        slot_saved_path=None,
+        state=SessionState.ACTIVE,
+        temperature=SessionTemperature.COLD,
+    )
+    
+    # Create orchestrator with a callback that DENIES confirmation
+    async def deny_callback(tool_name: str, arguments: dict) -> bool:
+        return False
+    
+    orchestrator = Orchestrator(
+        inference=inference,
+        session_store=store,
+        context_builder=context_builder,
+        tool_registry=registry,
+        policy=fake_policy,
+        confirm_callback=deny_callback,  # Always denies
+        max_iterations=10,
+    )
+    
+    respond_callback = AsyncMock()
+    user_message = Message(role="user", content="Run dangerous tool")
+    
+    turn = await orchestrator.process_turn(
+        session=session,
+        user_message=user_message,
+        respond_callback=respond_callback,
+    )
+    
+    # Turn should complete but tool was cancelled
+    assert turn.state == TurnState.DONE
+    
+    # Verify the tool message shows cancellation (not the tool's success message)
+    messages = await store.get_messages(session.id)
+    tool_messages = [m for m in messages if m.role == "tool"]
+    assert len(tool_messages) == 1
+    assert tool_messages[0].content == "Tool execution was cancelled by user."
+    assert "Executed dangerous operation" not in tool_messages[0].content  # Tool did NOT run
