@@ -240,3 +240,55 @@ Meta-commands:
 You: /quit
 Goodbye!
 ```
+
+---
+
+## Handoff Report
+
+**Completed:** 2026-04-09
+**Final Test Count:** 119 passing (12 new tests added in cleanup)
+**Branch:** `feature/phase-1c-orchestrator-cli`
+
+### Cleanup Cycle Commits (7 commits)
+
+1. `f2be4c8` - fix(orchestrator): own user message persistence to eliminate first-turn double-count
+2. `406349c` - fix(orchestrator): raise EmptyResponseError on empty stop/length response
+3. `b5d044e` - fix(orchestrator): fail closed when confirm_callback missing
+4. `b7e4247` - feat(cli): add /quit /reset /history /session /help REPL meta-commands
+5. `229d782` - test(integration): add two-tool chain test for Tokyo time + /tmp file count
+6. `cf30445` - docs(handoffs): move Phase 1c report to docs/handoffs/ and conform to naming
+7. `d3d9230` - docs(adr): add ADR-012 for turn state machine and confirmation callback
+
+### Quality Checks
+
+- **pytest:** 119 passed (was 107 at baseline)
+- **ruff:** Pre-existing warnings in scripts/calibrate_token_count.py only
+- **mypy:** 9 errors, all pre-existing (forward refs in sessions.py, Database.init pattern)
+
+### Deviations
+
+None. All 7 sections implemented as specified.
+
+### Blockers
+
+None. Ready for Dylan to push, merge to develop, and tag v0.1.0.
+
+### Git Log (feature/phase-1c-orchestrator-cli ^develop)
+
+```
+d3d9230 docs(adr): add ADR-012 for turn state machine and confirmation callback
+cf30445 docs(handoffs): move Phase 1c report to docs/handoffs/ and conform to naming
+229d782 test(integration): add two-tool chain test for Tokyo time + /tmp file count
+b7e4247 feat(cli): add /quit /reset /history /session /help REPL meta-commands
+b5d044e fix(orchestrator): fail closed when confirm_callback missing
+406349c fix(orchestrator): raise EmptyResponseError on empty stop/length response
+f2be4c8 fix(orchestrator): own user message persistence to eliminate first-turn double-count
+74b837b feat(phase-1c): Orchestrator engine and CLI adapter
+7601e0e refactor(tools): collapse auto_artifact_above and max_result_chars into max_inline_chars
+aa7d863 fix(inference): recalibrate count_request as body factor plus meta-tool overhead
+8dd8a9f Merge Phase 1b work into Phase 1c branch
+c862fcd docs(handoffs): Phase 1b progress report
+...
+```
+
+All commits authored by Dylan O'Keefe <dylanokeefedev@gmail.com>.
