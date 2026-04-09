@@ -18,8 +18,7 @@ from hestia.tools.metadata import tool
             }
         },
     },
-    max_result_chars=200,
-    auto_artifact_above=1000,
+    max_inline_chars=200,
     tags=["utility"],
 )
 async def current_time(timezone: str = "UTC") -> str:

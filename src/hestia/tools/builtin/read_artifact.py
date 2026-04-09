@@ -26,8 +26,7 @@ def make_read_artifact_tool(store: ArtifactStore) -> Any:
             },
             "required": ["handle"],
         },
-        max_result_chars=8000,
-        auto_artifact_above=100_000,  # Don't recursively artifact
+        max_inline_chars=8000,
         tags=["artifacts"],
     )
     async def read_artifact(handle: str) -> str:

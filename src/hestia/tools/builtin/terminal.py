@@ -21,8 +21,7 @@ from hestia.tools.metadata import tool
         },
         "required": ["command"],
     },
-    max_result_chars=4000,
-    auto_artifact_above=3000,
+    max_inline_chars=4000,
     requires_confirmation=True,  # Phase 1c will enforce this
     tags=["system"],
 )

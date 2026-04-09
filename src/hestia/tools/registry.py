@@ -125,14 +125,14 @@ class ToolRegistry:
         """Post-process tool result: truncate and/or promote to artifact."""
         size = len(content)
 
-        if size >= meta.auto_artifact_above:
-            # Store full content as artifact, return a preview + handle
+        if size > meta.max_inline_chars:
+            # Large result: store full content as artifact, return a preview
             handle = self._artifact_store.store(
                 content.encode("utf-8"),
                 content_type="text/plain",
                 source_tool=meta.name,
             )
-            preview = content[: meta.max_result_chars]
+            preview = content[: meta.max_inline_chars]
             return ToolCallResult(
                 status="ok",
                 content=(
@@ -140,7 +140,7 @@ class ToolRegistry:
                     f"showing first {len(preview)} of {size} chars]\n\n{preview}"
                 ),
                 artifact_handle=handle,
-                truncated=size > meta.max_result_chars,
+                truncated=True,
             )
 
         return ToolCallResult(

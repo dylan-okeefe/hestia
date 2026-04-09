@@ -21,8 +21,7 @@ from hestia.tools.metadata import tool
         },
         "required": ["path"],
     },
-    max_result_chars=4000,
-    auto_artifact_above=3000,
+    max_inline_chars=4000,
     tags=["filesystem"],
 )
 async def read_file(path: str, max_bytes: int = 1_000_000) -> str:

@@ -185,14 +185,14 @@ class TestAutoArtifact:
 
     @pytest.mark.asyncio
     async def test_large_result_becomes_artifact(self, registry, tmp_path):
-        """Large results (> auto_artifact_above) become artifacts."""
+        """Large results (> max_inline_chars) become artifacts."""
 
         # Create a tool with low threshold
         @tool(
             name="large_output",
             public_description="Returns large output",
             parameters_schema={"type": "object", "properties": {}},
-            auto_artifact_above=10,  # Very low for testing
+            max_inline_chars=10,  # Very low for testing
         )
         async def large_output() -> str:
             return "x" * 100
