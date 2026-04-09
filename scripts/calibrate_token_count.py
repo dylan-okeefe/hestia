@@ -9,7 +9,7 @@ factor to docs/calibration.json for use by ContextBuilder.
 import asyncio
 import json
 import statistics
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -51,10 +51,14 @@ TEST_SHAPES: list[tuple[str, list[Message], list[ToolSchema]]] = [
         "long_20turns",
         [
             Message(role="system", content="You are a helpful assistant."),
-            *[msg for i in range(10) for msg in [
-                Message(role="user", content=f"Question {i+1}?"),
-                Message(role="assistant", content=f"Answer {i+1}."),
-            ]],
+            *[
+                msg
+                for i in range(10)
+                for msg in [
+                    Message(role="user", content=f"Question {i + 1}?"),
+                    Message(role="assistant", content=f"Answer {i + 1}."),
+                ]
+            ],
             Message(role="user", content="Final question?"),
         ],
         [],
@@ -116,9 +120,7 @@ TEST_SHAPES: list[tuple[str, list[Message], list[ToolSchema]]] = [
             Message(
                 role="assistant",
                 content="",
-                tool_calls=[
-                    ToolCall(id="call_1", name="list_files", arguments={"path": "/tmp"})
-                ],
+                tool_calls=[ToolCall(id="call_1", name="list_files", arguments={"path": "/tmp"})],
             ),
             Message(
                 role="tool",
@@ -288,7 +290,7 @@ def print_table(results: list[CalibrationResult]) -> None:
 
 def print_stats(stats: dict) -> None:
     """Print aggregate statistics."""
-    print(f"\nAggregate Statistics:")
+    print("\nAggregate Statistics:")
     print(f"  Mean ratio:   {stats['mean_ratio']:.3f}")
     print(f"  Stdev:        {stats['stdev']:.3f}")
     print(f"  Min:          {stats['min']:.3f}")
@@ -323,8 +325,8 @@ def main() -> int:
     """Run calibration and save results."""
     print("Hestia Token Count Calibration")
     print("=" * 50)
-    print(f"Server: http://localhost:8001")
-    print(f"Model:  Qwen3.5-9B-UD-Q4_K_XL.gguf")
+    print("Server: http://localhost:8001")
+    print("Model:  Qwen3.5-9B-UD-Q4_K_XL.gguf")
     print()
 
     # Check server health

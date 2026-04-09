@@ -4,7 +4,7 @@ from datetime import datetime
 
 import pytest
 
-from hestia.context.builder import ContextBuilder, BuildResult
+from hestia.context.builder import ContextBuilder
 from hestia.core.types import Message, Session, SessionState, SessionTemperature, ToolSchema
 from hestia.policy.default import DefaultPolicyEngine
 
@@ -78,9 +78,7 @@ class TestBasicBuilding:
         ]
         new_msg = Message(role="user", content="How are you?")
 
-        result = await builder.build(
-            sample_session, history, new_msg, "You are helpful.", []
-        )
+        result = await builder.build(sample_session, history, new_msg, "You are helpful.", [])
 
         # Should have 4 messages: system, first_user, assistant, new_user
         assert len(result.messages) == 4
@@ -99,9 +97,7 @@ class TestBasicBuilding:
         history = [Message(role="user", content="Hi")]
         new_msg = Message(role="user", content="Bye")
 
-        result = await builder.build(
-            sample_session, history, new_msg, "System prompt here.", []
-        )
+        result = await builder.build(sample_session, history, new_msg, "System prompt here.", [])
 
         assert result.messages[0].role == "system"
         assert result.messages[0].content == "System prompt here."
@@ -185,9 +181,7 @@ class TestTruncation:
         ]
         new_msg = Message(role="user", content="NEW")
 
-        result = await builder.build(
-            sample_session, history, new_msg, "System" + "x" * 500, []
-        )
+        result = await builder.build(sample_session, history, new_msg, "System" + "x" * 500, [])
 
         # With tight budget, OLDEST should be dropped but RECENT kept
         contents = [m.content for m in result.messages]
@@ -285,9 +279,7 @@ class TestEdgeCases:
         history = [Message(role="user", content="x" * 1000)]
         new_msg = Message(role="user", content="New" + "y" * 1000)
 
-        result = await builder.build(
-            sample_session, history, new_msg, "System" + "z" * 1000, []
-        )
+        result = await builder.build(sample_session, history, new_msg, "System" + "z" * 1000, [])
 
         # Should return system + new_user as best effort
         assert result.messages[0].role == "system"
@@ -306,9 +298,7 @@ class TestFromCalibrationFile:
         cal_path = tmp_path / "calibration.json"
         cal_path.write_text(json.dumps({"correction_factor": 1.5}))
 
-        builder = ContextBuilder.from_calibration_file(
-            fake_client, policy, cal_path
-        )
+        builder = ContextBuilder.from_calibration_file(fake_client, policy, cal_path)
 
         assert builder._calibration == 1.5
 
@@ -317,8 +307,6 @@ class TestFromCalibrationFile:
         """Uses 1.0 when calibration file doesn't exist."""
         cal_path = tmp_path / "nonexistent.json"
 
-        builder = ContextBuilder.from_calibration_file(
-            fake_client, policy, cal_path
-        )
+        builder = ContextBuilder.from_calibration_file(fake_client, policy, cal_path)
 
         assert builder._calibration == 1.0

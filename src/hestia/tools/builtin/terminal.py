@@ -7,7 +7,9 @@ from hestia.tools.metadata import tool
 
 @tool(
     name="terminal",
-    public_description="Run a shell command and return stdout, stderr, and exit code. Use with caution.",
+    public_description=(
+        "Run a shell command and return stdout, stderr, and exit code. Use with caution."
+    ),
     parameters_schema={
         "type": "object",
         "properties": {
@@ -32,10 +34,8 @@ async def terminal(command: str, timeout: float = 30.0) -> str:
         stderr=asyncio.subprocess.PIPE,
     )
     try:
-        stdout, stderr = await asyncio.wait_for(
-            proc.communicate(), timeout=timeout
-        )
-    except asyncio.TimeoutError:
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except TimeoutError:
         proc.kill()
         await proc.wait()
         return f"TIMEOUT after {timeout}s"
@@ -44,7 +44,5 @@ async def terminal(command: str, timeout: float = 30.0) -> str:
     stderr_str = stderr.decode("utf-8", errors="replace")
 
     return (
-        f"exit_code: {proc.returncode}\n"
-        f"--- stdout ---\n{stdout_str}\n"
-        f"--- stderr ---\n{stderr_str}"
+        f"exit_code: {proc.returncode}\n--- stdout ---\n{stdout_str}\n--- stderr ---\n{stderr_str}"
     )

@@ -5,9 +5,8 @@ from types import SimpleNamespace
 import pytest
 
 from hestia.artifacts.store import ArtifactStore
-from hestia.tools.registry import ToolNotFoundError
 from hestia.tools.metadata import tool
-from hestia.tools.registry import ToolRegistry
+from hestia.tools.registry import ToolNotFoundError, ToolRegistry
 
 
 @pytest.fixture
@@ -18,6 +17,7 @@ def registry(tmp_path):
 
 
 # --- Test fixtures: decorated tools ---
+
 
 @tool(
     name="greet",
@@ -69,6 +69,7 @@ class TestRegistration:
 
     def test_register_non_decorated_raises(self, registry):
         """Registering non-decorated function raises ValueError."""
+
         async def not_a_tool():
             pass
 
@@ -185,6 +186,7 @@ class TestAutoArtifact:
     @pytest.mark.asyncio
     async def test_large_result_becomes_artifact(self, registry, tmp_path):
         """Large results (> auto_artifact_above) become artifacts."""
+
         # Create a tool with low threshold
         @tool(
             name="large_output",

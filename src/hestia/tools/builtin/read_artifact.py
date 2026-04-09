@@ -3,7 +3,7 @@
 from typing import Any
 
 from hestia.artifacts.store import ArtifactStore
-from hestia.errors import ArtifactNotFoundError, ArtifactExpiredError
+from hestia.errors import ArtifactExpiredError, ArtifactNotFoundError
 from hestia.tools.metadata import tool
 
 

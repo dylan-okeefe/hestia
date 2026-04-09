@@ -1,12 +1,10 @@
 """Unit tests for ArtifactStore."""
 
-import time
-from pathlib import Path
 
 import pytest
 
-from hestia.artifacts.store import ArtifactStore, INLINE_THRESHOLD_BYTES
-from hestia.errors import ArtifactNotFoundError, ArtifactExpiredError
+from hestia.artifacts.store import INLINE_THRESHOLD_BYTES, ArtifactStore
+from hestia.errors import ArtifactExpiredError, ArtifactNotFoundError
 
 
 @pytest.fixture

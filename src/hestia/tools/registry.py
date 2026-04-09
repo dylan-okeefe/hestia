@@ -1,12 +1,11 @@
 """Tool registry with meta-tool dispatch."""
 
-import inspect
 import json
 from types import ModuleType
 from typing import Any
 
 from hestia.artifacts.store import ArtifactStore
-from hestia.core.types import ToolSchema
+from hestia.core.types import FunctionSchema, ToolSchema
 from hestia.errors import HestiaError
 from hestia.tools.metadata import ToolMetadata, tool
 from hestia.tools.types import ToolCallResult
@@ -116,10 +115,9 @@ class ToolRegistry:
             )
 
         # Normalize to string
-        if isinstance(raw, (dict, list)):
-            content_str = json.dumps(raw, indent=2)
-        else:
-            content_str = str(raw)
+        content_str = (
+            json.dumps(raw, indent=2) if isinstance(raw, (dict, list)) else str(raw)
+        )
 
         return self._postprocess(content_str, meta)
 
@@ -158,13 +156,13 @@ class ToolRegistry:
         """Return the two meta-tools (list_tools, call_tool) as ToolSchema."""
         list_tools_schema = ToolSchema(
             type="function",
-            function={
-                "name": "list_tools",
-                "description": (
+            function=FunctionSchema(
+                name="list_tools",
+                description=(
                     "List all available tools. Returns tool names and one-line descriptions. "
                     "Call this before call_tool to discover what's available."
                 ),
-                "parameters": {
+                parameters={
                     "type": "object",
                     "properties": {
                         "tag": {
@@ -173,18 +171,18 @@ class ToolRegistry:
                         }
                     },
                 },
-            },
+            ),
         )
 
         call_tool_schema = ToolSchema(
             type="function",
-            function={
-                "name": "call_tool",
-                "description": (
+            function=FunctionSchema(
+                name="call_tool",
+                description=(
                     "Invoke a tool by name with arguments. Use list_tools first to "
                     "discover what exists."
                 ),
-                "parameters": {
+                parameters={
                     "type": "object",
                     "properties": {
                         "name": {
@@ -198,7 +196,7 @@ class ToolRegistry:
                     },
                     "required": ["name", "arguments"],
                 },
-            },
+            ),
         )
 
         return [list_tools_schema, call_tool_schema]
@@ -212,9 +210,7 @@ class ToolRegistry:
             lines.append(f"- {n}: {m.public_description}")
         return "\n".join(lines) if lines else "(no tools)"
 
-    async def meta_call_tool(
-        self, name: str, arguments: dict[str, Any]
-    ) -> ToolCallResult:
+    async def meta_call_tool(self, name: str, arguments: dict[str, Any]) -> ToolCallResult:
         """Handler for the call_tool meta-tool."""
         return await self.call(name, arguments)
 

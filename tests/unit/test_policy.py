@@ -3,7 +3,7 @@
 import pytest
 
 from hestia.core.types import Session, SessionState, SessionTemperature
-from hestia.errors import InferenceTimeoutError, InferenceServerError
+from hestia.errors import InferenceServerError, InferenceTimeoutError
 from hestia.policy.default import DefaultPolicyEngine
 from hestia.policy.engine import RetryAction
 
@@ -18,6 +18,7 @@ def policy():
 def sample_session():
     """Sample session fixture."""
     from datetime import datetime
+
     return Session(
         id="test_session",
         platform="test",

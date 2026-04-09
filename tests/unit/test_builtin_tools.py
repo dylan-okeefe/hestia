@@ -1,13 +1,12 @@
 """Unit tests for built-in tools."""
 
-from pathlib import Path
 
 import pytest
 
 from hestia.artifacts.store import ArtifactStore
 from hestia.tools.builtin.current_time import current_time
-from hestia.tools.builtin.read_file import read_file
 from hestia.tools.builtin.read_artifact import make_read_artifact_tool
+from hestia.tools.builtin.read_file import read_file
 from hestia.tools.builtin.terminal import terminal
 
 

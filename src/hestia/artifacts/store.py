@@ -6,7 +6,7 @@ import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from hestia.errors import ArtifactError, ArtifactExpiredError, ArtifactNotFoundError
+from hestia.errors import ArtifactExpiredError, ArtifactNotFoundError
 
 INLINE_THRESHOLD_BYTES = 64 * 1024  # 64 KB
 DEFAULT_TTL_SECONDS = 24 * 60 * 60  # 24 h
@@ -66,7 +66,7 @@ class ArtifactStore:
         """Load inline artifact index from disk."""
         index_path = self._root / "inline.json"
         if index_path.exists():
-            with open(index_path, "r") as f:
+            with open(index_path) as f:
                 data = json.load(f)
                 for handle, content_b64 in data.get("content", {}).items():
                     import base64
@@ -113,10 +113,7 @@ class ArtifactStore:
             Opaque handle for retrieving the artifact
         """
         # Normalize to bytes
-        if isinstance(content, str):
-            content_bytes = content.encode("utf-8")
-        else:
-            content_bytes = content
+        content_bytes = content.encode("utf-8") if isinstance(content, str) else content
 
         handle = self._generate_handle()
         now = time.time()
@@ -170,7 +167,7 @@ class ArtifactStore:
         if not metadata_path.exists():
             raise ArtifactNotFoundError(f"Artifact not found: {handle}")
 
-        with open(metadata_path, "r") as f:
+        with open(metadata_path) as f:
             data = json.load(f)
             metadata = ArtifactMetadata(**data)
 
@@ -193,7 +190,8 @@ class ArtifactStore:
             ArtifactNotFoundError: if artifact doesn't exist or content missing
             ArtifactExpiredError: if artifact has expired
         """
-        metadata = self.fetch_metadata(handle)
+        # Check metadata exists (will raise if not found or expired)
+        self.fetch_metadata(handle)
 
         # Try inline first
         if handle in self._inline:
@@ -205,9 +203,7 @@ class ArtifactStore:
             with open(content_path, "rb") as f:
                 return f.read()
 
-        raise ArtifactNotFoundError(
-            f"Artifact metadata exists but content missing: {handle}"
-        )
+        raise ArtifactNotFoundError(f"Artifact metadata exists but content missing: {handle}")
 
     def fetch(self, handle: str) -> Artifact:
         """Fetch full artifact (metadata + content).
@@ -237,7 +233,7 @@ class ArtifactStore:
                 continue
 
             try:
-                with open(metadata_path, "r") as f:
+                with open(metadata_path) as f:
                     data = json.load(f)
                     metadata = ArtifactMetadata(**data)
 

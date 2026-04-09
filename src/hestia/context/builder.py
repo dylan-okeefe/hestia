@@ -108,9 +108,6 @@ class ContextBuilder:
         # Get budget from policy
         raw_budget = self._policy.turn_token_budget(session)
 
-        # Start building message list
-        # Order: system, first_user, [history...], new_user
-        result_messages: list[Message] = []
         truncated_count = 0
 
         # Create system message
@@ -144,7 +141,6 @@ class ContextBuilder:
             )
 
         # Add remaining history messages (newest first) while they fit
-        remaining_budget = raw_budget - protected_count
         included_history: list[Message] = []
 
         # Walk history in reverse (newest first)
@@ -224,9 +220,7 @@ class ContextBuilder:
             kept_first_user=first_user_msg is not None,
         )
 
-    async def _count_messages(
-        self, messages: list[Message], tools: list[ToolSchema]
-    ) -> int:
+    async def _count_messages(self, messages: list[Message], tools: list[ToolSchema]) -> int:
         """Count tokens for messages, applying calibration correction.
 
         Args:

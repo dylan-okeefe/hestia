@@ -1,12 +1,12 @@
 """Default policy engine with conservative decisions."""
 
+from hestia.core.types import Session
 from hestia.errors import InferenceServerError, InferenceTimeoutError
 from hestia.policy.engine import (
     PolicyEngine,
     RetryAction,
     RetryDecision,
 )
-from hestia.core.types import Session
 
 
 class DefaultPolicyEngine(PolicyEngine):
@@ -32,9 +32,7 @@ class DefaultPolicyEngine(PolicyEngine):
         """
         return False
 
-    def should_compress(
-        self, session: Session, tokens_used: int, tokens_budget: int
-    ) -> bool:
+    def should_compress(self, session: Session, tokens_used: int, tokens_budget: int) -> bool:
         """Compress when we're over 85% of budget."""
         return tokens_used > int(tokens_budget * 0.85)
 

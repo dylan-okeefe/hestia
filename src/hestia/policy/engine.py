@@ -7,7 +7,7 @@ from enum import Enum
 from hestia.core.types import Session
 
 
-class RetryAction(str, Enum):
+class RetryAction(Enum):
     """Actions the orchestrator can take after an error."""
 
     RETRY = "retry"
@@ -37,9 +37,7 @@ class PolicyEngine(ABC):
         ...
 
     @abstractmethod
-    def should_compress(
-        self, session: Session, tokens_used: int, tokens_budget: int
-    ) -> bool:
+    def should_compress(self, session: Session, tokens_used: int, tokens_budget: int) -> bool:
         """Should we compress context before sending to model?"""
         ...
 

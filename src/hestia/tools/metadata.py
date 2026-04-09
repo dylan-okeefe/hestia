@@ -55,8 +55,7 @@ def tool(
             name=name,
             public_description=public_description,
             internal_description=internal_description or func.__doc__ or "",
-            parameters_schema=parameters_schema
-            or {"type": "object", "properties": {}},
+            parameters_schema=parameters_schema or {"type": "object", "properties": {}},
             max_result_chars=max_result_chars,
             auto_artifact_above=auto_artifact_above,
             requires_confirmation=requires_confirmation,

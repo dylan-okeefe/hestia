@@ -1,7 +1,6 @@
 """Current time tool."""
 
 from datetime import datetime
-
 from zoneinfo import ZoneInfo
 
 from hestia.tools.metadata import tool
@@ -28,9 +27,6 @@ async def current_time(timezone: str = "UTC") -> str:
     try:
         tz = ZoneInfo(timezone)
     except Exception:
-        return (
-            f"Unknown timezone: {timezone!r}. "
-            f"Use an IANA name like 'UTC' or 'America/New_York'."
-        )
+        return f"Unknown timezone: {timezone!r}. Use an IANA name like 'UTC' or 'America/New_York'."
     now = datetime.now(tz)
     return now.strftime("%Y-%m-%d %H:%M:%S %Z")

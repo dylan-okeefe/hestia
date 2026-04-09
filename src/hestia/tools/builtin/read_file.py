@@ -7,7 +7,9 @@ from hestia.tools.metadata import tool
 
 @tool(
     name="read_file",
-    public_description="Read the contents of a local text file. Large files are stored as artifacts.",
+    public_description=(
+        "Read the contents of a local text file. Large files are stored as artifacts."
+    ),
     parameters_schema={
         "type": "object",
         "properties": {
