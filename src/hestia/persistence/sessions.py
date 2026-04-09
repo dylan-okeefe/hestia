@@ -249,17 +249,29 @@ class SessionStore:
             await conn.execute(update)
             await conn.commit()
 
-    async def assign_slot(self, session_id: str, slot_id: int) -> None:
-        """Assign a slot to a session and mark it hot."""
-        update = (
-            sa.update(sessions)
-            .where(sessions.c.id == session_id)
-            .values(
-                slot_id=slot_id,
-                temperature=SessionTemperature.HOT.value,
-                last_active_at=datetime.now(),
-            )
-        )
+    async def assign_slot(
+        self,
+        session_id: str,
+        slot_id: int,
+        clear_saved_path: bool = False,
+    ) -> None:
+        """Assign a live slot to a session and mark it hot.
+
+        Args:
+            session_id: Which session
+            slot_id: Live slot index on the inference server
+            clear_saved_path: If True, also clear slot_saved_path. Use when the
+                session was WARM (disk-backed) and we've now restored into a
+                live slot, so the disk path is stale.
+        """
+        values = {
+            "slot_id": slot_id,
+            "temperature": SessionTemperature.HOT.value,
+            "last_active_at": datetime.now(),
+        }
+        if clear_saved_path:
+            values["slot_saved_path"] = None
+        update = sa.update(sessions).where(sessions.c.id == session_id).values(**values)
 
         async with self._db.engine.connect() as conn:
             await conn.execute(update)
@@ -269,18 +281,37 @@ class SessionStore:
         self,
         session_id: str,
         demote_to: SessionTemperature = SessionTemperature.WARM,
+        saved_path: str | None = None,
     ) -> None:
-        """Release a slot from a session."""
+        """Release the slot and record the disk path where its state lives.
+
+        Args:
+            session_id: Which session to release
+            demote_to: Target temperature (WARM if we saved to disk, COLD if we erased)
+            saved_path: If demoting to WARM, the path on disk where slot state was saved
+        """
         update = (
             sa.update(sessions)
             .where(sessions.c.id == session_id)
             .values(
                 slot_id=None,
+                slot_saved_path=saved_path,
                 temperature=demote_to.value,
                 last_active_at=datetime.now(),
             )
         )
 
+        async with self._db.engine.connect() as conn:
+            await conn.execute(update)
+            await conn.commit()
+
+    async def update_saved_path(self, session_id: str, saved_path: str) -> None:
+        """Update just the slot_saved_path field. Used after slot_save checkpoint."""
+        update = (
+            sa.update(sessions)
+            .where(sessions.c.id == session_id)
+            .values(slot_saved_path=saved_path)
+        )
         async with self._db.engine.connect() as conn:
             await conn.execute(update)
             await conn.commit()
