@@ -20,6 +20,8 @@ The following bugs were discovered during review and fixed in the Phase 1c clean
 
 5. **Missing ADR-012** - Forgot to document the state machine + confirmation callback pattern. Added in cleanup.
 
+6. **Confirmation enforcement bypassed in meta-tool path** - The fail-closed check from fix #3 only ran in the direct-tool branch, which is never exercised in production. Models invoke tools through `call_tool` meta-tool, completely bypassing confirmation. **Fixed in cleanup-2.**
+
 ## Cleanup Cycle Changes
 
 ### §1. Orchestrator Owns User Message Persistence
@@ -54,6 +56,31 @@ The following bugs were discovered during review and fixed in the Phase 1c clean
 ### §7. ADR-012 Added
 - Documents state machine + confirmation callback pattern
 - Explains adapter contract for Phase 2
+
+## Cleanup-2 Cycle (Post-Review Fixes)
+
+After the initial cleanup cycle, review found one critical bug and three nits:
+
+### §1. Fix: Confirmation Enforcement in Meta-Tool Path (Blocker)
+- **Bug:** The fail-closed check only ran in the direct-tool branch, never in production.
+- **Fix:** Moved confirmation enforcement into the `call_tool` meta-tool branch in orchestrator.
+- **Tests:** Added 2 new tests for meta-tool confirmation (fail closed, user denial).
+- **Commit:** `c15a61f`
+
+### §2. Nit: Hoist EmptyResponseError Import
+- Moved import from inline to module top for consistency.
+- **Commit:** `7040f15`
+
+### §3. Fix: /reset Keeps Same User
+- **Bug:** `/reset` created a new user identity each time, accumulating orphans.
+- **Fix:** Added `SessionStore.create_session()` and updated `/reset` to use same user.
+- **Tests:** Added 2 tests for `create_session` behavior.
+- **Commit:** `1254147`
+
+### §4. Nit: Fix ADR-012 Indentation
+- Re-indented sub-bullets to match ADR-011 format for proper GitHub rendering.
+- Updated confirmation enforcement wording to reflect meta-tool fix.
+- **Commit:** `874ff6c`
 
 ## Components Delivered
 
@@ -246,10 +273,10 @@ Goodbye!
 ## Handoff Report
 
 **Completed:** 2026-04-09
-**Final Test Count:** 119 passing (12 new tests added in cleanup)
+**Final Test Count:** 122 passing (15 new tests added in both cleanup cycles)
 **Branch:** `feature/phase-1c-orchestrator-cli`
 
-### Cleanup Cycle Commits (7 commits)
+### Cleanup-1 Cycle Commits (7 commits)
 
 1. `f2be4c8` - fix(orchestrator): own user message persistence to eliminate first-turn double-count
 2. `406349c` - fix(orchestrator): raise EmptyResponseError on empty stop/length response
@@ -259,19 +286,27 @@ Goodbye!
 6. `cf30445` - docs(handoffs): move Phase 1c report to docs/handoffs/ and conform to naming
 7. `d3d9230` - docs(adr): add ADR-012 for turn state machine and confirmation callback
 
+### Cleanup-2 Cycle Commits (5 commits)
+
+8. `c15a61f` - fix(orchestrator): enforce confirmation in meta-tool path, not just direct calls
+9. `7040f15` - style(orchestrator): hoist EmptyResponseError import to module top
+10. `1254147` - fix(cli): /reset creates a new session for the same user, not a new user
+11. `874ff6c` - docs(adr): fix ADR-012 indentation and update confirmation enforcement wording
+12. `XXXXXXX` - docs(handoffs): add cleanup-2 cycle summary and update test count
+
 ### Quality Checks
 
-- **pytest:** 119 passed (was 107 at baseline)
+- **pytest:** 122 passed (was 119 at cleanup-1, was 107 at baseline)
 - **ruff:** Pre-existing warnings in scripts/calibrate_token_count.py only
 - **mypy:** 9 errors, all pre-existing (forward refs in sessions.py, Database.init pattern)
 
 ### Deviations
 
-None. All 7 sections implemented as specified.
+None. All 11 sections implemented as specified across both cleanup cycles.
 
 ### Blockers
 
-None. Ready for Dylan to push, merge to develop, and tag v0.1.0.
+**Cleanup-2 complete.** Branch ready for Dylan to review, push, merge to develop, and tag v0.1.0.
 
 ### Git Log (feature/phase-1c-orchestrator-cli ^develop)
 
