@@ -83,8 +83,11 @@ class Orchestrator:
             # Start processing
             await self._transition(turn, TurnState.BUILDING_CONTEXT)
 
-            # Get conversation history
+            # Load prior history (does not include the current user message)
             history = await self._store.get_messages(session.id)
+
+            # Persist the new user message (now it's in the store for future turns / continuations)
+            await self._store.append_message(session.id, user_message)
 
             # Build context
             tools = self._tools.meta_tool_schemas()

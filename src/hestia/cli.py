@@ -152,7 +152,6 @@ def chat(ctx: click.Context) -> None:
                     break
 
                 user_message = Message(role="user", content=user_input)
-                await session_store.append_message(session.id, user_message)
 
                 await orchestrator.process_turn(
                     session=session,
@@ -206,7 +205,6 @@ def ask(ctx: click.Context, message: str) -> None:
         )
 
         user_message = Message(role="user", content=message)
-        await session_store.append_message(session.id, user_message)
 
         response_handler = CliResponseHandler(verbose=verbose)
 
