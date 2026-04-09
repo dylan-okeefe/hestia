@@ -47,3 +47,15 @@ class ArtifactExpiredError(ArtifactError):
     """Artifact has expired."""
 
     pass
+
+
+class IllegalTransitionError(HestiaError):
+    """Attempted an illegal state machine transition."""
+
+    pass
+
+
+class EmptyResponseError(HestiaError):
+    """Model returned empty content and no tool calls."""
+
+    pass

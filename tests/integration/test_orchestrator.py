@@ -1,0 +1,311 @@
+"""Integration tests for the Orchestrator."""
+
+from datetime import datetime
+
+import pytest
+
+from hestia.artifacts.store import ArtifactStore
+from hestia.context.builder import ContextBuilder
+from hestia.core.types import Message
+from hestia.orchestrator import Orchestrator, TurnState
+from hestia.persistence.db import Database
+from hestia.persistence.sessions import SessionStore
+from hestia.tools.builtin.current_time import current_time
+from hestia.tools.registry import ToolRegistry
+
+
+class FakeInferenceClient:
+    """Fake inference client for testing."""
+
+    def __init__(self, responses=None):
+        """Initialize with optional list of responses."""
+        self.responses = responses or []
+        self.call_count = 0
+        self.closed = False
+
+    async def count_request(self, messages, tools):
+        """Simple char-based token count."""
+        total = 0
+        for msg in messages:
+            total += 10 + len(msg.content) // 4
+        for tool in tools:
+            total += 50  # Tool schema cost
+        return total
+
+    async def chat(self, messages, tools=None, slot_id=None, **kwargs):
+        """Return next canned response."""
+        from hestia.core.types import ChatResponse
+
+        if self.call_count < len(self.responses):
+            response = self.responses[self.call_count]
+            self.call_count += 1
+            return response
+
+        # Default: simple text response
+        self.call_count += 1
+        return ChatResponse(
+            content="Test response",
+            reasoning_content=None,
+            tool_calls=[],
+            finish_reason="stop",
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+        )
+
+    async def close(self):
+        """Mark as closed."""
+        self.closed = True
+
+    async def health(self):
+        """Return fake health."""
+        return {"status": "ok"}
+
+
+class FakePolicyEngine:
+    """Fake policy engine for testing."""
+
+    def should_delegate(self, session, task_description):
+        return False
+
+    def should_compress(self, session, tokens_used, tokens_budget):
+        return False
+
+    def should_evict_slot(self, slot_id, pressure):
+        return False
+
+    def retry_after_error(self, error, attempt):
+        from hestia.policy.engine import RetryAction, RetryDecision
+
+        return RetryDecision(action=RetryAction.FAIL)
+
+    def turn_token_budget(self, session):
+        return 4000
+
+    def tool_result_max_chars(self, tool_name):
+        return 4000
+
+
+@pytest.fixture
+async def store(tmp_path):
+    """Create a SessionStore with temp database."""
+    db_url = f"sqlite+aiosqlite:///{tmp_path}/test.db"
+    db = Database(db_url)
+    await db.connect()
+    await db.create_tables()
+
+    store = SessionStore(db)
+    yield store
+    await db.close()
+
+
+@pytest.fixture
+def fake_inference():
+    """Fake inference client."""
+    return FakeInferenceClient()
+
+
+@pytest.fixture
+def fake_policy():
+    """Fake policy engine."""
+    return FakePolicyEngine()
+
+
+@pytest.fixture
+def artifact_store(tmp_path):
+    """Artifact store in temp directory."""
+    return ArtifactStore(tmp_path / "artifacts")
+
+
+@pytest.fixture
+def tool_registry(artifact_store):
+    """Tool registry with current_time tool."""
+    registry = ToolRegistry(artifact_store)
+    registry.register(current_time)
+    return registry
+
+
+@pytest.fixture
+def context_builder(fake_inference, fake_policy):
+    """Context builder with no calibration."""
+    return ContextBuilder(fake_inference, fake_policy, body_factor=1.0)
+
+
+@pytest.fixture
+def responses():
+    """List to capture responses."""
+    return []
+
+
+@pytest.fixture
+def respond_callback(responses):
+    """Callback that captures responses."""
+
+    async def callback(response):
+        responses.append(response)
+
+    return callback
+
+
+@pytest.mark.asyncio
+async def test_simple_turn_completes(
+    store,
+    fake_inference,
+    fake_policy,
+    context_builder,
+    tool_registry,
+    respond_callback,
+):
+    """A simple turn with no tool calls completes successfully."""
+    from hestia.core.types import Session, SessionState, SessionTemperature
+
+    # Create session
+    session = Session(
+        id="test_session",
+        platform="test",
+        platform_user="user",
+        started_at=datetime.now(),
+        last_active_at=datetime.now(),
+        slot_id=None,
+        slot_saved_path=None,
+        state=SessionState.ACTIVE,
+        temperature=SessionTemperature.COLD,
+    )
+
+    # Create orchestrator
+    orchestrator = Orchestrator(
+        inference=fake_inference,
+        session_store=store,
+        context_builder=context_builder,
+        tool_registry=tool_registry,
+        policy=fake_policy,
+        max_iterations=10,
+    )
+
+    user_message = Message(role="user", content="Hello")
+
+    turn = await orchestrator.process_turn(
+        session=session,
+        user_message=user_message,
+        respond_callback=respond_callback,
+    )
+
+    assert turn.state == TurnState.DONE
+    assert turn.final_response is not None
+    assert turn.iterations >= 0
+
+
+@pytest.mark.asyncio
+async def test_turn_with_tool_calls(
+    store,
+    fake_policy,
+    context_builder,
+    tool_registry,
+    respond_callback,
+):
+    """A turn that triggers tool calls."""
+    from hestia.core.types import ChatResponse, Session, SessionState, SessionTemperature, ToolCall
+
+    # Create inference client that returns a tool call, then a final response
+    tool_call_response = ChatResponse(
+        content="",
+        reasoning_content=None,
+        tool_calls=[
+            ToolCall(id="call_1", name="list_tools", arguments={"tag": None})
+        ],
+        finish_reason="tool_calls",
+        prompt_tokens=20,
+        completion_tokens=10,
+        total_tokens=30,
+    )
+    final_response = ChatResponse(
+        content="Here are your tools.",
+        reasoning_content=None,
+        tool_calls=[],
+        finish_reason="stop",
+        prompt_tokens=30,
+        completion_tokens=5,
+        total_tokens=35,
+    )
+
+    inference = FakeInferenceClient([tool_call_response, final_response])
+
+    session = Session(
+        id="test_session_tool",
+        platform="test",
+        platform_user="user",
+        started_at=datetime.now(),
+        last_active_at=datetime.now(),
+        slot_id=None,
+        slot_saved_path=None,
+        state=SessionState.ACTIVE,
+        temperature=SessionTemperature.COLD,
+    )
+
+    orchestrator = Orchestrator(
+        inference=inference,
+        session_store=store,
+        context_builder=context_builder,
+        tool_registry=tool_registry,
+        policy=fake_policy,
+        max_iterations=10,
+    )
+
+    user_message = Message(role="user", content="What tools do you have?")
+
+    turn = await orchestrator.process_turn(
+        session=session,
+        user_message=user_message,
+        respond_callback=respond_callback,
+    )
+
+    assert turn.state == TurnState.DONE
+    assert turn.tool_calls_made >= 1
+    assert turn.iterations >= 1
+
+
+@pytest.mark.asyncio
+async def test_turn_persisted_to_database(
+    store,
+    fake_inference,
+    fake_policy,
+    context_builder,
+    tool_registry,
+    respond_callback,
+):
+    """Turn data is persisted to the database."""
+    from hestia.core.types import Session, SessionState, SessionTemperature
+
+    session = Session(
+        id="test_session_persist",
+        platform="test",
+        platform_user="user",
+        started_at=datetime.now(),
+        last_active_at=datetime.now(),
+        slot_id=None,
+        slot_saved_path=None,
+        state=SessionState.ACTIVE,
+        temperature=SessionTemperature.COLD,
+    )
+
+    orchestrator = Orchestrator(
+        inference=fake_inference,
+        session_store=store,
+        context_builder=context_builder,
+        tool_registry=tool_registry,
+        policy=fake_policy,
+        max_iterations=10,
+    )
+
+    user_message = Message(role="user", content="Hello")
+
+    turn = await orchestrator.process_turn(
+        session=session,
+        user_message=user_message,
+        respond_callback=respond_callback,
+    )
+
+    # Verify turn was persisted
+    persisted_turn = await store.get_turn(turn.id)
+    assert persisted_turn is not None
+    assert persisted_turn.state == TurnState.DONE
