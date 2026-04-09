@@ -150,10 +150,16 @@ class Orchestrator:
                     continue  # Loop back for another model call
 
                 elif chat_response.finish_reason in ("stop", "length"):
-                    # Turn complete
+                    content = chat_response.content or ""
+                    if not content.strip() and not chat_response.tool_calls:
+                        from hestia.errors import EmptyResponseError
+                        raise EmptyResponseError(
+                            f"Model returned finish_reason={chat_response.finish_reason!r} "
+                            f"with empty content and no tool calls"
+                        )
                     await self._transition(turn, TurnState.DONE)
-                    turn.final_response = chat_response.content
-                    await respond_callback(chat_response.content)
+                    turn.final_response = content
+                    await respond_callback(content)
                     break
 
                 else:

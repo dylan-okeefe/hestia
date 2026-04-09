@@ -1,0 +1,199 @@
+"""Unit tests for Orchestrator error handling."""
+
+from datetime import datetime
+from unittest.mock import AsyncMock
+
+import pytest
+
+from hestia.artifacts.store import ArtifactStore
+from hestia.context.builder import ContextBuilder
+from hestia.core.types import ChatResponse, Message, Session, SessionState, SessionTemperature
+from hestia.orchestrator import Orchestrator, TurnState
+from hestia.persistence.db import Database
+from hestia.persistence.sessions import SessionStore
+from hestia.tools.registry import ToolRegistry
+
+
+class FakeInferenceClient:
+    """Fake inference client that returns canned responses."""
+
+    def __init__(self, responses):
+        self.responses = responses
+        self.call_count = 0
+
+    async def count_request(self, messages, tools):
+        total = 0
+        for msg in messages:
+            total += 10 + len(msg.content) // 4
+        for tool in tools:
+            total += 50
+        return total
+
+    async def chat(self, messages, tools=None, slot_id=None, **kwargs):
+        if self.call_count < len(self.responses):
+            response = self.responses[self.call_count]
+            self.call_count += 1
+            return response
+        raise RuntimeError("No more canned responses")
+
+
+class FakePolicyEngine:
+    """Fake policy engine."""
+
+    def should_delegate(self, session, task_description):
+        return False
+
+    def should_compress(self, session, tokens_used, tokens_budget):
+        return False
+
+    def should_evict_slot(self, slot_id, pressure):
+        return False
+
+    def retry_after_error(self, error, attempt):
+        from hestia.policy.engine import RetryAction, RetryDecision
+        return RetryDecision(action=RetryAction.FAIL)
+
+    def turn_token_budget(self, session):
+        return 4000
+
+    def tool_result_max_chars(self, tool_name):
+        return 4000
+
+
+@pytest.fixture
+async def store(tmp_path):
+    """Create a SessionStore with temp database."""
+    db_url = f"sqlite+aiosqlite:///{tmp_path}/test.db"
+    db = Database(db_url)
+    await db.connect()
+    await db.create_tables()
+    store = SessionStore(db)
+    yield store
+    await db.close()
+
+
+@pytest.fixture
+def artifact_store(tmp_path):
+    """Artifact store in temp directory."""
+    return ArtifactStore(tmp_path / "artifacts")
+
+
+@pytest.fixture
+def tool_registry(artifact_store):
+    """Tool registry with no tools."""
+    return ToolRegistry(artifact_store)
+
+
+@pytest.mark.asyncio
+async def test_empty_response_error_on_stop_with_empty_content(store, tool_registry):
+    """Empty content with finish_reason='stop' should fail the turn, not return blank."""
+    fake_policy = FakePolicyEngine()
+    
+    # Create inference that returns empty content with stop
+    empty_response = ChatResponse(
+        content="",
+        reasoning_content=None,
+        tool_calls=[],
+        finish_reason="stop",
+        prompt_tokens=10,
+        completion_tokens=0,
+        total_tokens=10,
+    )
+    inference = FakeInferenceClient([empty_response])
+    
+    context_builder = ContextBuilder(inference, fake_policy, body_factor=1.0)
+    
+    session = Session(
+        id="test_session_empty",
+        platform="test",
+        platform_user="user",
+        started_at=datetime.now(),
+        last_active_at=datetime.now(),
+        slot_id=None,
+        slot_saved_path=None,
+        state=SessionState.ACTIVE,
+        temperature=SessionTemperature.COLD,
+    )
+    
+    orchestrator = Orchestrator(
+        inference=inference,
+        session_store=store,
+        context_builder=context_builder,
+        tool_registry=tool_registry,
+        policy=fake_policy,
+        max_iterations=10,
+    )
+    
+    respond_callback = AsyncMock()
+    user_message = Message(role="user", content="Hello")
+    
+    # Should not raise - exception is caught internally
+    turn = await orchestrator.process_turn(
+        session=session,
+        user_message=user_message,
+        respond_callback=respond_callback,
+    )
+    
+    # Turn should be FAILED
+    assert turn.state == TurnState.FAILED
+    assert turn.error is not None
+    assert "EmptyResponseError" in turn.error or "empty content" in turn.error
+    
+    # Response callback should have been called with error, not empty string
+    respond_callback.assert_called_once()
+    call_args = respond_callback.call_args[0][0]
+    assert "Error:" in call_args
+    assert call_args != ""
+
+
+@pytest.mark.asyncio
+async def test_empty_response_error_on_length_with_empty_content(store, tool_registry):
+    """Empty content with finish_reason='length' should also fail the turn."""
+    fake_policy = FakePolicyEngine()
+    
+    empty_response = ChatResponse(
+        content="   ",  # whitespace-only counts as empty
+        reasoning_content=None,
+        tool_calls=[],
+        finish_reason="length",
+        prompt_tokens=10,
+        completion_tokens=0,
+        total_tokens=10,
+    )
+    inference = FakeInferenceClient([empty_response])
+    
+    context_builder = ContextBuilder(inference, fake_policy, body_factor=1.0)
+    
+    session = Session(
+        id="test_session_length",
+        platform="test",
+        platform_user="user",
+        started_at=datetime.now(),
+        last_active_at=datetime.now(),
+        slot_id=None,
+        slot_saved_path=None,
+        state=SessionState.ACTIVE,
+        temperature=SessionTemperature.COLD,
+    )
+    
+    orchestrator = Orchestrator(
+        inference=inference,
+        session_store=store,
+        context_builder=context_builder,
+        tool_registry=tool_registry,
+        policy=fake_policy,
+        max_iterations=10,
+    )
+    
+    respond_callback = AsyncMock()
+    user_message = Message(role="user", content="Hello")
+    
+    turn = await orchestrator.process_turn(
+        session=session,
+        user_message=user_message,
+        respond_callback=respond_callback,
+    )
+    
+    assert turn.state == TurnState.FAILED
+    assert turn.error is not None
+    respond_callback.assert_called_once()
