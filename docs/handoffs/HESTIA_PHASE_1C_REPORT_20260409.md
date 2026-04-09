@@ -327,3 +327,64 @@ c862fcd docs(handoffs): Phase 1b progress report
 ```
 
 All commits authored by Dylan O'Keefe <dylanokeefedev@gmail.com>.
+
+---
+
+## Final Verification (Cleanup-2)
+
+**Date:** 2026-04-09
+**Final Test Count:** 123 passing (16 new tests added across both cleanup cycles)
+
+### Cleanup-2 Commits (5 commits, all authored by Dylan O'Keefe)
+
+```
+4f4d246 docs(handoffs): add cleanup-2 cycle summary and update test count
+874ff6c docs(adr): fix ADR-012 indentation and update confirmation enforcement wording
+1254147 fix(cli): /reset creates a new session for the same user, not a new user
+7040f15 style(orchestrator): hoist EmptyResponseError import to module top
+c15a61f fix(orchestrator): enforce confirmation in meta-tool path, not just direct calls
+```
+
+### Quality Checks (Cleanup-2)
+
+- **pytest:** 123 passed ✅
+- **ruff:** Clean (pre-existing warnings in scripts/ only) ✅
+- **mypy:** 9 errors, all pre-existing ✅
+
+### Critical Bug Fixed
+
+**§1 Confirmation enforcement bypass:** The fail-closed check only ran in the direct-tool branch, which is never exercised. Models invoke tools through `call_tool` meta-tool, completely bypassing confirmation. Fixed by moving enforcement into the meta-tool branch in orchestrator.
+
+### Deviations
+
+None. All 4 sections (§1-§4) implemented as specified.
+
+### Blockers
+
+**None.** Cleanup-2 complete. Branch is ready for:
+1. Dylan review on Mac
+2. Push to remote
+3. Merge to develop
+4. Tag v0.1.0
+
+### Complete Git Log (feature/phase-1c-orchestrator-cli ^develop)
+
+```
+4f4d246 docs(handoffs): add cleanup-2 cycle summary and update test count
+874ff6c docs(adr): fix ADR-012 indentation and update confirmation enforcement wording
+1254147 fix(cli): /reset creates a new session for the same user, not a new user
+7040f15 style(orchestrator): hoist EmptyResponseError import to module top
+c15a61f fix(orchestrator): enforce confirmation in meta-tool path, not just direct calls
+8d29c26 docs(handoffs): add handoff report with commit SHAs and quality checks
+d3d9230 docs(adr): add ADR-012 for turn state machine and confirmation callback
+cf30445 docs(handoffs): move Phase 1c report to docs/handoffs/ and conform to naming
+229d782 test(integration): add two-tool chain test for Tokyo time + /tmp file count
+b7e4247 feat(cli): add /quit /reset /history /session /help REPL meta-commands
+b5d044e fix(orchestrator): fail closed when confirm_callback missing
+406349c fix(orchestrator): raise EmptyResponseError on empty stop/length response
+f2be4c8 fix(orchestrator): own user message persistence to eliminate first-turn double-count
+74b837b feat(phase-1c): Orchestrator engine and CLI adapter
+...
+```
+
+**Total: 12 commits since develop (5 Phase 1c originals + 7 cleanup-1 + 5 cleanup-2)**
