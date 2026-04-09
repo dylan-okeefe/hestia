@@ -1,0 +1,58 @@
+{
+  "timestamp": "2026-04-09T12:08:52.890130",
+  "model": "Qwen3.5-9B-UD-Q4_K_XL.gguf",
+  "base_url": "http://localhost:8001",
+  "body_factor": 1.9620229141366936,
+  "meta_tool_overhead_tokens": 317,
+  "body_statistics": {
+    "mean": 1.9620229141366936,
+    "stdev": 0.8840059156456369,
+    "min": 1.103448275862069,
+    "max": 3.4545454545454546,
+    "median": 1.8166717233009708,
+    "n_samples": 6
+  },
+  "meta_tool_measurements": [
+    317,
+    317,
+    317
+  ],
+  "measurements": [
+    {
+      "shape": "short_1user",
+      "predicted": 56,
+      "actual": 23,
+      "ratio": 2.4347826086956523
+    },
+    {
+      "shape": "medium_5turns",
+      "predicted": 121,
+      "actual": 64,
+      "ratio": 1.890625
+    },
+    {
+      "shape": "long_20turns",
+      "predicted": 359,
+      "actual": 206,
+      "ratio": 1.7427184466019416
+    },
+    {
+      "shape": "long_content",
+      "predicted": 259,
+      "actual": 226,
+      "ratio": 1.1460176991150441
+    },
+    {
+      "shape": "system_heavy",
+      "predicted": 352,
+      "actual": 319,
+      "ratio": 1.103448275862069
+    },
+    {
+      "shape": "minimal",
+      "predicted": 38,
+      "actual": 11,
+      "ratio": 3.4545454545454546
+    }
+  ]
+}

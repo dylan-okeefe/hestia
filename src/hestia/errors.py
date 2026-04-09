@@ -29,3 +29,33 @@ class PersistenceError(HestiaError):
     """Database operation failed."""
 
     pass
+
+
+class ArtifactError(HestiaError):
+    """Artifact storage error."""
+
+    pass
+
+
+class ArtifactNotFoundError(ArtifactError):
+    """Artifact handle does not exist."""
+
+    pass
+
+
+class ArtifactExpiredError(ArtifactError):
+    """Artifact has expired."""
+
+    pass
+
+
+class IllegalTransitionError(HestiaError):
+    """Attempted an illegal state machine transition."""
+
+    pass
+
+
+class EmptyResponseError(HestiaError):
+    """Model returned empty content and no tool calls."""
+
+    pass

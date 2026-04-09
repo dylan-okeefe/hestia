@@ -97,6 +97,48 @@ class SessionStore:
 
         return new_session
 
+    async def create_session(
+        self,
+        platform: str,
+        platform_user: str,
+    ) -> Session:
+        """Create a new session row, regardless of whether an active one exists.
+
+        Used by /reset and similar flows where the caller explicitly wants a
+        fresh session for an existing user.
+        """
+        session_id = _generate_session_id(platform, platform_user)
+        now = datetime.now()
+        new_session = Session(
+            id=session_id,
+            platform=platform,
+            platform_user=platform_user,
+            started_at=now,
+            last_active_at=now,
+            slot_id=None,
+            slot_saved_path=None,
+            state=SessionState.ACTIVE,
+            temperature=SessionTemperature.COLD,
+        )
+
+        insert = sa.insert(sessions).values(
+            id=new_session.id,
+            platform=new_session.platform,
+            platform_user=new_session.platform_user,
+            started_at=new_session.started_at,
+            last_active_at=new_session.last_active_at,
+            slot_id=new_session.slot_id,
+            slot_saved_path=new_session.slot_saved_path,
+            state=new_session.state.value,
+            temperature=new_session.temperature.value,
+        )
+
+        async with self._db.engine.connect() as conn:
+            await conn.execute(insert)
+            await conn.commit()
+
+        return new_session
+
     async def get_session(self, session_id: str) -> Session | None:
         """Get a session by ID."""
         query = sa.select(sessions).where(sessions.c.id == session_id)
@@ -255,3 +297,128 @@ class SessionStore:
             reasoning_content=row.reasoning_content,
             created_at=row.created_at,
         )
+
+    # --- Turn persistence ---
+
+    async def insert_turn(self, turn: "Turn") -> None:
+        """Insert a new turn into the database."""
+        from hestia.persistence.schema import turns
+
+        insert = sa.insert(turns).values(
+            id=turn.id,
+            session_id=turn.session_id,
+            state=turn.state.value,
+            started_at=turn.started_at,
+            last_transition_at=turn.started_at,
+            iteration=turn.iterations,
+        )
+
+        async with self._db.engine.connect() as conn:
+            await conn.execute(insert)
+            await conn.commit()
+
+    async def update_turn(self, turn: "Turn") -> None:
+        """Update a turn's state and completion info."""
+        from hestia.persistence.schema import turns
+
+        update = (
+            sa.update(turns)
+            .where(turns.c.id == turn.id)
+            .values(
+                state=turn.state.value,
+                last_transition_at=datetime.now(),
+                iteration=turn.iterations,
+                error=turn.error,
+            )
+        )
+
+        async with self._db.engine.connect() as conn:
+            await conn.execute(update)
+            await conn.commit()
+
+    async def append_transition(
+        self, turn_id: str, transition: "TurnTransition"
+    ) -> None:
+        """Append a transition to the turn_transitions table."""
+        from hestia.persistence.schema import turn_transitions
+
+        # Get next idx for this turn
+        idx_query = (
+            sa.select(sa.func.coalesce(sa.func.max(turn_transitions.c.idx), -1) + 1)
+            .where(turn_transitions.c.turn_id == turn_id)
+        )
+
+        async with self._db.engine.connect() as conn:
+            idx_result = await conn.execute(idx_query)
+            idx = idx_result.scalar_one()
+
+            insert = sa.insert(turn_transitions).values(
+                turn_id=turn_id,
+                idx=idx,
+                from_state=transition.from_state.value,
+                to_state=transition.to_state.value,
+                at=transition.at,
+                reason=transition.note,
+            )
+            await conn.execute(insert)
+            await conn.commit()
+
+    async def get_turn(self, turn_id: str) -> "Turn | None":
+        """Get a turn by ID (without transitions)."""
+        from hestia.persistence.schema import turns
+        from hestia.orchestrator.types import Turn, TurnState
+
+        query = sa.select(turns).where(turns.c.id == turn_id)
+
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(query)
+            row = result.fetchone()
+            if row:
+                return Turn(
+                    id=row.id,
+                    session_id=row.session_id,
+                    state=TurnState(row.state),
+                    user_message=None,  # Not stored in turns table
+                    started_at=row.started_at,
+                    completed_at=None,  # Not tracked separately
+                    iterations=row.iteration,
+                    tool_calls_made=0,  # Not stored separately
+                    final_response=None,
+                    error=row.error,
+                    transitions=[],  # Loaded separately
+                )
+            return None
+
+    async def list_turns_for_session(
+        self, session_id: str, limit: int = 50
+    ) -> list["Turn"]:
+        """List turns for a session, newest first."""
+        from hestia.persistence.schema import turns
+        from hestia.orchestrator.types import Turn, TurnState
+
+        query = (
+            sa.select(turns)
+            .where(turns.c.session_id == session_id)
+            .order_by(turns.c.started_at.desc())
+            .limit(limit)
+        )
+
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(query)
+            rows = result.fetchall()
+            return [
+                Turn(
+                    id=row.id,
+                    session_id=row.session_id,
+                    state=TurnState(row.state),
+                    user_message=None,
+                    started_at=row.started_at,
+                    completed_at=None,
+                    iterations=row.iteration,
+                    tool_calls_made=0,
+                    final_response=None,
+                    error=row.error,
+                    transitions=[],
+                )
+                for row in rows
+            ]
