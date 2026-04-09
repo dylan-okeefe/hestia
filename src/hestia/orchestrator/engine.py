@@ -8,7 +8,7 @@ from typing import Any
 from hestia.context.builder import BuildResult, ContextBuilder
 from hestia.core.inference import InferenceClient
 from hestia.core.types import Message, Session, ToolCall
-from hestia.errors import IllegalTransitionError
+from hestia.errors import EmptyResponseError, IllegalTransitionError
 from hestia.orchestrator.transitions import assert_transition
 from hestia.orchestrator.types import Turn, TurnState, TurnTransition
 from hestia.persistence.sessions import SessionStore
@@ -152,7 +152,6 @@ class Orchestrator:
                 elif chat_response.finish_reason in ("stop", "length"):
                     content = chat_response.content or ""
                     if not content.strip() and not chat_response.tool_calls:
-                        from hestia.errors import EmptyResponseError
                         raise EmptyResponseError(
                             f"Model returned finish_reason={chat_response.finish_reason!r} "
                             f"with empty content and no tool calls"
