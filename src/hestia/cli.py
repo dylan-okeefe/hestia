@@ -95,6 +95,7 @@ async def _handle_meta_command(
         new_session = await session_store.create_session(
             platform=session.platform,
             platform_user=session.platform_user,
+            archive_previous=session,
         )
         click.echo(f"New session: {new_session.id}")
         return False, new_session

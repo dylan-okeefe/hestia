@@ -97,15 +97,36 @@ class SessionStore:
 
         return new_session
 
+    async def archive_session(self, session_id: str) -> None:
+        """Mark a session as ARCHIVED. Used when /reset creates a successor."""
+        update = (
+            sa.update(sessions)
+            .where(sessions.c.id == session_id)
+            .values(
+                state=SessionState.ARCHIVED.value,
+                last_active_at=datetime.now(),
+            )
+        )
+        async with self._db.engine.connect() as conn:
+            await conn.execute(update)
+            await conn.commit()
+
     async def create_session(
         self,
         platform: str,
         platform_user: str,
+        archive_previous: Session | None = None,
     ) -> Session:
-        """Create a new session row, regardless of whether an active one exists.
+        """Create a new session row. Optionally archives a previous session atomically.
 
         Used by /reset and similar flows where the caller explicitly wants a
         fresh session for an existing user.
+
+        Args:
+            platform: Platform identifier (e.g., "cli", "matrix")
+            platform_user: User identifier on that platform
+            archive_previous: If provided, archive this session in the same transaction
+                so we never end up with two ACTIVE sessions for the same user.
         """
         session_id = _generate_session_id(platform, platform_user)
         now = datetime.now()
@@ -134,6 +155,12 @@ class SessionStore:
         )
 
         async with self._db.engine.connect() as conn:
+            if archive_previous is not None:
+                await conn.execute(
+                    sa.update(sessions)
+                    .where(sessions.c.id == archive_previous.id)
+                    .values(state=SessionState.ARCHIVED.value, last_active_at=datetime.now())
+                )
             await conn.execute(insert)
             await conn.commit()
 
