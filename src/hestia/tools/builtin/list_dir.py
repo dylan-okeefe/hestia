@@ -20,10 +20,11 @@ async def list_dir(path: str = ".", max_entries: int = 200) -> str:
     if not target.is_dir():
         return f"Error: {path} is not a directory"
 
+    all_items = sorted(target.iterdir())
     entries = []
-    for i, item in enumerate(sorted(target.iterdir())):
+    for i, item in enumerate(all_items):
         if i >= max_entries:
-            entries.append(f"... ({len(list(target.iterdir())) - max_entries} more entries)")
+            entries.append(f"... ({len(all_items) - max_entries} more entries)")
             break
         kind = "dir" if item.is_dir() else "file"
         size = ""

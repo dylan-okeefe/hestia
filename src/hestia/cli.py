@@ -213,6 +213,7 @@ def init(ctx: click.Context) -> None:
 @click.pass_context
 def chat(ctx: click.Context) -> None:
     """Start an interactive chat session."""
+    cfg: HestiaConfig = ctx.obj["config"]
     db: Database = ctx.obj["db"]
     inference: InferenceClient = ctx.obj["inference"]
     session_store: SessionStore = ctx.obj["session_store"]
@@ -238,7 +239,7 @@ def chat(ctx: click.Context) -> None:
             tool_registry=tool_registry,
             policy=policy,
             confirm_callback=CliConfirmHandler(),
-            max_iterations=10,
+            max_iterations=cfg.max_iterations,
             slot_manager=slot_manager,
         )
 
@@ -287,6 +288,7 @@ def chat(ctx: click.Context) -> None:
 @click.pass_context
 def ask(ctx: click.Context, message: str) -> None:
     """Send a single message and get a response."""
+    cfg: HestiaConfig = ctx.obj["config"]
     db: Database = ctx.obj["db"]
     inference: InferenceClient = ctx.obj["inference"]
     session_store: SessionStore = ctx.obj["session_store"]
@@ -308,7 +310,7 @@ def ask(ctx: click.Context, message: str) -> None:
             tool_registry=tool_registry,
             policy=policy,
             confirm_callback=CliConfirmHandler(),
-            max_iterations=10,
+            max_iterations=cfg.max_iterations,
             slot_manager=slot_manager,
         )
 
@@ -506,6 +508,7 @@ def schedule_show(ctx: click.Context, task_id: str) -> None:
 @click.pass_context
 def schedule_run(ctx: click.Context, task_id: str) -> None:
     """Manually trigger a scheduled task."""
+    cfg: HestiaConfig = ctx.obj["config"]
     db: Database = ctx.obj["db"]
     session_store: SessionStore = ctx.obj["session_store"]
     inference: InferenceClient = ctx.obj["inference"]
@@ -535,7 +538,7 @@ def schedule_run(ctx: click.Context, task_id: str) -> None:
             tool_registry=tool_registry,
             policy=policy,
             confirm_callback=CliConfirmHandler(),
-            max_iterations=10,
+            max_iterations=cfg.max_iterations,
             slot_manager=slot_manager,
         )
 
@@ -629,10 +632,12 @@ def schedule_remove(ctx: click.Context, task_id: str) -> None:
 
 
 @schedule.command(name="daemon")
-@click.option("--tick-interval", type=float, default=5.0, help="Tick interval in seconds")
+@click.option("--tick-interval", type=float, default=None,
+              help="Tick interval in seconds (default: from config)")
 @click.pass_context
-def schedule_daemon(ctx: click.Context, tick_interval: float) -> None:
+def schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None:
     """Run the scheduler daemon (blocks until Ctrl-C)."""
+    cfg: HestiaConfig = ctx.obj["config"]
     db: Database = ctx.obj["db"]
     session_store: SessionStore = ctx.obj["session_store"]
     inference: InferenceClient = ctx.obj["inference"]
@@ -640,6 +645,9 @@ def schedule_daemon(ctx: click.Context, tick_interval: float) -> None:
     tool_registry: ToolRegistry = ctx.obj["tool_registry"]
     policy = ctx.obj["policy"]
     slot_manager: SlotManager = ctx.obj["slot_manager"]
+
+    # Use config tick interval if not specified via CLI
+    tick = tick_interval if tick_interval is not None else cfg.scheduler.tick_interval_seconds
 
     async def response_callback(task: ScheduledTask, text: str) -> None:
         click.echo(f"[scheduler:{task.id}] {text}")
@@ -658,7 +666,7 @@ def schedule_daemon(ctx: click.Context, tick_interval: float) -> None:
             tool_registry=tool_registry,
             policy=policy,
             confirm_callback=CliConfirmHandler(),
-            max_iterations=10,
+            max_iterations=cfg.max_iterations,
             slot_manager=slot_manager,
         )
 
@@ -667,7 +675,7 @@ def schedule_daemon(ctx: click.Context, tick_interval: float) -> None:
             session_store=session_store,
             orchestrator=orchestrator,
             response_callback=response_callback,
-            tick_interval_seconds=tick_interval,
+            tick_interval_seconds=tick,
         )
 
         await scheduler.start()

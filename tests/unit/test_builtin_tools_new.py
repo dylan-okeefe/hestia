@@ -75,6 +75,16 @@ class TestListDir:
 
         assert "(empty)" in result
 
+    @pytest.mark.asyncio
+    async def test_list_dir_overflow_count_is_correct(self, tmp_path):
+        """Overflow message shows correct remaining count."""
+        for i in range(10):
+            (tmp_path / f"file{i:02d}.txt").write_text("x")
+
+        result = await list_dir(str(tmp_path), max_entries=3)
+
+        assert "7 more entries" in result
+
 
 class TestHttpGet:
     """Tests for http_get tool."""
