@@ -165,26 +165,29 @@ class SchedulerStore:
             return [self._row_to_task(row) for row in rows]
 
     async def list_tasks_for_session(
-        self, session_id: str, include_disabled: bool = False
+        self, session_id: str | None = None, include_disabled: bool = False
     ) -> list[ScheduledTask]:
-        """List all tasks for a session.
+        """List all tasks for a session, or all tasks if no session specified.
         
         Args:
-            session_id: The session ID to filter by
+            session_id: The session ID to filter by, or None for all tasks
             include_disabled: Whether to include disabled tasks
             
         Returns:
             List of tasks for the session
         """
-        conditions = [scheduled_tasks.c.session_id == session_id]
+        conditions: list = []
+        if session_id is not None:
+            conditions.append(scheduled_tasks.c.session_id == session_id)
         if not include_disabled:
             conditions.append(scheduled_tasks.c.enabled == True)
 
         query = (
             sa.select(scheduled_tasks)
-            .where(sa.and_(*conditions))
             .order_by(scheduled_tasks.c.created_at.desc())
         )
+        if conditions:
+            query = query.where(sa.and_(*conditions))
 
         async with self._db.engine.connect() as conn:
             result = await conn.execute(query)
