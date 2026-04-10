@@ -145,126 +145,126 @@ class Orchestrator:
                 # Start processing
                 await self._transition(turn, TurnState.BUILDING_CONTEXT)
 
-            # Load prior history (does not include the current user message)
-            history = await self._store.get_messages(session.id)
+                # Load prior history (does not include the current user message)
+                history = await self._store.get_messages(session.id)
 
-            # Persist the new user message (now it's in the store for future turns / continuations)
-            await self._store.append_message(session.id, user_message)
+                # Persist the new user message (now it's in the store for future turns / continuations)
+                await self._store.append_message(session.id, user_message)
 
-            # Build context
-            tools = self._tools.meta_tool_schemas()
-            build_result = await self._builder.build(
-                session=session,
-                history=history,
-                system_prompt=system_prompt,
-                tools=tools,
-                new_user_message=user_message,
-            )
-
-            # Acquire slot for this turn (if SlotManager is configured)
-            slot_id_to_use: int | None
-            if self._slot_manager is not None:
-                assignment = await self._slot_manager.acquire(session)
-                slot_id_to_use = assignment.slot_id
-                # Refetch session in case slot_id/temperature changed
-                refreshed = await self._store.get_session(session.id)
-                if refreshed is not None:
-                    session = refreshed
-            else:
-                slot_id_to_use = session.slot_id
-
-            # Main loop: model -> tools -> model -> ...
-            while turn.iterations < self._max_iterations:
-                await self._transition(turn, TurnState.AWAITING_MODEL)
-                await self._update_status(platform, platform_user, status_msg_id, "Thinking...")
-
-                chat_response = await self._inference.chat(
-                    messages=build_result.messages,
+                # Build context
+                tools = self._tools.meta_tool_schemas()
+                build_result = await self._builder.build(
+                    session=session,
+                    history=history,
+                    system_prompt=system_prompt,
                     tools=tools,
-                    slot_id=slot_id_to_use,
-                    reasoning_budget=2048,
+                    new_user_message=user_message,
                 )
 
-                # Append assistant message to history
-                assistant_msg = Message(
-                    role="assistant",
-                    content=chat_response.content,
-                    tool_calls=chat_response.tool_calls,
-                    reasoning_content=chat_response.reasoning_content,
-                    created_at=datetime.now(),
-                )
-                await self._store.append_message(session.id, assistant_msg)
+                # Acquire slot for this turn (if SlotManager is configured)
+                slot_id_to_use: int | None
+                if self._slot_manager is not None:
+                    assignment = await self._slot_manager.acquire(session)
+                    slot_id_to_use = assignment.slot_id
+                    # Refetch session in case slot_id/temperature changed
+                    refreshed = await self._store.get_session(session.id)
+                    if refreshed is not None:
+                        session = refreshed
+                else:
+                    slot_id_to_use = session.slot_id
 
-                if chat_response.finish_reason == "tool_calls":
-                    await self._transition(turn, TurnState.EXECUTING_TOOLS)
+                # Main loop: model -> tools -> model -> ...
+                while turn.iterations < self._max_iterations:
+                    await self._transition(turn, TurnState.AWAITING_MODEL)
+                    await self._update_status(platform, platform_user, status_msg_id, "Thinking...")
 
-                    # Update status with tool names
-                    tool_names = [tc.name for tc in chat_response.tool_calls]
-                    status_text = f"Running {', '.join(tool_names)}..."
-                    await self._update_status(platform, platform_user, status_msg_id, status_text)
-
-                    # Execute tools and collect results
-                    tool_results = await self._execute_tool_calls(
-                        session.id, chat_response.tool_calls
-                    )
-
-                    # Add tool results to history
-                    for result_msg in tool_results:
-                        await self._store.append_message(session.id, result_msg)
-
-                    # Transition back to building context for next model call
-                    await self._transition(turn, TurnState.BUILDING_CONTEXT)
-
-                    # Rebuild context with new history
-                    history = await self._store.get_messages(session.id)
-                    build_result = await self._builder.build(
-                        session=session,
-                        history=history,
-                        system_prompt=system_prompt,
+                    chat_response = await self._inference.chat(
+                        messages=build_result.messages,
                         tools=tools,
-                        new_user_message=None,  # Continuing turn, no new user message
+                        slot_id=slot_id_to_use,
+                        reasoning_budget=2048,
                     )
 
-                    turn.tool_calls_made += len(chat_response.tool_calls)
-                    turn.iterations += 1
-                    continue  # Loop back for another model call
+                    # Append assistant message to history
+                    assistant_msg = Message(
+                        role="assistant",
+                        content=chat_response.content,
+                        tool_calls=chat_response.tool_calls,
+                        reasoning_content=chat_response.reasoning_content,
+                        created_at=datetime.now(),
+                    )
+                    await self._store.append_message(session.id, assistant_msg)
 
-                elif chat_response.finish_reason in ("stop", "length"):
-                    content = chat_response.content or ""
-                    if not content.strip() and not chat_response.tool_calls:
-                        raise EmptyResponseError(
-                            f"Model returned finish_reason={chat_response.finish_reason!r} "
-                            f"with empty content and no tool calls"
+                    if chat_response.finish_reason == "tool_calls":
+                        await self._transition(turn, TurnState.EXECUTING_TOOLS)
+
+                        # Update status with tool names
+                        tool_names = [tc.name for tc in chat_response.tool_calls]
+                        status_text = f"Running {', '.join(tool_names)}..."
+                        await self._update_status(platform, platform_user, status_msg_id, status_text)
+
+                        # Execute tools and collect results
+                        tool_results = await self._execute_tool_calls(
+                            session.id, chat_response.tool_calls
                         )
-                    await self._transition(turn, TurnState.DONE)
-                    turn.final_response = content
-                    await respond_callback(content)
 
-                    # Save slot checkpoint after successful turn (but don't fail turn if save fails)
-                    if self._slot_manager is not None:
-                        try:
-                            await self._slot_manager.save(session)
-                        except Exception as e:
-                            logger.warning(
-                                "Failed to save slot for session %s: %s", session.id, e
+                        # Add tool results to history
+                        for result_msg in tool_results:
+                            await self._store.append_message(session.id, result_msg)
+
+                        # Transition back to building context for next model call
+                        await self._transition(turn, TurnState.BUILDING_CONTEXT)
+
+                        # Rebuild context with new history
+                        history = await self._store.get_messages(session.id)
+                        build_result = await self._builder.build(
+                            session=session,
+                            history=history,
+                            system_prompt=system_prompt,
+                            tools=tools,
+                            new_user_message=None,  # Continuing turn, no new user message
+                        )
+
+                        turn.tool_calls_made += len(chat_response.tool_calls)
+                        turn.iterations += 1
+                        continue  # Loop back for another model call
+
+                    elif chat_response.finish_reason in ("stop", "length"):
+                        content = chat_response.content or ""
+                        if not content.strip() and not chat_response.tool_calls:
+                            raise EmptyResponseError(
+                                f"Model returned finish_reason={chat_response.finish_reason!r} "
+                                f"with empty content and no tool calls"
                             )
+                        await self._transition(turn, TurnState.DONE)
+                        turn.final_response = content
+                        await respond_callback(content)
 
-                    break
+                        # Save slot checkpoint after successful turn (but don't fail turn if save fails)
+                        if self._slot_manager is not None:
+                            try:
+                                await self._slot_manager.save(session)
+                            except Exception as e:
+                                logger.warning(
+                                    "Failed to save slot for session %s: %s", session.id, e
+                                )
+
+                        break
+
+                    else:
+                        # Unexpected finish reason - retry
+                        decision = self._policy.retry_after_error(
+                            Exception(f"Unexpected finish_reason: {chat_response.finish_reason}"),
+                            turn.iterations,
+                        )
+                        if decision.action == RetryAction.FAIL:
+                            raise Exception(decision.reason)
+                        await self._transition(turn, TurnState.RETRYING)
+                        turn.iterations += 1
 
                 else:
-                    # Unexpected finish reason - retry
-                    decision = self._policy.retry_after_error(
-                        Exception(f"Unexpected finish_reason: {chat_response.finish_reason}"),
-                        turn.iterations,
-                    )
-                    if decision.action == RetryAction.FAIL:
-                        raise Exception(decision.reason)
-                    await self._transition(turn, TurnState.RETRYING)
-                    turn.iterations += 1
-
-            else:
-                # Max iterations reached
-                raise Exception(f"Max iterations ({self._max_iterations}) exceeded")
+                    # Max iterations reached
+                    raise Exception(f"Max iterations ({self._max_iterations}) exceeded")
 
             except IllegalTransitionError:
                 raise  # Re-raise state machine errors
@@ -339,7 +339,7 @@ class Orchestrator:
         return result_messages
 
     async def _dispatch_tool_call(self, tc: ToolCall) -> ToolCallResult:
-        """Dispatch a single tool call, handling meta-tools specially."""
+        """Dispatch a single tool call, handling meta-tools and direct tool calls."""
         # Handle meta-tools
         if tc.name == "list_tools":
             tag = tc.arguments.get("tag") if tc.arguments else None
@@ -378,14 +378,14 @@ class Orchestrator:
                     return ToolCallResult(
                         status="error",
                         content=(
-                            f"Tool {name!r} requires user confirmation but no "
-                            f"confirm_callback is configured on this orchestrator."
+                            f"Tool '{name}' requires user confirmation but no "
+                            "confirm_callback is configured on this orchestrator."
                         ),
                         artifact_handle=None,
                         truncated=False,
                     )
-                approved = await self._confirm_callback(name, arguments or {})
-                if not approved:
+                confirmed = await self._confirm_callback(name, arguments)
+                if not confirmed:
                     return ToolCallResult(
                         status="error",
                         content="Tool execution was cancelled by user.",
@@ -395,30 +395,31 @@ class Orchestrator:
 
             return await self._tools.meta_call_tool(name, arguments)
 
-        # Regular tool - check if it requires confirmation
+        # Direct tool call (non-meta-tool)
+        # Check if tool exists and handle confirmation
         try:
-            tool_meta = self._tools.describe(tc.name)
+            meta = self._tools.describe(tc.name)
         except Exception:
             return ToolCallResult(
                 status="error",
-                content=f"Tool not found: {tc.name}",
+                content=f"Unknown tool: {tc.name}",
                 artifact_handle=None,
                 truncated=False,
             )
 
-        if tool_meta.requires_confirmation:
+        if meta.requires_confirmation:
             if self._confirm_callback is None:
                 return ToolCallResult(
                     status="error",
                     content=(
-                        f"Tool {tc.name!r} requires user confirmation but no "
-                        f"confirm_callback is configured on this orchestrator."
+                        f"Tool '{tc.name}' requires user confirmation but no "
+                        "confirm_callback is configured on this orchestrator."
                     ),
                     artifact_handle=None,
                     truncated=False,
                 )
-            approved = await self._confirm_callback(tc.name, tc.arguments)
-            if not approved:
+            confirmed = await self._confirm_callback(tc.name, tc.arguments or {})
+            if not confirmed:
                 return ToolCallResult(
                     status="error",
                     content="Tool execution was cancelled by user.",
@@ -426,4 +427,4 @@ class Orchestrator:
                     truncated=False,
                 )
 
-        return await self._tools.call(tc.name, tc.arguments)
+        return await self._tools.call(tc.name, tc.arguments or {})
