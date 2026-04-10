@@ -29,11 +29,11 @@ from hestia.tools.builtin import (
     list_dir,
     make_delegate_task_tool,
     make_list_memories_tool,
+    make_read_file_tool,
     make_save_memory_tool,
     make_search_memory_tool,
-    read_file,
+    make_write_file_tool,
     terminal,
-    write_file,
 )
 from hestia.tools.registry import ToolRegistry
 
@@ -185,9 +185,11 @@ def cli(
     tool_registry.register(current_time)
     tool_registry.register(http_get)
     tool_registry.register(list_dir)
-    tool_registry.register(read_file)
     tool_registry.register(terminal)
-    tool_registry.register(write_file)
+
+    # Register file tools with path sandboxing
+    tool_registry.register(make_read_file_tool(cfg.storage.allowed_roots))
+    tool_registry.register(make_write_file_tool(cfg.storage.allowed_roots))
 
     # Register memory tools (bound to the memory store instance)
     tool_registry.register(make_search_memory_tool(memory_store))

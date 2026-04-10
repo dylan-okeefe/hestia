@@ -33,6 +33,7 @@ class StorageConfig:
     """Configuration for persistence and artifact storage."""
     database_url: str = "sqlite+aiosqlite:///hestia.db"
     artifacts_dir: Path = field(default_factory=lambda: Path("artifacts"))
+    allowed_roots: list[str] = field(default_factory=lambda: ["."])
 
 
 @dataclass
