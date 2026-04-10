@@ -9,7 +9,7 @@
 
 ## Current Branch & Phase
 
-- **Integrated branch:** `develop` (merge `feature/phase-5-subagent-delegation` when ready)
+- **Integrated branch:** `develop` (includes merged Phase 5)
 - **Phase:** 5 — Subagent delegation **complete** (CLI registration, policy path, `AWAITING_SUBAGENT`, tests, `delegate_task` async callback fix)
 - **Next phase:** 6 — Polish, docs, share (see design doc)
 - **Status:** Green to merge Phase 5 branch into `develop`.
