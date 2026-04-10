@@ -552,16 +552,11 @@ def schedule_enable(ctx: click.Context, task_id: str) -> None:
         await db.create_tables()
 
         scheduler_store = SchedulerStore(db)
-        task = await scheduler_store.get_task(task_id)
-
-        if task is None:
+        success = await scheduler_store.set_enabled(task_id, True)
+        if not success:
             click.echo(f"Task not found: {task_id}", err=True)
             sys.exit(1)
-
-        # Use update_after_run with no changes to preserve other fields
-        # This is a bit of a hack - we need a proper set_enabled method
-        # For now, just report success
-        click.echo(f"Task {task_id} enabled (not yet implemented)")
+        click.echo(f"Task {task_id} enabled")
 
     asyncio.run(_enable())
 
@@ -601,16 +596,11 @@ def schedule_remove(ctx: click.Context, task_id: str) -> None:
         await db.create_tables()
 
         scheduler_store = SchedulerStore(db)
-
-        # Verify task exists
-        task = await scheduler_store.get_task(task_id)
-        if task is None:
+        success = await scheduler_store.delete_task(task_id)
+        if not success:
             click.echo(f"Task not found: {task_id}", err=True)
             sys.exit(1)
-
-        # For now, disable instead of delete (delete not implemented in store)
-        await scheduler_store.disable_task(task_id)
-        click.echo(f"Task {task_id} removed (disabled)")
+        click.echo(f"Task {task_id} removed")
 
     asyncio.run(_remove())
 

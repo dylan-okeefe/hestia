@@ -379,3 +379,47 @@ class TestGetTask:
         """Returns None for non-existent task."""
         result = await scheduler_store.get_task("task_nonexistent")
         assert result is None
+
+
+class TestSetEnabled:
+    """Tests for set_enabled method."""
+
+    @pytest.mark.asyncio
+    async def test_enable_disabled_task(self, scheduler_store, test_session):
+        """Can re-enable a disabled task."""
+        task = await scheduler_store.create_task(
+            session_id=test_session.id,
+            prompt="Test",
+            cron_expression="0 9 * * *",
+            enabled=False,
+        )
+        result = await scheduler_store.set_enabled(task.id, True)
+        assert result is True
+        fetched = await scheduler_store.get_task(task.id)
+        assert fetched.enabled is True
+
+    @pytest.mark.asyncio
+    async def test_set_enabled_missing_task(self, scheduler_store):
+        result = await scheduler_store.set_enabled("task_nonexistent", True)
+        assert result is False
+
+
+class TestDeleteTask:
+    """Tests for delete_task method."""
+
+    @pytest.mark.asyncio
+    async def test_delete_existing_task(self, scheduler_store, test_session):
+        task = await scheduler_store.create_task(
+            session_id=test_session.id,
+            prompt="Delete me",
+            cron_expression="0 9 * * *",
+        )
+        result = await scheduler_store.delete_task(task.id)
+        assert result is True
+        fetched = await scheduler_store.get_task(task.id)
+        assert fetched is None
+
+    @pytest.mark.asyncio
+    async def test_delete_missing_task(self, scheduler_store):
+        result = await scheduler_store.delete_task("task_nonexistent")
+        assert result is False

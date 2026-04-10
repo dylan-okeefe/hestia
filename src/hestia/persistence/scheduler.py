@@ -273,23 +273,40 @@ class SchedulerStore:
                 last_error=error,
             )
 
-    async def disable_task(self, task_id: str) -> bool:
-        """Disable a scheduled task.
-        
-        Args:
-            task_id: The task ID to disable
-            
-        Returns:
-            True if the task was found and disabled, False otherwise
+    async def set_enabled(self, task_id: str, enabled: bool) -> bool:
+        """Enable or disable a scheduled task.
+
+        Returns True if the task was found, False otherwise.
         """
         update = (
             sa.update(scheduled_tasks)
             .where(scheduled_tasks.c.id == task_id)
-            .values(enabled=False)
+            .values(enabled=enabled)
         )
-
         async with self._db.engine.connect() as conn:
             result = await conn.execute(update)
+            await conn.commit()
+            return result.rowcount > 0
+
+    async def disable_task(self, task_id: str) -> bool:
+        """Disable a scheduled task.
+
+        Args:
+            task_id: The task ID to disable
+
+        Returns:
+            True if the task was found and disabled, False otherwise
+        """
+        return await self.set_enabled(task_id, False)
+
+    async def delete_task(self, task_id: str) -> bool:
+        """Permanently delete a scheduled task.
+
+        Returns True if the task was found and deleted, False otherwise.
+        """
+        delete = sa.delete(scheduled_tasks).where(scheduled_tasks.c.id == task_id)
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(delete)
             await conn.commit()
             return result.rowcount > 0
 
