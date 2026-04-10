@@ -713,6 +713,119 @@ def schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None:
     run_daemon()
 
 
+@cli.command(name="telegram")
+@click.pass_context
+def run_telegram(ctx: click.Context) -> None:
+    """Run Hestia as a Telegram bot (blocks until Ctrl-C)."""
+    cfg: HestiaConfig = ctx.obj["config"]
+    db: Database = ctx.obj["db"]
+    inference: InferenceClient = ctx.obj["inference"]
+    session_store: SessionStore = ctx.obj["session_store"]
+    context_builder: ContextBuilder = ctx.obj["context_builder"]
+    tool_registry: ToolRegistry = ctx.obj["tool_registry"]
+    policy = ctx.obj["policy"]
+    slot_manager: SlotManager = ctx.obj["slot_manager"]
+
+    if not cfg.telegram.bot_token:
+        click.echo("Error: telegram.bot_token is required in config.", err=True)
+        click.echo("Set it in your config file or via environment.", err=True)
+        sys.exit(1)
+
+    from hestia.platforms.telegram_adapter import TelegramAdapter
+
+    def _make_telegram_scheduler_callback(
+        adapter: TelegramAdapter, session_store: SessionStore
+    ):
+        """Create a scheduler response callback that routes to Telegram."""
+        async def callback(task: ScheduledTask, text: str) -> None:
+            session = await session_store.get_session(task.session_id)
+            if session is None or session.platform != "telegram":
+                logger.warning(
+                    "Scheduler task %s: session not found or not telegram", task.id
+                )
+                return
+            await adapter.send_message(session.platform_user, text)
+        return callback
+
+    async def _run() -> None:
+        await db.connect()
+        await db.create_tables()
+
+        adapter = TelegramAdapter(cfg.telegram)
+
+        orchestrator = Orchestrator(
+            inference=inference,
+            session_store=session_store,
+            context_builder=context_builder,
+            tool_registry=tool_registry,
+            policy=policy,
+            max_iterations=cfg.max_iterations,
+            slot_manager=slot_manager,
+        )
+
+        # Session cache: telegram_user_id -> Session
+        user_sessions: dict[str, Session] = {}
+
+        async def on_message(platform_name: str, platform_user: str, text: str) -> None:
+            """Handle incoming Telegram message."""
+            # Get or create session for this user
+            if platform_user not in user_sessions:
+                session = await session_store.create_session(
+                    platform="telegram",
+                    platform_user=platform_user,
+                )
+                user_sessions[platform_user] = session
+            else:
+                session = user_sessions[platform_user]
+
+            user_message = Message(role="user", content=text)
+
+            async def respond(response_text: str) -> None:
+                await adapter.send_message(platform_user, response_text)
+
+            try:
+                await orchestrator.process_turn(
+                    session=session,
+                    user_message=user_message,
+                    respond_callback=respond,
+                    system_prompt=cfg.system_prompt,
+                    platform=adapter,
+                    platform_user=platform_user,
+                )
+            except Exception as e:
+                logger.exception("Turn failed for user %s", platform_user)
+                await adapter.send_error(platform_user, f"Turn failed: {e}")
+
+        await adapter.start(on_message)
+        click.echo("Telegram bot started. Press Ctrl-C to stop.")
+
+        # Also start the scheduler
+        scheduler_store = SchedulerStore(db)
+        scheduler = Scheduler(
+            scheduler_store=scheduler_store,
+            session_store=session_store,
+            orchestrator=orchestrator,
+            response_callback=_make_telegram_scheduler_callback(adapter, session_store),
+            tick_interval_seconds=cfg.scheduler.tick_interval_seconds,
+        )
+        await scheduler.start()
+
+        try:
+            while True:
+                await asyncio.sleep(1)
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            pass
+        finally:
+            await scheduler.stop()
+            await adapter.stop()
+            await inference.close()
+
+    try:
+        asyncio.run(_run())
+    except KeyboardInterrupt:
+        click.echo("\nShutting down.")
+
+
 def main() -> None:
     """Entry point for the CLI."""
     cli()
