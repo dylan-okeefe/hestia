@@ -5,7 +5,6 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 
-
 # Callback type for incoming messages from the platform
 IncomingMessageCallback = Callable[[str, str, str], Awaitable[None]]
 # (platform_name, platform_user, message_text) -> None

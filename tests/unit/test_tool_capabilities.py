@@ -1,12 +1,8 @@
 """Unit tests for tool capability labels."""
 
-import pytest
 
 from hestia.tools.builtin import (
-    MEMORY_READ,
-    MEMORY_WRITE,
     NETWORK_EGRESS,
-    ORCHESTRATION,
     READ_LOCAL,
     SHELL_EXEC,
     WRITE_LOCAL,
@@ -81,7 +77,6 @@ class TestToolCapabilities:
     def test_memory_tools_have_memory_capabilities(self):
         """Memory tools have MEMORY_READ or MEMORY_WRITE capabilities."""
         from hestia.persistence.db import Database
-        from hestia.memory.store import MemoryStore
 
         db = Database("sqlite+aiosqlite:///:memory:")
         # Note: We can't await here in a sync test, so we just check the factory

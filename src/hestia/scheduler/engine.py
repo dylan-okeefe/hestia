@@ -11,6 +11,7 @@ from hestia.core.types import Message, ScheduledTask, SessionState
 from hestia.orchestrator import Orchestrator
 from hestia.persistence.scheduler import SchedulerStore, _calculate_next_run
 from hestia.persistence.sessions import SessionStore
+from hestia.runtime_context import scheduler_tick_active
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +102,7 @@ class Scheduler:
             await self._response_callback(task, text)
 
         turn_error: str | None = None
+        tick_token = scheduler_tick_active.set(True)
         try:
             turn = await self._orchestrator.process_turn(
                 session=session,
@@ -111,6 +113,8 @@ class Scheduler:
         except Exception as e:
             logger.exception("Task %s failed during process_turn", task.id)
             turn_error = str(e)
+        finally:
+            scheduler_tick_active.reset(tick_token)
 
         # Compute next run: cron tasks advance, one-shot tasks don't
         if task.cron_expression is not None:

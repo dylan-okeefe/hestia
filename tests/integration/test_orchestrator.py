@@ -86,6 +86,9 @@ class FakePolicyEngine:
 
         return RetryDecision(action=RetryAction.FAIL)
 
+    def filter_tools(self, session, tool_names, registry):
+        return tool_names
+
     def turn_token_budget(self, session):
         return 4000
 

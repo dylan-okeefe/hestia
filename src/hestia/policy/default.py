@@ -9,6 +9,7 @@ from hestia.policy.engine import (
     RetryAction,
     RetryDecision,
 )
+from hestia.runtime_context import scheduler_tick_active
 
 if TYPE_CHECKING:
     from hestia.tools.registry import ToolRegistry
@@ -161,7 +162,7 @@ class DefaultPolicyEngine(PolicyEngine):
                 if not (set(registry.describe(name).capabilities) & blocked)
             ]
 
-        if session.platform == "scheduler":
+        if session.platform == "scheduler" or scheduler_tick_active.get():
             # Scheduler: block shell_exec for headless safety
             blocked = {SHELL_EXEC}
             return [

@@ -78,3 +78,18 @@ scheduled_tasks = sa.Table(
     sa.Index("idx_scheduled_tasks_session", "session_id"),
     sa.Index("idx_scheduled_tasks_due", "next_run_at", "enabled"),
 )
+
+failure_bundles = sa.Table(
+    "failure_bundles",
+    metadata,
+    sa.Column("id", sa.String, primary_key=True),
+    sa.Column("session_id", sa.String, sa.ForeignKey("sessions.id"), nullable=False),
+    sa.Column("turn_id", sa.String, sa.ForeignKey("turns.id"), nullable=False),
+    sa.Column("failure_class", sa.String, nullable=False),
+    sa.Column("severity", sa.String, nullable=False),
+    sa.Column("error_message", sa.Text, nullable=False),
+    sa.Column("tool_chain", sa.Text, nullable=False),  # JSON
+    sa.Column("created_at", sa.DateTime, nullable=False),
+    sa.Index("idx_failure_bundles_class", "failure_class"),
+    sa.Index("idx_failure_bundles_created", "created_at"),
+)

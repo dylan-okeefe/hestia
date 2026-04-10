@@ -198,7 +198,7 @@ def make_delegate_task_tool(
                     tool_calls_made=turn.tool_calls_made,
                 )
 
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 duration = (datetime.now() - start_time).total_seconds()
                 result = SubagentResult(
                     status="timeout",

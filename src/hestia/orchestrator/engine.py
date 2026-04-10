@@ -5,12 +5,12 @@ import logging
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from hestia.context.builder import ContextBuilder
 from hestia.core.inference import InferenceClient
 from hestia.core.types import Message, Session, ToolCall
-from hestia.errors import EmptyResponseError, IllegalTransitionError
+from hestia.errors import EmptyResponseError, IllegalTransitionError, classify_error
 from hestia.inference.slot_manager import SlotManager
 from hestia.orchestrator.transitions import assert_transition
 from hestia.orchestrator.types import Turn, TurnState, TurnTransition
@@ -20,6 +20,9 @@ from hestia.policy.engine import PolicyEngine, RetryAction
 from hestia.tools.builtin import current_session_id
 from hestia.tools.registry import ToolRegistry
 from hestia.tools.types import ToolCallResult
+
+if TYPE_CHECKING:
+    from hestia.persistence.failure_store import FailureStore
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +49,7 @@ class Orchestrator:
         confirm_callback: ConfirmCallback | None = None,
         max_iterations: int = 10,
         slot_manager: SlotManager | None = None,
+        failure_store: "FailureStore | None" = None,
     ):
         """Initialize the orchestrator.
 
@@ -59,6 +63,7 @@ class Orchestrator:
             max_iterations: Hard limit to prevent infinite tool loops
             slot_manager: Optional SlotManager for KV-cache slot management.
                 When None, falls back to session.slot_id (legacy behavior).
+            failure_store: Optional store for recording failure bundles.
         """
         self._inference = inference
         self._store = session_store
@@ -68,6 +73,7 @@ class Orchestrator:
         self._confirm_callback = confirm_callback
         self._max_iterations = max_iterations
         self._slot_manager = slot_manager
+        self._failure_store = failure_store
 
     async def recover_stale_turns(self) -> int:
         """Mark any turns in non-terminal states as FAILED.
@@ -178,6 +184,7 @@ class Orchestrator:
                     slot_id_to_use = session.slot_id
 
                 # Main loop: model -> tools -> model -> ...
+                tool_chain: list[str] = []
                 while turn.iterations < self._max_iterations:
                     await self._transition(turn, TurnState.AWAITING_MODEL)
                     await self._update_status(platform, platform_user, status_msg_id, "Thinking...")
@@ -204,6 +211,7 @@ class Orchestrator:
 
                         # Update status with tool names
                         tool_names = [tc.name for tc in chat_response.tool_calls]
+                        tool_chain.extend(tool_names)
                         status_text = f"Running {', '.join(tool_names)}..."
                         await self._update_status(platform, platform_user, status_msg_id, status_text)
 
@@ -293,6 +301,26 @@ class Orchestrator:
                 await self._transition(turn, TurnState.FAILED)
                 turn.error = str(e)
                 await respond_callback(f"Error: {e}")
+
+                # Record failure bundle if store is configured
+                if self._failure_store is not None:
+                    try:
+                        from hestia.persistence.failure_store import FailureBundle
+
+                        failure_class, severity = classify_error(e)
+                        bundle = FailureBundle(
+                            id=str(uuid.uuid4()),
+                            session_id=session.id,
+                            turn_id=turn.id,
+                            failure_class=failure_class.value,
+                            severity=severity,
+                            error_message=str(e),
+                            tool_chain=json.dumps(tool_chain),
+                            created_at=datetime.now(),
+                        )
+                        await self._failure_store.record(bundle)
+                    except Exception as record_err:
+                        logger.warning("Failed to record failure bundle: %s", record_err)
 
             finally:
                 turn.completed_at = datetime.now()

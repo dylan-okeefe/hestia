@@ -6,8 +6,6 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
-
 import click
 
 from hestia.artifacts.store import ArtifactStore
@@ -16,13 +14,14 @@ from hestia.context.builder import ContextBuilder
 from hestia.core.inference import InferenceClient
 from hestia.core.types import Message, ScheduledTask, Session
 from hestia.inference import SlotManager
+from hestia.memory.store import MemoryStore
 from hestia.orchestrator import Orchestrator
 from hestia.persistence.db import Database
+from hestia.persistence.failure_store import FailureStore
 from hestia.persistence.scheduler import SchedulerStore
 from hestia.persistence.sessions import SessionStore
 from hestia.policy.default import DefaultPolicyEngine
 from hestia.scheduler import Scheduler
-from hestia.memory.store import MemoryStore
 from hestia.tools.builtin import (
     current_time,
     http_get,
@@ -36,6 +35,8 @@ from hestia.tools.builtin import (
     terminal,
 )
 from hestia.tools.registry import ToolRegistry
+
+logger = logging.getLogger(__name__)
 
 # Path to calibration file (not configurable via CLI)
 DEFAULT_CALIBRATION_PATH = Path("docs/calibration.json")
@@ -215,6 +216,7 @@ def cli(
             confirm_callback=ctx.obj.get("confirm_callback"),
             max_iterations=cfg.max_iterations,
             slot_manager=slot_manager,
+            failure_store=ctx.obj["failure_store"],
         )
 
     tool_registry.register(make_delegate_task_tool(session_store, orchestrator_factory))
@@ -229,10 +231,13 @@ def cli(
     ctx.obj["policy"] = policy
     ctx.obj["slot_manager"] = slot_manager
     ctx.obj["memory_store"] = memory_store
+    ctx.obj["failure_store"] = FailureStore(db)
     ctx.obj["verbose"] = cfg.verbose
 
 
-async def _bootstrap_db(db: Database, memory_store: MemoryStore) -> None:
+async def _bootstrap_db(
+    db: Database, memory_store: MemoryStore, failure_store: FailureStore | None = None
+) -> None:
     """Bootstrap database and FTS table for CLI commands.
 
     Repeated in many commands because Click callback + async don't mix cleanly.
@@ -241,6 +246,8 @@ async def _bootstrap_db(db: Database, memory_store: MemoryStore) -> None:
     await db.connect()
     await db.create_tables()
     await memory_store.create_table()
+    if failure_store is not None:
+        await failure_store.create_table()
 
 
 @cli.command()
@@ -250,9 +257,10 @@ def init(ctx: click.Context) -> None:
     cfg: HestiaConfig = ctx.obj["config"]
     db: Database = ctx.obj["db"]
     memory_store: MemoryStore = ctx.obj["memory_store"]
+    failure_store: FailureStore = ctx.obj["failure_store"]
 
     async def _init() -> None:
-        await _bootstrap_db(db, memory_store)
+        await _bootstrap_db(db, memory_store, failure_store)
         cfg.storage.artifacts_dir.mkdir(parents=True, exist_ok=True)
         cfg.slots.slot_dir.mkdir(parents=True, exist_ok=True)
         click.echo(f"Initialized database at {cfg.storage.database_url}")
@@ -278,19 +286,21 @@ def chat(ctx: click.Context) -> None:
     memory_store: MemoryStore = ctx.obj["memory_store"]
     verbose: bool = ctx.obj["verbose"]
 
-    async def _chat() -> None:
-        await _bootstrap_db(db, memory_store)
+    failure_store: FailureStore = ctx.obj["failure_store"]
 
-        # Create orchestrator (headless — no confirmation)
+    async def _chat() -> None:
+        await _bootstrap_db(db, memory_store, failure_store)
+
         orchestrator = Orchestrator(
             inference=inference,
             session_store=session_store,
             context_builder=context_builder,
             tool_registry=tool_registry,
             policy=policy,
-            confirm_callback=None,
+            confirm_callback=CliConfirmHandler(),
             max_iterations=cfg.max_iterations,
             slot_manager=slot_manager,
+            failure_store=failure_store,
         )
 
         # Recover stale turns from previous crash
@@ -359,9 +369,10 @@ def ask(ctx: click.Context, message: str) -> None:
     slot_manager: SlotManager = ctx.obj["slot_manager"]
     memory_store: MemoryStore = ctx.obj["memory_store"]
     verbose: bool = ctx.obj["verbose"]
+    failure_store: FailureStore = ctx.obj["failure_store"]
 
     async def _ask() -> None:
-        await _bootstrap_db(db, memory_store)
+        await _bootstrap_db(db, memory_store, failure_store)
 
         orchestrator = Orchestrator(
             inference=inference,
@@ -372,6 +383,7 @@ def ask(ctx: click.Context, message: str) -> None:
             confirm_callback=CliConfirmHandler(),
             max_iterations=cfg.max_iterations,
             slot_manager=slot_manager,
+            failure_store=failure_store,
         )
 
         # Recover stale turns from previous crash
@@ -585,10 +597,10 @@ def schedule_run(ctx: click.Context, task_id: str) -> None:
     policy = ctx.obj["policy"]
     slot_manager: SlotManager = ctx.obj["slot_manager"]
     memory_store: MemoryStore = ctx.obj["memory_store"]
-    verbose: bool = ctx.obj["verbose"]
+    failure_store: FailureStore = ctx.obj["failure_store"]
 
     async def _run() -> None:
-        await _bootstrap_db(db, memory_store)
+        await _bootstrap_db(db, memory_store, failure_store)
 
         scheduler_store = SchedulerStore(db)
 
@@ -608,6 +620,7 @@ def schedule_run(ctx: click.Context, task_id: str) -> None:
             confirm_callback=CliConfirmHandler(),
             max_iterations=cfg.max_iterations,
             slot_manager=slot_manager,
+            failure_store=failure_store,
         )
 
         # Build scheduler just for this one run
@@ -717,6 +730,7 @@ def schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None:
     policy = ctx.obj["policy"]
     slot_manager: SlotManager = ctx.obj["slot_manager"]
     memory_store: MemoryStore = ctx.obj["memory_store"]
+    failure_store: FailureStore = ctx.obj["failure_store"]
 
     # Use config tick interval if not specified via CLI
     tick = tick_interval if tick_interval is not None else cfg.scheduler.tick_interval_seconds
@@ -725,20 +739,21 @@ def schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None:
         click.echo(f"[scheduler:{task.id}] {text}")
 
     async def _daemon() -> None:
-        await _bootstrap_db(db, memory_store)
+        await _bootstrap_db(db, memory_store, failure_store)
 
         scheduler_store = SchedulerStore(db)
 
-        # Create orchestrator
+        # Headless: no stdin confirmation (matches ctx.obj["confirm_callback"] = None above)
         orchestrator = Orchestrator(
             inference=inference,
             session_store=session_store,
             context_builder=context_builder,
             tool_registry=tool_registry,
             policy=policy,
-            confirm_callback=CliConfirmHandler(),
+            confirm_callback=None,
             max_iterations=cfg.max_iterations,
             slot_manager=slot_manager,
+            failure_store=failure_store,
         )
 
         scheduler = Scheduler(
@@ -750,7 +765,7 @@ def schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None:
         )
 
         await scheduler.start()
-        click.echo(f"Scheduler daemon started (tick={tick_interval}s). Press Ctrl-C to stop.")
+        click.echo(f"Scheduler daemon started (tick={tick}s). Press Ctrl-C to stop.")
 
         try:
             # Wait forever until interrupted
@@ -798,6 +813,7 @@ def run_telegram(ctx: click.Context) -> None:
     policy = ctx.obj["policy"]
     slot_manager: SlotManager = ctx.obj["slot_manager"]
     memory_store: MemoryStore = ctx.obj["memory_store"]
+    failure_store: FailureStore = ctx.obj["failure_store"]
 
     if not cfg.telegram.bot_token:
         click.echo("Error: telegram.bot_token is required in config.", err=True)
@@ -821,7 +837,7 @@ def run_telegram(ctx: click.Context) -> None:
         return callback
 
     async def _run() -> None:
-        await _bootstrap_db(db, memory_store)
+        await _bootstrap_db(db, memory_store, failure_store)
 
         adapter = TelegramAdapter(cfg.telegram)
 
@@ -833,6 +849,7 @@ def run_telegram(ctx: click.Context) -> None:
             policy=policy,
             max_iterations=cfg.max_iterations,
             slot_manager=slot_manager,
+            failure_store=failure_store,
             # No confirm_callback for Telegram — tools requiring confirmation
             # (e.g., write_file) will refuse to run and tell the model why.
             # TODO: Implement confirmation via Telegram inline keyboard buttons.

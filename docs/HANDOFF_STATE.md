@@ -9,54 +9,41 @@
 
 ## Current Branch & Phase
 
-- **Base branch:** `develop` (includes merged Phase 5)
-- **Working branch:** `feature/phase-6-hardening` (to be created by Kimi)
-- **Phase:** 6 — Pre-release hardening (security, failure tracking, observability, docs)
-- **Status:** Prompt written, ready for Kimi build cycle.
+- **Integrated branch (pending merge):** `feature/phase-6-hardening`
+- **Phase:** 6 — Pre-release hardening **complete** (merge to `develop` when ready)
+- **Status:** Reviewed by Cursor; fixes applied for regressions noted below.
 
 ---
 
-## Review Verdict: Phase 5 (final)
+## Review Verdict: Phase 6 (final)
 
-**Overall: green.** Phase 5 merged into `develop`.
+**Overall: green** — core security and failure-tracking goals met. Kimi delivered capability labels, `filter_tools`, path sandboxing, `FailureStore` + orchestrator wiring, schema + Alembic migration, and tests.
 
-## Phase 6 Scope
+**Cursor follow-up fixes (same branch):**
 
-Phase 6 brings Hestia to a releasable state. No new features — closing security gaps, adding failure tracking, fixing observability, and polishing docs.
+1. **`hestia chat` regression:** Orchestrator used `confirm_callback=None` while the command set `CliConfirmHandler` on context — destructive tools could run without prompting. Fixed: `chat` now passes `CliConfirmHandler()`.
+2. **`schedule_daemon`:** Still constructed `Orchestrator(..., confirm_callback=CliConfirmHandler())` despite headless intent. Fixed: `confirm_callback=None`. Status echo also used wrong variable for tick interval — fixed to `{tick}`.
+3. **Scheduler tool filtering:** `platform="scheduler"` never matched real sessions (tasks use `cli` sessions). Fixed: `scheduler_tick_active` contextvar set for the duration of `Scheduler._fire_task` → `process_turn`; `DefaultPolicyEngine.filter_tools` treats it like scheduler mode.
+4. **`orchestrator_factory` (delegation):** Now passes `failure_store` so subagent failures can be recorded.
+5. **`cli.py`:** `logger` moved below imports (ruff E402). `FailureClass` uses `StrEnum` (ruff UP042).
 
-### §0 — Bug fixes
-- `cli.py` references `logger` but never defines it (missing import)
-- `schedule_daemon` sets `confirm_callback = CliConfirmHandler()` — blocks forever on headless process; should be `None`
+**Still missing vs Phase 6 prompt (non-blocking for merge):**
 
-### §1-§2 — Security: Capability labels + tool filtering
-- Add `capabilities` field to `ToolMetadata` with standardized labels (`read_local`, `write_local`, `shell_exec`, `network_egress`, `memory_read`, `memory_write`, `orchestration`)
-- `PolicyEngine.filter_tools()` restricts tools by session context (subagents denied `shell_exec`/`write_local`; scheduler denied `shell_exec`)
+- `setup_logging()`, `hestia status`, `hestia version`, `hestia failures` CLI commands
+- README overhaul and CHANGELOG expansion (prompt §6)
+- Phase 6 handoff report under `docs/handoffs/` (Kimi did not add one)
 
-### §3 — Security: Path sandboxing
-- `read_file` and `write_file` become factories with `allowed_roots` from `StorageConfig`
-- Path validation before any filesystem access
+**Design docs added (committed with branch):**
 
-### §4 — Failure tracking
-- `FailureClass` enum + `classify_error()` mapping HestiaError subclasses
-- `FailureBundle` model + `FailureStore` with SQLite table + Alembic migration
-- Orchestrator records failure bundles on turn failure
-
-### §5 — Observability + CLI polish
-- Centralized `setup_logging()`, `hestia status`, `hestia version`
-- `FailureStore` wired into CLI bootstrap
-
-### §6 — Documentation
-- ADR-019 (capability labels), ADR-020 (failure tracking)
-- README overhaul, CHANGELOG
-
-**Prompt:** `docs/prompts/KIMI_PHASE_6_PROMPT.md`
+- `docs/roadmap/future-systems-deferred-roadmap.md`
+- `docs/design/matrix-integration.md`
 
 ---
 
 ## Git State
 
-- **`develop`:** Through Phase 5 merge. All prior feature branches merged.
-- **`feature/phase-6-hardening`:** To be created by Kimi from `develop`.
+- **`feature/phase-6-hardening`:** Phase 6 implementation + review fixes; ready to merge into `develop`.
+- **`develop`:** Through Phase 5 until merge.
 
 ---
 
@@ -64,7 +51,7 @@ Phase 6 brings Hestia to a releasable state. No new features — closing securit
 
 | Phase | Tests (approx.) |
 |-------|-----------------|
-| 5 final | ~254 |
+| 6 final | ~295 |
 
 Run: `uv run pytest tests/unit/ tests/integration/ -q`
 
@@ -72,7 +59,7 @@ Run: `uv run pytest tests/unit/ tests/integration/ -q`
 
 ## Architecture Decisions (ADRs)
 
-18 ADRs including **ADR-018** (subagent delegation).
+20 ADRs including **ADR-019** (capability labels + tool filtering), **ADR-020** (failure bundles).
 
 ---
 
@@ -87,8 +74,8 @@ Run: `uv run pytest tests/unit/ tests/integration/ -q`
 
 ## Remaining Roadmap
 
-- **Phase 6:** Pre-release hardening (in progress — see `docs/prompts/KIMI_PHASE_6_PROMPT.md`).
-- **Post-release:** Future systems phases (knowledge separation, skill mining, failure analysis, security auditor, adversarial evaluator, bounded auto-healing). See `hestia-future-systems-synthesis.md` and `future-systems-design.md`.
+- **Phase 6 follow-ups:** `hestia status` / `version` / `failures`, `setup_logging`, README + CHANGELOG (see prompt §5–§6).
+- **Post-release:** Deferred roadmap in `docs/roadmap/future-systems-deferred-roadmap.md`; Matrix plan in `docs/design/matrix-integration.md`.
 
 ---
 

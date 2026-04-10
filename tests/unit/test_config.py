@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from hestia.config import HestiaConfig, InferenceConfig, SlotConfig, SchedulerConfig, StorageConfig
+from hestia.config import HestiaConfig
 
 
 class TestDefaultConfig:

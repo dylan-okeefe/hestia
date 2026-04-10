@@ -146,3 +146,58 @@ class TestToolResultMaxChars:
         """Default is 8000 chars."""
         assert policy.tool_result_max_chars("any_tool") == 8000
         assert policy.tool_result_max_chars("read_file") == 8000
+
+
+class TestFilterTools:
+    """Tests for capability-based tool filtering."""
+
+    def test_subagent_blocks_shell_and_write(
+        self, policy, sample_session, tmp_path
+    ):
+        from dataclasses import replace
+
+        from hestia.artifacts.store import ArtifactStore
+        from hestia.tools.builtin import current_time, terminal, write_file
+        from hestia.tools.registry import ToolRegistry
+
+        reg = ToolRegistry(ArtifactStore(tmp_path / "art"))
+        reg.register(current_time)
+        reg.register(terminal)
+        reg.register(write_file)
+        names = reg.list_names()
+        sub = replace(sample_session, platform="subagent")
+        filtered = policy.filter_tools(sub, names, reg)
+        assert "terminal" not in filtered
+        assert "write_file" not in filtered
+        assert "current_time" in filtered
+
+    def test_scheduler_tick_blocks_shell(self, policy, sample_session, tmp_path):
+        from hestia.artifacts.store import ArtifactStore
+        from hestia.runtime_context import scheduler_tick_active
+        from hestia.tools.builtin import current_time, terminal
+        from hestia.tools.registry import ToolRegistry
+
+        reg = ToolRegistry(ArtifactStore(tmp_path / "art"))
+        reg.register(current_time)
+        reg.register(terminal)
+        names = reg.list_names()
+        token = scheduler_tick_active.set(True)
+        try:
+            filtered = policy.filter_tools(sample_session, names, reg)
+        finally:
+            scheduler_tick_active.reset(token)
+        assert "terminal" not in filtered
+        assert "current_time" in filtered
+
+    def test_cli_allows_terminal(self, policy, sample_session, tmp_path):
+        from hestia.artifacts.store import ArtifactStore
+        from hestia.tools.builtin import current_time, terminal
+        from hestia.tools.registry import ToolRegistry
+
+        reg = ToolRegistry(ArtifactStore(tmp_path / "art"))
+        reg.register(current_time)
+        reg.register(terminal)
+        names = reg.list_names()
+        cli_sess = sample_session  # platform "test" is not subagent/scheduler
+        filtered = policy.filter_tools(cli_sess, names, reg)
+        assert filtered == names
