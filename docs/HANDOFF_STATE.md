@@ -33,6 +33,8 @@
 - README overhaul and CHANGELOG expansion (prompt §6)
 - Phase 6 handoff report under `docs/handoffs/` (Kimi did not add one)
 
+**Kimi prompt for the above:** `docs/prompts/KIMI_PHASE_6_FOLLOWUP_PROMPT.md` (stay on `feature/phase-6-hardening`; no merge to `develop` unless Dylan says so).
+
 **Design docs added (committed with branch):**
 
 - `docs/roadmap/future-systems-deferred-roadmap.md`
