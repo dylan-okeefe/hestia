@@ -28,6 +28,9 @@ class MemoryStore:
     Uses a SQLite FTS5 virtual table for full-text search. The table
     is created via raw DDL because SQLAlchemy doesn't support virtual
     tables through its Table/MetaData API.
+
+    Datetimes: All timestamps are naive/local (datetime.now()), consistent
+    with SessionStore and SchedulerStore. No timezone handling.
     """
 
     def __init__(self, db: Database) -> None:
@@ -137,14 +140,17 @@ class MemoryStore:
             List of memories, newest first
         """
         if tag:
-            # FTS5 can search within the tags column
+            # Use exact phrase matching with quotes to avoid stemming issues
+            # e.g., searching for "project" won't match "projects"
+            # The tag is stored as space-separated: "tag1 tag2 tag3"
+            quoted_tag = f'"{tag}"'
             sql = sa.text(
                 "SELECT id, content, tags, session_id, created_at "
                 "FROM memory WHERE tags MATCH :tag "
                 "ORDER BY created_at DESC "
                 "LIMIT :limit"
             )
-            params = {"tag": tag, "limit": limit}
+            params = {"tag": quoted_tag, "limit": limit}
         else:
             sql = sa.text(
                 "SELECT id, content, tags, session_id, created_at "

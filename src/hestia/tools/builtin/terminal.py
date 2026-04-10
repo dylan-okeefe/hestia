@@ -35,7 +35,11 @@ async def terminal(command: str, timeout: float = 30.0) -> str:
     try:
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except TimeoutError:
-        proc.kill()
+        try:
+            proc.kill()
+        except PermissionError:
+            # May fail in sandboxed environments; process will exit on its own
+            pass
         await proc.wait()
         return f"TIMEOUT after {timeout}s"
 

@@ -1,10 +1,18 @@
 """Memory tools — search and save to long-term memory."""
 
+import contextvars
 from collections.abc import Callable, Coroutine
 from typing import Any
 
 from hestia.memory.store import MemoryStore
 from hestia.tools.metadata import tool
+
+# Context variable to hold the current session ID during tool execution.
+# This is set by the orchestrator at the start of process_turn and cleared
+# in a finally block. Tools can read this to associate saves with sessions.
+current_session_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "current_session_id", default=None
+)
 
 
 def make_search_memory_tool(
@@ -62,7 +70,9 @@ def make_save_memory_tool(
             Confirmation with the memory ID.
         """
         tag_list = tags.split() if tags else []
-        mem = await memory_store.save(content=content, tags=tag_list)
+        # Associate with current session if running inside orchestrator
+        session_id = current_session_id.get()
+        mem = await memory_store.save(content=content, tags=tag_list, session_id=session_id)
         preview = content[:80] + ("..." if len(content) > 80 else "")
         return f"Saved memory {mem.id}: {preview}"
 

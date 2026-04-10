@@ -48,7 +48,13 @@ class FakeInferenceClient:
 class FakePolicyEngine:
     """Fake policy engine."""
 
-    def should_delegate(self, session, task_description):
+    def should_delegate(
+        self,
+        session,
+        task_description,
+        tool_chain_length: int = 0,
+        projected_tool_calls: int = 0,
+    ):
         return False
 
     def should_compress(self, session, tokens_used, tokens_budget):

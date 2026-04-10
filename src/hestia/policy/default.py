@@ -25,11 +25,52 @@ class DefaultPolicyEngine(PolicyEngine):
         """
         self.ctx_window = ctx_window
 
-    def should_delegate(self, session: Session, task_description: str) -> bool:
-        """Never delegate in Phase 1b.
+    def should_delegate(
+        self,
+        session: Session,
+        task_description: str,
+        tool_chain_length: int = 0,
+        projected_tool_calls: int = 0,
+    ) -> bool:
+        """Decide whether to delegate to a subagent.
 
-        Phase 1c will add delegation logic.
+        Delegation is recommended when:
+        - Tool chain is getting long (>5 calls so far)
+        - Task appears complex (keywords like "research", "analyze", "investigate")
+        - User explicitly requests delegation
+
+        Args:
+            session: Current session
+            task_description: Description of the task
+            tool_chain_length: Number of tool calls made so far in this turn
+            projected_tool_calls: Estimated remaining tool calls needed
+
+        Returns:
+            True if delegation is recommended
         """
+        # Never recurse: subagent runs use platform "subagent"
+        if session.platform == "subagent":
+            return False
+
+        # Explicit user request for delegation
+        delegation_keywords = ["delegate", "subagent", "spawn task", "background task"]
+        task_lower = task_description.lower()
+        if any(kw in task_lower for kw in delegation_keywords):
+            return True
+
+        # Long tool chain - offload to subagent to keep parent context clean
+        if tool_chain_length > 5:
+            return True
+
+        # Complex research tasks that might involve many steps
+        research_keywords = ["research", "investigate", "analyze deeply", "comprehensive"]
+        if any(kw in task_lower for kw in research_keywords):
+            return True
+
+        # High projected tool usage
+        if projected_tool_calls > 3:
+            return True
+
         return False
 
     def should_compress(self, session: Session, tokens_used: int, tokens_budget: int) -> bool:

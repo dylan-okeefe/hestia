@@ -105,12 +105,29 @@ class TestTurnTokenBudget:
 
 
 class TestDelegation:
-    """Tests for delegation policy (Phase 1b: always false)."""
+    """Tests for should_delegate policy."""
 
-    def test_no_delegation_in_phase_1b(self, policy, sample_session):
-        """Delegation is disabled in Phase 1b."""
+    def test_no_delegation_for_benign_tasks(self, policy, sample_session):
+        """Ordinary tasks do not trigger delegation heuristics."""
         assert not policy.should_delegate(sample_session, "any task")
-        assert not policy.should_delegate(sample_session, "complex multi-step task")
+        assert not policy.should_delegate(sample_session, "hello")
+
+    def test_delegation_keywords(self, policy, sample_session):
+        """User can ask explicitly for delegation."""
+        assert policy.should_delegate(sample_session, "use a subagent for this")
+        assert policy.should_delegate(sample_session, "please delegate this task")
+
+    def test_subagent_session_never_delegates(self, policy, sample_session):
+        """Avoid recursive policy delegation inside subagent turns."""
+        from dataclasses import replace
+
+        sub = replace(sample_session, platform="subagent")
+        assert not policy.should_delegate(
+            sub,
+            "delegate everything to a subagent",
+            tool_chain_length=99,
+            projected_tool_calls=9,
+        )
 
 
 class TestSlotEviction:

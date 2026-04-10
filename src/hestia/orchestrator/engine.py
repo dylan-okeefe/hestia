@@ -1,5 +1,6 @@
 """Orchestrator engine for managing turn execution."""
 
+import json
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
@@ -16,6 +17,7 @@ from hestia.orchestrator.types import Turn, TurnState, TurnTransition
 from hestia.persistence.sessions import SessionStore
 from hestia.platforms.base import Platform
 from hestia.policy.engine import PolicyEngine, RetryAction
+from hestia.tools.builtin import current_session_id
 from hestia.tools.registry import ToolRegistry
 from hestia.tools.types import ToolCallResult
 
@@ -124,154 +126,179 @@ class Orchestrator:
         Returns:
             Completed Turn with full history
         """
-        turn = self._create_turn(session.id, user_message)
-        await self._persist_turn(turn)
-
-        # Send initial status message if platform is available
-        status_msg_id: str | None = None
-        if platform is not None and platform_user is not None:
-            try:
-                status_msg_id = await platform.send_message(platform_user, "Thinking...")
-            except Exception as e:
-                logger.warning("Failed to send status message: %s", e)
+        # Set session context for tools that need to know the current session
+        session_token = current_session_id.set(session.id)
 
         try:
-            # Start processing
-            await self._transition(turn, TurnState.BUILDING_CONTEXT)
+            turn = self._create_turn(session.id, user_message)
+            await self._persist_turn(turn)
 
-            # Load prior history (does not include the current user message)
-            history = await self._store.get_messages(session.id)
+            # Send initial status message if platform is available
+            status_msg_id: str | None = None
+            if platform is not None and platform_user is not None:
+                try:
+                    status_msg_id = await platform.send_message(platform_user, "Thinking...")
+                except Exception as e:
+                    logger.warning("Failed to send status message: %s", e)
 
-            # Persist the new user message (now it's in the store for future turns / continuations)
-            await self._store.append_message(session.id, user_message)
+            try:
+                # Start processing
+                await self._transition(turn, TurnState.BUILDING_CONTEXT)
 
-            # Build context
-            tools = self._tools.meta_tool_schemas()
-            build_result = await self._builder.build(
-                session=session,
-                history=history,
-                system_prompt=system_prompt,
-                tools=tools,
-                new_user_message=user_message,
-            )
+                # Load prior history (does not include the current user message)
+                history = await self._store.get_messages(session.id)
 
-            # Acquire slot for this turn (if SlotManager is configured)
-            slot_id_to_use: int | None
-            if self._slot_manager is not None:
-                assignment = await self._slot_manager.acquire(session)
-                slot_id_to_use = assignment.slot_id
-                # Refetch session in case slot_id/temperature changed
-                refreshed = await self._store.get_session(session.id)
-                if refreshed is not None:
-                    session = refreshed
-            else:
-                slot_id_to_use = session.slot_id
+                # Persist the new user message (now it's in the store for future turns / continuations)
+                await self._store.append_message(session.id, user_message)
 
-            # Main loop: model -> tools -> model -> ...
-            while turn.iterations < self._max_iterations:
-                await self._transition(turn, TurnState.AWAITING_MODEL)
-                await self._update_status(platform, platform_user, status_msg_id, "Thinking...")
-
-                chat_response = await self._inference.chat(
-                    messages=build_result.messages,
+                # Build context
+                tools = self._tools.meta_tool_schemas()
+                build_result = await self._builder.build(
+                    session=session,
+                    history=history,
+                    system_prompt=system_prompt,
                     tools=tools,
-                    slot_id=slot_id_to_use,
-                    reasoning_budget=2048,
+                    new_user_message=user_message,
                 )
 
-                # Append assistant message to history
-                assistant_msg = Message(
-                    role="assistant",
-                    content=chat_response.content,
-                    tool_calls=chat_response.tool_calls,
-                    reasoning_content=chat_response.reasoning_content,
-                    created_at=datetime.now(),
-                )
-                await self._store.append_message(session.id, assistant_msg)
+                # Acquire slot for this turn (if SlotManager is configured)
+                slot_id_to_use: int | None
+                if self._slot_manager is not None:
+                    assignment = await self._slot_manager.acquire(session)
+                    slot_id_to_use = assignment.slot_id
+                    # Refetch session in case slot_id/temperature changed
+                    refreshed = await self._store.get_session(session.id)
+                    if refreshed is not None:
+                        session = refreshed
+                else:
+                    slot_id_to_use = session.slot_id
 
-                if chat_response.finish_reason == "tool_calls":
-                    await self._transition(turn, TurnState.EXECUTING_TOOLS)
+                # Main loop: model -> tools -> model -> ...
+                while turn.iterations < self._max_iterations:
+                    await self._transition(turn, TurnState.AWAITING_MODEL)
+                    await self._update_status(platform, platform_user, status_msg_id, "Thinking...")
 
-                    # Update status with tool names
-                    tool_names = [tc.name for tc in chat_response.tool_calls]
-                    status_text = f"Running {', '.join(tool_names)}..."
-                    await self._update_status(platform, platform_user, status_msg_id, status_text)
-
-                    # Execute tools and collect results
-                    tool_results = await self._execute_tool_calls(
-                        session.id, chat_response.tool_calls
-                    )
-
-                    # Add tool results to history
-                    for result_msg in tool_results:
-                        await self._store.append_message(session.id, result_msg)
-
-                    # Transition back to building context for next model call
-                    await self._transition(turn, TurnState.BUILDING_CONTEXT)
-
-                    # Rebuild context with new history
-                    history = await self._store.get_messages(session.id)
-                    build_result = await self._builder.build(
-                        session=session,
-                        history=history,
-                        system_prompt=system_prompt,
+                    chat_response = await self._inference.chat(
+                        messages=build_result.messages,
                         tools=tools,
-                        new_user_message=None,  # Continuing turn, no new user message
+                        slot_id=slot_id_to_use,
+                        reasoning_budget=2048,
                     )
 
-                    turn.tool_calls_made += len(chat_response.tool_calls)
-                    turn.iterations += 1
-                    continue  # Loop back for another model call
+                    # Append assistant message to history
+                    assistant_msg = Message(
+                        role="assistant",
+                        content=chat_response.content,
+                        tool_calls=chat_response.tool_calls,
+                        reasoning_content=chat_response.reasoning_content,
+                        created_at=datetime.now(),
+                    )
+                    await self._store.append_message(session.id, assistant_msg)
 
-                elif chat_response.finish_reason in ("stop", "length"):
-                    content = chat_response.content or ""
-                    if not content.strip() and not chat_response.tool_calls:
-                        raise EmptyResponseError(
-                            f"Model returned finish_reason={chat_response.finish_reason!r} "
-                            f"with empty content and no tool calls"
+                    if chat_response.finish_reason == "tool_calls":
+                        await self._transition(turn, TurnState.EXECUTING_TOOLS)
+
+                        # Update status with tool names
+                        tool_names = [tc.name for tc in chat_response.tool_calls]
+                        status_text = f"Running {', '.join(tool_names)}..."
+                        await self._update_status(platform, platform_user, status_msg_id, status_text)
+
+                        task_desc = (user_message.content or "").strip()
+                        use_policy_delegation = (
+                            "delegate_task" in self._tools.list_names()
+                            and self._policy.should_delegate(
+                                session,
+                                task_desc,
+                                turn.tool_calls_made,
+                                len(chat_response.tool_calls),
+                            )
                         )
-                    await self._transition(turn, TurnState.DONE)
-                    turn.final_response = content
-                    await respond_callback(content)
 
-                    # Save slot checkpoint after successful turn (but don't fail turn if save fails)
-                    if self._slot_manager is not None:
-                        try:
-                            await self._slot_manager.save(session)
-                        except Exception as e:
-                            logger.warning(
-                                "Failed to save slot for session %s: %s", session.id, e
+                        if use_policy_delegation:
+                            await self._transition(turn, TurnState.AWAITING_SUBAGENT)
+                            tool_results = await self._execute_policy_delegation(
+                                user_message, chat_response.tool_calls
+                            )
+                            await self._transition(turn, TurnState.EXECUTING_TOOLS)
+                        else:
+                            tool_results = await self._execute_tool_calls(
+                                session.id, chat_response.tool_calls
                             )
 
-                    break
+                        # Add tool results to history
+                        for result_msg in tool_results:
+                            await self._store.append_message(session.id, result_msg)
+
+                        # Transition back to building context for next model call
+                        await self._transition(turn, TurnState.BUILDING_CONTEXT)
+
+                        # Rebuild context with new history
+                        history = await self._store.get_messages(session.id)
+                        build_result = await self._builder.build(
+                            session=session,
+                            history=history,
+                            system_prompt=system_prompt,
+                            tools=tools,
+                            new_user_message=None,  # Continuing turn, no new user message
+                        )
+
+                        turn.tool_calls_made += len(chat_response.tool_calls)
+                        turn.iterations += 1
+                        continue  # Loop back for another model call
+
+                    elif chat_response.finish_reason in ("stop", "length"):
+                        content = chat_response.content or ""
+                        if not content.strip() and not chat_response.tool_calls:
+                            raise EmptyResponseError(
+                                f"Model returned finish_reason={chat_response.finish_reason!r} "
+                                f"with empty content and no tool calls"
+                            )
+                        await self._transition(turn, TurnState.DONE)
+                        turn.final_response = content
+                        await respond_callback(content)
+
+                        # Save slot checkpoint after successful turn (but don't fail turn if save fails)
+                        if self._slot_manager is not None:
+                            try:
+                                await self._slot_manager.save(session)
+                            except Exception as e:
+                                logger.warning(
+                                    "Failed to save slot for session %s: %s", session.id, e
+                                )
+
+                        break
+
+                    else:
+                        # Unexpected finish reason - retry
+                        decision = self._policy.retry_after_error(
+                            Exception(f"Unexpected finish_reason: {chat_response.finish_reason}"),
+                            turn.iterations,
+                        )
+                        if decision.action == RetryAction.FAIL:
+                            raise Exception(decision.reason)
+                        await self._transition(turn, TurnState.RETRYING)
+                        turn.iterations += 1
 
                 else:
-                    # Unexpected finish reason - retry
-                    decision = self._policy.retry_after_error(
-                        Exception(f"Unexpected finish_reason: {chat_response.finish_reason}"),
-                        turn.iterations,
-                    )
-                    if decision.action == RetryAction.FAIL:
-                        raise Exception(decision.reason)
-                    await self._transition(turn, TurnState.RETRYING)
-                    turn.iterations += 1
+                    # Max iterations reached
+                    raise Exception(f"Max iterations ({self._max_iterations}) exceeded")
 
-            else:
-                # Max iterations reached
-                raise Exception(f"Max iterations ({self._max_iterations}) exceeded")
+            except IllegalTransitionError:
+                raise  # Re-raise state machine errors
+            except Exception as e:
+                await self._transition(turn, TurnState.FAILED)
+                turn.error = str(e)
+                await respond_callback(f"Error: {e}")
 
-        except IllegalTransitionError:
-            raise  # Re-raise state machine errors
-        except Exception as e:
-            await self._transition(turn, TurnState.FAILED)
-            turn.error = str(e)
-            await respond_callback(f"Error: {e}")
+            finally:
+                turn.completed_at = datetime.now()
+                await self._store.update_turn(turn)
+
+            return turn
 
         finally:
-            turn.completed_at = datetime.now()
-            await self._store.update_turn(turn)
-
-        return turn
+            # Clear session context when turn processing completes
+            current_session_id.reset(session_token)
 
     def _create_turn(self, session_id: str, user_message: Message) -> Turn:
         """Create a new Turn instance."""
@@ -328,8 +355,42 @@ class Orchestrator:
 
         return result_messages
 
+    async def _execute_policy_delegation(
+        self,
+        user_message: Message,
+        tool_calls: list[ToolCall],
+    ) -> list[Message]:
+        """Run delegate_task once; map output to one message per model tool_call_id."""
+        task = (user_message.content or "").strip() or "(no user text)"
+        lines = [f"{tc.name} {json.dumps(tc.arguments or {})}" for tc in tool_calls]
+        context = "\n".join(lines)
+
+        result = await self._tools.call(
+            "delegate_task",
+            {"task": task, "context": context},
+        )
+        body = result.content
+        if result.status != "ok":
+            body = f"[delegation error] {body}"
+
+        messages: list[Message] = []
+        for i, tc in enumerate(tool_calls):
+            if i == 0:
+                content = body
+            else:
+                content = f"(Same policy delegation as tool_call_id={tool_calls[0].id}.)\n{body}"
+            messages.append(
+                Message(
+                    role="tool",
+                    content=content,
+                    tool_call_id=tc.id,
+                    created_at=datetime.now(),
+                )
+            )
+        return messages
+
     async def _dispatch_tool_call(self, tc: ToolCall) -> ToolCallResult:
-        """Dispatch a single tool call, handling meta-tools specially."""
+        """Dispatch a single tool call, handling meta-tools and direct tool calls."""
         # Handle meta-tools
         if tc.name == "list_tools":
             tag = tc.arguments.get("tag") if tc.arguments else None
@@ -368,14 +429,14 @@ class Orchestrator:
                     return ToolCallResult(
                         status="error",
                         content=(
-                            f"Tool {name!r} requires user confirmation but no "
-                            f"confirm_callback is configured on this orchestrator."
+                            f"Tool '{name}' requires user confirmation but no "
+                            "confirm_callback is configured on this orchestrator."
                         ),
                         artifact_handle=None,
                         truncated=False,
                     )
-                approved = await self._confirm_callback(name, arguments or {})
-                if not approved:
+                confirmed = await self._confirm_callback(name, arguments)
+                if not confirmed:
                     return ToolCallResult(
                         status="error",
                         content="Tool execution was cancelled by user.",
@@ -385,30 +446,31 @@ class Orchestrator:
 
             return await self._tools.meta_call_tool(name, arguments)
 
-        # Regular tool - check if it requires confirmation
+        # Direct tool call (non-meta-tool)
+        # Check if tool exists and handle confirmation
         try:
-            tool_meta = self._tools.describe(tc.name)
+            meta = self._tools.describe(tc.name)
         except Exception:
             return ToolCallResult(
                 status="error",
-                content=f"Tool not found: {tc.name}",
+                content=f"Unknown tool: {tc.name}",
                 artifact_handle=None,
                 truncated=False,
             )
 
-        if tool_meta.requires_confirmation:
+        if meta.requires_confirmation:
             if self._confirm_callback is None:
                 return ToolCallResult(
                     status="error",
                     content=(
-                        f"Tool {tc.name!r} requires user confirmation but no "
-                        f"confirm_callback is configured on this orchestrator."
+                        f"Tool '{tc.name}' requires user confirmation but no "
+                        "confirm_callback is configured on this orchestrator."
                     ),
                     artifact_handle=None,
                     truncated=False,
                 )
-            approved = await self._confirm_callback(tc.name, tc.arguments)
-            if not approved:
+            confirmed = await self._confirm_callback(tc.name, tc.arguments or {})
+            if not confirmed:
                 return ToolCallResult(
                     status="error",
                     content="Tool execution was cancelled by user.",
@@ -416,4 +478,4 @@ class Orchestrator:
                     truncated=False,
                 )
 
-        return await self._tools.call(tc.name, tc.arguments)
+        return await self._tools.call(tc.name, tc.arguments or {})
