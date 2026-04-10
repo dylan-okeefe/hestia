@@ -189,7 +189,7 @@ def make_delegate_task_tool(
                     summary=summary,
                     completeness=completeness,
                     artifact_refs=artifact_refs,
-                    error=turn.error if turn.state == TurnState.FAILED else None,
+                    error=turn.error if state_value == "failed" else None,
                     duration_seconds=duration,
                     tool_calls_made=turn.tool_calls_made,
                 )

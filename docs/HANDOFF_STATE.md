@@ -9,95 +9,90 @@
 
 ## Current Branch & Phase
 
-- **Integrated branch:** `develop` (includes merged `feature/phase-4-memory`)
-- **Phase:** 4 — Long-term memory (FTS5) **shipped and merged**
-- **Next phase:** 5 — Subagent delegation (see `docs/prompts/KIMI_PHASE_5_PROMPT.md`)
-- **Status:** Phase 4 review complete. Green for Phase 5 Kimi cycle.
+- **Reviewed branch:** `feature/phase-5-subagent-delegation` (not merged to `develop` at last review)
+- **Phase:** 5 — Subagent delegation (partial delivery)
+- **Next:** Phase 5b completion merge, or fold §0 of Phase 6 prompt with items below
+- **Status:** Review complete. **Do not ship** as “Phase 5 done” until blockers are fixed (see Verdict).
 
 ---
 
-## Review Verdict: Phase 4 (post-merge of Phase 3 fixes)
+## Review Verdict: Phase 5
 
-**Overall: green.** Phase 3 review items were fixed in commit `f22d508` (Alembic, Telegram session recovery, crash recovery, dead `http_client`). Phase 4 added MemoryStore, memory tools, CLI `memory` group, ADR-017.
+**Overall: yellow — merge only after fixes or explicit acceptance of partial scope.**
 
-### Findings for Phase 5 §0 (cleanup + follow-ups)
+Kimi delivered solid **§0 (Phase 4 follow-ups)** and useful **infrastructure** (policy hook, transitions, `delegate_task` skeleton, ADR-018, direct-tool confirmation in `_dispatch_tool_call`). The Phase 5 handoff report correctly lists **remaining work**.
 
-1. **Memory tools omit `session_id` on save** — `MemoryStore.save()` supports `session_id`, but `save_memory` (tool) and CLI `memory add` never pass it. Agent-created memories cannot be attributed to a session. **Fix:** Thread current session id into tool execution (e.g. `contextvars`, or extend `ToolRegistry.call` / orchestrator dispatch with an execution context dict) and pass `session_id` into `make_save_memory_tool` (or equivalent).
+### Critical (fixed in repo after review)
 
-2. **`list_memories` tag filter uses FTS `tags MATCH`** — Works but can match unintended rows (stemming / token overlap). **Fix (optional):** Tighten tag filtering (exact tag match or `tags : "phrase"` style) if precise tags matter; add tests.
+1. **`delegate_task.py` referenced `TurnState` without importing it** — would raise `NameError` when building `SubagentResult`. Importing `TurnState` from `orchestrator.types` **causes a circular import** (`builtin` → `orchestrator` → `engine` → `builtin`). **Fix applied:** use existing `state_value == "failed"` for the `error` field (same pattern as the rest of the function).
 
-3. **Naive datetimes in `MemoryStore.save()`** — Uses `datetime.now()` without timezone, consistent with rest of persistence. **Fix (optional):** Document or align with project-wide datetime strategy (UTC-aware vs naive).
+### Blockers before calling Phase 5 “complete”
 
-4. **CLI bootstrap repetition** — Many commands each call `await db.connect()`, `create_tables()`, and `await memory_store.create_table()`. Harmless (`IF NOT EXISTS`) but noisy. **Style:** Consider a shared async startup helper used by commands that need DB + FTS, or document the pattern as intentional.
+2. **`delegate_task` is not registered in `cli.py`** — the model never sees the tool; delegation is unreachable in normal use.
 
-5. **Terminal unit test in restricted environments** — `TestTerminal.test_timeout` can fail with `PermissionError` on `proc.kill()` under sandboxed CI. Not a product bug; **optional:** skip or mock when kill is denied.
+3. **Orchestrator does not use `AWAITING_SUBAGENT` or `policy.should_delegate()`** — transitions were added to `ALLOWED_TRANSITIONS`, but `engine.py` still goes `EXECUTING_TOOLS` → `BUILDING_CONTEXT` with no delegation branch. The new edges are unused.
 
-6. **Telegram `confirm_callback`** — Still absent; documented in `cli.py`. Future: inline keyboards. No Phase 5 §0 code change required unless wiring confirmation is in scope.
+4. **No unit/integration tests for `delegate_task`** — zero test coverage for the new tool; the `TurnState` bug was latent for that reason.
+
+### §0 verification (Phase 4 prompt — done)
+
+| Item | Verdict |
+|------|---------|
+| Session context for `save_memory` | OK — `contextvars.current_session_id` set in `process_turn` / reset in `finally` |
+| Stricter tag filter | OK — quoted phrase in `MemoryStore.list_memories` + tests |
+| Naive datetime documented | OK — class docstring on `MemoryStore` |
+| `_bootstrap_db` helper | OK — used across CLI commands |
+| Terminal kill `PermissionError` | OK — handled in `terminal.py` |
+
+### Tests (reviewer run)
+
+- `uv run pytest tests/unit/ -q` — **245 passed** (full permissions; terminal timeout test needs kill permission).
 
 ---
 
-## Resolved (was Phase 3 §0 / HANDOFF_STATE bugs — do not re-file)
+## Resolved earlier (do not re-file)
 
-- Initial Alembic migration includes `scheduled_tasks` — revision `7368d8100cae` (`migrations/versions/7368d8100cae_initial_schema.py`).
-- Telegram: `get_or_create_session`, `recover_stale_turns`, no dead httpx client, ADR-016 behavior.
+- Phase 3 Telegram / Alembic fixes on `develop` via Phase 4 merge.
+- Phase 4 memory stack (FTS5, tools, CLI).
 
 ---
 
 ## Git State
 
-- **`develop`:** Should contain merged `feature/phase-4-memory` (Phase 3 + Phase 4 + Phase 3 cleanup commit `f22d508`).
-- **`feature/phase-4-memory`:** Feature branch; merge target was `develop`.
-- **`main`:** Behind develop; merge to `main` when you cut a release.
-
-### Remote (Dylan / CI)
-
-Push `develop` after merge when ready: `git push origin develop`.
+- **`develop`:** Through Phase 4 merge (`2a2a011` and ancestors).
+- **`feature/phase-5-subagent-delegation`:** Phase 5 work + post-review fix for `TurnState` import (commit after review if you commit the fix).
+- **Recommended:** After addressing blockers 2–4 (or scoping them to Phase 5b), merge feature branch into `develop` and push.
 
 ---
 
 ## Test Counts by Phase
 
-| Phase | Tests (approx.) | Key Additions |
-|-------|-----------------|---------------|
-| 1a | 42 | Inference, persistence, calibration |
-| 1b | 96 | Tools, context, artifacts |
-| 1c | 123 | Orchestrator, CLI |
-| 2a | 142 | SlotManager |
-| 2b | 196 | Scheduler |
-| 2c | 218 | Platform base, HestiaConfig |
-| 3 | ~226 | Telegram adapter, status editing, deploy |
-| 4 | ~241 | MemoryStore FTS5, memory tools, `memory` CLI |
+| Phase | Tests (approx.) | Notes |
+|-------|-----------------|-------|
+| 5 | ~245 | +4 vs Phase 4 per Kimi; no delegate_task tests |
 
 ---
 
 ## Architecture Decisions (ADRs)
 
-17 ADRs in `docs/DECISIONS.md`. Notable:
-
-- ADR-011 — Two-number calibration
-- ADR-012 — Turn state machine
-- ADR-013 — SlotManager
-- ADR-014 — Scheduler
-- ADR-015 — HestiaConfig
-- ADR-016 — Telegram adapter
-- ADR-017 — FTS5 long-term memory
+18 ADRs in `docs/DECISIONS.md` including **ADR-018** (subagent delegation).
 
 ---
 
 ## Design Debt (carried forward)
 
-1. PolicyEngine mostly stub (beyond retry_after_error)
-2. Alembic migration workflow still worth a short doc in `docs/` when someone has time
-3. Artifact tools: `grep_artifact`, `list_artifacts` not built; TTL/cleanup for ArtifactStore
-4. Telegram confirmation UI not implemented (inline keyboard)
-5. Matrix adapter + Matrix integration tests (Phase 4 design doc scope; not shipped in Phase 4 branch)
+1. Finish Phase 5: register `delegate_task`, wire `should_delegate` + `AWAITING_SUBAGENT` (or document intentional deferral and narrow ADR-018 scope).
+2. PolicyEngine still mostly stub beyond `retry_after_error` and `should_delegate` heuristic.
+3. Matrix adapter + integration harness (original Phase 4 design stretch).
+4. Telegram confirmation UI.
+5. Artifact tools (`grep_artifact`, `list_artifacts`).
 
 ---
 
 ## Remaining Roadmap
 
-- **Phase 5:** Subagent delegation (`docs/prompts/KIMI_PHASE_5_PROMPT.md`)
-- **Phase 6:** Polish, docs, share (`docs/hestia-design-revised-april-2026.md` §7)
+- **Phase 5b (recommended):** CLI registration, orchestrator delegation loop, tests — see `docs/prompts/KIMI_PHASE_5_PROMPT.md` “Next Steps” and fold into §0 of next Kimi prompt.
+- **Phase 6:** Polish, docs, share (`docs/hestia-design-revised-april-2026.md`).
 
 ---
 
@@ -114,15 +109,14 @@ Push `develop` after merge when ready: `git push origin develop`.
 1. Read this file at the start of every session about Hestia
 2. The "Review Verdict" section lists active findings and resolved history
 3. After reviewing Kimi output, update this file the same way Claude would
-4. Kimi prompts: this repo keeps canonical copies under `docs/prompts/`; Dylan may also copy to the Cowork workspace folder
+4. Kimi prompts: `docs/prompts/`
 5. Design reference: `docs/hestia-design-revised-april-2026.md`
-6. When writing a Kimi prompt, follow the format established in prior phases (§-1 merge, §0 cleanup, §1+ features, handoff report, Critical Rules Recap)
 
 ### Key files for any reviewer:
 
 - `docs/DECISIONS.md` — All ADRs
 - `docs/handoffs/HESTIA_PHASE_*_REPORT_*.md` — Kimi's self-reported output per phase
-- `src/hestia/persistence/schema.py` — Ground truth for relational schema (FTS `memory` table is DDL in MemoryStore)
+- `src/hestia/persistence/schema.py` — Relational schema
 - `src/hestia/orchestrator/transitions.py` — State machine transition table
 - `src/hestia/config.py` — Configuration
 - `pyproject.toml` — Dependencies
@@ -132,9 +126,7 @@ Push `develop` after merge when ready: `git push origin develop`.
 1. Read the handoff report Kimi wrote (`docs/handoffs/`)
 2. Read every new/modified file listed in the report
 3. Check §0 cleanup items were actually done
-4. Check config fields are actually wired (not just defined)
-5. Check new store methods have matching tests
-6. Check CLI commands call the right store methods (not stubs)
-7. Check imports are correct
-8. Run mental model: "what happens on restart?" for any stateful component
-9. Update this file with findings
+4. Check new tools are registered in `cli.py` if they should be visible to the model
+5. Check state machine changes are exercised in `engine.py`, not only in `transitions.py`
+6. Run `pytest tests/unit/`
+7. Update this file with findings
