@@ -19,7 +19,7 @@ from hestia.persistence.scheduler import SchedulerStore
 from hestia.persistence.sessions import SessionStore
 from hestia.policy.default import DefaultPolicyEngine
 from hestia.scheduler import Scheduler
-from hestia.tools.builtin import current_time, read_file, terminal
+from hestia.tools.builtin import current_time, http_get, list_dir, read_file, terminal, write_file
 from hestia.tools.registry import ToolRegistry
 
 # Path to calibration file (not configurable via CLI)
@@ -163,9 +163,12 @@ def cli(
 
     # Tool registry with built-in tools
     tool_registry = ToolRegistry(artifact_store)
+    tool_registry.register(current_time)
+    tool_registry.register(http_get)
+    tool_registry.register(list_dir)
     tool_registry.register(read_file)
     tool_registry.register(terminal)
-    tool_registry.register(current_time)
+    tool_registry.register(write_file)
 
     # Slot manager for KV-cache persistence
     slot_manager = SlotManager(
