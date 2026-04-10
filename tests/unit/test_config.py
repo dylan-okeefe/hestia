@@ -48,6 +48,14 @@ class TestDefaultConfig:
         assert cfg1.inference is not cfg2.inference
         assert cfg1.slots is not cfg2.slots
 
+    def test_default_telegram_config(self):
+        """Default Telegram config has sensible values."""
+        cfg = HestiaConfig.default()
+        assert cfg.telegram.bot_token == ""
+        assert cfg.telegram.rate_limit_edits_seconds == 1.5
+        assert cfg.telegram.http_version == "1.1"
+        assert cfg.telegram.allowed_users == []
+
 
 class TestFromFile:
     """Tests for loading config from Python files."""

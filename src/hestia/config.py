@@ -36,6 +36,21 @@ class StorageConfig:
 
 
 @dataclass
+class TelegramConfig:
+    """Configuration for the Telegram adapter."""
+    bot_token: str = ""
+    allowed_users: list[str] = field(default_factory=list)
+    rate_limit_edits_seconds: float = 1.5
+    http_version: str = "1.1"  # Force HTTP/1.1 for Telegram API stability
+    fallback_ips: list[str] = field(default_factory=lambda: [
+        "149.154.167.220",  # api.telegram.org primary
+    ])
+    connect_timeout_seconds: float = 10.0
+    read_timeout_seconds: float = 30.0
+    long_poll_timeout_seconds: float = 30.0
+
+
+@dataclass
 class HestiaConfig:
     """Top-level Hestia configuration.
 
@@ -46,6 +61,7 @@ class HestiaConfig:
     slots: SlotConfig = field(default_factory=SlotConfig)
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
+    telegram: TelegramConfig = field(default_factory=TelegramConfig)
     system_prompt: str = "You are a helpful assistant."
     max_iterations: int = 10
     verbose: bool = False
