@@ -32,7 +32,13 @@ class PolicyEngine(ABC):
     """
 
     @abstractmethod
-    def should_delegate(self, session: Session, task_description: str) -> bool:
+    def should_delegate(
+        self,
+        session: Session,
+        task_description: str,
+        tool_chain_length: int = 0,
+        projected_tool_calls: int = 0,
+    ) -> bool:
         """Should this task be delegated to a subagent?"""
         ...
 
