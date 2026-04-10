@@ -1,12 +1,10 @@
 """Unit tests for SlotManager."""
 
-from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 import pytest
 
-from hestia.core.types import ChatResponse, Session, SessionState, SessionTemperature
+from hestia.core.types import ChatResponse, SessionTemperature
 from hestia.inference import SlotManager
 from hestia.persistence.db import Database
 from hestia.persistence.sessions import SessionStore

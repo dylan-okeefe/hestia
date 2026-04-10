@@ -6,9 +6,6 @@ import pytest
 from click.testing import CliRunner
 
 from hestia.cli import cli
-from hestia.persistence.db import Database
-from hestia.persistence.scheduler import SchedulerStore
-from hestia.persistence.sessions import SessionStore
 
 
 @pytest.fixture

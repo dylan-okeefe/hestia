@@ -2,18 +2,15 @@
 
 import asyncio
 import sys
-import uuid
 from datetime import datetime
 from pathlib import Path
 
 import click
 
-from hestia.core.types import Session
-
 from hestia.artifacts.store import ArtifactStore
 from hestia.context.builder import ContextBuilder
 from hestia.core.inference import InferenceClient
-from hestia.core.types import Message, ScheduledTask
+from hestia.core.types import Message, ScheduledTask, Session
 from hestia.inference import SlotManager
 from hestia.orchestrator import Orchestrator
 from hestia.persistence.db import Database
@@ -23,7 +20,6 @@ from hestia.policy.default import DefaultPolicyEngine
 from hestia.scheduler import Scheduler
 from hestia.tools.builtin import current_time, read_file, terminal
 from hestia.tools.registry import ToolRegistry
-
 
 # Default configuration
 DEFAULT_DB_PATH = Path("hestia.db")
@@ -332,7 +328,7 @@ def health(ctx: click.Context) -> None:
 
 # Schedule command group
 @cli.group()
-def schedule():
+def schedule() -> None:
     """Manage scheduled tasks."""
     pass
 

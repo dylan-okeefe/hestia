@@ -43,7 +43,7 @@ def _calculate_next_run(
             return fire_at
         # fire_at is in the past, run immediately (use created_at if provided)
         return created_at if created_at else base_time
-    
+
     if cron_expr is not None:
         # Recurring task - calculate next occurrence from cron expression
         if base_time is None:
@@ -53,7 +53,7 @@ def _calculate_next_run(
             return itr.get_next(datetime)
         except Exception as e:
             raise PersistenceError(f"Invalid cron expression '{cron_expr}': {e}") from e
-    
+
     return None
 
 
@@ -98,7 +98,7 @@ class SchedulerStore:
 
         task_id = _generate_task_id()
         created_at = datetime.now()
-        
+
         # Calculate initial next_run_at
         next_run_at = _calculate_next_run(cron_expression, fire_at, created_at, created_at)
 
@@ -219,7 +219,7 @@ class SchedulerStore:
 
         # First get the task to determine its type
         query = sa.select(scheduled_tasks).where(scheduled_tasks.c.id == task_id)
-        
+
         async with self._db.engine.connect() as conn:
             result = await conn.execute(query)
             row = result.fetchone()
@@ -227,7 +227,7 @@ class SchedulerStore:
                 return None
 
             task = self._row_to_task(row)
-            
+
             # Calculate next run time if not provided
             if next_run_at is None:
                 if error is not None:
@@ -287,7 +287,7 @@ class SchedulerStore:
             .where(scheduled_tasks.c.id == task_id)
             .values(enabled=False)
         )
-        
+
         async with self._db.engine.connect() as conn:
             result = await conn.execute(update)
             await conn.commit()
@@ -303,7 +303,7 @@ class SchedulerStore:
             The ScheduledTask, or None if not found
         """
         query = sa.select(scheduled_tasks).where(scheduled_tasks.c.id == task_id)
-        
+
         async with self._db.engine.connect() as conn:
             result = await conn.execute(query)
             row = result.fetchone()

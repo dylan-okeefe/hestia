@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 import pytest_asyncio
 
-from hestia.core.types import Message, ScheduledTask, Session, SessionState, SessionTemperature
+from hestia.core.types import Message, ScheduledTask, Session
 from hestia.orchestrator.types import Turn, TurnState
 from hestia.persistence.db import Database
 from hestia.persistence.scheduler import SchedulerStore
@@ -51,13 +51,13 @@ class FakeOrchestrator:
             "session": session,
             "user_message": user_message,
         })
-        
+
         if self.should_fail:
             raise RuntimeError("Orchestrator failed")
-        
+
         # Simulate sending a response
         await respond_callback("Task completed")
-        
+
         return Turn(
             id="turn_123",
             session_id=session.id,
@@ -142,26 +142,26 @@ class TestRunNow:
             prompt="Daily task",
             cron_expression="0 9 * * *",  # 9 AM daily
         )
-        
+
         # Run at 9 AM today
         run_time = datetime(2024, 1, 1, 9, 0, 0)
-        
+
         orchestrator = FakeOrchestrator()
         scheduler = await make_scheduler(
             scheduler_store, session_store, response_log, orchestrator
         )
-        
+
         # Patch datetime.now() in _fire_task by calling directly with run_time
         await scheduler._fire_task(task, run_time)
-        
+
         # Verify orchestrator was called
         assert len(orchestrator.calls) == 1
         assert orchestrator.calls[0]["user_message"].content == "Daily task"
-        
+
         # Verify response was delivered
         assert len(response_log) == 1
         assert response_log[0]["text"] == "Task completed"
-        
+
         # Verify task was updated with next run tomorrow
         updated = await scheduler_store.get_task(task.id)
         assert updated.last_run_at == run_time
@@ -179,17 +179,17 @@ class TestRunNow:
             prompt="One-time task",
             fire_at=fire_at,
         )
-        
+
         orchestrator = FakeOrchestrator()
         scheduler = await make_scheduler(
             scheduler_store, session_store, response_log, orchestrator
         )
-        
+
         await scheduler._fire_task(task, datetime.now())
-        
+
         # Verify orchestrator was called
         assert len(orchestrator.calls) == 1
-        
+
         # Verify task was disabled
         updated = await scheduler_store.get_task(task.id)
         assert updated.enabled is False
@@ -205,15 +205,15 @@ class TestRunNow:
             prompt="Failing task",
             cron_expression="0 9 * * *",
         )
-        
+
         failing_orchestrator = FakeOrchestrator(should_fail=True)
         scheduler = await make_scheduler(
             scheduler_store, session_store, response_log, failing_orchestrator
         )
-        
+
         run_time = datetime.now()
         await scheduler._fire_task(task, run_time)
-        
+
         # Verify error was recorded
         updated = await scheduler_store.get_task(task.id)
         assert updated.last_error == "Orchestrator failed"
@@ -229,16 +229,16 @@ class TestRunNow:
             prompt="Task with turn error",
             cron_expression="0 9 * * *",
         )
-        
+
         orchestrator = FakeOrchestrator()
         orchestrator.turn_error = "Tool execution failed"
         scheduler = await make_scheduler(
             scheduler_store, session_store, response_log, orchestrator
         )
-        
+
         run_time = datetime.now()
         await scheduler._fire_task(task, run_time)
-        
+
         # Verify turn error was recorded
         updated = await scheduler_store.get_task(task.id)
         assert updated.last_error == "Tool execution failed"
@@ -253,21 +253,21 @@ class TestRunNow:
             prompt="Orphaned task",
             cron_expression="0 9 * * *",
         )
-        
+
         # Delete the session
         await session_store.end_session(test_session.id, "test cleanup")
-        
+
         orchestrator = FakeOrchestrator()
         scheduler = await make_scheduler(
             scheduler_store, session_store, response_log, orchestrator
         )
-        
+
         run_time = datetime.now()
         await scheduler._fire_task(task, run_time)
-        
+
         # Verify orchestrator was NOT called
         assert len(orchestrator.calls) == 0
-        
+
         # Verify error was recorded
         updated = await scheduler_store.get_task(task.id)
         assert "no longer exists" in updated.last_error
@@ -280,7 +280,7 @@ class TestRunNow:
         scheduler = await make_scheduler(
             scheduler_store, session_store, response_log
         )
-        
+
         with pytest.raises(ValueError, match="Task not found"):
             await scheduler.run_now("task_nonexistent")
 
@@ -300,19 +300,19 @@ class TestLoop:
             prompt="Due task",
             fire_at=past,
         )
-        
+
         orchestrator = FakeOrchestrator()
         scheduler = await make_scheduler(
             scheduler_store, session_store, response_log, orchestrator, tick_interval=0.05
         )
-        
+
         await scheduler.start()
         try:
             # Wait for at least one tick
             await asyncio.sleep(0.1)
         finally:
             await scheduler.stop()
-        
+
         # Verify orchestrator was called
         assert len(orchestrator.calls) == 1
         assert orchestrator.calls[0]["user_message"].content == "Due task"
@@ -329,18 +329,18 @@ class TestLoop:
             fire_at=past,
             enabled=False,
         )
-        
+
         orchestrator = FakeOrchestrator()
         scheduler = await make_scheduler(
             scheduler_store, session_store, response_log, orchestrator, tick_interval=0.05
         )
-        
+
         await scheduler.start()
         try:
             await asyncio.sleep(0.1)
         finally:
             await scheduler.stop()
-        
+
         # Verify orchestrator was NOT called
         assert len(orchestrator.calls) == 0
 
@@ -355,18 +355,18 @@ class TestLoop:
             prompt="Future task",
             fire_at=future,
         )
-        
+
         orchestrator = FakeOrchestrator()
         scheduler = await make_scheduler(
             scheduler_store, session_store, response_log, orchestrator, tick_interval=0.05
         )
-        
+
         await scheduler.start()
         try:
             await asyncio.sleep(0.1)
         finally:
             await scheduler.stop()
-        
+
         # Verify orchestrator was NOT called
         assert len(orchestrator.calls) == 0
 
@@ -381,31 +381,31 @@ class TestLoop:
             prompt="Due task",
             fire_at=past,
         )
-        
+
         # Create orchestrator that fails on first call only
         class FailingThenWorkingOrchestrator(FakeOrchestrator):
             def __init__(self):
                 super().__init__()
                 self.call_count = 0
-            
+
             async def process_turn(self, session, user_message, respond_callback):
                 self.call_count += 1
                 if self.call_count == 1:
                     raise RuntimeError("First call fails")
                 return await super().process_turn(session, user_message, respond_callback)
-        
+
         orchestrator = FailingThenWorkingOrchestrator()
         scheduler = await make_scheduler(
             scheduler_store, session_store, response_log, orchestrator, tick_interval=0.05
         )
-        
+
         await scheduler.start()
         try:
             # Wait for multiple ticks
             await asyncio.sleep(0.2)
         finally:
             await scheduler.stop()
-        
+
         # Verify task was eventually processed (second tick)
         assert orchestrator.call_count >= 1
 
@@ -421,7 +421,7 @@ class TestStartStop:
         scheduler = await make_scheduler(
             scheduler_store, session_store, response_log, tick_interval=0.1
         )
-        
+
         await scheduler.start()
         with pytest.raises(RuntimeError, match="already running"):
             await scheduler.start()
@@ -435,7 +435,7 @@ class TestStartStop:
         scheduler = await make_scheduler(
             scheduler_store, session_store, response_log, tick_interval=0.1
         )
-        
+
         await scheduler.start()
         await scheduler.stop()
         await scheduler.stop()  # Should not raise
@@ -448,14 +448,14 @@ class TestStartStop:
         scheduler = await make_scheduler(
             scheduler_store, session_store, response_log, tick_interval=60.0
         )
-        
+
         await scheduler.start()
-        
+
         # Stop should return quickly, not wait 60 seconds
         start = datetime.now()
         await scheduler.stop()
         elapsed = (datetime.now() - start).total_seconds()
-        
+
         assert elapsed < 1.0  # Should be very fast
 
 
@@ -468,7 +468,7 @@ class TestTick:
     ):
         """_tick processes all due tasks in order."""
         past = datetime.now() - timedelta(minutes=5)
-        
+
         # Create multiple due tasks
         task1 = await scheduler_store.create_task(
             session_id=test_session.id,
@@ -480,14 +480,14 @@ class TestTick:
             prompt="Task 2",
             fire_at=past + timedelta(minutes=1),
         )
-        
+
         orchestrator = FakeOrchestrator()
         scheduler = await make_scheduler(
             scheduler_store, session_store, response_log, orchestrator
         )
-        
+
         await scheduler._tick(datetime.now())
-        
+
         # Both tasks should have been processed
         assert len(orchestrator.calls) == 2
         assert orchestrator.calls[0]["user_message"].content == "Task 1"
@@ -499,7 +499,7 @@ class TestTick:
     ):
         """Tasks are processed sequentially, not in parallel."""
         past = datetime.now() - timedelta(minutes=5)
-        
+
         await scheduler_store.create_task(
             session_id=test_session.id,
             prompt="Task 1",
@@ -510,20 +510,20 @@ class TestTick:
             prompt="Task 2",
             fire_at=past,
         )
-        
+
         execution_order = []
-        
+
         class OrderTrackingOrchestrator(FakeOrchestrator):
             async def process_turn(self, session, user_message, respond_callback):
                 execution_order.append(user_message.content)
                 return await super().process_turn(session, user_message, respond_callback)
-        
+
         orchestrator = OrderTrackingOrchestrator()
         scheduler = await make_scheduler(
             scheduler_store, session_store, response_log, orchestrator
         )
-        
+
         await scheduler._tick(datetime.now())
-        
+
         # Tasks should execute in order
         assert execution_order == ["Task 1", "Task 2"]

@@ -6,7 +6,7 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import Any
 
-from hestia.context.builder import BuildResult, ContextBuilder
+from hestia.context.builder import ContextBuilder
 from hestia.core.inference import InferenceClient
 from hestia.core.types import Message, Session, ToolCall
 from hestia.errors import EmptyResponseError, IllegalTransitionError
@@ -334,7 +334,7 @@ class Orchestrator:
         # Regular tool - check if it requires confirmation
         try:
             tool_meta = self._tools.describe(tc.name)
-        except Exception as e:
+        except Exception:
             return ToolCallResult(
                 status="error",
                 content=f"Tool not found: {tc.name}",

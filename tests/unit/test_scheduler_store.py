@@ -5,7 +5,6 @@ from datetime import datetime, timedelta
 import pytest
 import pytest_asyncio
 
-from hestia.core.types import ScheduledTask, Session, SessionState, SessionTemperature
 from hestia.errors import PersistenceError
 from hestia.persistence.db import Database
 from hestia.persistence.scheduler import SchedulerStore, _calculate_next_run
@@ -93,7 +92,7 @@ class TestCreateTask:
             description="Run every day",
             cron_expression="0 9 * * *",
         )
-        
+
         assert task.session_id == test_session.id
         assert task.prompt == "Daily summary"
         assert task.description == "Run every day"
@@ -114,7 +113,7 @@ class TestCreateTask:
             prompt="One-time task",
             fire_at=fire_at,
         )
-        
+
         assert task.cron_expression is None
         assert task.fire_at == fire_at
         assert task.next_run_at == fire_at
@@ -123,7 +122,7 @@ class TestCreateTask:
     async def test_create_requires_exactly_one_schedule(self, scheduler_store, test_session):
         """Must provide exactly one of cron_expression or fire_at."""
         fire_at = datetime.now() + timedelta(days=1)
-        
+
         # Both provided
         with pytest.raises(PersistenceError, match="Cannot specify both"):
             await scheduler_store.create_task(
@@ -132,7 +131,7 @@ class TestCreateTask:
                 cron_expression="0 9 * * *",
                 fire_at=fire_at,
             )
-        
+
         # Neither provided
         with pytest.raises(PersistenceError, match="Must specify either"):
             await scheduler_store.create_task(
@@ -149,7 +148,7 @@ class TestCreateTask:
             cron_expression="0 9 * * *",
             enabled=False,
         )
-        
+
         assert task.enabled is False
 
 
@@ -165,7 +164,7 @@ class TestListDueTasks:
             prompt="Future task",
             fire_at=future,
         )
-        
+
         due = await scheduler_store.list_due_tasks()
         assert len(due) == 0
 
@@ -178,7 +177,7 @@ class TestListDueTasks:
             prompt="Past task",
             fire_at=past,
         )
-        
+
         due = await scheduler_store.list_due_tasks()
         assert len(due) == 1
         assert due[0].prompt == "Past task"
@@ -193,7 +192,7 @@ class TestListDueTasks:
             fire_at=past,
             enabled=False,
         )
-        
+
         due = await scheduler_store.list_due_tasks()
         assert len(due) == 0
 
@@ -207,7 +206,7 @@ class TestListDueTasks:
                 prompt=f"Task {i}",
                 fire_at=past + timedelta(minutes=i),
             )
-        
+
         due = await scheduler_store.list_due_tasks(limit=3)
         assert len(due) == 3
 
@@ -224,11 +223,11 @@ class TestUpdateAfterRun:
             prompt="Daily task",
             cron_expression="0 9 * * *",  # 9 AM daily
         )
-        
+
         # Simulate running at 9 AM
         run_time = datetime(2024, 1, 1, 9, 0, 0)
         updated = await scheduler_store.update_after_run(task.id, now=run_time)
-        
+
         assert updated.last_run_at == run_time
         assert updated.next_run_at == datetime(2024, 1, 2, 9, 0, 0)  # Tomorrow
         assert updated.enabled is True  # Cron tasks stay enabled
@@ -243,9 +242,9 @@ class TestUpdateAfterRun:
             prompt="One-time task",
             fire_at=fire_at,
         )
-        
+
         updated = await scheduler_store.update_after_run(task.id)
-        
+
         assert updated.enabled is False
         assert updated.next_run_at is None
 
@@ -258,9 +257,9 @@ class TestUpdateAfterRun:
             prompt="One-time task",
             fire_at=fire_at,
         )
-        
+
         updated = await scheduler_store.update_after_run(task.id, error="Connection failed")
-        
+
         assert updated.enabled is True  # Stay enabled for retry
         assert updated.last_error == "Connection failed"
 
@@ -279,7 +278,7 @@ class TestListTasksForSession:
         """Only returns tasks for specified session."""
         session1 = await session_store.get_or_create_session("test", "user1")
         session2 = await session_store.get_or_create_session("test", "user2")
-        
+
         await scheduler_store.create_task(
             session_id=session1.id,
             prompt="Task for session 1",
@@ -290,7 +289,7 @@ class TestListTasksForSession:
             prompt="Task for session 2",
             cron_expression="0 10 * * *",
         )
-        
+
         tasks = await scheduler_store.list_tasks_for_session(session1.id)
         assert len(tasks) == 1
         assert tasks[0].prompt == "Task for session 1"
@@ -309,7 +308,7 @@ class TestListTasksForSession:
             cron_expression="0 10 * * *",
             enabled=False,
         )
-        
+
         tasks = await scheduler_store.list_tasks_for_session(test_session.id)
         assert len(tasks) == 1
         assert tasks[0].prompt == "Enabled task"
@@ -328,7 +327,7 @@ class TestListTasksForSession:
             cron_expression="0 10 * * *",
             enabled=False,
         )
-        
+
         tasks = await scheduler_store.list_tasks_for_session(test_session.id, include_disabled=True)
         assert len(tasks) == 2
 
@@ -344,10 +343,10 @@ class TestDisableTask:
             prompt="Task to disable",
             cron_expression="0 9 * * *",
         )
-        
+
         result = await scheduler_store.disable_task(task.id)
         assert result is True
-        
+
         fetched = await scheduler_store.get_task(task.id)
         assert fetched.enabled is False
 
@@ -369,7 +368,7 @@ class TestGetTask:
             prompt="Test task",
             cron_expression="0 9 * * *",
         )
-        
+
         fetched = await scheduler_store.get_task(created.id)
         assert fetched is not None
         assert fetched.id == created.id

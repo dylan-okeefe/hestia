@@ -3,7 +3,6 @@
 from hestia.errors import IllegalTransitionError
 from hestia.orchestrator.types import TurnState
 
-
 # Allowed transitions: from_state -> set of valid to_states
 ALLOWED_TRANSITIONS: dict[TurnState, set[TurnState]] = {
     TurnState.RECEIVED: {TurnState.BUILDING_CONTEXT, TurnState.FAILED},

@@ -67,7 +67,7 @@ class Scheduler:
                         self._stop_event.wait(),
                         timeout=self._tick_interval,
                     )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     pass
         finally:
             logger.info("Scheduler loop exited")
@@ -100,17 +100,17 @@ class Scheduler:
         async def deliver(text: str) -> None:
             await self._response_callback(task, text)
 
-        error: str | None = None
+        turn_error: str | None = None
         try:
             turn = await self._orchestrator.process_turn(
                 session=session,
                 user_message=user_message,
                 respond_callback=deliver,
             )
-            error = turn.error
+            turn_error = turn.error
         except Exception as e:
             logger.exception("Task %s failed during process_turn", task.id)
-            error = str(e)
+            turn_error = str(e)
 
         # Compute next run: cron tasks advance, one-shot tasks don't
         if task.cron_expression is not None:
@@ -120,5 +120,5 @@ class Scheduler:
         else:
             next_run = None  # One-shot tasks don't repeat
         await self._scheduler_store.update_after_run(
-            task.id, error=error, now=now, next_run_at=next_run
+            task.id, error=turn_error, now=now, next_run_at=next_run
         )

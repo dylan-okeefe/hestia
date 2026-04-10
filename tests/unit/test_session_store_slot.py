@@ -1,10 +1,9 @@
 """Unit tests for SessionStore slot operations."""
 
-from datetime import datetime
 
 import pytest
 
-from hestia.core.types import SessionState, SessionTemperature
+from hestia.core.types import SessionTemperature
 from hestia.persistence.db import Database
 from hestia.persistence.sessions import SessionStore
 
