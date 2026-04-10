@@ -19,7 +19,18 @@ from hestia.persistence.scheduler import SchedulerStore
 from hestia.persistence.sessions import SessionStore
 from hestia.policy.default import DefaultPolicyEngine
 from hestia.scheduler import Scheduler
-from hestia.tools.builtin import current_time, http_get, list_dir, read_file, terminal, write_file
+from hestia.memory.store import MemoryStore
+from hestia.tools.builtin import (
+    current_time,
+    http_get,
+    list_dir,
+    make_list_memories_tool,
+    make_save_memory_tool,
+    make_search_memory_tool,
+    read_file,
+    terminal,
+    write_file,
+)
 from hestia.tools.registry import ToolRegistry
 
 # Path to calibration file (not configurable via CLI)
@@ -161,6 +172,9 @@ def cli(
         inference, policy, calibration_path
     )
 
+    # Memory store for long-term memory
+    memory_store = MemoryStore(db)
+
     # Tool registry with built-in tools
     tool_registry = ToolRegistry(artifact_store)
     tool_registry.register(current_time)
@@ -169,6 +183,11 @@ def cli(
     tool_registry.register(read_file)
     tool_registry.register(terminal)
     tool_registry.register(write_file)
+
+    # Register memory tools (bound to the memory store instance)
+    tool_registry.register(make_search_memory_tool(memory_store))
+    tool_registry.register(make_save_memory_tool(memory_store))
+    tool_registry.register(make_list_memories_tool(memory_store))
 
     # Slot manager for KV-cache persistence
     slot_manager = SlotManager(
@@ -187,6 +206,7 @@ def cli(
     ctx.obj["tool_registry"] = tool_registry
     ctx.obj["policy"] = policy
     ctx.obj["slot_manager"] = slot_manager
+    ctx.obj["memory_store"] = memory_store
     ctx.obj["verbose"] = cfg.verbose
 
 
@@ -196,10 +216,12 @@ def init(ctx: click.Context) -> None:
     """Initialize database, artifacts, and slot directories."""
     cfg: HestiaConfig = ctx.obj["config"]
     db: Database = ctx.obj["db"]
+    memory_store: MemoryStore = ctx.obj["memory_store"]
 
     async def _init() -> None:
         await db.connect()
         await db.create_tables()
+        await memory_store.create_table()
         cfg.storage.artifacts_dir.mkdir(parents=True, exist_ok=True)
         cfg.slots.slot_dir.mkdir(parents=True, exist_ok=True)
         click.echo(f"Initialized database at {cfg.storage.database_url}")
@@ -221,11 +243,13 @@ def chat(ctx: click.Context) -> None:
     tool_registry: ToolRegistry = ctx.obj["tool_registry"]
     policy = ctx.obj["policy"]
     slot_manager: SlotManager = ctx.obj["slot_manager"]
+    memory_store: MemoryStore = ctx.obj["memory_store"]
     verbose: bool = ctx.obj["verbose"]
 
     async def _chat() -> None:
         await db.connect()
         await db.create_tables()
+        await memory_store.create_table()
 
         # Create orchestrator
         orchestrator = Orchestrator(
@@ -307,6 +331,7 @@ def ask(ctx: click.Context, message: str) -> None:
     async def _ask() -> None:
         await db.connect()
         await db.create_tables()
+        await memory_store.create_table()
 
         orchestrator = Orchestrator(
             inference=inference,
@@ -386,6 +411,7 @@ def schedule_add(
     """Add a scheduled task."""
     db: Database = ctx.obj["db"]
     session_store: SessionStore = ctx.obj["session_store"]
+    memory_store: MemoryStore = ctx.obj["memory_store"]
 
     # Validate exactly one of cron or fire_at
     if cron is not None and fire_at_str is not None:
@@ -412,6 +438,7 @@ def schedule_add(
     async def _add() -> None:
         await db.connect()
         await db.create_tables()
+        await memory_store.create_table()
 
         # Get or create default CLI session
         session = await session_store.get_or_create_session("cli", "default")
@@ -446,10 +473,12 @@ def schedule_add(
 def schedule_list(ctx: click.Context) -> None:
     """List scheduled tasks."""
     db: Database = ctx.obj["db"]
+    memory_store: MemoryStore = ctx.obj["memory_store"]
 
     async def _list() -> None:
         await db.connect()
         await db.create_tables()
+        await memory_store.create_table()
 
         scheduler_store = SchedulerStore(db)
         tasks = await scheduler_store.list_tasks_for_session(
@@ -485,10 +514,12 @@ def schedule_list(ctx: click.Context) -> None:
 def schedule_show(ctx: click.Context, task_id: str) -> None:
     """Show details of a scheduled task."""
     db: Database = ctx.obj["db"]
+    memory_store: MemoryStore = ctx.obj["memory_store"]
 
     async def _show() -> None:
         await db.connect()
         await db.create_tables()
+        await memory_store.create_table()
 
         scheduler_store = SchedulerStore(db)
         task = await scheduler_store.get_task(task_id)
@@ -528,11 +559,13 @@ def schedule_run(ctx: click.Context, task_id: str) -> None:
     tool_registry: ToolRegistry = ctx.obj["tool_registry"]
     policy = ctx.obj["policy"]
     slot_manager: SlotManager = ctx.obj["slot_manager"]
+    memory_store: MemoryStore = ctx.obj["memory_store"]
     verbose: bool = ctx.obj["verbose"]
 
     async def _run() -> None:
         await db.connect()
         await db.create_tables()
+        await memory_store.create_table()
 
         scheduler_store = SchedulerStore(db)
 
@@ -584,10 +617,12 @@ def schedule_run(ctx: click.Context, task_id: str) -> None:
 def schedule_enable(ctx: click.Context, task_id: str) -> None:
     """Enable a scheduled task."""
     db: Database = ctx.obj["db"]
+    memory_store: MemoryStore = ctx.obj["memory_store"]
 
     async def _enable() -> None:
         await db.connect()
         await db.create_tables()
+        await memory_store.create_table()
 
         scheduler_store = SchedulerStore(db)
         success = await scheduler_store.set_enabled(task_id, True)
@@ -605,10 +640,12 @@ def schedule_enable(ctx: click.Context, task_id: str) -> None:
 def schedule_disable(ctx: click.Context, task_id: str) -> None:
     """Disable a scheduled task."""
     db: Database = ctx.obj["db"]
+    memory_store: MemoryStore = ctx.obj["memory_store"]
 
     async def _disable() -> None:
         await db.connect()
         await db.create_tables()
+        await memory_store.create_table()
 
         scheduler_store = SchedulerStore(db)
         success = await scheduler_store.disable_task(task_id)
@@ -628,10 +665,12 @@ def schedule_disable(ctx: click.Context, task_id: str) -> None:
 def schedule_remove(ctx: click.Context, task_id: str) -> None:
     """Remove a scheduled task."""
     db: Database = ctx.obj["db"]
+    memory_store: MemoryStore = ctx.obj["memory_store"]
 
     async def _remove() -> None:
         await db.connect()
         await db.create_tables()
+        await memory_store.create_table()
 
         scheduler_store = SchedulerStore(db)
         success = await scheduler_store.delete_task(task_id)
@@ -657,6 +696,7 @@ def schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None:
     tool_registry: ToolRegistry = ctx.obj["tool_registry"]
     policy = ctx.obj["policy"]
     slot_manager: SlotManager = ctx.obj["slot_manager"]
+    memory_store: MemoryStore = ctx.obj["memory_store"]
 
     # Use config tick interval if not specified via CLI
     tick = tick_interval if tick_interval is not None else cfg.scheduler.tick_interval_seconds
@@ -667,6 +707,7 @@ def schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None:
     async def _daemon() -> None:
         await db.connect()
         await db.create_tables()
+        await memory_store.create_table()
 
         scheduler_store = SchedulerStore(db)
 
@@ -737,6 +778,7 @@ def run_telegram(ctx: click.Context) -> None:
     tool_registry: ToolRegistry = ctx.obj["tool_registry"]
     policy = ctx.obj["policy"]
     slot_manager: SlotManager = ctx.obj["slot_manager"]
+    memory_store: MemoryStore = ctx.obj["memory_store"]
 
     if not cfg.telegram.bot_token:
         click.echo("Error: telegram.bot_token is required in config.", err=True)
@@ -762,6 +804,7 @@ def run_telegram(ctx: click.Context) -> None:
     async def _run() -> None:
         await db.connect()
         await db.create_tables()
+        await memory_store.create_table()
 
         adapter = TelegramAdapter(cfg.telegram)
 
@@ -773,18 +816,25 @@ def run_telegram(ctx: click.Context) -> None:
             policy=policy,
             max_iterations=cfg.max_iterations,
             slot_manager=slot_manager,
+            # No confirm_callback for Telegram — tools requiring confirmation
+            # (e.g., write_file) will refuse to run and tell the model why.
+            # TODO: Implement confirmation via Telegram inline keyboard buttons.
         )
+
+        # Recover stale turns from previous crash
+        recovered = await orchestrator.recover_stale_turns()
+        if recovered:
+            click.echo(f"Recovered {recovered} stale turn(s) from previous crash.")
 
         # Session cache: telegram_user_id -> Session
         user_sessions: dict[str, Session] = {}
 
         async def on_message(platform_name: str, platform_user: str, text: str) -> None:
             """Handle incoming Telegram message."""
-            # Get or create session for this user
+            # Get or create session for this user (DB-backed, survives restarts)
             if platform_user not in user_sessions:
-                session = await session_store.create_session(
-                    platform="telegram",
-                    platform_user=platform_user,
+                session = await session_store.get_or_create_session(
+                    "telegram", platform_user
                 )
                 user_sessions[platform_user] = session
             else:
@@ -836,6 +886,110 @@ def run_telegram(ctx: click.Context) -> None:
         asyncio.run(_run())
     except KeyboardInterrupt:
         click.echo("\nShutting down.")
+
+
+@cli.group()
+@click.pass_context
+def memory(ctx: click.Context) -> None:
+    """Manage long-term memory."""
+    pass
+
+
+@memory.command(name="search")
+@click.argument("query")
+@click.option("--limit", type=int, default=5)
+@click.pass_context
+def memory_search(ctx: click.Context, query: str, limit: int) -> None:
+    """Search memories."""
+    db: Database = ctx.obj["db"]
+    memory_store: MemoryStore = ctx.obj["memory_store"]
+
+    async def _search() -> None:
+        await db.connect()
+        await db.create_tables()
+        await memory_store.create_table()
+
+        results = await memory_store.search(query, limit=limit)
+        if not results:
+            click.echo("No memories found.")
+            return
+
+        for mem in results:
+            tags = f" [{mem.tags}]" if mem.tags else ""
+            date = mem.created_at.strftime("%Y-%m-%d %H:%M")
+            click.echo(f"{mem.id}  {date}{tags}  {mem.content}")
+
+    asyncio.run(_search())
+
+
+@memory.command(name="list")
+@click.option("--tag", default=None)
+@click.option("--limit", type=int, default=20)
+@click.pass_context
+def memory_list(ctx: click.Context, tag: str | None, limit: int) -> None:
+    """List recent memories."""
+    db: Database = ctx.obj["db"]
+    memory_store: MemoryStore = ctx.obj["memory_store"]
+
+    async def _list() -> None:
+        await db.connect()
+        await db.create_tables()
+        await memory_store.create_table()
+
+        results = await memory_store.list_memories(tag=tag, limit=limit)
+        if not results:
+            click.echo("No memories found.")
+            return
+
+        for mem in results:
+            tags = f" [{mem.tags}]" if mem.tags else ""
+            date = mem.created_at.strftime("%Y-%m-%d %H:%M")
+            click.echo(f"{mem.id}  {date}{tags}  {mem.content}")
+
+    asyncio.run(_list())
+
+
+@memory.command(name="add")
+@click.argument("content")
+@click.option("--tags", default="")
+@click.pass_context
+def memory_add(ctx: click.Context, content: str, tags: str) -> None:
+    """Add a memory manually."""
+    db: Database = ctx.obj["db"]
+    memory_store: MemoryStore = ctx.obj["memory_store"]
+
+    async def _add() -> None:
+        await db.connect()
+        await db.create_tables()
+        await memory_store.create_table()
+
+        tag_list = tags.split() if tags else []
+        mem = await memory_store.save(content=content, tags=tag_list)
+        click.echo(f"Saved: {mem.id}")
+
+    asyncio.run(_add())
+
+
+@memory.command(name="remove")
+@click.argument("memory_id")
+@click.pass_context
+def memory_remove(ctx: click.Context, memory_id: str) -> None:
+    """Delete a memory by ID."""
+    db: Database = ctx.obj["db"]
+    memory_store: MemoryStore = ctx.obj["memory_store"]
+
+    async def _remove() -> None:
+        await db.connect()
+        await db.create_tables()
+        await memory_store.create_table()
+
+        success = await memory_store.delete(memory_id)
+        if not success:
+            click.echo(f"Memory not found: {memory_id}", err=True)
+            sys.exit(1)
+        click.echo(f"Deleted: {memory_id}")
+
+    asyncio.run(_remove())
 
 
 def main() -> None:

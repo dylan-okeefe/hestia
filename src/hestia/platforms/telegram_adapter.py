@@ -5,10 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Awaitable, Callable
-
-import httpx
-from telegram import Bot, Update
+from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 from hestia.config import TelegramConfig
@@ -42,17 +39,6 @@ class TelegramAdapter(Platform):
     async def start(self, on_message: IncomingMessageCallback) -> None:
         """Start polling for Telegram messages."""
         self._on_message = on_message
-
-        # Build httpx client with HTTP/1.1 forcing
-        http_client = httpx.AsyncClient(
-            http2=False,  # Force HTTP/1.1
-            timeout=httpx.Timeout(
-                connect=self._config.connect_timeout_seconds,
-                read=self._config.read_timeout_seconds,
-                write=10.0,
-                pool=10.0,
-            ),
-        )
 
         self._app = (
             Application.builder()
