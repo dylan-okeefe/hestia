@@ -45,9 +45,9 @@ async def test_proto_orchestrator_uses_terminal_tool(tmp_path):
     registry = ToolRegistry(store)
 
     # Register built-in tools
-    registry.register(current_time.current_time)
-    registry.register(read_file.read_file)
-    registry.register(terminal.terminal)
+    registry.register(current_time)
+    registry.register(read_file)
+    registry.register(terminal)
     registry.register(make_read_artifact_tool(store))
 
     # Load calibration and create context builder
