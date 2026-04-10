@@ -7,7 +7,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 
-from hestia.core.types import Message, ScheduledTask
+from hestia.core.types import Message, ScheduledTask, SessionState
 from hestia.orchestrator import Orchestrator
 from hestia.persistence.scheduler import SchedulerStore, _calculate_next_run
 from hestia.persistence.sessions import SessionStore
@@ -87,7 +87,7 @@ class Scheduler:
     async def _fire_task(self, task: ScheduledTask, now: datetime) -> None:
         logger.info("Firing scheduled task %s", task.id)
         session = await self._session_store.get_session(task.session_id)
-        if session is None or session.state.value != "active":
+        if session is None or session.state != SessionState.ACTIVE:
             error = f"Session {task.session_id} no longer exists"
             logger.warning(error)
             await self._scheduler_store.update_after_run(

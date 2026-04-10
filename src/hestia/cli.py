@@ -8,6 +8,7 @@ from pathlib import Path
 import click
 
 from hestia.artifacts.store import ArtifactStore
+from hestia.config import HestiaConfig
 from hestia.context.builder import ContextBuilder
 from hestia.core.inference import InferenceClient
 from hestia.core.types import Message, ScheduledTask, Session
@@ -18,17 +19,11 @@ from hestia.persistence.scheduler import SchedulerStore
 from hestia.persistence.sessions import SessionStore
 from hestia.policy.default import DefaultPolicyEngine
 from hestia.scheduler import Scheduler
-from hestia.tools.builtin import current_time, read_file, terminal
+from hestia.tools.builtin import current_time, http_get, list_dir, read_file, terminal, write_file
 from hestia.tools.registry import ToolRegistry
 
-# Default configuration
-DEFAULT_DB_PATH = Path("hestia.db")
-DEFAULT_ARTIFACTS_PATH = Path("artifacts")
-DEFAULT_SLOT_DIR = Path("slots")
-DEFAULT_SLOT_POOL_SIZE = 4
+# Path to calibration file (not configurable via CLI)
 DEFAULT_CALIBRATION_PATH = Path("docs/calibration.json")
-DEFAULT_INFERENCE_URL = "http://localhost:8001"
-DEFAULT_MODEL = "Qwen3.5-9B-UD-Q4_K_XL.gguf"
 
 
 class CliResponseHandler:
@@ -107,32 +102,56 @@ async def _handle_meta_command(
 
 
 @click.group()
-@click.option("--db-path", type=click.Path(), default=DEFAULT_DB_PATH)
-@click.option("--artifacts-path", type=click.Path(), default=DEFAULT_ARTIFACTS_PATH)
-@click.option("--slot-dir", type=click.Path(), default=DEFAULT_SLOT_DIR)
-@click.option("--slot-pool-size", type=int, default=DEFAULT_SLOT_POOL_SIZE)
-@click.option("--inference-url", default=DEFAULT_INFERENCE_URL)
-@click.option("--model", default=DEFAULT_MODEL)
-@click.option("--verbose", "-v", is_flag=True)
+@click.option("--config", "config_path", type=click.Path(exists=True), default=None,
+              help="Path to Hestia config file (Python)")
+@click.option("--db-path", type=click.Path(), default=None)
+@click.option("--artifacts-path", type=click.Path(), default=None)
+@click.option("--slot-dir", type=click.Path(), default=None)
+@click.option("--slot-pool-size", type=int, default=None)
+@click.option("--inference-url", default=None)
+@click.option("--model", default=None)
+@click.option("--verbose", "-v", is_flag=True, default=False)
 @click.pass_context
 def cli(
     ctx: click.Context,
-    db_path: str,
-    artifacts_path: str,
-    slot_dir: str,
-    slot_pool_size: int,
-    inference_url: str,
-    model: str,
+    config_path: str | None,
+    db_path: str | None,
+    artifacts_path: str | None,
+    slot_dir: str | None,
+    slot_pool_size: int | None,
+    inference_url: str | None,
+    model: str | None,
     verbose: bool,
 ) -> None:
     """Hestia - Local-first LLM agent framework."""
-    # Ensure context object exists
     ctx.ensure_object(dict)
 
-    # Initialize components
-    db = Database(f"sqlite+aiosqlite:///{db_path}")
-    artifact_store = ArtifactStore(Path(artifacts_path))
-    inference = InferenceClient(inference_url, model)
+    # Load config
+    if config_path:
+        cfg = HestiaConfig.from_file(Path(config_path))
+    else:
+        cfg = HestiaConfig.default()
+
+    # Apply CLI overrides (only when explicitly provided)
+    if db_path is not None:
+        cfg.storage.database_url = f"sqlite+aiosqlite:///{db_path}"
+    if artifacts_path is not None:
+        cfg.storage.artifacts_dir = Path(artifacts_path)
+    if slot_dir is not None:
+        cfg.slots.slot_dir = Path(slot_dir)
+    if slot_pool_size is not None:
+        cfg.slots.pool_size = slot_pool_size
+    if inference_url is not None:
+        cfg.inference.base_url = inference_url
+    if model is not None:
+        cfg.inference.model_name = model
+    if verbose:
+        cfg.verbose = True
+
+    # Build subsystems from config
+    db = Database(cfg.storage.database_url)
+    artifact_store = ArtifactStore(cfg.storage.artifacts_dir)
+    inference = InferenceClient(cfg.inference.base_url, cfg.inference.model_name)
     session_store = SessionStore(db)
     policy = DefaultPolicyEngine()
 
@@ -144,19 +163,23 @@ def cli(
 
     # Tool registry with built-in tools
     tool_registry = ToolRegistry(artifact_store)
+    tool_registry.register(current_time)
+    tool_registry.register(http_get)
+    tool_registry.register(list_dir)
     tool_registry.register(read_file)
     tool_registry.register(terminal)
-    tool_registry.register(current_time)
+    tool_registry.register(write_file)
 
     # Slot manager for KV-cache persistence
     slot_manager = SlotManager(
         inference=inference,
         session_store=session_store,
-        slot_dir=Path(slot_dir),
-        pool_size=slot_pool_size,
+        slot_dir=cfg.slots.slot_dir,
+        pool_size=cfg.slots.pool_size,
     )
 
     # Store in context
+    ctx.obj["config"] = cfg
     ctx.obj["db"] = db
     ctx.obj["inference"] = inference
     ctx.obj["session_store"] = session_store
@@ -164,24 +187,24 @@ def cli(
     ctx.obj["tool_registry"] = tool_registry
     ctx.obj["policy"] = policy
     ctx.obj["slot_manager"] = slot_manager
-    ctx.obj["verbose"] = verbose
+    ctx.obj["verbose"] = cfg.verbose
 
 
 @cli.command()
 @click.pass_context
 def init(ctx: click.Context) -> None:
     """Initialize database, artifacts, and slot directories."""
+    cfg: HestiaConfig = ctx.obj["config"]
     db: Database = ctx.obj["db"]
-    artifacts_path = ctx.parent.params["artifacts_path"] if ctx.parent else DEFAULT_ARTIFACTS_PATH
-    slot_dir = ctx.parent.params["slot_dir"] if ctx.parent else DEFAULT_SLOT_DIR
 
     async def _init() -> None:
-        await db.init()
-        Path(artifacts_path).mkdir(parents=True, exist_ok=True)
-        Path(slot_dir).mkdir(parents=True, exist_ok=True)
-        click.echo(f"Initialized database at {db}")
-        click.echo(f"Initialized artifacts directory at {artifacts_path}")
-        click.echo(f"Initialized slot directory at {slot_dir}")
+        await db.connect()
+        await db.create_tables()
+        cfg.storage.artifacts_dir.mkdir(parents=True, exist_ok=True)
+        cfg.slots.slot_dir.mkdir(parents=True, exist_ok=True)
+        click.echo(f"Initialized database at {cfg.storage.database_url}")
+        click.echo(f"Initialized artifacts directory at {cfg.storage.artifacts_dir}")
+        click.echo(f"Initialized slot directory at {cfg.slots.slot_dir}")
 
     asyncio.run(_init())
 
@@ -552,16 +575,11 @@ def schedule_enable(ctx: click.Context, task_id: str) -> None:
         await db.create_tables()
 
         scheduler_store = SchedulerStore(db)
-        task = await scheduler_store.get_task(task_id)
-
-        if task is None:
+        success = await scheduler_store.set_enabled(task_id, True)
+        if not success:
             click.echo(f"Task not found: {task_id}", err=True)
             sys.exit(1)
-
-        # Use update_after_run with no changes to preserve other fields
-        # This is a bit of a hack - we need a proper set_enabled method
-        # For now, just report success
-        click.echo(f"Task {task_id} enabled (not yet implemented)")
+        click.echo(f"Task {task_id} enabled")
 
     asyncio.run(_enable())
 
@@ -601,16 +619,11 @@ def schedule_remove(ctx: click.Context, task_id: str) -> None:
         await db.create_tables()
 
         scheduler_store = SchedulerStore(db)
-
-        # Verify task exists
-        task = await scheduler_store.get_task(task_id)
-        if task is None:
+        success = await scheduler_store.delete_task(task_id)
+        if not success:
             click.echo(f"Task not found: {task_id}", err=True)
             sys.exit(1)
-
-        # For now, disable instead of delete (delete not implemented in store)
-        await scheduler_store.disable_task(task_id)
-        click.echo(f"Task {task_id} removed (disabled)")
+        click.echo(f"Task {task_id} removed")
 
     asyncio.run(_remove())
 
