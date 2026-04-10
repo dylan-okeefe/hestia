@@ -14,6 +14,7 @@ from hestia.inference.slot_manager import SlotManager
 from hestia.orchestrator.transitions import assert_transition
 from hestia.orchestrator.types import Turn, TurnState, TurnTransition
 from hestia.persistence.sessions import SessionStore
+from hestia.platforms.base import Platform
 from hestia.policy.engine import PolicyEngine, RetryAction
 from hestia.tools.registry import ToolRegistry
 from hestia.tools.types import ToolCallResult
@@ -66,12 +67,28 @@ class Orchestrator:
         self._max_iterations = max_iterations
         self._slot_manager = slot_manager
 
+    async def _update_status(
+        self,
+        platform: Platform | None,
+        platform_user: str | None,
+        status_msg_id: str | None,
+        text: str,
+    ) -> None:
+        """Update the status message if a platform is available."""
+        if platform is not None and status_msg_id is not None and platform_user is not None:
+            try:
+                await platform.edit_message(platform_user, status_msg_id, text)
+            except Exception as e:
+                logger.warning("Failed to update status: %s", e)
+
     async def process_turn(
         self,
         session: Session,
         user_message: Message,
         respond_callback: ResponseCallback,
         system_prompt: str = "You are a helpful assistant.",
+        platform: Platform | None = None,
+        platform_user: str | None = None,
     ) -> Turn:
         """Process a single user turn through the state machine.
 
@@ -80,12 +97,22 @@ class Orchestrator:
             user_message: The user's message
             respond_callback: Async callback to send responses to user
             system_prompt: System prompt for the model
+            platform: Optional platform adapter for status updates
+            platform_user: Optional platform user ID for status updates
 
         Returns:
             Completed Turn with full history
         """
         turn = self._create_turn(session.id, user_message)
         await self._persist_turn(turn)
+
+        # Send initial status message if platform is available
+        status_msg_id: str | None = None
+        if platform is not None and platform_user is not None:
+            try:
+                status_msg_id = await platform.send_message(platform_user, "Thinking...")
+            except Exception as e:
+                logger.warning("Failed to send status message: %s", e)
 
         try:
             # Start processing
@@ -122,6 +149,7 @@ class Orchestrator:
             # Main loop: model -> tools -> model -> ...
             while turn.iterations < self._max_iterations:
                 await self._transition(turn, TurnState.AWAITING_MODEL)
+                await self._update_status(platform, platform_user, status_msg_id, "Thinking...")
 
                 chat_response = await self._inference.chat(
                     messages=build_result.messages,
@@ -142,6 +170,11 @@ class Orchestrator:
 
                 if chat_response.finish_reason == "tool_calls":
                     await self._transition(turn, TurnState.EXECUTING_TOOLS)
+
+                    # Update status with tool names
+                    tool_names = [tc.name for tc in chat_response.tool_calls]
+                    status_text = f"Running {', '.join(tool_names)}..."
+                    await self._update_status(platform, platform_user, status_msg_id, status_text)
 
                     # Execute tools and collect results
                     tool_results = await self._execute_tool_calls(
