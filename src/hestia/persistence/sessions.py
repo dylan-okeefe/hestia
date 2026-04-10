@@ -480,3 +480,49 @@ class SessionStore:
                 )
                 for row in rows
             ]
+
+
+    async def list_stale_turns(self) -> list["Turn"]:
+        """List all turns not in a terminal state. Used for crash recovery."""
+        from hestia.orchestrator.types import Turn, TurnState
+        from hestia.persistence.schema import turns
+
+        terminal_states = ["done", "failed", "cancelled"]
+        query = sa.select(turns).where(sa.not_(turns.c.state.in_(terminal_states)))
+
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(query)
+            rows = result.fetchall()
+            return [
+                Turn(
+                    id=row.id,
+                    session_id=row.session_id,
+                    state=TurnState(row.state),
+                    user_message=None,
+                    started_at=row.started_at,
+                    completed_at=None,
+                    iterations=row.iteration,
+                    tool_calls_made=0,
+                    final_response=None,
+                    error=row.error,
+                    transitions=[],
+                )
+                for row in rows
+            ]
+
+    async def fail_turn(self, turn_id: str, error: str) -> None:
+        """Force a turn into FAILED state. Used for crash recovery."""
+        from hestia.persistence.schema import turns
+
+        update = (
+            sa.update(turns)
+            .where(turns.c.id == turn_id)
+            .values(
+                state="failed",
+                error=error,
+                last_transition_at=datetime.now(),
+            )
+        )
+        async with self._db.engine.connect() as conn:
+            await conn.execute(update)
+            await conn.commit()

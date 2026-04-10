@@ -67,6 +67,27 @@ class Orchestrator:
         self._max_iterations = max_iterations
         self._slot_manager = slot_manager
 
+    async def recover_stale_turns(self) -> int:
+        """Mark any turns in non-terminal states as FAILED.
+
+        Called on startup after a crash. Returns the number of turns recovered.
+
+        Non-terminal states: RECEIVED, BUILDING_CONTEXT, AWAITING_MODEL,
+        EXECUTING_TOOLS, AWAITING_USER, AWAITING_SUBAGENT, COMPRESSING,
+        RETRYING.
+
+        Terminal states: DONE, FAILED.
+        """
+        stale = await self._store.list_stale_turns()
+        count = 0
+        for turn in stale:
+            if turn.state not in (TurnState.DONE, TurnState.FAILED):
+                await self._store.fail_turn(
+                    turn.id, error="Recovered after crash: turn was in non-terminal state"
+                )
+                count += 1
+        return count
+
     async def _update_status(
         self,
         platform: Platform | None,

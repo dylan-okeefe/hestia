@@ -224,12 +224,8 @@ def chat(ctx: click.Context) -> None:
     verbose: bool = ctx.obj["verbose"]
 
     async def _chat() -> None:
-        await db.init()
-
-        # Get or create session for CLI user
-        session = await session_store.get_or_create_session("cli", "default")
-        click.echo(f"Session: {session.id}")
-        click.echo("Type 'exit' or 'quit' to end the session, or /help for commands.\n")
+        await db.connect()
+        await db.create_tables()
 
         # Create orchestrator
         orchestrator = Orchestrator(
@@ -242,6 +238,16 @@ def chat(ctx: click.Context) -> None:
             max_iterations=cfg.max_iterations,
             slot_manager=slot_manager,
         )
+
+        # Recover stale turns from previous crash
+        recovered = await orchestrator.recover_stale_turns()
+        if recovered:
+            click.echo(f"Recovered {recovered} stale turn(s) from previous crash.")
+
+        # Get or create session for CLI user
+        session = await session_store.get_or_create_session("cli", "default")
+        click.echo(f"Session: {session.id}")
+        click.echo("Type 'exit' or 'quit' to end the session, or /help for commands.\n")
 
         response_handler = CliResponseHandler(verbose=verbose)
 
@@ -299,9 +305,8 @@ def ask(ctx: click.Context, message: str) -> None:
     verbose: bool = ctx.obj["verbose"]
 
     async def _ask() -> None:
-        await db.init()
-
-        session = await session_store.get_or_create_session("cli", "default")
+        await db.connect()
+        await db.create_tables()
 
         orchestrator = Orchestrator(
             inference=inference,
@@ -313,6 +318,13 @@ def ask(ctx: click.Context, message: str) -> None:
             max_iterations=cfg.max_iterations,
             slot_manager=slot_manager,
         )
+
+        # Recover stale turns from previous crash
+        recovered = await orchestrator.recover_stale_turns()
+        if recovered:
+            click.echo(f"Recovered {recovered} stale turn(s) from previous crash.")
+
+        session = await session_store.get_or_create_session("cli", "default")
 
         user_message = Message(role="user", content=message)
 
