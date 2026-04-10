@@ -17,6 +17,7 @@ class ToolMetadata:
     max_inline_chars: int = 4000  # results above this → artifact + preview
     requires_confirmation: bool = False
     tags: list[str] = field(default_factory=list)
+    capabilities: list[str] = field(default_factory=list)  # security capabilities
     handler: ToolHandler | None = None
 
 
@@ -28,6 +29,7 @@ def tool(
     max_inline_chars: int = 4000,
     requires_confirmation: bool = False,
     tags: list[str] | None = None,
+    capabilities: list[str] | None = None,
 ) -> Any:
     """Decorator to register a tool.
 
@@ -43,6 +45,7 @@ def tool(
                          preview is capped to this same limit.
         requires_confirmation: Whether user confirmation is needed (Phase 1c)
         tags: Tags for filtering tools
+        capabilities: Security capability labels (e.g., 'shell_exec', 'write_local')
 
     Returns:
         Decorator function
@@ -57,6 +60,7 @@ def tool(
             max_inline_chars=max_inline_chars,
             requires_confirmation=requires_confirmation,
             tags=tags or [],
+            capabilities=capabilities or [],
             handler=func,
         )
         func.__hestia_tool__ = meta  # type: ignore[attr-defined]

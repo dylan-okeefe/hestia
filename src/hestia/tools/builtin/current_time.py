@@ -20,6 +20,7 @@ from hestia.tools.metadata import tool
     },
     max_inline_chars=200,
     tags=["utility"],
+    capabilities=[],
 )
 async def current_time(timezone: str = "UTC") -> str:
     """Get the current date and time."""

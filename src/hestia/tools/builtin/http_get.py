@@ -1,5 +1,6 @@
 """HTTP GET tool."""
 
+from hestia.tools.capabilities import NETWORK_EGRESS
 from hestia.tools.metadata import tool
 
 
@@ -8,6 +9,7 @@ from hestia.tools.metadata import tool
     public_description="Fetch the contents of a URL via HTTP GET.",
     max_inline_chars=6000,
     tags=["network", "builtin"],
+    capabilities=[NETWORK_EGRESS],
 )
 async def http_get(url: str, timeout_seconds: int = 30) -> str:
     """Fetch a URL and return its text content.

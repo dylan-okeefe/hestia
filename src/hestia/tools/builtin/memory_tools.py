@@ -5,6 +5,7 @@ from collections.abc import Callable, Coroutine
 from typing import Any
 
 from hestia.memory.store import MemoryStore
+from hestia.tools.capabilities import MEMORY_READ, MEMORY_WRITE
 from hestia.tools.metadata import tool
 
 # Context variable to hold the current session ID during tool execution.
@@ -24,6 +25,7 @@ def make_search_memory_tool(
         name="search_memory",
         public_description="Search your long-term memory for previously saved notes.",
         tags=["memory", "builtin"],
+        capabilities=[MEMORY_READ],
     )
     async def search_memory(query: str, limit: int = 5) -> str:
         """Search long-term memory using full-text search.
@@ -58,6 +60,7 @@ def make_save_memory_tool(
         name="save_memory",
         public_description="Save a note to long-term memory for future recall.",
         tags=["memory", "builtin"],
+        capabilities=[MEMORY_WRITE],
     )
     async def save_memory(content: str, tags: str = "") -> str:
         """Save a note to long-term memory.
@@ -88,6 +91,7 @@ def make_list_memories_tool(
         name="list_memories",
         public_description="List recent memories, optionally filtered by tag.",
         tags=["memory", "builtin"],
+        capabilities=[MEMORY_READ],
     )
     async def list_memories(tag: str = "", limit: int = 20) -> str:
         """List recent memories from long-term storage.

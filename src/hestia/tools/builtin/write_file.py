@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from hestia.tools.capabilities import WRITE_LOCAL
 from hestia.tools.metadata import tool
 
 
@@ -10,6 +11,7 @@ from hestia.tools.metadata import tool
     public_description="Write content to a file, creating it if it doesn't exist.",
     requires_confirmation=True,
     tags=["system", "builtin"],
+    capabilities=[WRITE_LOCAL],
 )
 async def write_file(path: str, content: str) -> str:
     """Write content to a file at the given path.

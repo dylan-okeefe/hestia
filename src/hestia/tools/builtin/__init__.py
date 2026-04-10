@@ -1,5 +1,14 @@
 """Built-in tools for Hestia."""
 
+from hestia.tools.capabilities import (
+    MEMORY_READ,
+    MEMORY_WRITE,
+    NETWORK_EGRESS,
+    ORCHESTRATION,
+    READ_LOCAL,
+    SHELL_EXEC,
+    WRITE_LOCAL,
+)
 from hestia.tools.builtin.current_time import current_time
 from hestia.tools.builtin.delegate_task import make_delegate_task_tool, SubagentResult
 from hestia.tools.builtin.http_get import http_get
@@ -10,6 +19,7 @@ from hestia.tools.builtin.memory_tools import (
     make_save_memory_tool,
     make_search_memory_tool,
 )
+from hestia.tools.builtin.read_artifact import make_read_artifact_tool
 from hestia.tools.builtin.read_file import read_file
 from hestia.tools.builtin.terminal import terminal
 from hestia.tools.builtin.write_file import write_file
@@ -21,10 +31,18 @@ __all__ = [
     "list_dir",
     "make_delegate_task_tool",
     "make_list_memories_tool",
+    "make_read_artifact_tool",
     "make_save_memory_tool",
     "make_search_memory_tool",
+    "MEMORY_READ",
+    "MEMORY_WRITE",
+    "NETWORK_EGRESS",
+    "ORCHESTRATION",
     "read_file",
+    "READ_LOCAL",
+    "SHELL_EXEC",
     "SubagentResult",
     "terminal",
+    "WRITE_LOCAL",
     "write_file",
 ]

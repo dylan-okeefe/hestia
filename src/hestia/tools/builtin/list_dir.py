@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from hestia.tools.capabilities import READ_LOCAL
 from hestia.tools.metadata import tool
 
 
@@ -9,6 +10,7 @@ from hestia.tools.metadata import tool
     name="list_dir",
     public_description="List the contents of a directory.",
     tags=["system", "builtin"],
+    capabilities=[READ_LOCAL],
 )
 async def list_dir(path: str = ".", max_entries: int = 200) -> str:
     """List files and directories at the given path.

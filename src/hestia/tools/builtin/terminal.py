@@ -2,6 +2,7 @@
 
 import asyncio
 
+from hestia.tools.capabilities import SHELL_EXEC
 from hestia.tools.metadata import tool
 
 
@@ -24,6 +25,7 @@ from hestia.tools.metadata import tool
     max_inline_chars=4000,
     requires_confirmation=True,  # Phase 1c will enforce this
     tags=["system"],
+    capabilities=[SHELL_EXEC],
 )
 async def terminal(command: str, timeout: float = 30.0) -> str:
     """Run a shell command and return the result."""

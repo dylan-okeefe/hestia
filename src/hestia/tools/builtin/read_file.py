@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from hestia.tools.capabilities import READ_LOCAL
 from hestia.tools.metadata import tool
 
 
@@ -23,6 +24,7 @@ from hestia.tools.metadata import tool
     },
     max_inline_chars=4000,
     tags=["filesystem"],
+    capabilities=[READ_LOCAL],
 )
 async def read_file(path: str, max_bytes: int = 1_000_000) -> str:
     """Read a file and return its contents."""

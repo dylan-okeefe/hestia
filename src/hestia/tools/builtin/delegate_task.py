@@ -11,6 +11,7 @@ from typing import Any
 
 from hestia.core.types import Message
 from hestia.persistence.sessions import SessionStore
+from hestia.tools.capabilities import ORCHESTRATION
 from hestia.tools.metadata import tool
 
 
@@ -85,6 +86,7 @@ def make_delegate_task_tool(
         name="delegate_task",
         public_description="Spawn a subagent to handle a task in a separate session with its own slot.",
         tags=["orchestration", "builtin"],
+        capabilities=[ORCHESTRATION],
         parameters_schema={
             "type": "object",
             "properties": {

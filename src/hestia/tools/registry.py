@@ -207,7 +207,8 @@ class ToolRegistry:
         lines = []
         for n in names:
             m = self._tools[n]
-            lines.append(f"- {n}: {m.public_description}")
+            caps = ", ".join(m.capabilities) or "none"
+            lines.append(f"- {n}: {m.public_description} [caps: {caps}]")
         return "\n".join(lines) if lines else "(no tools)"
 
     async def meta_call_tool(self, name: str, arguments: dict[str, Any]) -> ToolCallResult:
