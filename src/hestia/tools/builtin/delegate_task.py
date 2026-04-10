@@ -151,14 +151,16 @@ def make_delegate_task_tool(
 
             # Track results
             artifact_refs: list[str] = []
-            tool_calls_made = 0
 
-            # Run the subagent with timeout
+            # Run the subagent with timeout (respond_callback must be async — engine awaits it)
+            async def _noop_respond(_: str) -> None:
+                return None
+
             async def run_subagent():
                 turn = await orchestrator.process_turn(
                     session=subagent_session,
                     user_message=user_message,
-                    respond_callback=lambda x: None,  # We capture from turn
+                    respond_callback=_noop_respond,
                     system_prompt="You are a focused subagent working on a specific task.",
                 )
                 return turn

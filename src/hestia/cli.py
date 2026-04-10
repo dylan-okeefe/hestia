@@ -24,6 +24,7 @@ from hestia.tools.builtin import (
     current_time,
     http_get,
     list_dir,
+    make_delegate_task_tool,
     make_list_memories_tool,
     make_save_memory_tool,
     make_search_memory_tool,
@@ -136,6 +137,7 @@ def cli(
 ) -> None:
     """Hestia - Local-first LLM agent framework."""
     ctx.ensure_object(dict)
+    ctx.obj["confirm_callback"] = None
 
     # Load config
     if config_path:
@@ -197,6 +199,21 @@ def cli(
         pool_size=cfg.slots.pool_size,
     )
 
+    def orchestrator_factory() -> Orchestrator:
+        """Fresh orchestrator for subagent turns (shares registry and stores)."""
+        return Orchestrator(
+            inference=inference,
+            session_store=session_store,
+            context_builder=context_builder,
+            tool_registry=tool_registry,
+            policy=policy,
+            confirm_callback=ctx.obj.get("confirm_callback"),
+            max_iterations=cfg.max_iterations,
+            slot_manager=slot_manager,
+        )
+
+    tool_registry.register(make_delegate_task_tool(session_store, orchestrator_factory))
+
     # Store in context
     ctx.obj["config"] = cfg
     ctx.obj["db"] = db
@@ -244,6 +261,7 @@ def init(ctx: click.Context) -> None:
 @click.pass_context
 def chat(ctx: click.Context) -> None:
     """Start an interactive chat session."""
+    ctx.obj["confirm_callback"] = CliConfirmHandler()
     cfg: HestiaConfig = ctx.obj["config"]
     db: Database = ctx.obj["db"]
     inference: InferenceClient = ctx.obj["inference"]
@@ -325,6 +343,7 @@ def chat(ctx: click.Context) -> None:
 @click.pass_context
 def ask(ctx: click.Context, message: str) -> None:
     """Send a single message and get a response."""
+    ctx.obj["confirm_callback"] = CliConfirmHandler()
     cfg: HestiaConfig = ctx.obj["config"]
     db: Database = ctx.obj["db"]
     inference: InferenceClient = ctx.obj["inference"]
@@ -333,6 +352,7 @@ def ask(ctx: click.Context, message: str) -> None:
     tool_registry: ToolRegistry = ctx.obj["tool_registry"]
     policy = ctx.obj["policy"]
     slot_manager: SlotManager = ctx.obj["slot_manager"]
+    memory_store: MemoryStore = ctx.obj["memory_store"]
     verbose: bool = ctx.obj["verbose"]
 
     async def _ask() -> None:
@@ -550,6 +570,7 @@ def schedule_show(ctx: click.Context, task_id: str) -> None:
 @click.pass_context
 def schedule_run(ctx: click.Context, task_id: str) -> None:
     """Manually trigger a scheduled task."""
+    ctx.obj["confirm_callback"] = CliConfirmHandler()
     cfg: HestiaConfig = ctx.obj["config"]
     db: Database = ctx.obj["db"]
     session_store: SessionStore = ctx.obj["session_store"]
@@ -679,6 +700,7 @@ def schedule_remove(ctx: click.Context, task_id: str) -> None:
 @click.pass_context
 def schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None:
     """Run the scheduler daemon (blocks until Ctrl-C)."""
+    ctx.obj["confirm_callback"] = CliConfirmHandler()
     cfg: HestiaConfig = ctx.obj["config"]
     db: Database = ctx.obj["db"]
     session_store: SessionStore = ctx.obj["session_store"]
@@ -759,6 +781,7 @@ def schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None:
 @click.pass_context
 def run_telegram(ctx: click.Context) -> None:
     """Run Hestia as a Telegram bot (blocks until Ctrl-C)."""
+    ctx.obj["confirm_callback"] = None
     cfg: HestiaConfig = ctx.obj["config"]
     db: Database = ctx.obj["db"]
     inference: InferenceClient = ctx.obj["inference"]

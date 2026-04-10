@@ -9,89 +9,61 @@
 
 ## Current Branch & Phase
 
-- **Reviewed branch:** `feature/phase-5-subagent-delegation` (not merged to `develop` at last review)
-- **Phase:** 5 — Subagent delegation (partial delivery)
-- **Next:** Phase 5b completion merge, or fold §0 of Phase 6 prompt with items below
-- **Status:** Review complete. **Do not ship** as “Phase 5 done” until blockers are fixed (see Verdict).
+- **Integrated branch:** `develop` (merge `feature/phase-5-subagent-delegation` when ready)
+- **Phase:** 5 — Subagent delegation **complete** (CLI registration, policy path, `AWAITING_SUBAGENT`, tests, `delegate_task` async callback fix)
+- **Next phase:** 6 — Polish, docs, share (see design doc)
+- **Status:** Green to merge Phase 5 branch into `develop`.
 
 ---
 
-## Review Verdict: Phase 5
+## Review Verdict: Phase 5 (final)
 
-**Overall: yellow — merge only after fixes or explicit acceptance of partial scope.**
+**Overall: green.**
 
-Kimi delivered solid **§0 (Phase 4 follow-ups)** and useful **infrastructure** (policy hook, transitions, `delegate_task` skeleton, ADR-018, direct-tool confirmation in `_dispatch_tool_call`). The Phase 5 handoff report correctly lists **remaining work**.
+Delivered:
 
-### Critical (fixed in repo after review)
-
-1. **`delegate_task.py` referenced `TurnState` without importing it** — would raise `NameError` when building `SubagentResult`. Importing `TurnState` from `orchestrator.types` **causes a circular import** (`builtin` → `orchestrator` → `engine` → `builtin`). **Fix applied:** use existing `state_value == "failed"` for the `error` field (same pattern as the rest of the function).
-
-### Blockers before calling Phase 5 “complete”
-
-2. **`delegate_task` is not registered in `cli.py`** — the model never sees the tool; delegation is unreachable in normal use.
-
-3. **Orchestrator does not use `AWAITING_SUBAGENT` or `policy.should_delegate()`** — transitions were added to `ALLOWED_TRANSITIONS`, but `engine.py` still goes `EXECUTING_TOOLS` → `BUILDING_CONTEXT` with no delegation branch. The new edges are unused.
-
-4. **No unit/integration tests for `delegate_task`** — zero test coverage for the new tool; the `TurnState` bug was latent for that reason.
-
-### §0 verification (Phase 4 prompt — done)
-
-| Item | Verdict |
-|------|---------|
-| Session context for `save_memory` | OK — `contextvars.current_session_id` set in `process_turn` / reset in `finally` |
-| Stricter tag filter | OK — quoted phrase in `MemoryStore.list_memories` + tests |
-| Naive datetime documented | OK — class docstring on `MemoryStore` |
-| `_bootstrap_db` helper | OK — used across CLI commands |
-| Terminal kill `PermissionError` | OK — handled in `terminal.py` |
-
-### Tests (reviewer run)
-
-- `uv run pytest tests/unit/ -q` — **245 passed** (full permissions; terminal timeout test needs kill permission).
-
----
-
-## Resolved earlier (do not re-file)
-
-- Phase 3 Telegram / Alembic fixes on `develop` via Phase 4 merge.
-- Phase 4 memory stack (FTS5, tools, CLI).
+- **`delegate_task`** registered in `cli.py` via `orchestrator_factory()` (shared registry; `ctx.obj["confirm_callback"]` set per command — CLI `CliConfirmHandler`, Telegram `None`).
+- **Policy-driven delegation:** When `should_delegate(...)` is true and `delegate_task` is registered, orchestrator transitions `EXECUTING_TOOLS` → `AWAITING_SUBAGENT` → runs one `delegate_task` via `_execute_policy_delegation` → `EXECUTING_TOOLS` → `BUILDING_CONTEXT`, with one tool result per model `tool_call_id`.
+- **`DefaultPolicyEngine`:** `session.platform == "subagent"` skips delegation (no recursion).
+- **`delegate_task`:** Subagent `respond_callback` is **async** (sync lambdas caused `TypeError` after `DONE`, then bogus `DONE`→`FAILED` transition).
+- **Tests:** `tests/unit/test_subagent_delegation.py` (mocked delegate + full policy path); policy and fake-policy signatures updated.
 
 ---
 
 ## Git State
 
-- **`develop`:** Through Phase 4 merge (`2a2a011` and ancestors).
-- **`feature/phase-5-subagent-delegation`:** Phase 5 work + post-review fix for `TurnState` import (commit after review if you commit the fix).
-- **Recommended:** After addressing blockers 2–4 (or scoping them to Phase 5b), merge feature branch into `develop` and push.
+- **`feature/phase-5-subagent-delegation`:** Phase 5 completion commits (merge into `develop`).
+- **`develop`:** Through Phase 4 merge until Phase 5 merge.
 
 ---
 
-## Test Counts by Phase
+## Test Counts
 
-| Phase | Tests (approx.) | Notes |
-|-------|-----------------|-------|
-| 5 | ~245 | +4 vs Phase 4 per Kimi; no delegate_task tests |
+| Phase | Tests (approx.) |
+|-------|-----------------|
+| 5 final | ~254 |
+
+Run: `uv run pytest tests/unit/ tests/integration/ -q`
 
 ---
 
 ## Architecture Decisions (ADRs)
 
-18 ADRs in `docs/DECISIONS.md` including **ADR-018** (subagent delegation).
+18 ADRs including **ADR-018** (subagent delegation).
 
 ---
 
 ## Design Debt (carried forward)
 
-1. Finish Phase 5: register `delegate_task`, wire `should_delegate` + `AWAITING_SUBAGENT` (or document intentional deferral and narrow ADR-018 scope).
-2. PolicyEngine still mostly stub beyond `retry_after_error` and `should_delegate` heuristic.
-3. Matrix adapter + integration harness (original Phase 4 design stretch).
-4. Telegram confirmation UI.
-5. Artifact tools (`grep_artifact`, `list_artifacts`).
+1. Policy delegation **replaces** the model’s tool batch with one `delegate_task` result (duplicated text for multiple `tool_call_id`s except the first). Refine UX later if needed.
+2. Matrix adapter + integration harness (design stretch).
+3. Telegram confirmation UI for destructive tools.
+4. Artifact tools (`grep_artifact`, `list_artifacts`).
 
 ---
 
 ## Remaining Roadmap
 
-- **Phase 5b (recommended):** CLI registration, orchestrator delegation loop, tests — see `docs/prompts/KIMI_PHASE_5_PROMPT.md` “Next Steps” and fold into §0 of next Kimi prompt.
 - **Phase 6:** Polish, docs, share (`docs/hestia-design-revised-april-2026.md`).
 
 ---
@@ -107,26 +79,21 @@ Kimi delivered solid **§0 (Phase 4 follow-ups)** and useful **infrastructure** 
 ### If you're Cursor:
 
 1. Read this file at the start of every session about Hestia
-2. The "Review Verdict" section lists active findings and resolved history
-3. After reviewing Kimi output, update this file the same way Claude would
-4. Kimi prompts: `docs/prompts/`
-5. Design reference: `docs/hestia-design-revised-april-2026.md`
+2. Kimi prompts: `docs/prompts/`
+3. Design reference: `docs/hestia-design-revised-april-2026.md`
 
 ### Key files for any reviewer:
 
 - `docs/DECISIONS.md` — All ADRs
 - `docs/handoffs/HESTIA_PHASE_*_REPORT_*.md` — Kimi's self-reported output per phase
-- `src/hestia/persistence/schema.py` — Relational schema
-- `src/hestia/orchestrator/transitions.py` — State machine transition table
-- `src/hestia/config.py` — Configuration
-- `pyproject.toml` — Dependencies
+- `src/hestia/orchestrator/engine.py` — Turn loop and delegation
+- `src/hestia/orchestrator/transitions.py` — State machine
+- `src/hestia/cli.py` — Tool registration and confirm callback wiring
 
 ### Review checklist (for any tool):
 
 1. Read the handoff report Kimi wrote (`docs/handoffs/`)
-2. Read every new/modified file listed in the report
-3. Check §0 cleanup items were actually done
-4. Check new tools are registered in `cli.py` if they should be visible to the model
-5. Check state machine changes are exercised in `engine.py`, not only in `transitions.py`
-6. Run `pytest tests/unit/`
-7. Update this file with findings
+2. New tools registered in `cli.py` when they should be visible to the model
+3. `respond_callback` is async wherever the orchestrator awaits it
+4. Run `pytest tests/unit/ tests/integration/`
+5. Update this file with findings

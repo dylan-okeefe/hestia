@@ -1,6 +1,6 @@
 """Orchestrator engine for managing turn execution."""
 
-import contextvars
+import json
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
@@ -203,10 +203,27 @@ class Orchestrator:
                         status_text = f"Running {', '.join(tool_names)}..."
                         await self._update_status(platform, platform_user, status_msg_id, status_text)
 
-                        # Execute tools and collect results
-                        tool_results = await self._execute_tool_calls(
-                            session.id, chat_response.tool_calls
+                        task_desc = (user_message.content or "").strip()
+                        use_policy_delegation = (
+                            "delegate_task" in self._tools.list_names()
+                            and self._policy.should_delegate(
+                                session,
+                                task_desc,
+                                turn.tool_calls_made,
+                                len(chat_response.tool_calls),
+                            )
                         )
+
+                        if use_policy_delegation:
+                            await self._transition(turn, TurnState.AWAITING_SUBAGENT)
+                            tool_results = await self._execute_policy_delegation(
+                                user_message, chat_response.tool_calls
+                            )
+                            await self._transition(turn, TurnState.EXECUTING_TOOLS)
+                        else:
+                            tool_results = await self._execute_tool_calls(
+                                session.id, chat_response.tool_calls
+                            )
 
                         # Add tool results to history
                         for result_msg in tool_results:
@@ -337,6 +354,40 @@ class Orchestrator:
             result_messages.append(msg)
 
         return result_messages
+
+    async def _execute_policy_delegation(
+        self,
+        user_message: Message,
+        tool_calls: list[ToolCall],
+    ) -> list[Message]:
+        """Run delegate_task once; map output to one message per model tool_call_id."""
+        task = (user_message.content or "").strip() or "(no user text)"
+        lines = [f"{tc.name} {json.dumps(tc.arguments or {})}" for tc in tool_calls]
+        context = "\n".join(lines)
+
+        result = await self._tools.call(
+            "delegate_task",
+            {"task": task, "context": context},
+        )
+        body = result.content
+        if result.status != "ok":
+            body = f"[delegation error] {body}"
+
+        messages: list[Message] = []
+        for i, tc in enumerate(tool_calls):
+            if i == 0:
+                content = body
+            else:
+                content = f"(Same policy delegation as tool_call_id={tool_calls[0].id}.)\n{body}"
+            messages.append(
+                Message(
+                    role="tool",
+                    content=content,
+                    tool_call_id=tc.id,
+                    created_at=datetime.now(),
+                )
+            )
+        return messages
 
     async def _dispatch_tool_call(self, tc: ToolCall) -> ToolCallResult:
         """Dispatch a single tool call, handling meta-tools and direct tool calls."""

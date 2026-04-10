@@ -31,10 +31,11 @@ class TestAllowedTransitions:
         assert TurnState.FAILED in allowed
 
     def test_executing_tools_can_loop_or_fail(self):
-        """EXECUTING_TOOLS can loop to BUILDING_CONTEXT or go to AWAITING_USER/FAILED."""
+        """EXECUTING_TOOLS can loop to BUILDING_CONTEXT or go to AWAITING_USER/FAILED/SUBAGENT."""
         allowed = ALLOWED_TRANSITIONS[TurnState.EXECUTING_TOOLS]
         assert TurnState.BUILDING_CONTEXT in allowed
         assert TurnState.AWAITING_USER in allowed
+        assert TurnState.AWAITING_SUBAGENT in allowed
         assert TurnState.FAILED in allowed
 
     def test_retrying_can_await_or_fail(self):

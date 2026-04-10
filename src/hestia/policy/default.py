@@ -48,6 +48,10 @@ class DefaultPolicyEngine(PolicyEngine):
         Returns:
             True if delegation is recommended
         """
+        # Never recurse: subagent runs use platform "subagent"
+        if session.platform == "subagent":
+            return False
+
         # Explicit user request for delegation
         delegation_keywords = ["delegate", "subagent", "spawn task", "background task"]
         task_lower = task_description.lower()
