@@ -196,6 +196,7 @@ class SchedulerStore:
         task_id: str,
         error: str | None = None,
         now: datetime | None = None,
+        next_run_at: datetime | None = None,
     ) -> ScheduledTask | None:
         """Update a task after it has been executed.
         
@@ -224,16 +225,17 @@ class SchedulerStore:
 
             task = self._row_to_task(row)
             
-            # Calculate next run time
-            if error is not None:
-                # Failed run - keep enabled for retry
-                next_run_at = task.next_run_at
-            elif task.cron_expression is not None:
-                # Recurring task - calculate next occurrence
-                next_run_at = _calculate_next_run(task.cron_expression, None, now)
-            else:
-                # One-time task - disable after successful run
-                next_run_at = None
+            # Calculate next run time if not provided
+            if next_run_at is None:
+                if error is not None:
+                    # Failed run - keep enabled for retry
+                    next_run_at = task.next_run_at
+                elif task.cron_expression is not None:
+                    # Recurring task - calculate next occurrence
+                    next_run_at = _calculate_next_run(task.cron_expression, None, now)
+                else:
+                    # One-time task - disable after successful run
+                    next_run_at = None
 
             # Update the task
             values = {
