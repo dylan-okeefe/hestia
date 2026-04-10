@@ -773,18 +773,25 @@ def run_telegram(ctx: click.Context) -> None:
             policy=policy,
             max_iterations=cfg.max_iterations,
             slot_manager=slot_manager,
+            # No confirm_callback for Telegram — tools requiring confirmation
+            # (e.g., write_file) will refuse to run and tell the model why.
+            # TODO: Implement confirmation via Telegram inline keyboard buttons.
         )
+
+        # Recover stale turns from previous crash
+        recovered = await orchestrator.recover_stale_turns()
+        if recovered:
+            click.echo(f"Recovered {recovered} stale turn(s) from previous crash.")
 
         # Session cache: telegram_user_id -> Session
         user_sessions: dict[str, Session] = {}
 
         async def on_message(platform_name: str, platform_user: str, text: str) -> None:
             """Handle incoming Telegram message."""
-            # Get or create session for this user
+            # Get or create session for this user (DB-backed, survives restarts)
             if platform_user not in user_sessions:
-                session = await session_store.create_session(
-                    platform="telegram",
-                    platform_user=platform_user,
+                session = await session_store.get_or_create_session(
+                    "telegram", platform_user
                 )
                 user_sessions[platform_user] = session
             else:
