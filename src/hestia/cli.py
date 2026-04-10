@@ -1,9 +1,12 @@
 """CLI adapter for Hestia - local-first LLM agent framework."""
 
 import asyncio
+import logging
 import sys
 from datetime import datetime
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 import click
 
@@ -276,14 +279,14 @@ def chat(ctx: click.Context) -> None:
     async def _chat() -> None:
         await _bootstrap_db(db, memory_store)
 
-        # Create orchestrator
+        # Create orchestrator (headless — no confirmation)
         orchestrator = Orchestrator(
             inference=inference,
             session_store=session_store,
             context_builder=context_builder,
             tool_registry=tool_registry,
             policy=policy,
-            confirm_callback=CliConfirmHandler(),
+            confirm_callback=None,
             max_iterations=cfg.max_iterations,
             slot_manager=slot_manager,
         )
@@ -700,7 +703,9 @@ def schedule_remove(ctx: click.Context, task_id: str) -> None:
 @click.pass_context
 def schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None:
     """Run the scheduler daemon (blocks until Ctrl-C)."""
-    ctx.obj["confirm_callback"] = CliConfirmHandler()
+    # Headless daemon — no confirmation callback. Tools requiring confirmation
+    # will be denied, which is correct for unattended execution.
+    ctx.obj["confirm_callback"] = None
     cfg: HestiaConfig = ctx.obj["config"]
     db: Database = ctx.obj["db"]
     session_store: SessionStore = ctx.obj["session_store"]
