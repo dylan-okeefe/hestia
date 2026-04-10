@@ -1,0 +1,80 @@
+# Hestia — Cursor Context
+
+## What is this project?
+
+Hestia is a local-first personal assistant framework targeting RTX 3060 12GB
+Ubuntu with llama.cpp + Qwen 3.5 9B. It is built by a three-tool workflow:
+
+1. **Claude (Cowork on Mac)** or **Cursor** — Reviews code, writes Kimi prompts,
+   orchestrates the build
+2. **Kimi** — Executes build phases on the Ubuntu machine in 1-2 hour cycles
+3. **Dylan** — Merges branches, pushes to GitHub, hands prompts to Kimi
+
+## Before doing anything, read:
+
+1. `docs/HANDOFF_STATE.md` — Current phase, review status, bugs, git state.
+   This is the handoff contract between Claude and Cursor. **Always read this first.**
+2. `docs/DECISIONS.md` — All Architecture Decision Records
+3. The latest handoff report in `docs/handoffs/`
+
+## Your role
+
+You are a code reviewer and build orchestrator. Your responsibilities:
+
+- Review Kimi's output for correctness (bugs, missing implementations, stubs)
+- Write detailed Kimi prompts for the next phase (see prior prompts for format)
+- Update `docs/HANDOFF_STATE.md` after every review session
+- Fold bugs from the current review into §0 of the next phase prompt
+
+## Kimi prompt format
+
+Kimi prompts follow a consistent structure established over Phases 1a-3:
+- §-1: Merge previous phase into develop
+- §0: Cleanup bugs from the previous phase review
+- §1-N: New work sections with code sketches, tests, and commit messages
+- Final section: Handoff report
+- Critical Rules Recap at the end
+
+Prior Kimi prompts are in Dylan's workspace folder (ask Dylan for the path if needed).
+
+## Key review patterns to watch for
+
+Based on experience across 7 phases:
+
+1. **§0 cleanup items sometimes get skipped** — Always verify each fix was done
+2. **Config fields get defined but not wired** — Check every new config field is
+   actually read somewhere in cli.py
+3. **Import changes break downstream tests** — When __init__.py exports change,
+   check all test files that import from that package
+4. **Alembic migrations lag behind schema.py** — Compare table count in migrations
+   vs tables defined in schema.py
+5. **Store methods missing from CLI** — If a store gains a new method, check
+   whether the CLI command that should call it actually does
+6. **In-memory state lost on restart** — Any dict cache needs a database fallback
+
+## Project structure
+
+```
+src/hestia/
+  cli.py              # CLI entry point
+  config.py           # HestiaConfig dataclass
+  core/               # Types + inference client
+  context/            # Context builder
+  orchestrator/       # Turn state machine
+  inference/          # SlotManager
+  scheduler/          # Background task loop
+  tools/              # Tool registry + built-ins
+  artifacts/          # Artifact storage
+  persistence/        # Database layer (SessionStore, SchedulerStore)
+  platforms/          # Platform ABC + adapters (CLI, Telegram)
+  policy/             # Policy engine
+```
+
+## Conventions
+
+- Conventional commits (feat, fix, refactor, test, docs)
+- Gitflow: main/develop/feature branches
+- One commit per logical section in Kimi prompts
+- pytest + ruff + mypy on every phase
+- ADR for every architectural decision
+- Handoff report for every phase
