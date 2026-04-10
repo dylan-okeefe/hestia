@@ -210,6 +210,17 @@ def cli(
     ctx.obj["verbose"] = cfg.verbose
 
 
+async def _bootstrap_db(db: Database, memory_store: MemoryStore) -> None:
+    """Bootstrap database and FTS table for CLI commands.
+
+    Repeated in many commands because Click callback + async don't mix cleanly.
+    Each command extracts its own ctx.obj refs and calls this helper.
+    """
+    await db.connect()
+    await db.create_tables()
+    await memory_store.create_table()
+
+
 @cli.command()
 @click.pass_context
 def init(ctx: click.Context) -> None:
@@ -219,9 +230,7 @@ def init(ctx: click.Context) -> None:
     memory_store: MemoryStore = ctx.obj["memory_store"]
 
     async def _init() -> None:
-        await db.connect()
-        await db.create_tables()
-        await memory_store.create_table()
+        await _bootstrap_db(db, memory_store)
         cfg.storage.artifacts_dir.mkdir(parents=True, exist_ok=True)
         cfg.slots.slot_dir.mkdir(parents=True, exist_ok=True)
         click.echo(f"Initialized database at {cfg.storage.database_url}")
@@ -247,9 +256,7 @@ def chat(ctx: click.Context) -> None:
     verbose: bool = ctx.obj["verbose"]
 
     async def _chat() -> None:
-        await db.connect()
-        await db.create_tables()
-        await memory_store.create_table()
+        await _bootstrap_db(db, memory_store)
 
         # Create orchestrator
         orchestrator = Orchestrator(
@@ -329,9 +336,7 @@ def ask(ctx: click.Context, message: str) -> None:
     verbose: bool = ctx.obj["verbose"]
 
     async def _ask() -> None:
-        await db.connect()
-        await db.create_tables()
-        await memory_store.create_table()
+        await _bootstrap_db(db, memory_store)
 
         orchestrator = Orchestrator(
             inference=inference,
@@ -436,9 +441,7 @@ def schedule_add(
             sys.exit(1)
 
     async def _add() -> None:
-        await db.connect()
-        await db.create_tables()
-        await memory_store.create_table()
+        await _bootstrap_db(db, memory_store)
 
         # Get or create default CLI session
         session = await session_store.get_or_create_session("cli", "default")
@@ -476,9 +479,7 @@ def schedule_list(ctx: click.Context) -> None:
     memory_store: MemoryStore = ctx.obj["memory_store"]
 
     async def _list() -> None:
-        await db.connect()
-        await db.create_tables()
-        await memory_store.create_table()
+        await _bootstrap_db(db, memory_store)
 
         scheduler_store = SchedulerStore(db)
         tasks = await scheduler_store.list_tasks_for_session(
@@ -517,9 +518,7 @@ def schedule_show(ctx: click.Context, task_id: str) -> None:
     memory_store: MemoryStore = ctx.obj["memory_store"]
 
     async def _show() -> None:
-        await db.connect()
-        await db.create_tables()
-        await memory_store.create_table()
+        await _bootstrap_db(db, memory_store)
 
         scheduler_store = SchedulerStore(db)
         task = await scheduler_store.get_task(task_id)
@@ -563,9 +562,7 @@ def schedule_run(ctx: click.Context, task_id: str) -> None:
     verbose: bool = ctx.obj["verbose"]
 
     async def _run() -> None:
-        await db.connect()
-        await db.create_tables()
-        await memory_store.create_table()
+        await _bootstrap_db(db, memory_store)
 
         scheduler_store = SchedulerStore(db)
 
@@ -620,9 +617,7 @@ def schedule_enable(ctx: click.Context, task_id: str) -> None:
     memory_store: MemoryStore = ctx.obj["memory_store"]
 
     async def _enable() -> None:
-        await db.connect()
-        await db.create_tables()
-        await memory_store.create_table()
+        await _bootstrap_db(db, memory_store)
 
         scheduler_store = SchedulerStore(db)
         success = await scheduler_store.set_enabled(task_id, True)
@@ -643,9 +638,7 @@ def schedule_disable(ctx: click.Context, task_id: str) -> None:
     memory_store: MemoryStore = ctx.obj["memory_store"]
 
     async def _disable() -> None:
-        await db.connect()
-        await db.create_tables()
-        await memory_store.create_table()
+        await _bootstrap_db(db, memory_store)
 
         scheduler_store = SchedulerStore(db)
         success = await scheduler_store.disable_task(task_id)
@@ -668,9 +661,7 @@ def schedule_remove(ctx: click.Context, task_id: str) -> None:
     memory_store: MemoryStore = ctx.obj["memory_store"]
 
     async def _remove() -> None:
-        await db.connect()
-        await db.create_tables()
-        await memory_store.create_table()
+        await _bootstrap_db(db, memory_store)
 
         scheduler_store = SchedulerStore(db)
         success = await scheduler_store.delete_task(task_id)
@@ -705,9 +696,7 @@ def schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None:
         click.echo(f"[scheduler:{task.id}] {text}")
 
     async def _daemon() -> None:
-        await db.connect()
-        await db.create_tables()
-        await memory_store.create_table()
+        await _bootstrap_db(db, memory_store)
 
         scheduler_store = SchedulerStore(db)
 
@@ -802,9 +791,7 @@ def run_telegram(ctx: click.Context) -> None:
         return callback
 
     async def _run() -> None:
-        await db.connect()
-        await db.create_tables()
-        await memory_store.create_table()
+        await _bootstrap_db(db, memory_store)
 
         adapter = TelegramAdapter(cfg.telegram)
 
@@ -905,9 +892,7 @@ def memory_search(ctx: click.Context, query: str, limit: int) -> None:
     memory_store: MemoryStore = ctx.obj["memory_store"]
 
     async def _search() -> None:
-        await db.connect()
-        await db.create_tables()
-        await memory_store.create_table()
+        await _bootstrap_db(db, memory_store)
 
         results = await memory_store.search(query, limit=limit)
         if not results:
@@ -932,9 +917,7 @@ def memory_list(ctx: click.Context, tag: str | None, limit: int) -> None:
     memory_store: MemoryStore = ctx.obj["memory_store"]
 
     async def _list() -> None:
-        await db.connect()
-        await db.create_tables()
-        await memory_store.create_table()
+        await _bootstrap_db(db, memory_store)
 
         results = await memory_store.list_memories(tag=tag, limit=limit)
         if not results:
@@ -959,9 +942,7 @@ def memory_add(ctx: click.Context, content: str, tags: str) -> None:
     memory_store: MemoryStore = ctx.obj["memory_store"]
 
     async def _add() -> None:
-        await db.connect()
-        await db.create_tables()
-        await memory_store.create_table()
+        await _bootstrap_db(db, memory_store)
 
         tag_list = tags.split() if tags else []
         mem = await memory_store.save(content=content, tags=tag_list)
@@ -979,9 +960,7 @@ def memory_remove(ctx: click.Context, memory_id: str) -> None:
     memory_store: MemoryStore = ctx.obj["memory_store"]
 
     async def _remove() -> None:
-        await db.connect()
-        await db.create_tables()
-        await memory_store.create_table()
+        await _bootstrap_db(db, memory_store)
 
         success = await memory_store.delete(memory_id)
         if not success:

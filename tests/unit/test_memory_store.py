@@ -151,3 +151,35 @@ class TestMemoryStore:
         results = await memory_store.search('"machine learning"')
         assert len(results) == 1
         assert "machine learning" in results[0].content
+
+    @pytest.mark.asyncio
+    async def test_list_memories_distinct_tags(self, memory_store):
+        """Tag filter matches exact tags, not stemming variants."""
+        await memory_store.save("Project alpha", tags=["project"])
+        await memory_store.save("Projects list", tags=["projects"])
+        await memory_store.save("Personal journal", tags=["personal"])
+
+        # Searching for "project" should only match "project", not "projects"
+        results = await memory_store.list_memories(tag="project")
+        assert len(results) == 1
+        assert "Project alpha" in results[0].content
+
+        # Searching for "projects" should only match "projects"
+        results = await memory_store.list_memories(tag="projects")
+        assert len(results) == 1
+        assert "Projects list" in results[0].content
+
+    @pytest.mark.asyncio
+    async def test_list_memories_partial_tag_no_match(self, memory_store):
+        """Tag filter does not match partial tokens."""
+        await memory_store.save("Documentation", tags=["docs"])
+        await memory_store.save("Doctor appointment", tags=["doctor"])
+
+        # Searching for "doc" should not match "docs" or "doctor"
+        results = await memory_store.list_memories(tag="doc")
+        assert len(results) == 0
+
+        # Searching for "docs" should match only "docs"
+        results = await memory_store.list_memories(tag="docs")
+        assert len(results) == 1
+        assert "Documentation" in results[0].content

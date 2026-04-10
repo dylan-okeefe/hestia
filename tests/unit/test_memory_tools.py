@@ -5,6 +5,7 @@ import pytest
 from hestia.memory.store import MemoryStore
 from hestia.persistence.db import Database
 from hestia.tools.builtin.memory_tools import (
+    current_session_id,
     make_list_memories_tool,
     make_save_memory_tool,
     make_search_memory_tool,
@@ -146,3 +147,37 @@ class TestSearchMemoryTool:
         assert "Search" in search_tool.__hestia_tool__.public_description
         assert "Save" in save_tool.__hestia_tool__.public_description
         assert "List" in list_tool.__hestia_tool__.public_description
+
+    @pytest.mark.asyncio
+    async def test_save_memory_with_session_context(self, tools):
+        """save_memory records session_id when contextvar is set."""
+        store, _, save_tool, _ = tools
+
+        # Set the session context (as orchestrator would do)
+        token = current_session_id.set("session_test_123")
+        try:
+            result = await save_tool("Memory with session", tags="test")
+            assert "Saved memory" in result
+
+            # Verify memory was saved with session_id
+            memories = await store.list_memories()
+            assert len(memories) == 1
+            assert memories[0].session_id == "session_test_123"
+        finally:
+            current_session_id.reset(token)
+
+    @pytest.mark.asyncio
+    async def test_save_memory_without_session_context(self, tools):
+        """save_memory works without session context (CLI usage)."""
+        store, _, save_tool, _ = tools
+
+        # Ensure no session context is set
+        assert current_session_id.get() is None
+
+        result = await save_tool("Memory without session", tags="test")
+        assert "Saved memory" in result
+
+        # Verify memory was saved with None session_id
+        memories = await store.list_memories()
+        assert len(memories) == 1
+        assert memories[0].session_id is None

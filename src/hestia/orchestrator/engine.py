@@ -1,5 +1,6 @@
 """Orchestrator engine for managing turn execution."""
 
+import contextvars
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
@@ -16,6 +17,7 @@ from hestia.orchestrator.types import Turn, TurnState, TurnTransition
 from hestia.persistence.sessions import SessionStore
 from hestia.platforms.base import Platform
 from hestia.policy.engine import PolicyEngine, RetryAction
+from hestia.tools.builtin import current_session_id
 from hestia.tools.registry import ToolRegistry
 from hestia.tools.types import ToolCallResult
 
@@ -124,20 +126,24 @@ class Orchestrator:
         Returns:
             Completed Turn with full history
         """
-        turn = self._create_turn(session.id, user_message)
-        await self._persist_turn(turn)
-
-        # Send initial status message if platform is available
-        status_msg_id: str | None = None
-        if platform is not None and platform_user is not None:
-            try:
-                status_msg_id = await platform.send_message(platform_user, "Thinking...")
-            except Exception as e:
-                logger.warning("Failed to send status message: %s", e)
+        # Set session context for tools that need to know the current session
+        session_token = current_session_id.set(session.id)
 
         try:
-            # Start processing
-            await self._transition(turn, TurnState.BUILDING_CONTEXT)
+            turn = self._create_turn(session.id, user_message)
+            await self._persist_turn(turn)
+
+            # Send initial status message if platform is available
+            status_msg_id: str | None = None
+            if platform is not None and platform_user is not None:
+                try:
+                    status_msg_id = await platform.send_message(platform_user, "Thinking...")
+                except Exception as e:
+                    logger.warning("Failed to send status message: %s", e)
+
+            try:
+                # Start processing
+                await self._transition(turn, TurnState.BUILDING_CONTEXT)
 
             # Load prior history (does not include the current user message)
             history = await self._store.get_messages(session.id)
@@ -260,18 +266,22 @@ class Orchestrator:
                 # Max iterations reached
                 raise Exception(f"Max iterations ({self._max_iterations}) exceeded")
 
-        except IllegalTransitionError:
-            raise  # Re-raise state machine errors
-        except Exception as e:
-            await self._transition(turn, TurnState.FAILED)
-            turn.error = str(e)
-            await respond_callback(f"Error: {e}")
+            except IllegalTransitionError:
+                raise  # Re-raise state machine errors
+            except Exception as e:
+                await self._transition(turn, TurnState.FAILED)
+                turn.error = str(e)
+                await respond_callback(f"Error: {e}")
+
+            finally:
+                turn.completed_at = datetime.now()
+                await self._store.update_turn(turn)
+
+            return turn
 
         finally:
-            turn.completed_at = datetime.now()
-            await self._store.update_turn(turn)
-
-        return turn
+            # Clear session context when turn processing completes
+            current_session_id.reset(session_token)
 
     def _create_turn(self, session_id: str, user_message: Message) -> Turn:
         """Create a new Turn instance."""
