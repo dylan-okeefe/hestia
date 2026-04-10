@@ -888,6 +888,110 @@ def run_telegram(ctx: click.Context) -> None:
         click.echo("\nShutting down.")
 
 
+@cli.group()
+@click.pass_context
+def memory(ctx: click.Context) -> None:
+    """Manage long-term memory."""
+    pass
+
+
+@memory.command(name="search")
+@click.argument("query")
+@click.option("--limit", type=int, default=5)
+@click.pass_context
+def memory_search(ctx: click.Context, query: str, limit: int) -> None:
+    """Search memories."""
+    db: Database = ctx.obj["db"]
+    memory_store: MemoryStore = ctx.obj["memory_store"]
+
+    async def _search() -> None:
+        await db.connect()
+        await db.create_tables()
+        await memory_store.create_table()
+
+        results = await memory_store.search(query, limit=limit)
+        if not results:
+            click.echo("No memories found.")
+            return
+
+        for mem in results:
+            tags = f" [{mem.tags}]" if mem.tags else ""
+            date = mem.created_at.strftime("%Y-%m-%d %H:%M")
+            click.echo(f"{mem.id}  {date}{tags}  {mem.content}")
+
+    asyncio.run(_search())
+
+
+@memory.command(name="list")
+@click.option("--tag", default=None)
+@click.option("--limit", type=int, default=20)
+@click.pass_context
+def memory_list(ctx: click.Context, tag: str | None, limit: int) -> None:
+    """List recent memories."""
+    db: Database = ctx.obj["db"]
+    memory_store: MemoryStore = ctx.obj["memory_store"]
+
+    async def _list() -> None:
+        await db.connect()
+        await db.create_tables()
+        await memory_store.create_table()
+
+        results = await memory_store.list_memories(tag=tag, limit=limit)
+        if not results:
+            click.echo("No memories found.")
+            return
+
+        for mem in results:
+            tags = f" [{mem.tags}]" if mem.tags else ""
+            date = mem.created_at.strftime("%Y-%m-%d %H:%M")
+            click.echo(f"{mem.id}  {date}{tags}  {mem.content}")
+
+    asyncio.run(_list())
+
+
+@memory.command(name="add")
+@click.argument("content")
+@click.option("--tags", default="")
+@click.pass_context
+def memory_add(ctx: click.Context, content: str, tags: str) -> None:
+    """Add a memory manually."""
+    db: Database = ctx.obj["db"]
+    memory_store: MemoryStore = ctx.obj["memory_store"]
+
+    async def _add() -> None:
+        await db.connect()
+        await db.create_tables()
+        await memory_store.create_table()
+
+        tag_list = tags.split() if tags else []
+        mem = await memory_store.save(content=content, tags=tag_list)
+        click.echo(f"Saved: {mem.id}")
+
+    asyncio.run(_add())
+
+
+@memory.command(name="remove")
+@click.argument("memory_id")
+@click.pass_context
+def memory_remove(ctx: click.Context, memory_id: str) -> None:
+    """Delete a memory by ID."""
+    db: Database = ctx.obj["db"]
+    memory_store: MemoryStore = ctx.obj["memory_store"]
+
+    async def _remove() -> None:
+        await db.connect()
+        await db.create_tables()
+        await memory_store.create_table()
+
+        success = await memory_store.delete(memory_id)
+        if not success:
+            click.echo(f"Memory not found: {memory_id}", err=True)
+            sys.exit(1)
+        click.echo(f"Deleted: {memory_id}")
+
+    asyncio.run(_remove())
+
+
 def main() -> None:
     """Entry point for the CLI."""
     cli()
