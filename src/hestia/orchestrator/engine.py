@@ -1,5 +1,6 @@
 """Orchestrator engine for managing turn execution."""
 
+import logging
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import datetime
@@ -9,12 +10,15 @@ from hestia.context.builder import BuildResult, ContextBuilder
 from hestia.core.inference import InferenceClient
 from hestia.core.types import Message, Session, ToolCall
 from hestia.errors import EmptyResponseError, IllegalTransitionError
+from hestia.inference.slot_manager import SlotManager
 from hestia.orchestrator.transitions import assert_transition
 from hestia.orchestrator.types import Turn, TurnState, TurnTransition
 from hestia.persistence.sessions import SessionStore
 from hestia.policy.engine import PolicyEngine, RetryAction
 from hestia.tools.registry import ToolRegistry
 from hestia.tools.types import ToolCallResult
+
+logger = logging.getLogger(__name__)
 
 
 # Callback types
@@ -38,6 +42,7 @@ class Orchestrator:
         policy: PolicyEngine,
         confirm_callback: ConfirmCallback | None = None,
         max_iterations: int = 10,
+        slot_manager: SlotManager | None = None,
     ):
         """Initialize the orchestrator.
 
@@ -49,6 +54,8 @@ class Orchestrator:
             policy: Policy engine for decisions
             confirm_callback: Optional callback for tool confirmation
             max_iterations: Hard limit to prevent infinite tool loops
+            slot_manager: Optional SlotManager for KV-cache slot management.
+                When None, falls back to session.slot_id (legacy behavior).
         """
         self._inference = inference
         self._store = session_store
@@ -57,6 +64,7 @@ class Orchestrator:
         self._policy = policy
         self._confirm_callback = confirm_callback
         self._max_iterations = max_iterations
+        self._slot_manager = slot_manager
 
     async def process_turn(
         self,
@@ -99,6 +107,18 @@ class Orchestrator:
                 new_user_message=user_message,
             )
 
+            # Acquire slot for this turn (if SlotManager is configured)
+            slot_id_to_use: int | None
+            if self._slot_manager is not None:
+                assignment = await self._slot_manager.acquire(session)
+                slot_id_to_use = assignment.slot_id
+                # Refetch session in case slot_id/temperature changed
+                refreshed = await self._store.get_session(session.id)
+                if refreshed is not None:
+                    session = refreshed
+            else:
+                slot_id_to_use = session.slot_id
+
             # Main loop: model -> tools -> model -> ...
             while turn.iterations < self._max_iterations:
                 await self._transition(turn, TurnState.AWAITING_MODEL)
@@ -106,7 +126,7 @@ class Orchestrator:
                 chat_response = await self._inference.chat(
                     messages=build_result.messages,
                     tools=tools,
-                    slot_id=session.slot_id,
+                    slot_id=slot_id_to_use,
                     reasoning_budget=2048,
                 )
 
@@ -159,6 +179,16 @@ class Orchestrator:
                     await self._transition(turn, TurnState.DONE)
                     turn.final_response = content
                     await respond_callback(content)
+
+                    # Save slot checkpoint after successful turn (but don't fail turn if save fails)
+                    if self._slot_manager is not None:
+                        try:
+                            await self._slot_manager.save(session)
+                        except Exception as e:
+                            logger.warning(
+                                "Failed to save slot for session %s: %s", session.id, e
+                            )
+
                     break
 
                 else:

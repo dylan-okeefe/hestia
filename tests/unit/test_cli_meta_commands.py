@@ -106,20 +106,31 @@ async def test_meta_command_history_empty(store, sample_session):
 
 
 @pytest.mark.asyncio
-async def test_meta_command_reset_creates_new_session_same_user(store, sample_session):
-    """/reset should create a new session for the same user."""
+async def test_meta_command_reset_creates_new_session_same_user(store):
+    """/reset should create a new session for the same user and archive the old one."""
+    from hestia.core.types import SessionState
     from hestia.cli import _handle_meta_command
     
-    original_user = sample_session.platform_user
+    # First create a real session in the database
+    session1 = await store.get_or_create_session("cli", "testuser")
+    original_id = session1.id
+    assert session1.state == SessionState.ACTIVE
     
     should_exit, new_session = await _handle_meta_command(
-        "/reset", sample_session, store
+        "/reset", session1, store
     )
     
     assert should_exit is False
-    assert new_session.id != sample_session.id  # New session ID
-    assert new_session.platform == sample_session.platform  # Same platform
-    assert new_session.platform_user == original_user  # Same user!
+    assert new_session.id != original_id  # New session ID
+    assert new_session.platform == session1.platform  # Same platform
+    assert new_session.platform_user == session1.platform_user  # Same user!
+    
+    # Old session should be archived
+    fetched_old = await store.get_session(original_id)
+    assert fetched_old.state == SessionState.ARCHIVED
+    
+    # New session should be active
+    assert new_session.state == SessionState.ACTIVE
 
 
 @pytest.mark.asyncio
