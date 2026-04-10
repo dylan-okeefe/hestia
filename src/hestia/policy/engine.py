@@ -3,8 +3,12 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
+from typing import TYPE_CHECKING
 
 from hestia.core.types import Session
+
+if TYPE_CHECKING:
+    from hestia.tools.registry import ToolRegistry
 
 
 class RetryAction(Enum):
@@ -65,4 +69,17 @@ class PolicyEngine(ABC):
     @abstractmethod
     def tool_result_max_chars(self, tool_name: str) -> int:
         """Maximum characters to include for a tool result."""
+        ...
+
+    @abstractmethod
+    def filter_tools(
+        self,
+        session: Session,
+        tool_names: list[str],
+        registry: "ToolRegistry",
+    ) -> list[str]:
+        """Filter available tools based on session context.
+
+        Returns the subset of tool_names allowed for this session.
+        """
         ...

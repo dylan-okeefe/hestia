@@ -1,5 +1,7 @@
 """Default policy engine with conservative decisions."""
 
+from typing import TYPE_CHECKING
+
 from hestia.core.types import Session
 from hestia.errors import InferenceServerError, InferenceTimeoutError
 from hestia.policy.engine import (
@@ -7,6 +9,9 @@ from hestia.policy.engine import (
     RetryAction,
     RetryDecision,
 )
+
+if TYPE_CHECKING:
+    from hestia.tools.registry import ToolRegistry
 
 
 class DefaultPolicyEngine(PolicyEngine):
@@ -125,3 +130,44 @@ class DefaultPolicyEngine(PolicyEngine):
         Individual tools can override via registry metadata.
         """
         return 8000
+
+    def filter_tools(
+        self,
+        session: Session,
+        tool_names: list[str],
+        registry: "ToolRegistry",
+    ) -> list[str]:
+        """Filter available tools based on session context.
+
+        Subagents are denied shell_exec and write_local to prevent
+        uncontrolled modifications. Scheduler is denied shell_exec
+        for headless safety.
+
+        Args:
+            session: Current session
+            tool_names: List of tool names to filter
+            registry: Tool registry for looking up capabilities
+
+        Returns:
+            Filtered list of allowed tool names
+        """
+        from hestia.tools.capabilities import SHELL_EXEC, WRITE_LOCAL
+
+        if session.platform == "subagent":
+            # Subagents: block shell_exec and write_local
+            blocked = {SHELL_EXEC, WRITE_LOCAL}
+            return [
+                name for name in tool_names
+                if not (set(registry.describe(name).capabilities) & blocked)
+            ]
+
+        if session.platform == "scheduler":
+            # Scheduler: block shell_exec for headless safety
+            blocked = {SHELL_EXEC}
+            return [
+                name for name in tool_names
+                if not (set(registry.describe(name).capabilities) & blocked)
+            ]
+
+        # CLI and other platforms: allow all tools
+        return tool_names

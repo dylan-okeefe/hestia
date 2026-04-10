@@ -73,6 +73,9 @@ class FakePolicyEngine:
     def tool_result_max_chars(self, tool_name):
         return 4000
 
+    def filter_tools(self, session, tool_names, registry):
+        return tool_names
+
 
 @pytest.fixture
 async def store(tmp_path):

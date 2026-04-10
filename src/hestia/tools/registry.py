@@ -201,9 +201,18 @@ class ToolRegistry:
 
         return [list_tools_schema, call_tool_schema]
 
-    async def meta_list_tools(self, tag: str | None = None) -> str:
-        """Handler for the list_tools meta-tool."""
+    async def meta_list_tools(
+        self, tag: str | None = None, allowed_names: list[str] | None = None
+    ) -> str:
+        """Handler for the list_tools meta-tool.
+
+        Args:
+            tag: Optional tag filter
+            allowed_names: Optional list of allowed tool names (for session filtering)
+        """
         names = self.list_names(tag=tag)
+        if allowed_names is not None:
+            names = [n for n in names if n in allowed_names]
         lines = []
         for n in names:
             m = self._tools[n]

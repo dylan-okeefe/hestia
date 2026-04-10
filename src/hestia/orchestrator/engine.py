@@ -145,6 +145,10 @@ class Orchestrator:
                 # Start processing
                 await self._transition(turn, TurnState.BUILDING_CONTEXT)
 
+                # Compute allowed tools based on session context
+                all_tool_names = self._tools.list_names()
+                allowed_tools = self._policy.filter_tools(session, all_tool_names, self._tools)
+
                 # Load prior history (does not include the current user message)
                 history = await self._store.get_messages(session.id)
 
@@ -222,7 +226,7 @@ class Orchestrator:
                             await self._transition(turn, TurnState.EXECUTING_TOOLS)
                         else:
                             tool_results = await self._execute_tool_calls(
-                                session.id, chat_response.tool_calls
+                                session.id, chat_response.tool_calls, allowed_tools
                             )
 
                         # Add tool results to history
@@ -337,13 +341,13 @@ class Orchestrator:
         await self._store.update_turn(turn)
 
     async def _execute_tool_calls(
-        self, session_id: str, tool_calls: list[ToolCall]
+        self, session_id: str, tool_calls: list[ToolCall], allowed_tools: list[str] | None = None
     ) -> list[Message]:
         """Execute tool calls and return result messages."""
         result_messages = []
 
         for tc in tool_calls:
-            result = await self._dispatch_tool_call(tc)
+            result = await self._dispatch_tool_call(tc, allowed_tools)
 
             msg = Message(
                 role="tool",
@@ -389,12 +393,29 @@ class Orchestrator:
             )
         return messages
 
-    async def _dispatch_tool_call(self, tc: ToolCall) -> ToolCallResult:
-        """Dispatch a single tool call, handling meta-tools and direct tool calls."""
+    async def _dispatch_tool_call(
+        self, tc: ToolCall, allowed_tools: list[str] | None = None
+    ) -> ToolCallResult:
+        """Dispatch a single tool call, handling meta-tools and direct tool calls.
+
+        Args:
+            tc: The tool call to dispatch
+            allowed_tools: Optional list of allowed tool names for filtering
+        """
+        # Check if tool is allowed (for call_tool, we check the inner tool later)
+        if allowed_tools is not None and tc.name != "call_tool":
+            if tc.name not in allowed_tools:
+                return ToolCallResult(
+                    status="error",
+                    content=f"Tool '{tc.name}' is not available in this session context.",
+                    artifact_handle=None,
+                    truncated=False,
+                )
+
         # Handle meta-tools
         if tc.name == "list_tools":
             tag = tc.arguments.get("tag") if tc.arguments else None
-            content = await self._tools.meta_list_tools(tag)
+            content = await self._tools.meta_list_tools(tag, allowed_names=allowed_tools)
             return ToolCallResult(
                 status="ok",
                 content=content,
@@ -409,6 +430,15 @@ class Orchestrator:
                 return ToolCallResult(
                     status="error",
                     content="Missing 'name' argument for call_tool",
+                    artifact_handle=None,
+                    truncated=False,
+                )
+
+            # Check if inner tool is allowed
+            if allowed_tools is not None and name not in allowed_tools:
+                return ToolCallResult(
+                    status="error",
+                    content=f"Tool '{name}' is not available in this session context.",
                     artifact_handle=None,
                     truncated=False,
                 )
