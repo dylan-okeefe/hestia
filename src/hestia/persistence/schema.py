@@ -60,3 +60,21 @@ turn_transitions = sa.Table(
     sa.Column("reason", sa.String, nullable=True),
     sa.PrimaryKeyConstraint("turn_id", "idx"),
 )
+
+scheduled_tasks = sa.Table(
+    "scheduled_tasks",
+    metadata,
+    sa.Column("id", sa.String, primary_key=True),
+    sa.Column("session_id", sa.String, sa.ForeignKey("sessions.id"), nullable=False),
+    sa.Column("prompt", sa.Text, nullable=False),
+    sa.Column("description", sa.String, nullable=True),
+    sa.Column("cron_expression", sa.String, nullable=True),
+    sa.Column("fire_at", sa.DateTime, nullable=True),
+    sa.Column("enabled", sa.Boolean, nullable=False, default=True),
+    sa.Column("created_at", sa.DateTime, nullable=False),
+    sa.Column("last_run_at", sa.DateTime, nullable=True),
+    sa.Column("next_run_at", sa.DateTime, nullable=True),
+    sa.Column("last_error", sa.Text, nullable=True),
+    sa.Index("idx_scheduled_tasks_session", "session_id"),
+    sa.Index("idx_scheduled_tasks_due", "next_run_at", "enabled"),
+)

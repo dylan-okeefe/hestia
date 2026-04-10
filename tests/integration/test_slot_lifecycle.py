@@ -1,14 +1,12 @@
 """Integration test for full slot lifecycle through Orchestrator."""
 
-from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 import pytest
 
 from hestia.artifacts.store import ArtifactStore
 from hestia.context.builder import ContextBuilder
-from hestia.core.types import ChatResponse, Message, Session, SessionState, SessionTemperature, ToolCall
+from hestia.core.types import ChatResponse, Message, SessionTemperature, ToolCall
 from hestia.inference import SlotManager
 from hestia.orchestrator import Orchestrator, TurnState
 from hestia.persistence.db import Database
@@ -182,7 +180,7 @@ async def test_full_slot_lifecycle_through_orchestrator(
     # === Turn 1: Session A (cold start) ===
     # Temporarily set the inference client
     shared_slot_manager._inference = inference_a
-    
+
     orchestrator_a = Orchestrator(
         inference=inference_a,
         session_store=store,
@@ -220,7 +218,7 @@ async def test_full_slot_lifecycle_through_orchestrator(
     # === Turn 2: Session B (evicts A) ===
     # Update the SlotManager's inference client
     shared_slot_manager._inference = inference_b
-    
+
     orchestrator_b = Orchestrator(
         inference=inference_b,
         session_store=store,
@@ -264,7 +262,7 @@ async def test_full_slot_lifecycle_through_orchestrator(
     # === Turn 3: Session A again (restores from disk, evicts B) ===
     # Update the SlotManager's inference client
     shared_slot_manager._inference = inference_a2
-    
+
     orchestrator_a2 = Orchestrator(
         inference=inference_a2,
         session_store=store,

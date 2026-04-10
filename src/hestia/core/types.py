@@ -70,6 +70,23 @@ class Session:
     temperature: SessionTemperature
 
 
+@dataclass
+class ScheduledTask:
+    """A scheduled task for autonomous execution."""
+
+    id: str
+    session_id: str
+    prompt: str
+    description: str | None
+    cron_expression: str | None  # Exactly one of cron_expression or fire_at must be set
+    fire_at: datetime | None
+    enabled: bool
+    created_at: datetime
+    last_run_at: datetime | None
+    next_run_at: datetime | None
+    last_error: str | None
+
+
 class TurnState(Enum):
     """Turn processing states."""
 

@@ -1,12 +1,10 @@
 """Unit tests for SlotManager."""
 
-from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 import pytest
 
-from hestia.core.types import ChatResponse, Session, SessionState, SessionTemperature
+from hestia.core.types import ChatResponse, SessionTemperature
 from hestia.inference import SlotManager
 from hestia.persistence.db import Database
 from hestia.persistence.sessions import SessionStore
@@ -370,3 +368,39 @@ async def test_evict_by_id(store, slot_dir):
     call_names = [c[0] for c in inference.calls]
     assert "slot_save" in call_names
     assert "slot_erase" in call_names
+
+
+@pytest.mark.asyncio
+async def test_acquire_warm_rolls_back_assignment_on_restore_failure(store, slot_dir):
+    """If slot_restore raises during WARM acquire, the assignment map rolls back."""
+
+    class FailingRestoreInference(FakeInferenceClient):
+        async def slot_restore(self, slot_id: int, filename: str) -> None:
+            raise RuntimeError("Corrupt save file")
+
+    inference = FailingRestoreInference()
+    manager = SlotManager(
+        inference=inference,
+        session_store=store,
+        slot_dir=slot_dir,
+        pool_size=4,
+    )
+
+    # Set up a WARM session
+    session = await store.get_or_create_session("cli", "user1")
+    await store.assign_slot(session.id, slot_id=0)
+    await store.release_slot(
+        session.id,
+        demote_to=SessionTemperature.WARM,
+        saved_path="/slots/test.bin",
+    )
+    session = await store.get_session(session.id)
+
+    # acquire should raise and leave _assignments empty
+    with pytest.raises(RuntimeError, match="Corrupt save file"):
+        await manager.acquire(session)
+
+    assert manager._assignments == {}
+    # SessionStore should still show WARM
+    refetched = await store.get_session(session.id)
+    assert refetched.temperature == SessionTemperature.WARM

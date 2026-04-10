@@ -423,8 +423,8 @@ class SessionStore:
 
     async def get_turn(self, turn_id: str) -> "Turn | None":
         """Get a turn by ID (without transitions)."""
-        from hestia.persistence.schema import turns
         from hestia.orchestrator.types import Turn, TurnState
+        from hestia.persistence.schema import turns
 
         query = sa.select(turns).where(turns.c.id == turn_id)
 
@@ -451,8 +451,8 @@ class SessionStore:
         self, session_id: str, limit: int = 50
     ) -> list["Turn"]:
         """List turns for a session, newest first."""
-        from hestia.persistence.schema import turns
         from hestia.orchestrator.types import Turn, TurnState
+        from hestia.persistence.schema import turns
 
         query = (
             sa.select(turns)
