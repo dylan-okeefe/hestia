@@ -4,362 +4,441 @@
 **Design & Build Plan**
 
 *Revised April 2026*
-*Reflects actual build through Phase 2b (v0.1.0 + develop)*
+*Reflects actual build through Phase 6 (311 tests, 20 ADRs, develop branch)*
 
-Target: RTX 3060 12GB | Qwen 3.5 9B UD Q4_K_XL | llama.cpp
+Target: RTX 3060 12 GB | Qwen 3.5 9B UD Q4_K_XL | llama.cpp
 Dylan O'Keefe | dylanokeefedev@gmail.com
 
 ---
 
-## 1. Executive Summary
+## 1. Executive summary
 
-Hestia is a local-first, constrained-hardware agent framework for personal assistants running on a single consumer GPU. It is built specifically for llama.cpp, designed for one user, and opinionated about doing the right thing for small hardware instead of trying to be everything to everyone.
+Hestia is a local-first, constrained-hardware agent framework for personal
+assistants running on a single consumer GPU. It is built specifically for
+llama.cpp, designed for one user, and opinionated about doing the right thing
+for small hardware instead of trying to be everything to everyone.
 
-This document is the revised design plan, updated to reflect what was actually built through Phase 2b (196 tests, 14 ADRs, SlotManager and Scheduler shipped). It notes where the implementation diverged from the original plan, why those changes were beneficial, and where decisions may need revisiting.
+This document is the design plan, updated to reflect what was actually built
+through Phase 6. It notes where the implementation diverged from the original
+plan, why those changes were beneficial, and what remains.
 
-### 1.1 What Has Shipped
+### 1.1 What has shipped
 
-| Component | Status | Notes |
-|-----------|--------|-------|
-| InferenceClient | Shipped | Phase 1a. Tokenize, chat, slot ops, calibration. |
-| SessionStore | Shipped | Phase 1a. SQLAlchemy Core async, archive support. |
-| ContextBuilder | Shipped | Phase 1b. Token budgeting, pair integrity, protected regions. |
-| ToolRegistry | Shipped | Phase 1b. Meta-tool pattern, @tool decorator, metadata. |
-| ArtifactStore | Shipped | Phase 1b. Basic put/get, inline storage. |
-| PolicyEngine | Partial | Stub with retry_after_error only. Other hooks not yet needed. |
-| Orchestrator | Shipped | Phase 1c. Full 10-state machine, confirmation enforcement. |
-| CLI Adapter | Shipped | Phase 1c. Chat, ask, init, health, meta-commands. |
-| SlotManager | Shipped | Phase 2a. LRU eviction, HOT/WARM/COLD, leak fix. |
-| Scheduler | Shipped | Phase 2b. Cron + one-shot, asyncio loop, CLI commands. |
-| Telegram Adapter | Not started | Original Phase 2. Deferred to Phase 3. |
-| Subagent Delegation | Not started | States exist in enum. Logic not wired. |
-| Long-term Memory | Not started | FTS5 schema not created yet. |
-| Matrix Adapter | Not started | Dev/test adapter. Deferred to Phase 4. |
+| Component | Phase | Status | Notes |
+|-----------|-------|--------|-------|
+| InferenceClient | 1a | Shipped | Tokenize, chat, slot ops, calibration |
+| SessionStore | 1a | Shipped | SQLAlchemy Core async, archive, slot tracking |
+| ContextBuilder | 1b | Shipped | Token budgeting, pair integrity, protected regions |
+| ToolRegistry | 1b | Shipped | Meta-tool pattern, `@tool` decorator |
+| ArtifactStore | 1b | Shipped | File-backed put/get |
+| PolicyEngine | 1b + 6 | Shipped | `retry_after_error`, `filter_tools`, `should_delegate` |
+| Orchestrator | 1c | Shipped | Full 10-state machine, confirmation enforcement |
+| CLI Adapter | 1c | Shipped | chat, ask, init, health, meta-commands |
+| SlotManager | 2a | Shipped | LRU eviction, HOT/WARM/COLD, save/restore |
+| Scheduler | 2b | Shipped | Cron + one-shot, asyncio loop, CLI commands |
+| HestiaConfig | 2c | Shipped | Typed Python config with CLI overrides |
+| Platform ABC | 2c | Shipped | Base class, CLI adapter refactored to implement it |
+| Alembic migrations | 2c | Shipped | Initial + per-phase migrations |
+| Telegram Adapter | 3 | Shipped | HTTP/1.1, rate-limited edits, user allowlist, crash recovery |
+| Long-term Memory | 4 | Shipped | FTS5 MemoryStore, `search_memory`/`save_memory`/`list_memories` tools |
+| Subagent Delegation | 5 | Shipped | `delegate_task`, SubagentResult envelope, AWAITING_SUBAGENT state |
+| Capability Labels | 6 | Shipped | Tool capabilities, `filter_tools` on PolicyEngine |
+| Path Sandboxing | 6 | Shipped | `allowed_roots` enforcement on read_file/write_file |
+| Failure Tracking | 6 | Shipped | FailureClass enum, FailureStore, CLI `failures` command |
+| CLI Observability | 6 | Shipped | `version`, `status`, `failures list/summary` |
+| Matrix Adapter | 7 | In progress | Design complete, implementation next |
 
 ---
 
-## 2. Design Principles
+## 2. Design principles
 
-These remain unchanged from the original design. Every one of them came from a concrete bug or performance problem in the Hermes predecessor.
+Every one of these came from a concrete bug or performance problem in the
+Hermes predecessor.
 
 ### 2.1 Tokenize, don't estimate
 
-Use llama-server's /tokenize endpoint for context budgeting. The implementation uses a two-number calibration (body_factor + meta_tool_overhead_tokens) measured empirically and recorded in docs/calibration.json (ADR-011).
+Use llama-server's `/tokenize` endpoint for context budgeting. Two-number
+calibration (body_factor + meta_tool_overhead_tokens) measured empirically.
 
 ### 2.2 Work with the chat template, not around it
 
-llama.cpp's --jinja mode plus reasoning_format: deepseek is the clean path for Qwen-class models. Strip historical reasoning from the API payload.
+llama.cpp's `--jinja` mode plus `reasoning_format: deepseek` is the clean path
+for Qwen-class models. Strip historical reasoning from the API payload.
 
 ### 2.3 Fail loud
 
-Every error path sends something to the user. The EmptyResponseError guard (Phase 1c) is the direct embodiment of this: if the model returns empty content with finish_reason stop or length, the orchestrator raises rather than silently continuing.
+Every error path sends something to the user. The `EmptyResponseError` guard
+catches empty model responses. Failure bundles persist for postmortem.
 
 ### 2.4 Truncation over summarization
 
-Default compression is rule-based truncation. ContextBuilder drops oldest non-protected messages before the request leaves the process.
+Default compression is rule-based truncation. ContextBuilder drops oldest
+non-protected messages before the request leaves the process.
 
 ### 2.5 Budget is known at build time
 
-The context builder computes the exact token count before calling the model. If the budget is exceeded, compression happens before the request, not after a failed send.
+The context builder computes the exact token count before calling the model.
+Compression happens before the request, not after a failed send.
 
 ### 2.6 Tools are Python functions
 
-A tool is a function with a docstring, type hints, and an optional metadata block. The registry auto-generates the JSON schema. No YAML, no DSL.
+A tool is a function with type hints and an optional metadata block. The
+registry auto-generates the JSON schema. No YAML, no DSL.
 
 ### 2.7 Slots are leased, not owned
 
-Sessions don't own slots across idle periods. SlotManager (Phase 2a) leases slots on acquire() and checkpoints on save(). Eviction is LRU when the pool is full.
+Sessions don't own slots across idle periods. SlotManager leases slots on
+`acquire()` and checkpoints on `save()`. Eviction is LRU when the pool is full.
 
 ### 2.8 Progress is visible
 
-Not yet implemented. Requires platform adapters with edit_message support (Telegram, Matrix). Deferred to Phase 3.
+Telegram adapter implements `edit_message` for live status updates during turns.
+Matrix adapter will follow the same pattern.
 
 ### 2.9 Config is code
 
-*Needs revisiting. See Section 6, Design Debt.*
-
-The original plan called for a typed Python config file. What shipped is Click CLI options and constructor arguments. This works for CLI-only usage but will need consolidation into a proper Config dataclass before Telegram lands.
+`HestiaConfig` is a typed Python dataclass loaded from a Python file via
+`importlib`. Sub-configs for inference, slots, scheduler, storage, and Telegram.
+CLI options override config file values. IDE autocompletion works.
 
 ### 2.10 State is durable
 
-Sessions, turns, transitions, messages, scheduled tasks are all in SQLite. Nothing in-memory-only except the SlotManager's _assignments cache, which reconciles against SessionStore on mismatch.
+Sessions, turns, transitions, messages, scheduled tasks, failure bundles, and
+memories are all in SQLite. Nothing in-memory-only except the SlotManager's
+`_assignments` cache, which reconciles against SessionStore on mismatch.
 
 ### 2.11 Large outputs live in durable storage; the model sees handles
 
-ArtifactStore exists and works. The artifact tools (read_artifact, grep_artifact) are registered but not fully exercised in integration tests yet.
+ArtifactStore stores large tool outputs. The model receives a capped inline
+version with an artifact reference.
 
 ### 2.12 Policy is separated from execution
 
-*Partially implemented. See Section 6, Design Debt.*
-
-The PolicyEngine interface exists and the orchestrator delegates retry decisions to it. But delegation, compression, eviction, tool exposure, and reasoning budget policies are either hardcoded or not yet needed. The separation is architecturally clean; the methods just aren't populated yet.
+PolicyEngine interface with `retry_after_error`, `filter_tools`, and
+`should_delegate`. The orchestrator delegates decisions without hardcoding.
+Capability-based tool filtering restricts subagent and scheduler sessions.
 
 ---
 
 ## 3. Architecture
 
-Three rings: platforms on the outside, runtime in the middle, persistence on the inside. Every decision that isn't pure execution lives in the policy engine.
+Three rings: platforms on the outside, runtime in the middle, persistence on
+the inside. Every decision that isn't pure execution lives in the policy engine.
 
-### 3.1 Current Directory Layout
-
-The original design put most subsystems under src/hestia/core/. The actual build spread them into top-level packages, which is better for navigation and import clarity:
+### 3.1 Directory layout
 
 ```
 src/hestia/
-  cli.py                        # CLI entry point (Click)
-  errors.py                     # Shared exception types
-  core/                         # Core types + inference client
-    inference.py                # llama.cpp HTTP wrapper
+  cli.py                        # Click CLI entry point
+  config.py                     # HestiaConfig + sub-configs
+  errors.py                     # Exception types + FailureClass
+  logging_config.py             # Centralized logging setup
+  core/
+    inference.py                # llama.cpp HTTP client
     types.py                    # Message, Session, ChatResponse, etc.
-  context/                      # Context building
+  context/
     builder.py                  # Token budgeting, pair integrity
-  orchestrator/                 # Turn state machine
-    engine.py                   # Orchestrator.process_turn()
+  orchestrator/
+    engine.py                   # 10-state turn machine
     transitions.py              # ALLOWED_TRANSITIONS table
     types.py                    # Turn, TurnState, TurnTransition
-  inference/                    # Slot management (policy layer)
-    slot_manager.py             # SlotManager with LRU eviction
-  scheduler/                    # Background task loop
-    engine.py                   # Scheduler with asyncio Event
-  tools/                        # Tool system
+  inference/
+    slot_manager.py             # KV-cache slot lifecycle
+  scheduler/
+    engine.py                   # Cron + one-shot loop
+  tools/
     registry.py                 # ToolRegistry + meta-tool dispatch
     metadata.py                 # @tool decorator, ToolMetadata
+    capabilities.py             # Capability label constants
     types.py                    # ToolCallResult, ToolSchema
-    builtin/                    # Built-in tools
-      current_time.py, read_file.py, terminal.py, read_artifact.py
-  artifacts/                    # Artifact storage
-    store.py                    # ArtifactStore (put/get)
-  persistence/                  # Database layer
+    builtin/
+      current_time.py, read_file.py, write_file.py, list_dir.py,
+      http_get.py, terminal.py, read_artifact.py, path_utils.py
+  memory/
+    store.py                    # MemoryStore (FTS5)
+  artifacts/
+    store.py                    # File-backed artifact storage
+  persistence/
     db.py                       # Database connection wrapper
     schema.py                   # SQLAlchemy table definitions
-    sessions.py                 # SessionStore (CRUD + slot tracking)
-    scheduler.py                # SchedulerStore (task CRUD + cron)
-  policy/                       # Policy engine
+    sessions.py                 # SessionStore (CRUD + slots + stats)
+    scheduler.py                # SchedulerStore (tasks + cron + stats)
+    failure_store.py            # FailureStore (bundles)
+  platforms/
+    base.py                     # Platform ABC
+    cli_adapter.py              # CLI adapter
+    telegram_adapter.py         # Telegram adapter
+  policy/
     engine.py                   # PolicyEngine ABC
     default.py                  # DefaultPolicyEngine
 ```
 
-### 3.2 Component Summary
+### 3.2 Component details
 
-Each subsystem is described below with its current state and any drift from the original design.
+**InferenceClient.** Thin HTTP wrapper for llama-server: tokenize, chat,
+slot_save/slot_restore/slot_erase, health. Two-number calibration
+(body_factor + meta_tool_overhead_tokens) replaced the original single-ratio
+approach (ADR-009 superseded by ADR-011).
 
-**InferenceClient.** Thin wrapper around llama-server's HTTP API. Shipped in Phase 1a exactly as designed: tokenize, chat, slot_save/slot_restore/slot_erase, health, count_request. The two-number calibration (body_factor + meta_tool_overhead_tokens) replaced the original single-ratio approach after ADR-009 was superseded by ADR-011.
+**ContextBuilder.** Builds the API request with real token counts. Protected
+top/bottom regions, oldest-first middle message dropping, pair integrity for
+user/assistant pairs. Takes a Session object plus history list rather than a
+session ID, avoiding a redundant database read.
 
-**ContextBuilder.** Shipped in Phase 1b. The algorithm matches the design (protected top/bottom regions, drop oldest middle messages, real token counts). One addition: the builder takes a new_user_message parameter so the orchestrator can include the current message in the count without double-persisting it. The interface signature is slightly different from the original (takes a Session object plus history list rather than just a session ID), which is cleaner because it avoids a redundant database read inside the builder.
+**SessionStore.** Sessions with HOT/WARM/COLD temperature states,
+archive/create-and-archive, slot assignment/release, disk-path tracking,
+and query methods for status reporting (`count_sessions_by_state`,
+`turn_stats_since`).
 
-**SessionStore.** Shipped in Phase 1a, extended in Phase 2a. Beyond the original design: archive_session() for /reset, create_session(archive_previous=...) for atomic archive-and-create, assign_slot/release_slot with disk-path tracking, update_saved_path for slot checkpoints. The temperature field (HOT/WARM/COLD) is on the Session dataclass as designed; the state field added an ARCHIVED value beyond the original active/idle/archived.
+**ToolRegistry + Meta-Tool Pattern.** The meta-tool pattern (`call_tool` +
+`list_tools`) saves ~2,900 tokens per request for 20 tools by not inlining
+every tool schema into the API call. Confirmation enforcement works on both
+the meta-tool and direct dispatch paths.
 
-**ToolRegistry + Meta-Tool Pattern.** Shipped in Phase 1b as designed. The meta-tool pattern (call_tool + list_tools) saves roughly 2900 tokens per request for 20 tools. One implementation detail that changed: max_result_chars and auto_artifact_above were collapsed into a single max_inline_chars parameter (ADR in code, not a numbered ADR). The confirmation enforcement for the call_tool meta-tool path was a Phase 1c bug fix (tools with requires_confirmation=True were bypassed when called via call_tool).
+**ArtifactStore.** File-backed put/get. Large tool outputs go to disk; the
+model sees a capped inline version with an artifact handle.
 
-**ArtifactStore.** Shipped in Phase 1b. Basic put/get with file-backed storage. The original design described inline database storage for small artifacts and a TTL/cleanup system. What shipped is simpler: all artifacts go to disk, no TTL yet. The read_artifact tool exists. grep_artifact and list_artifacts are not built yet.
+**PolicyEngine.** `retry_after_error()` for retry decisions,
+`filter_tools()` for capability-based tool filtering by session type,
+`should_delegate()` for delegation heuristics. Subagent sessions lose
+`shell_exec` and `write_local`; scheduler turns lose `shell_exec`.
 
-**PolicyEngine.** The interface exists (Phase 1b) but only retry_after_error is populated in DefaultPolicyEngine. The original design described seven policy methods (should_delegate, compression_action, which_to_evict, slot_demotion, visible_tools, reasoning_budget, on_empty_content). These will be filled in as the features they govern are built. The architectural decision to separate policy from execution has already paid off: the orchestrator delegates cleanly to the policy engine without hardcoding retry behavior.
+**Orchestrator.** 10-state turn machine with inline state handling in a
+while-loop inside `process_turn()`. Confirmation and response delivery via
+injected callbacks. Tool chain tracking feeds FailureStore on turn failure.
 
-**Orchestrator.** Shipped in Phase 1c. The state machine has all 10 states from the original design. The main divergence: the original design used a handler-per-state dispatch pattern (STATE_HANDLERS dict), while the implementation uses a single process_turn method with a while-loop and inline state handling. At this scale (one orchestrator, 10 states), the inline approach is more readable. If multiple orchestrator variants emerge, the handler pattern would be worth revisiting.
+**SlotManager.** LRU eviction over a fixed slot pool. Sessions stay HOT after a
+turn (no post-turn demotion) because the single-user case almost always reuses
+the same session. Disk save/restore for WARM sessions (~200ms on NVMe).
 
-The Turn dataclass is simpler than designed: no status_msg_id (no platform adapters with edit_message yet), no built_messages cache (context is rebuilt each iteration), no reasoning_budget field (passed as a constant). This is appropriate for Phase 2; the missing fields will be added when Telegram lands.
+**Scheduler.** Asyncio loop with configurable tick interval. Tasks are prompts
+(not Python functions) fired through the same Orchestrator as interactive turns.
+Cron expressions via croniter; one-shot tasks auto-disable after firing.
+Response delivery via injected callback (stdout for CLI daemon, platform adapter
+for Telegram/Matrix).
 
-**SlotManager.** Shipped in Phase 2a. Matches the original design's intent (leased slots, HOT/WARM/COLD, LRU eviction) but differs in lifecycle: the original design called for an explicit release() at turn end where the policy engine decides hot/warm/cold demotion. What actually got built keeps sessions HOT after a turn and only demotes on eviction. This is better for the single-user case because the most recently used session is almost always the one that will talk next. The release-and-demote pattern from the design would add unnecessary slot_save/slot_restore churn.
+**MemoryStore.** SQLite FTS5 virtual table with BM25 ranking. No embeddings,
+no external services. Factory-pattern tools (`make_search_memory_tool`, etc.)
+bound to a store instance. Session ID threading via `contextvars` for memory
+attribution.
 
-The original design also included a watchdog (max_hold_seconds) to force-release slots held too long. This hasn't been needed because eviction handles the contention case. Worth adding later if stuck tool chains become a problem.
+**Telegram Adapter.** HTTP/1.1 forced via httpx. Rate-limited `edit_message`
+(max 1 per 1.5s). User allowlist. Crash recovery scans for stale turns on
+startup. Scheduler delivery routes to originating platform/user.
 
-**Scheduler.** Shipped in Phase 2b. The original design specified APScheduler with decorator-based Python function tasks. What got built is much better for the agent use case: tasks are prompts (strings processed by Orchestrator.process_turn), not Python functions. This means users create scheduled tasks dynamically from the CLI without writing code. The dependency changed from apscheduler to croniter (much lighter). The asyncio-loop-with-Event pattern is simpler than APScheduler's job store machinery.
+**Subagent Delegation.** `delegate_task` tool spawns a Turn in a new session
+with its own slot. SubagentResult envelope caps parent context growth at ~300
+tokens regardless of subagent work volume. `AWAITING_SUBAGENT` state in the
+turn machine. Timeout via `asyncio.wait_for()`.
 
-Missing from the design that didn't ship: reactive notifications (only notify if result changed), task decorator pattern, scheduled tasks as Python functions. The prompt-based approach is the right call for an LLM agent framework; reactive mode can be layered on top later.
+**Failure Tracking.** `FailureClass` enum with `classify_error()` mapping from
+exception types. `FailureStore` persists bundles with session, turn, class,
+severity, message, and tool chain JSON. CLI `failures list` and
+`failures summary` for operational visibility.
 
 ---
 
-## 4. Intentional Divergences from Original Design
-
-These are deliberate changes made during implementation that improved the design.
+## 4. Intentional divergences from original design
 
 ### 4.1 Phasing
 
-The original roadmap had five phases over three weeks. The actual build restructured into tighter cycles:
+The original five-phase roadmap was restructured into tighter cycles. Each
+cycle is one focused subsystem with full tests, ADR, and handoff report,
+reviewed before the next cycle starts.
 
-| Phase | Original Plan | What Actually Happened |
+| Phase | Original plan | What actually happened |
 |-------|--------------|----------------------|
-| 1a | Part of Phase 1 (Days 1-3) | Inference + Persistence + Calibration |
-| 1b | Part of Phase 1 (Days 1-3) | Tools + Context + Artifacts |
-| 1c | Part of Phase 1 (Days 1-3) | Orchestrator + CLI + State Machine |
-| 2a | Phase 2: Telegram + SlotManager | SlotManager only (no Telegram) |
-| 2b | Phase 4: Scheduler + Memory | Scheduler only (no Memory) |
+| 1a–1c | Phase 1 (Days 1–3) | Split into three sub-phases: inference+persistence, tools+context, orchestrator+CLI |
+| 2a | Phase 2: Telegram + SlotManager | SlotManager only |
+| 2b | Phase 4: Scheduler + Memory | Scheduler only |
+| 2c | — | Config consolidation + Platform ABC + Alembic + cleanup |
+| 3 | Phase 2: Telegram | Telegram adapter + crash recovery |
+| 4 | Phase 4: Memory | FTS5 MemoryStore + memory tools |
+| 5 | Phase 3: Subagent | Delegation + SubagentResult + policy |
+| 6 | Phase 5: Polish | Capability labels + path sandbox + failure tracking + CLI obs |
+| 7 | — | Matrix adapter (in progress) |
 
-The key change: each cycle is one focused subsystem with full tests, ADR, and handoff report, reviewed before the next cycle starts. This is slower per-feature but catches bugs much earlier. The Phase 1c confirmation bypass bug (tools with requires_confirmation=True were silently allowed through the meta-tool path) was caught in review and fixed before it could become a production issue.
+### 4.2 Scheduler: prompts instead of Python functions
 
-### 4.2 Scheduler: Prompts Instead of Python Functions
+The original design had scheduled tasks as decorated Python functions. The
+implementation uses prompt strings processed by the orchestrator. Users create
+scheduled tasks dynamically from the CLI without writing code:
+`hestia schedule add --cron "0 9 * * 1-5" "Summarize my Matrix messages"`.
 
-The original design had scheduled tasks as decorated Python functions. The implementation uses prompt strings processed by the orchestrator. This is the right choice for an LLM agent framework: the whole point is that the agent processes natural language, so scheduled tasks should be natural language too. A user can type `hestia schedule add --cron "0 9 * * 1-5" "Summarize my unread Matrix messages"` without writing any code.
+### 4.3 SlotManager: no post-turn release
 
-### 4.3 SlotManager: No Post-Turn Release
+The original design had the policy engine decide HOT/WARM/COLD demotion after
+every turn. The implementation keeps sessions HOT and only demotes on eviction.
+For a single-user system, the most recent session is almost always next. Forcing
+save+restore on every turn would add ~400ms for no benefit.
 
-The original design had the policy engine decide hot/warm/cold demotion after every turn via release(). The implementation keeps sessions HOT and only demotes on eviction. For a single-user system with 4 slots, the most recent session is almost always the one that will be used next. Forcing a save-to-disk and restore-from-disk cycle on every turn would add 400ms of latency for no benefit. Eviction handles the rare case where all 4 slots are needed by different sessions.
+### 4.4 Flat packages instead of core/
 
-### 4.4 Directory Layout: Flat Packages Instead of core/
+The original design put most subsystems under `src/hestia/core/`. The actual
+build created top-level packages: `orchestrator/`, `inference/`, `scheduler/`,
+etc. Every import starts with `hestia.<subsystem>`, which is clearer.
 
-The original design put most subsystems under src/hestia/core/. The actual build created top-level packages: orchestrator/, inference/, scheduler/, context/, policy/, persistence/. This is better for navigation (every import starts with hestia.<subsystem>) and avoids a god-module core/ that grows without bound.
+### 4.5 croniter instead of APScheduler
 
-### 4.5 Dependencies: croniter Instead of APScheduler
+APScheduler is a full job scheduling framework with its own execution model.
+Hestia's scheduler is a simple asyncio loop querying the database. croniter
+(a single-purpose cron parser) is all it needs.
 
-APScheduler is a full job scheduling framework with its own execution model, job stores, and executors. Hestia's scheduler is a simple asyncio loop that queries the database for due tasks. croniter (a single-purpose cron expression parser) is all it needs. The runtime deps are now: httpx, sqlalchemy, aiosqlite, asyncpg, click, croniter, pydantic, python-dateutil, alembic. No APScheduler, no langchain, no transformers, no torch.
+### 4.6 Inline state handling instead of handler dispatch
 
-### 4.6 Orchestrator: Inline State Handling Instead of Handler Dispatch
-
-The original design used STATE_HANDLERS[turn.state] dispatch. The implementation handles states inline in a while-loop inside process_turn(). At this scale, inline is more readable and debuggable. The handler pattern would be worth revisiting if multiple orchestrator variants emerge (e.g., a streaming orchestrator, a batch orchestrator).
+The original design used `STATE_HANDLERS[turn.state]` dispatch. The
+implementation handles states inline in a while-loop. At this scale, inline is
+more readable. The handler pattern is worth revisiting if multiple orchestrator
+variants emerge.
 
 ---
 
-## 5. Test Coverage and Quality
+## 5. Test coverage
 
-| Phase | Tests | Delta | Key Additions |
+| Phase | Tests | Delta | Key additions |
 |-------|-------|-------|---------------|
 | 1a | 42 | +42 | Inference, persistence, calibration |
 | 1b | 96 | +54 | Tools, context builder, artifacts, registry |
 | 1c | 123 | +27 | Orchestrator, state machine, CLI, integration |
-| 2a | 142 | +19 | SlotManager unit + integration, session slots |
+| 2a | 142 | +19 | SlotManager unit + integration |
 | 2b | 196 | +54 | SchedulerStore, Scheduler engine, CLI schedule |
+| 2c | ~210 | ~+14 | Config, Platform ABC, Alembic |
+| 3 | ~230 | ~+20 | Telegram adapter, crash recovery |
+| 4 | ~250 | ~+20 | MemoryStore, memory tools, CLI memory |
+| 5 | ~280 | ~+30 | Delegation, SubagentResult, policy |
+| 6 | 311 | ~+31 | Capabilities, sandboxing, failure store, CLI obs |
 
-Quality tooling: **pytest** for testing, **ruff** for linting, **mypy** for type checking. All three run on every phase. mypy has 16 errors at Phase 2b (mostly croniter untyped stubs and annotation gaps), ruff is clean on src/ and tests/.
+Quality tooling: **pytest** for testing, **ruff** for linting, **mypy** for
+type checking. All three run on every phase.
 
-Architecture Decision Records: 14 ADRs in docs/DECISIONS.md covering naming, tooling, persistence, calibration, state machine design, slot management, and scheduler design. ADR-009 was superseded by ADR-011 when the single-ratio calibration proved too imprecise.
-
----
-
-## 6. Design Debt and Items to Revisit
-
-These are areas where the current implementation is known to be incomplete or suboptimal.
-
-### 6.1 Config Is Not Code Yet
-
-The original principle (2.9) called for a typed Python config file. What exists is Click CLI options and constructor arguments scattered across cli.py. Before Telegram ships, Hestia needs a proper Config dataclass that consolidates inference URL, model name, slot pool size, database path, artifact path, system prompt, and platform configs into one importable object. This is a Phase 2c prerequisite.
-
-### 6.2 PolicyEngine Is Mostly Stub
-
-Only retry_after_error is implemented. The should_delegate, compression_action, visible_tools, and reasoning_budget methods need to be filled in as features demand them. The separation is architecturally clean; the methods just aren't populated. This becomes urgent when subagent delegation or multi-platform tool exposure ships.
-
-### 6.3 No Alembic Migrations
-
-Schema changes have been handled by create_tables() which is fine for development but won't work for production upgrades. Before v1.0, Alembic needs to be set up with an initial migration and a migration per schema change.
-
-### 6.4 No Crash Recovery
-
-The original design described resuming in-flight turns on startup. Currently, a crash mid-turn leaves the turn in a non-terminal state with no recovery. For a single-user CLI tool, this is acceptable (the user just re-sends). For a Telegram bot running as a systemd service, it needs fixing.
-
-### 6.5 Artifact Tools Not Exercised
-
-read_artifact exists as a registered tool. grep_artifact and list_artifacts are described in the design but not built. The ArtifactStore has no TTL or cleanup. These become important when subagent delegation ships (subagent transcripts are artifacts).
-
-### 6.6 SchedulerStore Missing enable_task and delete_task
-
-Phase 2b shipped with disable_task but no way to re-enable a task, and schedule remove actually just disables rather than deleting. The CLI schedule enable command is a non-functional stub. These are 5-10 line fixes folded into the Phase 2c cleanup.
-
-### 6.7 Progress Visibility Not Implemented
-
-Design principle 2.8 (progress is visible) requires platform adapters with edit_message support. The Turn dataclass has no status_msg_id field yet. This ships with Telegram.
-
-### 6.8 Missing Built-in Tools
-
-The design specified 10 built-in tools. Four shipped: current_time, read_file, terminal, read_artifact. Still missing: write_file, list_dir, http_get, search_memory, save_memory, delegate_task, schedule_task. Some of these (search_memory, save_memory, delegate_task) depend on unbuilt subsystems.
+Architecture Decision Records: 20 ADRs in `docs/DECISIONS.md`.
 
 ---
 
-## 7. Remaining Roadmap
+## 6. Design debt and items to revisit
 
-The original five-phase, three-week roadmap is replaced with the following, organized by dependency order. Each phase is scoped for a single Kimi build cycle (roughly 1-2 hours) followed by Claude review.
+### 6.1 Artifact tools not fully exercised
 
-### Phase 2c: Cleanup + Platform Adapter Base
+`read_artifact` exists. `grep_artifact` and `list_artifacts` are described
+in the design but not built. The ArtifactStore has no TTL or cleanup.
 
-Prerequisite for Telegram. Consolidates scattered config, establishes the Platform adapter interface, and fixes Phase 2b stubs.
+### 6.2 Crash recovery scope
 
-- **Section 0 Cleanup:** Add SchedulerStore.set_enabled() and delete_task(). Fix CLI schedule enable stub and schedule remove. Fix _fire_task string comparison (use SessionState.ACTIVE enum instead of hardcoded "active").
-- **Config dataclass:** Consolidate CLI options into a typed HestiaConfig with InferenceConfig, SlotConfig, SchedulerConfig, and PlatformConfig sub-objects. CLI reads from config file with CLI overrides.
-- **Platform ABC:** Abstract base class with start(), send_message(), edit_message(), send_status(), send_error(). CLI adapter refactored to implement this interface.
-- **Built-in tools:** Add write_file, list_dir, http_get (the ones that don't depend on unbuilt subsystems).
-- **Alembic setup:** Initial migration from current schema. Migration workflow documented.
+Telegram adapter recovers stale turns on startup. The CLI adapter does not.
+For a single-user CLI tool, this is acceptable; for production daemon modes
+it should be extended.
 
-### Phase 3: Telegram Adapter
+### 6.3 Progress visibility on CLI
 
-The primary user-facing transport. This is how you actually talk to the bot in production.
+Telegram has live status edits. CLI shows nothing during long turns. A spinner
+or streaming output would improve the experience.
 
-- **TelegramAdapter** implementing Platform ABC. HTTP/1.1 forcing via httpx (learned from Hermes). Fallback IPs for DNS flakiness. Rate-limited edit_message (max 1/1.5s per message).
-- **Status message editing:** Turn gets a status_msg_id field. Orchestrator updates status during state transitions (Thinking... / Running terminal... / Done).
-- **Systemd service files:** hestia-llama.service (llama-server) and hestia-agent.service (Hestia process). Install script.
-- **Crash recovery:** On startup, scan for turns in non-terminal states. If the slot can be restored, resume. Otherwise, mark FAILED and notify user.
-- **Scheduler delivery to Telegram:** Scheduler response_callback routes to the originating platform/user.
+### 6.4 Confirmation UX on Telegram
 
-### Phase 4: Long-Term Memory + Matrix Dev Adapter
+Destructive tools currently fail closed on Telegram (no inline keyboard).
+Inline confirmation buttons are tracked as a product gap.
 
-- **FTS5 memory store:** search_memory(query) and save_memory(content, tags) tools. SQLite FTS5 virtual table. No vector DB, no embeddings.
-- **MatrixAdapter:** Dev/test transport. matrix-nio async client. Room-per-session. Valuable because Kimi and other CLI tools can drive a Matrix client for closed-loop automated testing.
-- **Integration test harness:** Drive the agent via Matrix CLI, verify end-to-end tool chains, scheduled task firing, and multi-turn conversations.
+### 6.5 Policy delegation UX
 
-### Phase 5: Subagent Delegation
+When the policy engine replaces a batch of tool calls with one `delegate_task`,
+the duplicate text for multiple `tool_call_id`s (except the first) is
+suboptimal. Needs model-facing tool result shaping.
 
-The biggest remaining subsystem. Same concept as the Hermes design, but built on the existing orchestrator.
+### 6.6 aiosqlite thread warnings
 
-- **delegate_task tool:** Spawns a Turn in a new session with its own slot. Subagent runs until completion or timeout.
-- **SubagentResult envelope:** Structured return (summary, status, completeness, artifact_refs, follow_up_questions, next_actions, error, duration, tool_calls_made). The main session's context grows by roughly 300 tokens per delegation regardless of subagent work volume.
-- **AWAITING_SUBAGENT and AWAITING_USER states:** Wire up the transitions that already exist in the state enum. Subagent can ask questions routed to the user via the active platform.
-- **PolicyEngine.should_delegate():** Implement delegation policy based on tool chain length, projected result sizes, and explicit user requests.
-
-### Phase 6: Polish, Docs, Share
-
-The agent is fully functional at this point. This phase is about making it presentable and installable by others.
-
-- **Documentation:** Getting started guide, hardware profiles (8GB / 12GB / 24GB / CPU-only), writing custom tools, policy customization.
-- **Example configs and tools:** Weather monitor (ported from Hermes), RSS digest, home assistant bridge.
-- **README:** Clear positioning for who this is for and who it isn't for.
-- **CLI observability commands:** hestia status, hestia logs, hestia sessions, hestia policy log, hestia turn <id>, hestia artifact <id>.
-- **Webhook adapter:** Generic HTTP POST adapter for Home Assistant, cron callers, custom UIs.
-- **Video walkthrough:** From zero to Telegram bot in 30 minutes on a 3060.
-- **Distribution:** GitHub, r/LocalLLaMA post, optional Hacker News when v1.0 ships.
+Two `PytestUnhandledThreadExceptionWarning` from aiosqlite on closed event
+loops. Housekeeping, not a functional issue.
 
 ---
 
-## 8. Hardware-Specific Optimizations
+## 7. Remaining roadmap
 
-These are what earn Hestia its "built for 12GB" claim. All are implemented or directly supported by the architecture.
+### Phase 7: Matrix adapter (in progress)
 
-- **Accurate token budgeting** via /tokenize endpoint. Two-number calibration (body_factor + meta_tool_overhead_tokens). Takes roughly 5ms per count. Implemented and tested.
-- **TurboQuant KV cache** (--cache-type-k turbo3 --cache-type-v turbo3). Roughly 5x KV cache compression. For a 16K context, that's roughly 2.4 GB saved per slot. Documented in example service file.
-- **Flash attention** always on (--flash-attn on).
-- **Meta-tool pattern** saves roughly 2900 tokens per request for 20 tools. Implemented and measured.
-- **Reasoning budget tuning:** Currently a fixed 2048 default. The PolicyEngine.reasoning_budget() hook exists for future per-task tuning (512 for quick, 2048 for standard, 4096 for heavy synthesis).
-- **Slot save/restore to NVMe.** A 16K slot with TurboQuant is roughly 50 MB on disk. Restore takes roughly 200ms. SlotManager handles this transparently.
-- **Reasoning strip on history.** ContextBuilder strips reasoning_content from all historical assistant messages before the API call.
-- **Tool result caps at build time.** max_inline_chars applied before counting, not after. Full results go to ArtifactStore; capped version goes to the model.
-- **Truncation-first compression.** Drop oldest non-protected turns. No summarization in the hot path. Summarization is future opt-in with hard timeout.
+Branch: `feature/phase-7-matrix`. Design: [`docs/design/matrix-integration.md`](design/matrix-integration.md).
+
+- `MatrixAdapter` implementing Platform ABC with `matrix-nio`
+- `MatrixConfig` dataclass mirroring TelegramConfig
+- `hestia matrix` CLI command
+- Room-per-session model with allowlist
+- Unit + component tests; E2E tests as optional CI job
+- ADR-021
+
+### Post-Phase 7
+
+See [`docs/roadmap/future-systems-deferred-roadmap.md`](roadmap/future-systems-deferred-roadmap.md)
+for the full deferred roadmap, organized into tiers:
+
+- **Tier A** — Product gaps: Telegram confirmation UI, artifact tools,
+  extended CLI observability, webhook adapter, example configs
+- **Tier B** — Future foundations: trace store, failure bundle enrichment,
+  artifact trust labels, security findings store
+- **Tier C** — Knowledge architecture: five-store model, knowledge router,
+  memory epochs, skill lifecycle
+- **Tier D** — Skill miner, failure analyst, bounded auto-healing
+- **Tier E** — Security loop and adversarial evaluation
+- **Tier F** — Policy synthesis
 
 ---
 
-## 9. Decisions Locked In
+## 8. Hardware-specific optimizations
 
-These are settled and recorded in ADRs. They won't change without a new ADR superseding them.
+These are what earn Hestia its "built for 12 GB" claim:
 
-- **Name:** Hestia. Goddess of the hearth, home, and domestic life. (ADR-001)
-- **Package manager:** uv. Lockfile-by-default, fast installs. (ADR-002)
-- **Language:** Python 3.11+. (ADR-003)
-- **Database:** SQLite by default, Postgres via URL override. SQLAlchemy Core async. (ADR-004)
-- **Subagents:** Same process, different slot, different asyncio task. (ADR-005)
-- **Search:** FTS5-only for v1. Vector search is a future plugin. (ADR-006)
-- **No web UI in v1.** Read-only dashboard is a possibility later. (ADR-007)
-- **License:** Apache 2.0. (ADR-008)
-- **Calibration:** Two-number (body_factor + meta_tool_overhead_tokens). (ADR-011)
-- **Turn state machine:** 10 states, ALLOWED_TRANSITIONS table, platform-agnostic confirmation callback. (ADR-012)
-- **SlotManager:** Owns KV-cache lifecycle, LRU eviction, SessionStore is source of truth. (ADR-013)
-- **Scheduler:** Runs tasks via existing Orchestrator, prompt-based not function-based, croniter for cron parsing. (ADR-014)
+- **Accurate token budgeting** via `/tokenize`. Two-number calibration takes
+  ~5ms per count.
+- **KV-cache quantization** (`--cache-type-k q4_0 --cache-type-v q4_0`).
+  ~4x KV-cache compression.
+- **Flash attention** always on (`--flash-attn`).
+- **Meta-tool pattern** saves ~2,900 tokens per request.
+- **Slot save/restore to NVMe.** A 16K slot is ~50 MB on disk. Restore takes
+  ~200ms.
+- **Reasoning strip.** Historical `reasoning_content` stripped before the API
+  call.
+- **Tool result caps at build time.** Full results go to ArtifactStore; capped
+  version goes to the model.
+- **Truncation-first compression.** Drop oldest non-protected turns. No
+  summarization in the hot path.
+
+---
+
+## 9. Decisions locked in
+
+Settled and recorded in ADRs. They won't change without a new ADR superseding them.
+
+| ADR | Decision |
+|-----|----------|
+| 001 | Name: Hestia |
+| 002 | Package manager: uv |
+| 003 | Language: Python 3.11+ |
+| 004 | Database: SQLite default, Postgres via URL; SQLAlchemy Core async |
+| 005 | Subagents: same process, different slot, different asyncio task |
+| 006 | Search: FTS5-only for v1 |
+| 007 | No web UI in v1 |
+| 008 | License: Apache 2.0 |
+| 011 | Calibration: two-number (body_factor + meta_tool_overhead) |
+| 012 | Turn state machine: 10 states, platform-agnostic callbacks |
+| 013 | SlotManager: LRU eviction, SessionStore as truth |
+| 014 | Scheduler: prompt-based tasks via Orchestrator, croniter |
+| 015 | HestiaConfig: typed Python dataclass from Python file |
+| 016 | Telegram: HTTP/1.1, rate-limited edits, user allowlist |
+| 017 | Memory: SQLite FTS5, no vector search in v1 |
+| 018 | Delegation: same-process, SubagentResult envelope |
+| 019 | Capability labels + session-aware tool filtering |
+| 020 | Typed failure bundles with FailureStore |
 
 ---
 
 ## 10. Dependencies
 
-Minimal by design. No langchain, no transformers, no torch, no vector DB.
+Minimal by design. No LangChain, no transformers, no torch, no vector DB.
 
 **Runtime:**
-httpx, sqlalchemy[asyncio], aiosqlite, asyncpg, click, croniter, pydantic, python-dateutil, alembic.
+httpx, sqlalchemy[asyncio], aiosqlite, asyncpg, click, croniter, pydantic,
+python-dateutil, alembic, python-telegram-bot.
 
 **Development:**
 pytest + pytest-asyncio, ruff, mypy.
 
-**Future (not yet added):**
-python-telegram-bot (Phase 3), matrix-nio (Phase 4).
+**Future (Phase 7):**
+matrix-nio.

@@ -1,58 +1,86 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
+Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### Added
-- **Phase 6: Hardening & Observability**
-  - Capability labels for tools (`read_local`, `write_local`, `shell_exec`, etc.)
-  - Session-aware tool filtering via `PolicyEngine.filter_tools()`
-  - Path sandboxing for file operations with `allowed_roots` configuration
-  - Typed failure tracking with `FailureClass` enum and `FailureStore` persistence
-  - Centralized logging with `setup_logging()`
-  - CLI commands: `version`, `status`, `failures list/summary`
-  - Store query methods for status reporting (`count_sessions_by_state`, `turn_stats_since`, `summary_stats`)
+### Added — Phase 7: Matrix adapter (in progress)
+- `MatrixAdapter` implementing Platform ABC with `matrix-nio`
+- `hestia matrix` CLI command
+- `MatrixConfig` dataclass
+- ADR-021
 
-- **Phase 5: Subagent Delegation**
-  - `delegate_task` tool for subagent spawning
-  - `SubagentResult` envelope for structured responses
-  - `AWAITING_SUBAGENT` state in turn lifecycle
-  - `PolicyEngine.should_delegate()` with heuristics
-  - Session ID threading via `contextvars` for memory attribution
+### Added — Phase 6: Hardening & observability
+- Capability labels for tools (`read_local`, `write_local`, `shell_exec`,
+  `network_egress`, `memory_read`, `memory_write`, `orchestration`)
+- `PolicyEngine.filter_tools()` — session-aware tool filtering
+- Path sandboxing for file operations with `allowed_roots` configuration
+- Typed failure tracking with `FailureClass` enum and `FailureStore`
+- Centralized logging via `setup_logging()`
+- CLI commands: `version`, `status`, `failures list`, `failures summary`
+- Store query helpers: `count_sessions_by_state`, `turn_stats_since`,
+  `summary_stats`
 
-- **Phase 4: Long-Term Memory**
-  - `MemoryStore` with FTS5 full-text search
-  - Memory tools: `search_memory`, `save_memory`, `list_memories`
-  - CLI memory commands: `hestia memory search/list/add/remove`
-  - Session context tracking for memory attribution
+### Added — Phase 5: Subagent delegation
+- `delegate_task` tool for spawning subagents
+- `SubagentResult` envelope for bounded context growth (~300 tokens)
+- `AWAITING_SUBAGENT` state in turn lifecycle
+- `PolicyEngine.should_delegate()` with heuristics
+- Session ID threading via `contextvars` for memory attribution
 
-- **Phase 3: Scheduler & Platforms**
-  - `Scheduler` with cron and one-shot task support
-  - `SchedulerStore` for task persistence
-  - CLI scheduler commands: `add`, `list`, `show`, `run`, `enable`, `disable`, `remove`, `daemon`
-  - Telegram adapter with long-polling
-  - Crash recovery for stale turns and sessions
+### Added — Phase 4: Long-term memory
+- `MemoryStore` with FTS5 full-text search and BM25 ranking
+- Memory tools: `search_memory`, `save_memory`, `list_memories`
+- CLI memory commands: `memory search`, `memory list`, `memory add`,
+  `memory remove`
+- Session context tracking for memory attribution
 
-- **Phase 2: KV Cache Management**
-  - `SlotManager` for llama.cpp KV-cache slot allocation
-  - HOT/WARM/COLD temperature states for sessions
-  - Slot save/restore to disk for memory pressure handling
-  - LRU eviction policy
+### Added — Phase 3: Telegram adapter
+- `TelegramAdapter` implementing Platform ABC
+- HTTP/1.1 forced for Telegram API stability (ADR-016)
+- Rate-limited `edit_message` (max 1 per 1.5s)
+- User allowlist via `TelegramConfig.allowed_users`
+- Crash recovery for stale turns and sessions on startup
+- `hestia telegram` CLI command
 
-- **Phase 1: Core Framework**
-  - `InferenceClient` for llama.cpp server (tokenize, chat, slot ops)
-  - `SessionStore` with SQLAlchemy Core async
-  - `ContextBuilder` with token budgeting and calibration
-  - `ToolRegistry` with `@tool` decorator
-  - `Orchestrator` with 10-state turn machine
-  - Built-in tools: `current_time`, `http_get`, `list_dir`, `read_file`, `write_file`, `terminal`
-  - CLI commands: `chat`, `ask`, `init`, `health`
-  - Alembic migrations
+### Added — Phase 2c: Config & platform base
+- `HestiaConfig` typed dataclass with sub-configs (ADR-015)
+- Platform ABC with `start`, `send_message`, `edit_message`, `send_error`
+- CLI adapter refactored to implement Platform ABC
+- Alembic migration setup with initial migration
+- `write_file`, `list_dir`, `http_get` built-in tools
 
-## [0.0.0] - 2026-04-09
+### Added — Phase 2b: Scheduler
+- `Scheduler` with cron and one-shot task support (ADR-014)
+- `SchedulerStore` for task persistence with croniter
+- CLI scheduler commands: `add`, `list`, `run`, `enable`, `disable`,
+  `remove`, `daemon`
+
+### Added — Phase 2a: KV-cache management
+- `SlotManager` for llama.cpp KV-cache slots (ADR-013)
+- HOT/WARM/COLD temperature states
+- LRU eviction with save/restore to disk
+
+### Added — Phase 1c: Orchestrator & CLI
+- `Orchestrator` with 10-state turn machine (ADR-012)
+- Platform-agnostic `ConfirmCallback` and `ResponseCallback`
+- CLI commands: `chat`, `ask`, `init`, `health`
+- Integration tests for full turn lifecycle
+
+### Added — Phase 1b: Tools & context
+- `ToolRegistry` with `@tool` decorator and meta-tool pattern (ADR-011)
+- `ContextBuilder` with token budgeting and two-number calibration
+- `ArtifactStore` for large tool output storage
+- Built-in tools: `current_time`, `read_file`, `terminal`, `read_artifact`
+
+### Added — Phase 1a: Core foundation
+- `InferenceClient` for llama.cpp server (tokenize, chat, slot ops)
+- `SessionStore` with SQLAlchemy Core async
+- Database schema and connection management
+- Calibration measurement tooling
+
+## [0.0.0] — 2026-04-09
 
 ### Added
 - Initial scaffold (README, LICENSE, .gitignore, pyproject.toml)
