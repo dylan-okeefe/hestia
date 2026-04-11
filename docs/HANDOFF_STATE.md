@@ -29,7 +29,7 @@ Read docs/prompts/KIMI_CURRENT.md, then execute the full "Current task" section 
 ## Current Branch & Phase
 
 - **Branch:** `feature/phase-6-hardening`
-- **Phase:** 6 — **ready to merge** (docs fixed, commits prepared)
+- **Phase:** 6 — **MERGED to develop**
 - **Blocker before merge:** Kimi must **commit** all changes, finish **doc closeout** (see below), then Dylan (or Kimi per prompt) runs **gitflow** merge to `develop`.
 
 ---
