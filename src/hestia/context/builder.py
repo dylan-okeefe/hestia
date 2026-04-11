@@ -195,9 +195,7 @@ class ContextBuilder:
 
                 if found_pair:
                     # Try to add both messages
-                    test_messages = (
-                        protected_top + included_history + pair_msgs + protected_bottom
-                    )
+                    test_messages = protected_top + included_history + pair_msgs + protected_bottom
                     count = await self._count_messages(test_messages, len(tools) > 0)
                     if count <= raw_budget:
                         included_history.extend(pair_msgs)

@@ -138,6 +138,30 @@ class TestFailureStore:
         assert recent[1].session_id == "session_1"
 
     @pytest.mark.asyncio
+    async def test_list_recent_filters_by_class(self, failure_store):
+        """list_recent with failure_class filter returns only matching rows."""
+        # Create bundles with different classes
+        for fc in [FailureClass.TOOL_ERROR, FailureClass.TOOL_ERROR, FailureClass.INFERENCE_ERROR]:
+            bundle = FailureBundle(
+                id=str(uuid.uuid4()),
+                session_id="s1",
+                turn_id="t1",
+                failure_class=fc.value,
+                severity="medium",
+                error_message="Error",
+                tool_chain="[]",
+                created_at=datetime.now(),
+            )
+            await failure_store.record(bundle)
+
+        # Query with limit=2 but filter for the rare class - should get it
+        recent = await failure_store.list_recent(
+            limit=2, failure_class=FailureClass.INFERENCE_ERROR.value
+        )
+        assert len(recent) == 1
+        assert recent[0].failure_class == FailureClass.INFERENCE_ERROR.value
+
+    @pytest.mark.asyncio
     async def test_count_by_class(self, failure_store):
         """Count failures grouped by class."""
         # Create bundles of different classes

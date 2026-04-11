@@ -21,9 +21,7 @@ class TestMemoryStore:
     @pytest.mark.asyncio
     async def test_save_and_search(self, memory_store):
         """Can save a memory and find it via search."""
-        await memory_store.save(
-            "The capital of France is Paris", tags=["geography"]
-        )
+        await memory_store.save("The capital of France is Paris", tags=["geography"])
         results = await memory_store.search("Paris")
         assert len(results) == 1
         assert "Paris" in results[0].content
@@ -92,9 +90,7 @@ class TestMemoryStore:
     @pytest.mark.asyncio
     async def test_save_with_session_id(self, memory_store):
         """Memory records which session created it."""
-        mem = await memory_store.save(
-            "Session note", session_id="session_123"
-        )
+        mem = await memory_store.save("Session note", session_id="session_123")
         assert mem.session_id == "session_123"
 
     @pytest.mark.asyncio

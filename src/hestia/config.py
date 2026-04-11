@@ -9,6 +9,7 @@ from pathlib import Path
 @dataclass
 class InferenceConfig:
     """Configuration for the llama.cpp inference server."""
+
     base_url: str = "http://localhost:8001"
     model_name: str = "Qwen3.5-9B-UD-Q4_K_XL.gguf"
     default_reasoning_budget: int = 2048
@@ -18,6 +19,7 @@ class InferenceConfig:
 @dataclass
 class SlotConfig:
     """Configuration for the SlotManager."""
+
     slot_dir: Path = field(default_factory=lambda: Path("slots"))
     pool_size: int = 4
 
@@ -25,12 +27,14 @@ class SlotConfig:
 @dataclass
 class SchedulerConfig:
     """Configuration for the Scheduler."""
+
     tick_interval_seconds: float = 5.0
 
 
 @dataclass
 class StorageConfig:
     """Configuration for persistence and artifact storage."""
+
     database_url: str = "sqlite+aiosqlite:///hestia.db"
     artifacts_dir: Path = field(default_factory=lambda: Path("artifacts"))
     allowed_roots: list[str] = field(default_factory=lambda: ["."])
@@ -39,13 +43,16 @@ class StorageConfig:
 @dataclass
 class TelegramConfig:
     """Configuration for the Telegram adapter."""
+
     bot_token: str = ""
     allowed_users: list[str] = field(default_factory=list)
     rate_limit_edits_seconds: float = 1.5
     http_version: str = "1.1"  # Force HTTP/1.1 for Telegram API stability
-    fallback_ips: list[str] = field(default_factory=lambda: [
-        "149.154.167.220",  # api.telegram.org primary
-    ])
+    fallback_ips: list[str] = field(
+        default_factory=lambda: [
+            "149.154.167.220",  # api.telegram.org primary
+        ]
+    )
     connect_timeout_seconds: float = 10.0
     read_timeout_seconds: float = 30.0
     long_poll_timeout_seconds: float = 30.0
@@ -58,6 +65,7 @@ class HestiaConfig:
     CLI options override values set here. Config files are loaded
     with HestiaConfig.from_file() and merged with CLI overrides.
     """
+
     inference: InferenceConfig = field(default_factory=InferenceConfig)
     slots: SlotConfig = field(default_factory=SlotConfig)
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)

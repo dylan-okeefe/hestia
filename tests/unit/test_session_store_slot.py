@@ -1,6 +1,5 @@
 """Unit tests for SessionStore slot operations."""
 
-
 import pytest
 
 from hestia.core.types import SessionTemperature

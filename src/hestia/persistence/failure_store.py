@@ -54,12 +54,10 @@ class FailureStore:
         )
         """
         idx_class = (
-            "CREATE INDEX IF NOT EXISTS idx_failure_bundles_class "
-            "ON failure_bundles(failure_class)"
+            "CREATE INDEX IF NOT EXISTS idx_failure_bundles_class ON failure_bundles(failure_class)"
         )
         idx_created = (
-            "CREATE INDEX IF NOT EXISTS idx_failure_bundles_created "
-            "ON failure_bundles(created_at)"
+            "CREATE INDEX IF NOT EXISTS idx_failure_bundles_created ON failure_bundles(created_at)"
         )
 
         async with self._db.engine.connect() as conn:

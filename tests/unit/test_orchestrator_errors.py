@@ -65,6 +65,7 @@ class FakePolicyEngine:
 
     def retry_after_error(self, error, attempt):
         from hestia.policy.engine import RetryAction, RetryDecision
+
         return RetryDecision(action=RetryAction.FAIL)
 
     def turn_token_budget(self, session):
@@ -240,9 +241,7 @@ async def test_confirm_callback_missing_fails_closed_direct_path(store, artifact
     tool_call_response = ChatResponse(
         content="",
         reasoning_content=None,
-        tool_calls=[
-            ToolCall(id="call_1", name="dangerous_tool", arguments={})
-        ],
+        tool_calls=[ToolCall(id="call_1", name="dangerous_tool", arguments={})],
         finish_reason="tool_calls",
         prompt_tokens=20,
         completion_tokens=10,
@@ -323,7 +322,7 @@ async def test_meta_tool_confirm_callback_missing_fails_closed(store, artifact_s
             ToolCall(
                 id="call_1",
                 name="call_tool",  # Meta-tool pattern!
-                arguments={"name": "dangerous_tool", "arguments": {}}
+                arguments={"name": "dangerous_tool", "arguments": {}},
             )
         ],
         finish_reason="tool_calls",
@@ -402,9 +401,7 @@ async def test_meta_tool_confirm_callback_denial_respected(store, artifact_store
         reasoning_content=None,
         tool_calls=[
             ToolCall(
-                id="call_1",
-                name="call_tool",
-                arguments={"name": "dangerous_tool", "arguments": {}}
+                id="call_1", name="call_tool", arguments={"name": "dangerous_tool", "arguments": {}}
             )
         ],
         finish_reason="tool_calls",

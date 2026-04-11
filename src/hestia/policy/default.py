@@ -158,7 +158,8 @@ class DefaultPolicyEngine(PolicyEngine):
             # Subagents: block shell_exec and write_local
             blocked = {SHELL_EXEC, WRITE_LOCAL}
             return [
-                name for name in tool_names
+                name
+                for name in tool_names
                 if not (set(registry.describe(name).capabilities) & blocked)
             ]
 
@@ -166,7 +167,8 @@ class DefaultPolicyEngine(PolicyEngine):
             # Scheduler: block shell_exec for headless safety
             blocked = {SHELL_EXEC}
             return [
-                name for name in tool_names
+                name
+                for name in tool_names
                 if not (set(registry.describe(name).capabilities) & blocked)
             ]
 

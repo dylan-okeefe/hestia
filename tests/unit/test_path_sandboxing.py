@@ -46,7 +46,9 @@ class TestCheckPathAllowed:
         """Path traversal attacks are blocked."""
         root = str(tmp_path / "allowed")
         # Try to escape via ..
-        result = check_path_allowed(str(tmp_path / "allowed" / ".." / ".." / "etc" / "passwd"), [root])
+        result = check_path_allowed(
+            str(tmp_path / "allowed" / ".." / ".." / "etc" / "passwd"), [root]
+        )
         assert result is not None
         assert "Access denied" in result
 
@@ -113,6 +115,7 @@ class TestWriteFileSandboxing:
         assert "Access denied" in result
         # Verify file was NOT written
         import os
+
         assert not os.path.exists("/etc/passwd") or open("/etc/passwd").read() != "malicious"
 
     @pytest.mark.asyncio

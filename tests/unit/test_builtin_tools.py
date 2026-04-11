@@ -1,6 +1,5 @@
 """Unit tests for built-in tools."""
 
-
 import pytest
 
 from hestia.artifacts.store import ArtifactStore

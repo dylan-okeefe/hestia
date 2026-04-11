@@ -221,9 +221,7 @@ async def test_turn_with_tool_calls(
     tool_call_response = ChatResponse(
         content="",
         reasoning_content=None,
-        tool_calls=[
-            ToolCall(id="call_1", name="list_tools", arguments={"tag": None})
-        ],
+        tool_calls=[ToolCall(id="call_1", name="list_tools", arguments={"tag": None})],
         finish_reason="tool_calls",
         prompt_tokens=20,
         completion_tokens=10,

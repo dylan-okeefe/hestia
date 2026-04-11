@@ -1,6 +1,5 @@
 """Unit tests for tool capability labels."""
 
-
 from hestia.tools.builtin import (
     NETWORK_EGRESS,
     READ_LOCAL,
@@ -102,12 +101,14 @@ class TestToolCapabilities:
     def test_delegate_task_has_orchestration(self):
         """delegate_task has ORCHESTRATION capability."""
         import inspect
+
         src = inspect.getsource(make_delegate_task_tool)
         assert "ORCHESTRATION" in src
 
     def test_read_artifact_has_read_local(self):
         """read_artifact has READ_LOCAL capability."""
         import inspect
+
         src = inspect.getsource(make_read_artifact_tool)
         assert "READ_LOCAL" in src
 

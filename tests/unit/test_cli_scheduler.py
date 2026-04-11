@@ -26,13 +26,20 @@ class TestScheduleAdd:
     def test_add_cron_task(self, runner, tmp_path):
         """Can add a cron-scheduled task."""
         db_path = tmp_path / "test.db"
-        result = runner.invoke(cli, [
-            "--db-path", str(db_path),
-            "schedule", "add",
-            "--cron", "0 9 * * 1-5",
-            "--description", "Daily standup",
-            "Summarize my morning messages"
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--db-path",
+                str(db_path),
+                "schedule",
+                "add",
+                "--cron",
+                "0 9 * * 1-5",
+                "--description",
+                "Daily standup",
+                "Summarize my morning messages",
+            ],
+        )
         assert result.exit_code == 0
         assert "Created task:" in result.output
         assert "cron" in result.output
@@ -41,13 +48,20 @@ class TestScheduleAdd:
         """Can add a one-shot task."""
         db_path = tmp_path / "test.db"
         future = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S")
-        result = runner.invoke(cli, [
-            "--db-path", str(db_path),
-            "schedule", "add",
-            "--at", future,
-            "--description", "Coffee reminder",
-            "Time for coffee"
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--db-path",
+                str(db_path),
+                "schedule",
+                "add",
+                "--at",
+                future,
+                "--description",
+                "Coffee reminder",
+                "Time for coffee",
+            ],
+        )
         assert result.exit_code == 0
         assert "Created task:" in result.output
         assert "at" in result.output
@@ -56,25 +70,38 @@ class TestScheduleAdd:
         """Cannot specify both --cron and --at."""
         db_path = tmp_path / "test.db"
         future = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S")
-        result = runner.invoke(cli, [
-            "--db-path", str(db_path),
-            "schedule", "add",
-            "--cron", "0 9 * * *",
-            "--at", future,
-            "Task with both"
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--db-path",
+                str(db_path),
+                "schedule",
+                "add",
+                "--cron",
+                "0 9 * * *",
+                "--at",
+                future,
+                "Task with both",
+            ],
+        )
         assert result.exit_code == 1
         assert "Cannot specify both" in result.output
 
     def test_add_rejects_neither_cron_nor_at(self, runner, tmp_path):
         """Must specify either --cron or --at."""
         db_path = tmp_path / "test.db"
-        result = runner.invoke(cli, [
-            "--db-path", str(db_path),
-            "schedule", "add",
-            "--description", "No schedule",
-            "Task with no schedule"
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--db-path",
+                str(db_path),
+                "schedule",
+                "add",
+                "--description",
+                "No schedule",
+                "Task with no schedule",
+            ],
+        )
         assert result.exit_code == 1
         assert "Must specify either" in result.output
 
@@ -82,24 +109,27 @@ class TestScheduleAdd:
         """Cannot schedule task in the past."""
         db_path = tmp_path / "test.db"
         past = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S")
-        result = runner.invoke(cli, [
-            "--db-path", str(db_path),
-            "schedule", "add",
-            "--at", past,
-            "Task in the past"
-        ])
+        result = runner.invoke(
+            cli, ["--db-path", str(db_path), "schedule", "add", "--at", past, "Task in the past"]
+        )
         assert result.exit_code == 1
         assert "Cannot schedule task in the past" in result.output
 
     def test_add_rejects_invalid_datetime(self, runner, tmp_path):
         """Invalid datetime format is rejected."""
         db_path = tmp_path / "test.db"
-        result = runner.invoke(cli, [
-            "--db-path", str(db_path),
-            "schedule", "add",
-            "--at", "not-a-date",
-            "Task with bad date"
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--db-path",
+                str(db_path),
+                "schedule",
+                "add",
+                "--at",
+                "not-a-date",
+                "Task with bad date",
+            ],
+        )
         assert result.exit_code == 1
         assert "Invalid datetime format" in result.output
 
@@ -110,10 +140,7 @@ class TestScheduleList:
     def test_list_empty(self, runner, tmp_path):
         """List shows message when no tasks exist."""
         db_path = tmp_path / "test.db"
-        result = runner.invoke(cli, [
-            "--db-path", str(db_path),
-            "schedule", "list"
-        ])
+        result = runner.invoke(cli, ["--db-path", str(db_path), "schedule", "list"])
         assert result.exit_code == 0
         assert "No scheduled tasks" in result.output
 
@@ -121,18 +148,22 @@ class TestScheduleList:
         """List displays created tasks."""
         db_path = tmp_path / "test.db"
         # Add a task first
-        runner.invoke(cli, [
-            "--db-path", str(db_path),
-            "schedule", "add",
-            "--cron", "0 9 * * *",
-            "--description", "Daily summary",
-            "Summarize my day"
-        ])
+        runner.invoke(
+            cli,
+            [
+                "--db-path",
+                str(db_path),
+                "schedule",
+                "add",
+                "--cron",
+                "0 9 * * *",
+                "--description",
+                "Daily summary",
+                "Summarize my day",
+            ],
+        )
 
-        result = runner.invoke(cli, [
-            "--db-path", str(db_path),
-            "schedule", "list"
-        ])
+        result = runner.invoke(cli, ["--db-path", str(db_path), "schedule", "list"])
         assert result.exit_code == 0
         assert "Daily summary" in result.output
         assert "cron" in result.output
@@ -145,13 +176,20 @@ class TestScheduleShow:
         """Can show details of an existing task."""
         db_path = tmp_path / "test.db"
         # Add a task
-        result = runner.invoke(cli, [
-            "--db-path", str(db_path),
-            "schedule", "add",
-            "--cron", "0 9 * * *",
-            "--description", "Test task",
-            "Test prompt"
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--db-path",
+                str(db_path),
+                "schedule",
+                "add",
+                "--cron",
+                "0 9 * * *",
+                "--description",
+                "Test task",
+                "Test prompt",
+            ],
+        )
 
         # Extract task ID from output
         task_id = None
@@ -162,10 +200,7 @@ class TestScheduleShow:
 
         assert task_id is not None
 
-        result = runner.invoke(cli, [
-            "--db-path", str(db_path),
-            "schedule", "show", task_id
-        ])
+        result = runner.invoke(cli, ["--db-path", str(db_path), "schedule", "show", task_id])
         assert result.exit_code == 0
         assert task_id in result.output
         assert "Test task" in result.output
@@ -174,10 +209,9 @@ class TestScheduleShow:
     def test_show_missing_task(self, runner, tmp_path):
         """Shows error for non-existent task."""
         db_path = tmp_path / "test.db"
-        result = runner.invoke(cli, [
-            "--db-path", str(db_path),
-            "schedule", "show", "task_nonexistent"
-        ])
+        result = runner.invoke(
+            cli, ["--db-path", str(db_path), "schedule", "show", "task_nonexistent"]
+        )
         assert result.exit_code == 1
         assert "Task not found" in result.output
 
@@ -189,12 +223,18 @@ class TestScheduleDisable:
         """Can disable an existing task."""
         db_path = tmp_path / "test.db"
         # Add a task
-        result = runner.invoke(cli, [
-            "--db-path", str(db_path),
-            "schedule", "add",
-            "--cron", "0 9 * * *",
-            "Task to disable"
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "--db-path",
+                str(db_path),
+                "schedule",
+                "add",
+                "--cron",
+                "0 9 * * *",
+                "Task to disable",
+            ],
+        )
 
         # Extract task ID
         task_id = None
@@ -205,20 +245,16 @@ class TestScheduleDisable:
 
         assert task_id is not None
 
-        result = runner.invoke(cli, [
-            "--db-path", str(db_path),
-            "schedule", "disable", task_id
-        ])
+        result = runner.invoke(cli, ["--db-path", str(db_path), "schedule", "disable", task_id])
         assert result.exit_code == 0
         assert f"Task {task_id} disabled" in result.output
 
     def test_disable_missing_task(self, runner, tmp_path):
         """Shows error for non-existent task."""
         db_path = tmp_path / "test.db"
-        result = runner.invoke(cli, [
-            "--db-path", str(db_path),
-            "schedule", "disable", "task_nonexistent"
-        ])
+        result = runner.invoke(
+            cli, ["--db-path", str(db_path), "schedule", "disable", "task_nonexistent"]
+        )
         assert result.exit_code == 1
         assert "Task not found" in result.output
 
@@ -230,12 +266,10 @@ class TestScheduleRemove:
         """Can remove an existing task."""
         db_path = tmp_path / "test.db"
         # Add a task
-        result = runner.invoke(cli, [
-            "--db-path", str(db_path),
-            "schedule", "add",
-            "--cron", "0 9 * * *",
-            "Task to remove"
-        ])
+        result = runner.invoke(
+            cli,
+            ["--db-path", str(db_path), "schedule", "add", "--cron", "0 9 * * *", "Task to remove"],
+        )
 
         # Extract task ID
         task_id = None
@@ -246,19 +280,15 @@ class TestScheduleRemove:
 
         assert task_id is not None
 
-        result = runner.invoke(cli, [
-            "--db-path", str(db_path),
-            "schedule", "remove", task_id
-        ])
+        result = runner.invoke(cli, ["--db-path", str(db_path), "schedule", "remove", task_id])
         assert result.exit_code == 0
         assert f"Task {task_id} removed" in result.output
 
     def test_remove_missing_task(self, runner, tmp_path):
         """Shows error for non-existent task."""
         db_path = tmp_path / "test.db"
-        result = runner.invoke(cli, [
-            "--db-path", str(db_path),
-            "schedule", "remove", "task_nonexistent"
-        ])
+        result = runner.invoke(
+            cli, ["--db-path", str(db_path), "schedule", "remove", "task_nonexistent"]
+        )
         assert result.exit_code == 1
         assert "Task not found" in result.output

@@ -1,6 +1,5 @@
 """Unit tests for ArtifactStore."""
 
-
 import pytest
 
 from hestia.artifacts.store import INLINE_THRESHOLD_BYTES, ArtifactStore

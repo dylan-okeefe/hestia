@@ -213,7 +213,9 @@ class Orchestrator:
                         tool_names = [tc.name for tc in chat_response.tool_calls]
                         tool_chain.extend(tool_names)
                         status_text = f"Running {', '.join(tool_names)}..."
-                        await self._update_status(platform, platform_user, status_msg_id, status_text)
+                        await self._update_status(
+                            platform, platform_user, status_msg_id, status_text
+                        )
 
                         task_desc = (user_message.content or "").strip()
                         use_policy_delegation = (

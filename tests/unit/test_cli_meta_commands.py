@@ -45,9 +45,7 @@ async def test_meta_command_quit(store, sample_session, capsys):
     """/quit should signal exit."""
     from hestia.cli import _handle_meta_command
 
-    should_exit, new_session = await _handle_meta_command(
-        "/quit", sample_session, store
-    )
+    should_exit, new_session = await _handle_meta_command("/quit", sample_session, store)
 
     assert should_exit is True
     assert new_session.id == sample_session.id  # Same session
@@ -58,9 +56,7 @@ async def test_meta_command_exit(store, sample_session):
     """/exit should also signal exit."""
     from hestia.cli import _handle_meta_command
 
-    should_exit, new_session = await _handle_meta_command(
-        "/exit", sample_session, store
-    )
+    should_exit, new_session = await _handle_meta_command("/exit", sample_session, store)
 
     assert should_exit is True
 
@@ -70,9 +66,7 @@ async def test_meta_command_help(store, sample_session, capsys):
     """/help should print help and not exit."""
     from hestia.cli import _handle_meta_command
 
-    should_exit, new_session = await _handle_meta_command(
-        "/help", sample_session, store
-    )
+    should_exit, new_session = await _handle_meta_command("/help", sample_session, store)
 
     assert should_exit is False
     assert new_session.id == sample_session.id
@@ -83,9 +77,7 @@ async def test_meta_command_session(store, sample_session):
     """/session should print session metadata."""
     from hestia.cli import _handle_meta_command
 
-    should_exit, new_session = await _handle_meta_command(
-        "/session", sample_session, store
-    )
+    should_exit, new_session = await _handle_meta_command("/session", sample_session, store)
 
     assert should_exit is False
     assert new_session.id == sample_session.id
@@ -96,9 +88,7 @@ async def test_meta_command_history_empty(store, sample_session):
     """/history on empty session should print '(empty)'."""
     from hestia.cli import _handle_meta_command
 
-    should_exit, new_session = await _handle_meta_command(
-        "/history", sample_session, store
-    )
+    should_exit, new_session = await _handle_meta_command("/history", sample_session, store)
 
     assert should_exit is False
 
@@ -114,9 +104,7 @@ async def test_meta_command_reset_creates_new_session_same_user(store):
     original_id = session1.id
     assert session1.state == SessionState.ACTIVE
 
-    should_exit, new_session = await _handle_meta_command(
-        "/reset", session1, store
-    )
+    should_exit, new_session = await _handle_meta_command("/reset", session1, store)
 
     assert should_exit is False
     assert new_session.id != original_id  # New session ID
@@ -136,9 +124,7 @@ async def test_meta_command_unknown(store, sample_session):
     """Unknown commands should print error and not exit."""
     from hestia.cli import _handle_meta_command
 
-    should_exit, new_session = await _handle_meta_command(
-        "/unknown_command", sample_session, store
-    )
+    should_exit, new_session = await _handle_meta_command("/unknown_command", sample_session, store)
 
     assert should_exit is False
     assert new_session.id == sample_session.id
@@ -149,8 +135,6 @@ async def test_meta_command_with_whitespace(store, sample_session):
     """Commands with whitespace should be handled."""
     from hestia.cli import _handle_meta_command
 
-    should_exit, _ = await _handle_meta_command(
-        "  /quit  ", sample_session, store
-    )
+    should_exit, _ = await _handle_meta_command("  /quit  ", sample_session, store)
 
     assert should_exit is True

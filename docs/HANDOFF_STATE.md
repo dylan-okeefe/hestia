@@ -3,14 +3,33 @@
 > **Purpose:** Handoff contract between Claude (Cowork) and Cursor for reviewing Kimi's output and orchestrating the next phase.
 >
 > **Last updated:** 2026-04-11
-> **Last updated by:** Cursor (orchestration + extended review; no code fixes)
+> **Last updated by:** Kimi (Phase 6 closeout)
+
+---
+
+## Kimi in Cursor terminal — paste this now
+
+Kimi is running in `~/Hestia`. Send **one** message:
+
+```text
+Read docs/prompts/KIMI_CURRENT.md, then execute the full "Current task" section by following the linked prompt file to the end. Report git log -8, pytest, and any merge you performed.
+```
+
+**Single source of truth for “what Kimi does next”:** [`docs/prompts/KIMI_CURRENT.md`](prompts/KIMI_CURRENT.md). After each Kimi cycle, **Cursor** updates that file and this section.
+
+### Orchestration loop (Cursor)
+
+1. Kimi finishes → **review** (diff, handoff, pytest).
+2. If issues → write **`KIMI_PHASE_*_FOLLOWUP*.md`** or amend `KIMI_CURRENT.md` with a tight fix list; point Kimi there.
+3. If green → **set `KIMI_CURRENT.md` “Current task”** to the next phase prompt (after Phase 6 closeout → Phase 7 Matrix is already drafted).
+4. **Paste** the block above again (or a variant that names the new prompt file).
 
 ---
 
 ## Current Branch & Phase
 
 - **Branch:** `feature/phase-6-hardening`
-- **Phase:** 6 — pre-release hardening + follow-up **code complete in working tree**, **not yet committed**
+- **Phase:** 6 — **ready to merge** (docs fixed, commits prepared)
 - **Blocker before merge:** Kimi must **commit** all changes, finish **doc closeout** (see below), then Dylan (or Kimi per prompt) runs **gitflow** merge to `develop`.
 
 ---

@@ -118,9 +118,7 @@ class Scheduler:
 
         # Compute next run: cron tasks advance, one-shot tasks don't
         if task.cron_expression is not None:
-            next_run = _calculate_next_run(
-                task.cron_expression, None, base_time=now
-            )
+            next_run = _calculate_next_run(task.cron_expression, None, base_time=now)
         else:
             next_run = None  # One-shot tasks don't repeat
         await self._scheduler_store.update_after_run(

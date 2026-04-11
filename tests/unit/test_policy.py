@@ -151,9 +151,7 @@ class TestToolResultMaxChars:
 class TestFilterTools:
     """Tests for capability-based tool filtering."""
 
-    def test_subagent_blocks_shell_and_write(
-        self, policy, sample_session, tmp_path
-    ):
+    def test_subagent_blocks_shell_and_write(self, policy, sample_session, tmp_path):
         from dataclasses import replace
 
         from hestia.artifacts.store import ArtifactStore

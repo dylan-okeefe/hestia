@@ -47,10 +47,12 @@ class FakeOrchestrator:
         user_message: Message,
         respond_callback: Any,
     ) -> Turn:
-        self.calls.append({
-            "session": session,
-            "user_message": user_message,
-        })
+        self.calls.append(
+            {
+                "session": session,
+                "user_message": user_message,
+            }
+        )
 
         if self.should_fail:
             raise RuntimeError("Orchestrator failed")
@@ -115,6 +117,7 @@ async def make_scheduler(
     tick_interval: float = 5.0,
 ) -> Scheduler:
     """Helper to create a scheduler with a capturing response callback."""
+
     async def response_callback(task: ScheduledTask, text: str) -> None:
         response_log.append({"task": task, "text": text})
 
@@ -147,9 +150,7 @@ class TestRunNow:
         run_time = datetime(2024, 1, 1, 9, 0, 0)
 
         orchestrator = FakeOrchestrator()
-        scheduler = await make_scheduler(
-            scheduler_store, session_store, response_log, orchestrator
-        )
+        scheduler = await make_scheduler(scheduler_store, session_store, response_log, orchestrator)
 
         # Patch datetime.now() in _fire_task by calling directly with run_time
         await scheduler._fire_task(task, run_time)
@@ -181,9 +182,7 @@ class TestRunNow:
         )
 
         orchestrator = FakeOrchestrator()
-        scheduler = await make_scheduler(
-            scheduler_store, session_store, response_log, orchestrator
-        )
+        scheduler = await make_scheduler(scheduler_store, session_store, response_log, orchestrator)
 
         await scheduler._fire_task(task, datetime.now())
 
@@ -232,9 +231,7 @@ class TestRunNow:
 
         orchestrator = FakeOrchestrator()
         orchestrator.turn_error = "Tool execution failed"
-        scheduler = await make_scheduler(
-            scheduler_store, session_store, response_log, orchestrator
-        )
+        scheduler = await make_scheduler(scheduler_store, session_store, response_log, orchestrator)
 
         run_time = datetime.now()
         await scheduler._fire_task(task, run_time)
@@ -258,9 +255,7 @@ class TestRunNow:
         await session_store.end_session(test_session.id, "test cleanup")
 
         orchestrator = FakeOrchestrator()
-        scheduler = await make_scheduler(
-            scheduler_store, session_store, response_log, orchestrator
-        )
+        scheduler = await make_scheduler(scheduler_store, session_store, response_log, orchestrator)
 
         run_time = datetime.now()
         await scheduler._fire_task(task, run_time)
@@ -277,9 +272,7 @@ class TestRunNow:
         self, scheduler_store, session_store, response_log
     ):
         """run_now raises ValueError for non-existent task."""
-        scheduler = await make_scheduler(
-            scheduler_store, session_store, response_log
-        )
+        scheduler = await make_scheduler(scheduler_store, session_store, response_log)
 
         with pytest.raises(ValueError, match="Task not found"):
             await scheduler.run_now("task_nonexistent")
@@ -428,9 +421,7 @@ class TestStartStop:
         await scheduler.stop()
 
     @pytest.mark.asyncio
-    async def test_stop_is_idempotent(
-        self, scheduler_store, session_store, response_log
-    ):
+    async def test_stop_is_idempotent(self, scheduler_store, session_store, response_log):
         """stop() can be called multiple times safely."""
         scheduler = await make_scheduler(
             scheduler_store, session_store, response_log, tick_interval=0.1
@@ -441,9 +432,7 @@ class TestStartStop:
         await scheduler.stop()  # Should not raise
 
     @pytest.mark.asyncio
-    async def test_stop_cancels_loop_quickly(
-        self, scheduler_store, session_store, response_log
-    ):
+    async def test_stop_cancels_loop_quickly(self, scheduler_store, session_store, response_log):
         """stop() cancels the loop quickly without waiting full tick."""
         scheduler = await make_scheduler(
             scheduler_store, session_store, response_log, tick_interval=60.0
@@ -482,9 +471,7 @@ class TestTick:
         )
 
         orchestrator = FakeOrchestrator()
-        scheduler = await make_scheduler(
-            scheduler_store, session_store, response_log, orchestrator
-        )
+        scheduler = await make_scheduler(scheduler_store, session_store, response_log, orchestrator)
 
         await scheduler._tick(datetime.now())
 
@@ -519,9 +506,7 @@ class TestTick:
                 return await super().process_turn(session, user_message, respond_callback)
 
         orchestrator = OrderTrackingOrchestrator()
-        scheduler = await make_scheduler(
-            scheduler_store, session_store, response_log, orchestrator
-        )
+        scheduler = await make_scheduler(scheduler_store, session_store, response_log, orchestrator)
 
         await scheduler._tick(datetime.now())
 

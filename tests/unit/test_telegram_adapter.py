@@ -39,4 +39,5 @@ class TestTelegramAdapter:
         adapter = TelegramAdapter(cfg)
         with pytest.raises(RuntimeError, match="not started"):
             import asyncio
+
             asyncio.run(adapter.send_message("123", "test"))

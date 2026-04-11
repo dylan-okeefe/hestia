@@ -115,9 +115,7 @@ class ToolRegistry:
             )
 
         # Normalize to string
-        content_str = (
-            json.dumps(raw, indent=2) if isinstance(raw, (dict, list)) else str(raw)
-        )
+        content_str = json.dumps(raw, indent=2) if isinstance(raw, (dict, list)) else str(raw)
 
         return self._postprocess(content_str, meta)
 

@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import click
@@ -14,6 +14,7 @@ from hestia.context.builder import ContextBuilder
 from hestia.core.inference import InferenceClient
 from hestia.core.types import Message, ScheduledTask, Session
 from hestia.inference import SlotManager
+from hestia.logging_config import setup_logging
 from hestia.memory.store import MemoryStore
 from hestia.orchestrator import Orchestrator
 from hestia.persistence.db import Database
@@ -118,8 +119,13 @@ async def _handle_meta_command(
 
 
 @click.group()
-@click.option("--config", "config_path", type=click.Path(exists=True), default=None,
-              help="Path to Hestia config file (Python)")
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(exists=True),
+    default=None,
+    help="Path to Hestia config file (Python)",
+)
 @click.option("--db-path", type=click.Path(), default=None)
 @click.option("--artifacts-path", type=click.Path(), default=None)
 @click.option("--slot-dir", type=click.Path(), default=None)
@@ -165,6 +171,9 @@ def cli(
     if verbose:
         cfg.verbose = True
 
+    # Setup logging after config is finalized
+    setup_logging(cfg.verbose)
+
     # Build subsystems from config
     db = Database(cfg.storage.database_url)
     artifact_store = ArtifactStore(cfg.storage.artifacts_dir)
@@ -174,9 +183,7 @@ def cli(
 
     # Context builder with calibration
     calibration_path = Path("docs/calibration.json")
-    context_builder = ContextBuilder.from_calibration_file(
-        inference, policy, calibration_path
-    )
+    context_builder = ContextBuilder.from_calibration_file(inference, policy, calibration_path)
 
     # Memory store for long-term memory
     memory_store = MemoryStore(db)
@@ -430,6 +437,147 @@ def health(ctx: click.Context) -> None:
     asyncio.run(_health())
 
 
+@cli.command()
+def version() -> None:
+    """Show Hestia version."""
+    from importlib.metadata import version as get_version
+
+    click.echo(f"Hestia {get_version('hestia')}")
+    click.echo(f"Python {sys.version}")
+
+
+@cli.command()
+@click.pass_context
+def status(ctx: click.Context) -> None:
+    """Show system status summary."""
+    cfg: HestiaConfig = ctx.obj["config"]
+    db: Database = ctx.obj["db"]
+    inference: InferenceClient = ctx.obj["inference"]
+    session_store: SessionStore = ctx.obj["session_store"]
+    failure_store: FailureStore = ctx.obj["failure_store"]
+
+    async def _status() -> None:
+        await _bootstrap_db(db, ctx.obj["memory_store"], failure_store)
+
+        # 1. Inference health
+        click.echo("Inference:")
+        try:
+            health_info = await inference.health()
+            click.echo("  Status: ok")
+            for key, value in health_info.items():
+                click.echo(f"  {key}: {value}")
+        except Exception as e:
+            click.echo(f"  Status: failed ({e})")
+
+        # 2. Sessions by state
+        click.echo("\nSessions:")
+        session_counts = await session_store.count_sessions_by_state()
+        if session_counts:
+            for state, count in sorted(session_counts.items()):
+                click.echo(f"  {state}: {count}")
+        else:
+            click.echo("  No sessions")
+
+        # 3. Turns in last 24h
+        click.echo("\nTurns (last 24h):")
+        from datetime import timedelta
+
+        since = datetime.now() - timedelta(hours=24)
+        turn_stats = await session_store.turn_stats_since(since)
+        if turn_stats:
+            for state, count in sorted(turn_stats.items()):
+                click.echo(f"  {state}: {count}")
+        else:
+            click.echo("  No turns")
+
+        # 4. Scheduled tasks
+        click.echo("\nScheduled Tasks:")
+        scheduler_store = SchedulerStore(db)
+        stats = await scheduler_store.summary_stats()
+        click.echo(f"  Enabled: {stats['enabled_count']}")
+        if stats["next_run_at"]:
+            click.echo(f"  Next due: {stats['next_run_at']}")
+        else:
+            click.echo(f"  Next due: none")
+
+        # 5. Failures in last 24h
+        click.echo("\nFailures (last 24h):")
+        failure_counts = await failure_store.count_by_class(since=since)
+        if failure_counts:
+            for failure_class, count in sorted(failure_counts.items()):
+                click.echo(f"  {failure_class}: {count}")
+        else:
+            click.echo("  No failures")
+
+        await inference.close()
+
+    asyncio.run(_status())
+
+
+# Failures command group
+@cli.group()
+def failures() -> None:
+    """View failure history."""
+    pass
+
+
+@failures.command(name="list")
+@click.option("--limit", type=int, default=20, help="Maximum number of failures to show")
+@click.option("--class", "failure_class", default=None, help="Filter by failure class")
+@click.pass_context
+def failures_list(ctx: click.Context, limit: int, failure_class: str | None) -> None:
+    """List recent failures."""
+    db: Database = ctx.obj["db"]
+    failure_store: FailureStore = ctx.obj["failure_store"]
+
+    async def _list() -> None:
+        await _bootstrap_db(db, ctx.obj["memory_store"], failure_store)
+
+        bundles = await failure_store.list_recent(limit=limit, failure_class=failure_class)
+
+        if not bundles:
+            click.echo("No failures found.")
+            return
+
+        for bundle in bundles:
+            click.echo(f"\nID: {bundle.id}")
+            click.echo(f"  Time: {bundle.created_at}")
+            click.echo(f"  Class: {bundle.failure_class} (severity: {bundle.severity})")
+            click.echo(f"  Session: {bundle.session_id}")
+            click.echo(f"  Turn: {bundle.turn_id}")
+            click.echo(f"  Message: {bundle.error_message[:100]}")
+            if len(bundle.error_message) > 100:
+                click.echo("  ...")
+
+    asyncio.run(_list())
+
+
+@failures.command(name="summary")
+@click.option("--days", type=int, default=7, help="Number of days to summarize")
+@click.pass_context
+def failures_summary(ctx: click.Context, days: int) -> None:
+    """Show failure counts by class."""
+    db: Database = ctx.obj["db"]
+    failure_store: FailureStore = ctx.obj["failure_store"]
+
+    async def _summary() -> None:
+        await _bootstrap_db(db, ctx.obj["memory_store"], failure_store)
+
+        since = datetime.now() - timedelta(days=days)
+        counts = await failure_store.count_by_class(since=since)
+
+        click.echo(f"Failure summary (last {days} days):\n")
+        if counts:
+            total = sum(counts.values())
+            for failure_class, count in sorted(counts.items(), key=lambda x: -x[1]):
+                click.echo(f"  {failure_class}: {count}")
+            click.echo(f"\nTotal: {total}")
+        else:
+            click.echo("  No failures in this period.")
+
+    asyncio.run(_summary())
+
+
 # Schedule command group
 @cli.group()
 def schedule() -> None:
@@ -469,7 +617,10 @@ def schedule_add(
         try:
             fire_at = datetime.fromisoformat(fire_at_str)
         except ValueError:
-            click.echo(f"Error: Invalid datetime format '{fire_at_str}'. Use ISO format: 2026-04-15T15:00:00", err=True)
+            click.echo(
+                f"Error: Invalid datetime format '{fire_at_str}'. Use ISO format: 2026-04-15T15:00:00",
+                err=True,
+            )
             sys.exit(1)
 
         # Reject past times
@@ -519,9 +670,7 @@ def schedule_list(ctx: click.Context) -> None:
         await _bootstrap_db(db, memory_store)
 
         scheduler_store = SchedulerStore(db)
-        tasks = await scheduler_store.list_tasks_for_session(
-            session_id=None, include_disabled=True
-        )
+        tasks = await scheduler_store.list_tasks_for_session(session_id=None, include_disabled=True)
 
         if not tasks:
             click.echo("No scheduled tasks.")
@@ -713,8 +862,12 @@ def schedule_remove(ctx: click.Context, task_id: str) -> None:
 
 
 @schedule.command(name="daemon")
-@click.option("--tick-interval", type=float, default=None,
-              help="Tick interval in seconds (default: from config)")
+@click.option(
+    "--tick-interval",
+    type=float,
+    default=None,
+    help="Tick interval in seconds (default: from config)",
+)
 @click.pass_context
 def schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None:
     """Run the scheduler daemon (blocks until Ctrl-C)."""
@@ -822,18 +975,16 @@ def run_telegram(ctx: click.Context) -> None:
 
     from hestia.platforms.telegram_adapter import TelegramAdapter
 
-    def _make_telegram_scheduler_callback(
-        adapter: TelegramAdapter, session_store: SessionStore
-    ):
+    def _make_telegram_scheduler_callback(adapter: TelegramAdapter, session_store: SessionStore):
         """Create a scheduler response callback that routes to Telegram."""
+
         async def callback(task: ScheduledTask, text: str) -> None:
             session = await session_store.get_session(task.session_id)
             if session is None or session.platform != "telegram":
-                logger.warning(
-                    "Scheduler task %s: session not found or not telegram", task.id
-                )
+                logger.warning("Scheduler task %s: session not found or not telegram", task.id)
                 return
             await adapter.send_message(session.platform_user, text)
+
         return callback
 
     async def _run() -> None:
@@ -867,9 +1018,7 @@ def run_telegram(ctx: click.Context) -> None:
             """Handle incoming Telegram message."""
             # Get or create session for this user (DB-backed, survives restarts)
             if platform_user not in user_sessions:
-                session = await session_store.get_or_create_session(
-                    "telegram", platform_user
-                )
+                session = await session_store.get_or_create_session("telegram", platform_user)
                 user_sessions[platform_user] = session
             else:
                 session = user_sessions[platform_user]

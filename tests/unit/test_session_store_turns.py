@@ -217,9 +217,7 @@ class TestCreateSession:
         assert session1.state == SessionState.ACTIVE
 
         # Create new session with archive_previous
-        session2 = await store.create_session(
-            "cli", "testuser", archive_previous=session1
-        )
+        session2 = await store.create_session("cli", "testuser", archive_previous=session1)
 
         # New session is ACTIVE
         assert session2.state == SessionState.ACTIVE

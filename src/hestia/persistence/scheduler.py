@@ -25,13 +25,13 @@ def _calculate_next_run(
     created_at: datetime | None = None,
 ) -> datetime | None:
     """Calculate the next run time from a cron expression or fire_at time.
-    
+
     Args:
         cron_expr: Cron expression for recurring tasks (e.g., "0 9 * * *")
         fire_at: Exact datetime for one-time tasks
         base_time: Base time for cron calculation (defaults to now in local timezone)
         created_at: Task creation time (used when fire_at is in the past)
-        
+
     Returns:
         The next scheduled run time, or None if the task should not run again.
     """
@@ -74,7 +74,7 @@ class SchedulerStore:
         enabled: bool = True,
     ) -> ScheduledTask:
         """Create a new scheduled task.
-        
+
         Args:
             session_id: Session ID to run the task in
             prompt: The prompt text to send to the model
@@ -82,10 +82,10 @@ class SchedulerStore:
             cron_expression: Cron expression for recurring tasks (e.g., "0 9 * * *")
             fire_at: Exact datetime for one-time tasks
             enabled: Whether the task is initially enabled
-            
+
         Returns:
             The created ScheduledTask
-            
+
         Raises:
             PersistenceError: If neither cron_expression nor fire_at is provided,
                 or if both are provided.
@@ -134,13 +134,15 @@ class SchedulerStore:
             last_error=None,
         )
 
-    async def list_due_tasks(self, now: datetime | None = None, limit: int = 100) -> list[ScheduledTask]:
+    async def list_due_tasks(
+        self, now: datetime | None = None, limit: int = 100
+    ) -> list[ScheduledTask]:
         """List tasks that are due to run.
-        
+
         Args:
             now: Current time (defaults to now in local timezone)
             limit: Maximum number of tasks to return
-            
+
         Returns:
             List of tasks where next_run_at <= now and enabled=True
         """
@@ -168,11 +170,11 @@ class SchedulerStore:
         self, session_id: str | None = None, include_disabled: bool = False
     ) -> list[ScheduledTask]:
         """List all tasks for a session, or all tasks if no session specified.
-        
+
         Args:
             session_id: The session ID to filter by, or None for all tasks
             include_disabled: Whether to include disabled tasks
-            
+
         Returns:
             List of tasks for the session
         """
@@ -182,10 +184,7 @@ class SchedulerStore:
         if not include_disabled:
             conditions.append(scheduled_tasks.c.enabled == True)
 
-        query = (
-            sa.select(scheduled_tasks)
-            .order_by(scheduled_tasks.c.created_at.desc())
-        )
+        query = sa.select(scheduled_tasks).order_by(scheduled_tasks.c.created_at.desc())
         if conditions:
             query = query.where(sa.and_(*conditions))
 
@@ -202,15 +201,15 @@ class SchedulerStore:
         next_run_at: datetime | None = None,
     ) -> ScheduledTask | None:
         """Update a task after it has been executed.
-        
+
         For recurring tasks (cron_expression), calculates the next run time.
         For one-time tasks (fire_at), disables the task.
-        
+
         Args:
             task_id: The task ID
             error: Error message if the run failed, None if successful
             now: Current time (defaults to now in local timezone)
-            
+
         Returns:
             The updated ScheduledTask, or None if not found
         """
@@ -251,9 +250,7 @@ class SchedulerStore:
                 values["enabled"] = False
 
             update = (
-                sa.update(scheduled_tasks)
-                .where(scheduled_tasks.c.id == task_id)
-                .values(**values)
+                sa.update(scheduled_tasks).where(scheduled_tasks.c.id == task_id).values(**values)
             )
             await conn.execute(update)
             await conn.commit()
@@ -312,10 +309,10 @@ class SchedulerStore:
 
     async def get_task(self, task_id: str) -> ScheduledTask | None:
         """Get a task by ID.
-        
+
         Args:
             task_id: The task ID
-            
+
         Returns:
             The ScheduledTask, or None if not found
         """
@@ -343,3 +340,33 @@ class SchedulerStore:
             next_run_at=row.next_run_at,
             last_error=row.last_error,
         )
+
+    async def summary_stats(self) -> dict[str, Any]:
+        """Get summary stats for the status command.
+
+        Returns:
+            Dict with:
+                - enabled_count: Number of enabled tasks
+                - next_run_at: Earliest next_run_at among enabled tasks, or None
+        """
+        count_query = sa.select(sa.func.count(scheduled_tasks.c.id)).where(
+            scheduled_tasks.c.enabled.is_(True)
+        )
+        next_run_query = sa.select(sa.func.min(scheduled_tasks.c.next_run_at)).where(
+            sa.and_(
+                scheduled_tasks.c.enabled.is_(True),
+                scheduled_tasks.c.next_run_at.is_not(None),
+            )
+        )
+
+        async with self._db.engine.connect() as conn:
+            count_result = await conn.execute(count_query)
+            enabled_count = count_result.scalar_one() or 0
+
+            next_run_result = await conn.execute(next_run_query)
+            next_run_at = next_run_result.scalar_one()
+
+            return {
+                "enabled_count": enabled_count,
+                "next_run_at": next_run_at,
+            }

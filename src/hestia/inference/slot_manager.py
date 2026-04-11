@@ -88,27 +88,19 @@ class SlotManager:
                     slot_id = await self._allocate_slot(session.id)
                     try:
                         if session.slot_saved_path:
-                            await self._inference.slot_restore(
-                                slot_id, session.slot_saved_path
-                            )
+                            await self._inference.slot_restore(slot_id, session.slot_saved_path)
                             await self._store.assign_slot(
                                 session.id, slot_id, clear_saved_path=True
                             )
-                            return SlotAssignment(
-                                slot_id=slot_id, restored_from_disk=True
-                            )
+                            return SlotAssignment(slot_id=slot_id, restored_from_disk=True)
                         else:
                             await self._store.assign_slot(session.id, slot_id)
-                            return SlotAssignment(
-                                slot_id=slot_id, restored_from_disk=False
-                            )
+                            return SlotAssignment(slot_id=slot_id, restored_from_disk=False)
                     except Exception:
                         self._assignments.pop(slot_id, None)
                         raise
 
-                return SlotAssignment(
-                    slot_id=session.slot_id, restored_from_disk=False
-                )
+                return SlotAssignment(slot_id=session.slot_id, restored_from_disk=False)
 
             elif session.temperature == SessionTemperature.WARM:
                 slot_id = await self._allocate_slot(session.id)
@@ -122,9 +114,7 @@ class SlotManager:
                         return SlotAssignment(slot_id=slot_id, restored_from_disk=False)
 
                     await self._inference.slot_restore(slot_id, session.slot_saved_path)
-                    await self._store.assign_slot(
-                        session.id, slot_id, clear_saved_path=True
-                    )
+                    await self._store.assign_slot(session.id, slot_id, clear_saved_path=True)
                     return SlotAssignment(slot_id=slot_id, restored_from_disk=True)
                 except Exception:
                     self._assignments.pop(slot_id, None)
@@ -144,9 +134,7 @@ class SlotManager:
         completes successfully. The slot stays assigned and HOT.
         """
         if session.slot_id is None:
-            logger.warning(
-                "save() called on session %s with no slot_id", session.id
-            )
+            logger.warning("save() called on session %s with no slot_id", session.id)
             return
         saved_path = self._slot_path_for(session.id)
         async with self._lock:
@@ -174,9 +162,7 @@ class SlotManager:
         # Pool full — evict LRU
         victim_session_id = await self._pick_lru_victim()
         if victim_session_id is None:
-            raise RuntimeError(
-                "No LRU victim available — slot pool exhausted"
-            )
+            raise RuntimeError("No LRU victim available — slot pool exhausted")
         victim_slot_id = await self._evict_session_locked(victim_session_id)
         self._assignments[victim_slot_id] = session_id
         return victim_slot_id
@@ -188,9 +174,7 @@ class SlotManager:
         """
         session = await self._store.get_session(session_id)
         if session is None or session.slot_id is None:
-            raise RuntimeError(
-                f"Cannot evict session {session_id}: not assigned to a slot"
-            )
+            raise RuntimeError(f"Cannot evict session {session_id}: not assigned to a slot")
 
         slot_id = session.slot_id
         saved_path = self._slot_path_for(session_id)

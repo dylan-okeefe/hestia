@@ -394,16 +394,13 @@ class SessionStore:
             await conn.execute(update)
             await conn.commit()
 
-    async def append_transition(
-        self, turn_id: str, transition: "TurnTransition"
-    ) -> None:
+    async def append_transition(self, turn_id: str, transition: "TurnTransition") -> None:
         """Append a transition to the turn_transitions table."""
         from hestia.persistence.schema import turn_transitions
 
         # Get next idx for this turn
-        idx_query = (
-            sa.select(sa.func.coalesce(sa.func.max(turn_transitions.c.idx), -1) + 1)
-            .where(turn_transitions.c.turn_id == turn_id)
+        idx_query = sa.select(sa.func.coalesce(sa.func.max(turn_transitions.c.idx), -1) + 1).where(
+            turn_transitions.c.turn_id == turn_id
         )
 
         async with self._db.engine.connect() as conn:
@@ -447,9 +444,7 @@ class SessionStore:
                 )
             return None
 
-    async def list_turns_for_session(
-        self, session_id: str, limit: int = 50
-    ) -> list["Turn"]:
+    async def list_turns_for_session(self, session_id: str, limit: int = 50) -> list["Turn"]:
         """List turns for a session, newest first."""
         from hestia.orchestrator.types import Turn, TurnState
         from hestia.persistence.schema import turns
@@ -481,13 +476,12 @@ class SessionStore:
                 for row in rows
             ]
 
-
     async def list_stale_turns(self) -> list["Turn"]:
         """List all turns not in a terminal state. Used for crash recovery."""
         from hestia.orchestrator.types import Turn, TurnState
         from hestia.persistence.schema import turns
 
-        terminal_states = ["done", "failed", "cancelled"]
+        terminal_states = ["done", "failed"]
         query = sa.select(turns).where(sa.not_(turns.c.state.in_(terminal_states)))
 
         async with self._db.engine.connect() as conn:
@@ -526,3 +520,44 @@ class SessionStore:
         async with self._db.engine.connect() as conn:
             await conn.execute(update)
             await conn.commit()
+
+    # --- Stats queries for CLI status command ---
+
+    async def count_sessions_by_state(self) -> dict[str, int]:
+        """Count sessions grouped by state.
+
+        Returns:
+            Dict mapping state name to count.
+        """
+        query = sa.select(sessions.c.state, sa.func.count(sessions.c.id)).group_by(sessions.c.state)
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(query)
+            rows = result.fetchall()
+            return {row.state: row[1] for row in rows}
+
+    async def turn_stats_since(self, since: datetime) -> dict[str, int]:
+        """Count turns by terminal state since a given time.
+
+        Args:
+            since: Only count turns started at or after this time.
+
+        Returns:
+            Dict mapping state name to count (only includes terminal states
+            that have at least one turn).
+        """
+        from hestia.persistence.schema import turns
+
+        query = (
+            sa.select(turns.c.state, sa.func.count(turns.c.id))
+            .where(
+                sa.and_(
+                    turns.c.started_at >= since,
+                    turns.c.state.in_(["done", "failed"]),
+                )
+            )
+            .group_by(turns.c.state)
+        )
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(query)
+            rows = result.fetchall()
+            return {row.state: row[1] for row in rows}

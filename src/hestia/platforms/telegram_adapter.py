@@ -41,18 +41,11 @@ class TelegramAdapter(Platform):
         """Start polling for Telegram messages."""
         self._on_message = on_message
 
-        self._app = (
-            Application.builder()
-            .token(self._config.bot_token)
-            .http_version("1.1")
-            .build()
-        )
+        self._app = Application.builder().token(self._config.bot_token).http_version("1.1").build()
 
         # Register handlers
         self._app.add_handler(CommandHandler("start", self._handle_start))
-        self._app.add_handler(
-            MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message)
-        )
+        self._app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message))
 
         # Start polling
         await self._app.initialize()
@@ -132,10 +125,7 @@ class TelegramAdapter(Platform):
             return True  # No whitelist = allow all
 
         allowed = self._config.allowed_users
-        return (
-            str(user_id) in allowed
-            or (username is not None and username in allowed)
-        )
+        return str(user_id) in allowed or (username is not None and username in allowed)
 
     async def _handle_start(self, update: Update, context) -> None:
         """Handle /start command."""
