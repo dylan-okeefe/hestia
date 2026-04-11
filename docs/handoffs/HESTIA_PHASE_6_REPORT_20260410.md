@@ -1,8 +1,8 @@
 # Hestia Phase 6 Report — Hardening & Observability
 
 **Date:** 2026-04-10  
-**Branch:** `feature/phase-6-hardening`  
-**Status:** Complete (pending merge to `develop`)
+**Branch:** landed on `develop` (was `feature/phase-6-hardening`)  
+**Status:** Complete — merged to `develop` (2026-04-11)
 
 ---
 
