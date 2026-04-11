@@ -1,59 +1,76 @@
 # Hestia — Review & Orchestration State
 
-> **Purpose:** This file is the handoff contract between Claude (Cowork) and Cursor for reviewing Kimi's output and orchestrating the next phase. Whichever tool picks up the work reads this file first to understand where we are. Whoever finishes a review session updates it.
+> **Purpose:** Handoff contract between Claude (Cowork) and Cursor for reviewing Kimi's output and orchestrating the next phase.
 >
-> **Last updated:** 2026-04-10
-> **Last updated by:** Cursor
+> **Last updated:** 2026-04-11
+> **Last updated by:** Cursor (orchestration + extended review; no code fixes)
 
 ---
 
 ## Current Branch & Phase
 
-- **Integrated branch (pending merge):** `feature/phase-6-hardening`
-- **Phase:** 6 — Pre-release hardening **complete** (merge to `develop` when ready)
-- **Status:** Reviewed by Cursor; fixes applied for regressions noted below.
+- **Branch:** `feature/phase-6-hardening`
+- **Phase:** 6 — pre-release hardening + follow-up **code complete in working tree**, **not yet committed**
+- **Blocker before merge:** Kimi must **commit** all changes, finish **doc closeout** (see below), then Dylan (or Kimi per prompt) runs **gitflow** merge to `develop`.
 
 ---
 
-## Review Verdict: Phase 6 (final)
+## Cursor review: full working-tree diff (Phase 6 follow-up)
 
-**Overall: green** — core security and failure-tracking goals met. Kimi delivered capability labels, `filter_tools`, path sandboxing, `FailureStore` + orchestrator wiring, schema + Alembic migration, and tests.
+**Scope:** ~31 files, **+806 / −339** lines vs last commit (`git diff HEAD --stat`).
 
-**Cursor follow-up fixes (same branch):**
+**Verdict on “the rest” of the changes (beyond CLI/status/failures):**
 
-1. **`hestia chat` regression:** Orchestrator used `confirm_callback=None` while the command set `CliConfirmHandler` on context — destructive tools could run without prompting. Fixed: `chat` now passes `CliConfirmHandler()`.
-2. **`schedule_daemon`:** Still constructed `Orchestrator(..., confirm_callback=CliConfirmHandler())` despite headless intent. Fixed: `confirm_callback=None`. Status echo also used wrong variable for tick interval — fixed to `{tick}`.
-3. **Scheduler tool filtering:** `platform="scheduler"` never matched real sessions (tasks use `cli` sessions). Fixed: `scheduler_tick_active` contextvar set for the duration of `Scheduler._fire_task` → `process_turn`; `DefaultPolicyEngine.filter_tools` treats it like scheduler mode.
-4. **`orchestrator_factory` (delegation):** Now passes `failure_store` so subagent failures can be recorded.
-5. **`cli.py`:** `logger` moved below imports (ruff E402). `FailureClass` uses `StrEnum` (ruff UP042).
+| Area | Assessment |
+|------|------------|
+| `config.py`, `context/builder.py`, `slot_manager.py`, `registry.py`, `telegram_adapter.py`, `policy/default.py`, `scheduler/engine.py`, `orchestrator/engine.py` | Almost entirely **line-wrapping / ruff-style formatting**. **No semantic risk** spotted in sampled diffs. |
+| `persistence/sessions.py`, `scheduler.py`, `failure_store.py` | **Functional** changes align with prior review (turn stats, `summary_stats`, class filter, etc.). |
+| `tests/unit/test_cli_scheduler.py` (large) | **CliRunner invoke formatting** + structure; behavior should be unchanged — **rely on pytest**. |
+| Other test tweaks | Small import/assert adjustments; **311 tests passed** in last Cursor run (`uv run pytest tests/unit/ tests/integration/ -q`). |
 
-**Still missing vs Phase 6 prompt (non-blocking for merge):**
+**Remaining doc issues (Kimi — do not merge until fixed):**
 
-- `setup_logging()`, `hestia status`, `hestia version`, `hestia failures` CLI commands
-- README overhaul and CHANGELOG expansion (prompt §6)
-- Phase 6 handoff report under `docs/handoffs/` (Kimi did not add one)
+1. **README Deploy** — Still lists non-existent `hestia-scheduler.service`, `hestia-telegram.service`, and broken `deploy/README.md` link. **Fix per** [`docs/prompts/KIMI_PHASE_6_CLOSEOUT_AND_GITFLOW.md`](prompts/KIMI_PHASE_6_CLOSEOUT_AND_GITFLOW.md) §1.1.
+2. **Phase 6 handoff report** — Remove phantom `tools/decorators.py`; fill **real commit SHAs** after commit. Same closeout prompt §1.2.
 
-**Kimi prompt for the above:** `docs/prompts/KIMI_PHASE_6_FOLLOWUP_PROMPT.md` (stay on `feature/phase-6-hardening`; no merge to `develop` unless Dylan says so).
+**Pytest note:** 2× `PytestUnhandledThreadExceptionWarning` (aiosqlite / closed loop) — **housekeeping** for a future Kimi cycle; not a merge blocker.
 
-**Design docs added (committed with branch):**
+---
 
-- `docs/roadmap/future-systems-deferred-roadmap.md`
-- `docs/design/matrix-integration.md`
+## Review Verdict: Phase 6 (code)
+
+**Green** for security, failure tracking, observability CLI, and store queries — pending **commit + doc closeout** above.
+
+---
+
+## Kimi prompt order (orchestration — Cursor does not implement)
+
+1. **Closeout + gitflow:** [`docs/prompts/KIMI_PHASE_6_CLOSEOUT_AND_GITFLOW.md`](prompts/KIMI_PHASE_6_CLOSEOUT_AND_GITFLOW.md) — README deploy, handoff SHAs, commits, merge `feature/phase-6-hardening` → `develop`.
+2. **Matrix (Phase 7):** [`docs/prompts/KIMI_PHASE_7_MATRIX.md`](prompts/KIMI_PHASE_7_MATRIX.md) — new branch `feature/phase-7-matrix` from updated `develop`; adapter, config, CLI, tests per [`docs/design/matrix-integration.md`](design/matrix-integration.md).
+
+**Earlier prompts (reference only):**
+
+- [`KIMI_PHASE_6_FOLLOWUP_PROMPT.md`](prompts/KIMI_PHASE_6_FOLLOWUP_PROMPT.md) — original follow-up scope
+- [`KIMI_PHASE_6_FOLLOWUP_REVIEW_FIXES_PROMPT.md`](prompts/KIMI_PHASE_6_FOLLOWUP_REVIEW_FIXES_PROMPT.md) — most items addressed in tree; deploy/handoff still open
 
 ---
 
 ## Git State
 
-- **`feature/phase-6-hardening`:** Phase 6 implementation + review fixes; ready to merge into `develop`.
-- **`develop`:** Through Phase 5 until merge.
+| Branch | Role |
+|--------|------|
+| `feature/phase-6-hardening` | **Uncommitted WIP** — Kimi commits here, then merge per closeout prompt |
+| `develop` | Still at Phase 5 merge until Phase 6 lands |
+
+**Cursor did not merge** — merge is explicit in closeout prompt for Dylan/Kimi.
 
 ---
 
 ## Test Counts
 
-| Phase | Tests (approx.) |
-|-------|-----------------|
-| 6 final | ~295 |
+| Snapshot | Count |
+|----------|-------|
+| Last `pytest tests/unit/ tests/integration/ -q` on this tree | **311 passed** |
 
 Run: `uv run pytest tests/unit/ tests/integration/ -q`
 
@@ -61,52 +78,49 @@ Run: `uv run pytest tests/unit/ tests/integration/ -q`
 
 ## Architecture Decisions (ADRs)
 
-20 ADRs including **ADR-019** (capability labels + tool filtering), **ADR-020** (failure bundles).
+20 ADRs (ADR-019, ADR-020 for Phase 6). **Phase 7 Matrix** should add **ADR-021** (per Matrix prompt).
+
+---
+
+## Quality Checks (orienting)
+
+| Tool | Notes |
+|------|--------|
+| pytest | **311 passed** on reviewed tree; fix HANDOFF if your run differs |
+| ruff | Run before merge; large pre-existing debt possible outside touched files |
+| mypy | Pre-existing errors in some modules; new Matrix code should type-check |
 
 ---
 
 ## Design Debt (carried forward)
 
-1. Policy delegation **replaces** the model’s tool batch with one `delegate_task` result (duplicated text for multiple `tool_call_id`s except the first). Refine UX later if needed.
-2. Matrix adapter + integration harness (design stretch).
-3. Telegram confirmation UI for destructive tools (inline keyboard).
+1. Policy delegation batch UX (duplicate `tool_call_id` text).
+2. **Matrix** — design in `docs/design/matrix-integration.md`; implementation = Phase 7 prompt.
+3. Telegram inline confirmation for destructive tools.
 4. Artifact tools (`grep_artifact`, `list_artifacts`).
+5. aiosqlite pytest thread warnings (housekeeping).
 
 ---
 
 ## Remaining Roadmap
 
-- **Phase 6 follow-ups:** `hestia status` / `version` / `failures`, `setup_logging`, README + CHANGELOG (see prompt §5–§6).
-- **Post-release:** Deferred roadmap in `docs/roadmap/future-systems-deferred-roadmap.md`; Matrix plan in `docs/design/matrix-integration.md`.
+1. Kimi: **Phase 6 closeout** + merge to `develop` (prompt above).
+2. Kimi: **Phase 7 Matrix** + tests (prompt above).
+3. Long-term: `docs/roadmap/future-systems-deferred-roadmap.md`.
 
 ---
 
 ## How to Use This File
 
-### If you're Claude (Cowork):
+### Claude / Cursor
 
-1. Read this file at the start of every session about Hestia
-2. After reviewing Kimi output, update the "Current Branch & Phase", "Review Verdict", and "Git State" sections
-3. When writing a Kimi prompt, fold any bugs from the current review into §0 of the next phase
+1. Read at start of each Hestia session.
+2. After Kimi delivers work: update verdict, test counts, git state, prompt pointers.
+3. Next Kimi cycle: use **closeout** then **Matrix** prompts in order.
 
-### If you're Cursor:
+### Review checklist
 
-1. Read this file at the start of every session about Hestia
-2. Kimi prompts: `docs/prompts/`
-3. Design reference: `docs/hestia-design-revised-april-2026.md`
-
-### Key files for any reviewer:
-
-- `docs/DECISIONS.md` — All ADRs
-- `docs/handoffs/HESTIA_PHASE_*_REPORT_*.md` — Kimi's self-reported output per phase
-- `src/hestia/orchestrator/engine.py` — Turn loop and delegation
-- `src/hestia/orchestrator/transitions.py` — State machine
-- `src/hestia/cli.py` — Tool registration and confirm callback wiring
-
-### Review checklist (for any tool):
-
-1. Read the handoff report Kimi wrote (`docs/handoffs/`)
-2. New tools registered in `cli.py` when they should be visible to the model
-3. `respond_callback` is async wherever the orchestrator awaits it
-4. Run `pytest tests/unit/ tests/integration/`
-5. Update this file with findings
+1. Read Kimi handoff under `docs/handoffs/`
+2. `pytest tests/unit/ tests/integration/`
+3. New platform commands register tools and use async `respond_callback`
+4. Update this file
