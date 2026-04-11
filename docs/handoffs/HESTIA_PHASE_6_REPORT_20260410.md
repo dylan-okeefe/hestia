@@ -57,13 +57,8 @@ Phase 6 delivered a comprehensive hardening layer including capability-based sec
 
 ## Commit SHAs (Main Ones)
 
-Phase 6 + follow-up commits (to be filled at commit time):
-- `[SHA]` — Centralized logging setup
-- `[SHA]` — CLI observability commands (version, status, failures)
-- `[SHA]` — Store query methods for status reporting
-- `[SHA]` — README overhaul
-- `[SHA]` — CHANGELOG update
-- `[SHA]` — Review fixes (tool import, FTS5 wording, SQL filters)
+Phase 6 + follow-up commits:
+- `4cf2fc7` — CLI observability, logging, status/failures commands, store queries, README deploy fixes
 
 ---
 
