@@ -22,6 +22,7 @@ Cursor will adjust this file or add a follow-up design/prompt if the review find
 
 ## Reference
 
+- Full queue (Phases 7 → Matrix → 8–13): [`../orchestration/kimi-phase-queue.md`](../orchestration/kimi-phase-queue.md)
 - Orchestration contract: [`../HANDOFF_STATE.md`](../HANDOFF_STATE.md)
 - Loop audit trail (detailed): [`../orchestration/kimi-loop-log.md`](../orchestration/kimi-loop-log.md)
 - One-shot CLI (optional): [`../../scripts/kimi-run-current.sh`](../../scripts/kimi-run-current.sh)
