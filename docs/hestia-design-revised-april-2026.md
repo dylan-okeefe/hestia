@@ -355,7 +355,7 @@ loops. Housekeeping, not a functional issue.
 
 ### Phase 7: Matrix adapter (in progress)
 
-Branch: `feature/phase-7-matrix`. Design: [`docs/design/matrix-integration.md`](design/matrix-integration.md).
+Branch for Matrix work: `feature/phase-7-matrix` (or successor name in `HANDOFF_STATE.md`). Design: [`docs/design/matrix-integration.md`](design/matrix-integration.md). **Phase 7 cleanup** precedes Matrix — see [`docs/design/kimi-hestia-phase-7-cleanup.md`](design/kimi-hestia-phase-7-cleanup.md).
 
 - `MatrixAdapter` implementing Platform ABC with `matrix-nio`
 - `MatrixConfig` dataclass mirroring TelegramConfig

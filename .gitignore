@@ -12,6 +12,10 @@ build/
 # uv
 .venv/
 
+# Kimi orchestration (local only; never commit)
+.kimi-done
+.kimi-output.log
+
 # Hestia local state
 .hestia/
 *.db

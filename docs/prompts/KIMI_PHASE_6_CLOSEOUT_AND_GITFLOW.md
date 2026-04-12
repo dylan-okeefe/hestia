@@ -76,7 +76,7 @@ Optional: delete remote feature branch after merge, or keep for history.
 
 ## §4 — Next step after merge
 
-Start **[`KIMI_PHASE_7_MATRIX.md`](./KIMI_PHASE_7_MATRIX.md)** from a **new** branch **`feature/phase-7-matrix`** cut from **updated `develop`**.
+Start the task described in **[`KIMI_CURRENT.md`](./KIMI_CURRENT.md)** and **[`../HANDOFF_STATE.md`](../HANDOFF_STATE.md)** (phase order has moved to design-first specs under `docs/design/`).
 
 ---
 

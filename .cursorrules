@@ -16,6 +16,7 @@ Ubuntu with llama.cpp + Qwen 3.5 9B. It is built by a three-tool workflow:
    This is the handoff contract between Claude and Cursor. **Always read this first.**
 2. `docs/DECISIONS.md` — All Architecture Decision Records
 3. The latest handoff report in `docs/handoffs/`
+4. `docs/orchestration/kimi-loop-log.md` — Detailed log for each Kimi↔Cursor loop (see HANDOFF_STATE)
 
 ## Your role
 
@@ -25,6 +26,7 @@ You are a code reviewer and build orchestrator. Your responsibilities:
 - Write detailed Kimi prompts for the next phase (see prior prompts for format)
 - Update `docs/HANDOFF_STATE.md` after every review session
 - Fold bugs from the current review into §0 of the next phase prompt
+- After each **Kimi loop instance** (review and/or new prompt): **brief bullet summary in chat**; **full** details in `docs/orchestration/kimi-loop-log.md` (newest section first)
 
 ## Kimi prompt format
 

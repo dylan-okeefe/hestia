@@ -1,26 +1,27 @@
 # Kimi — current task (orchestration pointer)
 
-**Orchestrator:** Cursor updates this file after each review. **You:** read this file first in each session, then open the linked prompt and execute it end-to-end.
+**Orchestrator:** Cursor updates this file after each review. **Executor:** follow every step below, then the linked **design** specs (not duplicate prompt files).
 
-**Last set by:** Cursor — 2026-04-11 (after Phase 6 closeout review)
+**Last set by:** Cursor — 2026-04-12 (Phase 7 cleanup; design-dir source of truth)
 
 ---
 
 ## Current task (do this now)
 
-1. Ensure you are on **up-to-date `develop`** (`git checkout develop && git pull` if you use a remote).
-2. Create branch **`feature/phase-7-matrix`** from `develop`.
-3. Open **[`KIMI_PHASE_7_MATRIX.md`](./KIMI_PHASE_7_MATRIX.md)** and implement it fully (adapter, config, CLI, tests, ADR-021 per that file and [`docs/design/matrix-integration.md`](../design/matrix-integration.md)).
-4. **Report back:** `git log --oneline -8`, `pytest` summary, and list of new/modified files.
+1. Read **[`docs/design/kimi-hestia-phase-7-cleanup.md`](../design/kimi-hestia-phase-7-cleanup.md)** and implement it **end-to-end** (all sections, tests, commit, push). That file is the **authoritative spec** for this phase.
+2. For **Matrix** and **Phase 8+** planning context only (do not implement unless this file explicitly says so later): [`docs/design/matrix-integration.md`](../design/matrix-integration.md), [`docs/design/hestia-phase-8-plus-roadmap.md`](../design/hestia-phase-8-plus-roadmap.md).
+3. Complete the **Handoff report** and **`.kimi-done` artifact`** sections at the bottom of the cleanup design doc — those are part of the task.
 
 ---
 
 ## Next task (after Cursor review)
 
-Cursor will add a follow-up prompt here if Matrix review finds gaps; otherwise see [`../HANDOFF_STATE.md`](../HANDOFF_STATE.md) roadmap.
+Cursor will adjust this file or add a follow-up design/prompt if the review finds gaps. Otherwise see [`../HANDOFF_STATE.md`](../HANDOFF_STATE.md) for the merged roadmap order (Matrix after cleanup unless reprioritized).
 
 ---
 
 ## Reference
 
 - Orchestration contract: [`../HANDOFF_STATE.md`](../HANDOFF_STATE.md)
+- Loop audit trail (detailed): [`../orchestration/kimi-loop-log.md`](../orchestration/kimi-loop-log.md)
+- One-shot CLI (optional): [`../../scripts/kimi-run-current.sh`](../../scripts/kimi-run-current.sh)
