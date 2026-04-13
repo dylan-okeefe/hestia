@@ -8,6 +8,16 @@
 
 ---
 
+## 2026-04-12 — Loop: L05 Phase 10 — memory epochs (Kimi)
+
+**Kimi:** ~9.2 min. `.kimi-done`: `GIT_HEAD=2a54255`, **386 passed**.
+
+**Outcome:** `memory/epochs.py`, CLI + `ContextBuilder` wiring, **ADR-023** under `docs/architecture/adr/`, `test_memory_epochs.py`.
+
+**Git:** Merged `feature/phase-10-memory-epochs` → `develop`.
+
+---
+
 ## 2026-04-12 — Loop: L04 Phase 9 — test infra (Kimi)
 
 **Kimi:** `./scripts/kimi-run-current.sh` (~14.9 min). `.kimi-done`: `GIT_HEAD=39caca5`, **379 passed**.
