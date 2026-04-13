@@ -62,7 +62,7 @@ Dylan can **defer per-loop review** to Cursor for a **queued multi-loop run** (s
 
 - **Branch:** `develop` (local **ahead of** `origin/develop` until you `git push` — includes Phase 7 cleanup + orchestration docs)
 - **Phase 7:** **Merged** — commit **`265003b`** on `develop` ("fix: phase 7 cleanup — bugs, security, dead code").
-- **Active Kimi work:** **None** — queue **L01–L08** complete on `develop` (tip **`381a543`** area includes L08 audit). Next work is **your** call (push, release, or new design doc). Pointer: [`docs/prompts/KIMI_CURRENT.md`](prompts/KIMI_CURRENT.md).
+- **Active Kimi work:** **None** — queue **L01–L08** complete on `develop` (tip **`70b9fb9`** includes closeout docs; L08 code in **`381a543`**). Next: **your** call (`git push`, release, or new design). Pointer: [`docs/prompts/KIMI_CURRENT.md`](prompts/KIMI_CURRENT.md).
 
 **Phase 7 summary (merged):**
 
@@ -102,7 +102,7 @@ Dylan can **defer per-loop review** to Cursor for a **queued multi-loop run** (s
 
 | Branch | Role |
 |--------|------|
-| `develop` | **Tip** — **L01–L08 queue complete** (`381a543` L08); **not pushed** to `origin` yet |
+| `develop` | **Tip** — **L01–L08 queue complete** (`70b9fb9`); **not pushed** to `origin` yet |
 | `feature/phase-13-audit` | Merged into `develop` |
 | `feature/phase-12-skills` | Merged into `develop` |
 | `feature/phase-11-trace-store` | Merged into `develop` |
