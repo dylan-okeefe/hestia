@@ -8,6 +8,18 @@
 
 ---
 
+## 2026-04-12 — Loop: L02 Phase 8a — identity + reasoning budget (Kimi)
+
+**Commands:** `git checkout -b feature/phase-8a-identity-reasoning`, `./scripts/kimi-run-current.sh` (~12.3 min). `.kimi-done`: `GIT_HEAD=98b4caa`, `354 passed, 1 warning`.
+
+**Outcome:** Commit **`98b4caa`** — `IdentityConfig`, `src/hestia/identity/compiler.py`, context builder integration, **`DefaultPolicyEngine.reasoning_budget()`**, orchestrator uses policy instead of hardcoded 2048, **ADR-022**, `tests/unit/test_identity_compiler.py`, policy tests extended. **354 passed** (known aiosqlite thread warnings unchanged).
+
+**Git:** Merged `feature/phase-8a-identity-reasoning` → `develop`.
+
+**Next:** L03 (`L03-phase-8b-cli-exceptions-datetime.md`).
+
+---
+
 ## 2026-04-12 — Loop: L01 Matrix adapter (Kimi)
 
 **Commands:** `git checkout -b feature/matrix-adapter` from `develop`, `./scripts/kimi-run-current.sh` (~21.6 min). `.kimi-done`: `GIT_HEAD=c3c34b2`, `PYTEST=328 passed`.
