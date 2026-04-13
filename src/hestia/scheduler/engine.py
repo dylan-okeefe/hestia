@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import datetime
+from datetime import datetime, timezone
 
 from hestia.core.types import Message, ScheduledTask, SessionState
 from hestia.orchestrator import Orchestrator
@@ -58,8 +58,9 @@ class Scheduler:
         try:
             while not self._stop_event.is_set():
                 try:
-                    await self._tick(datetime.now())
-                except Exception as e:
+                    await self._tick(datetime.now(timezone.utc))
+                except Exception as e:  # noqa: BLE001
+                    # Catch-all to prevent scheduler crash on any error
                     logger.exception("Scheduler tick raised: %s", e)
 
                 # Sleep until next tick or stop signal, whichever comes first
@@ -83,7 +84,7 @@ class Scheduler:
         task = await self._scheduler_store.get_task(task_id)
         if task is None:
             raise ValueError(f"Task not found: {task_id}")
-        await self._fire_task(task, datetime.now())
+        await self._fire_task(task, datetime.now(timezone.utc))
 
     async def _fire_task(self, task: ScheduledTask, now: datetime) -> None:
         logger.info("Firing scheduled task %s", task.id)
@@ -110,7 +111,8 @@ class Scheduler:
                 respond_callback=deliver,
             )
             turn_error = turn.error
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
+            # Catch-all to record any failure during task execution
             logger.exception("Task %s failed during process_turn", task.id)
             turn_error = str(e)
         finally:

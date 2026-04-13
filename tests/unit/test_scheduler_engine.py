@@ -1,7 +1,7 @@
 """Unit tests for Scheduler engine."""
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pytest
@@ -65,8 +65,8 @@ class FakeOrchestrator:
             session_id=session.id,
             state=TurnState.DONE,
             user_message=user_message,
-            started_at=datetime.now(),
-            completed_at=datetime.now(),
+            started_at=datetime.now(timezone.utc),
+            completed_at=datetime.now(timezone.utc),
             iterations=1,
             tool_calls_made=0,
             final_response="Task completed",
@@ -147,12 +147,12 @@ class TestRunNow:
         )
 
         # Run at 9 AM today
-        run_time = datetime(2024, 1, 1, 9, 0, 0)
+        run_time = datetime(2024, 1, 1, 9, 0, 0, tzinfo=timezone.utc)
 
         orchestrator = FakeOrchestrator()
         scheduler = await make_scheduler(scheduler_store, session_store, response_log, orchestrator)
 
-        # Patch datetime.now() in _fire_task by calling directly with run_time
+        # Call directly with run_time
         await scheduler._fire_task(task, run_time)
 
         # Verify orchestrator was called
@@ -166,7 +166,7 @@ class TestRunNow:
         # Verify task was updated with next run tomorrow
         updated = await scheduler_store.get_task(task.id)
         assert updated.last_run_at == run_time
-        assert updated.next_run_at == datetime(2024, 1, 2, 9, 0, 0)
+        assert updated.next_run_at == datetime(2024, 1, 2, 9, 0, 0, tzinfo=timezone.utc)
         assert updated.enabled is True
 
     @pytest.mark.asyncio
@@ -174,7 +174,7 @@ class TestRunNow:
         self, scheduler_store, session_store, test_session, response_log
     ):
         """One-shot task fires and gets disabled."""
-        fire_at = datetime.now() - timedelta(hours=1)
+        fire_at = datetime.now(timezone.utc) - timedelta(hours=1)
         task = await scheduler_store.create_task(
             session_id=test_session.id,
             prompt="One-time task",
@@ -184,7 +184,7 @@ class TestRunNow:
         orchestrator = FakeOrchestrator()
         scheduler = await make_scheduler(scheduler_store, session_store, response_log, orchestrator)
 
-        await scheduler._fire_task(task, datetime.now())
+        await scheduler._fire_task(task, datetime.now(timezone.utc))
 
         # Verify orchestrator was called
         assert len(orchestrator.calls) == 1
@@ -210,7 +210,7 @@ class TestRunNow:
             scheduler_store, session_store, response_log, failing_orchestrator
         )
 
-        run_time = datetime.now()
+        run_time = datetime.now(timezone.utc)
         await scheduler._fire_task(task, run_time)
 
         # Verify error was recorded
@@ -233,7 +233,7 @@ class TestRunNow:
         orchestrator.turn_error = "Tool execution failed"
         scheduler = await make_scheduler(scheduler_store, session_store, response_log, orchestrator)
 
-        run_time = datetime.now()
+        run_time = datetime.now(timezone.utc)
         await scheduler._fire_task(task, run_time)
 
         # Verify turn error was recorded
@@ -257,7 +257,7 @@ class TestRunNow:
         orchestrator = FakeOrchestrator()
         scheduler = await make_scheduler(scheduler_store, session_store, response_log, orchestrator)
 
-        run_time = datetime.now()
+        run_time = datetime.now(timezone.utc)
         await scheduler._fire_task(task, run_time)
 
         # Verify orchestrator was NOT called
@@ -287,7 +287,7 @@ class TestLoop:
     ):
         """Loop fires tasks that are due."""
         # Create a task that's already due
-        past = datetime.now() - timedelta(minutes=5)
+        past = datetime.now(timezone.utc) - timedelta(minutes=5)
         await scheduler_store.create_task(
             session_id=test_session.id,
             prompt="Due task",
@@ -315,7 +315,7 @@ class TestLoop:
         self, scheduler_store, session_store, test_session, response_log
     ):
         """Loop skips disabled tasks even if due."""
-        past = datetime.now() - timedelta(minutes=5)
+        past = datetime.now(timezone.utc) - timedelta(minutes=5)
         await scheduler_store.create_task(
             session_id=test_session.id,
             prompt="Disabled task",
@@ -342,7 +342,7 @@ class TestLoop:
         self, scheduler_store, session_store, test_session, response_log
     ):
         """Loop skips tasks that aren't due yet."""
-        future = datetime.now() + timedelta(hours=1)
+        future = datetime.now(timezone.utc) + timedelta(hours=1)
         await scheduler_store.create_task(
             session_id=test_session.id,
             prompt="Future task",
@@ -368,7 +368,7 @@ class TestLoop:
         self, scheduler_store, session_store, test_session, response_log
     ):
         """Loop continues running even if a tick raises."""
-        past = datetime.now() - timedelta(minutes=5)
+        past = datetime.now(timezone.utc) - timedelta(minutes=5)
         await scheduler_store.create_task(
             session_id=test_session.id,
             prompt="Due task",
@@ -441,9 +441,9 @@ class TestStartStop:
         await scheduler.start()
 
         # Stop should return quickly, not wait 60 seconds
-        start = datetime.now()
+        start = datetime.now(timezone.utc)
         await scheduler.stop()
-        elapsed = (datetime.now() - start).total_seconds()
+        elapsed = (datetime.now(timezone.utc) - start).total_seconds()
 
         assert elapsed < 1.0  # Should be very fast
 
@@ -456,7 +456,7 @@ class TestTick:
         self, scheduler_store, session_store, test_session, response_log
     ):
         """_tick processes all due tasks in order."""
-        past = datetime.now() - timedelta(minutes=5)
+        past = datetime.now(timezone.utc) - timedelta(minutes=5)
 
         # Create multiple due tasks
         task1 = await scheduler_store.create_task(
@@ -473,7 +473,7 @@ class TestTick:
         orchestrator = FakeOrchestrator()
         scheduler = await make_scheduler(scheduler_store, session_store, response_log, orchestrator)
 
-        await scheduler._tick(datetime.now())
+        await scheduler._tick(datetime.now(timezone.utc))
 
         # Both tasks should have been processed
         assert len(orchestrator.calls) == 2
@@ -485,7 +485,7 @@ class TestTick:
         self, scheduler_store, session_store, test_session, response_log
     ):
         """Tasks are processed sequentially, not in parallel."""
-        past = datetime.now() - timedelta(minutes=5)
+        past = datetime.now(timezone.utc) - timedelta(minutes=5)
 
         await scheduler_store.create_task(
             session_id=test_session.id,
@@ -508,7 +508,7 @@ class TestTick:
         orchestrator = OrderTrackingOrchestrator()
         scheduler = await make_scheduler(scheduler_store, session_store, response_log, orchestrator)
 
-        await scheduler._tick(datetime.now())
+        await scheduler._tick(datetime.now(timezone.utc))
 
         # Tasks should execute in order
         assert execution_order == ["Task 1", "Task 2"]

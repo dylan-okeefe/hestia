@@ -1,7 +1,7 @@
 """Scheduler persistence layer for scheduled tasks."""
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, tzinfo
 from typing import Any
 
 import sqlalchemy as sa
@@ -49,8 +49,11 @@ def _calculate_next_run(
     if fire_at is not None:
         # One-time task - run at fire_at, or immediately if fire_at is in the past
         if base_time is None:
-            base_time = datetime.now()
-        if _dt_gt_utc(fire_at, base_time):
+            base_time = datetime.now(timezone.utc)
+        # Normalize both to UTC for comparison
+        fire_at_utc = fire_at if fire_at.tzinfo else fire_at.replace(tzinfo=timezone.utc)
+        base_time_utc = base_time if base_time.tzinfo else base_time.replace(tzinfo=timezone.utc)
+        if fire_at_utc > base_time_utc:
             return fire_at
         # fire_at is in the past, run immediately (use created_at if provided)
         return created_at if created_at else base_time
@@ -58,11 +61,11 @@ def _calculate_next_run(
     if cron_expr is not None:
         # Recurring task - calculate next occurrence from cron expression
         if base_time is None:
-            base_time = datetime.now()
+            base_time = datetime.now(timezone.utc)
         try:
             itr = croniter(cron_expr, base_time)
             return itr.get_next(datetime)
-        except Exception as e:
+        except (ValueError, TypeError) as e:
             raise PersistenceError(f"Invalid cron expression '{cron_expr}': {e}") from e
 
     return None
@@ -108,7 +111,7 @@ class SchedulerStore:
             raise PersistenceError("Must specify either cron_expression or fire_at")
 
         task_id = _generate_task_id()
-        created_at = datetime.now()
+        created_at = datetime.now(timezone.utc)
 
         # Calculate initial next_run_at
         next_run_at = _calculate_next_run(cron_expression, fire_at, created_at, created_at)
@@ -158,7 +161,7 @@ class SchedulerStore:
             List of tasks where next_run_at <= now and enabled=True
         """
         if now is None:
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
 
         query = (
             sa.select(scheduled_tasks)
@@ -225,7 +228,7 @@ class SchedulerStore:
             The updated ScheduledTask, or None if not found
         """
         if now is None:
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
 
         # First get the task to determine its type
         query = sa.select(scheduled_tasks).where(scheduled_tasks.c.id == task_id)
@@ -337,18 +340,27 @@ class SchedulerStore:
             return None
 
     def _row_to_task(self, row: Any) -> ScheduledTask:
-        """Convert a database row to a ScheduledTask dataclass."""
+        """Convert a database row to a ScheduledTask dataclass.
+
+        Ensures datetime fields are UTC-aware (SQLite stores naive datetimes).
+        """
+
+        def _ensure_utc(dt: datetime | None) -> datetime | None:
+            if dt is None:
+                return None
+            return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
         return ScheduledTask(
             id=row.id,
             session_id=row.session_id,
             prompt=row.prompt,
             description=row.description,
             cron_expression=row.cron_expression,
-            fire_at=row.fire_at,
+            fire_at=_ensure_utc(row.fire_at),
             enabled=row.enabled,
-            created_at=row.created_at,
-            last_run_at=row.last_run_at,
-            next_run_at=row.next_run_at,
+            created_at=_ensure_utc(row.created_at),
+            last_run_at=_ensure_utc(row.last_run_at),
+            next_run_at=_ensure_utc(row.next_run_at),
             last_error=row.last_error,
         )
 

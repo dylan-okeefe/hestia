@@ -26,7 +26,7 @@ async def current_time(timezone: str = "UTC") -> str:
     """Get the current date and time."""
     try:
         tz = ZoneInfo(timezone)
-    except Exception:
+    except (KeyError, ValueError):
         return f"Unknown timezone: {timezone!r}. Use an IANA name like 'UTC' or 'America/New_York'."
     now = datetime.now(tz)
     return now.strftime("%Y-%m-%d %H:%M:%S %Z")

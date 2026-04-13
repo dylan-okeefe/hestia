@@ -1,6 +1,6 @@
 """Unit tests for SchedulerStore."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 import pytest_asyncio
@@ -44,14 +44,14 @@ class TestCalculateNextRun:
 
     def test_fire_at_future(self):
         """fire_at in future returns the fire_at time."""
-        future = datetime.now() + timedelta(hours=1)
+        future = datetime.now(timezone.utc) + timedelta(hours=1)
         result = _calculate_next_run(None, future)
         assert result == future
 
     def test_fire_at_past_returns_created_at(self):
         """fire_at in past returns created_at (run immediately)."""
-        past = datetime.now() - timedelta(hours=1)
-        created = datetime.now() - timedelta(minutes=5)
+        past = datetime.now(timezone.utc) - timedelta(hours=1)
+        created = datetime.now(timezone.utc) - timedelta(minutes=5)
         result = _calculate_next_run(None, past, created_at=created)
         assert result == created
 

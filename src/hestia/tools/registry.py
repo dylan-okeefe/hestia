@@ -106,7 +106,7 @@ class ToolRegistry:
 
         try:
             raw = await meta.handler(**arguments)
-        except Exception as e:
+        except (TypeError, ValueError, OSError) as e:
             return ToolCallResult(
                 status="error",
                 content=f"{type(e).__name__}: {e}",

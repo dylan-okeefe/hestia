@@ -4,13 +4,19 @@ import json
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from hestia.context.builder import ContextBuilder
 from hestia.core.inference import InferenceClient
 from hestia.core.types import Message, Session, ToolCall
-from hestia.errors import EmptyResponseError, IllegalTransitionError, classify_error
+from hestia.errors import (
+    EmptyResponseError,
+    IllegalTransitionError,
+    PersistenceError,
+    PlatformError,
+    classify_error,
+)
 from hestia.inference.slot_manager import SlotManager
 from hestia.orchestrator.transitions import assert_transition
 from hestia.orchestrator.types import Turn, TurnState, TurnTransition
@@ -18,7 +24,7 @@ from hestia.persistence.sessions import SessionStore
 from hestia.platforms.base import Platform
 from hestia.policy.engine import PolicyEngine, RetryAction
 from hestia.tools.builtin import current_session_id
-from hestia.tools.registry import ToolRegistry
+from hestia.tools.registry import ToolNotFoundError, ToolRegistry
 from hestia.tools.types import ToolCallResult
 
 if TYPE_CHECKING:
@@ -106,7 +112,7 @@ class Orchestrator:
         if platform is not None and status_msg_id is not None and platform_user is not None:
             try:
                 await platform.edit_message(platform_user, status_msg_id, text)
-            except Exception as e:
+            except (PlatformError, OSError) as e:
                 logger.warning("Failed to update status: %s", e)
 
     async def process_turn(
@@ -144,7 +150,7 @@ class Orchestrator:
             if platform is not None and platform_user is not None:
                 try:
                     status_msg_id = await platform.send_message(platform_user, "Thinking...")
-                except Exception as e:
+                except (PlatformError, OSError) as e:
                     logger.warning("Failed to send status message: %s", e)
 
             try:
@@ -206,7 +212,7 @@ class Orchestrator:
                         content=chat_response.content,
                         tool_calls=chat_response.tool_calls,
                         reasoning_content=chat_response.reasoning_content,
-                        created_at=datetime.now(),
+                        created_at=datetime.now(timezone.utc),
                     )
                     await self._store.append_message(session.id, assistant_msg)
 
@@ -279,7 +285,7 @@ class Orchestrator:
                         if self._slot_manager is not None:
                             try:
                                 await self._slot_manager.save(session)
-                            except Exception as e:
+                            except (OSError, PersistenceError) as e:
                                 logger.warning(
                                     "Failed to save slot for session %s: %s", session.id, e
                                 )
@@ -322,14 +328,14 @@ class Orchestrator:
                             severity=severity,
                             error_message=str(e),
                             tool_chain=json.dumps(tool_chain),
-                            created_at=datetime.now(),
+                            created_at=datetime.now(timezone.utc),
                         )
                         await self._failure_store.record(bundle)
-                    except Exception as record_err:
-                        logger.warning("Failed to record failure bundle: %s", record_err)
+                    except Exception as record_err:  # noqa: BLE001
+                        logger.error("Failed to record failure bundle: %s", record_err)
 
             finally:
-                turn.completed_at = datetime.now()
+                turn.completed_at = datetime.now(timezone.utc)
                 await self._store.update_turn(turn)
 
             return turn
@@ -345,7 +351,7 @@ class Orchestrator:
             session_id=session_id,
             state=TurnState.RECEIVED,
             user_message=user_message,
-            started_at=datetime.now(),
+            started_at=datetime.now(timezone.utc),
             completed_at=None,
             iterations=0,
             tool_calls_made=0,
@@ -365,7 +371,7 @@ class Orchestrator:
         transition = TurnTransition(
             from_state=turn.state,
             to_state=to_state,
-            at=datetime.now(),
+            at=datetime.now(timezone.utc),
             note=note,
         )
         turn.transitions.append(transition)
@@ -480,7 +486,7 @@ class Orchestrator:
             # Confirmation enforcement: check the INNER tool's metadata before dispatch
             try:
                 inner_meta = self._tools.describe(name)
-            except Exception:
+            except ToolNotFoundError:
                 return ToolCallResult(
                     status="error",
                     content=f"Tool not found: {name}",
@@ -514,7 +520,7 @@ class Orchestrator:
         # Check if tool exists and handle confirmation
         try:
             meta = self._tools.describe(tc.name)
-        except Exception:
+        except ToolNotFoundError:
             return ToolCallResult(
                 status="error",
                 content=f"Unknown tool: {tc.name}",

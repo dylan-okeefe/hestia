@@ -7,6 +7,7 @@ import logging
 import time
 
 from telegram import Update
+from telegram.error import TelegramError
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 from hestia.config import TelegramConfig
@@ -101,7 +102,7 @@ class TelegramAdapter(Platform):
                 parse_mode="Markdown",
             )
             self._last_edit_times[msg_id] = time.monotonic()
-        except Exception as e:
+        except TelegramError as e:
             # Telegram returns 400 if message content is unchanged
             if "message is not modified" in str(e).lower():
                 logger.debug("Message %s not modified, skipping edit", msg_id)

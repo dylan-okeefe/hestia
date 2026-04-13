@@ -2,7 +2,7 @@
 
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import sqlalchemy as sa
@@ -21,7 +21,7 @@ from hestia.persistence.schema import messages, sessions
 
 def _generate_session_id(platform: str, platform_user: str) -> str:
     """Generate a sortable, debuggable session ID."""
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     short_uuid = uuid.uuid4().hex[:8]
     return f"{platform}_{platform_user}_{timestamp}_{short_uuid}"
 
@@ -58,7 +58,7 @@ class SessionStore:
                 update = (
                     sa.update(sessions)
                     .where(sessions.c.id == row.id)
-                    .values(last_active_at=datetime.now())
+                    .values(last_active_at=datetime.now(timezone.utc))
                 )
                 await conn.execute(update)
                 await conn.commit()
@@ -66,7 +66,7 @@ class SessionStore:
 
         # Create new session
         session_id = _generate_session_id(platform, platform_user)
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         new_session = Session(
             id=session_id,
             platform=platform,
@@ -104,7 +104,7 @@ class SessionStore:
             .where(sessions.c.id == session_id)
             .values(
                 state=SessionState.ARCHIVED.value,
-                last_active_at=datetime.now(),
+                last_active_at=datetime.now(timezone.utc),
             )
         )
         async with self._db.engine.connect() as conn:
@@ -129,7 +129,7 @@ class SessionStore:
                 so we never end up with two ACTIVE sessions for the same user.
         """
         session_id = _generate_session_id(platform, platform_user)
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         new_session = Session(
             id=session_id,
             platform=platform,
@@ -241,7 +241,7 @@ class SessionStore:
             .where(sessions.c.id == session_id)
             .values(
                 state=SessionState.ARCHIVED.value,
-                last_active_at=datetime.now(),
+                last_active_at=datetime.now(timezone.utc),
             )
         )
 
@@ -297,7 +297,7 @@ class SessionStore:
                 slot_id=None,
                 slot_saved_path=saved_path,
                 temperature=demote_to.value,
-                last_active_at=datetime.now(),
+                last_active_at=datetime.now(timezone.utc),
             )
         )
 
@@ -384,7 +384,7 @@ class SessionStore:
             .where(turns.c.id == turn.id)
             .values(
                 state=turn.state.value,
-                last_transition_at=datetime.now(),
+                last_transition_at=datetime.now(timezone.utc),
                 iteration=turn.iterations,
                 error=turn.error,
             )
@@ -514,7 +514,7 @@ class SessionStore:
             .values(
                 state="failed",
                 error=error,
-                last_transition_at=datetime.now(),
+                last_transition_at=datetime.now(timezone.utc),
             )
         )
         async with self._db.engine.connect() as conn:

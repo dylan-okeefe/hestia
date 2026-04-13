@@ -1,11 +1,16 @@
 """Core dataclasses for Hestia."""
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Literal
 
 from pydantic import BaseModel
+
+
+def _utc_now() -> datetime:
+    """Return timezone-aware UTC now."""
+    return datetime.now(timezone.utc)
 
 
 @dataclass
@@ -26,7 +31,7 @@ class Message:
     tool_calls: list[ToolCall] | None = None
     tool_call_id: str | None = None
     reasoning_content: str | None = None
-    created_at: datetime = field(default_factory=lambda: datetime.now().replace(tzinfo=None))
+    created_at: datetime = field(default_factory=_utc_now)
 
 
 @dataclass

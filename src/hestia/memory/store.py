@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 
 import sqlalchemy as sa
 
@@ -29,7 +29,7 @@ class MemoryStore:
     is created via raw DDL because SQLAlchemy doesn't support virtual
     tables through its Table/MetaData API.
 
-    Datetimes: All timestamps are naive/local (datetime.now()), consistent
+    Datetimes: All timestamps are UTC (datetime.now(timezone.utc)), consistent
     with SessionStore and SchedulerStore. No timezone handling.
     """
 
@@ -72,7 +72,7 @@ class MemoryStore:
         """
         memory_id = f"mem_{uuid.uuid4().hex[:16]}"
         tag_str = " ".join(tags) if tags else ""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
 
         insert = sa.text(
             "INSERT INTO memory (id, content, tags, session_id, created_at) "

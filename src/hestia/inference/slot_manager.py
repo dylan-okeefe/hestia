@@ -9,6 +9,7 @@ from pathlib import Path
 
 from hestia.core.inference import InferenceClient
 from hestia.core.types import Session, SessionTemperature
+from hestia.errors import PersistenceError
 from hestia.persistence.sessions import SessionStore
 
 logger = logging.getLogger(__name__)
@@ -70,7 +71,7 @@ class SlotManager:
                     slot_id = await self._allocate_slot(session.id)
                     try:
                         await self._store.assign_slot(session.id, slot_id)
-                    except Exception:
+                    except PersistenceError:
                         self._assignments.pop(slot_id, None)
                         raise
                     return SlotAssignment(slot_id=slot_id, restored_from_disk=False)
@@ -96,7 +97,7 @@ class SlotManager:
                         else:
                             await self._store.assign_slot(session.id, slot_id)
                             return SlotAssignment(slot_id=slot_id, restored_from_disk=False)
-                    except Exception:
+                    except PersistenceError:
                         self._assignments.pop(slot_id, None)
                         raise
 

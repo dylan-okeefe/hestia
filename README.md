@@ -116,16 +116,21 @@ You are Hestia, a personal assistant running on Dylan's home server.
 - You don't pad responses with filler.
 ```
 
-Then reference it in your config:
+Then enable compiled identity in your config:
 
 ```python
+from hestia.config import HestiaConfig, IdentityConfig
+
 config = HestiaConfig(
-    system_prompt=Path("soul.md").read_text(),
+    identity=IdentityConfig(
+        soul_path=Path("soul.md"),
+        max_tokens=300,  # Hard cap on compiled identity size
+    ),
     # ... rest of config
 )
 ```
 
-Keep the soul document short. Every token of system prompt is multiplied across active sessions and eats into your context budget. Aim for 200-400 words — enough to establish personality, not enough to crowd out actual conversation.
+Hestia compiles your soul document into a compact identity view on startup. The full soul doc isn't injected raw — it's extracted, bounded, and cached under `.hestia/compiled_identity.txt` for efficiency. Keep the soul document reasonably short (under 1000 words). The compiled view is truncated to `max_tokens`, so put the most important traits first.
 
 ---
 
