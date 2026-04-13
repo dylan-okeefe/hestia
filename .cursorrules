@@ -6,9 +6,10 @@ Hestia is a local-first personal assistant framework targeting RTX 3060 12GB
 Ubuntu with llama.cpp + Qwen 3.5 9B. It is built by a three-tool workflow:
 
 1. **Claude (Cowork on Mac)** or **Cursor** — Reviews code, writes Kimi prompts,
-   orchestrates the build
+   orchestrates the build (including **full Kimi queue runs**: see below)
 2. **Kimi** — Executes build phases on the Ubuntu machine in 1-2 hour cycles
-3. **Dylan** — Merges branches, pushes to GitHub, hands prompts to Kimi
+3. **Dylan** — GitHub merge/push when ready, and **final** pass over the repo after
+   a queued multi-loop run (Cursor handles per-loop review and the next prompt in between)
 
 ## Before doing anything, read:
 
@@ -27,6 +28,22 @@ You are a code reviewer and build orchestrator. Your responsibilities:
 - Update `docs/HANDOFF_STATE.md` after every review session
 - Fold bugs from the current review into **`## Review carry-forward`** on the **next** queue spec file in `docs/orchestration/kimi-loops/L*.md` (and/or §0 of a follow-up prompt), including small nits and code smells — not only blocking bugs
 - After each **Kimi loop instance** (review and/or new prompt): **brief bullet summary in chat**; **full** details in `docs/orchestration/kimi-loop-log.md` (newest section first)
+
+### Kimi queue — autonomous orchestration (Cursor runs the full cycle)
+
+When Dylan wants a **queued multi-loop run** (`docs/orchestration/kimi-phase-queue.md`), **you** drive the entire chain until the queue is done or Kimi/auth is blocked. Dylan is **not** expected to review between loops; they skim **chat summaries** and read **`kimi-loop-log.md`** once at the end (or whenever they choose).
+
+**Each loop (repeat until no next row in queue or hard stop):**
+
+1. Ensure `docs/prompts/KIMI_CURRENT.md` matches the intended queue row and the correct feature branch is checked out (or created from `develop`).
+2. Run `./scripts/kimi-run-current.sh` (from repo root; redirect logs as in `HANDOFF_STATE.md`). Wait until exit; require **`.kimi-done`** with `HESTIA_KIMI_DONE=1` unless abort semantics apply.
+3. **Review:** `git diff`, handoff files under `docs/handoffs/` if any, `uv run pytest tests/unit/ tests/integration/ -q`, spot-check risky areas (config wiring, migrations, platform callbacks).
+4. **If red:** fix trivial issues yourself **or** tighten `KIMI_CURRENT` / add follow-up spec — re-run Kimi on the same loop until green or you document a blocker for Dylan.
+5. **If green:** merge feature branch to `develop` (fast-forward or merge commit per project habit), update `HANDOFF_STATE.md`, append **`kimi-loop-log.md`** (full detail), reply in chat with a **short** bullet summary only.
+6. **Advance:** Point `KIMI_CURRENT.md` at the **next** `kimi-loops/L*.md` row. **Before** the next Kimi launch, edit that next spec file’s **`## Review carry-forward`** with every issue from step 3 (including nits).
+7. **Start the next loop:** go to step 2. If there is no next row, tell Dylan the queue is complete and what to `git push` / sanity-check.
+
+**If your Cursor context runs out** mid-queue: stop after a clean **git** state (commit or stash), finish step 5–6 for the last completed loop, and tell Dylan to send **“Continue Kimi orchestration”**; resume from `HANDOFF_STATE.md` + `kimi-loop-log.md` + `KIMI_CURRENT.md`.
 
 ## Kimi prompt format
 

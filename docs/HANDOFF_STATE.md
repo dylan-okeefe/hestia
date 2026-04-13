@@ -3,7 +3,7 @@
 > **Purpose:** Handoff contract between Claude (Cowork) and Cursor for reviewing Kimi's output and orchestrating the next phase.
 >
 > **Last updated:** 2026-04-12
-> **Last updated by:** Cursor (L02 merged to `develop`; L03 Phase 8b next)
+> **Last updated by:** Cursor (autonomous queue orchestration contract for Cursor)
 
 ---
 
@@ -44,14 +44,17 @@ Read docs/prompts/KIMI_CURRENT.md, then execute the full "Current task" section 
 
 **Single source of truth for "what Kimi does next":** [`docs/prompts/KIMI_CURRENT.md`](prompts/KIMI_CURRENT.md). After each Kimi cycle, **Cursor** updates that file and this section.
 
-### Orchestration loop (Cursor)
+### Orchestration loop (Cursor — full autonomous chain)
+
+Dylan can **defer per-loop review** to Cursor for a **queued multi-loop run** (see [`kimi-phase-queue.md`](orchestration/kimi-phase-queue.md)): Cursor reviews, updates the **next** loop’s **`## Review carry-forward`**, advances `KIMI_CURRENT.md`, and **starts the next `./scripts/kimi-run-current.sh`** until the queue is finished or blocked. Dylan gets **short chat summaries** between loops and does a **single** pass when everything is done (plus normal `git push`).
 
 1. **Wait for done:** Kimi CLI exits **and** `.kimi-done` exists with `HESTIA_KIMI_DONE=1` (or read `.kimi-output.log` if Kimi was redirected).
 2. **Review:** diff (`develop..HEAD` or merge base), handoff notes, `uv run pytest tests/unit/ tests/integration/ -q`.
-3. If issues → add a follow-up design section or a tight `KIMI_PHASE_*_FOLLOWUP*.md`; point `KIMI_CURRENT.md` at it.
+3. If issues → add a follow-up design section or a tight `KIMI_PHASE_*_FOLLOWUP*.md`; point `KIMI_CURRENT.md` at it **or** re-run Kimi on the same loop after fixing carry-forward (Cursor may fix trivial issues directly).
 4. If green → merge per gitflow, update this file, set `KIMI_CURRENT.md` for the next queue row in [`docs/orchestration/kimi-phase-queue.md`](orchestration/kimi-phase-queue.md). **Before** the next Kimi run, edit that **next** loop spec under [`docs/orchestration/kimi-loops/`](orchestration/kimi-loops/) and add or extend a **`## Review carry-forward`** section with every bug, code smell, or nit discovered in review (even small ones), so Kimi addresses them in the same pass as the main scope.
 5. Remove stale **`.kimi-done`** before the next Kimi launch (the helper script does this automatically).
 6. **Loop log:** After each review (and whenever you set the next prompt), append a **dated** section to [`docs/orchestration/kimi-loop-log.md`](orchestration/kimi-loop-log.md) with the full narrative. In the **Cursor chat**, reply with only a **brief** bullet summary of the same loop instance.
+7. **Start the next loop:** run `./scripts/kimi-run-current.sh` again from repo root (same as §A) unless the queue has no further rows or Kimi is blocked — then tell Dylan the run is complete and what to push.
 
 ---
 
