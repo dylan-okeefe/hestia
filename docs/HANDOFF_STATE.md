@@ -2,8 +2,8 @@
 
 > **Purpose:** Handoff contract between Claude (Cowork) and Cursor for reviewing Kimi's output and orchestrating the next phase.
 >
-> **Last updated:** 2026-04-12
-> **Last updated by:** Cursor (queued loops L01–L08 merged to `develop`; Dylan final pass)
+> **Last updated:** 2026-04-13
+> **Last updated by:** Cursor (L09 merged to `develop`; release-prep queue complete)
 
 ---
 
@@ -62,7 +62,7 @@ Dylan can **defer per-loop review** to Cursor for a **queued multi-loop run** (s
 
 - **Branch:** `develop` (local **ahead of** `origin/develop` until you `git push` — includes Phase 7 cleanup + orchestration docs)
 - **Phase 7:** **Merged** — commit **`265003b`** on `develop` ("fix: phase 7 cleanup — bugs, security, dead code").
-- **Active Kimi work:** **None** — queue **L01–L08** complete on `develop` (L08 audit merged in **`381a543`**; see `git log -1` for current doc-only tip). Next: **your** call (`git push`, release, or new design). Pointer: [`docs/prompts/KIMI_CURRENT.md`](prompts/KIMI_CURRENT.md).
+- **Active Kimi work:** **None** — queue **L01–L09** complete on `develop` (L09 merge **`71c09b1`**). Next: maintainer release pass, then push/release flow. Pointer: [`docs/prompts/KIMI_CURRENT.md`](prompts/KIMI_CURRENT.md).
 
 **Phase 7 summary (merged):**
 
@@ -88,6 +88,7 @@ Dylan can **defer per-loop review** to Cursor for a **queued multi-loop run** (s
 8. ~~**L06 Phase 11**~~ — Done (`20a5c40` on `develop`)  
 9. ~~**L07 Phase 12**~~ — Done (`12d7531` on `develop`)  
 10. ~~**L08 Phase 13**~~ — Done (`381a543` on `develop`)  
+11. ~~**L09 Phase 14**~~ — Done (`71c09b1` on `develop`)  
 
 **Earlier prompts (reference only):**
 
@@ -102,7 +103,8 @@ Dylan can **defer per-loop review** to Cursor for a **queued multi-loop run** (s
 
 | Branch | Role |
 |--------|------|
-| `develop` | **Tip** — **L01–L08 queue complete**; run `git log -1 --oneline` (not pushed to `origin` yet) |
+| `develop` | **Tip** — **L01–L09 queue complete**; run `git log -1 --oneline` (not pushed to `origin` yet) |
+| `feature/phase-14-cleanup-release-prep` | Merged into `develop` |
 | `feature/phase-13-audit` | Merged into `develop` |
 | `feature/phase-12-skills` | Merged into `develop` |
 | `feature/phase-11-trace-store` | Merged into `develop` |
@@ -129,7 +131,7 @@ Dylan can **defer per-loop review** to Cursor for a **queued multi-loop run** (s
 
 | Snapshot | Count |
 |----------|-------|
-| Last `pytest tests/unit/ tests/integration/ -q` on `develop` after L08 merge (2026-04-12) | **435 passed** |
+| Last `pytest tests/unit/ tests/integration/ -q` on `develop` after L09 merge (2026-04-13) | **437 passed** |
 
 Run: `uv run pytest tests/unit/ tests/integration/ -q`
 
@@ -137,7 +139,7 @@ Run: `uv run pytest tests/unit/ tests/integration/ -q`
 
 ## Architecture Decisions (ADRs)
 
-Through **ADR-024** (skills, L07). L08 audit is CLI-only unless you add a small ADR for audit semantics.
+Through **ADR-024** (skills, L07). L09 adds cleanup/release prep; no new ADR required.
 
 ---
 
@@ -145,7 +147,7 @@ Through **ADR-024** (skills, L07). L08 audit is CLI-only unless you add a small 
 
 | Tool | Notes |
 |------|-------|
-| pytest | **435 passed** on reviewed tree after L08 merge |
+| pytest | **437 passed** on reviewed tree after L09 merge |
 | ruff | Touched files clean in Phase 7; large pre-existing debt possible elsewhere |
 | mypy | Pre-existing errors in some modules |
 
@@ -165,7 +167,7 @@ Through **ADR-024** (skills, L07). L08 audit is CLI-only unless you add a small 
 
 1. ~~Phase 7 cleanup~~  
 2. ~~**L01 Matrix**~~  
-3. ~~**L01–L08 Kimi queue**~~ — complete on `develop`  
+3. ~~**L01–L09 Kimi queue**~~ — complete on `develop`  
 4. Long-term: `docs/roadmap/future-systems-deferred-roadmap.md`  
 
 ---
@@ -176,7 +178,7 @@ Through **ADR-024** (skills, L07). L08 audit is CLI-only unless you add a small 
 
 1. Read at start of each Hestia session.  
 2. After Kimi delivers work: update verdict, test counts, git state, `KIMI_CURRENT.md`; remove or acknowledge `.kimi-done`.  
-3. **`KIMI_CURRENT.md`** is idle until the next initiative; **`git push`** when satisfied.  
+3. **`KIMI_CURRENT.md`** is idle until the next initiative; run final maintainer review, then **`git push`** when satisfied.  
 
 ### Review checklist
 

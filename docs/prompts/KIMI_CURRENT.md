@@ -1,22 +1,22 @@
 # Kimi — current task (orchestration pointer)
 
-**Orchestrator:** Claude (Cowork) updates this file after each review.
+**Orchestrator:** Cursor updates this file after each review.
 
-**Last set by:** Claude (Cowork) — 2026-04-13 (L09 queued: cleanup + release prep)
+**Last set by:** Cursor — 2026-04-13 (**L09 complete; queue closed**)
 
 ---
 
 ## Current task
 
-**L09 — Phase 14: Cleanup + Release Prep**
+**None** — the queued loops in [`../orchestration/kimi-phase-queue.md`](../orchestration/kimi-phase-queue.md) are complete through **L09**.
 
-Read and execute the full spec at [`../orchestration/kimi-loops/L09-phase-14-cleanup-release-prep.md`](../orchestration/kimi-loops/L09-phase-14-cleanup-release-prep.md).
+Recommended next actions:
 
-This loop has two parts:
-- **Part A** — Three code cleanup items (utcnow adoption, exception narrowing, failure bundle field population)
-- **Part B** — Four release prep items (license field, CONTRIBUTING.md, GitHub Actions CI, CHANGELOG update)
+1. Final maintainer pass over `develop`.
+2. Push branch state (`git push origin develop` or your preferred release branch flow).
+3. Use [`../orchestration/kimi-loop-log.md`](../orchestration/kimi-loop-log.md) for full loop-by-loop audit trail.
 
-Branch from latest `develop`. Finish with the `.kimi-done` artifact described in the spec.
+When a new initiative is chosen, replace this section with the next loop spec.
 
 ---
 
@@ -25,5 +25,4 @@ Branch from latest `develop`. Finish with the `.kimi-done` artifact described in
 - Queue: [`../orchestration/kimi-phase-queue.md`](../orchestration/kimi-phase-queue.md)
 - Orchestration contract: [`../HANDOFF_STATE.md`](../HANDOFF_STATE.md)
 - Loop audit trail: [`../orchestration/kimi-loop-log.md`](../orchestration/kimi-loop-log.md)
-- Phase 7–13 review (source of cleanup items): [`../reviews/phase-7-13-review-april-13.md`](../reviews/phase-7-13-review-april-13.md)
 - CLI: [`../../scripts/kimi-run-current.sh`](../../scripts/kimi-run-current.sh)

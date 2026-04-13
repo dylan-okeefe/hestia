@@ -8,6 +8,16 @@
 
 ---
 
+## 2026-04-13 — Loop: L09 Phase 14 — cleanup + release prep (Kimi) — **queue complete**
+
+**Kimi:** `.kimi-done` reports `GIT_HEAD=71c09b1`, `PYTEST=437 passed`, `UTCNOW_GREP=0`, broad catch count noted as intentional boundaries.
+
+**Outcome:** Closed review findings from Phases 7–13 (utcnow adoption sweep, exception-narrowing cleanup, enriched failure-bundle population), plus release-prep artifacts: `.github/workflows/ci.yml`, `CONTRIBUTING.md`, `pyproject` license field, changelog update. Added docs: `phase-7-13-review-april-13.md`, `brainstorm-april-13.md`, and L09 loop spec.
+
+**Git:** Merged `feature/phase-14-cleanup-release-prep` → `develop` (fast-forward to `71c09b1`). Queue through L09 complete; maintainer final pass + push/release next.
+
+---
+
 ## 2026-04-12 — Loop: L08 Phase 13 — security audit CLI (Kimi) — **queue complete**
 
 **Kimi:** ~16.8 min. `.kimi-done`: `GIT_HEAD=381a543`, **435 passed**.
