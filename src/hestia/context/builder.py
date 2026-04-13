@@ -18,6 +18,7 @@ class BuildResult:
     tokens_budget: int
     truncated_count: int  # how many historical messages got dropped
     kept_first_user: bool  # sanity flag for the Qwen template requirement
+    memory_epoch_included: bool  # whether memory epoch was included
 
 
 class ContextBuilder:
@@ -50,6 +51,7 @@ class ContextBuilder:
         body_factor: float = 1.0,
         meta_tool_overhead: int = 0,
         identity_prefix: str | None = None,
+        memory_epoch_prefix: str | None = None,
     ):
         """Initialize with inference client and policy.
 
@@ -59,12 +61,14 @@ class ContextBuilder:
             body_factor: Correction factor for message body tokenization
             meta_tool_overhead: Constant overhead when tools are present
             identity_prefix: Optional compiled identity view to prepend to system prompt
+            memory_epoch_prefix: Optional compiled memory epoch to prepend to system prompt
         """
         self._inference = inference_client
         self._policy = policy
         self._body_factor = body_factor
         self._meta_tool_overhead = meta_tool_overhead
         self._identity_prefix = identity_prefix
+        self._memory_epoch_prefix = memory_epoch_prefix
 
     def set_identity_prefix(self, identity_prefix: str | None) -> None:
         """Set the identity prefix to prepend to system prompts.
@@ -73,6 +77,14 @@ class ContextBuilder:
             identity_prefix: Compiled identity view, or None to clear
         """
         self._identity_prefix = identity_prefix
+
+    def set_memory_epoch_prefix(self, memory_epoch_prefix: str | None) -> None:
+        """Set the memory epoch prefix to prepend to system prompts.
+
+        Args:
+            memory_epoch_prefix: Compiled memory epoch, or None to clear
+        """
+        self._memory_epoch_prefix = memory_epoch_prefix
 
     @classmethod
     def from_calibration_file(
@@ -111,6 +123,7 @@ class ContextBuilder:
         tools: list[ToolSchema],
         new_user_message: Message | None = None,
         identity_prefix: str | None = None,
+        memory_epoch_prefix: str | None = None,
     ) -> BuildResult:
         """Build the message list for a new turn.
 
@@ -129,6 +142,7 @@ class ContextBuilder:
             new_user_message: The new user message for this turn, or None for
                             continuation turns (e.g., during tool chains)
             identity_prefix: Optional compiled identity view to prepend to system prompt
+            memory_epoch_prefix: Optional compiled memory epoch to prepend to system prompt
 
         Returns:
             BuildResult with messages and bookkeeping
@@ -138,12 +152,24 @@ class ContextBuilder:
 
         truncated_count = 0
 
-        # Build effective system prompt with optional identity prefix
-        # Use provided identity_prefix, fall back to stored one
+        # Build effective system prompt with optional prefixes
+        # Assembly order per roadmap §10.1:
+        # 1. Compiled identity view (from soul.md)
+        # 2. Compiled memory epoch
+        # 3. Base system prompt
+
         effective_identity = identity_prefix if identity_prefix is not None else self._identity_prefix
+        effective_memory_epoch = memory_epoch_prefix if memory_epoch_prefix is not None else self._memory_epoch_prefix
+
         effective_prompt = system_prompt
+        memory_epoch_included = False
+
+        if effective_memory_epoch:
+            effective_prompt = effective_memory_epoch + "\n\n" + effective_prompt
+            memory_epoch_included = True
+
         if effective_identity:
-            effective_prompt = effective_identity + "\n\n" + system_prompt
+            effective_prompt = effective_identity + "\n\n" + effective_prompt
 
         # Create system message
         system_msg = Message(role="system", content=effective_prompt)
@@ -181,6 +207,7 @@ class ContextBuilder:
                 tokens_budget=raw_budget,
                 truncated_count=len(history),
                 kept_first_user=False,
+                memory_epoch_included=False,
             )
 
         # Add remaining history messages (newest first) while they fit
@@ -259,6 +286,7 @@ class ContextBuilder:
             tokens_budget=raw_budget,
             truncated_count=truncated_count,
             kept_first_user=first_user_msg is not None,
+            memory_epoch_included=memory_epoch_included,
         )
 
     async def _count_body(self, messages: list[Message]) -> int:

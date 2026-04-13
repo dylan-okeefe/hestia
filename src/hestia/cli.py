@@ -20,7 +20,7 @@ from hestia.errors import HestiaError
 from hestia.identity import IdentityCompiler
 from hestia.inference import SlotManager
 from hestia.logging_config import setup_logging
-from hestia.memory.store import MemoryStore
+from hestia.memory import MemoryEpochCompiler, MemoryStore
 from hestia.orchestrator import Orchestrator
 from hestia.persistence.db import Database
 from hestia.persistence.failure_store import FailureStore
@@ -77,6 +77,7 @@ class CliAppContext:
     scheduler_store: SchedulerStore | None = None
     verbose: bool = False
     confirm_callback: Any = None
+    epoch_compiler: MemoryEpochCompiler | None = None
 
     async def bootstrap_db(self) -> None:
         """Connect to database and create tables."""
@@ -110,10 +111,34 @@ class CliConfirmHandler:
         return click.confirm("Execute?", default=True)
 
 
+async def _compile_and_set_memory_epoch(
+    app: CliAppContext,
+    session: Session,
+) -> bool:
+    """Compile memory epoch for the session and set it in context builder.
+
+    Args:
+        app: The CLI app context
+        session: The current session
+
+    Returns:
+        True if an epoch was compiled and set, False otherwise
+    """
+    if app.epoch_compiler is None:
+        return False
+
+    epoch = await app.epoch_compiler.compile(session)
+    if epoch.memory_count > 0:
+        app.context_builder.set_memory_epoch_prefix(epoch.compiled_text)
+        return True
+    return False
+
+
 async def _handle_meta_command(
     cmd: str,
     session: Session,
     session_store: SessionStore,
+    app: CliAppContext | None = None,
 ) -> tuple[bool, Session]:
     """Handle a /meta command. Returns (should_exit, possibly_new_session)."""
     cmd = cmd.strip().lower()
@@ -127,6 +152,7 @@ async def _handle_meta_command(
         click.echo("  /reset           Start a new session")
         click.echo("  /history         Print the current session message history")
         click.echo("  /session         Print the current session metadata")
+        click.echo("  /refresh         Refresh the memory epoch")
         click.echo("  /help            Show this help")
         return False, session
 
@@ -157,7 +183,23 @@ async def _handle_meta_command(
             archive_previous=session,
         )
         click.echo(f"New session: {new_session.id}")
+        # Refresh memory epoch for new session
+        if app is not None:
+            compiled = await _compile_and_set_memory_epoch(app, new_session)
+            if compiled:
+                click.echo("Memory epoch refreshed.")
         return False, new_session
+
+    if cmd == "/refresh":
+        if app is not None:
+            compiled = await _compile_and_set_memory_epoch(app, session)
+            if compiled:
+                click.echo("Memory epoch refreshed.")
+            else:
+                click.echo("No memories to include in epoch.")
+        else:
+            click.echo("Cannot refresh: app context not available.")
+        return False, session
 
     click.echo(f"Unknown command: {cmd}. Type /help for a list.")
     return False, session
@@ -284,7 +326,10 @@ def cli(
     # Create typed context
     failure_store = FailureStore(db)
     scheduler_store = SchedulerStore(db)
-    
+
+    # Initialize memory epoch compiler
+    epoch_compiler = MemoryEpochCompiler(memory_store, max_tokens=500)
+
     ctx.obj["app"] = CliAppContext(
         config=cfg,
         db=db,
@@ -299,6 +344,7 @@ def cli(
         scheduler_store=scheduler_store,
         verbose=cfg.verbose,
         confirm_callback=None,
+        epoch_compiler=epoch_compiler,
     )
 
 
@@ -342,6 +388,12 @@ def chat(ctx: click.Context) -> None:
         # Get or create session for CLI user
         session = await session_store.get_or_create_session("cli", "default")
         click.echo(f"Session: {session.id}")
+
+        # Compile memory epoch for this session
+        compiled = await _compile_and_set_memory_epoch(app, session)
+        if compiled:
+            click.echo("Memory epoch compiled.")
+
         click.echo("Type 'exit' or 'quit' to end the session, or /help for commands.\n")
 
         response_handler = CliResponseHandler(verbose=verbose)
@@ -353,7 +405,7 @@ def chat(ctx: click.Context) -> None:
                     break
                 if user_input.startswith("/"):
                     should_exit, session = await _handle_meta_command(
-                        user_input, session, session_store
+                        user_input, session, session_store, app
                     )
                     if should_exit:
                         break
@@ -402,6 +454,9 @@ def ask(ctx: click.Context, message: str) -> None:
             click.echo(f"Recovered {recovered} stale turn(s) from previous crash.")
 
         session = await app.session_store.get_or_create_session("cli", "default")
+
+        # Compile memory epoch for this session
+        await _compile_and_set_memory_epoch(app, session)
 
         user_message = Message(role="user", content=message)
 
