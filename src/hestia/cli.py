@@ -3,17 +3,21 @@
 import asyncio
 import logging
 import sys
-from datetime import datetime, timedelta
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 import click
+import httpx
 
 from hestia.artifacts.store import ArtifactStore
 from hestia.config import HestiaConfig
 from hestia.context.builder import ContextBuilder
-from hestia.identity import IdentityCompiler
 from hestia.core.inference import InferenceClient
 from hestia.core.types import Message, ScheduledTask, Session
+from hestia.errors import HestiaError
+from hestia.identity import IdentityCompiler
 from hestia.inference import SlotManager
 from hestia.logging_config import setup_logging
 from hestia.memory.store import MemoryStore
@@ -54,6 +58,46 @@ class CliResponseHandler:
     async def __call__(self, response: str) -> None:
         """Print response to stdout."""
         click.echo(f"\nAssistant: {response}\n")
+
+
+@dataclass
+class CliAppContext:
+    """Typed application context shared across CLI commands."""
+
+    config: HestiaConfig
+    db: Database
+    inference: InferenceClient
+    session_store: SessionStore
+    context_builder: ContextBuilder
+    tool_registry: ToolRegistry
+    policy: DefaultPolicyEngine
+    slot_manager: SlotManager
+    memory_store: MemoryStore
+    failure_store: FailureStore
+    scheduler_store: SchedulerStore | None = None
+    verbose: bool = False
+    confirm_callback: Any = None
+
+    async def bootstrap_db(self) -> None:
+        """Connect to database and create tables."""
+        await self.db.connect()
+        await self.db.create_tables()
+        await self.memory_store.create_table()
+        await self.failure_store.create_table()
+
+    def make_orchestrator(self) -> Orchestrator:
+        """Create an Orchestrator with the current app context."""
+        return Orchestrator(
+            inference=self.inference,
+            session_store=self.session_store,
+            context_builder=self.context_builder,
+            tool_registry=self.tool_registry,
+            policy=self.policy,
+            confirm_callback=self.confirm_callback,
+            max_iterations=self.config.max_iterations,
+            slot_manager=self.slot_manager,
+            failure_store=self.failure_store,
+        )
 
 
 class CliConfirmHandler:
@@ -237,46 +281,39 @@ def cli(
 
     tool_registry.register(make_delegate_task_tool(session_store, orchestrator_factory))
 
-    # Store in context
-    ctx.obj["config"] = cfg
-    ctx.obj["db"] = db
-    ctx.obj["inference"] = inference
-    ctx.obj["session_store"] = session_store
-    ctx.obj["context_builder"] = context_builder
-    ctx.obj["tool_registry"] = tool_registry
-    ctx.obj["policy"] = policy
-    ctx.obj["slot_manager"] = slot_manager
-    ctx.obj["memory_store"] = memory_store
-    ctx.obj["failure_store"] = FailureStore(db)
-    ctx.obj["verbose"] = cfg.verbose
+    # Create typed context
+    failure_store = FailureStore(db)
+    scheduler_store = SchedulerStore(db)
+    
+    ctx.obj["app"] = CliAppContext(
+        config=cfg,
+        db=db,
+        inference=inference,
+        session_store=session_store,
+        context_builder=context_builder,
+        tool_registry=tool_registry,
+        policy=policy,
+        slot_manager=slot_manager,
+        memory_store=memory_store,
+        failure_store=failure_store,
+        scheduler_store=scheduler_store,
+        verbose=cfg.verbose,
+        confirm_callback=None,
+    )
 
 
-async def _bootstrap_db(
-    db: Database, memory_store: MemoryStore, failure_store: FailureStore | None = None
-) -> None:
-    """Bootstrap database and FTS table for CLI commands.
 
-    Repeated in many commands because Click callback + async don't mix cleanly.
-    Each command extracts its own ctx.obj refs and calls this helper.
-    """
-    await db.connect()
-    await db.create_tables()
-    await memory_store.create_table()
-    if failure_store is not None:
-        await failure_store.create_table()
 
 
 @cli.command()
 @click.pass_context
 def init(ctx: click.Context) -> None:
     """Initialize database, artifacts, and slot directories."""
-    cfg: HestiaConfig = ctx.obj["config"]
-    db: Database = ctx.obj["db"]
-    memory_store: MemoryStore = ctx.obj["memory_store"]
-    failure_store: FailureStore = ctx.obj["failure_store"]
+    app: CliAppContext = ctx.obj["app"]
+    cfg = app.config
 
     async def _init() -> None:
-        await _bootstrap_db(db, memory_store, failure_store)
+        await app.bootstrap_db()
         cfg.storage.artifacts_dir.mkdir(parents=True, exist_ok=True)
         cfg.slots.slot_dir.mkdir(parents=True, exist_ok=True)
         click.echo(f"Initialized database at {cfg.storage.database_url}")
@@ -290,34 +327,12 @@ def init(ctx: click.Context) -> None:
 @click.pass_context
 def chat(ctx: click.Context) -> None:
     """Start an interactive chat session."""
-    ctx.obj["confirm_callback"] = CliConfirmHandler()
-    cfg: HestiaConfig = ctx.obj["config"]
-    db: Database = ctx.obj["db"]
-    inference: InferenceClient = ctx.obj["inference"]
-    session_store: SessionStore = ctx.obj["session_store"]
-    context_builder: ContextBuilder = ctx.obj["context_builder"]
-    tool_registry: ToolRegistry = ctx.obj["tool_registry"]
-    policy = ctx.obj["policy"]
-    slot_manager: SlotManager = ctx.obj["slot_manager"]
-    memory_store: MemoryStore = ctx.obj["memory_store"]
-    verbose: bool = ctx.obj["verbose"]
-
-    failure_store: FailureStore = ctx.obj["failure_store"]
+    app: CliAppContext = ctx.obj["app"]
+    app.confirm_callback = CliConfirmHandler()
 
     async def _chat() -> None:
-        await _bootstrap_db(db, memory_store, failure_store)
-
-        orchestrator = Orchestrator(
-            inference=inference,
-            session_store=session_store,
-            context_builder=context_builder,
-            tool_registry=tool_registry,
-            policy=policy,
-            confirm_callback=ctx.obj["confirm_callback"],
-            max_iterations=cfg.max_iterations,
-            slot_manager=slot_manager,
-            failure_store=failure_store,
-        )
+        await app.bootstrap_db()
+        orchestrator = app.make_orchestrator()
 
         # Recover stale turns from previous crash
         recovered = await orchestrator.recover_stale_turns()
@@ -354,9 +369,9 @@ def chat(ctx: click.Context) -> None:
 
             except KeyboardInterrupt:
                 click.echo("\nUse /quit or /exit to end the session.")
-            except Exception as e:
+            except (HestiaError, httpx.HTTPError, OSError) as e:
                 click.echo(f"Error: {e}", err=True)
-                if verbose:
+                if app.verbose:
                     import traceback
 
                     traceback.print_exc()
@@ -366,7 +381,7 @@ def chat(ctx: click.Context) -> None:
     try:
         asyncio.run(_chat())
     finally:
-        asyncio.run(inference.close())
+        asyncio.run(app.inference.close())
 
 
 @cli.command()
@@ -374,44 +389,23 @@ def chat(ctx: click.Context) -> None:
 @click.pass_context
 def ask(ctx: click.Context, message: str) -> None:
     """Send a single message and get a response."""
-    ctx.obj["confirm_callback"] = CliConfirmHandler()
-    cfg: HestiaConfig = ctx.obj["config"]
-    db: Database = ctx.obj["db"]
-    inference: InferenceClient = ctx.obj["inference"]
-    session_store: SessionStore = ctx.obj["session_store"]
-    context_builder: ContextBuilder = ctx.obj["context_builder"]
-    tool_registry: ToolRegistry = ctx.obj["tool_registry"]
-    policy = ctx.obj["policy"]
-    slot_manager: SlotManager = ctx.obj["slot_manager"]
-    memory_store: MemoryStore = ctx.obj["memory_store"]
-    verbose: bool = ctx.obj["verbose"]
-    failure_store: FailureStore = ctx.obj["failure_store"]
+    app: CliAppContext = ctx.obj["app"]
+    app.confirm_callback = CliConfirmHandler()
 
     async def _ask() -> None:
-        await _bootstrap_db(db, memory_store, failure_store)
-
-        orchestrator = Orchestrator(
-            inference=inference,
-            session_store=session_store,
-            context_builder=context_builder,
-            tool_registry=tool_registry,
-            policy=policy,
-            confirm_callback=ctx.obj["confirm_callback"],
-            max_iterations=cfg.max_iterations,
-            slot_manager=slot_manager,
-            failure_store=failure_store,
-        )
+        await app.bootstrap_db()
+        orchestrator = app.make_orchestrator()
 
         # Recover stale turns from previous crash
         recovered = await orchestrator.recover_stale_turns()
         if recovered:
             click.echo(f"Recovered {recovered} stale turn(s) from previous crash.")
 
-        session = await session_store.get_or_create_session("cli", "default")
+        session = await app.session_store.get_or_create_session("cli", "default")
 
         user_message = Message(role="user", content=message)
 
-        response_handler = CliResponseHandler(verbose=verbose)
+        response_handler = CliResponseHandler(verbose=app.verbose)
 
         await orchestrator.process_turn(
             session=session,
@@ -422,26 +416,26 @@ def ask(ctx: click.Context, message: str) -> None:
     try:
         asyncio.run(_ask())
     finally:
-        asyncio.run(inference.close())
+        asyncio.run(app.inference.close())
 
 
 @cli.command()
 @click.pass_context
 def health(ctx: click.Context) -> None:
     """Check inference server health."""
-    inference: InferenceClient = ctx.obj["inference"]
+    app: CliAppContext = ctx.obj["app"]
 
     async def _health() -> None:
         try:
-            health_info = await inference.health()
+            health_info = await app.inference.health()
             click.echo("Inference server is healthy:")
             for key, value in health_info.items():
                 click.echo(f"  {key}: {value}")
-        except Exception as e:
+        except (HestiaError, httpx.HTTPError, OSError) as e:
             click.echo(f"Health check failed: {e}", err=True)
             sys.exit(1)
         finally:
-            await inference.close()
+            await app.inference.close()
 
     asyncio.run(_health())
 
@@ -459,28 +453,25 @@ def version() -> None:
 @click.pass_context
 def status(ctx: click.Context) -> None:
     """Show system status summary."""
-    cfg: HestiaConfig = ctx.obj["config"]
-    db: Database = ctx.obj["db"]
-    inference: InferenceClient = ctx.obj["inference"]
-    session_store: SessionStore = ctx.obj["session_store"]
-    failure_store: FailureStore = ctx.obj["failure_store"]
+    app: CliAppContext = ctx.obj["app"]
+    cfg = app.config
 
     async def _status() -> None:
-        await _bootstrap_db(db, ctx.obj["memory_store"], failure_store)
+        await app.bootstrap_db()
 
         # 1. Inference health
         click.echo("Inference:")
         try:
-            health_info = await inference.health()
+            health_info = await app.inference.health()
             click.echo("  Status: ok")
             for key, value in health_info.items():
                 click.echo(f"  {key}: {value}")
-        except Exception as e:
+        except (HestiaError, httpx.HTTPError, OSError) as e:
             click.echo(f"  Status: failed ({e})")
 
         # 2. Sessions by state
         click.echo("\nSessions:")
-        session_counts = await session_store.count_sessions_by_state()
+        session_counts = await app.session_store.count_sessions_by_state()
         if session_counts:
             for state, count in sorted(session_counts.items()):
                 click.echo(f"  {state}: {count}")
@@ -489,10 +480,8 @@ def status(ctx: click.Context) -> None:
 
         # 3. Turns in last 24h
         click.echo("\nTurns (last 24h):")
-        from datetime import timedelta
-
-        since = datetime.now() - timedelta(hours=24)
-        turn_stats = await session_store.turn_stats_since(since)
+        since = datetime.now(timezone.utc) - timedelta(hours=24)
+        turn_stats = await app.session_store.turn_stats_since(since)
         if turn_stats:
             for state, count in sorted(turn_stats.items()):
                 click.echo(f"  {state}: {count}")
@@ -501,24 +490,27 @@ def status(ctx: click.Context) -> None:
 
         # 4. Scheduled tasks
         click.echo("\nScheduled Tasks:")
-        scheduler_store = SchedulerStore(db)
-        stats = await scheduler_store.summary_stats()
+        stats = await app.scheduler_store.summary_stats()
         click.echo(f"  Enabled: {stats['enabled_count']}")
         if stats["next_run_at"]:
-            click.echo(f"  Next due: {stats['next_run_at']}")
+            # Convert UTC to local time for display
+            next_run = stats["next_run_at"]
+            if next_run.tzinfo is None:
+                next_run = next_run.replace(tzinfo=timezone.utc)
+            click.echo(f"  Next due: {next_run.astimezone().strftime('%Y-%m-%d %H:%M %Z')}")
         else:
             click.echo(f"  Next due: none")
 
         # 5. Failures in last 24h
         click.echo("\nFailures (last 24h):")
-        failure_counts = await failure_store.count_by_class(since=since)
+        failure_counts = await app.failure_store.count_by_class(since=since)
         if failure_counts:
             for failure_class, count in sorted(failure_counts.items()):
                 click.echo(f"  {failure_class}: {count}")
         else:
             click.echo("  No failures")
 
-        await inference.close()
+        await app.inference.close()
 
     asyncio.run(_status())
 
@@ -536,13 +528,12 @@ def failures() -> None:
 @click.pass_context
 def failures_list(ctx: click.Context, limit: int, failure_class: str | None) -> None:
     """List recent failures."""
-    db: Database = ctx.obj["db"]
-    failure_store: FailureStore = ctx.obj["failure_store"]
+    app: CliAppContext = ctx.obj["app"]
 
     async def _list() -> None:
-        await _bootstrap_db(db, ctx.obj["memory_store"], failure_store)
+        await app.bootstrap_db()
 
-        bundles = await failure_store.list_recent(limit=limit, failure_class=failure_class)
+        bundles = await app.failure_store.list_recent(limit=limit, failure_class=failure_class)
 
         if not bundles:
             click.echo("No failures found.")
@@ -566,14 +557,13 @@ def failures_list(ctx: click.Context, limit: int, failure_class: str | None) -> 
 @click.pass_context
 def failures_summary(ctx: click.Context, days: int) -> None:
     """Show failure counts by class."""
-    db: Database = ctx.obj["db"]
-    failure_store: FailureStore = ctx.obj["failure_store"]
+    app: CliAppContext = ctx.obj["app"]
 
     async def _summary() -> None:
-        await _bootstrap_db(db, ctx.obj["memory_store"], failure_store)
+        await app.bootstrap_db()
 
-        since = datetime.now() - timedelta(days=days)
-        counts = await failure_store.count_by_class(since=since)
+        since = datetime.now(timezone.utc) - timedelta(days=days)
+        counts = await app.failure_store.count_by_class(since=since)
 
         click.echo(f"Failure summary (last {days} days):\n")
         if counts:
@@ -608,9 +598,7 @@ def schedule_add(
     prompt: str,
 ) -> None:
     """Add a scheduled task."""
-    db: Database = ctx.obj["db"]
-    session_store: SessionStore = ctx.obj["session_store"]
-    memory_store: MemoryStore = ctx.obj["memory_store"]
+    app: CliAppContext = ctx.obj["app"]
 
     # Validate exactly one of cron or fire_at
     if cron is not None and fire_at_str is not None:
@@ -632,23 +620,23 @@ def schedule_add(
             )
             sys.exit(1)
 
-        # Reject past times
-        if fire_at < datetime.now():
+        # Reject past times (compare in UTC)
+        if fire_at.tzinfo is None:
+            fire_at = fire_at.replace(tzinfo=timezone.utc)
+        if fire_at < datetime.now(timezone.utc):
             click.echo(f"Error: Cannot schedule task in the past: {fire_at}", err=True)
             sys.exit(1)
 
     async def _add() -> None:
-        await _bootstrap_db(db, memory_store)
+        await app.bootstrap_db()
 
         # Get or create default CLI session
-        session = await session_store.get_or_create_session("cli", "default")
+        session = await app.session_store.get_or_create_session("cli", "default")
         if session is None:
             click.echo("Warning: No active session exists. Creating one.", err=True)
 
-        scheduler_store = SchedulerStore(db)
-
         try:
-            task = await scheduler_store.create_task(
+            task = await app.scheduler_store.create_task(
                 session_id=session.id,
                 prompt=prompt,
                 description=description,
@@ -661,7 +649,7 @@ def schedule_add(
             elif task.fire_at:
                 click.echo(f"  Schedule: at {task.fire_at}")
             click.echo(f"  Next run: {task.next_run_at}")
-        except Exception as e:
+        except (HestiaError, ValueError) as e:
             click.echo(f"Error creating task: {e}", err=True)
             sys.exit(1)
 
@@ -672,14 +660,12 @@ def schedule_add(
 @click.pass_context
 def schedule_list(ctx: click.Context) -> None:
     """List scheduled tasks."""
-    db: Database = ctx.obj["db"]
-    memory_store: MemoryStore = ctx.obj["memory_store"]
+    app: CliAppContext = ctx.obj["app"]
 
     async def _list() -> None:
-        await _bootstrap_db(db, memory_store)
+        await app.bootstrap_db()
 
-        scheduler_store = SchedulerStore(db)
-        tasks = await scheduler_store.list_tasks_for_session(session_id=None, include_disabled=True)
+        tasks = await app.scheduler_store.list_tasks_for_session(session_id=None, include_disabled=True)
 
         if not tasks:
             click.echo("No scheduled tasks.")
@@ -694,11 +680,22 @@ def schedule_list(ctx: click.Context) -> None:
             if task.cron_expression:
                 sched = f"cron: {task.cron_expression[:16]}"
             elif task.fire_at:
-                sched = f"at: {task.fire_at.strftime('%Y-%m-%d %H:%M')[:16]}"
+                # Convert UTC to local time for display
+                fire_at = task.fire_at
+                if fire_at.tzinfo is None:
+                    fire_at = fire_at.replace(tzinfo=timezone.utc)
+                sched = f"at: {fire_at.astimezone().strftime('%Y-%m-%d %H:%M')[:16]}"
             else:
                 sched = "unknown"
             enabled = "yes" if task.enabled else "no"
-            next_run = task.next_run_at.strftime("%Y-%m-%d %H:%M") if task.next_run_at else "-"
+            if task.next_run_at:
+                # Convert UTC to local time for display
+                next_run_dt = task.next_run_at
+                if next_run_dt.tzinfo is None:
+                    next_run_dt = next_run_dt.replace(tzinfo=timezone.utc)
+                next_run = next_run_dt.astimezone().strftime("%Y-%m-%d %H:%M")
+            else:
+                next_run = "-"
             click.echo(f"{task.id:<20} {desc:<25} {sched:<20} {enabled:<8} {next_run}")
 
     asyncio.run(_list())
@@ -709,14 +706,20 @@ def schedule_list(ctx: click.Context) -> None:
 @click.pass_context
 def schedule_show(ctx: click.Context, task_id: str) -> None:
     """Show details of a scheduled task."""
-    db: Database = ctx.obj["db"]
-    memory_store: MemoryStore = ctx.obj["memory_store"]
+    app: CliAppContext = ctx.obj["app"]
+
+    def _format_datetime(dt: datetime | None) -> str:
+        """Format datetime for display, converting UTC to local time."""
+        if dt is None:
+            return "-"
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone().strftime("%Y-%m-%d %H:%M %Z")
 
     async def _show() -> None:
-        await _bootstrap_db(db, memory_store)
+        await app.bootstrap_db()
 
-        scheduler_store = SchedulerStore(db)
-        task = await scheduler_store.get_task(task_id)
+        task = await app.scheduler_store.get_task(task_id)
 
         if task is None:
             click.echo(f"Task not found: {task_id}", err=True)
@@ -730,10 +733,10 @@ def schedule_show(ctx: click.Context, task_id: str) -> None:
         if task.cron_expression:
             click.echo(f"Schedule:    cron '{task.cron_expression}'")
         elif task.fire_at:
-            click.echo(f"Schedule:    at {task.fire_at}")
-        click.echo(f"Created:     {task.created_at}")
-        click.echo(f"Last run:    {task.last_run_at or '-'}")
-        click.echo(f"Next run:    {task.next_run_at or '-'}")
+            click.echo(f"Schedule:    at {_format_datetime(task.fire_at)}")
+        click.echo(f"Created:     {_format_datetime(task.created_at)}")
+        click.echo(f"Last run:    {_format_datetime(task.last_run_at)}")
+        click.echo(f"Next run:    {_format_datetime(task.next_run_at)}")
         if task.last_error:
             click.echo(f"Last error:  {task.last_error}")
 
@@ -745,49 +748,28 @@ def schedule_show(ctx: click.Context, task_id: str) -> None:
 @click.pass_context
 def schedule_run(ctx: click.Context, task_id: str) -> None:
     """Manually trigger a scheduled task."""
-    ctx.obj["confirm_callback"] = CliConfirmHandler()
-    cfg: HestiaConfig = ctx.obj["config"]
-    db: Database = ctx.obj["db"]
-    session_store: SessionStore = ctx.obj["session_store"]
-    inference: InferenceClient = ctx.obj["inference"]
-    context_builder: ContextBuilder = ctx.obj["context_builder"]
-    tool_registry: ToolRegistry = ctx.obj["tool_registry"]
-    policy = ctx.obj["policy"]
-    slot_manager: SlotManager = ctx.obj["slot_manager"]
-    memory_store: MemoryStore = ctx.obj["memory_store"]
-    failure_store: FailureStore = ctx.obj["failure_store"]
+    app: CliAppContext = ctx.obj["app"]
+    app.confirm_callback = CliConfirmHandler()
 
     async def _run() -> None:
-        await _bootstrap_db(db, memory_store, failure_store)
-
-        scheduler_store = SchedulerStore(db)
+        await app.bootstrap_db()
 
         # Verify task exists
-        task = await scheduler_store.get_task(task_id)
+        task = await app.scheduler_store.get_task(task_id)
         if task is None:
             click.echo(f"Task not found: {task_id}", err=True)
             sys.exit(1)
 
         # Create orchestrator
-        orchestrator = Orchestrator(
-            inference=inference,
-            session_store=session_store,
-            context_builder=context_builder,
-            tool_registry=tool_registry,
-            policy=policy,
-            confirm_callback=ctx.obj["confirm_callback"],
-            max_iterations=cfg.max_iterations,
-            slot_manager=slot_manager,
-            failure_store=failure_store,
-        )
+        orchestrator = app.make_orchestrator()
 
         # Build scheduler just for this one run
         async def response_callback(task: ScheduledTask, text: str) -> None:
             click.echo(f"[{task.id}] {text}")
 
         scheduler = Scheduler(
-            scheduler_store=scheduler_store,
-            session_store=session_store,
+            scheduler_store=app.scheduler_store,
+            session_store=app.session_store,
             orchestrator=orchestrator,
             response_callback=response_callback,
         )
@@ -795,14 +777,14 @@ def schedule_run(ctx: click.Context, task_id: str) -> None:
         try:
             await scheduler.run_now(task_id)
             click.echo(f"Task {task_id} executed successfully")
-        except Exception as e:
+        except (HestiaError, httpx.HTTPError, OSError) as e:
             click.echo(f"Error running task: {e}", err=True)
             sys.exit(1)
 
     try:
         asyncio.run(_run())
     finally:
-        asyncio.run(inference.close())
+        asyncio.run(app.inference.close())
 
 
 @schedule.command(name="enable")
@@ -810,14 +792,12 @@ def schedule_run(ctx: click.Context, task_id: str) -> None:
 @click.pass_context
 def schedule_enable(ctx: click.Context, task_id: str) -> None:
     """Enable a scheduled task."""
-    db: Database = ctx.obj["db"]
-    memory_store: MemoryStore = ctx.obj["memory_store"]
+    app: CliAppContext = ctx.obj["app"]
 
     async def _enable() -> None:
-        await _bootstrap_db(db, memory_store)
+        await app.bootstrap_db()
 
-        scheduler_store = SchedulerStore(db)
-        success = await scheduler_store.set_enabled(task_id, True)
+        success = await app.scheduler_store.set_enabled(task_id, True)
         if not success:
             click.echo(f"Task not found: {task_id}", err=True)
             sys.exit(1)
@@ -831,14 +811,12 @@ def schedule_enable(ctx: click.Context, task_id: str) -> None:
 @click.pass_context
 def schedule_disable(ctx: click.Context, task_id: str) -> None:
     """Disable a scheduled task."""
-    db: Database = ctx.obj["db"]
-    memory_store: MemoryStore = ctx.obj["memory_store"]
+    app: CliAppContext = ctx.obj["app"]
 
     async def _disable() -> None:
-        await _bootstrap_db(db, memory_store)
+        await app.bootstrap_db()
 
-        scheduler_store = SchedulerStore(db)
-        success = await scheduler_store.disable_task(task_id)
+        success = await app.scheduler_store.disable_task(task_id)
 
         if not success:
             click.echo(f"Task not found: {task_id}", err=True)
@@ -854,14 +832,12 @@ def schedule_disable(ctx: click.Context, task_id: str) -> None:
 @click.pass_context
 def schedule_remove(ctx: click.Context, task_id: str) -> None:
     """Remove a scheduled task."""
-    db: Database = ctx.obj["db"]
-    memory_store: MemoryStore = ctx.obj["memory_store"]
+    app: CliAppContext = ctx.obj["app"]
 
     async def _remove() -> None:
-        await _bootstrap_db(db, memory_store)
+        await app.bootstrap_db()
 
-        scheduler_store = SchedulerStore(db)
-        success = await scheduler_store.delete_task(task_id)
+        success = await app.scheduler_store.delete_task(task_id)
         if not success:
             click.echo(f"Task not found: {task_id}", err=True)
             sys.exit(1)

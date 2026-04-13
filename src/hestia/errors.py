@@ -9,6 +9,12 @@ class HestiaError(Exception):
     pass
 
 
+class PlatformError(HestiaError):
+    """Base class for platform adapter errors."""
+
+    pass
+
+
 class InferenceServerError(HestiaError):
     """llama-server returned a non-200 response."""
 
