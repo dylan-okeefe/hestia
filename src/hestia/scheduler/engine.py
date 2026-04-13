@@ -5,8 +5,9 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import datetime, timezone
+from datetime import datetime
 
+from hestia.core.clock import utcnow
 from hestia.core.types import Message, ScheduledTask, SessionState
 from hestia.orchestrator import Orchestrator
 from hestia.persistence.scheduler import SchedulerStore, _calculate_next_run
@@ -58,10 +59,12 @@ class Scheduler:
         try:
             while not self._stop_event.is_set():
                 try:
-                    await self._tick(datetime.now(timezone.utc))
+                    await self._tick(utcnow())
                 except Exception as e:  # noqa: BLE001
                     # Catch-all to prevent scheduler crash on any error
-                    logger.exception("Scheduler tick raised: %s", e)
+                    logger.exception(
+                        "Scheduler tick raised: %s", e
+                    )  # Outermost boundary — intentionally broad
 
                 # Sleep until next tick or stop signal, whichever comes first
                 try:
@@ -84,7 +87,7 @@ class Scheduler:
         task = await self._scheduler_store.get_task(task_id)
         if task is None:
             raise ValueError(f"Task not found: {task_id}")
-        await self._fire_task(task, datetime.now(timezone.utc))
+        await self._fire_task(task, utcnow())
 
     async def _fire_task(self, task: ScheduledTask, now: datetime) -> None:
         logger.info("Firing scheduled task %s", task.id)
@@ -113,7 +116,9 @@ class Scheduler:
             turn_error = turn.error
         except Exception as e:  # noqa: BLE001
             # Catch-all to record any failure during task execution
-            logger.exception("Task %s failed during process_turn", task.id)
+            logger.exception(
+                "Task %s failed during process_turn", task.id
+            )  # Outermost boundary — intentionally broad
             turn_error = str(e)
         finally:
             scheduler_tick_active.reset(tick_token)

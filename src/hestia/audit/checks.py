@@ -9,12 +9,13 @@ import json
 import shutil
 import subprocess
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from hestia.core.clock import utcnow
 from hestia.core.types import Session, SessionState, SessionTemperature
 from hestia.tools.capabilities import NETWORK_EGRESS, SHELL_EXEC
+from hestia.tools.registry import ToolNotFoundError
 
 if TYPE_CHECKING:
     from hestia.config import HestiaConfig
@@ -207,7 +208,7 @@ class SecurityAuditor:
             try:
                 meta = self.tool_registry.describe(name)
                 tool_caps[name] = list(meta.capabilities)
-            except Exception:
+            except (ToolNotFoundError, ValueError):
                 tool_caps[name] = []
 
         report.tool_capabilities = tool_caps
@@ -228,7 +229,7 @@ class SecurityAuditor:
         from hestia.policy.default import DefaultPolicyEngine
 
         policy = DefaultPolicyEngine()
-        now = datetime.now(timezone.utc)
+        now = utcnow()
 
         for session_type in session_types:
             session = Session(
@@ -425,7 +426,7 @@ class SecurityAuditor:
                 "warning", "dependencies", "pip-audit timed out after 60 seconds"
             )
             report.dependency_issues.append("pip-audit timed out")
-        except Exception as e:
+        except OSError as e:
             report.add_finding(
                 "info",
                 "dependencies",
@@ -444,7 +445,8 @@ class SecurityAuditor:
         # Check if traces table exists and has data
         try:
             recent_traces = await self.trace_store.list_recent(limit=100)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
+            # Trace store may raise various errors; audit should remain resilient
             report.add_finding(
                 "info",
                 "traces",

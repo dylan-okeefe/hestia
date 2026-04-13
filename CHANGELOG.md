@@ -5,11 +5,34 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### Added — Phase 7: Matrix adapter (in progress)
+## [0.1.0] — 2026-04-13
+
+### Added
 - `MatrixAdapter` implementing Platform ABC with `matrix-nio`
 - `hestia matrix` CLI command
 - `MatrixConfig` dataclass
 - ADR-021
+- `IdentityConfig` and `IdentityCompiler` for deterministic identity extraction
+- `MemoryEpochCompiler` for 30-day memory epochs in context
+- `TraceStore` and `FailureStore` with enriched fields
+- `SkillStore`, `SkillIndexBuilder`, and skill lifecycle management
+- `SecurityAuditor` with `hestia audit` and `hestia policy show` CLI commands
+- `CONTRIBUTING.md`
+- GitHub Actions CI workflow (`.github/workflows/ci.yml`)
+
+### Changed
+- Unified `utcnow()` adoption across the entire `src/` tree
+- Narrowed exception catches in orchestrator, CLI, and stores
+- Populated enriched `FailureBundle` fields (`request_summary`, `policy_snapshot`, `slot_snapshot`, `trace_id`)
+
+### Fixed
+- `tool_chain` UnboundLocalError in orchestrator error handler
+- `db.py` import ordering
+- Path sandboxing for `list_dir`
+- Deduplicated `CliConfirmHandler`
+- Removed unsandboxed `read_file` / `write_file` fallbacks
+- SSRF protection on `http_get`
+- Removed dead `COMPRESSING` state
 
 ### Added — Phase 6: Hardening & observability
 - Capability labels for tools (`read_local`, `write_local`, `shell_exec`,

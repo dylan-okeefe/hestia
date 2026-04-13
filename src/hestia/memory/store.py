@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 
 import sqlalchemy as sa
 
+from hestia.core.clock import utcnow
 from hestia.persistence.db import Database
 
 
@@ -29,7 +30,7 @@ class MemoryStore:
     is created via raw DDL because SQLAlchemy doesn't support virtual
     tables through its Table/MetaData API.
 
-    Datetimes: All timestamps are UTC (datetime.now(timezone.utc)), consistent
+    Datetimes: All timestamps are UTC (utcnow()), consistent
     with SessionStore and SchedulerStore. No timezone handling.
     """
 
@@ -72,7 +73,7 @@ class MemoryStore:
         """
         memory_id = f"mem_{uuid.uuid4().hex[:16]}"
         tag_str = " ".join(tags) if tags else ""
-        now = datetime.now(timezone.utc)
+        now = utcnow()
 
         insert = sa.text(
             "INSERT INTO memory (id, content, tags, session_id, created_at) "

@@ -4,10 +4,10 @@ import json
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from hestia.context.builder import ContextBuilder
+from hestia.core.clock import utcnow
 from hestia.core.inference import InferenceClient
 from hestia.core.types import Message, Session, ToolCall
 from hestia.errors import (
@@ -158,11 +158,13 @@ class Orchestrator:
                     logger.warning("Failed to send status message: %s", e)
 
             # Track timing and token usage for trace
-            turn_start_time = datetime.now(timezone.utc)
+            turn_start_time = utcnow()
             total_prompt_tokens = 0
             total_completion_tokens = 0
             total_reasoning_tokens = 0
             artifact_handles: list[str] = []
+
+            trace_record_id: str | None = None
 
             try:
                 # Start processing
@@ -227,7 +229,7 @@ class Orchestrator:
                         content=chat_response.content,
                         tool_calls=chat_response.tool_calls,
                         reasoning_content=chat_response.reasoning_content,
-                        created_at=datetime.now(timezone.utc),
+                        created_at=utcnow(),
                     )
                     await self._store.append_message(session.id, assistant_msg)
 
@@ -335,7 +337,7 @@ class Orchestrator:
 
             except IllegalTransitionError:
                 raise  # Re-raise state machine errors
-            except Exception as e:
+            except Exception as e:  # Outermost boundary — intentionally broad
                 await self._transition(turn, TurnState.FAILED)
                 turn.error = str(e)
                 await respond_callback(f"Error: {e}")
@@ -347,18 +349,30 @@ class Orchestrator:
 
                         failure_class, severity = classify_error(e)
 
-                        # Build enriched fields (handle case where error happens early)
-                        user_input_summary = (user_message.content or "")[:200]
+                        # Build request summary (truncate with ... if > 200 chars)
+                        raw_summary = user_message.content or ""
+                        if len(raw_summary) > 200:
+                            user_input_summary = raw_summary[:200] + "..."
+                        else:
+                            user_input_summary = raw_summary
+
+                        # Build policy snapshot using policy engine methods
                         try:
+                            reasoning_budget = turn.reasoning_budget
+                            if reasoning_budget is None:
+                                reasoning_budget = self._policy.reasoning_budget(
+                            session, turn.iterations
+                        )
                             policy_snapshot = json.dumps({
-                                "allowed_tools": allowed_tools,
-                                "reasoning_budget": turn.reasoning_budget,
-                                "max_iterations": self._max_iterations,
+                                "reasoning_budget": reasoning_budget,
+                                "turn_token_budget": self._policy.turn_token_budget(session),
+                                "tool_filter_active": allowed_tools is not None,
                             }, default=str)
                         except NameError:
                             policy_snapshot = json.dumps({"error": "policy not initialized"})
+
+                        # Build slot snapshot
                         try:
-                            # Handle session.temperature safely (may be enum or mock in tests)
                             temp_value = None
                             if hasattr(session, "temperature") and session.temperature is not None:
                                 if hasattr(session.temperature, "value"):
@@ -366,13 +380,20 @@ class Orchestrator:
                                 else:
                                     temp_value = str(session.temperature)
                             slot_snapshot = json.dumps({
-                                "slot_id": slot_id_to_use,
+                                "slot_id": session.slot_id,
                                 "temperature": temp_value,
+                                "slot_saved_path": getattr(session, "slot_saved_path", None),
                             }, default=str)
                         except NameError:
                             slot_snapshot = json.dumps({"error": "slot not initialized"})
                         except (TypeError, AttributeError):
-                            slot_snapshot = json.dumps({"error": "slot snapshot serialization failed"})
+                            slot_snapshot = json.dumps({
+                                "error": "slot snapshot serialization failed"
+                            })
+
+                        # Link trace ID if trace store is configured
+                        if self._trace_store is not None:
+                            trace_record_id = str(uuid.uuid4())
 
                         bundle = FailureBundle(
                             id=str(uuid.uuid4()),
@@ -382,19 +403,20 @@ class Orchestrator:
                             severity=severity,
                             error_message=str(e),
                             tool_chain=json.dumps(tool_chain),
-                            created_at=datetime.now(timezone.utc),
+                            created_at=utcnow(),
                             request_summary=user_input_summary,
                             policy_snapshot=policy_snapshot,
                             slot_snapshot=slot_snapshot,
-                            trace_id=None,  # Will be set after trace is recorded
+                            trace_id=trace_record_id,
                         )
                         await self._failure_store.record(bundle)
                     except Exception as record_err:  # noqa: BLE001
+                        # Outermost boundary — intentionally broad to avoid masking original error
                         logger.error("Failed to record failure bundle: %s", record_err)
 
             finally:
                 # Calculate timing
-                turn_end_time = datetime.now(timezone.utc)
+                turn_end_time = utcnow()
                 total_duration_ms = int(
                     (turn_end_time - turn_start_time).total_seconds() * 1000
                 )
@@ -407,13 +429,20 @@ class Orchestrator:
                     try:
                         from hestia.persistence.trace_store import TraceRecord
 
-                        user_input_summary = (user_message.content or "")[:200]
+                        raw_summary = user_message.content or ""
+                        if len(raw_summary) > 200:
+                            user_input_summary = raw_summary[:200] + "..."
+                        else:
+                            user_input_summary = raw_summary
                         outcome = "success" if turn.state == TurnState.DONE else "failed"
                         if turn.state not in (TurnState.DONE, TurnState.FAILED):
                             outcome = "partial"
 
+                        if trace_record_id is None:
+                            trace_record_id = str(uuid.uuid4())
+
                         trace = TraceRecord(
-                            id=str(uuid.uuid4()),
+                            id=trace_record_id,
                             session_id=session.id,
                             turn_id=turn.id,
                             started_at=turn_start_time,
@@ -425,12 +454,17 @@ class Orchestrator:
                             outcome=outcome,
                             artifact_handles=artifact_handles,
                             prompt_tokens=total_prompt_tokens if total_prompt_tokens > 0 else None,
-                            completion_tokens=total_completion_tokens if total_completion_tokens > 0 else None,
-                            reasoning_tokens=total_reasoning_tokens if total_reasoning_tokens > 0 else None,
+                            completion_tokens=(
+                                total_completion_tokens if total_completion_tokens > 0 else None
+                            ),
+                            reasoning_tokens=(
+                                total_reasoning_tokens if total_reasoning_tokens > 0 else None
+                            ),
                             total_duration_ms=total_duration_ms,
                         )
                         await self._trace_store.record(trace)
                     except Exception as trace_err:  # noqa: BLE001
+                        # Outermost boundary — intentionally broad to avoid masking original error
                         logger.error("Failed to record trace: %s", trace_err)
 
             return turn
@@ -446,7 +480,7 @@ class Orchestrator:
             session_id=session_id,
             state=TurnState.RECEIVED,
             user_message=user_message,
-            started_at=datetime.now(timezone.utc),
+            started_at=utcnow(),
             completed_at=None,
             iterations=0,
             tool_calls_made=0,
@@ -466,7 +500,7 @@ class Orchestrator:
         transition = TurnTransition(
             from_state=turn.state,
             to_state=to_state,
-            at=datetime.now(timezone.utc),
+            at=utcnow(),
             note=note,
         )
         turn.transitions.append(transition)
@@ -488,7 +522,7 @@ class Orchestrator:
                 role="tool",
                 content=result.content,
                 tool_call_id=tc.id,
-                created_at=datetime.now(),
+                created_at=utcnow(),
             )
             result_messages.append(msg)
 
@@ -523,7 +557,7 @@ class Orchestrator:
                     role="tool",
                     content=content,
                     tool_call_id=tc.id,
-                    created_at=datetime.now(),
+                    created_at=utcnow(),
                 )
             )
         return messages

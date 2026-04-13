@@ -7,6 +7,8 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
+import httpx
+
 from hestia.core.inference import InferenceClient
 from hestia.core.types import Session, SessionTemperature
 from hestia.errors import PersistenceError
@@ -117,7 +119,7 @@ class SlotManager:
                     await self._inference.slot_restore(slot_id, session.slot_saved_path)
                     await self._store.assign_slot(session.id, slot_id, clear_saved_path=True)
                     return SlotAssignment(slot_id=slot_id, restored_from_disk=True)
-                except Exception:
+                except (OSError, PersistenceError, httpx.HTTPError, RuntimeError):
                     self._assignments.pop(slot_id, None)
                     raise
 
@@ -125,7 +127,7 @@ class SlotManager:
                 slot_id = await self._allocate_slot(session.id)
                 try:
                     await self._store.assign_slot(session.id, slot_id)
-                except Exception:
+                except (OSError, PersistenceError, httpx.HTTPError, RuntimeError):
                     self._assignments.pop(slot_id, None)
                     raise
                 return SlotAssignment(slot_id=slot_id, restored_from_disk=False)

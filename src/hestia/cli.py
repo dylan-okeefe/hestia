@@ -3,8 +3,8 @@
 import asyncio
 import logging
 import sys
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +14,7 @@ import httpx
 from hestia.artifacts.store import ArtifactStore
 from hestia.config import HestiaConfig
 from hestia.context.builder import ContextBuilder
+from hestia.core.clock import utcnow
 from hestia.core.inference import InferenceClient
 from hestia.core.types import Message, ScheduledTask, Session
 from hestia.errors import HestiaError
@@ -28,10 +29,10 @@ from hestia.persistence.scheduler import SchedulerStore
 from hestia.persistence.sessions import SessionStore
 from hestia.persistence.skill_store import SkillStore
 from hestia.persistence.trace_store import TraceStore
-from hestia.skills.index import SkillIndexBuilder
-from hestia.skills.state import SkillState
 from hestia.policy.default import DefaultPolicyEngine
 from hestia.scheduler import Scheduler
+from hestia.skills.index import SkillIndexBuilder
+from hestia.skills.state import SkillState
 from hestia.tools.builtin import (
     current_time,
     http_get,
@@ -44,7 +45,7 @@ from hestia.tools.builtin import (
     make_write_file_tool,
     terminal,
 )
-from hestia.tools.registry import ToolRegistry
+from hestia.tools.registry import ToolNotFoundError, ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -438,7 +439,7 @@ def chat(ctx: click.Context) -> None:
             click.echo(f"Recovered {recovered} stale turn(s) from previous crash.")
 
         # Get or create session for CLI user
-        session = await session_store.get_or_create_session("cli", "default")
+        session = await app.session_store.get_or_create_session("cli", "default")
         click.echo(f"Session: {session.id}")
 
         # Compile memory epoch for this session
@@ -448,7 +449,7 @@ def chat(ctx: click.Context) -> None:
 
         click.echo("Type 'exit' or 'quit' to end the session, or /help for commands.\n")
 
-        response_handler = CliResponseHandler(verbose=verbose)
+        response_handler = CliResponseHandler(verbose=app.verbose)
 
         while True:
             try:
@@ -457,7 +458,7 @@ def chat(ctx: click.Context) -> None:
                     break
                 if user_input.startswith("/"):
                     should_exit, session = await _handle_meta_command(
-                        user_input, session, session_store, app
+                        user_input, session, app.session_store, app
                     )
                     if should_exit:
                         break
@@ -587,7 +588,7 @@ def status(ctx: click.Context) -> None:
 
         # 3. Turns in last 24h
         click.echo("\nTurns (last 24h):")
-        since = datetime.now(timezone.utc) - timedelta(hours=24)
+        since = utcnow() - timedelta(hours=24)
         turn_stats = await app.session_store.turn_stats_since(since)
         if turn_stats:
             for state, count in sorted(turn_stats.items()):
@@ -603,10 +604,10 @@ def status(ctx: click.Context) -> None:
             # Convert UTC to local time for display
             next_run = stats["next_run_at"]
             if next_run.tzinfo is None:
-                next_run = next_run.replace(tzinfo=timezone.utc)
+                next_run = next_run.replace(tzinfo=UTC)
             click.echo(f"  Next due: {next_run.astimezone().strftime('%Y-%m-%d %H:%M %Z')}")
         else:
-            click.echo(f"  Next due: none")
+            click.echo("  Next due: none")
 
         # 5. Failures in last 24h
         click.echo("\nFailures (last 24h):")
@@ -669,7 +670,7 @@ def failures_summary(ctx: click.Context, days: int) -> None:
     async def _summary() -> None:
         await app.bootstrap_db()
 
-        since = datetime.now(timezone.utc) - timedelta(days=days)
+        since = utcnow() - timedelta(days=days)
         counts = await app.failure_store.count_by_class(since=since)
 
         click.echo(f"Failure summary (last {days} days):\n")
@@ -729,8 +730,8 @@ def schedule_add(
 
         # Reject past times (compare in UTC)
         if fire_at.tzinfo is None:
-            fire_at = fire_at.replace(tzinfo=timezone.utc)
-        if fire_at < datetime.now(timezone.utc):
+            fire_at = fire_at.replace(tzinfo=UTC)
+        if fire_at < utcnow():
             click.echo(f"Error: Cannot schedule task in the past: {fire_at}", err=True)
             sys.exit(1)
 
@@ -790,7 +791,7 @@ def schedule_list(ctx: click.Context) -> None:
                 # Convert UTC to local time for display
                 fire_at = task.fire_at
                 if fire_at.tzinfo is None:
-                    fire_at = fire_at.replace(tzinfo=timezone.utc)
+                    fire_at = fire_at.replace(tzinfo=UTC)
                 sched = f"at: {fire_at.astimezone().strftime('%Y-%m-%d %H:%M')[:16]}"
             else:
                 sched = "unknown"
@@ -799,7 +800,7 @@ def schedule_list(ctx: click.Context) -> None:
                 # Convert UTC to local time for display
                 next_run_dt = task.next_run_at
                 if next_run_dt.tzinfo is None:
-                    next_run_dt = next_run_dt.replace(tzinfo=timezone.utc)
+                    next_run_dt = next_run_dt.replace(tzinfo=UTC)
                 next_run = next_run_dt.astimezone().strftime("%Y-%m-%d %H:%M")
             else:
                 next_run = "-"
@@ -820,7 +821,7 @@ def schedule_show(ctx: click.Context, task_id: str) -> None:
         if dt is None:
             return "-"
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=UTC)
         return dt.astimezone().strftime("%Y-%m-%d %H:%M %Z")
 
     async def _show() -> None:
@@ -985,7 +986,7 @@ def schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None:
         click.echo(f"[scheduler:{task.id}] {text}")
 
     async def _daemon() -> None:
-        await _bootstrap_db(db, memory_store, failure_store, trace_store)
+        await _bootstrap_db(db, memory_store, failure_store, app.trace_store)
 
         scheduler_store = SchedulerStore(db)
 
@@ -1082,7 +1083,7 @@ def run_telegram(ctx: click.Context) -> None:
         return callback
 
     async def _run() -> None:
-        await _bootstrap_db(db, memory_store, failure_store, trace_store)
+        await _bootstrap_db(db, memory_store, failure_store, app.trace_store)
 
         adapter = TelegramAdapter(cfg.telegram)
 
@@ -1095,7 +1096,7 @@ def run_telegram(ctx: click.Context) -> None:
             max_iterations=cfg.max_iterations,
             slot_manager=slot_manager,
             failure_store=failure_store,
-            trace_store=trace_store,
+            trace_store=app.trace_store,
             # No confirm_callback for Telegram — tools requiring confirmation
             # (e.g., write_file) will refuse to run and tell the model why.
             # TODO: Implement confirmation via Telegram inline keyboard buttons.
@@ -1132,7 +1133,7 @@ def run_telegram(ctx: click.Context) -> None:
                     platform=adapter,
                     platform_user=platform_user,
                 )
-            except Exception as e:
+            except Exception as e:  # Outermost boundary — intentionally broad
                 logger.exception("Turn failed for user %s", platform_user)
                 await adapter.send_error(platform_user, f"Turn failed: {e}")
 
@@ -1206,7 +1207,7 @@ def run_matrix(ctx: click.Context) -> None:
         return callback
 
     async def _run() -> None:
-        await _bootstrap_db(db, memory_store, failure_store, trace_store)
+        await _bootstrap_db(db, memory_store, failure_store, app.trace_store)
 
         adapter = MatrixAdapter(cfg.matrix)
 
@@ -1219,7 +1220,7 @@ def run_matrix(ctx: click.Context) -> None:
             max_iterations=cfg.max_iterations,
             slot_manager=slot_manager,
             failure_store=failure_store,
-            trace_store=trace_store,
+            trace_store=app.trace_store,
             # No confirm_callback for Matrix — tools requiring confirmation
             # (e.g., write_file) will refuse to run and tell the model why.
             # TODO: Implement confirmation via Matrix reply pattern.
@@ -1256,7 +1257,7 @@ def run_matrix(ctx: click.Context) -> None:
                     platform=adapter,
                     platform_user=platform_user,
                 )
-            except Exception as e:
+            except Exception as e:  # Outermost boundary — intentionally broad
                 logger.exception("Turn failed for room %s", platform_user)
                 await adapter.send_error(platform_user, f"Turn failed: {e}")
 
@@ -1629,7 +1630,6 @@ def policy(ctx: click.Context) -> None:
 @click.pass_context
 def policy_show(ctx: click.Context) -> None:
     """Show current effective policy configuration."""
-    from datetime import datetime, timezone
 
     from hestia.core.types import Session, SessionState, SessionTemperature
     from hestia.tools.capabilities import (
@@ -1658,7 +1658,7 @@ def policy_show(ctx: click.Context) -> None:
         click.echo("REASONING BUDGETS")
         click.echo("-" * 40)
         click.echo(f"  Default: {cfg.inference.default_reasoning_budget} tokens")
-        click.echo(f"  Subagent max: 1024 tokens (capped)")
+        click.echo("  Subagent max: 1024 tokens (capped)")
         click.echo("")
 
         # Context window and budgets
@@ -1667,7 +1667,7 @@ def policy_show(ctx: click.Context) -> None:
         click.echo("-" * 40)
         click.echo(f"  Context window: {policy_engine.ctx_window} tokens")
         click.echo(f"  Turn token budget: {policy_engine.turn_token_budget(None)} tokens")
-        click.echo(f"  Compression threshold: 85% of budget")
+        click.echo("  Compression threshold: 85% of budget")
         click.echo("")
 
         # Tool filtering by session type
@@ -1683,7 +1683,7 @@ def policy_show(ctx: click.Context) -> None:
 
         all_tools = app.tool_registry.list_names()
 
-        now = datetime.now(timezone.utc)
+        now = utcnow()
         for label, platform in session_types:
             session = Session(
                 id="policy-show",
@@ -1724,7 +1724,7 @@ def policy_show(ctx: click.Context) -> None:
                         else:
                             reason = "unknown"
                         blocked_with_reasons.append(f"{tool} ({reason})")
-                    except Exception:
+                    except ToolNotFoundError:
                         blocked_with_reasons.append(tool)
 
                 click.echo(f"    Blocked ({len(blocked)}): {', '.join(blocked_with_reasons)}")
@@ -1749,7 +1749,7 @@ def policy_show(ctx: click.Context) -> None:
                 for cap in meta.capabilities:
                     if cap in capability_tools:
                         capability_tools[cap].append(tool)
-            except Exception:
+            except ToolNotFoundError:
                 pass
 
         for cap, tools in capability_tools.items():

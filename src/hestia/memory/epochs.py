@@ -8,8 +8,9 @@ stability and predictable token budgets.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
+from hestia.core.clock import utcnow
 from hestia.core.types import Session
 from hestia.memory.store import Memory, MemoryStore
 
@@ -62,7 +63,7 @@ class MemoryEpochCompiler:
         seen_ids: set[str] = set()
 
         # 1. Fetch recent memories (last 30 days)
-        cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+        cutoff = utcnow() - timedelta(days=30)
         recent_memories = await self._fetch_recent_memories(limit=50)
         for mem in recent_memories:
             if mem.created_at >= cutoff and mem.id not in seen_ids:
@@ -95,7 +96,7 @@ class MemoryEpochCompiler:
 
         return MemoryEpoch(
             compiled_text=formatted,
-            created_at=datetime.now(timezone.utc),
+            created_at=utcnow(),
             memory_count=len(memories),
             token_estimate=token_estimate,
         )
@@ -144,7 +145,7 @@ class MemoryEpochCompiler:
         """
         return MemoryEpoch(
             compiled_text="",
-            created_at=datetime.now(timezone.utc),
+            created_at=utcnow(),
             memory_count=0,
             token_estimate=0,
         )

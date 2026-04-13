@@ -98,7 +98,7 @@ class SkillStore:
                         )
                     )
             return record
-        except Exception as e:
+        except sa.exc.SQLAlchemyError as e:
             raise PersistenceError(f"Failed to upsert skill: {e}") from e
 
     async def get_by_name(self, name: str) -> SkillRecord | None:
@@ -122,7 +122,7 @@ class SkillStore:
                 if row is None:
                     return None
                 return self._row_to_record(row)
-        except Exception as e:
+        except sa.exc.SQLAlchemyError as e:
             raise PersistenceError(f"Failed to get skill: {e}") from e
 
     async def list_all(
@@ -152,7 +152,7 @@ class SkillStore:
                 query = query.order_by(skills.c.name)
                 result = await conn.execute(query)
                 return [self._row_to_record(row) for row in result.mappings()]
-        except Exception as e:
+        except sa.exc.SQLAlchemyError as e:
             raise PersistenceError(f"Failed to list skills: {e}") from e
 
     async def update_state(self, name: str, new_state: SkillState) -> bool:
@@ -176,7 +176,7 @@ class SkillStore:
                     .values(state=new_state.value)
                 )
                 return result.rowcount > 0
-        except Exception as e:
+        except sa.exc.SQLAlchemyError as e:
             raise PersistenceError(f"Failed to update skill state: {e}") from e
 
     async def record_run(
@@ -222,7 +222,7 @@ class SkillStore:
                     )
                 )
                 return True
-        except Exception as e:
+        except sa.exc.SQLAlchemyError as e:
             raise PersistenceError(f"Failed to record skill run: {e}") from e
 
     async def delete(self, name: str) -> bool:
@@ -243,7 +243,7 @@ class SkillStore:
                     sa.delete(skills).where(skills.c.name == name)
                 )
                 return result.rowcount > 0
-        except Exception as e:
+        except sa.exc.SQLAlchemyError as e:
             raise PersistenceError(f"Failed to delete skill: {e}") from e
 
     def _row_to_record(self, row: Any) -> SkillRecord:

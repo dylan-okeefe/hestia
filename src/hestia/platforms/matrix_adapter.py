@@ -5,15 +5,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any
 
 from nio import (
     AsyncClient,
-    ErrorResponse,
-    Event,
     MatrixRoom,
-    MegolmEvent,
-    RoomGetEventError,
     RoomMessageText,
     RoomSendResponse,
     SyncResponse,
@@ -182,7 +177,7 @@ class MatrixAdapter(Platform):
                         pass
                 except asyncio.CancelledError:
                     raise
-                except Exception as e:
+                except Exception as e:  # Background sync loop — intentionally broad
                     logger.warning("Matrix sync error: %s", e)
                     await asyncio.sleep(5)  # Back off on error
         except asyncio.CancelledError:

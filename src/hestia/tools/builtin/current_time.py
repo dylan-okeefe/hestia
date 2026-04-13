@@ -28,5 +28,5 @@ async def current_time(timezone: str = "UTC") -> str:
         tz = ZoneInfo(timezone)
     except (KeyError, ValueError):
         return f"Unknown timezone: {timezone!r}. Use an IANA name like 'UTC' or 'America/New_York'."
-    now = datetime.now(tz)
+    now = datetime.now(tz)  # local time for user display — intentional
     return now.strftime("%Y-%m-%d %H:%M:%S %Z")

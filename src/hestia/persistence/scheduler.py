@@ -1,12 +1,13 @@
 """Scheduler persistence layer for scheduled tasks."""
 
 import uuid
-from datetime import datetime, timezone, tzinfo
+from datetime import UTC, datetime
 from typing import Any
 
 import sqlalchemy as sa
 from croniter import croniter
 
+from hestia.core.clock import utcnow
 from hestia.core.types import ScheduledTask
 from hestia.errors import PersistenceError
 from hestia.persistence.db import Database
@@ -23,8 +24,8 @@ def _dt_gt_utc(left: datetime, right: datetime) -> bool:
 
     def as_utc_aware(dt: datetime) -> datetime:
         if dt.tzinfo is None:
-            return dt.replace(tzinfo=timezone.utc)
-        return dt.astimezone(timezone.utc)
+            return dt.replace(tzinfo=UTC)
+        return dt.astimezone(UTC)
 
     return as_utc_aware(left) > as_utc_aware(right)
 
@@ -49,10 +50,10 @@ def _calculate_next_run(
     if fire_at is not None:
         # One-time task - run at fire_at, or immediately if fire_at is in the past
         if base_time is None:
-            base_time = datetime.now(timezone.utc)
+            base_time = utcnow()
         # Normalize both to UTC for comparison
-        fire_at_utc = fire_at if fire_at.tzinfo else fire_at.replace(tzinfo=timezone.utc)
-        base_time_utc = base_time if base_time.tzinfo else base_time.replace(tzinfo=timezone.utc)
+        fire_at_utc = fire_at if fire_at.tzinfo else fire_at.replace(tzinfo=UTC)
+        base_time_utc = base_time if base_time.tzinfo else base_time.replace(tzinfo=UTC)
         if fire_at_utc > base_time_utc:
             return fire_at
         # fire_at is in the past, run immediately (use created_at if provided)
@@ -61,7 +62,7 @@ def _calculate_next_run(
     if cron_expr is not None:
         # Recurring task - calculate next occurrence from cron expression
         if base_time is None:
-            base_time = datetime.now(timezone.utc)
+            base_time = utcnow()
         try:
             itr = croniter(cron_expr, base_time)
             return itr.get_next(datetime)
@@ -111,7 +112,7 @@ class SchedulerStore:
             raise PersistenceError("Must specify either cron_expression or fire_at")
 
         task_id = _generate_task_id()
-        created_at = datetime.now(timezone.utc)
+        created_at = utcnow()
 
         # Calculate initial next_run_at
         next_run_at = _calculate_next_run(cron_expression, fire_at, created_at, created_at)
@@ -161,7 +162,7 @@ class SchedulerStore:
             List of tasks where next_run_at <= now and enabled=True
         """
         if now is None:
-            now = datetime.now(timezone.utc)
+            now = utcnow()
 
         query = (
             sa.select(scheduled_tasks)
@@ -228,7 +229,7 @@ class SchedulerStore:
             The updated ScheduledTask, or None if not found
         """
         if now is None:
-            now = datetime.now(timezone.utc)
+            now = utcnow()
 
         # First get the task to determine its type
         query = sa.select(scheduled_tasks).where(scheduled_tasks.c.id == task_id)
@@ -348,7 +349,7 @@ class SchedulerStore:
         def _ensure_utc(dt: datetime | None) -> datetime | None:
             if dt is None:
                 return None
-            return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+            return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
 
         return ScheduledTask(
             id=row.id,

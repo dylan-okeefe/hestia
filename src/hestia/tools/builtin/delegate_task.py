@@ -6,9 +6,9 @@ import asyncio
 import uuid
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Any
 
+from hestia.core.clock import utcnow
 from hestia.core.types import Message
 from hestia.persistence.sessions import SessionStore
 from hestia.tools.capabilities import ORCHESTRATION
@@ -132,7 +132,7 @@ def make_delegate_task_tool(
             platform_user=f"subagent_{uuid.uuid4().hex[:8]}",
         )
 
-        start_time = datetime.now(timezone.utc)
+        start_time = utcnow()
 
         try:
             # Build the prompt for the subagent
@@ -146,7 +146,7 @@ def make_delegate_task_tool(
             prompt = "\n".join(prompt_parts)
 
             # Create user message for the subagent
-            user_message = Message(role="user", content=prompt, created_at=datetime.now(timezone.utc))
+            user_message = Message(role="user", content=prompt, created_at=utcnow())
 
             # Get orchestrator via factory
             orchestrator = orchestrator_factory()
@@ -171,7 +171,7 @@ def make_delegate_task_tool(
             try:
                 turn = await asyncio.wait_for(run_subagent(), timeout=timeout)
 
-                duration = (datetime.now(timezone.utc) - start_time).total_seconds()
+                duration = (utcnow() - start_time).total_seconds()
 
                 # Determine status from turn (use string comparison to avoid circular import)
                 state_value = getattr(turn.state, "value", str(turn.state))
@@ -199,7 +199,7 @@ def make_delegate_task_tool(
                 )
 
             except TimeoutError:
-                duration = (datetime.now(timezone.utc) - start_time).total_seconds()
+                duration = (utcnow() - start_time).total_seconds()
                 result = SubagentResult(
                     status="timeout",
                     summary=f"Subagent timed out after {timeout}s",

@@ -1,16 +1,18 @@
 """Core dataclasses for Hestia."""
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from enum import Enum
 from typing import Any, Literal
 
 from pydantic import BaseModel
 
+from hestia.core.clock import utcnow
+
 
 def _utc_now() -> datetime:
     """Return timezone-aware UTC now."""
-    return datetime.now(timezone.utc)
+    return utcnow()
 
 
 @dataclass
