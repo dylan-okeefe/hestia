@@ -1,7 +1,7 @@
 """Scheduler persistence layer for scheduled tasks."""
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import sqlalchemy as sa
@@ -16,6 +16,17 @@ from hestia.persistence.schema import scheduled_tasks
 def _generate_task_id() -> str:
     """Generate a unique task ID."""
     return f"task_{uuid.uuid4().hex[:16]}"
+
+
+def _dt_gt_utc(left: datetime, right: datetime) -> bool:
+    """True if *left* is after *right* on the UTC timeline (naive datetimes treated as UTC)."""
+
+    def as_utc_aware(dt: datetime) -> datetime:
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+
+    return as_utc_aware(left) > as_utc_aware(right)
 
 
 def _calculate_next_run(
@@ -39,7 +50,7 @@ def _calculate_next_run(
         # One-time task - run at fire_at, or immediately if fire_at is in the past
         if base_time is None:
             base_time = datetime.now()
-        if fire_at > base_time:
+        if _dt_gt_utc(fire_at, base_time):
             return fire_at
         # fire_at is in the past, run immediately (use created_at if provided)
         return created_at if created_at else base_time
