@@ -3,7 +3,7 @@
 > **Purpose:** Handoff contract between Claude (Cowork) and Cursor for reviewing Kimi's output and orchestrating the next phase.
 >
 > **Last updated:** 2026-04-12
-> **Last updated by:** Cursor (L05 merged; L06 Phase 11 next)
+> **Last updated by:** Cursor (L06 merged; L07 Phase 12 next)
 
 ---
 
@@ -62,7 +62,7 @@ Dylan can **defer per-loop review** to Cursor for a **queued multi-loop run** (s
 
 - **Branch:** `develop` (local **ahead of** `origin/develop` until you `git push` — includes Phase 7 cleanup + orchestration docs)
 - **Phase 7:** **Merged** — commit **`265003b`** on `develop` ("fix: phase 7 cleanup — bugs, security, dead code").
-- **Active Kimi work:** **L06 Phase 11** (trace store + enriched failure bundles) — [`docs/orchestration/kimi-loops/L06-phase-11-trace-store.md`](orchestration/kimi-loops/L06-phase-11-trace-store.md). Pointer: [`docs/prompts/KIMI_CURRENT.md`](prompts/KIMI_CURRENT.md).
+- **Active Kimi work:** **L07 Phase 12** (manual skills) — [`docs/orchestration/kimi-loops/L07-phase-12-skills.md`](orchestration/kimi-loops/L07-phase-12-skills.md). Pointer: [`docs/prompts/KIMI_CURRENT.md`](prompts/KIMI_CURRENT.md).
 
 **Phase 7 summary (merged):**
 
@@ -85,8 +85,9 @@ Dylan can **defer per-loop review** to Cursor for a **queued multi-loop run** (s
 5. ~~**L03 Phase 8b**~~ — Done (`0034038` on `develop`)  
 6. ~~**L04 Phase 9**~~ — Done (`39caca5` on `develop`)  
 7. ~~**L05 Phase 10**~~ — Done (`2a54255` on `develop`)  
-8. **L06 Phase 11** — traces + failure bundles (`L06-phase-11-trace-store.md`)  
-9. **L07–L08** — remainder per queue table  
+8. ~~**L06 Phase 11**~~ — Done (`20a5c40` on `develop`)  
+9. **L07 Phase 12** — skills (`L07-phase-12-skills.md`)  
+10. **L08** — audit CLI (`L08-phase-13-audit.md`)  
 
 **Earlier prompts (reference only):**
 
@@ -101,7 +102,8 @@ Dylan can **defer per-loop review** to Cursor for a **queued multi-loop run** (s
 
 | Branch | Role |
 |--------|------|
-| `develop` | **Tip** — through **L05** Phase 10 (`2a54255`); not yet pushed |
+| `develop` | **Tip** — through **L06** Phase 11 (`20a5c40`); not yet pushed |
+| `feature/phase-11-trace-store` | Merged into `develop` |
 | `feature/phase-10-memory-epochs` | Merged into `develop` |
 | `feature/phase-9-test-infra` | Merged into `develop` |
 | `feature/phase-8b-cli-exceptions-datetime` | Merged into `develop` |
@@ -161,7 +163,7 @@ Through **ADR-023** (memory epochs, L05). **L07** should add **ADR-024** (skills
 
 1. ~~Phase 7 cleanup~~  
 2. ~~**L01 Matrix**~~  
-3. **L06–L08** per [`kimi-phase-queue.md`](orchestration/kimi-phase-queue.md)  
+3. **L07–L08** per [`kimi-phase-queue.md`](orchestration/kimi-phase-queue.md)  
 4. Long-term: `docs/roadmap/future-systems-deferred-roadmap.md`  
 
 ---
@@ -172,7 +174,7 @@ Through **ADR-023** (memory epochs, L05). **L07** should add **ADR-024** (skills
 
 1. Read at start of each Hestia session.  
 2. After Kimi delivers work: update verdict, test counts, git state, `KIMI_CURRENT.md`; remove or acknowledge `.kimi-done`.  
-3. Next Kimi cycle: follow **`KIMI_CURRENT.md`** (currently **L06 Phase 11**).  
+3. Next Kimi cycle: follow **`KIMI_CURRENT.md`** (currently **L07 Phase 12**).  
 
 ### Review checklist
 

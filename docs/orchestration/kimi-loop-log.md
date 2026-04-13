@@ -8,6 +8,16 @@
 
 ---
 
+## 2026-04-12 — Loop: L06 Phase 11 — traces + failure bundles (Kimi)
+
+**Kimi:** ~18.3 min. `.kimi-done`: `GIT_HEAD=20a5c40`, **386 passed**.
+
+**Outcome:** `trace_store.py`, Alembic migration `b2c3d4e5f6g7_*`, orchestrator `finally` tracing, enriched `FailureBundle` fields, CLI wiring.
+
+**Git:** Merged `feature/phase-11-trace-store` → `develop`.
+
+---
+
 ## 2026-04-12 — Loop: L05 Phase 10 — memory epochs (Kimi)
 
 **Kimi:** ~9.2 min. `.kimi-done`: `GIT_HEAD=2a54255`, **386 passed**.

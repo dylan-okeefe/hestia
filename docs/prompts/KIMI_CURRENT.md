@@ -2,21 +2,21 @@
 
 **Orchestrator:** Cursor updates this file after each review. **Executor:** follow every step below, then the linked specs.
 
-**Last set by:** Cursor — 2026-04-12 (L06 Phase 11: trace store + failure bundles)
+**Last set by:** Cursor — 2026-04-12 (L07 Phase 12: manual skills)
 
 ---
 
 ## Current task (do this now)
 
-1. Read **[`docs/orchestration/kimi-loops/L06-phase-11-trace-store.md`](../orchestration/kimi-loops/L06-phase-11-trace-store.md)** and execute **end-to-end** (branch, §11.1–§11.2, push, `.kimi-done`). Follow **`## Review carry-forward`** on that file.
-2. **Authoritative technical detail:** **[`docs/design/hestia-phase-8-plus-roadmap.md`](../design/hestia-phase-8-plus-roadmap.md)** — **§11.1** and **§11.2** only.
+1. Read **[`docs/orchestration/kimi-loops/L07-phase-12-skills.md`](../orchestration/kimi-loops/L07-phase-12-skills.md)** and execute **end-to-end** (branch, §12.1–§12.5, **ADR-024**, push, `.kimi-done`). Follow **`## Review carry-forward`** on that file.
+2. **Authoritative technical detail:** **[`docs/design/hestia-phase-8-plus-roadmap.md`](../design/hestia-phase-8-plus-roadmap.md)** — **§12.1–§12.5** only.
 3. Queue: [`../orchestration/kimi-phase-queue.md`](../orchestration/kimi-phase-queue.md).
 
 ---
 
 ## Next task (after Cursor review)
 
-Cursor advances to **L07** when green.
+Cursor advances to **L08** when green.
 
 ---
 
