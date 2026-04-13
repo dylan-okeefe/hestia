@@ -1,33 +1,38 @@
 # Hestia
 
-A local-first personal assistant framework for people running their own LLMs on consumer hardware.
+A personal assistant that runs entirely on your own hardware.
 
-Hestia is designed for self-hosters who want a capable AI agent without sending
-conversations to the cloud. It runs on a single GPU (8–24 GB VRAM), talks to
-llama.cpp over HTTP, and gives you tool use, scheduled tasks, long-term memory,
-and multi-platform chat — all from one process with a SQLite database.
+Hestia is a local-first AI agent for self-hosters. It runs on a single consumer GPU, talks to [llama.cpp](https://github.com/ggerganov/llama.cpp) over HTTP, and gives you tool use, long-term memory, scheduled tasks, and multi-platform chat — all from one Python process backed by SQLite.
 
-No LangChain. No transformers. No vector DB. Just Python, llama.cpp, and SQLite.
+Your conversations never leave your machine. No cloud APIs, no telemetry, no subscriptions.
 
-**Status:** Pre-release — core features are functional, APIs are stabilizing.
-Matrix adapter is in active development.
+**Status:** Pre-release. Core features work, APIs are stabilizing, Matrix adapter is in active development.
 
 ---
 
 ## Who this is for
 
-- Self-hosters with 8–24 GB VRAM who want a real agent on their own hardware
-- Privacy-focused users who don't want conversations leaving their machine
-- Tinkerers who want to extend their assistant with custom Python tools
-- People already running things like Home Assistant or Synapse who want an LLM
-  that fits into that workflow
+Hestia is built for people who run their own infrastructure. If you already have a GPU sitting idle, or you're running things like Home Assistant, Synapse, or Jellyfin, Hestia fits into that world. It's for people who want an AI assistant that lives on their hardware, respects their privacy, and can be extended with Python.
 
-## Who this isn't for
+You probably don't want Hestia if you're looking for a plug-and-play ChatGPT replacement, a multi-tenant deployment, or a coding agent. There are better tools for all of those.
 
-- Plug-and-play OpenAI API wrappers (use anything else)
-- Multi-tenant deployments (use letta / agno / autogen)
-- Code-focused agents (use aider / opencode / SWE-agent)
-- People who need a web UI (Hestia is CLI + Telegram + Matrix)
+---
+
+## How it works
+
+You send Hestia a message — through the terminal, Telegram, or Matrix. Here's what happens:
+
+1. **Context assembly.** Hestia loads your conversation history from SQLite, counts the real token cost using llama.cpp's `/tokenize` endpoint, and trims old messages if needed to stay within your GPU's context window. If you've given Hestia a personality (more on that below), it gets prepended to every conversation.
+
+2. **Tool selection.** Instead of describing every available tool to the model on every message (which wastes tokens), Hestia uses a meta-tool pattern: the model gets two generic tools — `list_tools` to see what's available, and `call_tool` to invoke one by name. This saves roughly 2,900 tokens per request compared to listing all tools individually. On a 9B model with 16K context, that's a meaningful chunk of your budget.
+
+3. **Model inference.** The assembled context goes to your local llama.cpp server. Hestia manages KV-cache slots so that resuming a conversation doesn't require re-processing the entire history — a warm session restores from disk in about 200ms.
+
+4. **Tool execution.** If the model asks to call a tool, Hestia executes it, adds the result to the conversation, and sends it back to the model. This loop continues until the model produces a final text response or hits the iteration limit.
+
+5. **Overflow handling.** When a tool produces a result that's too large for context (a long file, a big HTTP response), Hestia automatically saves the full result as an **artifact** — a file on disk with a short handle like `art_a7f3b2c9d1`. Only a preview goes into the conversation, and the model can use `read_artifact` to access the full content when it needs it. This keeps your context window clean without losing data.
+
+6. **Memory.** Hestia has a long-term memory backed by SQLite's FTS5 full-text search. The model can save facts, search for them later, and list recent memories. No embeddings, no vector database, no external services. It's just text search that works.
 
 ---
 
@@ -41,132 +46,92 @@ uv sync
 # Initialize database and directories
 hestia init
 
-# Start chatting
+# Start chatting (connects to llama.cpp on localhost:8001 by default)
 hestia chat
 ```
 
-That's it for local CLI use with default settings (connects to llama.cpp on
-`localhost:8001`).
-
-For production or Telegram deployment, create a config file:
+For Telegram or production use, create a config file:
 
 ```bash
 cp deploy/example_config.py config.py
-# Edit config.py — set your model, paths, Telegram token, etc.
+# Edit config.py — set your model path, Telegram token, personality, etc.
 hestia --config config.py telegram
 ```
 
-See [`deploy/`](deploy/) for systemd service templates and production setup.
+---
+
+## What it can do
+
+**Multi-turn chat** — Conversation history is persisted in SQLite. Sessions resume across restarts. If your llama.cpp server has KV-cache slot save/restore enabled, resuming is near-instant.
+
+**Tool use** — 11 built-in tools plus a `@tool` decorator for writing your own. Tools declare their capabilities (filesystem access, network, shell, memory) and the policy engine controls which tools are available in which contexts. Dangerous tools like `write_file` and `terminal` require explicit confirmation.
+
+**Long-term memory** — The model can save notes and search them later using full-text search. Useful for remembering preferences, project context, recurring tasks, or anything you'd want your assistant to recall between sessions.
+
+**Scheduled tasks** — Cron expressions and one-shot timers. The model itself can create scheduled tasks, or you can manage them through the CLI. Scheduled tasks run through the same orchestrator as interactive conversations, with a restricted tool set for safety.
+
+**Subagent delegation** — Complex tasks can be offloaded to a separate session with its own context window. The parent session gets back a short summary (about 300 tokens) instead of the full tool chain, keeping context growth bounded.
+
+**Artifacts** — When tool outputs are too large for the conversation (files, HTTP responses, command output), they're automatically saved to disk and replaced with a preview + handle. The model can read the full artifact when it needs to. This keeps conversations focused without losing data.
 
 ---
 
-## What Hestia can do
+## Platforms
 
-| Feature | How it works |
-|---------|-------------|
-| **Multi-turn chat** | Conversation history persisted in SQLite; sessions resume across restarts |
-| **Tool use** | 11 built-in tools + custom `@tool` decorator for your own |
-| **Scheduled tasks** | Cron and one-shot prompts fired by the agent itself |
-| **Long-term memory** | FTS5 full-text search — `save_memory`, `search_memory`, `list_memories` |
-| **Subagent delegation** | Offload complex tasks to a separate session/slot with bounded context growth |
-| **KV-cache management** | SlotManager with LRU eviction, save/restore to NVMe, HOT/WARM/COLD states |
-| **Path sandboxing** | File tools restricted to `allowed_roots` directories |
-| **Capability filtering** | Tools declare capabilities; policy engine restricts access by session type |
-| **Failure tracking** | Typed `FailureClass` enum with persistence for postmortem analysis |
-| **Telegram bot** | Long-polling adapter with rate-limited status edits and user allowlist |
-| **Matrix bot** | *(In development)* — automation-first adapter for scripted testing and personal use |
+Hestia speaks three protocols, each with a different role:
+
+**CLI** — The development interface. `hestia chat` gives you a REPL for interactive conversations, `hestia ask "question"` for one-shots. Best for building and testing tools, debugging conversations, and daily local use.
+
+**Telegram** — The mobile interface. Long-polling bot with rate-limited status messages ("Thinking...", "Running search_memory..."), user allowlist, and HTTP/1.1 forcing for API stability. Good for daily use when you're away from your terminal.
+
+**Matrix** — The automation and testing interface. Matrix has proper CLI clients (`matrix-commander`, `matrix-nio`), which means you can script conversations against Hestia, capture responses, and assert on them. This makes Matrix the natural choice for integration testing, regression suites, and CI pipelines. Also works well for personal use if you already run a Synapse server.
 
 ---
 
-## Architecture
+## Giving Hestia a personality
 
+The default system prompt is "You are a helpful assistant." You can do better.
+
+Create a `soul.md` file in your project root:
+
+```markdown
+# Hestia
+
+You are Hestia, a personal assistant running on Dylan's home server.
+
+## Personality
+- Warm but not saccharine. You're helpful without being performatively eager.
+- Direct. If something won't work, say so.
+- You have opinions about technology and you're willing to share them when asked.
+- You don't use emoji unless the human does first.
+
+## Things you know about your human
+- Runs Ubuntu on an RTX 3060. Respects the hardware budget.
+- Prefers straightforward answers over hedged corporate-speak.
+- Works on software projects. Familiar with Python, git, Linux.
+
+## Things you don't do
+- You don't pretend to have feelings you don't have.
+- You don't apologize for things that aren't your fault.
+- You don't pad responses with filler.
 ```
-┌──────────────────────────────────────────────────────────┐
-│  Platforms         CLI · Telegram · Matrix (in dev)      │
-├──────────────────────────────────────────────────────────┤
-│  Orchestrator      10-state turn machine, tool dispatch  │
-├──────────────────────────────────────────────────────────┤
-│  Policy            Capability filtering, delegation,     │
-│                    confirmation enforcement              │
-├──────────────────────────────────────────────────────────┤
-│  Tools             11 built-in + @tool decorator         │
-├──────────────────────────────────────────────────────────┤
-│  Context Builder   Token budgeting via /tokenize,        │
-│                    two-number calibration, pair integrity │
-├──────────────────────────────────────────────────────────┤
-│  Inference         llama.cpp HTTP API (chat, slots,      │
-│                    tokenize, health)                     │
-├──────────────────────────────────────────────────────────┤
-│  Persistence       SQLite · SQLAlchemy Core (async)      │
-│                    Sessions · Turns · Memory · Scheduler │
-│                    Failures · Artifacts                  │
-└──────────────────────────────────────────────────────────┘
+
+Then reference it in your config:
+
+```python
+config = HestiaConfig(
+    system_prompt=Path("soul.md").read_text(),
+    # ... rest of config
+)
 ```
 
-Key components:
-
-- **Orchestrator** — 10-state turn machine (`RECEIVED` → `BUILDING_CONTEXT` →
-  `AWAITING_MODEL` → `EXECUTING_TOOLS` → … → `DONE`). Platform-agnostic
-  confirmation and response callbacks.
-- **SlotManager** — LRU cache over llama.cpp KV-cache slots with
-  HOT/WARM/COLD temperature states and disk save/restore.
-- **ContextBuilder** — Token budgeting with real `/tokenize` counts, two-number
-  calibration, protected regions, oldest-first truncation.
-- **MemoryStore** — FTS5 full-text search over user-saved notes. No embeddings,
-  no external services.
-- **PolicyEngine** — Capability-based tool filtering, delegation decisions,
-  retry policy. Subagents and scheduler turns get restricted tool sets.
-- **Scheduler** — Cron + one-shot tasks stored in SQLite, fired through the
-  same orchestrator as interactive turns.
-
----
-
-## CLI reference
-
-```
-hestia [OPTIONS] COMMAND
-
-Options:
-  --config PATH           Python config file
-  --db-path PATH          Override database location
-  --inference-url TEXT    llama.cpp server URL
-  --model TEXT            Model filename
-  -v, --verbose           DEBUG logging
-
-Commands:
-  chat                    Interactive chat session
-  ask MESSAGE             Single message, single response
-  init                    Create database, artifacts dir, slot dir
-  health                  Check llama.cpp server status
-
-  telegram                Run as Telegram bot (blocks)
-
-  status                  System status summary
-  version                 Version info
-  failures list           Recent failures
-  failures summary        Failure counts by class
-
-  memory search QUERY     Search long-term memory
-  memory list             Recent memories
-  memory add TEXT         Save a memory
-  memory remove ID        Delete a memory
-
-  schedule add            Add a cron or one-shot task
-  schedule list           List scheduled tasks
-  schedule run ID         Manually trigger a task
-  schedule enable ID      Enable a disabled task
-  schedule disable ID     Disable a task
-  schedule remove ID      Remove a task
-  schedule daemon         Run scheduler loop (blocks)
-```
+Keep the soul document short. Every token of system prompt is multiplied across active sessions and eats into your context budget. Aim for 200-400 words — enough to establish personality, not enough to crowd out actual conversation.
 
 ---
 
 ## Configuration
 
-Config is a Python file defining a `config` variable of type `HestiaConfig`.
-Python means you get IDE autocompletion, type checking, and the ability to
-compute values at load time.
+Config is a Python file that defines a `config` variable of type `HestiaConfig`. Python (not YAML, not TOML) because you get IDE autocompletion, type checking, and the ability to compute values at load time.
 
 ```python
 from pathlib import Path
@@ -200,40 +165,37 @@ config = HestiaConfig(
 )
 ```
 
-### Config sections
+| Section | What it controls |
+|---------|-----------------|
+| `InferenceConfig` | Where your llama.cpp server lives, which model to use, token budgets |
+| `SlotConfig` | KV-cache slot directory and pool size (match your `-np` flag) |
+| `SchedulerConfig` | How often to check for due tasks (default: every 5 seconds) |
+| `StorageConfig` | Database URL, where artifacts go, which directories file tools can access |
+| `TelegramConfig` | Bot token, who's allowed to talk to it, rate limiting |
 
-| Section | Key fields | Purpose |
-|---------|-----------|---------|
-| `InferenceConfig` | `base_url`, `model_name`, `default_reasoning_budget`, `max_tokens` | llama.cpp server connection |
-| `SlotConfig` | `slot_dir`, `pool_size` | KV-cache slot management |
-| `SchedulerConfig` | `tick_interval_seconds` | How often to check for due tasks |
-| `StorageConfig` | `database_url`, `artifacts_dir`, `allowed_roots` | Database, file storage, sandboxing |
-| `TelegramConfig` | `bot_token`, `allowed_users`, `rate_limit_edits_seconds` | Telegram bot settings |
-
-CLI options (`--config`, `--db-path`, `--verbose`, etc.) override config file values.
+CLI flags (`--config`, `--db-path`, `--inference-url`, `--verbose`) override config values.
 
 ---
 
 ## Built-in tools
 
-| Tool | Description | Capabilities | Confirms |
-|------|-------------|--------------|----------|
-| `current_time` | Current date and time | — | No |
-| `http_get` | Fetch URL content | `network_egress` | No |
-| `list_dir` | List directory contents | `read_local` | No |
-| `read_file` | Read file (sandboxed) | `read_local` | No |
-| `write_file` | Write file (sandboxed) | `write_local` | **Yes** |
-| `terminal` | Execute shell command | `shell_exec` | **Yes** |
-| `read_artifact` | Read artifact by ID | `read_local` | No |
-| `search_memory` | Search long-term memory | `memory_read` | No |
-| `save_memory` | Save to long-term memory | `memory_write` | No |
-| `list_memories` | List recent memories | `memory_read` | No |
-| `delegate_task` | Spawn subagent | `orchestration` | No |
+| Tool | What it does | Needs confirmation? |
+|------|-------------|-------------------|
+| `current_time` | Returns the current date and time | No |
+| `read_file` | Reads a text file (sandboxed to `allowed_roots`) | No |
+| `write_file` | Writes content to a file (sandboxed) | **Yes** |
+| `list_dir` | Lists directory contents (sandboxed) | No |
+| `terminal` | Executes a shell command | **Yes** |
+| `http_get` | Fetches a URL (blocks private/internal IPs) | No |
+| `read_artifact` | Retrieves the full content of an artifact by handle | No |
+| `search_memory` | Searches long-term memory by keyword | No |
+| `save_memory` | Saves a note to long-term memory | No |
+| `list_memories` | Lists recent memories | No |
+| `delegate_task` | Spawns a subagent with its own context | No |
 
-Tools marked **Yes** require explicit user confirmation in interactive modes.
-In headless contexts (scheduler, daemon), these tools are denied.
+Tools marked **Yes** require you to approve before they run. In headless mode (scheduler, daemon), these tools are denied instead — they fail closed, not open.
 
-### Custom tools
+### Writing your own tools
 
 ```python
 from hestia.tools.metadata import tool
@@ -241,91 +203,73 @@ from hestia.tools.metadata import tool
 @tool(
     name="weather",
     public_description="Get weather for a location",
-    parameters_schema={
-        "type": "object",
-        "properties": {"location": {"type": "string"}},
-        "required": ["location"],
-    },
     capabilities=["network_egress"],
 )
 async def get_weather(location: str) -> str:
-    # your implementation here
-    return f"Weather for {location}: sunny, 72°F"
+    # your implementation
+    return f"Weather for {location}: sunny, 22C"
 ```
 
----
-
-## Security model
-
-**Path sandboxing.** File operations (`read_file`, `write_file`) are restricted
-to paths within `storage.allowed_roots`. Attempts to escape are rejected before
-the tool executes.
-
-**Capability labels.** Every tool declares its capabilities from a fixed
-vocabulary: `read_local`, `write_local`, `shell_exec`, `network_egress`,
-`memory_read`, `memory_write`, `orchestration`. The policy engine uses these to
-filter tools by session type:
-
-- **Subagent sessions** — blocked from `shell_exec` and `write_local`
-- **Scheduler turns** — blocked from `shell_exec`
-
-**Confirmation enforcement.** Tools with `requires_confirmation=True` need
-explicit user approval. If no confirmation callback is available (headless
-mode), the tool fails closed with an explanatory message. This is enforced on
-both the direct dispatch and meta-tool (`call_tool`) paths.
-
-**User allowlists.** Telegram and Matrix adapters support allowlists so only
-authorized users/rooms can interact with the bot.
+Register it in your config or CLI setup and it's available to the model.
 
 ---
 
-## Hardware guidance
+## Security
+
+**Path sandboxing.** File tools (`read_file`, `write_file`, `list_dir`) can only access directories listed in `storage.allowed_roots`. Attempts to read `/etc/shadow` or write to `~/.ssh` are rejected before the tool runs.
+
+**SSRF protection.** `http_get` blocks requests to private IP ranges (localhost, 10.x, 172.16.x, 192.168.x, 169.254.x) to prevent the model from probing internal services or cloud metadata endpoints.
+
+**Capability labels.** Every tool declares what it can do: `read_local`, `write_local`, `shell_exec`, `network_egress`, `memory_read`, `memory_write`, `orchestration`. The policy engine uses these to restrict access by context — subagents can't execute shell commands, scheduled tasks can't write files.
+
+**Confirmation enforcement.** Dangerous tools require explicit user approval. If no confirmation mechanism is available (headless mode), the tool is denied. This is enforced on both the direct path and the meta-tool path.
+
+**User allowlists.** Telegram and Matrix adapters support allowlists. Only authorized users or rooms can interact with the bot.
+
+---
+
+## Running on your hardware
 
 Hestia is built for consumer GPUs. Here's what to expect:
 
-| VRAM | Model size | Slots | Context | Notes |
-|------|-----------|-------|---------|-------|
-| 8 GB | 3–4B Q4 | 2 | 8K | Functional but limited tool chaining |
-| 12 GB | 7–9B Q4 | 4 | 16K | Sweet spot — Qwen 3.5 9B recommended |
-| 16 GB | 9–12B Q4/Q6 | 4 | 16–24K | Comfortable headroom |
-| 24 GB | 12–14B Q6/Q8 | 4–6 | 32K | Multi-session without eviction pressure |
+| VRAM | Model | Slots | Context | Experience |
+|------|-------|-------|---------|-----------|
+| 8 GB | 3-4B Q4 | 2 | 8K | Works, but tool chaining is limited |
+| 12 GB | 7-9B Q4 | 4 | 16K | The sweet spot — Qwen 3.5 9B recommended |
+| 16 GB | 9-12B Q4/Q6 | 4 | 16-24K | Comfortable. Room for longer conversations |
+| 24 GB | 12-14B Q6/Q8 | 4-6 | 32K | Multi-session without eviction pressure |
 
-### Key llama-server flags
+### llama-server flags
 
 ```bash
 llama-server \
   -m /path/to/model.gguf \
-  -ngl 99 \                         # offload all layers to GPU
-  -np 4 \                           # slot count (match SlotConfig.pool_size)
-  -c 16384 \                        # context length
-  --flash-attn \                    # always on
-  --cache-type-k q4_0 \             # KV cache quantization (saves ~4x VRAM)
+  -ngl 99 \
+  -np 4 \
+  -c 16384 \
+  --flash-attn \
+  --cache-type-k q4_0 \
   --cache-type-v q4_0 \
-  --slot-save-path /path/to/slots \ # must match SlotConfig.slot_dir
-  --jinja \                         # chat template support
+  --slot-save-path /path/to/slots \
+  --jinja \
   --port 8001
 ```
 
-### What makes Hestia efficient on small hardware
+The flags that matter: `-np 4` sets 4 KV-cache slots (match `SlotConfig.pool_size`). `--cache-type-k q4_0` and `--cache-type-v q4_0` quantize the KV-cache, saving roughly 4x VRAM. `--slot-save-path` enables save/restore so Hestia can checkpoint and resume sessions from disk.
 
-- **Token budgeting via `/tokenize`** — real counts, not estimates
-- **Two-number calibration** — body_factor + meta_tool_overhead compensate for
-  chat template transformation
-- **Meta-tool pattern** — `call_tool` + `list_tools` saves ~2,900 tokens per
-  request versus exposing all tools individually
-- **KV-cache save/restore** — resuming a WARM session skips prompt re-ingestion
-  entirely (~200ms restore from NVMe)
-- **Truncation-first compression** — drop oldest non-protected turns at build
-  time, no summarization in the hot path
-- **Reasoning strip** — historical `reasoning_content` stripped before the API call
+### What makes Hestia efficient
+
+- **Real token counting** via llama.cpp's `/tokenize` — no estimates, no surprises
+- **Meta-tool pattern** — two generic tools instead of describing all 11 individually (~2,900 tokens saved per request)
+- **KV-cache save/restore** — resuming a warm session skips prompt re-ingestion entirely (~200ms from NVMe)
+- **Automatic artifact overflow** — large tool results go to disk, only a preview enters context
+- **Truncation-first compression** — drops oldest messages at build time, no summarization in the hot path
 
 ---
 
 ## Deployment
 
-See [`deploy/README.md`](deploy/README.md) for systemd service templates.
-
-Quick version:
+See [`deploy/README.md`](deploy/README.md) for the full guide. Quick version:
 
 ```bash
 cp deploy/example_config.py /opt/hestia/config.py
@@ -336,8 +280,50 @@ sudo systemctl start hestia-llama@$USER
 sudo systemctl start hestia-agent@$USER
 ```
 
-`hestia-llama.service` runs the llama.cpp inference server.
-`hestia-agent.service` runs the Hestia agent (Telegram bot + scheduler daemon).
+`hestia-llama.service` runs the llama.cpp server. `hestia-agent.service` runs Hestia itself (Telegram/Matrix bot + scheduler).
+
+---
+
+## CLI reference
+
+```
+hestia [OPTIONS] COMMAND
+
+Options:
+  --config PATH          Python config file
+  --db-path PATH         Override database location
+  --inference-url TEXT   llama.cpp server URL
+  --model TEXT           Model filename
+  -v, --verbose          DEBUG logging
+
+Commands:
+  chat                   Interactive conversation
+  ask MESSAGE            Single message, single response
+  init                   Set up database, artifacts, slots
+  health                 Check llama.cpp server status
+
+  telegram               Run as Telegram bot
+  matrix                 Run as Matrix bot
+
+  status                 System overview
+  version                Version info
+
+  memory search QUERY    Search long-term memory
+  memory list            Recent memories
+  memory add TEXT        Save a memory
+  memory remove ID       Delete a memory
+
+  failures list          Recent failure records
+  failures summary       Failure counts by class
+
+  schedule add           Create a cron or one-shot task
+  schedule list          List tasks
+  schedule run ID        Trigger a task manually
+  schedule enable ID     Enable a task
+  schedule disable ID    Disable a task
+  schedule remove ID     Remove a task
+  schedule daemon        Run the scheduler loop
+```
 
 ---
 
@@ -345,81 +331,23 @@ sudo systemctl start hestia-agent@$USER
 
 ```bash
 uv sync                                          # install deps
-uv run pytest tests/unit/ tests/integration/ -q  # 311 tests
+uv run pytest tests/unit/ tests/integration/ -q  # tests
 uv run ruff check src/ tests/                    # lint
 uv run ruff format src/ tests/                   # format
 uv run mypy src/hestia                           # type check
 ```
 
-### Project structure
-
-```
-src/hestia/
-├── cli.py                 # Click CLI entry point
-├── config.py              # HestiaConfig dataclasses
-├── errors.py              # Error types + FailureClass enum
-├── logging_config.py      # Centralized logging setup
-├── core/
-│   ├── inference.py       # llama.cpp HTTP client
-│   └── types.py           # Message, Session, ChatResponse, etc.
-├── context/
-│   └── builder.py         # Token budgeting + compression
-├── orchestrator/
-│   ├── engine.py          # Turn state machine
-│   ├── transitions.py     # ALLOWED_TRANSITIONS table
-│   └── types.py           # Turn, TurnState, TurnTransition
-├── inference/
-│   └── slot_manager.py    # KV-cache slot lifecycle
-├── scheduler/
-│   └── engine.py          # Cron + one-shot task loop
-├── tools/
-│   ├── registry.py        # ToolRegistry + meta-tool dispatch
-│   ├── metadata.py        # @tool decorator, ToolMetadata
-│   ├── capabilities.py    # Capability label constants
-│   └── builtin/           # Built-in tool implementations
-├── memory/
-│   └── store.py           # MemoryStore with FTS5
-├── artifacts/
-│   └── store.py           # File-backed artifact storage
-├── persistence/
-│   ├── db.py              # Database connection
-│   ├── schema.py          # SQLAlchemy table definitions
-│   ├── sessions.py        # SessionStore
-│   ├── scheduler.py       # SchedulerStore
-│   └── failure_store.py   # FailureStore
-├── platforms/
-│   ├── base.py            # Platform ABC
-│   ├── cli_adapter.py     # CLI adapter
-│   └── telegram_adapter.py # Telegram adapter
-└── policy/
-    ├── engine.py           # PolicyEngine ABC
-    └── default.py          # DefaultPolicyEngine
-```
-
 ### Branch model
 
-- `main` — Tagged releases only
-- `develop` — Integration branch
-- `feature/<slug>` — One branch per task
-- `release/<version>` — Stabilization before tagging
-- `hotfix/<slug>` — Urgent fixes off `main`
+- `main` — tagged releases only
+- `develop` — integration branch
+- `feature/<slug>` — one branch per task
+- `release/<version>` — stabilization before tagging
+- `hotfix/<slug>` — urgent fixes off main
 
 ### Architecture decisions
 
-20 ADRs in [`docs/DECISIONS.md`](docs/DECISIONS.md) covering naming, tooling,
-persistence, calibration, state machine design, slot management, scheduling,
-platform adapters, memory, delegation, security, and failure tracking.
-
----
-
-## Design documentation
-
-| Document | Purpose |
-|----------|---------|
-| [`docs/hestia-design-revised-april-2026.md`](docs/hestia-design-revised-april-2026.md) | Full design plan with component descriptions, divergences from original design, and implementation notes |
-| [`docs/DECISIONS.md`](docs/DECISIONS.md) | All 20 architecture decision records |
-| [`docs/design/matrix-integration.md`](docs/design/matrix-integration.md) | Matrix adapter design and integration test plan |
-| [`docs/roadmap/future-systems-deferred-roadmap.md`](docs/roadmap/future-systems-deferred-roadmap.md) | Post-Phase 6 roadmap: knowledge architecture, skill mining, security loop |
+20+ ADRs in [`docs/DECISIONS.md`](docs/DECISIONS.md) covering everything from why it's called Hestia to why FTS5 over vector search.
 
 ---
 
