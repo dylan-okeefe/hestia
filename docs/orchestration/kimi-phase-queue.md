@@ -11,6 +11,7 @@
 | 6 | `feature/phase-11-trace-store` | [`kimi-loops/L06-phase-11-trace-store.md`](kimi-loops/L06-phase-11-trace-store.md) |
 | 7 | `feature/phase-12-skills` | [`kimi-loops/L07-phase-12-skills.md`](kimi-loops/L07-phase-12-skills.md) |
 | 8 | `feature/phase-13-audit` | [`kimi-loops/L08-phase-13-audit.md`](kimi-loops/L08-phase-13-audit.md) |
+| 9 | `feature/phase-14-cleanup-release-prep` | [`kimi-loops/L09-phase-14-cleanup-release-prep.md`](kimi-loops/L09-phase-14-cleanup-release-prep.md) |
 
 **Authoritative detail** for Phases 8–13 lives in [`docs/design/hestia-phase-8-plus-roadmap.md`](../design/hestia-phase-8-plus-roadmap.md). Each `L*.md` file names sections to implement and the **`.kimi-done`** contract.
 
