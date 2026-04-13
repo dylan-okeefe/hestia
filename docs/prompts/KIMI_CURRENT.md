@@ -1,28 +1,28 @@
 # Kimi — current task (orchestration pointer)
 
-**Orchestrator:** Cursor updates this file after each review. **Executor:** follow every step below, then the linked **design** specs (not duplicate prompt files).
+**Orchestrator:** Cursor updates this file after each review. **Executor:** follow every step below, then the linked specs.
 
-**Last set by:** Cursor — 2026-04-12 (Phase 7 cleanup; design-dir source of truth)
+**Last set by:** Cursor — 2026-04-12 (L01 Matrix adapter after Phase 7 merge)
 
 ---
 
 ## Current task (do this now)
 
-1. Read **[`docs/design/kimi-hestia-phase-7-cleanup.md`](../design/kimi-hestia-phase-7-cleanup.md)** and implement it **end-to-end** (all sections, tests, commit, push). That file is the **authoritative spec** for this phase.
-2. For **Matrix** and **Phase 8+** planning context only (do not implement unless this file explicitly says so later): [`docs/design/matrix-integration.md`](../design/matrix-integration.md), [`docs/design/hestia-phase-8-plus-roadmap.md`](../design/hestia-phase-8-plus-roadmap.md).
-3. Complete the **Handoff report** and **`.kimi-done` artifact`** sections at the bottom of the cleanup design doc — those are part of the task.
+1. Read **[`docs/orchestration/kimi-loops/L01-matrix-adapter.md`](../orchestration/kimi-loops/L01-matrix-adapter.md)** and execute it **end-to-end** (branch, implementation, tests, ADR-021, push, `.kimi-done`).
+2. **Product design (authoritative detail):** **[`docs/design/matrix-integration.md`](../design/matrix-integration.md)** — implement fully per that document.
+3. Queue context only: [`../orchestration/kimi-phase-queue.md`](../orchestration/kimi-phase-queue.md).
 
 ---
 
 ## Next task (after Cursor review)
 
-Cursor will adjust this file or add a follow-up design/prompt if the review finds gaps. Otherwise see [`../HANDOFF_STATE.md`](../HANDOFF_STATE.md) for the merged roadmap order (Matrix after cleanup unless reprioritized).
+Cursor advances this file to **L02** (`kimi-loops/L02-phase-8a-identity-reasoning.md`) when Matrix is green, or adds a follow-up if review finds gaps.
 
 ---
 
 ## Reference
 
-- Full queue (Phases 7 → Matrix → 8–13): [`../orchestration/kimi-phase-queue.md`](../orchestration/kimi-phase-queue.md)
+- Full queue: [`../orchestration/kimi-phase-queue.md`](../orchestration/kimi-phase-queue.md)
 - Orchestration contract: [`../HANDOFF_STATE.md`](../HANDOFF_STATE.md)
-- Loop audit trail (detailed): [`../orchestration/kimi-loop-log.md`](../orchestration/kimi-loop-log.md)
-- One-shot CLI (optional): [`../../scripts/kimi-run-current.sh`](../../scripts/kimi-run-current.sh)
+- Loop audit trail: [`../orchestration/kimi-loop-log.md`](../orchestration/kimi-loop-log.md)
+- CLI: [`../../scripts/kimi-run-current.sh`](../../scripts/kimi-run-current.sh)

@@ -3,7 +3,7 @@
 > **Purpose:** Handoff contract between Claude (Cowork) and Cursor for reviewing Kimi's output and orchestrating the next phase.
 >
 > **Last updated:** 2026-04-12
-> **Last updated by:** Cursor (Kimi CLI + `.kimi-done` orchestration; Phase 7 = cleanup design doc)
+> **Last updated by:** Cursor (Phase 7 merged to `develop`; orchestration restored; L01 Matrix next)
 
 ---
 
@@ -27,42 +27,53 @@ The script defaults to **`--quiet`** (final assistant message only; see Kimi doc
 Kimi is running in `~/Hestia`. Send **one** message:
 
 ```text
-Read docs/prompts/KIMI_CURRENT.md, then execute the full "Current task" section including every linked file under docs/design/. Finish with the handoff steps and .kimi-done artifact described in the active design spec.
+Read docs/prompts/KIMI_CURRENT.md, then execute the full "Current task" section including every linked file under docs/design/. Finish with the handoff steps and .kimi-done artifact described in the active loop spec.
 ```
 
-**Single source of truth for “what Kimi does next”:** [`docs/prompts/KIMI_CURRENT.md`](prompts/KIMI_CURRENT.md). After each Kimi cycle, **Cursor** updates that file and this section.
+**Single source of truth for "what Kimi does next":** [`docs/prompts/KIMI_CURRENT.md`](prompts/KIMI_CURRENT.md). After each Kimi cycle, **Cursor** updates that file and this section.
 
 ### Orchestration loop (Cursor)
 
 1. **Wait for done:** Kimi CLI exits **and** `.kimi-done` exists with `HESTIA_KIMI_DONE=1` (or read `.kimi-output.log` if Kimi was redirected).
 2. **Review:** diff (`develop..HEAD` or merge base), handoff notes, `uv run pytest tests/unit/ tests/integration/ -q`.
 3. If issues → add a follow-up design section or a tight `KIMI_PHASE_*_FOLLOWUP*.md`; point `KIMI_CURRENT.md` at it.
-4. If green → merge per gitflow, update this file, set `KIMI_CURRENT.md` for the next task (Matrix remains in [`docs/design/matrix-integration.md`](design/matrix-integration.md)).
+4. If green → merge per gitflow, update this file, set `KIMI_CURRENT.md` for the next queue row in [`docs/orchestration/kimi-phase-queue.md`](orchestration/kimi-phase-queue.md).
 5. Remove stale **`.kimi-done`** before the next Kimi launch (the helper script does this automatically).
-6. **Loop log:** After each review (and whenever you set the next prompt), append a **dated** section to [`docs/orchestration/kimi-loop-log.md`](orchestration/kimi-loop-log.md) with the full narrative (commands, branches, SHAs, pytest/ruff notes, files touched, follow-up text). In the **Cursor chat**, reply with only a **brief** bullet summary of the same loop instance.
+6. **Loop log:** After each review (and whenever you set the next prompt), append a **dated** section to [`docs/orchestration/kimi-loop-log.md`](orchestration/kimi-loop-log.md) with the full narrative. In the **Cursor chat**, reply with only a **brief** bullet summary of the same loop instance.
 
 ---
 
 ## Current branch and phase
 
-- **Branch:** `develop` (local may be **ahead of** `origin/develop` until you `git push`)
-- **Phase:** **6 complete** on `develop`. **Active Kimi work:** **Phase 7 cleanup** — spec is **[`docs/design/kimi-hestia-phase-7-cleanup.md`](design/kimi-hestia-phase-7-cleanup.md)** (branch `feature/phase-7-cleanup`). Orchestration pointer: [`docs/prompts/KIMI_CURRENT.md`](prompts/KIMI_CURRENT.md).
-- **Closeout verification (2026-04-11):** README lists `hestia-llama.service` / `hestia-agent.service` and valid `deploy/README.md`; pytest **311 passed** on clean tree.
+- **Branch:** `develop` (local **ahead of** `origin/develop` until you `git push` — includes Phase 7 cleanup + orchestration docs)
+- **Phase 7:** **Merged** — commit **`265003b`** on `develop` ("fix: phase 7 cleanup — bugs, security, dead code").
+- **Active Kimi work:** **L01 Matrix adapter** — [`docs/orchestration/kimi-loops/L01-matrix-adapter.md`](orchestration/kimi-loops/L01-matrix-adapter.md) + product design [`docs/design/matrix-integration.md`](design/matrix-integration.md). Pointer: [`docs/prompts/KIMI_CURRENT.md`](prompts/KIMI_CURRENT.md).
+
+**Phase 7 summary (merged):**
+
+1. `tool_chain` UnboundLocalError fix in orchestrator error handler  
+2. `sqlalchemy as sa` import ordering in `db.py`  
+3. Path sandboxing for `list_dir` (factory)  
+4. Deduplicated `CliConfirmHandler` in CLI  
+5. Removed unsandboxed `read_file` / `write_file` fallbacks  
+6. SSRF protection on `http_get`  
+7. Removed dead `COMPRESSING` state  
 
 ---
 
-## Kimi prompt order (orchestration — Cursor does not implement)
+## Kimi prompt order (see [`docs/orchestration/kimi-phase-queue.md`](orchestration/kimi-phase-queue.md))
 
-1. ~~**Closeout + gitflow**~~ — Done (see `git log` on `develop`, e.g. `4cf2fc7`, `de7159f`, `81462d1`).
-2. **Phase 7 cleanup (current):** [`docs/design/kimi-hestia-phase-7-cleanup.md`](design/kimi-hestia-phase-7-cleanup.md) — branch **`feature/phase-7-cleanup`** from `develop`.
-3. **Matrix (next, after cleanup):** [`docs/design/matrix-integration.md`](design/matrix-integration.md) — cut a feature branch from updated `develop` when Cursor points `KIMI_CURRENT.md` there.
-4. **Phase 8+ plan:** [`docs/design/hestia-phase-8-plus-roadmap.md`](design/hestia-phase-8-plus-roadmap.md) (reference for later prompts).
+1. ~~Closeout + gitflow~~ — Done  
+2. ~~Phase 7 cleanup~~ — Done (`265003b` on `develop`)  
+3. **L01 Matrix adapter** — `L01-matrix-adapter.md` + `matrix-integration.md`  
+4. **L02–L08** — Phase 8a through Phase 13 per queue table  
 
 **Earlier prompts (reference only):**
 
-- [`KIMI_PHASE_6_CLOSEOUT_AND_GITFLOW.md`](prompts/KIMI_PHASE_6_CLOSEOUT_AND_GITFLOW.md) — closeout spec (completed)
-- [`KIMI_PHASE_6_FOLLOWUP_PROMPT.md`](prompts/KIMI_PHASE_6_FOLLOWUP_PROMPT.md) — original follow-up scope
-- [`KIMI_PHASE_6_FOLLOWUP_REVIEW_FIXES_PROMPT.md`](prompts/KIMI_PHASE_6_FOLLOWUP_REVIEW_FIXES_PROMPT.md) — review-fixes pass
+- [`KIMI_PHASE_6_CLOSEOUT_AND_GITFLOW.md`](prompts/KIMI_PHASE_6_CLOSEOUT_AND_GITFLOW.md) — closeout spec (completed)  
+- [`KIMI_PHASE_6_FOLLOWUP_PROMPT.md`](prompts/KIMI_PHASE_6_FOLLOWUP_PROMPT.md)  
+- [`KIMI_PHASE_6_FOLLOWUP_REVIEW_FIXES_PROMPT.md`](prompts/KIMI_PHASE_6_FOLLOWUP_REVIEW_FIXES_PROMPT.md)  
+- [`kimi-hestia-phase-7-cleanup.md`](design/kimi-hestia-phase-7-cleanup.md) — Phase 7 spec (completed)  
 
 ---
 
@@ -70,17 +81,19 @@ Read docs/prompts/KIMI_CURRENT.md, then execute the full "Current task" section 
 
 | Branch | Role |
 |--------|------|
-| `develop` | Phase 6 tip — merge / fast-forward complete locally |
-| `feature/phase-7-cleanup` | **Active Kimi target** for Phase 7 cleanup spec |
+| `develop` | **Tip** — Phase 7 cleanup + orchestration commits (not yet pushed) |
+| `feature/phase-7-cleanup` | Historical; merged into `develop` locally |
 | `feature/phase-6-hardening` | Optional remote history |
 
 ---
 
-## Review verdict: Phase 6 (post-closeout)
+## Review verdict: Phase 7
 
-**Green.** Capability filtering, path sandboxing, failure store, CLI observability, deploy docs, and tests are on `develop` with a clean working tree.
+**Green.** All seven cleanup items landed in **`265003b`** (see summary above).
 
-**Housekeeping (not blocking Phase 7):** `PytestUnhandledThreadExceptionWarning` (aiosqlite / closed loop); ruff/mypy debt unchanged from prior notes.
+**Tests:** **309 passed** (baseline 311; two COMPRESSING-related tests removed, new tests for §1, §3, §6).
+
+**Ruff:** Touched files clean; pre-existing debt elsewhere.
 
 ---
 
@@ -88,7 +101,7 @@ Read docs/prompts/KIMI_CURRENT.md, then execute the full "Current task" section 
 
 | Snapshot | Count |
 |----------|-------|
-| Last `pytest tests/unit/ tests/integration/ -q` on `develop` (2026-04-11) | **311 passed** |
+| Last `pytest tests/unit/ tests/integration/ -q` on `develop` after Phase 7 merge (2026-04-12) | **309 passed** |
 
 Run: `uv run pytest tests/unit/ tests/integration/ -q`
 
@@ -96,7 +109,7 @@ Run: `uv run pytest tests/unit/ tests/integration/ -q`
 
 ## Architecture Decisions (ADRs)
 
-20 ADRs (ADR-019, ADR-020 for Phase 6). **Matrix** work should add **ADR-021** when that phase starts (per `matrix-integration.md`).
+20 ADRs (ADR-019, ADR-020 for Phase 6). **Matrix (L01)** adds **ADR-021** per `matrix-integration.md`.
 
 ---
 
@@ -104,27 +117,27 @@ Run: `uv run pytest tests/unit/ tests/integration/ -q`
 
 | Tool | Notes |
 |------|-------|
-| pytest | **311 passed** on reviewed tree; fix HANDOFF if your run differs |
-| ruff | Large pre-existing debt possible; run on touched files before pushing |
-| mypy | Pre-existing errors in some modules; new code should type-check |
+| pytest | **309 passed** on reviewed tree after merge |
+| ruff | Touched files clean in Phase 7; large pre-existing debt possible elsewhere |
+| mypy | Pre-existing errors in some modules |
 
 ---
 
 ## Design Debt (carried forward)
 
-1. Policy delegation batch UX (duplicate `tool_call_id` text).
-2. **Matrix** — [`docs/design/matrix-integration.md`](design/matrix-integration.md); schedule after Phase 7 cleanup.
-3. Telegram inline confirmation for destructive tools.
-4. Artifact tools (`grep_artifact`, `list_artifacts`).
-5. aiosqlite pytest thread warnings (housekeeping).
+1. Policy delegation batch UX (duplicate `tool_call_id` text).  
+2. **Matrix** — implementation in progress (L01).  
+3. Telegram inline confirmation for destructive tools.  
+4. Artifact tools (`grep_artifact`, `list_artifacts`).  
+5. aiosqlite pytest thread warnings (housekeeping).  
 
 ---
 
 ## Remaining roadmap
 
-1. Kimi: **Phase 7 cleanup** ([`kimi-hestia-phase-7-cleanup.md`](design/kimi-hestia-phase-7-cleanup.md)).
-2. Kimi: **Matrix** adapter + tests ([`matrix-integration.md`](design/matrix-integration.md)).
-3. Long-term: `docs/roadmap/future-systems-deferred-roadmap.md` and Phase 8+ design doc.
+1. ~~Phase 7 cleanup~~  
+2. **L01 Matrix** → **L02–L08** per [`kimi-phase-queue.md`](orchestration/kimi-phase-queue.md)  
+3. Long-term: `docs/roadmap/future-systems-deferred-roadmap.md`  
 
 ---
 
@@ -132,13 +145,13 @@ Run: `uv run pytest tests/unit/ tests/integration/ -q`
 
 ### Claude / Cursor
 
-1. Read at start of each Hestia session.
-2. After Kimi delivers work: update verdict, test counts, git state, prompt pointers; remove or acknowledge `.kimi-done`.
-3. Next Kimi cycle: follow `KIMI_CURRENT.md` (currently → Phase 7 cleanup design).
+1. Read at start of each Hestia session.  
+2. After Kimi delivers work: update verdict, test counts, git state, `KIMI_CURRENT.md`; remove or acknowledge `.kimi-done`.  
+3. Next Kimi cycle: follow **`KIMI_CURRENT.md`** (currently **L01 Matrix**).  
 
 ### Review checklist
 
-1. Read `.kimi-done` and Kimi logs if present; read Kimi handoff under `docs/handoffs/` when applicable
-2. `pytest tests/unit/ tests/integration/`
-3. New platform commands register tools and use async `respond_callback`
-4. Update this file
+1. Read `.kimi-done` and Kimi logs if present; read `docs/handoffs/` when applicable.  
+2. `pytest tests/unit/ tests/integration/`  
+3. New platform commands register tools and use async `respond_callback`  
+4. Update this file  
