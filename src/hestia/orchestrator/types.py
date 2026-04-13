@@ -16,7 +16,6 @@ class TurnState(Enum):
     EXECUTING_TOOLS = "executing_tools"  # dispatching tool calls
     AWAITING_USER = "awaiting_user"  # paused for confirmation
     AWAITING_SUBAGENT = "awaiting_subagent"  # reserved for Phase 3
-    COMPRESSING = "compressing"  # reserved for Phase 3
     RETRYING = "retrying"  # transient error, backing off
     DONE = "done"  # final answer produced
     FAILED = "failed"  # terminal error, no recovery

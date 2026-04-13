@@ -41,23 +41,3 @@ def make_write_file_tool(allowed_roots: list[str]) -> Any:
         return f"Wrote {len(content)} bytes to {path}"
 
     return write_file
-
-
-# Default write_file for backward compatibility (no sandboxing)
-# This will be replaced by the factory-created tool in cli.py
-async def _default_write_file(path: str, content: str) -> str:
-    """Default write_file without sandboxing (for backward compatibility)."""
-    target = Path(path)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(content)
-    return f"Wrote {len(content)} bytes to {path}"
-
-
-# Create a tool with no sandboxing for backward compatibility
-write_file = tool(
-    name="write_file",
-    public_description="Write content to a file, creating it if it doesn't exist.",
-    requires_confirmation=True,
-    tags=["system", "builtin"],
-    capabilities=[WRITE_LOCAL],
-)(_default_write_file)

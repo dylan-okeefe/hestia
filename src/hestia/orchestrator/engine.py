@@ -81,8 +81,7 @@ class Orchestrator:
         Called on startup after a crash. Returns the number of turns recovered.
 
         Non-terminal states: RECEIVED, BUILDING_CONTEXT, AWAITING_MODEL,
-        EXECUTING_TOOLS, AWAITING_USER, AWAITING_SUBAGENT, COMPRESSING,
-        RETRYING.
+        EXECUTING_TOOLS, AWAITING_USER, AWAITING_SUBAGENT, RETRYING.
 
         Terminal states: DONE, FAILED.
         """
@@ -138,6 +137,7 @@ class Orchestrator:
         try:
             turn = self._create_turn(session.id, user_message)
             await self._persist_turn(turn)
+            tool_chain: list[str] = []  # Initialize before inner try block
 
             # Send initial status message if platform is available
             status_msg_id: str | None = None
@@ -158,7 +158,7 @@ class Orchestrator:
                 # Load prior history (does not include the current user message)
                 history = await self._store.get_messages(session.id)
 
-                # Persist the new user message (now it's in the store for future turns / continuations)
+                # Persist the new user message (now it's in the store for future turns)
                 await self._store.append_message(session.id, user_message)
 
                 # Build context
@@ -184,7 +184,6 @@ class Orchestrator:
                     slot_id_to_use = session.slot_id
 
                 # Main loop: model -> tools -> model -> ...
-                tool_chain: list[str] = []
                 while turn.iterations < self._max_iterations:
                     await self._transition(turn, TurnState.AWAITING_MODEL)
                     await self._update_status(platform, platform_user, status_msg_id, "Thinking...")
@@ -271,7 +270,7 @@ class Orchestrator:
                         turn.final_response = content
                         await respond_callback(content)
 
-                        # Save slot checkpoint after successful turn (but don't fail turn if save fails)
+                        # Save slot checkpoint after successful turn (don't fail turn if save fails)
                         if self._slot_manager is not None:
                             try:
                                 await self._slot_manager.save(session)

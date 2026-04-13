@@ -96,7 +96,6 @@ class TurnState(Enum):
     EXECUTING_TOOLS = "executing_tools"
     AWAITING_SUBAGENT = "awaiting_subagent"
     AWAITING_USER = "awaiting_user"
-    COMPRESSING = "compressing"
     RETRYING = "retrying"
     DONE = "done"
     FAILED = "failed"

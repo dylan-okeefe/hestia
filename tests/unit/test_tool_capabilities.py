@@ -7,10 +7,10 @@ from hestia.tools.builtin import (
     WRITE_LOCAL,
     current_time,
     http_get,
-    list_dir,
-    read_file,
+    make_list_dir_tool,
+    make_read_file_tool,
+    make_write_file_tool,
     terminal,
-    write_file,
 )
 from hestia.tools.builtin.delegate_task import make_delegate_task_tool
 from hestia.tools.builtin.memory_tools import (
@@ -27,6 +27,11 @@ class TestToolCapabilities:
 
     def test_all_builtin_tools_have_capabilities(self):
         """Every built-in tool must have explicit capabilities (can be empty)."""
+        # Create factory tools for testing
+        read_file = make_read_file_tool(["/tmp"])
+        write_file = make_write_file_tool(["/tmp"])
+        list_dir = make_list_dir_tool(["/tmp"])
+        
         # Check tools with @tool decorator
         tools_to_check = [
             ("current_time", current_time),
@@ -45,16 +50,19 @@ class TestToolCapabilities:
 
     def test_read_file_has_read_local(self):
         """read_file has READ_LOCAL capability."""
+        read_file = make_read_file_tool(["/tmp"])
         meta = read_file.__hestia_tool__
         assert READ_LOCAL in meta.capabilities
 
     def test_write_file_has_write_local(self):
         """write_file has WRITE_LOCAL capability."""
+        write_file = make_write_file_tool(["/tmp"])
         meta = write_file.__hestia_tool__
         assert WRITE_LOCAL in meta.capabilities
 
     def test_list_dir_has_read_local(self):
         """list_dir has READ_LOCAL capability."""
+        list_dir = make_list_dir_tool(["/tmp"])
         meta = list_dir.__hestia_tool__
         assert READ_LOCAL in meta.capabilities
 

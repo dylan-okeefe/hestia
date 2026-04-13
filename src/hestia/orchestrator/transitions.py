@@ -25,10 +25,6 @@ ALLOWED_TRANSITIONS: dict[TurnState, set[TurnState]] = {
         TurnState.FAILED,
     },
     TurnState.RETRYING: {TurnState.AWAITING_MODEL, TurnState.FAILED},
-    TurnState.COMPRESSING: {
-        TurnState.BUILDING_CONTEXT,  # compression done, rebuild context
-        TurnState.FAILED,
-    },
     TurnState.DONE: set(),
     TurnState.FAILED: set(),
 }

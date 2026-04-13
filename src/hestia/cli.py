@@ -26,8 +26,8 @@ from hestia.scheduler import Scheduler
 from hestia.tools.builtin import (
     current_time,
     http_get,
-    list_dir,
     make_delegate_task_tool,
+    make_list_dir_tool,
     make_list_memories_tool,
     make_read_file_tool,
     make_save_memory_tool,
@@ -192,7 +192,7 @@ def cli(
     tool_registry = ToolRegistry(artifact_store)
     tool_registry.register(current_time)
     tool_registry.register(http_get)
-    tool_registry.register(list_dir)
+    tool_registry.register(make_list_dir_tool(cfg.storage.allowed_roots))
     tool_registry.register(terminal)
 
     # Register file tools with path sandboxing
@@ -304,7 +304,7 @@ def chat(ctx: click.Context) -> None:
             context_builder=context_builder,
             tool_registry=tool_registry,
             policy=policy,
-            confirm_callback=CliConfirmHandler(),
+            confirm_callback=ctx.obj["confirm_callback"],
             max_iterations=cfg.max_iterations,
             slot_manager=slot_manager,
             failure_store=failure_store,
@@ -387,7 +387,7 @@ def ask(ctx: click.Context, message: str) -> None:
             context_builder=context_builder,
             tool_registry=tool_registry,
             policy=policy,
-            confirm_callback=CliConfirmHandler(),
+            confirm_callback=ctx.obj["confirm_callback"],
             max_iterations=cfg.max_iterations,
             slot_manager=slot_manager,
             failure_store=failure_store,
@@ -766,7 +766,7 @@ def schedule_run(ctx: click.Context, task_id: str) -> None:
             context_builder=context_builder,
             tool_registry=tool_registry,
             policy=policy,
-            confirm_callback=CliConfirmHandler(),
+            confirm_callback=ctx.obj["confirm_callback"],
             max_iterations=cfg.max_iterations,
             slot_manager=slot_manager,
             failure_store=failure_store,

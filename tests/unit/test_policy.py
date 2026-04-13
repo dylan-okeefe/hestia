@@ -155,13 +155,13 @@ class TestFilterTools:
         from dataclasses import replace
 
         from hestia.artifacts.store import ArtifactStore
-        from hestia.tools.builtin import current_time, terminal, write_file
+        from hestia.tools.builtin import current_time, make_write_file_tool, terminal
         from hestia.tools.registry import ToolRegistry
 
         reg = ToolRegistry(ArtifactStore(tmp_path / "art"))
         reg.register(current_time)
         reg.register(terminal)
-        reg.register(write_file)
+        reg.register(make_write_file_tool([str(tmp_path)]))
         names = reg.list_names()
         sub = replace(sample_session, platform="subagent")
         filtered = policy.filter_tools(sub, names, reg)

@@ -2,6 +2,7 @@
 
 from typing import Any
 
+import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from hestia.errors import PersistenceError
@@ -66,4 +67,3 @@ class Database:
             return result
 
 
-import sqlalchemy as sa  # noqa: E402
