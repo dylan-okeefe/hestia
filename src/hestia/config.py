@@ -59,6 +59,23 @@ class TelegramConfig:
 
 
 @dataclass
+class MatrixConfig:
+    """Configuration for the Matrix adapter.
+
+    Security: allowed_rooms is a whitelist. Empty list denies all inbound.
+    Session mapping: one Matrix room -> one Hestia session (room ID as platform_user).
+    """
+
+    homeserver: str = "https://matrix.org"
+    user_id: str = ""  # Bot MXID e.g., @hestia-bot:matrix.org
+    device_id: str = "hestia-bot"
+    access_token: str = ""  # From login or admin token
+    allowed_rooms: list[str] = field(default_factory=list)  # Room IDs or aliases
+    rate_limit_edits_seconds: float = 1.5
+    sync_timeout_ms: int = 30000  # Long-poll timeout for /sync
+
+
+@dataclass
 class HestiaConfig:
     """Top-level Hestia configuration.
 
@@ -71,6 +88,7 @@ class HestiaConfig:
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
+    matrix: MatrixConfig = field(default_factory=MatrixConfig)
     system_prompt: str = "You are a helpful assistant."
     max_iterations: int = 10
     verbose: bool = False

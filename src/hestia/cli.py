@@ -1071,6 +1071,129 @@ def run_telegram(ctx: click.Context) -> None:
         click.echo("\nShutting down.")
 
 
+@cli.command(name="matrix")
+@click.pass_context
+def run_matrix(ctx: click.Context) -> None:
+    """Run Hestia as a Matrix bot (blocks until Ctrl-C)."""
+    ctx.obj["confirm_callback"] = None
+    cfg: HestiaConfig = ctx.obj["config"]
+    db: Database = ctx.obj["db"]
+    inference: InferenceClient = ctx.obj["inference"]
+    session_store: SessionStore = ctx.obj["session_store"]
+    context_builder: ContextBuilder = ctx.obj["context_builder"]
+    tool_registry: ToolRegistry = ctx.obj["tool_registry"]
+    policy = ctx.obj["policy"]
+    slot_manager: SlotManager = ctx.obj["slot_manager"]
+    memory_store: MemoryStore = ctx.obj["memory_store"]
+    failure_store: FailureStore = ctx.obj["failure_store"]
+
+    if not cfg.matrix.access_token:
+        click.echo("Error: matrix.access_token is required in config.", err=True)
+        click.echo("Set it in your config file or via environment.", err=True)
+        sys.exit(1)
+
+    if not cfg.matrix.user_id:
+        click.echo("Error: matrix.user_id is required in config.", err=True)
+        sys.exit(1)
+
+    from hestia.platforms.matrix_adapter import MatrixAdapter
+
+    def _make_matrix_scheduler_callback(adapter: MatrixAdapter, session_store: SessionStore):
+        """Create a scheduler response callback that routes to Matrix."""
+
+        async def callback(task: ScheduledTask, text: str) -> None:
+            session = await session_store.get_session(task.session_id)
+            if session is None or session.platform != "matrix":
+                logger.warning("Scheduler task %s: session not found or not matrix", task.id)
+                return
+            await adapter.send_message(session.platform_user, text)
+
+        return callback
+
+    async def _run() -> None:
+        await _bootstrap_db(db, memory_store, failure_store)
+
+        adapter = MatrixAdapter(cfg.matrix)
+
+        orchestrator = Orchestrator(
+            inference=inference,
+            session_store=session_store,
+            context_builder=context_builder,
+            tool_registry=tool_registry,
+            policy=policy,
+            max_iterations=cfg.max_iterations,
+            slot_manager=slot_manager,
+            failure_store=failure_store,
+            # No confirm_callback for Matrix — tools requiring confirmation
+            # (e.g., write_file) will refuse to run and tell the model why.
+            # TODO: Implement confirmation via Matrix reply pattern.
+        )
+
+        # Recover stale turns from previous crash
+        recovered = await orchestrator.recover_stale_turns()
+        if recovered:
+            click.echo(f"Recovered {recovered} stale turn(s) from previous crash.")
+
+        # Session cache: room_id -> Session
+        room_sessions: dict[str, Session] = {}
+
+        async def on_message(platform_name: str, platform_user: str, text: str) -> None:
+            """Handle incoming Matrix message."""
+            # Get or create session for this room (DB-backed, survives restarts)
+            if platform_user not in room_sessions:
+                session = await session_store.get_or_create_session("matrix", platform_user)
+                room_sessions[platform_user] = session
+            else:
+                session = room_sessions[platform_user]
+
+            user_message = Message(role="user", content=text)
+
+            async def respond(response_text: str) -> None:
+                await adapter.send_message(platform_user, response_text)
+
+            try:
+                await orchestrator.process_turn(
+                    session=session,
+                    user_message=user_message,
+                    respond_callback=respond,
+                    system_prompt=cfg.system_prompt,
+                    platform=adapter,
+                    platform_user=platform_user,
+                )
+            except Exception as e:
+                logger.exception("Turn failed for room %s", platform_user)
+                await adapter.send_error(platform_user, f"Turn failed: {e}")
+
+        await adapter.start(on_message)
+        click.echo("Matrix bot started. Press Ctrl-C to stop.")
+
+        # Also start the scheduler
+        scheduler_store = SchedulerStore(db)
+        scheduler = Scheduler(
+            scheduler_store=scheduler_store,
+            session_store=session_store,
+            orchestrator=orchestrator,
+            response_callback=_make_matrix_scheduler_callback(adapter, session_store),
+            tick_interval_seconds=cfg.scheduler.tick_interval_seconds,
+        )
+        await scheduler.start()
+
+        try:
+            while True:
+                await asyncio.sleep(1)
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            pass
+        finally:
+            await scheduler.stop()
+            await adapter.stop()
+            await inference.close()
+
+    try:
+        asyncio.run(_run())
+    except KeyboardInterrupt:
+        click.echo("\nShutting down.")
+
+
 @cli.group()
 @click.pass_context
 def memory(ctx: click.Context) -> None:
