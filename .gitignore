@@ -16,6 +16,9 @@ build/
 .kimi-done
 .kimi-output.log
 
+# Runtime worktree local state (see ~/Hestia-runtime/config.runtime.py)
+/runtime-data/
+
 # Hestia local state
 .hestia/
 *.db
