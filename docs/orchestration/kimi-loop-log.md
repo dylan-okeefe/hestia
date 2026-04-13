@@ -8,6 +8,18 @@
 
 ---
 
+## 2026-04-12 — Loop: L03 Phase 8b — CLI, exceptions, datetime (Kimi + Cursor prep)
+
+**Carry-forward set in `L03-phase-8b-cli-exceptions-datetime.md`:** README “personality” must match **compiled identity** (`IdentityConfig` / `IdentityCompiler`); finish roadmap **§8.4** and **§8.5**; note prior commits for §8.3, `PlatformError`, scheduler `_dt_gt_utc`.
+
+**Kimi:** `./scripts/kimi-run-current.sh` (~13.7 min). `.kimi-done`: `GIT_HEAD=0034038`, `354 passed`.
+
+**Outcome:** **`0034038`** — `core/clock.py`, `utcnow()` adoption, exception narrowing per roadmap table, README identity section updated (`IdentityConfig` example), scheduler/session/registry/telegram/slot tweaks, tests adjusted.
+
+**Git:** Merged `feature/phase-8b-cli-exceptions-datetime` → `develop`. **Next:** **L04** (`KIMI_CURRENT` → `L04-phase-9-test-infra.md`); carry-forward added for aiosqlite warnings, `hestia matrix` smoke, Docker-skippable e2e, UTC in scheduler assertions.
+
+---
+
 ## 2026-04-12 — Loop: L02 Phase 8a — identity + reasoning budget (Kimi)
 
 **Commands:** `git checkout -b feature/phase-8a-identity-reasoning`, `./scripts/kimi-run-current.sh` (~12.3 min). `.kimi-done`: `GIT_HEAD=98b4caa`, `354 passed, 1 warning`.

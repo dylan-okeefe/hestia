@@ -1,5 +1,12 @@
 # Kimi loop L04 — Phase 9 (Matrix test harness + adapter tests)
 
+## Review carry-forward
+
+- **`PytestUnhandledThreadExceptionWarning`** still appears in `tests/unit/test_context_builder.py` (aiosqlite / closed event loop). If L04 touches async tests, consider tightening teardown or xfailing with a tracked issue — not blocking Matrix e2e.
+- **L03 CLI refactor** — `CliAppContext` / `hestia matrix` path: smoke-check that `hestia matrix` still boots after Phase 9 wiring; regression risk at orchestrator construction.
+- **E2E / Docker** — If §9.1 adds Synapse-backed tests, mark them **skipped** when Docker or compose stack is unavailable so default `pytest tests/unit tests/integration` stays green in environments without Docker; document how to run the full e2e stack in `tests/e2e/README` or handoff.
+- **Cron / scheduler** — L03 changed scheduler datetime handling; any new e2e or CLI tests that assert `next_run_at` should use **UTC-aware** or consistently naive times matching store behavior.
+
 **Branch:** `feature/phase-9-test-infra` from latest `develop`.
 
 **Prerequisite:** Matrix adapter (L01) merged — tests assume Matrix transport exists.

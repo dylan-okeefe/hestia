@@ -2,21 +2,21 @@
 
 **Orchestrator:** Cursor updates this file after each review. **Executor:** follow every step below, then the linked specs.
 
-**Last set by:** Cursor — 2026-04-12 (L03 Phase 8b: CLI context, exceptions, datetime)
+**Last set by:** Cursor — 2026-04-12 (L04 Phase 9: test infra)
 
 ---
 
 ## Current task (do this now)
 
-1. Read **[`docs/orchestration/kimi-loops/L03-phase-8b-cli-exceptions-datetime.md`](../orchestration/kimi-loops/L03-phase-8b-cli-exceptions-datetime.md)** and execute **end-to-end** (branch, §8.3–§8.5 from roadmap, tests, push, `.kimi-done`).
-2. **Authoritative technical detail:** **[`docs/design/hestia-phase-8-plus-roadmap.md`](../design/hestia-phase-8-plus-roadmap.md)** — implement **§8.3**, **§8.4**, and **§8.5** only in this loop.
+1. Read **[`docs/orchestration/kimi-loops/L04-phase-9-test-infra.md`](../orchestration/kimi-loops/L04-phase-9-test-infra.md)** and execute **end-to-end** (branch, §9.1–§9.3, tests, push, `.kimi-done`). Follow **`## Review carry-forward`** on that file.
+2. **Authoritative technical detail:** **[`docs/design/hestia-phase-8-plus-roadmap.md`](../design/hestia-phase-8-plus-roadmap.md)** — **§9.1**, **§9.2**, **§9.3** only.
 3. Queue: [`../orchestration/kimi-phase-queue.md`](../orchestration/kimi-phase-queue.md).
 
 ---
 
 ## Next task (after Cursor review)
 
-Cursor advances to **L04** when green.
+Cursor advances to **L05** when green.
 
 ---
 
