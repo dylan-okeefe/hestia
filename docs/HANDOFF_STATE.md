@@ -3,7 +3,7 @@
 > **Purpose:** Handoff contract between Claude (Cowork) and Cursor for reviewing Kimi's output and orchestrating the next phase.
 >
 > **Last updated:** 2026-04-12
-> **Last updated by:** Cursor (L03 merged; L04 Phase 9 next)
+> **Last updated by:** Cursor (L04 merged; L05 Phase 10 next)
 
 ---
 
@@ -62,7 +62,7 @@ Dylan can **defer per-loop review** to Cursor for a **queued multi-loop run** (s
 
 - **Branch:** `develop` (local **ahead of** `origin/develop` until you `git push` — includes Phase 7 cleanup + orchestration docs)
 - **Phase 7:** **Merged** — commit **`265003b`** on `develop` ("fix: phase 7 cleanup — bugs, security, dead code").
-- **Active Kimi work:** **L04 Phase 9** (test infra: Matrix e2e, Telegram async, CLI integration) — [`docs/orchestration/kimi-loops/L04-phase-9-test-infra.md`](orchestration/kimi-loops/L04-phase-9-test-infra.md). Pointer: [`docs/prompts/KIMI_CURRENT.md`](prompts/KIMI_CURRENT.md).
+- **Active Kimi work:** **L05 Phase 10** (memory epochs) — [`docs/orchestration/kimi-loops/L05-phase-10-memory-epochs.md`](orchestration/kimi-loops/L05-phase-10-memory-epochs.md). Pointer: [`docs/prompts/KIMI_CURRENT.md`](prompts/KIMI_CURRENT.md).
 
 **Phase 7 summary (merged):**
 
@@ -83,8 +83,9 @@ Dylan can **defer per-loop review** to Cursor for a **queued multi-loop run** (s
 3. ~~**L01 Matrix adapter**~~ — Done (`c3c34b2` on `develop`)  
 4. ~~**L02 Phase 8a**~~ — Done (`98b4caa` on `develop`)  
 5. ~~**L03 Phase 8b**~~ — Done (`0034038` on `develop`)  
-6. **L04 Phase 9** — test infra (`L04-phase-9-test-infra.md`)  
-7. **L05–L08** — remainder per queue table  
+6. ~~**L04 Phase 9**~~ — Done (`39caca5` on `develop`)  
+7. **L05 Phase 10** — memory epochs (`L05-phase-10-memory-epochs.md`)  
+8. **L06–L08** — remainder per queue table  
 
 **Earlier prompts (reference only):**
 
@@ -99,7 +100,8 @@ Dylan can **defer per-loop review** to Cursor for a **queued multi-loop run** (s
 
 | Branch | Role |
 |--------|------|
-| `develop` | **Tip** — through **L03** Phase 8b (`0034038`); not yet pushed |
+| `develop` | **Tip** — through **L04** Phase 9 (`39caca5`); not yet pushed |
+| `feature/phase-9-test-infra` | Merged into `develop` |
 | `feature/phase-8b-cli-exceptions-datetime` | Merged into `develop` |
 | `feature/matrix-adapter` | Merged into `develop` (historical) |
 | `feature/phase-7-cleanup` | Historical |
@@ -121,7 +123,7 @@ Dylan can **defer per-loop review** to Cursor for a **queued multi-loop run** (s
 
 | Snapshot | Count |
 |----------|-------|
-| Last `pytest tests/unit/ tests/integration/ -q` on `develop` after L03 merge (2026-04-12) | **354 passed** |
+| Last `pytest tests/unit/ tests/integration/ -q` on `develop` after L04 merge (2026-04-12) | **379 passed** |
 
 Run: `uv run pytest tests/unit/ tests/integration/ -q`
 
@@ -129,7 +131,7 @@ Run: `uv run pytest tests/unit/ tests/integration/ -q`
 
 ## Architecture Decisions (ADRs)
 
-21 ADRs through **ADR-021** (Matrix, L01). **L02** adds **ADR-022** (identity) per roadmap §8.1.
+21 ADRs through **ADR-022** (identity, L02). **L05** should add **ADR-023** (memory epochs) per roadmap §10.1.
 
 ---
 
@@ -137,7 +139,7 @@ Run: `uv run pytest tests/unit/ tests/integration/ -q`
 
 | Tool | Notes |
 |------|-------|
-| pytest | **354 passed** on reviewed tree after L03 merge |
+| pytest | **379 passed** on reviewed tree after L04 merge |
 | ruff | Touched files clean in Phase 7; large pre-existing debt possible elsewhere |
 | mypy | Pre-existing errors in some modules |
 
@@ -157,7 +159,7 @@ Run: `uv run pytest tests/unit/ tests/integration/ -q`
 
 1. ~~Phase 7 cleanup~~  
 2. ~~**L01 Matrix**~~  
-3. **L04–L08** per [`kimi-phase-queue.md`](orchestration/kimi-phase-queue.md)  
+3. **L05–L08** per [`kimi-phase-queue.md`](orchestration/kimi-phase-queue.md)  
 4. Long-term: `docs/roadmap/future-systems-deferred-roadmap.md`  
 
 ---
@@ -168,7 +170,7 @@ Run: `uv run pytest tests/unit/ tests/integration/ -q`
 
 1. Read at start of each Hestia session.  
 2. After Kimi delivers work: update verdict, test counts, git state, `KIMI_CURRENT.md`; remove or acknowledge `.kimi-done`.  
-3. Next Kimi cycle: follow **`KIMI_CURRENT.md`** (currently **L04 Phase 9**).  
+3. Next Kimi cycle: follow **`KIMI_CURRENT.md`** (currently **L05 Phase 10**).  
 
 ### Review checklist
 

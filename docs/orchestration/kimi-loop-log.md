@@ -8,6 +8,16 @@
 
 ---
 
+## 2026-04-12 — Loop: L04 Phase 9 — test infra (Kimi)
+
+**Kimi:** `./scripts/kimi-run-current.sh` (~14.9 min). `.kimi-done`: `GIT_HEAD=39caca5`, **379 passed**.
+
+**Outcome:** Matrix e2e scaffold (`tests/e2e/*`, docker-compose, mock llama), Telegram async tests expanded, **`tests/integration/test_cli_integration.py`**. E2E module **skipped by default** (Docker). Carry-forward into L05: baseline 379, keep default pytest green, epoch ordering vs identity.
+
+**Git:** Merged `feature/phase-9-test-infra` → `develop`.
+
+---
+
 ## 2026-04-12 — Loop: L03 Phase 8b — CLI, exceptions, datetime (Kimi + Cursor prep)
 
 **Carry-forward set in `L03-phase-8b-cli-exceptions-datetime.md`:** README “personality” must match **compiled identity** (`IdentityConfig` / `IdentityCompiler`); finish roadmap **§8.4** and **§8.5**; note prior commits for §8.3, `PlatformError`, scheduler `_dt_gt_utc`.
