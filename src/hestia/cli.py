@@ -1192,13 +1192,12 @@ def memory(ctx: click.Context) -> None:
 @click.pass_context
 def memory_search(ctx: click.Context, query: str, limit: int) -> None:
     """Search memories."""
-    db: Database = ctx.obj["db"]
-    memory_store: MemoryStore = ctx.obj["memory_store"]
+    app: CliAppContext = ctx.obj["app"]
 
     async def _search() -> None:
-        await _bootstrap_db(db, memory_store)
+        await app.bootstrap_db()
 
-        results = await memory_store.search(query, limit=limit)
+        results = await app.memory_store.search(query, limit=limit)
         if not results:
             click.echo("No memories found.")
             return
@@ -1217,13 +1216,12 @@ def memory_search(ctx: click.Context, query: str, limit: int) -> None:
 @click.pass_context
 def memory_list(ctx: click.Context, tag: str | None, limit: int) -> None:
     """List recent memories."""
-    db: Database = ctx.obj["db"]
-    memory_store: MemoryStore = ctx.obj["memory_store"]
+    app: CliAppContext = ctx.obj["app"]
 
     async def _list() -> None:
-        await _bootstrap_db(db, memory_store)
+        await app.bootstrap_db()
 
-        results = await memory_store.list_memories(tag=tag, limit=limit)
+        results = await app.memory_store.list_memories(tag=tag, limit=limit)
         if not results:
             click.echo("No memories found.")
             return
@@ -1242,14 +1240,13 @@ def memory_list(ctx: click.Context, tag: str | None, limit: int) -> None:
 @click.pass_context
 def memory_add(ctx: click.Context, content: str, tags: str) -> None:
     """Add a memory manually."""
-    db: Database = ctx.obj["db"]
-    memory_store: MemoryStore = ctx.obj["memory_store"]
+    app: CliAppContext = ctx.obj["app"]
 
     async def _add() -> None:
-        await _bootstrap_db(db, memory_store)
+        await app.bootstrap_db()
 
         tag_list = tags.split() if tags else []
-        mem = await memory_store.save(content=content, tags=tag_list)
+        mem = await app.memory_store.save(content=content, tags=tag_list)
         click.echo(f"Saved: {mem.id}")
 
     asyncio.run(_add())
@@ -1260,13 +1257,12 @@ def memory_add(ctx: click.Context, content: str, tags: str) -> None:
 @click.pass_context
 def memory_remove(ctx: click.Context, memory_id: str) -> None:
     """Delete a memory by ID."""
-    db: Database = ctx.obj["db"]
-    memory_store: MemoryStore = ctx.obj["memory_store"]
+    app: CliAppContext = ctx.obj["app"]
 
     async def _remove() -> None:
-        await _bootstrap_db(db, memory_store)
+        await app.bootstrap_db()
 
-        success = await memory_store.delete(memory_id)
+        success = await app.memory_store.delete(memory_id)
         if not success:
             click.echo(f"Memory not found: {memory_id}", err=True)
             sys.exit(1)
