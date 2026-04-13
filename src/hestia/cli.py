@@ -1578,6 +1578,229 @@ def skill_test(ctx: click.Context, name: str) -> None:
     click.echo("Note: Run the skill manually and observe results.")
 
 
+@cli.command(name="audit")
+@click.option("--json", "output_json", is_flag=True, help="Output as JSON")
+@click.option("--output", "-o", type=click.Path(), help="Save report to file")
+@click.pass_context
+def audit_command(ctx: click.Context, output_json: bool, output: str | None) -> None:
+    """Run security audit checks."""
+    from hestia.audit import SecurityAuditor
+
+    app: CliAppContext = ctx.obj["app"]
+
+    async def _audit() -> None:
+        await app.bootstrap_db()
+
+        auditor = SecurityAuditor(
+            config=app.config,
+            tool_registry=app.tool_registry,
+            trace_store=app.trace_store,
+        )
+
+        report = await auditor.run_audit()
+
+        if output_json:
+            result = report.to_json()
+        else:
+            result = report.summary()
+
+        if output:
+            Path(output).write_text(result)
+            click.echo(f"Audit report saved to: {output}")
+        else:
+            click.echo(result)
+
+        # Exit with error code if critical findings
+        critical_count = sum(1 for f in report.findings if f.severity == "critical")
+        if critical_count > 0:
+            sys.exit(1)
+
+    asyncio.run(_audit())
+
+
+@cli.group()
+@click.pass_context
+def policy(ctx: click.Context) -> None:
+    """Manage and view security policies."""
+    pass
+
+
+@policy.command(name="show")
+@click.pass_context
+def policy_show(ctx: click.Context) -> None:
+    """Show current effective policy configuration."""
+    from datetime import datetime, timezone
+
+    from hestia.core.types import Session, SessionState, SessionTemperature
+    from hestia.tools.capabilities import (
+        MEMORY_READ,
+        MEMORY_WRITE,
+        NETWORK_EGRESS,
+        SHELL_EXEC,
+        WRITE_LOCAL,
+    )
+
+    app: CliAppContext = ctx.obj["app"]
+
+    async def _show() -> None:
+        await app.bootstrap_db()
+
+        cfg = app.config
+        policy_engine = app.policy
+
+        click.echo("=" * 60)
+        click.echo("HESTIA EFFECTIVE POLICY")
+        click.echo("=" * 60)
+        click.echo("")
+
+        # Reasoning budget
+        click.echo("-" * 40)
+        click.echo("REASONING BUDGETS")
+        click.echo("-" * 40)
+        click.echo(f"  Default: {cfg.inference.default_reasoning_budget} tokens")
+        click.echo(f"  Subagent max: 1024 tokens (capped)")
+        click.echo("")
+
+        # Context window and budgets
+        click.echo("-" * 40)
+        click.echo("CONTEXT & COMPRESSION")
+        click.echo("-" * 40)
+        click.echo(f"  Context window: {policy_engine.ctx_window} tokens")
+        click.echo(f"  Turn token budget: {policy_engine.turn_token_budget(None)} tokens")
+        click.echo(f"  Compression threshold: 85% of budget")
+        click.echo("")
+
+        # Tool filtering by session type
+        click.echo("-" * 40)
+        click.echo("TOOL AVAILABILITY BY SESSION TYPE")
+        click.echo("-" * 40)
+
+        session_types = [
+            ("interactive (cli)", "cli"),
+            ("subagent", "subagent"),
+            ("scheduler", "scheduler"),
+        ]
+
+        all_tools = app.tool_registry.list_names()
+
+        now = datetime.now(timezone.utc)
+        for label, platform in session_types:
+            session = Session(
+                id="policy-show",
+                platform=platform,
+                platform_user="policy",
+                started_at=now,
+                last_active_at=now,
+                slot_id=None,
+                slot_saved_path=None,
+                state=SessionState.ACTIVE,
+                temperature=SessionTemperature.HOT,
+            )
+            allowed = policy_engine.filter_tools(session, all_tools, app.tool_registry)
+            blocked = set(all_tools) - set(allowed)
+
+            click.echo(f"\n  {label}:")
+            click.echo(f"    Allowed ({len(allowed)}): {', '.join(sorted(allowed))}")
+
+            if blocked:
+                # Show why each tool is blocked
+                blocked_with_reasons = []
+                for tool in sorted(blocked):
+                    try:
+                        meta = app.tool_registry.describe(tool)
+                        caps = set(meta.capabilities)
+                        if platform == "subagent":
+                            if SHELL_EXEC in caps:
+                                reason = "shell_exec"
+                            elif WRITE_LOCAL in caps:
+                                reason = "write_local"
+                            else:
+                                reason = "other"
+                        elif platform == "scheduler":
+                            if SHELL_EXEC in caps:
+                                reason = "shell_exec"
+                            else:
+                                reason = "other"
+                        else:
+                            reason = "unknown"
+                        blocked_with_reasons.append(f"{tool} ({reason})")
+                    except Exception:
+                        blocked_with_reasons.append(tool)
+
+                click.echo(f"    Blocked ({len(blocked)}): {', '.join(blocked_with_reasons)}")
+
+        click.echo("")
+
+        # Capabilities summary
+        click.echo("-" * 40)
+        click.echo("TOOL CAPABILITIES")
+        click.echo("-" * 40)
+        capability_tools: dict[str, list[str]] = {
+            SHELL_EXEC: [],
+            NETWORK_EGRESS: [],
+            WRITE_LOCAL: [],
+            MEMORY_READ: [],
+            MEMORY_WRITE: [],
+        }
+
+        for tool in all_tools:
+            try:
+                meta = app.tool_registry.describe(tool)
+                for cap in meta.capabilities:
+                    if cap in capability_tools:
+                        capability_tools[cap].append(tool)
+            except Exception:
+                pass
+
+        for cap, tools in capability_tools.items():
+            if tools:
+                click.echo(f"  {cap}: {', '.join(sorted(tools))}")
+
+        click.echo("")
+
+        # Delegation settings
+        click.echo("-" * 40)
+        click.echo("DELEGATION POLICY")
+        click.echo("-" * 40)
+        click.echo("  Delegation triggers:")
+        click.echo("    - Tool chain > 5 calls")
+        click.echo("    - Keywords: delegate, subagent, spawn task, background task")
+        click.echo("    - Research keywords: research, investigate, analyze deeply, comprehensive")
+        click.echo("    - Projected tool calls > 3")
+        click.echo("  Subagent restrictions:")
+        click.echo("    - Cannot delegate further (no recursion)")
+        click.echo("    - Reduced reasoning budget")
+        click.echo("")
+
+        # Confirmation requirements
+        click.echo("-" * 40)
+        click.echo("CONFIRMATION REQUIREMENTS")
+        click.echo("-" * 40)
+        click.echo("  Tools requiring confirmation (interactive only):")
+        click.echo("    - write_file")
+        click.echo("    - terminal (for destructive operations)")
+        click.echo("  Platforms with confirmation:")
+        click.echo("    - cli: Yes (interactive prompt)")
+        click.echo("    - telegram: No (tools requiring confirmation will fail)")
+        click.echo("    - matrix: No (tools requiring confirmation will fail)")
+        click.echo("    - scheduler: No (shell_exec blocked entirely)")
+        click.echo("")
+
+        # Retry policy
+        click.echo("-" * 40)
+        click.echo("RETRY POLICY")
+        click.echo("-" * 40)
+        click.echo("  Max attempts: 2")
+        click.echo("  Transient errors (retry with backoff):")
+        click.echo("    - InferenceTimeoutError")
+        click.echo("    - InferenceServerError")
+        click.echo("  Non-transient errors (fail immediately):")
+        click.echo("    - All other exceptions")
+        click.echo("")
+
+    asyncio.run(_show())
+
+
 def main() -> None:
     """Entry point for the CLI."""
     cli()
