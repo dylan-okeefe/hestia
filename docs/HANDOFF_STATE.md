@@ -3,7 +3,7 @@
 > **Purpose:** Handoff contract between Claude (Cowork) and Cursor for reviewing Kimi's output and orchestrating the next phase.
 >
 > **Last updated:** 2026-04-12
-> **Last updated by:** Cursor (L07 merged; L08 Phase 13 next)
+> **Last updated by:** Cursor (queued loops L01–L08 merged to `develop`; Dylan final pass)
 
 ---
 
@@ -62,7 +62,7 @@ Dylan can **defer per-loop review** to Cursor for a **queued multi-loop run** (s
 
 - **Branch:** `develop` (local **ahead of** `origin/develop` until you `git push` — includes Phase 7 cleanup + orchestration docs)
 - **Phase 7:** **Merged** — commit **`265003b`** on `develop` ("fix: phase 7 cleanup — bugs, security, dead code").
-- **Active Kimi work:** **L08 Phase 13** (`hestia audit`, `hestia policy show`) — [`docs/orchestration/kimi-loops/L08-phase-13-audit.md`](orchestration/kimi-loops/L08-phase-13-audit.md). Pointer: [`docs/prompts/KIMI_CURRENT.md`](prompts/KIMI_CURRENT.md).
+- **Active Kimi work:** **None** — queue **L01–L08** complete on `develop` (tip **`381a543`** area includes L08 audit). Next work is **your** call (push, release, or new design doc). Pointer: [`docs/prompts/KIMI_CURRENT.md`](prompts/KIMI_CURRENT.md).
 
 **Phase 7 summary (merged):**
 
@@ -87,7 +87,7 @@ Dylan can **defer per-loop review** to Cursor for a **queued multi-loop run** (s
 7. ~~**L05 Phase 10**~~ — Done (`2a54255` on `develop`)  
 8. ~~**L06 Phase 11**~~ — Done (`20a5c40` on `develop`)  
 9. ~~**L07 Phase 12**~~ — Done (`12d7531` on `develop`)  
-10. **L08 Phase 13** — audit CLI (`L08-phase-13-audit.md`)  
+10. ~~**L08 Phase 13**~~ — Done (`381a543` on `develop`)  
 
 **Earlier prompts (reference only):**
 
@@ -102,7 +102,8 @@ Dylan can **defer per-loop review** to Cursor for a **queued multi-loop run** (s
 
 | Branch | Role |
 |--------|------|
-| `develop` | **Tip** — through **L07** Phase 12 (`12d7531`); not yet pushed |
+| `develop` | **Tip** — **L01–L08 queue complete** (`381a543` L08); **not pushed** to `origin` yet |
+| `feature/phase-13-audit` | Merged into `develop` |
 | `feature/phase-12-skills` | Merged into `develop` |
 | `feature/phase-11-trace-store` | Merged into `develop` |
 | `feature/phase-10-memory-epochs` | Merged into `develop` |
@@ -128,7 +129,7 @@ Dylan can **defer per-loop review** to Cursor for a **queued multi-loop run** (s
 
 | Snapshot | Count |
 |----------|-------|
-| Last `pytest tests/unit/ tests/integration/ -q` on `develop` after L07 merge (2026-04-12) | **412 passed** |
+| Last `pytest tests/unit/ tests/integration/ -q` on `develop` after L08 merge (2026-04-12) | **435 passed** |
 
 Run: `uv run pytest tests/unit/ tests/integration/ -q`
 
@@ -144,7 +145,7 @@ Through **ADR-024** (skills, L07). L08 audit is CLI-only unless you add a small 
 
 | Tool | Notes |
 |------|-------|
-| pytest | **412 passed** on reviewed tree after L07 merge |
+| pytest | **435 passed** on reviewed tree after L08 merge |
 | ruff | Touched files clean in Phase 7; large pre-existing debt possible elsewhere |
 | mypy | Pre-existing errors in some modules |
 
@@ -164,7 +165,7 @@ Through **ADR-024** (skills, L07). L08 audit is CLI-only unless you add a small 
 
 1. ~~Phase 7 cleanup~~  
 2. ~~**L01 Matrix**~~  
-3. **L08** (final queued loop) per [`kimi-phase-queue.md`](orchestration/kimi-phase-queue.md)  
+3. ~~**L01–L08 Kimi queue**~~ — complete on `develop`  
 4. Long-term: `docs/roadmap/future-systems-deferred-roadmap.md`  
 
 ---
@@ -175,7 +176,7 @@ Through **ADR-024** (skills, L07). L08 audit is CLI-only unless you add a small 
 
 1. Read at start of each Hestia session.  
 2. After Kimi delivers work: update verdict, test counts, git state, `KIMI_CURRENT.md`; remove or acknowledge `.kimi-done`.  
-3. Next Kimi cycle: follow **`KIMI_CURRENT.md`** (currently **L08 Phase 13**), then **queue complete** for Dylan’s final pass.  
+3. **`KIMI_CURRENT.md`** is idle until the next initiative; **`git push`** when satisfied.  
 
 ### Review checklist
 

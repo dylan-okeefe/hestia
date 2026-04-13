@@ -1,28 +1,24 @@
 # Kimi — current task (orchestration pointer)
 
-**Orchestrator:** Cursor updates this file after each review. **Executor:** follow every step below, then the linked specs.
+**Orchestrator:** Cursor updates this file after each review.
 
-**Last set by:** Cursor — 2026-04-12 (L08 Phase 13: security audit CLI)
-
----
-
-## Current task (do this now)
-
-1. Read **[`docs/orchestration/kimi-loops/L08-phase-13-audit.md`](../orchestration/kimi-loops/L08-phase-13-audit.md)** and execute **end-to-end** (branch, §13.1–§13.2, push, `.kimi-done`). Follow **`## Review carry-forward`** on that file.
-2. **Authoritative technical detail:** **[`docs/design/hestia-phase-8-plus-roadmap.md`](../design/hestia-phase-8-plus-roadmap.md)** — **§13.1** and **§13.2** only.
-3. Queue: [`../orchestration/kimi-phase-queue.md`](../orchestration/kimi-phase-queue.md).
+**Last set by:** Cursor — 2026-04-12 (**queued loops L01–L08 complete** on `develop`)
 
 ---
 
-## Next task (after Cursor review)
+## Current task
 
-**Queue L01–L08 complete** — Dylan does final pass, then `git push` / release workflow as you prefer.
+**None** — the [`kimi-phase-queue.md`](../orchestration/kimi-phase-queue.md) row **L01–L08** has landed on **`develop`** (tip includes **L08** `hestia audit` / `policy show`).
+
+**Dylan:** Final review, `git push origin develop` (or your release branch), and skim [`kimi-loop-log.md`](../orchestration/kimi-loop-log.md) for the full narrative.
+
+When you start the **next** initiative, replace this file’s **Current task** with the new loop spec path.
 
 ---
 
 ## Reference
 
-- Full queue: [`../orchestration/kimi-phase-queue.md`](../orchestration/kimi-phase-queue.md)
+- Queue (completed): [`../orchestration/kimi-phase-queue.md`](../orchestration/kimi-phase-queue.md)
 - Orchestration contract: [`../HANDOFF_STATE.md`](../HANDOFF_STATE.md)
 - Loop audit trail: [`../orchestration/kimi-loop-log.md`](../orchestration/kimi-loop-log.md)
 - CLI: [`../../scripts/kimi-run-current.sh`](../../scripts/kimi-run-current.sh)

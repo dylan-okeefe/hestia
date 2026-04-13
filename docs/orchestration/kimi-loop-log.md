@@ -8,6 +8,16 @@
 
 ---
 
+## 2026-04-12 — Loop: L08 Phase 13 — security audit CLI (Kimi) — **queue complete**
+
+**Kimi:** ~16.8 min. `.kimi-done`: `GIT_HEAD=381a543`, **435 passed**.
+
+**Outcome:** `hestia audit`, `hestia policy show`, tests added per §13.x.
+
+**Git:** Merged `feature/phase-13-audit` → `develop`. **L01–L08** queue finished; Dylan: push + holistic review.
+
+---
+
 ## 2026-04-12 — Loop: L07 Phase 12 — manual skills (Kimi)
 
 **Kimi:** ~14.6 min. `.kimi-done`: `GIT_HEAD=12d7531`, **412 passed**.
