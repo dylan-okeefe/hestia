@@ -199,3 +199,55 @@ class TestFilterTools:
         cli_sess = sample_session  # platform "test" is not subagent/scheduler
         filtered = policy.filter_tools(cli_sess, names, reg)
         assert filtered == names
+
+
+class TestReasoningBudget:
+    """Tests for reasoning_budget policy."""
+
+    def test_default_reasoning_budget(self, policy):
+        """Default reasoning budget is 2048."""
+        budget = policy.reasoning_budget(None, 0)  # type: ignore[arg-type]
+        assert budget == 2048
+
+    def test_custom_default_reasoning_budget(self):
+        """Custom default reasoning budget is respected."""
+        custom_policy = DefaultPolicyEngine(default_reasoning_budget=4096)
+        budget = custom_policy.reasoning_budget(None, 0)  # type: ignore[arg-type]
+        assert budget == 4096
+
+    def test_subagent_gets_smaller_budget(self, sample_session):
+        """Subagent sessions get capped at 1024 tokens."""
+        from dataclasses import replace
+
+        policy = DefaultPolicyEngine(default_reasoning_budget=2048)
+        subagent_session = replace(sample_session, platform="subagent")
+
+        budget = policy.reasoning_budget(subagent_session, 0)
+        assert budget == 1024
+
+    def test_subagent_budget_capped_even_with_high_default(self, sample_session):
+        """Subagent budget is capped at 1024 even with high default."""
+        from dataclasses import replace
+
+        policy = DefaultPolicyEngine(default_reasoning_budget=8192)
+        subagent_session = replace(sample_session, platform="subagent")
+
+        budget = policy.reasoning_budget(subagent_session, 0)
+        assert budget == 1024
+
+    def test_non_subagent_gets_full_budget(self, sample_session):
+        """Non-subagent sessions get the full default budget."""
+        policy = DefaultPolicyEngine(default_reasoning_budget=4096)
+
+        budget = policy.reasoning_budget(sample_session, 0)
+        assert budget == 4096
+
+    def test_iteration_parameter_ignored_for_now(self, sample_session):
+        """Iteration parameter doesn't affect budget (reserved for future)."""
+        policy = DefaultPolicyEngine(default_reasoning_budget=2048)
+
+        budget_first = policy.reasoning_budget(sample_session, 0)
+        budget_second = policy.reasoning_budget(sample_session, 1)
+        budget_tenth = policy.reasoning_budget(sample_session, 9)
+
+        assert budget_first == budget_second == budget_tenth == 2048

@@ -11,6 +11,7 @@ import click
 from hestia.artifacts.store import ArtifactStore
 from hestia.config import HestiaConfig
 from hestia.context.builder import ContextBuilder
+from hestia.identity import IdentityCompiler
 from hestia.core.inference import InferenceClient
 from hestia.core.types import Message, ScheduledTask, Session
 from hestia.inference import SlotManager
@@ -179,11 +180,19 @@ def cli(
     artifact_store = ArtifactStore(cfg.storage.artifacts_dir)
     inference = InferenceClient(cfg.inference.base_url, cfg.inference.model_name)
     session_store = SessionStore(db)
-    policy = DefaultPolicyEngine()
+    policy = DefaultPolicyEngine(
+        default_reasoning_budget=cfg.inference.default_reasoning_budget
+    )
 
-    # Context builder with calibration
+    # Compile identity from soul.md if configured
+    identity_compiler = IdentityCompiler(cfg.identity)
+    compiled_identity = identity_compiler.get_compiled_text()
+
+    # Context builder with calibration and optional identity
     calibration_path = Path("docs/calibration.json")
     context_builder = ContextBuilder.from_calibration_file(inference, policy, calibration_path)
+    if compiled_identity:
+        context_builder.set_identity_prefix(compiled_identity)
 
     # Memory store for long-term memory
     memory_store = MemoryStore(db)

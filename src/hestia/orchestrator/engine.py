@@ -188,11 +188,16 @@ class Orchestrator:
                     await self._transition(turn, TurnState.AWAITING_MODEL)
                     await self._update_status(platform, platform_user, status_msg_id, "Thinking...")
 
+                    # Get reasoning budget from policy and update turn
+                    turn.reasoning_budget = self._policy.reasoning_budget(
+                        session, turn.iterations
+                    )
+
                     chat_response = await self._inference.chat(
                         messages=build_result.messages,
                         tools=tools,
                         slot_id=slot_id_to_use,
-                        reasoning_budget=2048,
+                        reasoning_budget=turn.reasoning_budget,
                     )
 
                     # Append assistant message to history

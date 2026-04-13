@@ -22,14 +22,18 @@ class DefaultPolicyEngine(PolicyEngine):
     to customize behavior.
     """
 
-    def __init__(self, ctx_window: int = 32768) -> None:
+    def __init__(
+        self, ctx_window: int = 32768, default_reasoning_budget: int = 2048
+    ) -> None:
         """Initialize with context window size.
 
         Args:
             ctx_window: Total context window size in tokens. Default assumes
                        llama-server with 32K slots.
+            default_reasoning_budget: Default reasoning token budget.
         """
         self.ctx_window = ctx_window
+        self._default_reasoning_budget = default_reasoning_budget
 
     def should_delegate(
         self,
@@ -174,3 +178,10 @@ class DefaultPolicyEngine(PolicyEngine):
 
         # CLI and other platforms: allow all tools
         return tool_names
+
+    def reasoning_budget(self, session: Session, iteration: int) -> int:
+        """Use the configured default. Subagents get a smaller budget."""
+        base = self._default_reasoning_budget
+        if session is not None and session.platform == "subagent":
+            return min(base, 1024)  # subagents don't need deep reasoning
+        return base

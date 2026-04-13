@@ -83,3 +83,8 @@ class PolicyEngine(ABC):
         Returns the subset of tool_names allowed for this session.
         """
         ...
+
+    @abstractmethod
+    def reasoning_budget(self, session: Session, iteration: int) -> int:
+        """How many reasoning tokens to budget for this inference call."""
+        ...

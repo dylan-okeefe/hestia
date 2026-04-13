@@ -7,6 +7,18 @@ from pathlib import Path
 
 
 @dataclass
+class IdentityConfig:
+    """Configuration for Hestia's personality/identity."""
+
+    soul_path: Path | None = None  # Path to soul.md (None = no personality)
+    compiled_cache_path: Path = field(
+        default_factory=lambda: Path(".hestia/compiled_identity.txt")
+    )
+    max_tokens: int = 300  # Hard cap on compiled view size
+    recompile_on_change: bool = True  # Recompile if soul.md changes
+
+
+@dataclass
 class InferenceConfig:
     """Configuration for the llama.cpp inference server."""
 
@@ -89,6 +101,7 @@ class HestiaConfig:
     storage: StorageConfig = field(default_factory=StorageConfig)
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
     matrix: MatrixConfig = field(default_factory=MatrixConfig)
+    identity: IdentityConfig = field(default_factory=IdentityConfig)
     system_prompt: str = "You are a helpful assistant."
     max_iterations: int = 10
     verbose: bool = False

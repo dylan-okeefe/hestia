@@ -45,4 +45,5 @@ class Turn:
     tool_calls_made: int = 0  # cumulative count
     final_response: str | None = None  # populated on DONE
     error: str | None = None  # populated on FAILED
+    reasoning_budget: int = 2048  # reasoning tokens budgeted for this turn
     transitions: list[TurnTransition] = field(default_factory=list)

@@ -49,6 +49,7 @@ class ContextBuilder:
         policy: PolicyEngine,
         body_factor: float = 1.0,
         meta_tool_overhead: int = 0,
+        identity_prefix: str | None = None,
     ):
         """Initialize with inference client and policy.
 
@@ -57,11 +58,21 @@ class ContextBuilder:
             policy: Policy engine for budget decisions
             body_factor: Correction factor for message body tokenization
             meta_tool_overhead: Constant overhead when tools are present
+            identity_prefix: Optional compiled identity view to prepend to system prompt
         """
         self._inference = inference_client
         self._policy = policy
         self._body_factor = body_factor
         self._meta_tool_overhead = meta_tool_overhead
+        self._identity_prefix = identity_prefix
+
+    def set_identity_prefix(self, identity_prefix: str | None) -> None:
+        """Set the identity prefix to prepend to system prompts.
+
+        Args:
+            identity_prefix: Compiled identity view, or None to clear
+        """
+        self._identity_prefix = identity_prefix
 
     @classmethod
     def from_calibration_file(
@@ -99,6 +110,7 @@ class ContextBuilder:
         system_prompt: str,
         tools: list[ToolSchema],
         new_user_message: Message | None = None,
+        identity_prefix: str | None = None,
     ) -> BuildResult:
         """Build the message list for a new turn.
 
@@ -116,6 +128,7 @@ class ContextBuilder:
             tools: Available tools (for overhead calculation)
             new_user_message: The new user message for this turn, or None for
                             continuation turns (e.g., during tool chains)
+            identity_prefix: Optional compiled identity view to prepend to system prompt
 
         Returns:
             BuildResult with messages and bookkeeping
@@ -125,8 +138,15 @@ class ContextBuilder:
 
         truncated_count = 0
 
+        # Build effective system prompt with optional identity prefix
+        # Use provided identity_prefix, fall back to stored one
+        effective_identity = identity_prefix if identity_prefix is not None else self._identity_prefix
+        effective_prompt = system_prompt
+        if effective_identity:
+            effective_prompt = effective_identity + "\n\n" + system_prompt
+
         # Create system message
-        system_msg = Message(role="system", content=system_prompt)
+        system_msg = Message(role="system", content=effective_prompt)
 
         # Find first user message (must be protected for Qwen template)
         first_user_msg: Message | None = None
