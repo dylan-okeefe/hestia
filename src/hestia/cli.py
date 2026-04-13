@@ -300,7 +300,7 @@ def cli(
         default_reasoning_budget=cfg.inference.default_reasoning_budget
     )
 
-    # Compile identity from soul.md if configured
+    # Compile identity from SOUL.md (default path) when present
     identity_compiler = IdentityCompiler(cfg.identity)
     compiled_identity = identity_compiler.get_compiled_text()
 

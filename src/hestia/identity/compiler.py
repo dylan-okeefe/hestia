@@ -1,6 +1,6 @@
-"""Identity compiler for soul.md files.
+"""Identity compiler for SOUL.md (operator personality).
 
-Compiles a soul.md personality document into a compact, bounded identity view
+Compiles a SOUL.md personality document into a compact, bounded identity view
 that gets prepended to the system prompt. Uses deterministic extraction by default:
 - Parse markdown, extract text under each heading
 - Concatenate as flat text block, stripping markdown syntax
@@ -19,7 +19,7 @@ from hestia.config import IdentityConfig
 
 @dataclass
 class CompileResult:
-    """Result of compiling a soul.md file."""
+    """Result of compiling a SOUL.md file."""
 
     text: str  # The compiled identity view
     source_hash: str  # Hash of the source file for cache validation
@@ -27,7 +27,7 @@ class CompileResult:
 
 
 class IdentityCompiler:
-    """Compiles soul.md to a compact identity view.
+    """Compiles SOUL.md to a compact identity view.
 
     Default strategy: deterministic extraction (no model call needed).
     Extracts text under each markdown heading, flattens to text, truncates
@@ -43,10 +43,10 @@ class IdentityCompiler:
         self._config = config
 
     def compile(self) -> CompileResult | None:
-        """Compile soul.md to a compact identity view.
+        """Compile SOUL.md to a compact identity view.
 
         Returns:
-            CompileResult with the compiled text, or None if no soul.md exists
+            CompileResult with the compiled text, or None if the file is missing
             or soul_path is None.
         """
         if self._config.soul_path is None:
@@ -235,7 +235,7 @@ class IdentityCompiler:
         """Get the compiled identity text, or empty string if not available.
 
         Returns:
-            The compiled identity view, or "" if soul.md doesn't exist
+            The compiled identity view, or "" if SOUL.md isn't available
         """
         result = self.compile()
         if result is None:

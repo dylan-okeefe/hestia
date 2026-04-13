@@ -92,7 +92,7 @@ Hestia speaks three protocols, each with a different role:
 
 The default system prompt is "You are a helpful assistant." You can do better.
 
-Create a `soul.md` file in your project root:
+Create a **`SOUL.md`** file in your project root (default path: `hestia.config.DEFAULT_SOUL_MD_PATH`):
 
 ```markdown
 # Hestia
@@ -116,18 +116,23 @@ You are Hestia, a personal assistant running on Dylan's home server.
 - You don't pad responses with filler.
 ```
 
-Then enable compiled identity in your config:
+Compiled identity is on by default: `HestiaConfig` looks for **`SOUL.md`** in the process working directory. Override or disable as needed:
 
 ```python
-from hestia.config import HestiaConfig, IdentityConfig
+from pathlib import Path
+
+from hestia.config import DEFAULT_SOUL_MD_PATH, HestiaConfig, IdentityConfig
 
 config = HestiaConfig(
     identity=IdentityConfig(
-        soul_path=Path("soul.md"),
+        soul_path=DEFAULT_SOUL_MD_PATH,  # explicit; same as the default
         max_tokens=300,  # Hard cap on compiled identity size
     ),
     # ... rest of config
 )
+
+# Other paths: soul_path=Path("deploy/SOUL.md")
+# Disable: identity=IdentityConfig(soul_path=None)
 ```
 
 Hestia compiles your soul document into a compact identity view on startup. The full soul doc isn't injected raw — it's extracted, bounded, and cached under `.hestia/compiled_identity.txt` for efficiency. Keep the soul document reasonably short (under 1000 words). The compiled view is truncated to `max_tokens`, so put the most important traits first.

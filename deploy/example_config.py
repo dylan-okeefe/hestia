@@ -3,7 +3,9 @@
 from pathlib import Path
 
 from hestia.config import (
+    DEFAULT_SOUL_MD_PATH,
     HestiaConfig,
+    IdentityConfig,
     InferenceConfig,
     SlotConfig,
     SchedulerConfig,
@@ -33,6 +35,9 @@ config = HestiaConfig(
         bot_token="YOUR_BOT_TOKEN_HERE",
         allowed_users=["YOUR_TELEGRAM_USER_ID"],
         rate_limit_edits_seconds=1.5,
+    ),
+    identity=IdentityConfig(
+        soul_path=Path("/opt/hestia") / DEFAULT_SOUL_MD_PATH.name,
     ),
     system_prompt="You are Hestia, a helpful personal assistant.",
     max_iterations=10,

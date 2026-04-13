@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from hestia.config import HestiaConfig
+from hestia.config import DEFAULT_SOUL_MD_PATH, HestiaConfig, IdentityConfig
 
 
 class TestDefaultConfig:
@@ -35,6 +35,10 @@ class TestDefaultConfig:
         assert cfg.system_prompt == "You are a helpful assistant."
         assert cfg.max_iterations == 10
         assert cfg.verbose is False
+
+        # Identity defaults to SOUL.md in cwd
+        assert cfg.identity.soul_path == DEFAULT_SOUL_MD_PATH
+        assert IdentityConfig().soul_path == DEFAULT_SOUL_MD_PATH
 
     def test_default_factory_creates_new_instances(self):
         """Each call to default() creates fresh instances."""

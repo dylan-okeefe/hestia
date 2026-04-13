@@ -5,12 +5,17 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+# Default location for operator-authored personality (compiled identity; see ADR-022).
+DEFAULT_SOUL_MD_PATH = Path("SOUL.md")
+
 
 @dataclass
 class IdentityConfig:
     """Configuration for Hestia's personality/identity."""
 
-    soul_path: Path | None = None  # Path to soul.md (None = no personality)
+    soul_path: Path | None = field(
+        default_factory=lambda: DEFAULT_SOUL_MD_PATH,
+    )  # None = disable; default reads SOUL.md in cwd (DEFAULT_SOUL_MD_PATH)
     compiled_cache_path: Path = field(
         default_factory=lambda: Path(".hestia/compiled_identity.txt")
     )

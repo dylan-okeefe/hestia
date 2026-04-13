@@ -167,7 +167,7 @@ class ContextBuilder:
 
         # Build effective system prompt with optional prefixes
         # Assembly order per roadmap §10.1:
-        # 1. Compiled identity view (from soul.md)
+        # 1. Compiled identity view (from SOUL.md when configured)
         # 2. Compiled memory epoch
         # 3. Skill index
         # 4. Base system prompt
