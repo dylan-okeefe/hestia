@@ -26,7 +26,10 @@ from hestia.persistence.db import Database
 from hestia.persistence.failure_store import FailureStore
 from hestia.persistence.scheduler import SchedulerStore
 from hestia.persistence.sessions import SessionStore
+from hestia.persistence.skill_store import SkillStore
 from hestia.persistence.trace_store import TraceStore
+from hestia.skills.index import SkillIndexBuilder
+from hestia.skills.state import SkillState
 from hestia.policy.default import DefaultPolicyEngine
 from hestia.scheduler import Scheduler
 from hestia.tools.builtin import (
@@ -95,9 +98,11 @@ class CliAppContext:
     failure_store: FailureStore
     trace_store: TraceStore
     scheduler_store: SchedulerStore | None = None
+    skill_store: SkillStore | None = None
     verbose: bool = False
     confirm_callback: Any = None
     epoch_compiler: MemoryEpochCompiler | None = None
+    skill_index_builder: SkillIndexBuilder | None = None
 
     async def bootstrap_db(self) -> None:
         """Connect to database and create tables."""
@@ -106,6 +111,8 @@ class CliAppContext:
         await self.memory_store.create_table()
         await self.failure_store.create_table()
         await self.trace_store.create_table()
+        if self.skill_store is not None:
+            await self.skill_store.create_table()
 
     def make_orchestrator(self) -> Orchestrator:
         """Create an Orchestrator with the current app context."""
@@ -333,6 +340,7 @@ def cli(
     failure_store = FailureStore(db)
     scheduler_store = SchedulerStore(db)
     trace_store = TraceStore(db)
+    skill_store = SkillStore(db)
 
     def orchestrator_factory() -> Orchestrator:
         """Fresh orchestrator for subagent turns (shares registry and stores)."""
@@ -354,6 +362,9 @@ def cli(
     # Initialize memory epoch compiler
     epoch_compiler = MemoryEpochCompiler(memory_store, max_tokens=500)
 
+    # Initialize skill index builder
+    skill_index_builder = SkillIndexBuilder(skill_store)
+
     ctx.obj["app"] = CliAppContext(
         config=cfg,
         db=db,
@@ -367,9 +378,11 @@ def cli(
         failure_store=failure_store,
         trace_store=trace_store,
         scheduler_store=scheduler_store,
+        skill_store=skill_store,
         verbose=cfg.verbose,
         confirm_callback=None,
         epoch_compiler=epoch_compiler,
+        skill_index_builder=skill_index_builder,
     )
 
     # Also expose raw objects for daemon/bot commands that access ctx.obj directly
@@ -384,6 +397,7 @@ def cli(
     ctx.obj["memory_store"] = memory_store
     ctx.obj["failure_store"] = failure_store
     ctx.obj["trace_store"] = trace_store
+    ctx.obj["skill_store"] = skill_store
 
 
 
@@ -1366,6 +1380,202 @@ def memory_remove(ctx: click.Context, memory_id: str) -> None:
         click.echo(f"Deleted: {memory_id}")
 
     asyncio.run(_remove())
+
+
+# Skill command group
+@cli.group()
+@click.pass_context
+def skill(ctx: click.Context) -> None:
+    """Manage skills."""
+    pass
+
+
+@skill.command(name="list")
+@click.option("--state", "state_filter", default=None, help="Filter by state (draft, tested, trusted, deprecated, disabled)")
+@click.option("--all", "show_all", is_flag=True, help="Include disabled skills")
+@click.pass_context
+def skill_list(ctx: click.Context, state_filter: str | None, show_all: bool) -> None:
+    """List skills with their states."""
+    app: CliAppContext = ctx.obj["app"]
+
+    async def _list() -> None:
+        await app.bootstrap_db()
+        if app.skill_store is None:
+            click.echo("Skill store not available", err=True)
+            sys.exit(1)
+
+        skill_state = None
+        if state_filter:
+            try:
+                skill_state = SkillState(state_filter.lower())
+            except ValueError:
+                click.echo(f"Invalid state: {state_filter}", err=True)
+                sys.exit(1)
+
+        records = await app.skill_store.list_all(
+            state=skill_state,
+            exclude_disabled=not show_all,
+        )
+
+        if not records:
+            click.echo("No skills found.")
+            return
+
+        click.echo(f"{'Name':<20} {'State':<12} {'Runs':<6} {'Fails':<6} {'Description'}")
+        click.echo("-" * 80)
+        for record in records:
+            desc = record.description[:35] + "..." if len(record.description) > 35 else record.description
+            click.echo(
+                f"{record.name:<20} {record.state.value:<12} "
+                f"{record.run_count:<6} {record.failure_count:<6} {desc}"
+            )
+
+    asyncio.run(_list())
+
+
+@skill.command(name="show")
+@click.argument("name")
+@click.pass_context
+def skill_show(ctx: click.Context, name: str) -> None:
+    """Show skill details."""
+    app: CliAppContext = ctx.obj["app"]
+
+    async def _show() -> None:
+        await app.bootstrap_db()
+        if app.skill_store is None:
+            click.echo("Skill store not available", err=True)
+            sys.exit(1)
+
+        record = await app.skill_store.get_by_name(name)
+        if record is None:
+            click.echo(f"Skill not found: {name}", err=True)
+            sys.exit(1)
+
+        click.echo(f"Name:        {record.name}")
+        click.echo(f"Description: {record.description}")
+        click.echo(f"State:       {record.state.value}")
+        click.echo(f"File path:   {record.file_path}")
+        click.echo(f"Created:     {record.created_at}")
+        click.echo(f"Last run:    {record.last_run_at or 'Never'}")
+        click.echo(f"Run count:   {record.run_count}")
+        click.echo(f"Failures:    {record.failure_count}")
+        click.echo(f"Tools:       {', '.join(record.required_tools) or 'none'}")
+        click.echo(f"Caps:        {', '.join(record.capabilities) or 'none'}")
+
+    asyncio.run(_show())
+
+
+@skill.command(name="promote")
+@click.argument("name")
+@click.pass_context
+def skill_promote(ctx: click.Context, name: str) -> None:
+    """Advance skill state (draft -> tested -> trusted)."""
+    app: CliAppContext = ctx.obj["app"]
+
+    async def _promote() -> None:
+        await app.bootstrap_db()
+        if app.skill_store is None:
+            click.echo("Skill store not available", err=True)
+            sys.exit(1)
+
+        record = await app.skill_store.get_by_name(name)
+        if record is None:
+            click.echo(f"Skill not found: {name}", err=True)
+            sys.exit(1)
+
+        # State transitions
+        transitions = {
+            SkillState.DRAFT: SkillState.TESTED,
+            SkillState.TESTED: SkillState.TRUSTED,
+            SkillState.TRUSTED: SkillState.TRUSTED,  # Already at max
+            SkillState.DEPRECATED: SkillState.TESTED,
+            SkillState.DISABLED: SkillState.DRAFT,
+        }
+
+        new_state = transitions.get(record.state)
+        if new_state == record.state:
+            click.echo(f"Skill '{name}' is already at state '{record.state.value}'")
+            return
+
+        await app.skill_store.update_state(name, new_state)
+        click.echo(f"Promoted '{name}': {record.state.value} -> {new_state.value}")
+
+    asyncio.run(_promote())
+
+
+@skill.command(name="demote")
+@click.argument("name")
+@click.pass_context
+def skill_demote(ctx: click.Context, name: str) -> None:
+    """Move skill back one state."""
+    app: CliAppContext = ctx.obj["app"]
+
+    async def _demote() -> None:
+        await app.bootstrap_db()
+        if app.skill_store is None:
+            click.echo("Skill store not available", err=True)
+            sys.exit(1)
+
+        record = await app.skill_store.get_by_name(name)
+        if record is None:
+            click.echo(f"Skill not found: {name}", err=True)
+            sys.exit(1)
+
+        # State transitions (reverse)
+        transitions = {
+            SkillState.DRAFT: SkillState.DISABLED,
+            SkillState.TESTED: SkillState.DRAFT,
+            SkillState.TRUSTED: SkillState.TESTED,
+            SkillState.DEPRECATED: SkillState.DEPRECATED,  # Keep deprecated
+            SkillState.DISABLED: SkillState.DISABLED,  # Already at min
+        }
+
+        new_state = transitions.get(record.state)
+        if new_state == record.state:
+            click.echo(f"Skill '{name}' is already at state '{record.state.value}'")
+            return
+
+        await app.skill_store.update_state(name, new_state)
+        click.echo(f"Demoted '{name}': {record.state.value} -> {new_state.value}")
+
+    asyncio.run(_demote())
+
+
+@skill.command(name="disable")
+@click.argument("name")
+@click.pass_context
+def skill_disable(ctx: click.Context, name: str) -> None:
+    """Disable a skill without removing it."""
+    app: CliAppContext = ctx.obj["app"]
+
+    async def _disable() -> None:
+        await app.bootstrap_db()
+        if app.skill_store is None:
+            click.echo("Skill store not available", err=True)
+            sys.exit(1)
+
+        record = await app.skill_store.get_by_name(name)
+        if record is None:
+            click.echo(f"Skill not found: {name}", err=True)
+            sys.exit(1)
+
+        if record.state == SkillState.DISABLED:
+            click.echo(f"Skill '{name}' is already disabled")
+            return
+
+        await app.skill_store.update_state(name, SkillState.DISABLED)
+        click.echo(f"Disabled skill: {name}")
+
+    asyncio.run(_disable())
+
+
+@skill.command(name="test")
+@click.argument("name")
+@click.pass_context
+def skill_test(ctx: click.Context, name: str) -> None:
+    """Run skill in sandbox mode (not yet implemented)."""
+    click.echo(f"Skill testing not yet implemented for: {name}")
+    click.echo("Note: Run the skill manually and observe results.")
 
 
 def main() -> None:

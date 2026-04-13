@@ -52,6 +52,7 @@ class ContextBuilder:
         meta_tool_overhead: int = 0,
         identity_prefix: str | None = None,
         memory_epoch_prefix: str | None = None,
+        skill_index_prefix: str | None = None,
     ):
         """Initialize with inference client and policy.
 
@@ -62,6 +63,7 @@ class ContextBuilder:
             meta_tool_overhead: Constant overhead when tools are present
             identity_prefix: Optional compiled identity view to prepend to system prompt
             memory_epoch_prefix: Optional compiled memory epoch to prepend to system prompt
+            skill_index_prefix: Optional skill index to prepend to system prompt
         """
         self._inference = inference_client
         self._policy = policy
@@ -69,6 +71,7 @@ class ContextBuilder:
         self._meta_tool_overhead = meta_tool_overhead
         self._identity_prefix = identity_prefix
         self._memory_epoch_prefix = memory_epoch_prefix
+        self._skill_index_prefix = skill_index_prefix
 
     def set_identity_prefix(self, identity_prefix: str | None) -> None:
         """Set the identity prefix to prepend to system prompts.
@@ -85,6 +88,14 @@ class ContextBuilder:
             memory_epoch_prefix: Compiled memory epoch, or None to clear
         """
         self._memory_epoch_prefix = memory_epoch_prefix
+
+    def set_skill_index_prefix(self, skill_index_prefix: str | None) -> None:
+        """Set the skill index prefix to prepend to system prompts.
+
+        Args:
+            skill_index_prefix: Skill index text, or None to clear
+        """
+        self._skill_index_prefix = skill_index_prefix
 
     @classmethod
     def from_calibration_file(
@@ -124,6 +135,7 @@ class ContextBuilder:
         new_user_message: Message | None = None,
         identity_prefix: str | None = None,
         memory_epoch_prefix: str | None = None,
+        skill_index_prefix: str | None = None,
     ) -> BuildResult:
         """Build the message list for a new turn.
 
@@ -143,6 +155,7 @@ class ContextBuilder:
                             continuation turns (e.g., during tool chains)
             identity_prefix: Optional compiled identity view to prepend to system prompt
             memory_epoch_prefix: Optional compiled memory epoch to prepend to system prompt
+            skill_index_prefix: Optional skill index to prepend to system prompt
 
         Returns:
             BuildResult with messages and bookkeeping
@@ -156,13 +169,18 @@ class ContextBuilder:
         # Assembly order per roadmap §10.1:
         # 1. Compiled identity view (from soul.md)
         # 2. Compiled memory epoch
-        # 3. Base system prompt
+        # 3. Skill index
+        # 4. Base system prompt
 
         effective_identity = identity_prefix if identity_prefix is not None else self._identity_prefix
         effective_memory_epoch = memory_epoch_prefix if memory_epoch_prefix is not None else self._memory_epoch_prefix
+        effective_skill_index = skill_index_prefix if skill_index_prefix is not None else self._skill_index_prefix
 
         effective_prompt = system_prompt
         memory_epoch_included = False
+
+        if effective_skill_index:
+            effective_prompt = effective_skill_index + "\n\n" + effective_prompt
 
         if effective_memory_epoch:
             effective_prompt = effective_memory_epoch + "\n\n" + effective_prompt
