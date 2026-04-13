@@ -17,3 +17,15 @@
 **Matrix product design** for loop 1: [`docs/design/matrix-integration.md`](../design/matrix-integration.md).
 
 After each loop: merge to `develop` when green, bump queue in `KIMI_CURRENT.md`, append [`kimi-loop-log.md`](kimi-loop-log.md).
+
+### Review carry-forward (required before the next Kimi run)
+
+When Cursor advances the queue, open the **upcoming** `kimi-loops/L*.md` (the file `KIMI_CURRENT` will point at next) and add or update:
+
+```markdown
+## Review carry-forward
+
+- …
+```
+
+List **every** issue from the prior loop’s review: bugs, missing tests, style smells, confusing names, debt worth fixing now. Kimi treats this section as part of the task for that loop. If nothing to carry: `- *(none)*`.

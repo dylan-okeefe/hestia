@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Run Kimi non-interactively against docs/prompts/KIMI_CURRENT.md (see Kimi CLI: --prompt, --yolo, Ralph loop).
 # Default UI: --quiet (final message only). Full stream: KIMI_VERBOSE=1 ./scripts/kimi-run-current.sh
+# File logging (no stdout spam): KIMI_DEBUG=1 — Kimi writes debug trace to ~/.kimi/logs/kimi.log (see Kimi CLI --debug).
+#   Second terminal: tail -f ~/.kimi/logs/kimi.log
 # Or pass --print / --quiet / --wire / --acp yourself (mutually exclusive in Kimi).
 # Usage: ./scripts/kimi-run-current.sh [extra kimi args...]
 set -euo pipefail
@@ -27,7 +29,13 @@ elif [[ "$has_ui_mode" == false ]]; then
   default_ui=(--quiet)
 fi
 
+debug_flags=()
+if [[ "${KIMI_DEBUG:-}" == 1 ]]; then
+  debug_flags=(--debug)
+fi
+
 exec kimi \
+  "${debug_flags[@]}" \
   --work-dir "$ROOT" \
   --yolo \
   --max-ralph-iterations -1 \

@@ -20,6 +20,18 @@ chmod +x scripts/kimi-run-current.sh   # once
 
 The script defaults to **`--quiet`** (final assistant message only; see Kimi docs). For full output: `KIMI_VERBOSE=1 ./scripts/kimi-run-current.sh` or pass **`--print`** explicitly. Other Kimi flags go after the script name.
 
+**Watch progress without quiet-mode stdout:** in a **second** terminal, tail Kimi’s debug log (Kimi CLI writes here when **`--debug`** is on):
+
+```bash
+# Terminal 1 — enables Kimi --debug (still uses --quiet unless you override)
+KIMI_DEBUG=1 ./scripts/kimi-run-current.sh >> .kimi-output.log 2>&1
+
+# Terminal 2 — live trace (path is per Kimi docs)
+tail -f ~/.kimi/logs/kimi.log
+```
+
+Optional: `tail -f .kimi-output.log` only captures the thin wrapper stream (mostly empty under `--quiet`).
+
 **Completion signal:** wait until **`./scripts/kimi-run-current.sh` exits**, then confirm **`.kimi-done`** exists and read it before review.
 
 ### B — Interactive Kimi (fallback)
@@ -37,7 +49,7 @@ Read docs/prompts/KIMI_CURRENT.md, then execute the full "Current task" section 
 1. **Wait for done:** Kimi CLI exits **and** `.kimi-done` exists with `HESTIA_KIMI_DONE=1` (or read `.kimi-output.log` if Kimi was redirected).
 2. **Review:** diff (`develop..HEAD` or merge base), handoff notes, `uv run pytest tests/unit/ tests/integration/ -q`.
 3. If issues → add a follow-up design section or a tight `KIMI_PHASE_*_FOLLOWUP*.md`; point `KIMI_CURRENT.md` at it.
-4. If green → merge per gitflow, update this file, set `KIMI_CURRENT.md` for the next queue row in [`docs/orchestration/kimi-phase-queue.md`](orchestration/kimi-phase-queue.md).
+4. If green → merge per gitflow, update this file, set `KIMI_CURRENT.md` for the next queue row in [`docs/orchestration/kimi-phase-queue.md`](orchestration/kimi-phase-queue.md). **Before** the next Kimi run, edit that **next** loop spec under [`docs/orchestration/kimi-loops/`](orchestration/kimi-loops/) and add or extend a **`## Review carry-forward`** section with every bug, code smell, or nit discovered in review (even small ones), so Kimi addresses them in the same pass as the main scope.
 5. Remove stale **`.kimi-done`** before the next Kimi launch (the helper script does this automatically).
 6. **Loop log:** After each review (and whenever you set the next prompt), append a **dated** section to [`docs/orchestration/kimi-loop-log.md`](orchestration/kimi-loop-log.md) with the full narrative. In the **Cursor chat**, reply with only a **brief** bullet summary of the same loop instance.
 

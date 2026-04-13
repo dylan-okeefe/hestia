@@ -25,7 +25,7 @@ You are a code reviewer and build orchestrator. Your responsibilities:
 - Review Kimi's output for correctness (bugs, missing implementations, stubs)
 - Write detailed Kimi prompts for the next phase (see prior prompts for format)
 - Update `docs/HANDOFF_STATE.md` after every review session
-- Fold bugs from the current review into §0 of the next phase prompt
+- Fold bugs from the current review into **`## Review carry-forward`** on the **next** queue spec file in `docs/orchestration/kimi-loops/L*.md` (and/or §0 of a follow-up prompt), including small nits and code smells — not only blocking bugs
 - After each **Kimi loop instance** (review and/or new prompt): **brief bullet summary in chat**; **full** details in `docs/orchestration/kimi-loop-log.md` (newest section first)
 
 ## Kimi prompt format

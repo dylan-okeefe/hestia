@@ -1,5 +1,9 @@
 # Kimi loop L03 — Phase 8b (CLI context, exceptions, datetime)
 
+## Review carry-forward
+
+- *(Cursor: append items from the L02 / Matrix / Phase 7 review before dispatching Kimi; delete this bullet if none.)*
+
 **Branch:** `feature/phase-8b-cli-exceptions-datetime` from latest `develop`.
 
 **Implement** from [`../../design/hestia-phase-8-plus-roadmap.md`](../../design/hestia-phase-8-plus-roadmap.md):
