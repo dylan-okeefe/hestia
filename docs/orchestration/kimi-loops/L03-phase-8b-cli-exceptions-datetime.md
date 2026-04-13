@@ -2,7 +2,20 @@
 
 ## Review carry-forward
 
-- *(Cursor: append items from the L02 / Matrix / Phase 7 review before dispatching Kimi; delete this bullet if none.)*
+**Already on branch (do not redo unless broken):**
+
+- **§8.3** — `CliAppContext`, `make_orchestrator()`, CLI refactor: see commits through `feat(cli): CliAppContext refactor and PlatformError base (L03 §8.3)`.
+- **`PlatformError`** — base class added in `errors.py` (start of §8.4).
+- **Scheduler** — `fix(scheduler): UTC-safe comparison when fire_at is timezone-aware` (`_dt_gt_utc`): naive vs aware `fire_at` for `schedule add --at` is fixed.
+
+**Still required for this loop (roadmap):**
+
+- **§8.4** — Complete the exception-narrowing table in `hestia-phase-8-plus-roadmap.md` (slot_manager, engine status paths, cli, scheduler, registry, current_time, telegram_adapter, etc.). `engine.py` main catch-all may stay `Exception` with ERROR-level logging per roadmap.
+- **§8.5** — Add `src/hestia/core/clock.py` with `utcnow()`, replace `datetime.now()` usage across `src/hestia/` per roadmap; scheduler DST note; CLI display converts UTC → local at boundaries; tests as specified.
+
+**Docs / product copy:**
+
+- **`README.md`** — The “Giving Hestia a personality” / `soul.md` example still shows loading the soul file into `system_prompt` via `Path(...).read_text()`. The product path is **compiled identity** (**L02**): `IdentityConfig` / `IdentityCompiler`, optional cache under `.hestia/`, bounded token cap — align that README section with how the code actually works (and keep the narrative tone).
 
 **Branch:** `feature/phase-8b-cli-exceptions-datetime` from latest `develop`.
 
