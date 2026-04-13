@@ -3,7 +3,7 @@
 > **Purpose:** Handoff contract between Claude (Cowork) and Cursor for reviewing Kimi's output and orchestrating the next phase.
 >
 > **Last updated:** 2026-04-12
-> **Last updated by:** Cursor (Phase 7 merged to `develop`; orchestration restored; L01 Matrix next)
+> **Last updated by:** Cursor (L01 Matrix merged to `develop`; L02 Phase 8a next)
 
 ---
 
@@ -47,7 +47,7 @@ Read docs/prompts/KIMI_CURRENT.md, then execute the full "Current task" section 
 
 - **Branch:** `develop` (local **ahead of** `origin/develop` until you `git push` — includes Phase 7 cleanup + orchestration docs)
 - **Phase 7:** **Merged** — commit **`265003b`** on `develop` ("fix: phase 7 cleanup — bugs, security, dead code").
-- **Active Kimi work:** **L01 Matrix adapter** — [`docs/orchestration/kimi-loops/L01-matrix-adapter.md`](orchestration/kimi-loops/L01-matrix-adapter.md) + product design [`docs/design/matrix-integration.md`](design/matrix-integration.md). Pointer: [`docs/prompts/KIMI_CURRENT.md`](prompts/KIMI_CURRENT.md).
+- **Active Kimi work:** **L02 Phase 8a** (identity + reasoning budget) — [`docs/orchestration/kimi-loops/L02-phase-8a-identity-reasoning.md`](orchestration/kimi-loops/L02-phase-8a-identity-reasoning.md). Pointer: [`docs/prompts/KIMI_CURRENT.md`](prompts/KIMI_CURRENT.md).
 
 **Phase 7 summary (merged):**
 
@@ -65,8 +65,9 @@ Read docs/prompts/KIMI_CURRENT.md, then execute the full "Current task" section 
 
 1. ~~Closeout + gitflow~~ — Done  
 2. ~~Phase 7 cleanup~~ — Done (`265003b` on `develop`)  
-3. **L01 Matrix adapter** — `L01-matrix-adapter.md` + `matrix-integration.md`  
-4. **L02–L08** — Phase 8a through Phase 13 per queue table  
+3. ~~**L01 Matrix adapter**~~ — Done (`c3c34b2` on `develop`)  
+4. **L02 Phase 8a** — identity + reasoning budget (`L02-phase-8a-identity-reasoning.md`)  
+5. **L03–L08** — remainder per queue table  
 
 **Earlier prompts (reference only):**
 
@@ -81,7 +82,8 @@ Read docs/prompts/KIMI_CURRENT.md, then execute the full "Current task" section 
 
 | Branch | Role |
 |--------|------|
-| `develop` | **Tip** — Phase 7 cleanup + orchestration commits (not yet pushed) |
+| `develop` | **Tip** — Phase 7 + L01 Matrix + orchestration (not yet pushed) |
+| `feature/matrix-adapter` | Merged into `develop` |
 | `feature/phase-7-cleanup` | Historical; merged into `develop` locally |
 | `feature/phase-6-hardening` | Optional remote history |
 
@@ -101,7 +103,7 @@ Read docs/prompts/KIMI_CURRENT.md, then execute the full "Current task" section 
 
 | Snapshot | Count |
 |----------|-------|
-| Last `pytest tests/unit/ tests/integration/ -q` on `develop` after Phase 7 merge (2026-04-12) | **309 passed** |
+| Last `pytest tests/unit/ tests/integration/ -q` on `develop` after L01 merge (2026-04-12) | **328 passed** |
 
 Run: `uv run pytest tests/unit/ tests/integration/ -q`
 
@@ -109,7 +111,7 @@ Run: `uv run pytest tests/unit/ tests/integration/ -q`
 
 ## Architecture Decisions (ADRs)
 
-20 ADRs (ADR-019, ADR-020 for Phase 6). **Matrix (L01)** adds **ADR-021** per `matrix-integration.md`.
+21 ADRs through **ADR-021** (Matrix, L01). **L02** adds **ADR-022** (identity) per roadmap §8.1.
 
 ---
 
@@ -117,7 +119,7 @@ Run: `uv run pytest tests/unit/ tests/integration/ -q`
 
 | Tool | Notes |
 |------|-------|
-| pytest | **309 passed** on reviewed tree after merge |
+| pytest | **328 passed** on reviewed tree after L01 merge |
 | ruff | Touched files clean in Phase 7; large pre-existing debt possible elsewhere |
 | mypy | Pre-existing errors in some modules |
 
@@ -126,7 +128,7 @@ Run: `uv run pytest tests/unit/ tests/integration/ -q`
 ## Design Debt (carried forward)
 
 1. Policy delegation batch UX (duplicate `tool_call_id` text).  
-2. **Matrix** — implementation in progress (L01).  
+2. ~~**Matrix**~~ — L01 landed; further Matrix work in Phase 9 e2e.  
 3. Telegram inline confirmation for destructive tools.  
 4. Artifact tools (`grep_artifact`, `list_artifacts`).  
 5. aiosqlite pytest thread warnings (housekeeping).  
@@ -136,8 +138,9 @@ Run: `uv run pytest tests/unit/ tests/integration/ -q`
 ## Remaining roadmap
 
 1. ~~Phase 7 cleanup~~  
-2. **L01 Matrix** → **L02–L08** per [`kimi-phase-queue.md`](orchestration/kimi-phase-queue.md)  
-3. Long-term: `docs/roadmap/future-systems-deferred-roadmap.md`  
+2. ~~**L01 Matrix**~~  
+3. **L02–L08** per [`kimi-phase-queue.md`](orchestration/kimi-phase-queue.md)  
+4. Long-term: `docs/roadmap/future-systems-deferred-roadmap.md`  
 
 ---
 
@@ -147,7 +150,7 @@ Run: `uv run pytest tests/unit/ tests/integration/ -q`
 
 1. Read at start of each Hestia session.  
 2. After Kimi delivers work: update verdict, test counts, git state, `KIMI_CURRENT.md`; remove or acknowledge `.kimi-done`.  
-3. Next Kimi cycle: follow **`KIMI_CURRENT.md`** (currently **L01 Matrix**).  
+3. Next Kimi cycle: follow **`KIMI_CURRENT.md`** (currently **L02 Phase 8a**).  
 
 ### Review checklist
 

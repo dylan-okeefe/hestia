@@ -8,6 +8,18 @@
 
 ---
 
+## 2026-04-12 — Loop: L01 Matrix adapter (Kimi)
+
+**Commands:** `git checkout -b feature/matrix-adapter` from `develop`, `./scripts/kimi-run-current.sh` (~21.6 min). `.kimi-done`: `GIT_HEAD=c3c34b2`, `PYTEST=328 passed`.
+
+**Outcome:** `MatrixAdapter` (`matrix_adapter.py`), `MatrixConfig`, `hestia matrix` CLI, `matrix-nio` dependency, **ADR-021**, **19** new tests in `test_matrix_adapter.py`. Handoff: `docs/handoffs/L01-matrix-adapter.md`. **328 passed** locally after merge to `develop`.
+
+**Git:** Merged `feature/matrix-adapter` → `develop` (fast-forward to `c3c34b2`).
+
+**Next:** L02 Phase 8a (`KIMI_CURRENT.md` → `L02-phase-8a-identity-reasoning.md`).
+
+---
+
 ## 2026-04-12 — Loop: Phase 7 cleanup (Kimi) + merge + orchestration recovery
 
 **Commands:** `./scripts/kimi-run-current.sh >> .kimi-output.log 2>&1` on `feature/phase-7-cleanup` (~20.5 min wall time). Kimi wrote `.kimi-done` with `GIT_HEAD=265003b`, `PYTEST=309 passed in 33.23s`.
