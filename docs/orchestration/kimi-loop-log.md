@@ -8,6 +8,16 @@
 
 ---
 
+## 2026-04-12 — Loop: L07 Phase 12 — manual skills (Kimi)
+
+**Kimi:** ~14.6 min. `.kimi-done`: `GIT_HEAD=12d7531`, **412 passed**.
+
+**Outcome:** `skills/` package, `skill_store`, migration `c3d4e5f6g7h8_*`, `hestia skill` CLI group, **ADR-024**, `test_skills.py`.
+
+**Git:** Merged `feature/phase-12-skills` → `develop`.
+
+---
+
 ## 2026-04-12 — Loop: L06 Phase 11 — traces + failure bundles (Kimi)
 
 **Kimi:** ~18.3 min. `.kimi-done`: `GIT_HEAD=20a5c40`, **386 passed**.

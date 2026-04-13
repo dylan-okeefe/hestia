@@ -2,7 +2,7 @@
 
 ## Review carry-forward
 
-- **Test baseline:** update after L07 merge (expect **>** 386 once skills land).
+- **Test baseline:** **`412 passed`** on `develop` after L07 merge — keep unit/integration green.
 - **`hestia audit` trace checks (§13.1):** `TraceStore` / `traces` table may be **empty** on fresh DB — implement checks that **no-op or report “no traces”** instead of erroring.
 - **`hestia policy show` (§13.2):** Must reflect **capability** and **reasoning_budget** wiring post–L02/L03 (policy engine + `CliAppContext`).
 
