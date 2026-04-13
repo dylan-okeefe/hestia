@@ -29,6 +29,7 @@ from hestia.tools.types import ToolCallResult
 
 if TYPE_CHECKING:
     from hestia.persistence.failure_store import FailureStore
+    from hestia.persistence.trace_store import TraceStore
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,7 @@ class Orchestrator:
         max_iterations: int = 10,
         slot_manager: SlotManager | None = None,
         failure_store: "FailureStore | None" = None,
+        trace_store: "TraceStore | None" = None,
     ):
         """Initialize the orchestrator.
 
@@ -70,6 +72,7 @@ class Orchestrator:
             slot_manager: Optional SlotManager for KV-cache slot management.
                 When None, falls back to session.slot_id (legacy behavior).
             failure_store: Optional store for recording failure bundles.
+            trace_store: Optional store for recording execution traces.
         """
         self._inference = inference
         self._store = session_store
@@ -80,6 +83,7 @@ class Orchestrator:
         self._max_iterations = max_iterations
         self._slot_manager = slot_manager
         self._failure_store = failure_store
+        self._trace_store = trace_store
 
     async def recover_stale_turns(self) -> int:
         """Mark any turns in non-terminal states as FAILED.
@@ -153,6 +157,13 @@ class Orchestrator:
                 except (PlatformError, OSError) as e:
                     logger.warning("Failed to send status message: %s", e)
 
+            # Track timing and token usage for trace
+            turn_start_time = datetime.now(timezone.utc)
+            total_prompt_tokens = 0
+            total_completion_tokens = 0
+            total_reasoning_tokens = 0
+            artifact_handles: list[str] = []
+
             try:
                 # Start processing
                 await self._transition(turn, TurnState.BUILDING_CONTEXT)
@@ -206,6 +217,10 @@ class Orchestrator:
                         reasoning_budget=turn.reasoning_budget,
                     )
 
+                    # Accumulate token usage for trace
+                    total_prompt_tokens += getattr(chat_response, "prompt_tokens", 0) or 0
+                    total_completion_tokens += getattr(chat_response, "completion_tokens", 0) or 0
+
                     # Append assistant message to history
                     assistant_msg = Message(
                         role="assistant",
@@ -237,6 +252,7 @@ class Orchestrator:
                                 len(chat_response.tool_calls),
                             )
                         )
+                        delegated = use_policy_delegation
 
                         if use_policy_delegation:
                             await self._transition(turn, TurnState.AWAITING_SUBAGENT)
@@ -281,6 +297,16 @@ class Orchestrator:
                         turn.final_response = content
                         await respond_callback(content)
 
+                        # Collect artifact handles from successful tool results
+                        for msg in await self._store.get_messages(session.id):
+                            if msg.role == "tool" and msg.content:
+                                # Look for artifact handle patterns in tool results
+                                if "artifact://" in msg.content:
+                                    import re
+
+                                    handles = re.findall(r"artifact://([a-zA-Z0-9_-]+)", msg.content)
+                                    artifact_handles.extend(handles)
+
                         # Save slot checkpoint after successful turn (don't fail turn if save fails)
                         if self._slot_manager is not None:
                             try:
@@ -320,6 +346,34 @@ class Orchestrator:
                         from hestia.persistence.failure_store import FailureBundle
 
                         failure_class, severity = classify_error(e)
+
+                        # Build enriched fields (handle case where error happens early)
+                        user_input_summary = (user_message.content or "")[:200]
+                        try:
+                            policy_snapshot = json.dumps({
+                                "allowed_tools": allowed_tools,
+                                "reasoning_budget": turn.reasoning_budget,
+                                "max_iterations": self._max_iterations,
+                            }, default=str)
+                        except NameError:
+                            policy_snapshot = json.dumps({"error": "policy not initialized"})
+                        try:
+                            # Handle session.temperature safely (may be enum or mock in tests)
+                            temp_value = None
+                            if hasattr(session, "temperature") and session.temperature is not None:
+                                if hasattr(session.temperature, "value"):
+                                    temp_value = session.temperature.value
+                                else:
+                                    temp_value = str(session.temperature)
+                            slot_snapshot = json.dumps({
+                                "slot_id": slot_id_to_use,
+                                "temperature": temp_value,
+                            }, default=str)
+                        except NameError:
+                            slot_snapshot = json.dumps({"error": "slot not initialized"})
+                        except (TypeError, AttributeError):
+                            slot_snapshot = json.dumps({"error": "slot snapshot serialization failed"})
+
                         bundle = FailureBundle(
                             id=str(uuid.uuid4()),
                             session_id=session.id,
@@ -329,14 +383,55 @@ class Orchestrator:
                             error_message=str(e),
                             tool_chain=json.dumps(tool_chain),
                             created_at=datetime.now(timezone.utc),
+                            request_summary=user_input_summary,
+                            policy_snapshot=policy_snapshot,
+                            slot_snapshot=slot_snapshot,
+                            trace_id=None,  # Will be set after trace is recorded
                         )
                         await self._failure_store.record(bundle)
                     except Exception as record_err:  # noqa: BLE001
                         logger.error("Failed to record failure bundle: %s", record_err)
 
             finally:
-                turn.completed_at = datetime.now(timezone.utc)
+                # Calculate timing
+                turn_end_time = datetime.now(timezone.utc)
+                total_duration_ms = int(
+                    (turn_end_time - turn_start_time).total_seconds() * 1000
+                )
+
+                turn.completed_at = turn_end_time
                 await self._store.update_turn(turn)
+
+                # Record trace (narrow try/except - never mask original exception)
+                if self._trace_store is not None:
+                    try:
+                        from hestia.persistence.trace_store import TraceRecord
+
+                        user_input_summary = (user_message.content or "")[:200]
+                        outcome = "success" if turn.state == TurnState.DONE else "failed"
+                        if turn.state not in (TurnState.DONE, TurnState.FAILED):
+                            outcome = "partial"
+
+                        trace = TraceRecord(
+                            id=str(uuid.uuid4()),
+                            session_id=session.id,
+                            turn_id=turn.id,
+                            started_at=turn_start_time,
+                            ended_at=turn_end_time,
+                            user_input_summary=user_input_summary,
+                            tools_called=tool_chain,
+                            tool_call_count=len(tool_chain),
+                            delegated=locals().get("delegated", False),
+                            outcome=outcome,
+                            artifact_handles=artifact_handles,
+                            prompt_tokens=total_prompt_tokens if total_prompt_tokens > 0 else None,
+                            completion_tokens=total_completion_tokens if total_completion_tokens > 0 else None,
+                            reasoning_tokens=total_reasoning_tokens if total_reasoning_tokens > 0 else None,
+                            total_duration_ms=total_duration_ms,
+                        )
+                        await self._trace_store.record(trace)
+                    except Exception as trace_err:  # noqa: BLE001
+                        logger.error("Failed to record trace: %s", trace_err)
 
             return turn
 

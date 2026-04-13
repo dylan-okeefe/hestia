@@ -26,6 +26,7 @@ from hestia.persistence.db import Database
 from hestia.persistence.failure_store import FailureStore
 from hestia.persistence.scheduler import SchedulerStore
 from hestia.persistence.sessions import SessionStore
+from hestia.persistence.trace_store import TraceStore
 from hestia.policy.default import DefaultPolicyEngine
 from hestia.scheduler import Scheduler
 from hestia.tools.builtin import (
@@ -60,6 +61,24 @@ class CliResponseHandler:
         click.echo(f"\nAssistant: {response}\n")
 
 
+async def _bootstrap_db(
+    db: Database,
+    memory_store: MemoryStore,
+    failure_store: FailureStore,
+    trace_store: TraceStore | None = None,
+) -> None:
+    """Connect to database and create tables for daemon/bot commands.
+
+    This standalone helper is used by commands that don't use CliAppContext.
+    """
+    await db.connect()
+    await db.create_tables()
+    await memory_store.create_table()
+    await failure_store.create_table()
+    if trace_store is not None:
+        await trace_store.create_table()
+
+
 @dataclass
 class CliAppContext:
     """Typed application context shared across CLI commands."""
@@ -74,6 +93,7 @@ class CliAppContext:
     slot_manager: SlotManager
     memory_store: MemoryStore
     failure_store: FailureStore
+    trace_store: TraceStore
     scheduler_store: SchedulerStore | None = None
     verbose: bool = False
     confirm_callback: Any = None
@@ -85,6 +105,7 @@ class CliAppContext:
         await self.db.create_tables()
         await self.memory_store.create_table()
         await self.failure_store.create_table()
+        await self.trace_store.create_table()
 
     def make_orchestrator(self) -> Orchestrator:
         """Create an Orchestrator with the current app context."""
@@ -98,6 +119,7 @@ class CliAppContext:
             max_iterations=self.config.max_iterations,
             slot_manager=self.slot_manager,
             failure_store=self.failure_store,
+            trace_store=self.trace_store,
         )
 
 
@@ -307,6 +329,11 @@ def cli(
         pool_size=cfg.slots.pool_size,
     )
 
+    # Create typed context stores first (needed by orchestrator_factory)
+    failure_store = FailureStore(db)
+    scheduler_store = SchedulerStore(db)
+    trace_store = TraceStore(db)
+
     def orchestrator_factory() -> Orchestrator:
         """Fresh orchestrator for subagent turns (shares registry and stores)."""
         return Orchestrator(
@@ -318,14 +345,11 @@ def cli(
             confirm_callback=ctx.obj.get("confirm_callback"),
             max_iterations=cfg.max_iterations,
             slot_manager=slot_manager,
-            failure_store=ctx.obj["failure_store"],
+            failure_store=failure_store,
+            trace_store=trace_store,
         )
 
     tool_registry.register(make_delegate_task_tool(session_store, orchestrator_factory))
-
-    # Create typed context
-    failure_store = FailureStore(db)
-    scheduler_store = SchedulerStore(db)
 
     # Initialize memory epoch compiler
     epoch_compiler = MemoryEpochCompiler(memory_store, max_tokens=500)
@@ -341,11 +365,25 @@ def cli(
         slot_manager=slot_manager,
         memory_store=memory_store,
         failure_store=failure_store,
+        trace_store=trace_store,
         scheduler_store=scheduler_store,
         verbose=cfg.verbose,
         confirm_callback=None,
         epoch_compiler=epoch_compiler,
     )
+
+    # Also expose raw objects for daemon/bot commands that access ctx.obj directly
+    ctx.obj["config"] = cfg
+    ctx.obj["db"] = db
+    ctx.obj["inference"] = inference
+    ctx.obj["session_store"] = session_store
+    ctx.obj["context_builder"] = context_builder
+    ctx.obj["tool_registry"] = tool_registry
+    ctx.obj["policy"] = policy
+    ctx.obj["slot_manager"] = slot_manager
+    ctx.obj["memory_store"] = memory_store
+    ctx.obj["failure_store"] = failure_store
+    ctx.obj["trace_store"] = trace_store
 
 
 
@@ -924,6 +962,7 @@ def schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None:
     slot_manager: SlotManager = ctx.obj["slot_manager"]
     memory_store: MemoryStore = ctx.obj["memory_store"]
     failure_store: FailureStore = ctx.obj["failure_store"]
+    trace_store: TraceStore = ctx.obj["trace_store"]
 
     # Use config tick interval if not specified via CLI
     tick = tick_interval if tick_interval is not None else cfg.scheduler.tick_interval_seconds
@@ -932,7 +971,7 @@ def schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None:
         click.echo(f"[scheduler:{task.id}] {text}")
 
     async def _daemon() -> None:
-        await _bootstrap_db(db, memory_store, failure_store)
+        await _bootstrap_db(db, memory_store, failure_store, trace_store)
 
         scheduler_store = SchedulerStore(db)
 
@@ -947,6 +986,7 @@ def schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None:
             max_iterations=cfg.max_iterations,
             slot_manager=slot_manager,
             failure_store=failure_store,
+            trace_store=trace_store,
         )
 
         scheduler = Scheduler(
@@ -1028,7 +1068,7 @@ def run_telegram(ctx: click.Context) -> None:
         return callback
 
     async def _run() -> None:
-        await _bootstrap_db(db, memory_store, failure_store)
+        await _bootstrap_db(db, memory_store, failure_store, trace_store)
 
         adapter = TelegramAdapter(cfg.telegram)
 
@@ -1041,6 +1081,7 @@ def run_telegram(ctx: click.Context) -> None:
             max_iterations=cfg.max_iterations,
             slot_manager=slot_manager,
             failure_store=failure_store,
+            trace_store=trace_store,
             # No confirm_callback for Telegram — tools requiring confirmation
             # (e.g., write_file) will refuse to run and tell the model why.
             # TODO: Implement confirmation via Telegram inline keyboard buttons.
@@ -1151,7 +1192,7 @@ def run_matrix(ctx: click.Context) -> None:
         return callback
 
     async def _run() -> None:
-        await _bootstrap_db(db, memory_store, failure_store)
+        await _bootstrap_db(db, memory_store, failure_store, trace_store)
 
         adapter = MatrixAdapter(cfg.matrix)
 
@@ -1164,6 +1205,7 @@ def run_matrix(ctx: click.Context) -> None:
             max_iterations=cfg.max_iterations,
             slot_manager=slot_manager,
             failure_store=failure_store,
+            trace_store=trace_store,
             # No confirm_callback for Matrix — tools requiring confirmation
             # (e.g., write_file) will refuse to run and tell the model why.
             # TODO: Implement confirmation via Matrix reply pattern.

@@ -90,6 +90,35 @@ failure_bundles = sa.Table(
     sa.Column("error_message", sa.Text, nullable=False),
     sa.Column("tool_chain", sa.Text, nullable=False),  # JSON
     sa.Column("created_at", sa.DateTime, nullable=False),
+    # Enriched fields (Phase 11.2)
+    sa.Column("request_summary", sa.Text, nullable=True),  # first 200 chars of user message
+    sa.Column("policy_snapshot", sa.Text, nullable=True),  # JSON: allowed tools, reasoning budget
+    sa.Column("slot_snapshot", sa.Text, nullable=True),  # JSON: slot_id, temperature
+    sa.Column("trace_id", sa.String, nullable=True),  # link to trace record
     sa.Index("idx_failure_bundles_class", "failure_class"),
     sa.Index("idx_failure_bundles_created", "created_at"),
+)
+
+traces = sa.Table(
+    "traces",
+    metadata,
+    sa.Column("id", sa.String, primary_key=True),
+    sa.Column("session_id", sa.String, sa.ForeignKey("sessions.id"), nullable=False),
+    sa.Column("turn_id", sa.String, sa.ForeignKey("turns.id"), nullable=False),
+    sa.Column("started_at", sa.DateTime, nullable=False),
+    sa.Column("ended_at", sa.DateTime, nullable=True),
+    sa.Column("user_input_summary", sa.Text, nullable=False),
+    sa.Column("tools_called", sa.Text, nullable=False),  # JSON list
+    sa.Column("tool_call_count", sa.Integer, nullable=False, default=0),
+    sa.Column("delegated", sa.Boolean, nullable=False, default=False),
+    sa.Column("outcome", sa.String, nullable=False),  # success, partial, failed
+    sa.Column("artifact_handles", sa.Text, nullable=False),  # JSON list
+    sa.Column("prompt_tokens", sa.Integer, nullable=True),
+    sa.Column("completion_tokens", sa.Integer, nullable=True),
+    sa.Column("reasoning_tokens", sa.Integer, nullable=True),
+    sa.Column("total_duration_ms", sa.Integer, nullable=True),
+    sa.Index("idx_traces_session", "session_id", "started_at"),
+    sa.Index("idx_traces_turn", "turn_id"),
+    sa.Index("idx_traces_outcome", "outcome"),
+    sa.Index("idx_traces_created", "started_at"),
 )

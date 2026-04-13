@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -28,6 +29,11 @@ class FailureBundle:
     error_message: str
     tool_chain: str  # JSON list of tool names called during the turn
     created_at: datetime
+    # Enriched fields (Phase 11.2)
+    request_summary: str | None = None  # first 200 chars of user message
+    policy_snapshot: str | None = None  # JSON: allowed tools, reasoning budget, etc.
+    slot_snapshot: str | None = None  # JSON: slot_id, session temperature
+    trace_id: str | None = None  # link to trace record
 
 
 class FailureStore:
@@ -50,7 +56,11 @@ class FailureStore:
             severity TEXT NOT NULL,
             error_message TEXT NOT NULL,
             tool_chain TEXT NOT NULL,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            request_summary TEXT,
+            policy_snapshot TEXT,
+            slot_snapshot TEXT,
+            trace_id TEXT
         )
         """
         idx_class = (
@@ -70,9 +80,11 @@ class FailureStore:
         """Record a failure bundle."""
         sql = sa.text(
             "INSERT INTO failure_bundles (id, session_id, turn_id, failure_class, "
-            "severity, error_message, tool_chain, created_at) "
+            "severity, error_message, tool_chain, created_at, request_summary, "
+            "policy_snapshot, slot_snapshot, trace_id) "
             "VALUES (:id, :session_id, :turn_id, :failure_class, :severity, "
-            ":error_message, :tool_chain, :created_at)"
+            ":error_message, :tool_chain, :created_at, :request_summary, "
+            ":policy_snapshot, :slot_snapshot, :trace_id)"
         )
         async with self._db.engine.connect() as conn:
             await conn.execute(
@@ -86,6 +98,10 @@ class FailureStore:
                     "error_message": bundle.error_message,
                     "tool_chain": bundle.tool_chain,
                     "created_at": bundle.created_at.isoformat(),
+                    "request_summary": bundle.request_summary,
+                    "policy_snapshot": bundle.policy_snapshot,
+                    "slot_snapshot": bundle.slot_snapshot,
+                    "trace_id": bundle.trace_id,
                 },
             )
             await conn.commit()
@@ -97,7 +113,8 @@ class FailureStore:
         if failure_class:
             sql = sa.text(
                 "SELECT id, session_id, turn_id, failure_class, severity, "
-                "error_message, tool_chain, created_at "
+                "error_message, tool_chain, created_at, request_summary, "
+                "policy_snapshot, slot_snapshot, trace_id "
                 "FROM failure_bundles WHERE failure_class = :fc "
                 "ORDER BY created_at DESC LIMIT :limit"
             )
@@ -105,7 +122,8 @@ class FailureStore:
         else:
             sql = sa.text(
                 "SELECT id, session_id, turn_id, failure_class, severity, "
-                "error_message, tool_chain, created_at "
+                "error_message, tool_chain, created_at, request_summary, "
+                "policy_snapshot, slot_snapshot, trace_id "
                 "FROM failure_bundles "
                 "ORDER BY created_at DESC LIMIT :limit"
             )
@@ -149,4 +167,8 @@ class FailureStore:
             error_message=row.error_message,
             tool_chain=row.tool_chain,
             created_at=created_at,
+            request_summary=row.request_summary if hasattr(row, "request_summary") else None,
+            policy_snapshot=row.policy_snapshot if hasattr(row, "policy_snapshot") else None,
+            slot_snapshot=row.slot_snapshot if hasattr(row, "slot_snapshot") else None,
+            trace_id=row.trace_id if hasattr(row, "trace_id") else None,
         )
