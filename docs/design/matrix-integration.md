@@ -161,6 +161,14 @@ If the driver reused the bot token, you would only see the bot talking to itself
 - **`matrix-nio`** script (e.g. `scripts/matrix_smoke_send.py`) that logs in **as the tester user**, sends text to `MATRIX_TEST_ROOM_ID`, waits for a **reply event from the bot’s MXID** in the room timeline (timeout).
 - **`matrix-commander`**: uses **its own** stored credentials (`~/.local/share/matrix-commander/credentials.json` or equivalent) for the **tester** account — **not** the same file/vars as Hestia’s bot token. Tests may shell out: start `hestia matrix` with bot config, then invoke `matrix-commander` as the other user to send/assert.
 
+### 5.4 Full functional coverage and teardown (contract)
+
+Automation should aim to exercise **every built-in tool** the Matrix platform allows (see README tool table), including the **`list_tools` / `call_tool`** meta path. For tools that **cannot succeed** on Matrix today (`write_file`, `terminal` — no confirmation UI), tests assert **denial or tool error**, not success.
+
+**Memory:** `save_memory`, `search_memory`, and `list_memories` cover **untagged**, **tagged**, **multi-tag**, **list with tag filter**, and **FTS5 query shapes** (plain, AND/OR, quoted phrase where supported). There is **no** model-facing delete tool — tests **must** remove inserted rows in **`finally`** / fixture teardown via **`MemoryStore.delete`**, `hestia memory remove`, or a disposable test SQLite file. Use a unique tag or content prefix (e.g. `e2e_hestia_*`) so teardown is reliable.
+
+**Executor spec:** Implementation checklist and split between mock-inference vs `matrix_e2e` tiers live in **`docs/orchestration/kimi-loops/L10-matrix-realworld-runtime-testing.md`** Part C.
+
 ---
 
 ## 6. Realistic example test scenarios

@@ -62,23 +62,56 @@ Matrix bot is usable enough for a first chat, but two issues showed up immediate
 
 ---
 
-## Part C — “Real life” tests
+## Part C — “Real life” tests (full surface coverage + cleanup)
 
-**C1. Automated (preferred)**
+**Principles**
 
-- Add **`tests/integration/test_matrix_smoke.py`** (or extend existing Matrix tests) that:
-  - **Skips** unless env provides **both** identities: **bot** credentials for starting Hestia (or for in-process adapter tests) **and** **tester** credentials for the driver client (`matrix-nio` / `matrix-commander` is always the **second user** — never the bot token).
-  - **Room:** dedicated **`MATRIX_TEST_ROOM_ID`** (or equivalent); bot `allowed_rooms` must include it; tester must be a normal member who can post.
-  - Performs a **minimal** flow: driver sends as **tester MXID** → assert reply event **from bot MXID** (timeline poll or sync), optionally without real llama (**mock inference** **or** `@pytest.mark.matrix_e2e`).
-- Add a **mock-inference** test that forces a **`current_time`** tool call and asserts the tool result is merged into history (proves Matrix path is not stripping tools).
+- **Two Matrix identities:** bot (Hestia) vs tester driver — unchanged from §5.0 in **`matrix-integration.md`**.
+- **Every built-in tool** the Matrix session can reach must have **at least one** automated test (or an explicitly documented skip with rationale). Include the **meta-tool path**: `list_tools` + `call_tool` (not only “model happens to call X”).
+- **Matrix + no confirmation:** `write_file` and `terminal` are **denied** today. Tests must **assert the documented denial path** (tool error text, no file written / no shell), not require success. If a future Matrix confirm UX lands, add success-path tests behind a feature flag.
+- **Memory:** There is **no** `delete_memory` **model tool** — only `save_memory`, `search_memory`, `list_memories`. **Teardown** must delete rows created during tests via **`MemoryStore.delete`**, **`hestia memory remove`**, or SQL against the **test** SQLite file — never leave test cruft in a shared DB. Use a unique **`e2e_hestia_*`** content prefix or dedicated tags so teardown can find rows even if IDs are awkward to parse from Matrix replies.
+
+**C1. Tool coverage matrix (automated)**
+
+For each row, add an integration or E2E test (or split fast vs `@pytest.mark.matrix_e2e`). Prefer **deterministic mock-inference** tests where the harness forces specific `tool_calls`, plus **one** full-stack Matrix room test per category where value is highest.
+
+| Area | Must cover |
+|------|------------|
+| **Meta** | `list_tools` returns expected names; `call_tool` dispatches to at least one read-only tool. |
+| **Time / FS** | `current_time`; `read_file` + `list_dir` under `allowed_roots` (fixture file tree in a temp dir included in test config). |
+| **Denied on Matrix** | `write_file`, `terminal` — expect refusal / tool error, verify side effects absent. |
+| **Network** | `http_get` to a **public** URL only (respect SSRF rules); no LAN targets. |
+| **Artifacts** | Scenario where tool output exceeds inline cap so an **artifact** is created; then **`read_artifact`** retrieves it (may be two-turn or one-turn depending on harness). |
+| **Memory** | See **C1b** below. |
+| **Delegation** | One `delegate_task` scenario (mock or small real subagent) with assertion on parent receiving bounded summary. |
+
+**C1b. Memory “types” and queries (all paths worth testing)**
+
+`MemoryStore` supports **tags** (space-separated on save), **FTS5 search**, and **list by optional tag**. Cover at least:
+
+- **`save_memory`**: untagged; single-tag; multiple tags.
+- **`list_memories`**: no filter; filtered by one tag used above.
+- **`search_memory`**: plain word; query using **AND** / **OR** (or documented FTS5 subset); **quoted phrase** if supported.
+- **Session association:** memories saved during a Matrix turn carry `session_id` when tool runs inside orchestrator — assert with DB or API if exposed to tests.
+
+**Cleanup (required for every test module / session that writes memory)**
+
+- Register **`pytest` fixtures** (or `try`/`finally` in E2E driver) that **collect memory IDs** from tool results / DB queries filtered by the test prefix tag, and call **`MemoryStore.delete`** (async, in-process) or run **`uv run hestia memory remove <id> --config <test-config>`** in teardown.
+- If tests use a **file** DB under `runtime-data/`, scope to a disposable path per test run so worst-case wipe is `rm` of the test DB file.
+- Document the contract in **`docs/testing/matrix-manual-smoke.md`**: operator runs **`hestia memory list`** / **`remove`** after manual runs if automation did not run.
+
+**C1c. Splitting tiers**
+
+- **Fast:** mock inference + in-process orchestrator + same `MemoryStore` / registry as production wiring (no Matrix network).
+- **`@pytest.mark.matrix_e2e`:** real homeserver + tester driver + optional real llama; keep count small; still run teardown.
 
 **C2. Manual checklist (document)**
 
-- Add **`docs/testing/matrix-manual-smoke.md`** (keep under 60 lines): Two accounts (bot + tester), room invite list, bot **`allowed_rooms`**, **`hestia matrix`** with bot config, **`matrix-commander`** (or other CLI) **logged in as tester** to send the three test phrases; clarify credentials are **two separate** token/MXID pairs.
+- Expand **`docs/testing/matrix-manual-smoke.md`** (allow up to **~120 lines** if needed for the full checklist): two accounts, room, env vars, **per-tool** manual ping line the operator can paste, **memory cleanup** commands, link to **C1** matrix for automation.
 
 **C3. README pointer**
 
-- One paragraph in root **`README.md`** under Platforms → Matrix linking to the manual doc and env vars.
+- One paragraph in root **`README.md`** under Platforms → Matrix: link to manual doc + state that **full tool + memory coverage** lives in integration tests and **`matrix-integration.md`**.
 
 ---
 

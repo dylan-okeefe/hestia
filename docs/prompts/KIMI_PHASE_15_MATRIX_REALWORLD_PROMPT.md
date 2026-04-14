@@ -8,6 +8,8 @@
 
 **Matrix E2E model:** Hestia runs as the **bot user** (`hestia matrix`). Programmatic tests use a **second Matrix user** (e.g. `matrix-commander` or `matrix-nio`) with **its own** access token to send messages and read replies. See **`docs/design/matrix-integration.md` §5.0** — never use one token for both roles.
 
+**Coverage bar (Part C):** Implement tests so **every built-in tool** (and meta-tools) is exercised per the **Part C** tables in **`docs/orchestration/kimi-loops/L10-matrix-realworld-runtime-testing.md`**, including **all memory save/list/search variants** and **mandatory teardown** of test memories (no `delete_memory` tool — use store/CLI/disposable DB). Assert **denial** for `write_file` / `terminal` on Matrix, not success.
+
 **Operator context (symptoms to fix):**
 
 - Matrix users sometimes see a normal assistant reply, then **`Turn failed: Cannot transition from done to failed`**. That is an orchestrator state-machine bug when an error happens **after** the turn is already marked **`DONE`** (typically **`respond_callback`** / platform send).
