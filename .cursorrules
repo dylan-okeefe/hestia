@@ -61,7 +61,7 @@ Dylan should **not** have to message you between loops. **You** wait for Kimi’
 - **Success:** `.kimi-done` exists in the repo root and contains **`HESTIA_KIMI_DONE=1`** (plus optional `LOOP=`, `BRANCH=`, `COMMIT=`, `TESTS=` lines).
 - **How to wait:** After launching Kimi (foreground **or** background), **poll** until that condition holds — e.g. every 30–120 seconds: `test -f .kimi-done` and `grep -q '^HESTIA_KIMI_DONE=1$' .kimi-done`, or read the file with your file tool. Typical runs are minutes to hours; use long sleeps between polls so you are not spamming tools. If the launcher exits before `.kimi-done` is valid, treat that as failure and investigate (log path in `HANDOFF_STATE.md`) before merging.
 - **Do not** advance merge/review steps on “it probably finished” or on a user message alone — only on a valid `.kimi-done` (or documented abort/blocker: auth, script error, empty spec).
-- **Cursor `Await`:** If Kimi runs in a **terminal** and streams to a log file, you may `Await` on log patterns *in addition* to confirming `.kimi-done`; the file is still the source of truth for “Kimi accepted the loop.”
+- **Do not use Cursor `Await` on the shell/terminal task as completion.** That only tracks the wrapper process and timing — it is **not** equivalent to `.kimi-done`. You may `Await` log patterns for *human-readable progress*, but **loop advancement requires** repeated checks until `.kimi-done` contains `HESTIA_KIMI_DONE=1` (and ideally `LOOP=` matches the active queue row).
 
 ## Kimi prompt format
 

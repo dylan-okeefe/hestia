@@ -2,7 +2,9 @@
 
 ## Review carry-forward
 
-- *(Cursor: fill from L11 review.)*
+- **Orchestrator semantics (non-blocking):** After `DONE`, the outer `except` in `process_turn` can still fall through to `failure_store.record` for delivery errors — noisy; consider gating in a follow-up if it becomes an issue (see L11 handoff).
+- **Runtime parity (optional):** `~/Hestia-runtime/config.runtime.py` still uses ad-hoc env for Telegram only; optional: load `.matrix.secrets.py` or `MatrixConfig.from_env()` for Matrix parity (not blocking tests).
+- **Housekeeping:** aiosqlite thread warnings in pytest — pre-existing; no action required for L12 unless easy wins appear.
 
 **Branch:** `feature/l12-matrix-e2e-two-user` from **`develop`** (includes **L11**).
 
