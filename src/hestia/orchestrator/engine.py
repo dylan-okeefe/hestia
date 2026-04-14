@@ -105,19 +105,15 @@ class Orchestrator:
                 count += 1
         return count
 
-    async def _update_status(
-        self,
-        platform: Platform | None,
-        platform_user: str | None,
-        status_msg_id: str | None,
-        text: str,
+    async def _set_typing(
+        self, platform: Platform | None, platform_user: str | None, typing: bool
     ) -> None:
-        """Update the status message if a platform is available."""
-        if platform is not None and status_msg_id is not None and platform_user is not None:
+        """Set typing indicator on the platform (best-effort)."""
+        if platform is not None and platform_user is not None:
             try:
-                await platform.edit_message(platform_user, status_msg_id, text)
+                await platform.set_typing(platform_user, typing)
             except (PlatformError, OSError) as e:
-                logger.warning("Failed to update status: %s", e)
+                logger.debug("Failed to set typing: %s", e)
 
     async def process_turn(
         self,
@@ -149,13 +145,7 @@ class Orchestrator:
             await self._persist_turn(turn)
             tool_chain: list[str] = []  # Initialize before inner try block
 
-            # Send initial status message if platform is available
-            status_msg_id: str | None = None
-            if platform is not None and platform_user is not None:
-                try:
-                    status_msg_id = await platform.send_message(platform_user, "Thinking...")
-                except (PlatformError, OSError) as e:
-                    logger.warning("Failed to send status message: %s", e)
+            await self._set_typing(platform, platform_user, True)
 
             # Track timing and token usage for trace
             turn_start_time = utcnow()
@@ -205,7 +195,7 @@ class Orchestrator:
                 # Main loop: model -> tools -> model -> ...
                 while turn.iterations < self._max_iterations:
                     await self._transition(turn, TurnState.AWAITING_MODEL)
-                    await self._update_status(platform, platform_user, status_msg_id, "Thinking...")
+                    await self._set_typing(platform, platform_user, True)
 
                     # Get reasoning budget from policy and update turn
                     turn.reasoning_budget = self._policy.reasoning_budget(session, turn.iterations)
@@ -234,13 +224,10 @@ class Orchestrator:
                     if chat_response.finish_reason == "tool_calls":
                         await self._transition(turn, TurnState.EXECUTING_TOOLS)
 
-                        # Update status with tool names
                         tool_names = [tc.name for tc in chat_response.tool_calls]
                         tool_chain.extend(tool_names)
-                        status_text = f"Running {', '.join(tool_names)}..."
-                        await self._update_status(
-                            platform, platform_user, status_msg_id, status_text
-                        )
+                        logger.debug("Executing tools: %s", ", ".join(tool_names))
+                        await self._set_typing(platform, platform_user, True)
 
                         task_desc = (user_message.content or "").strip()
                         use_policy_delegation = (
@@ -293,6 +280,9 @@ class Orchestrator:
                                 f"Model returned finish_reason={chat_response.finish_reason!r} "
                                 f"with empty content and no tool calls"
                             )
+
+                        await self._set_typing(platform, platform_user, False)
+
                         await self._transition(turn, TurnState.DONE)
                         turn.final_response = content
                         await respond_callback(content)
@@ -340,6 +330,8 @@ class Orchestrator:
             except IllegalTransitionError:
                 raise  # Re-raise state machine errors
             except Exception as e:  # Outermost boundary — intentionally broad
+                await self._set_typing(platform, platform_user, False)
+
                 if turn.state in (TurnState.DONE, TurnState.FAILED):
                     # A1 minimal fix: delivery or post-DONE errors must not
                     # attempt an illegal transition from a terminal state.

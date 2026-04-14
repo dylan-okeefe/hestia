@@ -61,10 +61,12 @@ class MatrixAdapter(Platform):
         )
         self._client.access_token = self._config.access_token
 
-        # Register event callbacks
+        # Initial sync to advance next_batch past existing timeline events,
+        # so the message callback only fires for messages sent after start().
+        await self._client.sync(timeout=5000)
+
         self._client.add_event_callback(self._handle_room_message, RoomMessageText)
 
-        # Start sync loop in background
         self._sync_task = asyncio.create_task(self._sync_loop())
         logger.info("Matrix adapter started, user=%s", self._config.user_id)
 
@@ -155,6 +157,24 @@ class MatrixAdapter(Platform):
         """Send an error message to a Matrix room."""
         error_text = f"⚠️ Error: {text}"
         await self.send_message(user, error_text)
+
+    async def set_typing(self, user: str, typing: bool = True) -> None:
+        """Set typing indicator in a Matrix room."""
+        if self._client is None:
+            return
+        try:
+            await self._client.room_typing(user, typing, timeout=30000 if typing else 0)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("Failed to set typing indicator: %s", e)
+
+    async def delete_message(self, user: str, msg_id: str) -> None:
+        """Redact (delete) a message from a Matrix room."""
+        if self._client is None:
+            return
+        try:
+            await self._client.room_redact(user, msg_id)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("Failed to redact message %s: %s", msg_id, e)
 
     def _is_allowed(self, room_id: str) -> bool:
         """Check if a room is in the allowed list."""
