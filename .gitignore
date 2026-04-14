@@ -36,6 +36,9 @@ build/
 .env
 .env.*
 
+# Matrix — copy from .matrix.secrets.example.py; see docs/testing/CREDENTIALS_AND_SECRETS.md
+.matrix.secrets.py
+
 # Alembic
 migrations/__pycache__/
 migrations/versions/__pycache__/

@@ -62,7 +62,7 @@ New `MatrixConfig` dataclass (mirror style of `TelegramConfig` in `config.py`):
 | `status_edit_min_interval_seconds` | Same idea as Telegram rate limit for `edit_message` |
 | `sync_timeout_ms` | Long-poll tuning |
 
-**Login story:** Document how to obtain a token (Element dev tools, `matrix-nio` login once, or dedicated service user). Avoid storing passwords in config files committed to git.
+**Login story:** Obtain a token (Element dev tools, `matrix-nio` login once, or dedicated service user). Use **`.matrix.secrets.example.py`** → copy to **`.matrix.secrets.py`** (gitignored) — see **`docs/testing/CREDENTIALS_AND_SECRETS.md`**. Optional **`LOGIN_PASSWORD`** in that file supports Hermes-style manual re-login when the access token rotates; never commit the real file.
 
 ### 2.4 Session and room model
 

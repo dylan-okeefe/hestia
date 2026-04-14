@@ -1,6 +1,24 @@
 # Credentials and where to put them (Hestia testing)
 
-**Do not commit secrets.** Use environment variables, a **gitignored** `config.local.py`, or systemd `Environment=` / `EnvironmentFile=`.
+**Do not commit secrets.** Prefer the repo-root **Matrix** file below; or environment variables, a **gitignored** `config.local.py`, or systemd `Environment=` / `EnvironmentFile=`.
+
+---
+
+## Matrix (recommended): `.matrix.secrets.py`
+
+1. Copy the scaffold (tracked in git):
+
+   ```bash
+   cp .matrix.secrets.example.py .matrix.secrets.py
+   ```
+
+2. Edit **`.matrix.secrets.py`** (gitignored): set `HOMESERVER`, `USER_ID`, `DEVICE_ID`, `ACCESS_TOKEN`, `ALLOWED_ROOMS`. For E2E, fill **tester** fields and `TEST_ROOM_ID` if you keep both identities in one place.
+
+3. **Token rotation:** Access tokens can expire or be rotated. Optional **`LOGIN_PASSWORD`** (same account as `USER_ID`) is there for a **Hermes-style** workflow: re-login with **`matrix-nio`** password login when you need a fresh token — paste the new token into `ACCESS_TOKEN`. Hestia does **not** yet read the password automatically; it is for your scripts or a future auto-refresh feature.
+
+4. Wire secrets into **`MatrixConfig`** from your `config.py` using `importlib` (see comments at the top of **`.matrix.secrets.example.py`**) or merge values by hand.
+
+**Two-user model:** Bot fields drive **`hestia matrix`**. Tester fields are for **`matrix-commander`** / pytest; you can instead keep tester tokens only in the commander credentials file — the example file just offers one optional place.
 
 ---
 
@@ -28,23 +46,20 @@ No secret; must be up for E2E and manual Matrix/Telegram runs.
 
 ### 3.1 Bot (Hestia process: `hestia matrix`)
 
-| Secret / value | Env names (after L10/L11 wiring; until then set in Python `MatrixConfig`) |
-|----------------|-----------------------------------------------------------------------------|
-| Homeserver URL | `HESTIA_MATRIX_HOMESERVER` (e.g. `https://matrix.org`) |
-| Bot MXID | `HESTIA_MATRIX_USER_ID` (e.g. `@hestia-bot:matrix.org`) |
-| Bot access token | `HESTIA_MATRIX_ACCESS_TOKEN` |
-| Device id | `HESTIA_MATRIX_DEVICE_ID` (optional; default e.g. `hestia-bot`) |
-| Allowed rooms (comma-separated room ids or aliases) | `HESTIA_MATRIX_ALLOWED_ROOMS` |
+| Secret / value | Where |
+|----------------|--------|
+| Homeserver, MXID, device, token, rooms | **`.matrix.secrets.py`** (from example) **or** env vars below |
+| Optional password (token refresh workflow) | **`LOGIN_PASSWORD`** in **`.matrix.secrets.py`** only — not auto-used by Hestia yet |
 
-**Room:** Create a **test room**, invite the **bot** user, put its id (or alias) in `allowed_rooms`.
+Env alternative (when wired in config / L10): `HESTIA_MATRIX_HOMESERVER`, `HESTIA_MATRIX_USER_ID`, `HESTIA_MATRIX_ACCESS_TOKEN`, `HESTIA_MATRIX_DEVICE_ID`, `HESTIA_MATRIX_ALLOWED_ROOMS`.
+
+**Room:** Create a **test room**, invite the **bot** user, put its id (or alias) in `ALLOWED_ROOMS`.
 
 ### 3.2 Tester (driver: `matrix-commander` or pytest)
 
 | Secret / value | Typical location |
 |----------------|------------------|
-| Tester MXID | Own account (e.g. `@you-test:matrix.org`) |
-| Tester access token | **`matrix-commander`** credentials file (e.g. `~/.local/share/matrix-commander/credentials.json`) **or** CI env vars such as `MATRIX_TEST_USER_ACCESS_TOKEN`, `MATRIX_TEST_USER_ID` once L12 adds them |
-| Test room id | Same room as bot — tester must be a **member** who can post |
+| Tester MXID / token | **`TESTER_*`** in **`.matrix.secrets.py`** **or** `~/.local/share/matrix-commander/credentials.json` **or** CI env vars once L12 standardizes names |
 
 The tester must **not** reuse the bot token.
 
@@ -52,15 +67,7 @@ The tester must **not** reuse the bot token.
 
 ## 4. E2E / CI (optional env-gated pytest)
 
-After L12/L13 land, tests may expect names like:
-
-| Purpose | Examples |
-|---------|----------|
-| Bot | `MATRIX_BOT_ACCESS_TOKEN`, `MATRIX_BOT_USER_ID`, `MATRIX_HOMESERVER` |
-| Tester | `MATRIX_TEST_USER_ACCESS_TOKEN`, `MATRIX_TEST_USER_ID` |
-| Room | `MATRIX_TEST_ROOM_ID` |
-
-Exact names: follow **`docs/orchestration/kimi-loops/L12-matrix-e2e-two-user.md`** (or test module docstrings) after Kimi implements them.
+After L12 lands, tests may still read **`.matrix.secrets.py`** locally or expect env vars. Exact names: follow **`docs/orchestration/kimi-loops/L12-matrix-e2e-two-user.md`**.
 
 ---
 
@@ -71,14 +78,14 @@ Exact names: follow **`docs/orchestration/kimi-loops/L12-matrix-e2e-two-user.md`
 | SQLite DB for a test worktree | `runtime-data/hestia.db` inside that worktree (gitignored via `/runtime-data/`) |
 | KV slots | Same tree’s `runtime-data/slots` |
 
-Use a **dedicated** worktree or DB file for automation so you can `rm` it if teardown fails.
+Use a **dedicated** worktree or DB file for automation so you can `rm` if teardown fails.
 
 ---
 
 ## 6. Checklist before telling Cursor to run Kimi
 
 - [ ] llama-server healthy (`hestia health` or curl `/health`)
-- [ ] Matrix: bot account registered, token obtained, room created, bot invited, `allowed_rooms` set
-- [ ] Matrix: tester account registered, token in driver store or env
+- [ ] Matrix: **`.matrix.secrets.py`** filled (or env vars), room created, bot invited
+- [ ] Matrix: tester credentials for E2E (file or commander)
 - [ ] Telegram (if used): token + allowed user ids exported
-- [ ] No secrets in `git status` tracked files
+- [ ] `git status` shows **no** `.matrix.secrets.py` (ignored) and no other secret files tracked
