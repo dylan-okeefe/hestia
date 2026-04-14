@@ -59,7 +59,7 @@ Env alternative (when wired in config / L10): `HESTIA_MATRIX_HOMESERVER`, `HESTI
 
 | Secret / value | Typical location |
 |----------------|------------------|
-| Tester MXID / token | **`TESTER_*`** in **`.matrix.secrets.py`** **or** `~/.local/share/matrix-commander/credentials.json` **or** CI env vars once L12 standardizes names |
+| Tester MXID / token | **`TESTER_*`** in **`.matrix.secrets.py`** **or** `~/.local/share/matrix-commander/credentials.json` **or** CI env vars |
 
 The tester must **not** reuse the bot token.
 
@@ -67,7 +67,20 @@ The tester must **not** reuse the bot token.
 
 ## 4. E2E / CI (optional env-gated pytest)
 
-After L12 lands, tests may still read **`.matrix.secrets.py`** locally or expect env vars. Exact names: follow **`docs/orchestration/kimi-loops/L12-matrix-e2e-two-user.md`**.
+L12 standardizes the following environment variable names:
+
+| Variable | Purpose |
+|-----------------------------|-----------------------------|
+| `HESTIA_MATRIX_HOMESERVER` | Bot homeserver URL |
+| `HESTIA_MATRIX_USER_ID` | Bot MXID |
+| `HESTIA_MATRIX_ACCESS_TOKEN` | Bot access token |
+| `HESTIA_MATRIX_DEVICE_ID` | Bot device ID (optional) |
+| `HESTIA_MATRIX_TESTER_USER_ID` | Tester MXID |
+| `HESTIA_MATRIX_TESTER_ACCESS_TOKEN` | Tester access token |
+| `HESTIA_MATRIX_TESTER_DEVICE_ID` | Tester device ID (optional) |
+| `HESTIA_MATRIX_TEST_ROOM_ID` | Room used for scripted tests |
+
+Tests are marked with `@pytest.mark.matrix_e2e` and **skip cleanly** when any required variable is missing.
 
 ---
 

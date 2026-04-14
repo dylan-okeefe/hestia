@@ -67,3 +67,6 @@ warn_unused_ignores = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "matrix_e2e: Real Matrix homeserver end-to-end tests (requires env vars)",
+]
