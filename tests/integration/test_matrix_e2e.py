@@ -99,7 +99,7 @@ async def _wait_for_bot_response(
     after_ts_ms: int,
     timeout: float = 30.0,
 ) -> str:
-    """Poll room timeline for a bot message with server_timestamp > after_ts_ms."""
+    """Poll room timeline for a substantive bot message after the trigger timestamp."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         sync_response = await tester.sync(timeout=3000)
@@ -112,6 +112,10 @@ async def _wait_for_bot_response(
                         and event.sender == bot_mxid
                         and event.server_timestamp > after_ts_ms
                     ):
+                        body = event.body.strip()
+                        if body.lower() in {"thinking...", "thinking…"}:
+                            # Matrix adapter may emit an interim status message first.
+                            continue
                         return event.body
         await asyncio.sleep(0.5)
     raise TimeoutError(f"No bot response within {timeout}s")
