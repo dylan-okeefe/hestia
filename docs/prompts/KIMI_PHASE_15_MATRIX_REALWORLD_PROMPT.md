@@ -6,6 +6,8 @@
 
 **Read first:** `docs/HANDOFF_STATE.md`, `docs/DECISIONS.md`, `docs/design/matrix-integration.md`, `src/hestia/orchestrator/engine.py`, `src/hestia/orchestrator/transitions.py`.
 
+**Matrix E2E model:** Hestia runs as the **bot user** (`hestia matrix`). Programmatic tests use a **second Matrix user** (e.g. `matrix-commander` or `matrix-nio`) with **its own** access token to send messages and read replies. See **`docs/design/matrix-integration.md` §5.0** — never use one token for both roles.
+
 **Operator context (symptoms to fix):**
 
 - Matrix users sometimes see a normal assistant reply, then **`Turn failed: Cannot transition from done to failed`**. That is an orchestrator state-machine bug when an error happens **after** the turn is already marked **`DONE`** (typically **`respond_callback`** / platform send).

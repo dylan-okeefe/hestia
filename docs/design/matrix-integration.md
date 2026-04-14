@@ -1,6 +1,6 @@
 # Matrix Integration — Design & Integration Test Plan
 
-**Status:** Not implemented (deferred). Telegram and CLI are the live transports today.
+**Status:** `MatrixAdapter` + `hestia matrix` exist; this document remains the **design and test plan** reference. Update the status line when E2E harness is complete.
 
 **Intent:** Matrix is the **automation-first** chat transport: scripted clients, CI-friendly end-to-end tests, and optional personal use alongside Telegram. ADR-007 positions Matrix as a v1 interface alongside CLI/Telegram; ADR-012 already assumes Matrix can supply `ConfirmCallback` patterns (reply buttons).
 
@@ -125,6 +125,24 @@ Document which option is chosen in an ADR when implemented.
 
 ## 5. Integration test harness
 
+### 5.0 Two Matrix identities (required mental model)
+
+End-to-end and “real chat” tests involve **two different Matrix users**:
+
+| Role | Who | Credentials | Purpose |
+|------|-----|-------------|---------|
+| **Bot (Hestia)** | The process running `hestia matrix` | `MatrixConfig`: `homeserver`, `user_id` (bot MXID), `access_token`, `device_id`, `allowed_rooms` | Receives events in allowlisted rooms, runs the orchestrator, sends replies **as this user**. |
+| **Tester (driver)** | `matrix-commander`, a small `matrix-nio` script, or pytest fixture | **Separate** MXID + access token (and usually its own `device_id`) | Sends messages **into the same room** programmatically, reads the timeline for the bot’s reply, asserts content / latency. |
+
+**Important:** The CLI tool used to drive tests is **not** “logging in as the bot.” It uses **its own** user account. Typical setup:
+
+1. Register or use two accounts: `@hestia-test-bot:server` (Hestia) and `@hestia-test-client:server` (driver).
+2. Create a **test room**, invite **both** users, ensure the bot’s `allowed_rooms` includes that room’s id.
+3. Put **bot** credentials only in Hestia config (env or gitignored `config.py`).
+4. Put **tester** credentials only in the driver (`matrix-commander` credentials file, or `MATRIX_TEST_USER_ACCESS_TOKEN` / similar for CI — names are convention, not hard-coded yet).
+
+If the driver reused the bot token, you would only see the bot talking to itself and could not simulate a real human conversation or assert on “inbound from another user.”
+
 ### 5.1 Test layers
 
 | Layer | What it proves | Speed |
@@ -136,12 +154,12 @@ Document which option is chosen in an ADR when implemented.
 ### 5.2 CI recommendation
 
 - **Default CI:** unit + component tests only.
-- **Nightly / manual:** E2E job with secrets `MATRIX_HOMESERVER`, `MATRIX_ACCESS_TOKEN`, `MATRIX_TEST_ROOM_ID`.
+- **Nightly / manual:** E2E job with secrets for **both** identities at minimum: e.g. `MATRIX_HOMESERVER`, `MATRIX_BOT_ACCESS_TOKEN`, `MATRIX_BOT_USER_ID`, `MATRIX_TEST_USER_ACCESS_TOKEN`, `MATRIX_TEST_USER_ID`, `MATRIX_TEST_ROOM_ID` (exact names up to harness; split bot vs tester explicitly).
 
 ### 5.3 Client options for E2E
 
-- **`matrix-nio`** script in `scripts/matrix_smoke_send.py` that logs in, sends text, waits for reply event in room timeline (with timeout).
-- **`matrix-commander`** (if already in operator workflow) as an external driver — tests shell out or use Python subprocess with a fixture file.
+- **`matrix-nio`** script (e.g. `scripts/matrix_smoke_send.py`) that logs in **as the tester user**, sends text to `MATRIX_TEST_ROOM_ID`, waits for a **reply event from the bot’s MXID** in the room timeline (timeout).
+- **`matrix-commander`**: uses **its own** stored credentials (`~/.local/share/matrix-commander/credentials.json` or equivalent) for the **tester** account — **not** the same file/vars as Hestia’s bot token. Tests may shell out: start `hestia matrix` with bot config, then invoke `matrix-commander` as the other user to send/assert.
 
 ---
 
@@ -225,10 +243,10 @@ tests/
 
 **Fixtures:**
 
-- `matrix_config` — from env or skip
-- `matrix_client` — `AsyncClient` connected to test account
-- `hestia_matrix_process` — subprocess running `hestia matrix` (E2E only)
-- `wait_for_matrix_reply(room_id, timeout)` — poll timeline or sync
+- `matrix_bot_config` — Hestia’s `MatrixConfig` for subprocess under test
+- `matrix_client` — `AsyncClient` connected to the **tester** user (driver), not the bot
+- `hestia_matrix_process` — subprocess running `hestia matrix` with bot credentials (E2E only)
+- `wait_for_matrix_reply(room_id, bot_mxid, timeout)` — poll timeline for an event **from** the bot after a message **from** the tester
 
 ---
 

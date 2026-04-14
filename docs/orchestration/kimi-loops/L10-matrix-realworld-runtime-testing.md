@@ -67,13 +67,14 @@ Matrix bot is usable enough for a first chat, but two issues showed up immediate
 **C1. Automated (preferred)**
 
 - Add **`tests/integration/test_matrix_smoke.py`** (or extend existing Matrix tests) that:
-  - **Skips** unless **`HESTIA_MATRIX_*`** (or chosen env names) are set **and** optional **`HESTIA_MATRIX_TEST_ROOM`** points to a dedicated test room.
-  - Performs a **minimal** client flow: sync/send or use **matrix-nio** `AsyncClient` the same way the adapter does — **one** round-trip that proves “bot receives + responds” without hitting production llama if possible (**mock `InferenceClient`** at orchestrator boundary **or** mark as manual network test with `pytest -m matrix_e2e`).
+  - **Skips** unless env provides **both** identities: **bot** credentials for starting Hestia (or for in-process adapter tests) **and** **tester** credentials for the driver client (`matrix-nio` / `matrix-commander` is always the **second user** — never the bot token).
+  - **Room:** dedicated **`MATRIX_TEST_ROOM_ID`** (or equivalent); bot `allowed_rooms` must include it; tester must be a normal member who can post.
+  - Performs a **minimal** flow: driver sends as **tester MXID** → assert reply event **from bot MXID** (timeline poll or sync), optionally without real llama (**mock inference** **or** `@pytest.mark.matrix_e2e`).
 - Add a **mock-inference** test that forces a **`current_time`** tool call and asserts the tool result is merged into history (proves Matrix path is not stripping tools).
 
 **C2. Manual checklist (document)**
 
-- Add **`docs/testing/matrix-manual-smoke.md`** (keep under 60 lines): Bot invite, **`allowed_rooms`**, **`matrix-commander`** one-liner example, expected **`/health`** on llama, **`hestia matrix`** command, three test phrases (“ping”, “what time is it — use the tool”, long message).
+- Add **`docs/testing/matrix-manual-smoke.md`** (keep under 60 lines): Two accounts (bot + tester), room invite list, bot **`allowed_rooms`**, **`hestia matrix`** with bot config, **`matrix-commander`** (or other CLI) **logged in as tester** to send the three test phrases; clarify credentials are **two separate** token/MXID pairs.
 
 **C3. README pointer**
 
@@ -88,7 +89,7 @@ Add **`docs/orchestration/runtime-feature-testing.md`** (~80 lines max):
 1. **Stable personal runtime:** `~/Hestia-runtime` on branch **`hestia-runtime`** (or **`develop`**) — do not run experimental Matrix there during risky merges.
 2. **Feature runtime:** `git worktree add ../Hestia-runtime-<feature> <feature-branch>` (or **`-b runtime/<feature> <commit>`** tracking the feature branch).
 3. **`uv sync`**, copy/adapt **`config.runtime.py`** → **`config.local.py`** (gitignored) or env-only secrets; **separate** `runtime-data/` / SQLite per worktree (already true if each worktree has its own directory).
-4. **Matrix:** use a **dedicated test room** ID in **`allowed_rooms`** for feature worktrees; never reuse production room until green.
+4. **Matrix:** use a **dedicated test room** in **`allowed_rooms`**; **bot** secrets only in Hestia config for that worktree; **tester** secrets only in the CLI driver (`matrix-commander` store or test env). Do not reuse production room until green.
 5. **Merge discipline:** when feature merges to **`develop`**, fast-forward or merge **`develop`** into **`hestia-runtime`**, then **`uv sync`** on stable tree.
 
 Reference this doc from **`docs/HANDOFF_STATE.md`** (one bullet) after merge.
