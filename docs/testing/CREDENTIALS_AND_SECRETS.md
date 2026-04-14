@@ -37,7 +37,7 @@ No secret; must be up for E2E and manual Matrix/Telegram runs.
 
 | Item | Env variable | Where consumed |
 |------|--------------|----------------|
-| **Bot token** (BotFather) | `HESTIA_TELEGRAM_BOT_TOKEN` | `TelegramConfig.from_env()` or `~/Hestia-runtime/config.runtime.py` |
+| **Bot token** (BotFather) | `HESTIA_TELEGRAM_BOT_TOKEN` | Hardcoded in `config.py` or a custom runtime config file |
 | **Allowed numeric user ids** (comma-separated) | `HESTIA_TELEGRAM_ALLOWED_USERS` | Same |
 
 ---
