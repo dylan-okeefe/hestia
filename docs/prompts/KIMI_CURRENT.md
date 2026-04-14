@@ -2,21 +2,21 @@
 
 **Orchestrator:** Cursor updates this file after each review.
 
-**Last set by:** Cursor — 2026-04-14 (**L11 merged; L12 active**)
+**Last set by:** Cursor — 2026-04-14 (**L12 merged; L13 active**)
 
 ---
 
 ## Current task
 
-**Active loop:** **L12** — [`../orchestration/kimi-loops/L12-matrix-e2e-two-user.md`](../orchestration/kimi-loops/L12-matrix-e2e-two-user.md)
+**Active loop:** **L13** — [`../orchestration/kimi-loops/L13-scheduler-matrix-cron.md`](../orchestration/kimi-loops/L13-scheduler-matrix-cron.md)
 
 **Full chain:** [`KIMI_LOOPS_L10_L14.md`](KIMI_LOOPS_L10_L14.md)
 
-**Branch:** Create **`feature/l12-matrix-e2e-two-user`** from **`develop`** (must include L11 merge).
+**Branch:** Create **`feature/l13-scheduler-matrix-cron`** from **`develop`** (must include L12 merge).
 
-**Kimi prompt:** Point Kimi at **`KIMI_CURRENT.md`** + the **L12** spec (same workflow as prior loops: §-1 merge baseline, §0 carry-forward, implement Goal + Deliverables, handoff + `.kimi-done` with `LOOP=L12`).
+**Kimi prompt:** Point Kimi at **`KIMI_CURRENT.md`** + the **L13** spec (§-1 merge baseline, §0 carry-forward, goals, handoff + `.kimi-done` with `LOOP=L13`).
 
-**Scope:** Matrix real-homeserver E2E (bot + tester), skipped without env; marker + credentials doc updates; optional programmatic driver script.
+**Scope:** Scheduler cron/one-shot with Matrix delivery; CLI session binding for Matrix-scheduled tasks; tests + policy checks; teardown.
 
 ---
 

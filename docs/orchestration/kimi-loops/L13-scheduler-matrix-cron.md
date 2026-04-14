@@ -2,7 +2,10 @@
 
 ## Review carry-forward
 
-- *(Cursor: fill from L12 review.)*
+- **Orchestrator semantics (non-blocking):** After `DONE`, outer `except` in `process_turn` can still record `failure_store` for delivery errors — noisy; gate in a follow-up if needed (L12 handoff).
+- **Runtime parity (optional):** `~/Hestia-runtime/config.runtime.py` still ad-hoc Telegram env; optional `MatrixConfig.from_env()` / `.matrix.secrets.py` for Matrix parity.
+- **Housekeeping:** aiosqlite thread warnings in pytest — pre-existing.
+- **L12 tests:** Matrix E2E uses env-gated skips (`matrix_e2e`); maintain skip behavior when extending scheduler/Matrix tests.
 
 **Branch:** `feature/l13-scheduler-matrix-cron` from **`develop`** (includes **L12**).
 

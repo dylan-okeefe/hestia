@@ -8,6 +8,20 @@
 
 ---
 
+## 2026-04-14 — Loop: L12 — Matrix E2E two-user (Kimi) → merged
+
+**Kimi:** `.kimi-done`: `LOOP=L12`, commit **`f5c9297`**, **455 passed**, **2 skipped** (`matrix_e2e`). Report: [`docs/handoffs/HESTIA_L12_REPORT_20260413.md`](../handoffs/HESTIA_L12_REPORT_20260413.md).
+
+**Review (Cursor):** Re-ran full pytest — **455 passed**, **2 skipped**, pre-existing aiosqlite thread warnings only. New: `tests/integration/test_matrix_e2e.py`, `scripts/matrix_test_send.py`, `matrix_e2e` marker in `pyproject.toml`, credentials table in `CREDENTIALS_AND_SECRETS.md`.
+
+**Orchestration:** Waited for `.kimi-done` via **shell poll loop** (not Cursor `Await` on terminal) — ~13 min until `HESTIA_KIMI_DONE=1`.
+
+**Git:** Fast-forward `feature/l12-matrix-e2e-two-user` → `develop`.
+
+**Queue:** `KIMI_CURRENT.md` → **L13** [`L13-scheduler-matrix-cron.md`](kimi-loops/L13-scheduler-matrix-cron.md); **`## Review carry-forward`** filled from L12 handoff.
+
+---
+
 ## 2026-04-14 — Loop: L11 — mock-inference tool + memory matrix (Kimi) → merged
 
 **Kimi:** `.kimi-done`: `LOOP=L11`, commit **`ba46f32`** on `feature/l11-test-tools-memory-mock` (report: [`docs/handoffs/HESTIA_L11_REPORT_20260413.md`](../handoffs/HESTIA_L11_REPORT_20260413.md)).
