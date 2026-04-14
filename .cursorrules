@@ -44,7 +44,7 @@ When Dylan wants a **queued multi-loop run** (`docs/orchestration/kimi-phase-que
 **Each loop (repeat until no next row in queue or hard stop):**
 
 1. Ensure `docs/prompts/KIMI_CURRENT.md` matches the intended queue row and the correct feature branch is checked out (or created from `develop`).
-2. Run `./scripts/kimi-run-current.sh` (from repo root; redirect logs as in `HANDOFF_STATE.md`). Wait until exit; require **`.kimi-done`** with `HESTIA_KIMI_DONE=1` unless abort semantics apply.
+2. Run `./scripts/kimi-run-current.sh` (from repo root; redirect logs as in `HANDOFF_STATE.md`). **Completion signal is only `.kimi-done`** — see subsection below. Do **not** wait for Dylan to say the loop finished; keep working until the file proves it.
 3. **Review:** `git diff`, handoff files under `docs/handoffs/` if any, `uv run pytest tests/unit/ tests/integration/ -q`, spot-check risky areas (config wiring, migrations, platform callbacks).
 4. **If red:** fix trivial issues yourself **or** tighten `KIMI_CURRENT` / add follow-up spec — re-run Kimi on the same loop until green or you document a blocker for Dylan.
 5. **If green:** merge feature branch to `develop` (fast-forward or merge commit per project habit), update `HANDOFF_STATE.md`, append **`kimi-loop-log.md`** (full detail), reply in chat with a **short** bullet summary only.
@@ -52,6 +52,16 @@ When Dylan wants a **queued multi-loop run** (`docs/orchestration/kimi-phase-que
 7. **Start the next loop:** go to step 2. If there is no next row, tell Dylan the queue is complete and what to `git push` / sanity-check.
 
 **If your Cursor context runs out** mid-queue: stop after a clean **git** state (commit or stash), finish step 5–6 for the last completed loop, and tell Dylan to send **“Continue Kimi orchestration”**; resume from `HANDOFF_STATE.md` + `kimi-loop-log.md` + `KIMI_CURRENT.md`.
+
+### `.kimi-done` — mandatory wait (no human “Kimi finished” ping)
+
+Dylan should **not** have to message you between loops. **You** wait for Kimi’s artifact.
+
+- **`scripts/kimi-run-current.sh`** deletes `.kimi-done` at start, then Kimi recreates it when the loop is truly done.
+- **Success:** `.kimi-done` exists in the repo root and contains **`HESTIA_KIMI_DONE=1`** (plus optional `LOOP=`, `BRANCH=`, `COMMIT=`, `TESTS=` lines).
+- **How to wait:** After launching Kimi (foreground **or** background), **poll** until that condition holds — e.g. every 30–120 seconds: `test -f .kimi-done` and `grep -q '^HESTIA_KIMI_DONE=1$' .kimi-done`, or read the file with your file tool. Typical runs are minutes to hours; use long sleeps between polls so you are not spamming tools. If the launcher exits before `.kimi-done` is valid, treat that as failure and investigate (log path in `HANDOFF_STATE.md`) before merging.
+- **Do not** advance merge/review steps on “it probably finished” or on a user message alone — only on a valid `.kimi-done` (or documented abort/blocker: auth, script error, empty spec).
+- **Cursor `Await`:** If Kimi runs in a **terminal** and streams to a log file, you may `Await` on log patterns *in addition* to confirming `.kimi-done`; the file is still the source of truth for “Kimi accepted the loop.”
 
 ## Kimi prompt format
 
