@@ -133,6 +133,134 @@ class TestScheduleAdd:
         assert result.exit_code == 1
         assert "Invalid datetime format" in result.output
 
+    def test_add_with_session_id(self, runner, tmp_path):
+        """Can bind a scheduled task to an existing session via --session-id."""
+        import asyncio
+
+        db_path = tmp_path / "test.db"
+        from hestia.persistence.db import Database
+        from hestia.persistence.sessions import SessionStore
+
+        async def _setup():
+            db = Database(f"sqlite+aiosqlite:///{db_path}")
+            await db.connect()
+            await db.create_tables()
+            session_store = SessionStore(db)
+            session = await session_store.get_or_create_session("matrix", "!room:matrix.org")
+            sid = session.id
+            await db.close()
+            return sid
+
+        session_id = asyncio.run(_setup())
+
+        future = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S")
+        result = runner.invoke(
+            cli,
+            [
+                "--db-path",
+                str(db_path),
+                "schedule",
+                "add",
+                "--at",
+                future,
+                "--session-id",
+                session_id,
+                "Task bound to session",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "Created task:" in result.output
+        assert session_id in result.output
+
+    def test_add_with_platform_and_platform_user(self, runner, tmp_path):
+        """Can bind a scheduled task to a platform+user pair."""
+        db_path = tmp_path / "test.db"
+        future = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S")
+        result = runner.invoke(
+            cli,
+            [
+                "--db-path",
+                str(db_path),
+                "schedule",
+                "add",
+                "--at",
+                future,
+                "--platform",
+                "matrix",
+                "--platform-user",
+                "!test-room:matrix.org",
+                "Matrix room task",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "Created task:" in result.output
+        assert "matrix" in result.output
+
+    def test_add_rejects_session_id_with_platform(self, runner, tmp_path):
+        """Cannot mix --session-id with --platform or --platform-user."""
+        db_path = tmp_path / "test.db"
+        future = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S")
+        result = runner.invoke(
+            cli,
+            [
+                "--db-path",
+                str(db_path),
+                "schedule",
+                "add",
+                "--at",
+                future,
+                "--session-id",
+                "sess_123",
+                "--platform",
+                "matrix",
+                "Mixed binding",
+            ],
+        )
+        assert result.exit_code == 1
+        assert "Cannot use --session-id with --platform" in result.output
+
+    def test_add_rejects_missing_session_id(self, runner, tmp_path):
+        """Non-existent --session-id is rejected."""
+        db_path = tmp_path / "test.db"
+        future = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S")
+        result = runner.invoke(
+            cli,
+            [
+                "--db-path",
+                str(db_path),
+                "schedule",
+                "add",
+                "--at",
+                future,
+                "--session-id",
+                "task_nonexistent",
+                "Orphan task",
+            ],
+        )
+        assert result.exit_code == 1
+        assert "Session not found" in result.output
+
+    def test_add_rejects_platform_without_platform_user(self, runner, tmp_path):
+        """--platform without --platform-user is rejected."""
+        db_path = tmp_path / "test.db"
+        future = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S")
+        result = runner.invoke(
+            cli,
+            [
+                "--db-path",
+                str(db_path),
+                "schedule",
+                "add",
+                "--at",
+                future,
+                "--platform",
+                "matrix",
+                "Incomplete binding",
+            ],
+        )
+        assert result.exit_code == 1
+        assert "--platform and --platform-user must be used together" in result.output
+
 
 class TestScheduleList:
     """Tests for `hestia schedule list` command."""

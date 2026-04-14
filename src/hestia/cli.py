@@ -696,6 +696,9 @@ def schedule() -> None:
 @click.option("--cron", help="Cron expression (e.g., '0 9 * * 1-5' for weekdays at 9am)")
 @click.option("--at", "fire_at_str", help="One-shot time (ISO format: 2026-04-15T15:00:00)")
 @click.option("--description", "-d", help="Task description")
+@click.option("--session-id", help="Bind task to an existing session ID")
+@click.option("--platform", help="Platform for session binding (e.g., matrix)")
+@click.option("--platform-user", help="Platform user for session binding (e.g., room ID)")
 @click.argument("prompt")
 @click.pass_context
 def schedule_add(
@@ -703,6 +706,9 @@ def schedule_add(
     cron: str | None,
     fire_at_str: str | None,
     description: str | None,
+    session_id: str | None,
+    platform: str | None,
+    platform_user: str | None,
     prompt: str,
 ) -> None:
     """Add a scheduled task."""
@@ -714,6 +720,14 @@ def schedule_add(
         sys.exit(1)
     if cron is None and fire_at_str is None:
         click.echo("Error: Must specify either --cron or --at", err=True)
+        sys.exit(1)
+
+    # Validate session binding options
+    if session_id is not None and (platform is not None or platform_user is not None):
+        click.echo("Error: Cannot use --session-id with --platform or --platform-user", err=True)
+        sys.exit(1)
+    if (platform is not None) != (platform_user is not None):
+        click.echo("Error: --platform and --platform-user must be used together", err=True)
         sys.exit(1)
 
     # Parse fire_at if provided
@@ -738,10 +752,16 @@ def schedule_add(
     async def _add() -> None:
         await app.bootstrap_db()
 
-        # Get or create default CLI session
-        session = await app.session_store.get_or_create_session("cli", "default")
-        if session is None:
-            click.echo("Warning: No active session exists. Creating one.", err=True)
+        # Resolve target session
+        if session_id is not None:
+            session = await app.session_store.get_session(session_id)
+            if session is None:
+                click.echo(f"Error: Session not found: {session_id}", err=True)
+                sys.exit(1)
+        elif platform is not None and platform_user is not None:
+            session = await app.session_store.get_or_create_session(platform, platform_user)
+        else:
+            session = await app.session_store.get_or_create_session("cli", "default")
 
         try:
             task = await app.scheduler_store.create_task(
@@ -752,6 +772,7 @@ def schedule_add(
                 fire_at=fire_at,
             )
             click.echo(f"Created task: {task.id}")
+            click.echo(f"  Session: {task.session_id}")
             if task.cron_expression:
                 click.echo(f"  Schedule: cron '{task.cron_expression}'")
             elif task.fire_at:
