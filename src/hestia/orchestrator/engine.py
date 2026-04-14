@@ -208,9 +208,7 @@ class Orchestrator:
                     await self._update_status(platform, platform_user, status_msg_id, "Thinking...")
 
                     # Get reasoning budget from policy and update turn
-                    turn.reasoning_budget = self._policy.reasoning_budget(
-                        session, turn.iterations
-                    )
+                    turn.reasoning_budget = self._policy.reasoning_budget(session, turn.iterations)
 
                     chat_response = await self._inference.chat(
                         messages=build_result.messages,
@@ -301,13 +299,17 @@ class Orchestrator:
 
                         # Collect artifact handles from successful tool results
                         for msg in await self._store.get_messages(session.id):
-                            if msg.role == "tool" and msg.content:
-                                # Look for artifact handle patterns in tool results
-                                if "artifact://" in msg.content:
-                                    import re
+                            if (
+                                msg.role == "tool"
+                                and msg.content
+                                and "artifact://" in msg.content
+                            ):
+                                import re
 
-                                    handles = re.findall(r"artifact://([a-zA-Z0-9_-]+)", msg.content)
-                                    artifact_handles.extend(handles)
+                                handles = re.findall(
+                                    r"artifact://([a-zA-Z0-9_-]+)", msg.content
+                                )
+                                artifact_handles.extend(handles)
 
                         # Save slot checkpoint after successful turn (don't fail turn if save fails)
                         if self._slot_manager is not None:
@@ -347,9 +349,7 @@ class Orchestrator:
                         e,
                     )
                     try:
-                        await respond_callback(
-                            f"Error delivering response: {e}"
-                        )
+                        await respond_callback(f"Error delivering response: {e}")
                     except Exception as notify_err:  # noqa: BLE001
                         logger.warning(
                             "Failed to send post-terminal error notification: %s",
@@ -379,13 +379,16 @@ class Orchestrator:
                             reasoning_budget = turn.reasoning_budget
                             if reasoning_budget is None:
                                 reasoning_budget = self._policy.reasoning_budget(
-                            session, turn.iterations
-                        )
-                            policy_snapshot = json.dumps({
-                                "reasoning_budget": reasoning_budget,
-                                "turn_token_budget": self._policy.turn_token_budget(session),
-                                "tool_filter_active": allowed_tools is not None,
-                            }, default=str)
+                                    session, turn.iterations
+                                )
+                            policy_snapshot = json.dumps(
+                                {
+                                    "reasoning_budget": reasoning_budget,
+                                    "turn_token_budget": self._policy.turn_token_budget(session),
+                                    "tool_filter_active": allowed_tools is not None,
+                                },
+                                default=str,
+                            )
                         except NameError:
                             policy_snapshot = json.dumps({"error": "policy not initialized"})
 
@@ -397,17 +400,20 @@ class Orchestrator:
                                     temp_value = session.temperature.value
                                 else:
                                     temp_value = str(session.temperature)
-                            slot_snapshot = json.dumps({
-                                "slot_id": session.slot_id,
-                                "temperature": temp_value,
-                                "slot_saved_path": getattr(session, "slot_saved_path", None),
-                            }, default=str)
+                            slot_snapshot = json.dumps(
+                                {
+                                    "slot_id": session.slot_id,
+                                    "temperature": temp_value,
+                                    "slot_saved_path": getattr(session, "slot_saved_path", None),
+                                },
+                                default=str,
+                            )
                         except NameError:
                             slot_snapshot = json.dumps({"error": "slot not initialized"})
                         except (TypeError, AttributeError):
-                            slot_snapshot = json.dumps({
-                                "error": "slot snapshot serialization failed"
-                            })
+                            slot_snapshot = json.dumps(
+                                {"error": "slot snapshot serialization failed"}
+                            )
 
                         # Link trace ID if trace store is configured
                         if self._trace_store is not None:
@@ -435,9 +441,7 @@ class Orchestrator:
             finally:
                 # Calculate timing
                 turn_end_time = utcnow()
-                total_duration_ms = int(
-                    (turn_end_time - turn_start_time).total_seconds() * 1000
-                )
+                total_duration_ms = int((turn_end_time - turn_start_time).total_seconds() * 1000)
 
                 turn.completed_at = turn_end_time
                 await self._store.update_turn(turn)
@@ -589,15 +593,18 @@ class Orchestrator:
             tc: The tool call to dispatch
             allowed_tools: Optional list of allowed tool names for filtering
         """
-        # Check if tool is allowed (for call_tool, we check the inner tool later)
-        if allowed_tools is not None and tc.name != "call_tool":
-            if tc.name not in allowed_tools:
-                return ToolCallResult(
-                    status="error",
-                    content=f"Tool '{tc.name}' is not available in this session context.",
-                    artifact_handle=None,
-                    truncated=False,
-                )
+        # Check if tool is allowed (meta-tools are always available)
+        if (
+            allowed_tools is not None
+            and tc.name not in ("call_tool", "list_tools")
+            and tc.name not in allowed_tools
+        ):
+            return ToolCallResult(
+                status="error",
+                content=f"Tool '{tc.name}' is not available in this session context.",
+                artifact_handle=None,
+                truncated=False,
+            )
 
         # Handle meta-tools
         if tc.name == "list_tools":

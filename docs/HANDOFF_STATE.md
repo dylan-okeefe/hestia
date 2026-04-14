@@ -3,7 +3,7 @@
 > **Purpose:** Handoff contract between Claude (Cowork) and Cursor for reviewing Kimi's output and orchestrating the next phase.
 >
 > **Last updated:** 2026-04-14
-> **Last updated by:** Cursor (split **L10–L14** chain: Matrix, mock tests, E2E, scheduler, docs + credentials doc)
+> **Last updated by:** Cursor (**L10** merged to `develop`; **L11** queued)
 
 ---
 
@@ -62,7 +62,7 @@ Dylan can **defer per-loop review** to Cursor for a **queued multi-loop run** (s
 
 - **Branch:** `develop` (local **ahead of** `origin/develop` until you `git push` — includes Phase 7 cleanup + orchestration docs)
 - **Phase 7:** **Merged** — commit **`265003b`** on `develop` ("fix: phase 7 cleanup — bugs, security, dead code").
-- **Active Kimi work:** **L10–L14 chain** (five loops). **L10** first (orchestrator + Matrix env); **L11** mock full tool/memory matrix; **L12** Matrix two-user E2E; **L13** scheduler+cron→Matrix; **L14** docs + manual smoke. Index: [`docs/prompts/KIMI_LOOPS_L10_L14.md`](prompts/KIMI_LOOPS_L10_L14.md). Credentials checklist: [`docs/testing/CREDENTIALS_AND_SECRETS.md`](testing/CREDENTIALS_AND_SECRETS.md). Pointer: [`docs/prompts/KIMI_CURRENT.md`](prompts/KIMI_CURRENT.md).
+- **Active Kimi work:** **L11** (mock inference tool + memory matrix). **L10** merged (`develop` tip includes orchestrator post-`DONE` fix + `MatrixConfig.from_env` + Matrix `PlatformError`). Chain: [`docs/prompts/KIMI_LOOPS_L10_L14.md`](prompts/KIMI_LOOPS_L10_L14.md). Pointer: [`docs/prompts/KIMI_CURRENT.md`](prompts/KIMI_CURRENT.md).
 
 **Phase 7 summary (merged):**
 
@@ -132,7 +132,8 @@ Dylan can **defer per-loop review** to Cursor for a **queued multi-loop run** (s
 
 | Snapshot | Count |
 |----------|-------|
-| Last `pytest tests/unit/ tests/integration/ -q` on `develop` after L09 merge (2026-04-13) | **437 passed** |
+| Last `pytest` on `develop` after **L10** merge (2026-04-14) | **442 passed** |
+| Snapshot after L09 merge (2026-04-13) | **437 passed** |
 
 Run: `uv run pytest tests/unit/ tests/integration/ -q`
 

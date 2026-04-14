@@ -2,7 +2,11 @@
 
 ## Review carry-forward
 
-- *(Cursor: fill from L10 review before launch.)*
+- **L10 merged to `develop`:** orchestrator A1 post-terminal handling; `MatrixConfig.from_env()`; Matrix adapter `PlatformError`; **442** tests on merge tip.
+- **Style:** In `engine.py` failure-bundle block, `reasoning_budget` / `policy_snapshot` try-block indentation is hard to read — run **ruff format** on that region (or tidy manually).
+- **Semantics:** After **`DONE`**, outer `except` still falls through to **`failure_store.record`** — confirm that is desired for delivery errors (vs skipping bundle when already terminal); document or gate in a follow-up if noisy.
+- **Runtime config:** `~/Hestia-runtime/config.runtime.py` still uses ad-hoc env for Telegram only; optional: load **`.matrix.secrets.py`** or call **`MatrixConfig.from_env()`** for Matrix parity (not blocking L11 tests).
+- **B4:** Mock-inference `current_time` path still deferred — include in L11 deliverables.
 
 **Branch:** `feature/l11-test-tools-memory-mock` from **`develop`** (must include merged **L10**).
 

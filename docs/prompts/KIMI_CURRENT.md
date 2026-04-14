@@ -2,28 +2,27 @@
 
 **Orchestrator:** Cursor updates this file after each review.
 
-**Last set by:** Cursor — 2026-04-14 (**L10–L14 chain**)
+**Last set by:** Cursor — 2026-04-14 (**L10 merged; L11 active**)
 
 ---
 
 ## Current task
 
-**Active loop:** **L10** (first of five) — [`../orchestration/kimi-loops/L10-matrix-realworld-runtime-testing.md`](../orchestration/kimi-loops/L10-matrix-realworld-runtime-testing.md)
+**Active loop:** **L11** — [`../orchestration/kimi-loops/L11-test-tools-memory-mock.md`](../orchestration/kimi-loops/L11-test-tools-memory-mock.md)
 
-**Full chain (L10→L14):** [`KIMI_LOOPS_L10_L14.md`](KIMI_LOOPS_L10_L14.md) · **Queue:** [`../orchestration/kimi-phase-queue.md`](../orchestration/kimi-phase-queue.md)
+**Full chain:** [`KIMI_LOOPS_L10_L14.md`](KIMI_LOOPS_L10_L14.md)
 
-**Kimi prompt (L10):** [`KIMI_PHASE_15_MATRIX_REALWORLD_PROMPT.md`](KIMI_PHASE_15_MATRIX_REALWORLD_PROMPT.md) (adapt `LOOP` / spec link for L11+)
+**Branch:** Create **`feature/l11-test-tools-memory-mock`** from **`develop`** (must include L10 merge).
 
-**Branch:** `feature/l10-matrix-realworld-runtime` from **`develop`**.
+**Kimi prompt:** Point Kimi at **`KIMI_CURRENT.md`** + the **L11** spec (same workflow as prior phases: §-1 merge baseline, §0 carry-forward, implement Goal + Deliverables, handoff + `.kimi-done` with `LOOP=L11`).
 
-**L10 scope (only):** orchestrator post-`DONE` delivery error handling; Matrix **env-based** config + adapter send/edit robustness. **Not** in L10: exhaustive mock tests (→ **L11**), live Matrix E2E (→ **L12**), scheduler/cron (→ **L13**), big doc bundle (→ **L14**).
-
-**Dylan — before L12:** collect credentials per [`docs/testing/CREDENTIALS_AND_SECRETS.md`](../testing/CREDENTIALS_AND_SECRETS.md).
+**Scope:** Mock-inference integration tests — full built-in + meta tool matrix, memory variants, teardown; denied `write_file` / `terminal` with `confirm_callback=None`.
 
 ---
 
 ## Reference
 
-- Orchestration contract: [`../HANDOFF_STATE.md`](../HANDOFF_STATE.md)
-- Loop audit trail: [`../orchestration/kimi-loop-log.md`](../orchestration/kimi-loop-log.md)
-- CLI: [`../../scripts/kimi-run-current.sh`](../../scripts/kimi-run-current.sh)
+- Queue: [`../orchestration/kimi-phase-queue.md`](../orchestration/kimi-phase-queue.md)
+- Orchestration: [`../HANDOFF_STATE.md`](../HANDOFF_STATE.md)
+- Loop log: [`../orchestration/kimi-loop-log.md`](../orchestration/kimi-loop-log.md)
+- Kimi script: [`../../scripts/kimi-run-current.sh`](../../scripts/kimi-run-current.sh)
