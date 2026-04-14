@@ -58,3 +58,9 @@ class Platform(ABC):
     async def send_error(self, user: str, text: str) -> None:
         """Send an error message to a user."""
         ...
+
+    async def set_typing(self, user: str, typing: bool = True) -> None:
+        """Set typing indicator for a user/room. No-op by default."""
+
+    async def delete_message(self, user: str, msg_id: str) -> None:
+        """Delete a previously sent message. No-op by default."""

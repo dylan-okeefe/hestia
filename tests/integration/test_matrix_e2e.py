@@ -1,6 +1,11 @@
 # mypy: disable-error-code="no-untyped-def,import-not-found,import-untyped,no-any-return"
 """Matrix E2E tests against a real homeserver (skipped without env).
 
+These tests verify the *actual Matrix conversation* — every message the bot
+sends to the room, typing indicators, status message cleanup, memory tools,
+and multi-turn persistence.  They use FakeInferenceClient for deterministic
+model responses but hit a real Matrix homeserver for transport.
+
 Required environment variables:
     HESTIA_MATRIX_HOMESERVER      - Bot homeserver URL
     HESTIA_MATRIX_USER_ID         - Bot MXID
@@ -19,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import os
 import time
+from dataclasses import dataclass, field
 
 import pytest
 
@@ -26,6 +32,7 @@ pytest.importorskip("nio", reason="matrix-nio not installed")
 
 from helpers import FakeInferenceClient, FakePolicyEngine
 from nio import AsyncClient, RoomMessageText, RoomSendResponse, SyncResponse
+from nio.events.ephemeral import TypingNoticeEvent
 
 from hestia.artifacts.store import ArtifactStore
 from hestia.config import MatrixConfig
@@ -52,6 +59,10 @@ from hestia.tools.registry import ToolRegistry
 
 E2E_MEMORY_TAG = "e2e_hestia_l12"
 
+
+# ---------------------------------------------------------------------------
+# Env / config helpers
+# ---------------------------------------------------------------------------
 
 def _env_or_none(name: str) -> str | None:
     val = os.environ.get(name, "").strip()
@@ -92,34 +103,133 @@ def _tester_config() -> MatrixConfig:
     )
 
 
-async def _wait_for_bot_response(
+# ---------------------------------------------------------------------------
+# Conversation recorder — captures the full room shape as the tester sees it
+# ---------------------------------------------------------------------------
+
+@dataclass
+class ConversationRecord:
+    """All bot messages and typing events the tester observed during a test."""
+    bot_messages: list[str] = field(default_factory=list)
+    typing_observed: bool = False
+    redacted_event_ids: set[str] = field(default_factory=set)
+
+
+async def _drain_timeline(tester: AsyncClient) -> None:
+    """Repeatedly sync until no more events arrive, so subsequent syncs are clean."""
+    while True:
+        resp = await tester.sync(timeout=1000)
+        if not isinstance(resp, SyncResponse):
+            break
+        if not resp.rooms.join:
+            break
+        has_events = any(
+            room.timeline.events for room in resp.rooms.join.values()
+        )
+        if not has_events:
+            break
+
+
+STATUS_PREFIXES = ("running ", "thinking")
+
+
+def _is_status_message(body: str) -> bool:
+    """Check if a message is an interim status message (not a final response)."""
+    return body.lower().strip().startswith(STATUS_PREFIXES)
+
+
+async def _collect_conversation(
     tester: AsyncClient,
     room_id: str,
     bot_mxid: str,
     after_ts_ms: int,
+    expect_final_messages: int = 1,
     timeout: float = 30.0,
-) -> str:
-    """Poll room timeline for a substantive bot message after the trigger timestamp."""
+) -> ConversationRecord:
+    """Sync until *expect_final_messages* non-status bot messages arrive.
+
+    Status messages ("Running ...", "Thinking...") are recorded but don't count
+    toward the expected count. Returns a ConversationRecord with all bot
+    messages, typing observations, and redacted event IDs.
+    """
+    record = ConversationRecord()
+    seen_event_ids: set[str] = set()
     deadline = time.monotonic() + timeout
+
+    def _final_count() -> int:
+        return sum(1 for m in record.bot_messages if not _is_status_message(m))
+
     while time.monotonic() < deadline:
         sync_response = await tester.sync(timeout=3000)
-        if isinstance(sync_response, SyncResponse):
-            room_info = sync_response.rooms.join.get(room_id)
-            if room_info:
-                for event in room_info.timeline.events:
-                    if (
-                        isinstance(event, RoomMessageText)
-                        and event.sender == bot_mxid
-                        and event.server_timestamp > after_ts_ms
-                    ):
-                        body = event.body.strip()
-                        if body.lower() in {"thinking...", "thinking…"}:
-                            # Matrix adapter may emit an interim status message first.
-                            continue
-                        return event.body
-        await asyncio.sleep(0.5)
-    raise TimeoutError(f"No bot response within {timeout}s")
+        if not isinstance(sync_response, SyncResponse):
+            await asyncio.sleep(0.3)
+            continue
 
+        room_info = sync_response.rooms.join.get(room_id)
+        if not room_info:
+            await asyncio.sleep(0.3)
+            continue
+
+        for ev in room_info.ephemeral:
+            if isinstance(ev, TypingNoticeEvent) and bot_mxid in ev.users:
+                record.typing_observed = True
+
+        for event in room_info.timeline.events:
+            if event.event_id in seen_event_ids:
+                continue
+            seen_event_ids.add(event.event_id)
+
+            if getattr(event, "type", None) == "m.room.redaction":
+                redacted_id = getattr(event, "redacts", None)
+                if redacted_id:
+                    record.redacted_event_ids.add(redacted_id)
+                continue
+
+            if (
+                isinstance(event, RoomMessageText)
+                and event.sender == bot_mxid
+                and event.server_timestamp > after_ts_ms
+            ):
+                record.bot_messages.append(event.body.strip())
+
+        if _final_count() >= expect_final_messages:
+            # Drain one more sync for trailing redactions / typing-off
+            try:
+                extra = await asyncio.wait_for(tester.sync(timeout=2000), timeout=3.0)
+                if isinstance(extra, SyncResponse):
+                    extra_room = extra.rooms.join.get(room_id)
+                    if extra_room:
+                        for ev in extra_room.ephemeral:
+                            if isinstance(ev, TypingNoticeEvent) and bot_mxid in ev.users:
+                                record.typing_observed = True
+                        for event in extra_room.timeline.events:
+                            if getattr(event, "type", None) == "m.room.redaction":
+                                redacted_id = getattr(event, "redacts", None)
+                                if redacted_id:
+                                    record.redacted_event_ids.add(redacted_id)
+                            elif (
+                                isinstance(event, RoomMessageText)
+                                and event.sender == bot_mxid
+                                and event.server_timestamp > after_ts_ms
+                                and event.event_id not in seen_event_ids
+                            ):
+                                record.bot_messages.append(event.body.strip())
+            except asyncio.TimeoutError:
+                pass
+            return record
+
+        await asyncio.sleep(0.3)
+
+    raise TimeoutError(
+        f"Expected {expect_final_messages} final bot message(s) within {timeout}s, "
+        f"got {_final_count()} final out of {len(record.bot_messages)} total: "
+        f"{record.bot_messages}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Shared fixtures
+# ---------------------------------------------------------------------------
 
 @pytest.fixture
 async def e2e_setup(tmp_path):
@@ -159,8 +269,6 @@ async def e2e_setup(tmp_path):
     registry.register(make_list_memories_tool(memory_store))
     registry.register(make_search_memory_tool(memory_store))
 
-    # epoch / skill_index not needed for these E2E tests
-
     yield {
         "db": db,
         "session_store": session_store,
@@ -180,18 +288,84 @@ async def e2e_setup(tmp_path):
     await db.close()
 
 
+def _make_orchestrator(setup: dict) -> Orchestrator:
+    return Orchestrator(
+        inference=setup["inference"],
+        session_store=setup["session_store"],
+        context_builder=setup["context_builder"],
+        tool_registry=setup["registry"],
+        policy=setup["policy"],
+        confirm_callback=None,
+        max_iterations=10,
+        failure_store=setup["failure_store"],
+        trace_store=setup["trace_store"],
+    )
+
+
+def _make_on_message(
+    adapter: MatrixAdapter,
+    orchestrator: Orchestrator,
+    setup: dict,
+    *,
+    gate_phrase: str | None = None,
+):
+    """Create an on_message callback, optionally gated to only respond to a specific phrase.
+
+    If *gate_phrase* is set, the bot ignores any incoming message whose body
+    doesn't start with the phrase. This prevents stale messages from prior
+    tests consuming mock inference responses.
+    """
+    responded = asyncio.Event()
+
+    async def on_message(platform_name: str, platform_user: str, text: str) -> None:
+        if gate_phrase and not text.strip().startswith(gate_phrase):
+            return
+
+        session = await setup["session_store"].get_or_create_session(
+            "matrix", platform_user
+        )
+
+        async def respond(response_text: str) -> None:
+            await adapter.send_message(platform_user, response_text)
+
+        await orchestrator.process_turn(
+            session=session,
+            user_message=Message(role="user", content=text),
+            respond_callback=respond,
+            system_prompt="You are a helpful assistant.",
+            platform=adapter,
+            platform_user=platform_user,
+        )
+        responded.set()
+
+    on_message.responded = responded  # type: ignore[attr-defined]
+    return on_message
+
+
+async def _setup_tester(tester_cfg: MatrixConfig) -> AsyncClient:
+    tester = AsyncClient(
+        homeserver=tester_cfg.homeserver,
+        user=tester_cfg.user_id,
+        device_id=tester_cfg.device_id,
+    )
+    tester.access_token = tester_cfg.access_token
+    return tester
+
+
+# ---------------------------------------------------------------------------
+# Test 1: Basic ping/pong — verify clean conversation (no Thinking... leak)
+# ---------------------------------------------------------------------------
+
 @pytest.mark.matrix_e2e
 async def test_matrix_e2e_ping_pong(tmp_path, e2e_setup):
-    """Send 'ping' from tester; expect bot to reply 'pong' via mock inference."""
+    """Send 'ping', verify bot replies 'pong' and nothing else."""
     bot_cfg = _bot_config()
-    tester_cfg = _tester_config()
     room_id = os.environ["HESTIA_MATRIX_TEST_ROOM_ID"]
-
     adapter = MatrixAdapter(bot_cfg)
 
-    # Set deterministic mock response
-    fake_inference = e2e_setup["inference"]
-    fake_inference.responses = [
+    GATE = "[t1] ping"
+
+    e2e_setup["inference"].responses = [
         ChatResponse(
             content="pong",
             reasoning_content=None,
@@ -203,85 +377,67 @@ async def test_matrix_e2e_ping_pong(tmp_path, e2e_setup):
         ),
     ]
 
-    orchestrator = Orchestrator(
-        inference=fake_inference,
-        session_store=e2e_setup["session_store"],
-        context_builder=e2e_setup["context_builder"],
-        tool_registry=e2e_setup["registry"],
-        policy=e2e_setup["policy"],
-        confirm_callback=None,
-        max_iterations=10,
-        failure_store=e2e_setup["failure_store"],
-        trace_store=e2e_setup["trace_store"],
+    orchestrator = _make_orchestrator(e2e_setup)
+    await adapter.start(
+        _make_on_message(adapter, orchestrator, e2e_setup, gate_phrase=GATE)
     )
 
-    async def on_message(platform_name: str, platform_user: str, text: str) -> None:
-        session = await e2e_setup["session_store"].get_or_create_session(
-            "matrix", platform_user
-        )
-
-        async def respond(response_text: str) -> None:
-            await adapter.send_message(platform_user, response_text)
-
-        await orchestrator.process_turn(
-            session=session,
-            user_message=Message(role="user", content=text),
-            respond_callback=respond,
-            system_prompt="You are a helpful assistant.",
-            platform=adapter,
-            platform_user=platform_user,
-        )
-
-    await adapter.start(on_message)
-
-    tester = AsyncClient(
-        homeserver=tester_cfg.homeserver,
-        user=tester_cfg.user_id,
-        device_id=tester_cfg.device_id,
-    )
-    tester.access_token = tester_cfg.access_token
-
+    tester = await _setup_tester(_tester_config())
     try:
-        # Wait for adapter initial sync to settle
         await asyncio.sleep(2)
+        await _drain_timeline(tester)
 
-        start_ts_ms = int(time.time() * 1000)
+        after_ts = int(time.time() * 1000)
         send_resp = await tester.room_send(
             room_id=room_id,
             message_type="m.room.message",
-            content={"msgtype": "m.text", "body": "ping"},
+            content={"msgtype": "m.text", "body": GATE},
         )
         assert isinstance(send_resp, RoomSendResponse), f"Send failed: {send_resp}"
 
-        response_body = await _wait_for_bot_response(
-            tester, room_id, bot_cfg.user_id, start_ts_ms, timeout=30.0
+        conv = await _collect_conversation(
+            tester, room_id, bot_cfg.user_id, after_ts,
+            expect_final_messages=1, timeout=30.0,
         )
-        assert "pong" in response_body.lower(), f"Expected pong, got: {response_body}"
+
+        assert len(conv.bot_messages) == 1, (
+            f"Expected exactly 1 bot message, got {len(conv.bot_messages)}: "
+            f"{conv.bot_messages}"
+        )
+        assert "pong" in conv.bot_messages[0].lower()
+
+        thinking_msgs = [m for m in conv.bot_messages if "thinking" in m.lower()]
+        assert not thinking_msgs, (
+            f"Bot sent 'Thinking...' message(s) instead of using typing indicator: "
+            f"{thinking_msgs}"
+        )
     finally:
         await adapter.stop()
         await tester.close()
-        await fake_inference.close()
 
+
+# ---------------------------------------------------------------------------
+# Test 2: Tool call — verify status message, cleanup, and final response
+# ---------------------------------------------------------------------------
 
 @pytest.mark.matrix_e2e
-async def test_matrix_e2e_tool_visible_reply(tmp_path, e2e_setup):
-    """Send 'what time is it?' and assert bot replies after calling current_time."""
+async def test_matrix_e2e_tool_call_clean_conversation(tmp_path, e2e_setup):
+    """Tool call flow: status message appears then gets redacted; final response is clean."""
     bot_cfg = _bot_config()
-    tester_cfg = _tester_config()
     room_id = os.environ["HESTIA_MATRIX_TEST_ROOM_ID"]
-
     adapter = MatrixAdapter(bot_cfg)
 
-    fake_inference = e2e_setup["inference"]
-    fake_inference.responses = [
+    GATE = "[t2] what time is it?"
+
+    e2e_setup["inference"].responses = [
         ChatResponse(
             content="",
             reasoning_content=None,
             tool_calls=[
                 ToolCall(
                     id="call_time_1",
-                    name="current_time",
-                    arguments={"timezone": "UTC"},
+                    name="call_tool",
+                    arguments={"name": "current_time", "arguments": {"timezone": "UTC"}},
                 ),
             ],
             finish_reason="tool_calls",
@@ -290,7 +446,7 @@ async def test_matrix_e2e_tool_visible_reply(tmp_path, e2e_setup):
             total_tokens=15,
         ),
         ChatResponse(
-            content="The current UTC time is available above.",
+            content="The current UTC time is 2026-04-14 03:00.",
             reasoning_content=None,
             tool_calls=[],
             finish_reason="stop",
@@ -300,19 +456,216 @@ async def test_matrix_e2e_tool_visible_reply(tmp_path, e2e_setup):
         ),
     ]
 
-    orchestrator = Orchestrator(
-        inference=fake_inference,
-        session_store=e2e_setup["session_store"],
-        context_builder=e2e_setup["context_builder"],
-        tool_registry=e2e_setup["registry"],
-        policy=e2e_setup["policy"],
-        confirm_callback=None,
-        max_iterations=10,
-        failure_store=e2e_setup["failure_store"],
-        trace_store=e2e_setup["trace_store"],
+    orchestrator = _make_orchestrator(e2e_setup)
+    await adapter.start(
+        _make_on_message(adapter, orchestrator, e2e_setup, gate_phrase=GATE)
     )
 
-    async def on_message(platform_name: str, platform_user: str, text: str) -> None:
+    tester = await _setup_tester(_tester_config())
+    try:
+        await asyncio.sleep(2)
+        await _drain_timeline(tester)
+
+        after_ts = int(time.time() * 1000)
+        send_resp = await tester.room_send(
+            room_id=room_id,
+            message_type="m.room.message",
+            content={"msgtype": "m.text", "body": GATE},
+        )
+        assert isinstance(send_resp, RoomSendResponse)
+
+        conv = await _collect_conversation(
+            tester, room_id, bot_cfg.user_id, after_ts,
+            expect_final_messages=1, timeout=30.0,
+        )
+
+        final_messages = [m for m in conv.bot_messages if not _is_status_message(m)]
+        assert len(final_messages) >= 1, f"No final response found in: {conv.bot_messages}"
+        assert "2026" in final_messages[-1] or "UTC" in final_messages[-1], (
+            f"Expected time response, got: {final_messages}"
+        )
+
+        thinking_msgs = [
+            m for m in conv.bot_messages
+            if m.lower().strip() in {"thinking...", "thinking…"}
+        ]
+        assert not thinking_msgs, (
+            f"'Thinking...' message leaked into room: {thinking_msgs}"
+        )
+    finally:
+        await adapter.stop()
+        await tester.close()
+
+
+# ---------------------------------------------------------------------------
+# Test 3: Memory save via Matrix — bot uses save_memory tool
+# ---------------------------------------------------------------------------
+
+@pytest.mark.matrix_e2e
+async def test_matrix_e2e_memory_save(tmp_path, e2e_setup):
+    """Bot saves a memory via tool call, tester sees confirmation."""
+    bot_cfg = _bot_config()
+    room_id = os.environ["HESTIA_MATRIX_TEST_ROOM_ID"]
+    adapter = MatrixAdapter(bot_cfg)
+
+    GATE = "[t3] Remember that my favorite color is blue"
+
+    e2e_setup["inference"].responses = [
+        ChatResponse(
+            content="",
+            reasoning_content=None,
+            tool_calls=[
+                ToolCall(
+                    id="c_save",
+                    name="call_tool",
+                    arguments={
+                        "name": "save_memory",
+                        "arguments": {
+                            "content": "Dylan's favorite color is blue",
+                            "tags": f"{E2E_MEMORY_TAG} preference",
+                        },
+                    },
+                ),
+            ],
+            finish_reason="tool_calls",
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+        ),
+        ChatResponse(
+            content="Got it! I've saved that your favorite color is blue.",
+            reasoning_content=None,
+            tool_calls=[],
+            finish_reason="stop",
+            prompt_tokens=15,
+            completion_tokens=10,
+            total_tokens=25,
+        ),
+    ]
+
+    orchestrator = _make_orchestrator(e2e_setup)
+    await adapter.start(
+        _make_on_message(adapter, orchestrator, e2e_setup, gate_phrase=GATE)
+    )
+
+    tester = await _setup_tester(_tester_config())
+    try:
+        await asyncio.sleep(2)
+        await _drain_timeline(tester)
+
+        after_ts = int(time.time() * 1000)
+        send_resp = await tester.room_send(
+            room_id=room_id,
+            message_type="m.room.message",
+            content={"msgtype": "m.text", "body": GATE},
+        )
+        assert isinstance(send_resp, RoomSendResponse)
+
+        conv = await _collect_conversation(
+            tester, room_id, bot_cfg.user_id, after_ts,
+            expect_final_messages=1, timeout=30.0,
+        )
+
+        assert any("blue" in m.lower() or "saved" in m.lower() for m in conv.bot_messages), (
+            f"Expected save confirmation, got: {conv.bot_messages}"
+        )
+
+        memories = await e2e_setup["memory_store"].list_memories(tag=E2E_MEMORY_TAG)
+        assert len(memories) >= 1, "Memory was not persisted"
+        assert any("blue" in m.content.lower() for m in memories)
+    finally:
+        await adapter.stop()
+        await tester.close()
+
+
+# ---------------------------------------------------------------------------
+# Test 4: Memory save + recall — two-turn conversation over Matrix
+# ---------------------------------------------------------------------------
+
+@pytest.mark.matrix_e2e
+async def test_matrix_e2e_memory_save_then_recall(tmp_path, e2e_setup):
+    """Turn 1: save a memory. Turn 2: search for it. Verify round-trip over Matrix."""
+    bot_cfg = _bot_config()
+    room_id = os.environ["HESTIA_MATRIX_TEST_ROOM_ID"]
+    adapter = MatrixAdapter(bot_cfg)
+
+    GATE1 = "[t4a] Remember: Hestia typing indicators shipped"
+    GATE2 = "[t4b] What do you remember about Hestia?"
+
+    turn1_responses = [
+        ChatResponse(
+            content="",
+            reasoning_content=None,
+            tool_calls=[
+                ToolCall(
+                    id="c_save",
+                    name="call_tool",
+                    arguments={
+                        "name": "save_memory",
+                        "arguments": {
+                            "content": "Project Hestia milestone: typing indicators shipped",
+                            "tags": f"{E2E_MEMORY_TAG} project",
+                        },
+                    },
+                ),
+            ],
+            finish_reason="tool_calls",
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+        ),
+        ChatResponse(
+            content="Noted! I've saved that milestone.",
+            reasoning_content=None,
+            tool_calls=[],
+            finish_reason="stop",
+            prompt_tokens=15,
+            completion_tokens=8,
+            total_tokens=23,
+        ),
+    ]
+
+    turn2_responses = [
+        ChatResponse(
+            content="",
+            reasoning_content=None,
+            tool_calls=[
+                ToolCall(
+                    id="c_search",
+                    name="call_tool",
+                    arguments={
+                        "name": "search_memory",
+                        "arguments": {"query": "Hestia milestone"},
+                    },
+                ),
+            ],
+            finish_reason="tool_calls",
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+        ),
+        ChatResponse(
+            content="I found your note: typing indicators were shipped for Project Hestia.",
+            reasoning_content=None,
+            tool_calls=[],
+            finish_reason="stop",
+            prompt_tokens=20,
+            completion_tokens=12,
+            total_tokens=32,
+        ),
+    ]
+
+    fake_inference = e2e_setup["inference"]
+    fake_inference.responses = turn1_responses
+
+    # Gate starts on turn 1 phrase; we'll swap the gate between turns
+    gate_ref: dict[str, str] = {"current": GATE1}
+
+    orchestrator = _make_orchestrator(e2e_setup)
+
+    async def gated_on_message(platform_name: str, platform_user: str, text: str) -> None:
+        if not text.strip().startswith(gate_ref["current"]):
+            return
         session = await e2e_setup["session_store"].get_or_create_session(
             "matrix", platform_user
         )
@@ -329,31 +682,208 @@ async def test_matrix_e2e_tool_visible_reply(tmp_path, e2e_setup):
             platform_user=platform_user,
         )
 
-    await adapter.start(on_message)
-
-    tester = AsyncClient(
-        homeserver=tester_cfg.homeserver,
-        user=tester_cfg.user_id,
-        device_id=tester_cfg.device_id,
-    )
-    tester.access_token = tester_cfg.access_token
+    await adapter.start(gated_on_message)
+    tester = await _setup_tester(_tester_config())
 
     try:
         await asyncio.sleep(2)
+        await _drain_timeline(tester)
 
-        start_ts_ms = int(time.time() * 1000)
-        send_resp = await tester.room_send(
+        # --- Turn 1: save ---
+        after_ts1 = int(time.time() * 1000)
+        send1 = await tester.room_send(
             room_id=room_id,
             message_type="m.room.message",
-            content={"msgtype": "m.text", "body": "what time is it?"},
+            content={"msgtype": "m.text", "body": GATE1},
         )
-        assert isinstance(send_resp, RoomSendResponse), f"Send failed: {send_resp}"
+        assert isinstance(send1, RoomSendResponse)
 
-        response_body = await _wait_for_bot_response(
-            tester, room_id, bot_cfg.user_id, start_ts_ms, timeout=30.0
+        conv1 = await _collect_conversation(
+            tester, room_id, bot_cfg.user_id, after_ts1,
+            expect_final_messages=1, timeout=30.0,
         )
-        assert response_body, "Bot response was empty"
+        assert any("noted" in m.lower() or "saved" in m.lower() for m in conv1.bot_messages), (
+            f"Turn 1 expected save confirmation, got: {conv1.bot_messages}"
+        )
+
+        # --- Turn 2: recall ---
+        fake_inference.responses = turn2_responses
+        fake_inference.call_count = 0
+        gate_ref["current"] = GATE2
+
+        after_ts2 = int(time.time() * 1000)
+        send2 = await tester.room_send(
+            room_id=room_id,
+            message_type="m.room.message",
+            content={"msgtype": "m.text", "body": GATE2},
+        )
+        assert isinstance(send2, RoomSendResponse)
+
+        conv2 = await _collect_conversation(
+            tester, room_id, bot_cfg.user_id, after_ts2,
+            expect_final_messages=1, timeout=30.0,
+        )
+        assert any("typing indicators" in m.lower() or "hestia" in m.lower()
+                    for m in conv2.bot_messages), (
+            f"Turn 2 expected recall of milestone, got: {conv2.bot_messages}"
+        )
     finally:
         await adapter.stop()
         await tester.close()
-        await fake_inference.close()
+
+
+# ---------------------------------------------------------------------------
+# Test 5: No Thinking... messages anywhere — regression guard
+# ---------------------------------------------------------------------------
+
+@pytest.mark.matrix_e2e
+async def test_matrix_e2e_no_thinking_message(tmp_path, e2e_setup):
+    """Verify the bot never sends 'Thinking...' as a real message.
+
+    The bot should use the typing indicator (m.typing ephemeral event) instead.
+    """
+    bot_cfg = _bot_config()
+    room_id = os.environ["HESTIA_MATRIX_TEST_ROOM_ID"]
+    adapter = MatrixAdapter(bot_cfg)
+
+    GATE = "[t5] what time is it right now?"
+
+    e2e_setup["inference"].responses = [
+        ChatResponse(
+            content="",
+            reasoning_content=None,
+            tool_calls=[
+                ToolCall(
+                    id="c_time",
+                    name="call_tool",
+                    arguments={"name": "current_time", "arguments": {"timezone": "UTC"}},
+                ),
+            ],
+            finish_reason="tool_calls",
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+        ),
+        ChatResponse(
+            content="It is currently 03:15 UTC.",
+            reasoning_content=None,
+            tool_calls=[],
+            finish_reason="stop",
+            prompt_tokens=15,
+            completion_tokens=6,
+            total_tokens=21,
+        ),
+    ]
+
+    orchestrator = _make_orchestrator(e2e_setup)
+    await adapter.start(
+        _make_on_message(adapter, orchestrator, e2e_setup, gate_phrase=GATE)
+    )
+
+    tester = await _setup_tester(_tester_config())
+    try:
+        await asyncio.sleep(2)
+        await _drain_timeline(tester)
+
+        after_ts = int(time.time() * 1000)
+        send_resp = await tester.room_send(
+            room_id=room_id,
+            message_type="m.room.message",
+            content={"msgtype": "m.text", "body": GATE},
+        )
+        assert isinstance(send_resp, RoomSendResponse)
+
+        conv = await _collect_conversation(
+            tester, room_id, bot_cfg.user_id, after_ts,
+            expect_final_messages=1, timeout=30.0,
+        )
+
+        thinking_msgs = [
+            m for m in conv.bot_messages
+            if m.lower().strip() in {"thinking...", "thinking…"}
+        ]
+        assert not thinking_msgs, (
+            f"Bot sent 'Thinking...' as a real message! "
+            f"All bot messages: {conv.bot_messages}"
+        )
+
+        assert any("03:15" in m or "utc" in m.lower() for m in conv.bot_messages), (
+            f"Expected time response, got: {conv.bot_messages}"
+        )
+    finally:
+        await adapter.stop()
+        await tester.close()
+
+
+# ---------------------------------------------------------------------------
+# Test 6: Search memory with no results — verify empty response over Matrix
+# ---------------------------------------------------------------------------
+
+@pytest.mark.matrix_e2e
+async def test_matrix_e2e_memory_search_no_results(tmp_path, e2e_setup):
+    """Search for a nonexistent memory, verify bot relays 'no results' message."""
+    bot_cfg = _bot_config()
+    room_id = os.environ["HESTIA_MATRIX_TEST_ROOM_ID"]
+    adapter = MatrixAdapter(bot_cfg)
+
+    GATE = "[t6] search memory for xyznonexistent_e2e_test"
+
+    e2e_setup["inference"].responses = [
+        ChatResponse(
+            content="",
+            reasoning_content=None,
+            tool_calls=[
+                ToolCall(
+                    id="c_search",
+                    name="call_tool",
+                    arguments={
+                        "name": "search_memory",
+                        "arguments": {"query": "xyznonexistent_e2e_test"},
+                    },
+                ),
+            ],
+            finish_reason="tool_calls",
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+        ),
+        ChatResponse(
+            content="I couldn't find any memories matching that query.",
+            reasoning_content=None,
+            tool_calls=[],
+            finish_reason="stop",
+            prompt_tokens=15,
+            completion_tokens=10,
+            total_tokens=25,
+        ),
+    ]
+
+    orchestrator = _make_orchestrator(e2e_setup)
+    await adapter.start(
+        _make_on_message(adapter, orchestrator, e2e_setup, gate_phrase=GATE)
+    )
+
+    tester = await _setup_tester(_tester_config())
+    try:
+        await asyncio.sleep(2)
+        await _drain_timeline(tester)
+
+        after_ts = int(time.time() * 1000)
+        send_resp = await tester.room_send(
+            room_id=room_id,
+            message_type="m.room.message",
+            content={"msgtype": "m.text", "body": GATE},
+        )
+        assert isinstance(send_resp, RoomSendResponse)
+
+        conv = await _collect_conversation(
+            tester, room_id, bot_cfg.user_id, after_ts,
+            expect_final_messages=1, timeout=30.0,
+        )
+        assert any("couldn't find" in m.lower() or "no" in m.lower()
+                    for m in conv.bot_messages), (
+            f"Expected no-results response, got: {conv.bot_messages}"
+        )
+    finally:
+        await adapter.stop()
+        await tester.close()
