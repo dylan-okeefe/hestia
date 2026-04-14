@@ -986,7 +986,7 @@ def schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None:
         click.echo(f"[scheduler:{task.id}] {text}")
 
     async def _daemon() -> None:
-        await _bootstrap_db(db, memory_store, failure_store, app.trace_store)
+        await _bootstrap_db(db, memory_store, failure_store, trace_store)
 
         scheduler_store = SchedulerStore(db)
 
@@ -1062,6 +1062,7 @@ def run_telegram(ctx: click.Context) -> None:
     slot_manager: SlotManager = ctx.obj["slot_manager"]
     memory_store: MemoryStore = ctx.obj["memory_store"]
     failure_store: FailureStore = ctx.obj["failure_store"]
+    trace_store: TraceStore = ctx.obj["trace_store"]
 
     if not cfg.telegram.bot_token:
         click.echo("Error: telegram.bot_token is required in config.", err=True)
@@ -1083,7 +1084,7 @@ def run_telegram(ctx: click.Context) -> None:
         return callback
 
     async def _run() -> None:
-        await _bootstrap_db(db, memory_store, failure_store, app.trace_store)
+        await _bootstrap_db(db, memory_store, failure_store, trace_store)
 
         adapter = TelegramAdapter(cfg.telegram)
 
@@ -1096,7 +1097,7 @@ def run_telegram(ctx: click.Context) -> None:
             max_iterations=cfg.max_iterations,
             slot_manager=slot_manager,
             failure_store=failure_store,
-            trace_store=app.trace_store,
+            trace_store=trace_store,
             # No confirm_callback for Telegram — tools requiring confirmation
             # (e.g., write_file) will refuse to run and tell the model why.
             # TODO: Implement confirmation via Telegram inline keyboard buttons.
@@ -1182,6 +1183,7 @@ def run_matrix(ctx: click.Context) -> None:
     slot_manager: SlotManager = ctx.obj["slot_manager"]
     memory_store: MemoryStore = ctx.obj["memory_store"]
     failure_store: FailureStore = ctx.obj["failure_store"]
+    trace_store: TraceStore = ctx.obj["trace_store"]
 
     if not cfg.matrix.access_token:
         click.echo("Error: matrix.access_token is required in config.", err=True)
@@ -1207,7 +1209,7 @@ def run_matrix(ctx: click.Context) -> None:
         return callback
 
     async def _run() -> None:
-        await _bootstrap_db(db, memory_store, failure_store, app.trace_store)
+        await _bootstrap_db(db, memory_store, failure_store, trace_store)
 
         adapter = MatrixAdapter(cfg.matrix)
 
@@ -1220,7 +1222,7 @@ def run_matrix(ctx: click.Context) -> None:
             max_iterations=cfg.max_iterations,
             slot_manager=slot_manager,
             failure_store=failure_store,
-            trace_store=app.trace_store,
+            trace_store=trace_store,
             # No confirm_callback for Matrix — tools requiring confirmation
             # (e.g., write_file) will refuse to run and tell the model why.
             # TODO: Implement confirmation via Matrix reply pattern.
