@@ -13,6 +13,12 @@
 | 8 | `feature/phase-13-audit` | [`kimi-loops/L08-phase-13-audit.md`](kimi-loops/L08-phase-13-audit.md) |
 | 9 | `feature/phase-14-cleanup-release-prep` | [`kimi-loops/L09-phase-14-cleanup-release-prep.md`](kimi-loops/L09-phase-14-cleanup-release-prep.md) |
 | 10 | `feature/l10-matrix-realworld-runtime` | [`kimi-loops/L10-matrix-realworld-runtime-testing.md`](kimi-loops/L10-matrix-realworld-runtime-testing.md) |
+| 11 | `feature/l11-test-tools-memory-mock` | [`kimi-loops/L11-test-tools-memory-mock.md`](kimi-loops/L11-test-tools-memory-mock.md) |
+| 12 | `feature/l12-matrix-e2e-two-user` | [`kimi-loops/L12-matrix-e2e-two-user.md`](kimi-loops/L12-matrix-e2e-two-user.md) |
+| 13 | `feature/l13-scheduler-matrix-cron` | [`kimi-loops/L13-scheduler-matrix-cron.md`](kimi-loops/L13-scheduler-matrix-cron.md) |
+| 14 | `feature/l14-docs-runtime-manual` | [`kimi-loops/L14-docs-runtime-manual-smoke.md`](kimi-loops/L14-docs-runtime-manual-smoke.md) |
+
+**Chain index (L10–L14):** [`docs/prompts/KIMI_LOOPS_L10_L14.md`](../prompts/KIMI_LOOPS_L10_L14.md) · **Credentials:** [`docs/testing/CREDENTIALS_AND_SECRETS.md`](../testing/CREDENTIALS_AND_SECRETS.md)
 
 **Authoritative detail** for Phases 8–13 lives in [`docs/design/hestia-phase-8-plus-roadmap.md`](../design/hestia-phase-8-plus-roadmap.md). Each `L*.md` file names sections to implement and the **`.kimi-done`** contract.
 

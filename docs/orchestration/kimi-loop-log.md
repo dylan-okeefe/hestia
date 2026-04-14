@@ -8,6 +8,12 @@
 
 ---
 
+## 2026-04-14 — Orchestration: split L10 into L10–L14 chain (Cursor)
+
+**No Kimi run.** Broke work into **five** loops: **L10** (orchestrator + Matrix env only), **L11** (mock inference full tool + memory + teardown), **L12** (Matrix two-user E2E), **L13** (scheduler cron/one-shot + Matrix delivery + CLI session binding note), **L14** (runtime-feature-testing doc, matrix-manual-smoke, README, sync credentials doc). Added [`docs/testing/CREDENTIALS_AND_SECRETS.md`](../testing/CREDENTIALS_AND_SECRETS.md), [`docs/prompts/KIMI_LOOPS_L10_L14.md`](../prompts/KIMI_LOOPS_L10_L14.md), `L11`–`L14` specs; trimmed **L10** spec; updated queue, `KIMI_CURRENT`, `HANDOFF_STATE`, `KIMI_PHASE_15` (L10-only).
+
+---
+
 ## 2026-04-13 — Orchestration: L10 queued (Cursor) — Matrix + real-world tests
 
 **No Kimi run yet.** Cursor opened **L10** after Dylan reported Matrix production symptoms:

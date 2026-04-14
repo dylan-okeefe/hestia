@@ -167,7 +167,7 @@ Automation should aim to exercise **every built-in tool** the Matrix platform al
 
 **Memory:** `save_memory`, `search_memory`, and `list_memories` cover **untagged**, **tagged**, **multi-tag**, **list with tag filter**, and **FTS5 query shapes** (plain, AND/OR, quoted phrase where supported). There is **no** model-facing delete tool — tests **must** remove inserted rows in **`finally`** / fixture teardown via **`MemoryStore.delete`**, `hestia memory remove`, or a disposable test SQLite file. Use a unique tag or content prefix (e.g. `e2e_hestia_*`) so teardown is reliable.
 
-**Executor spec:** Implementation checklist and split between mock-inference vs `matrix_e2e` tiers live in **`docs/orchestration/kimi-loops/L10-matrix-realworld-runtime-testing.md`** Part C.
+**Executor specs:** **L11** (mock full tool matrix + memory + teardown), **L12** (live Matrix two-user E2E), **L13** (scheduler + Matrix), **L14** (manual smoke + runtime docs) — see **`docs/prompts/KIMI_LOOPS_L10_L14.md`** and **`docs/orchestration/kimi-phase-queue.md`**.
 
 ---
 
