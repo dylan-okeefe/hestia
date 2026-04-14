@@ -338,11 +338,29 @@ class Orchestrator:
             except IllegalTransitionError:
                 raise  # Re-raise state machine errors
             except Exception as e:  # Outermost boundary — intentionally broad
-                await self._transition(turn, TurnState.FAILED)
-                turn.error = str(e)
-                await respond_callback(f"Error: {e}")
+                if turn.state in (TurnState.DONE, TurnState.FAILED):
+                    # A1 minimal fix: delivery or post-DONE errors must not
+                    # attempt an illegal transition from a terminal state.
+                    logger.error(
+                        "Error after turn reached terminal state %s: %s",
+                        turn.state.value,
+                        e,
+                    )
+                    try:
+                        await respond_callback(
+                            f"Error delivering response: {e}"
+                        )
+                    except Exception as notify_err:  # noqa: BLE001
+                        logger.warning(
+                            "Failed to send post-terminal error notification: %s",
+                            notify_err,
+                        )
+                else:
+                    await self._transition(turn, TurnState.FAILED)
+                    turn.error = str(e)
+                    await respond_callback(f"Error: {e}")
 
-                # Record failure bundle if store is configured
+                    # Record failure bundle if store is configured
                 if self._failure_store is not None:
                     try:
                         from hestia.persistence.failure_store import FailureBundle
