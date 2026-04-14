@@ -12,13 +12,13 @@
    cp .matrix.secrets.example.py .matrix.secrets.py
    ```
 
-2. Edit **`.matrix.secrets.py`** (gitignored): set `HOMESERVER`, `USER_ID`, `DEVICE_ID`, `ACCESS_TOKEN`, `ALLOWED_ROOMS`. For E2E, fill **tester** fields and `TEST_ROOM_ID` if you keep both identities in one place.
+2. Edit **`.matrix.secrets.py`** (gitignored). Fill bot fields (`HOMESERVER`, `USER_ID`, `DEVICE_ID`, `ACCESS_TOKEN`, `ALLOWED_ROOMS`). For E2E, also fill tester fields and `TEST_ROOM_ID`.
 
-3. **Token rotation:** Access tokens can expire or be rotated. Optional **`LOGIN_PASSWORD`** (same account as `USER_ID`) is there for a **Hermes-style** workflow: re-login with **`matrix-nio`** password login when you need a fresh token — paste the new token into `ACCESS_TOKEN`. Hestia does **not** yet read the password automatically; it is for your scripts or a future auto-refresh feature.
+3. Wire it into **`MatrixConfig`** from your `config.py` using `importlib` (see the comment block at the top of `.matrix.secrets.example.py`) or set env vars instead.
 
-4. Wire secrets into **`MatrixConfig`** from your `config.py` using `importlib` (see comments at the top of **`.matrix.secrets.example.py`**) or merge values by hand.
+4. **Token rotation:** Access tokens can expire. Optional **`LOGIN_PASSWORD`** (same account as `USER_ID`) is there for a manual token-refresh workflow with `matrix-nio` password login. Hestia does **not** auto-refresh from password yet.
 
-**Two-user model:** Bot fields drive **`hestia matrix`**. Tester fields are for **`matrix-commander`** / pytest; you can instead keep tester tokens only in the commander credentials file — the example file just offers one optional place.
+**Two-user model:** Bot fields drive `hestia matrix`. Tester fields are used by `matrix-commander`, `scripts/matrix_test_send.py`, or pytest E2E.
 
 ---
 
@@ -35,52 +35,58 @@ No secret; must be up for E2E and manual Matrix/Telegram runs.
 
 ## 2. Telegram (optional — personal bot)
 
-| Item | Where |
-|------|--------|
-| **Bot token** (BotFather) | `HESTIA_TELEGRAM_BOT_TOKEN` → read by `~/Hestia-runtime/config.runtime.py` (or `TelegramConfig` in your config) |
-| **Allowed numeric user ids** (comma-separated) | `HESTIA_TELEGRAM_ALLOWED_USERS` |
+| Item | Env variable | Where consumed |
+|------|--------------|----------------|
+| **Bot token** (BotFather) | `HESTIA_TELEGRAM_BOT_TOKEN` | `TelegramConfig.from_env()` or `~/Hestia-runtime/config.runtime.py` |
+| **Allowed numeric user ids** (comma-separated) | `HESTIA_TELEGRAM_ALLOWED_USERS` | Same |
 
 ---
 
-## 3. Matrix — **two** users (see `docs/design/matrix-integration.md` §5.0)
+## 3. Matrix — bot credentials
 
-### 3.1 Bot (Hestia process: `hestia matrix`)
+### 3.1 Bot (`hestia matrix`)
 
-| Secret / value | Where |
-|----------------|--------|
-| Homeserver, MXID, device, token, rooms | **`.matrix.secrets.py`** (from example) **or** env vars below |
-| Optional password (token refresh workflow) | **`LOGIN_PASSWORD`** in **`.matrix.secrets.py`** only — not auto-used by Hestia yet |
+| Secret / value | Env variable | `MatrixConfig` field | Required |
+|----------------|--------------|----------------------|----------|
+| Homeserver URL | `HESTIA_MATRIX_HOMESERVER` | `homeserver` | Yes (default: `https://matrix.org`) |
+| Bot MXID | `HESTIA_MATRIX_USER_ID` | `user_id` | Yes |
+| Device ID | `HESTIA_MATRIX_DEVICE_ID` | `device_id` | No (default: `hestia-bot`) |
+| Access token | `HESTIA_MATRIX_ACCESS_TOKEN` | `access_token` | Yes |
+| Allowed rooms | `HESTIA_MATRIX_ALLOWED_ROOMS` | `allowed_rooms` | Yes (comma-separated room IDs or aliases) |
 
-Env alternative (when wired in config / L10): `HESTIA_MATRIX_HOMESERVER`, `HESTIA_MATRIX_USER_ID`, `HESTIA_MATRIX_ACCESS_TOKEN`, `HESTIA_MATRIX_DEVICE_ID`, `HESTIA_MATRIX_ALLOWED_ROOMS`.
+**Room setup:** Create a **test room**, invite the **bot** user, put its ID (or alias) in `ALLOWED_ROOMS`.
 
-**Room:** Create a **test room**, invite the **bot** user, put its id (or alias) in `ALLOWED_ROOMS`.
+**Optional password (manual refresh only):** `LOGIN_PASSWORD` in `.matrix.secrets.py` — not read by Hestia automatically.
 
-### 3.2 Tester (driver: `matrix-commander` or pytest)
+### 3.2 Tester (driver / E2E)
 
-| Secret / value | Typical location |
-|----------------|------------------|
-| Tester MXID / token | **`TESTER_*`** in **`.matrix.secrets.py`** **or** `~/.local/share/matrix-commander/credentials.json` **or** CI env vars |
+| Secret / value | Env variable | Required |
+|----------------|--------------|----------|
+| Tester MXID | `HESTIA_MATRIX_TESTER_USER_ID` | Yes (for E2E) |
+| Tester access token | `HESTIA_MATRIX_TESTER_ACCESS_TOKEN` | Yes (for E2E) |
+| Tester device ID | `HESTIA_MATRIX_TESTER_DEVICE_ID` | No (default: `hestia-e2e-tester`) |
+| Test room ID | `HESTIA_MATRIX_TEST_ROOM_ID` | Yes (for E2E) |
 
-The tester must **not** reuse the bot token.
+The tester **must not** reuse the bot token.
 
 ---
 
-## 4. E2E / CI (optional env-gated pytest)
+## 4. E2E / CI (env-gated pytest)
 
-L12 standardizes the following environment variable names:
+L12 standardizes the environment variable names above. Tests marked `@pytest.mark.matrix_e2e` **skip cleanly** when any required variable is missing.
 
-| Variable | Purpose |
-|-----------------------------|-----------------------------|
-| `HESTIA_MATRIX_HOMESERVER` | Bot homeserver URL |
-| `HESTIA_MATRIX_USER_ID` | Bot MXID |
-| `HESTIA_MATRIX_ACCESS_TOKEN` | Bot access token |
-| `HESTIA_MATRIX_DEVICE_ID` | Bot device ID (optional) |
-| `HESTIA_MATRIX_TESTER_USER_ID` | Tester MXID |
-| `HESTIA_MATRIX_TESTER_ACCESS_TOKEN` | Tester access token |
-| `HESTIA_MATRIX_TESTER_DEVICE_ID` | Tester device ID (optional) |
-| `HESTIA_MATRIX_TEST_ROOM_ID` | Room used for scripted tests |
+Required for E2E:
+- `HESTIA_MATRIX_HOMESERVER`
+- `HESTIA_MATRIX_USER_ID`
+- `HESTIA_MATRIX_ACCESS_TOKEN`
+- `HESTIA_MATRIX_TESTER_USER_ID`
+- `HESTIA_MATRIX_TESTER_ACCESS_TOKEN`
+- `HESTIA_MATRIX_TEST_ROOM_ID`
 
-Tests are marked with `@pytest.mark.matrix_e2e` and **skip cleanly** when any required variable is missing.
+Optional:
+- `HESTIA_MATRIX_DEVICE_ID` (bot)
+- `HESTIA_MATRIX_TESTER_DEVICE_ID` (tester)
+- `HESTIA_MATRIX_ALLOWED_ROOMS` (if omitted, E2E tests typically infer it from `TEST_ROOM_ID`)
 
 ---
 
@@ -90,12 +96,13 @@ Tests are marked with `@pytest.mark.matrix_e2e` and **skip cleanly** when any re
 |------|--------|
 | SQLite DB for a test worktree | `runtime-data/hestia.db` inside that worktree (gitignored via `/runtime-data/`) |
 | KV slots | Same tree’s `runtime-data/slots` |
+| Artifacts | Same tree’s `runtime-data/artifacts` |
 
-Use a **dedicated** worktree or DB file for automation so you can `rm` if teardown fails.
+Use a **dedicated** worktree or DB file for automation so you can `rm -rf runtime-data/` if teardown fails. See [`docs/orchestration/runtime-feature-testing.md`](../orchestration/runtime-feature-testing.md).
 
 ---
 
-## 6. Checklist before telling Cursor to run Kimi
+## 6. Checklist before running Matrix tests
 
 - [ ] llama-server healthy (`hestia health` or curl `/health`)
 - [ ] Matrix: **`.matrix.secrets.py`** filled (or env vars), room created, bot invited

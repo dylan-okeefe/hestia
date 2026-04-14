@@ -173,7 +173,8 @@ Through **ADR-024** (skills, L07). L09 adds cleanup/release prep; no new ADR req
 1. ~~Phase 7 cleanup~~  
 2. ~~**L01 Matrix**~~  
 3. ~~**L01–L09 Kimi queue**~~ — complete on `develop`  
-4. Long-term: `docs/roadmap/future-systems-deferred-roadmap.md`  
+4. Long-term: `docs/roadmap/future-systems-deferred-roadmap.md`
+5. Runtime worktree discipline: see [`docs/orchestration/runtime-feature-testing.md`](orchestration/runtime-feature-testing.md)  
 
 ---
 

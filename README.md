@@ -86,6 +86,8 @@ Hestia speaks three protocols, each with a different role:
 
 **Matrix** — The automation and testing interface. Matrix has proper CLI clients (`matrix-commander`, `matrix-nio`), which means you can script conversations against Hestia, capture responses, and assert on them. This makes Matrix the natural choice for integration testing, regression suites, and CI pipelines. Also works well for personal use if you already run a Synapse server.
 
+See [Matrix manual smoke test guide](docs/testing/matrix-manual-smoke.md) for a step-by-step walkthrough, [Matrix integration design](docs/design/matrix-integration.md) for architecture details, and [Credentials and secrets](docs/testing/CREDENTIALS_AND_SECRETS.md) for bot and tester setup.
+
 ---
 
 ## Giving Hestia a personality
