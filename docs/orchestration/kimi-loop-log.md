@@ -8,6 +8,19 @@
 
 ---
 
+## 2026-04-13 — Orchestration: L10 queued (Cursor) — Matrix + real-world tests
+
+**No Kimi run yet.** Cursor opened **L10** after Dylan reported Matrix production symptoms:
+
+- **`IllegalTransitionError`** (`done` → `failed`) when user already saw a final assistant message — orchestrator marks **`DONE`** then **`respond_callback`** (or nearby) throws; outer **`except`** attempts **`FAILED`** from a terminal state.
+- Model answered “what time is it?” without **`current_time`** — policy allows tools on **`matrix`**; needs tests / nudges.
+
+**Artifacts:** New loop spec [`kimi-loops/L10-matrix-realworld-runtime-testing.md`](kimi-loops/L10-matrix-realworld-runtime-testing.md), Kimi prompt [`docs/prompts/KIMI_PHASE_15_MATRIX_REALWORLD_PROMPT.md`](../prompts/KIMI_PHASE_15_MATRIX_REALWORLD_PROMPT.md), queue row **10**, `KIMI_CURRENT.md` → L10, `HANDOFF_STATE.md` updated.
+
+**Process:** L10 Part D instructs Kimi to add **`docs/orchestration/runtime-feature-testing.md`** — workflow for extra git worktrees per feature branch so **`~/Hestia-runtime`** stays stable.
+
+---
+
 ## 2026-04-13 — Loop: L09 Phase 14 — cleanup + release prep (Kimi) — **queue complete**
 
 **Kimi:** `.kimi-done` reports `GIT_HEAD=71c09b1`, `PYTEST=437 passed`, `UTCNOW_GREP=0`, broad catch count noted as intentional boundaries.

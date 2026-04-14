@@ -2,21 +2,24 @@
 
 **Orchestrator:** Cursor updates this file after each review.
 
-**Last set by:** Cursor — 2026-04-13 (**L09 complete; queue closed**)
+**Last set by:** Cursor — 2026-04-13 (**L10 Matrix + real-world tests + runtime testing flow**)
 
 ---
 
 ## Current task
 
-**None** — the queued loops in [`../orchestration/kimi-phase-queue.md`](../orchestration/kimi-phase-queue.md) are complete through **L09**.
+**Active loop:** **L10** — [`../orchestration/kimi-loops/L10-matrix-realworld-runtime-testing.md`](../orchestration/kimi-loops/L10-matrix-realworld-runtime-testing.md)
 
-Recommended next actions:
+**Kimi prompt (copy or point Kimi at):** [`KIMI_PHASE_15_MATRIX_REALWORLD_PROMPT.md`](KIMI_PHASE_15_MATRIX_REALWORLD_PROMPT.md)
 
-1. Final maintainer pass over `develop`.
-2. Push branch state (`git push origin develop` or your preferred release branch flow).
-3. Use [`../orchestration/kimi-loop-log.md`](../orchestration/kimi-loop-log.md) for full loop-by-loop audit trail.
+**Branch:** `feature/l10-matrix-realworld-runtime` from **`develop`**.
 
-When a new initiative is chosen, replace this section with the next loop spec.
+**Goals (summary):**
+
+1. Fix orchestrator **`DONE` → `FAILED`** illegal transition when delivery fails after a successful model completion (Matrix/Telegram).
+2. Matrix operator polish: env-based secrets for runtime configs, delivery robustness, docs.
+3. Real-world / integration tests (optional env-gated Matrix smoke) + short manual checklist.
+4. Document **runtime worktree** flow for testing feature branches without clobbering stable **`~/Hestia-runtime`**.
 
 ---
 

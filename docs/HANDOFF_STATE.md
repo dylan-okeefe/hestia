@@ -3,7 +3,7 @@
 > **Purpose:** Handoff contract between Claude (Cowork) and Cursor for reviewing Kimi's output and orchestrating the next phase.
 >
 > **Last updated:** 2026-04-13
-> **Last updated by:** Cursor (L09 merged to `develop`; release-prep queue complete)
+> **Last updated by:** Cursor (queued **L10** — Matrix hardening, real-world tests, runtime worktree flow)
 
 ---
 
@@ -62,7 +62,7 @@ Dylan can **defer per-loop review** to Cursor for a **queued multi-loop run** (s
 
 - **Branch:** `develop` (local **ahead of** `origin/develop` until you `git push` — includes Phase 7 cleanup + orchestration docs)
 - **Phase 7:** **Merged** — commit **`265003b`** on `develop` ("fix: phase 7 cleanup — bugs, security, dead code").
-- **Active Kimi work:** **None** — queue **L01–L09** complete on `develop` (L09 merge **`71c09b1`**). Next: maintainer release pass, then push/release flow. Pointer: [`docs/prompts/KIMI_CURRENT.md`](prompts/KIMI_CURRENT.md).
+- **Active Kimi work:** **L10** — Matrix chat hardening (post-`DONE` orchestrator bug), real-world tests, **`docs/orchestration/runtime-feature-testing.md`**. Spec: [`docs/orchestration/kimi-loops/L10-matrix-realworld-runtime-testing.md`](orchestration/kimi-loops/L10-matrix-realworld-runtime-testing.md). Prompt: [`docs/prompts/KIMI_PHASE_15_MATRIX_REALWORLD_PROMPT.md`](prompts/KIMI_PHASE_15_MATRIX_REALWORLD_PROMPT.md). Pointer: [`docs/prompts/KIMI_CURRENT.md`](prompts/KIMI_CURRENT.md).
 
 **Phase 7 summary (merged):**
 
@@ -89,6 +89,7 @@ Dylan can **defer per-loop review** to Cursor for a **queued multi-loop run** (s
 9. ~~**L07 Phase 12**~~ — Done (`12d7531` on `develop`)  
 10. ~~**L08 Phase 13**~~ — Done (`381a543` on `develop`)  
 11. ~~**L09 Phase 14**~~ — Done (`71c09b1` on `develop`)  
+12. **L10 Matrix + real-world + runtime testing** — **Queued** (see [`kimi-loops/L10-matrix-realworld-runtime-testing.md`](orchestration/kimi-loops/L10-matrix-realworld-runtime-testing.md))
 
 **Earlier prompts (reference only):**
 
@@ -103,7 +104,7 @@ Dylan can **defer per-loop review** to Cursor for a **queued multi-loop run** (s
 
 | Branch | Role |
 |--------|------|
-| `develop` | **Tip** — **L01–L09 queue complete**; run `git log -1 --oneline` (not pushed to `origin` yet) |
+| `develop` | **Tip** — **L01–L09 complete**; **L10** next (`feature/l10-matrix-realworld-runtime`). Run `git log -1 --oneline` |
 | `feature/phase-14-cleanup-release-prep` | Merged into `develop` |
 | `feature/phase-13-audit` | Merged into `develop` |
 | `feature/phase-12-skills` | Merged into `develop` |
