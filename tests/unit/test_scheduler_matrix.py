@@ -1,13 +1,13 @@
 """Tests for scheduler + Matrix delivery and policy enforcement."""
 
-from datetime import datetime, timedelta, timezone
+# mypy: disable-error-code="no-untyped-def,arg-type"
+from datetime import UTC, datetime, timedelta
 from typing import Any
-from unittest.mock import AsyncMock
 
 import pytest
 import pytest_asyncio
 
-from hestia.core.types import Message, ScheduledTask, Session, SessionState
+from hestia.core.types import Message, ScheduledTask, Session
 from hestia.orchestrator.types import Turn, TurnState
 from hestia.persistence.db import Database
 from hestia.persistence.scheduler import SchedulerStore
@@ -59,8 +59,8 @@ class FakeOrchestrator:
             session_id=session.id,
             state=TurnState.DONE,
             user_message=user_message,
-            started_at=datetime.now(timezone.utc),
-            completed_at=datetime.now(timezone.utc),
+            started_at=datetime.now(UTC),
+            completed_at=datetime.now(UTC),
             iterations=1,
             tool_calls_made=0,
             final_response=self.responses[-1],
@@ -135,7 +135,7 @@ class TestSchedulerMatrixDelivery:
             if session and session.platform == "matrix":
                 await adapter.send_message(session.platform_user, text)
 
-        fire_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+        fire_at = datetime.now(UTC) - timedelta(minutes=5)
         task = await scheduler_store.create_task(
             session_id=matrix_session.id,
             prompt="Hello from scheduler",
@@ -150,7 +150,7 @@ class TestSchedulerMatrixDelivery:
             tick_interval_seconds=5.0,
         )
 
-        await scheduler._fire_task(task, datetime.now(timezone.utc))
+        await scheduler._fire_task(task, datetime.now(UTC))
 
         # Verify response was captured
         assert len(response_log) == 1
@@ -166,7 +166,7 @@ class TestSchedulerMatrixDelivery:
         self, scheduler_store, session_store, matrix_session
     ):
         """Cron task fires and advances next_run_at; does not disable."""
-        base_time = datetime(2024, 1, 1, 9, 0, 0, tzinfo=timezone.utc)
+        base_time = datetime(2024, 1, 1, 9, 0, 0, tzinfo=UTC)
 
         task = await scheduler_store.create_task(
             session_id=matrix_session.id,
@@ -174,7 +174,9 @@ class TestSchedulerMatrixDelivery:
             cron_expression="*/5 * * * *",  # every 5 minutes
         )
         # Override next_run_at to be due at base_time
-        await scheduler_store.update_after_run(task.id, error=None, now=base_time, next_run_at=base_time)
+        await scheduler_store.update_after_run(
+            task.id, error=None, now=base_time, next_run_at=base_time
+        )
 
         scheduler = await make_scheduler(
             scheduler_store, session_store, [], FakeOrchestrator(), tick_interval=5.0
@@ -184,7 +186,7 @@ class TestSchedulerMatrixDelivery:
 
         updated = await scheduler_store.get_task(task.id)
         assert updated.enabled is True
-        assert updated.next_run_at == datetime(2024, 1, 1, 9, 5, 0, tzinfo=timezone.utc)
+        assert updated.next_run_at == datetime(2024, 1, 1, 9, 5, 0, tzinfo=UTC)
 
     @pytest.mark.asyncio
     async def test_scheduler_skips_delivery_when_session_not_matrix(
@@ -201,7 +203,7 @@ class TestSchedulerMatrixDelivery:
             if session and session.platform == "matrix":
                 await adapter.send_message(session.platform_user, text)
 
-        fire_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+        fire_at = datetime.now(UTC) - timedelta(minutes=5)
         task = await scheduler_store.create_task(
             session_id=cli_session.id,
             prompt="CLI task",
@@ -216,7 +218,7 @@ class TestSchedulerMatrixDelivery:
             tick_interval_seconds=5.0,
         )
 
-        await scheduler._fire_task(task, datetime.now(timezone.utc))
+        await scheduler._fire_task(task, datetime.now(UTC))
 
         # Response captured but not delivered to Matrix
         assert len(response_log) == 1
@@ -235,7 +237,7 @@ class TestSchedulerPolicy:
         orch = FakeOrchestrator()
         orch.turn_error = "Tool write_file was denied: no confirm_callback is configured"
 
-        fire_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+        fire_at = datetime.now(UTC) - timedelta(minutes=5)
         task = await scheduler_store.create_task(
             session_id=matrix_session.id,
             prompt="Write a file please",
@@ -243,7 +245,7 @@ class TestSchedulerPolicy:
         )
 
         scheduler = await make_scheduler(scheduler_store, session_store, [], orch)
-        await scheduler._fire_task(task, datetime.now(timezone.utc))
+        await scheduler._fire_task(task, datetime.now(UTC))
 
         updated = await scheduler_store.get_task(task.id)
         assert "denied" in updated.last_error.lower() or "confirm_callback" in updated.last_error
@@ -263,7 +265,7 @@ class TestSchedulerPolicy:
                 recorded_flag = scheduler_tick_active.get()
                 return await super().process_turn(session, user_message, respond_callback)
 
-        fire_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+        fire_at = datetime.now(UTC) - timedelta(minutes=5)
         task = await scheduler_store.create_task(
             session_id=matrix_session.id,
             prompt="Observed task",
@@ -273,7 +275,7 @@ class TestSchedulerPolicy:
         scheduler = await make_scheduler(
             scheduler_store, session_store, [], ObservingOrchestrator()
         )
-        await scheduler._fire_task(task, datetime.now(timezone.utc))
+        await scheduler._fire_task(task, datetime.now(UTC))
 
         assert recorded_flag is True
 
@@ -286,7 +288,7 @@ class TestSchedulerTeardown:
         self, scheduler_store, session_store, matrix_session
     ):
         """Tasks can be removed via scheduler_store.delete_task."""
-        fire_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+        fire_at = datetime.now(UTC) - timedelta(minutes=5)
         task = await scheduler_store.create_task(
             session_id=matrix_session.id,
             prompt="Temporary task",
@@ -295,7 +297,7 @@ class TestSchedulerTeardown:
 
         # Run and then delete
         scheduler = await make_scheduler(scheduler_store, session_store, [], FakeOrchestrator())
-        await scheduler._fire_task(task, datetime.now(timezone.utc))
+        await scheduler._fire_task(task, datetime.now(UTC))
 
         success = await scheduler_store.delete_task(task.id)
         assert success is True
