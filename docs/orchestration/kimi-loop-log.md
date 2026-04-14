@@ -8,6 +8,18 @@
 
 ---
 
+## 2026-04-14 — Loop: L11 — mock-inference tool + memory matrix (Kimi) → merged
+
+**Kimi:** `.kimi-done`: `LOOP=L11`, commit **`ba46f32`** on `feature/l11-test-tools-memory-mock` (report: [`docs/handoffs/HESTIA_L11_REPORT_20260413.md`](../handoffs/HESTIA_L11_REPORT_20260413.md)).
+
+**Review (Cursor):** `uv run pytest tests/unit/ tests/integration/ -q` — **455 passed** (63.8s). Spot-check: `engine.py` exempts meta-tools `list_tools` / `call_tool` from the outer `allowed_tools` filter so policy-filtered sessions can still use meta-tools; matches integration tests.
+
+**Git:** Fast-forward merge `feature/l11-test-tools-memory-mock` → `develop` (tip **`51749a2`** includes handoff + `.cursorrules` clarification: **do not use Cursor `Await` on the shell task as Kimi completion** — poll `.kimi-done`).
+
+**Queue:** `KIMI_CURRENT.md` → **L12** [`kimi-loops/L12-matrix-e2e-two-user.md`](kimi-loops/L12-matrix-e2e-two-user.md); **`## Review carry-forward`** on L12 filled from L11 handoff (orchestrator semantics noise, optional runtime Matrix parity, aiosqlite warnings).
+
+---
+
 ## 2026-04-14 — Orchestration: split L10 into L10–L14 chain (Cursor)
 
 **No Kimi run.** Broke work into **five** loops: **L10** (orchestrator + Matrix env only), **L11** (mock inference full tool + memory + teardown), **L12** (Matrix two-user E2E), **L13** (scheduler cron/one-shot + Matrix delivery + CLI session binding note), **L14** (runtime-feature-testing doc, matrix-manual-smoke, README, sync credentials doc). Added [`docs/testing/CREDENTIALS_AND_SECRETS.md`](../testing/CREDENTIALS_AND_SECRETS.md), [`docs/prompts/KIMI_LOOPS_L10_L14.md`](../prompts/KIMI_LOOPS_L10_L14.md), `L11`–`L14` specs; trimmed **L10** spec; updated queue, `KIMI_CURRENT`, `HANDOFF_STATE`, `KIMI_PHASE_15` (L10-only).
