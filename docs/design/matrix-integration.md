@@ -64,6 +64,27 @@ New `MatrixConfig` dataclass (mirror style of `TelegramConfig` in `config.py`):
 
 **Login story:** Obtain a token (Element dev tools, `matrix-nio` login once, or dedicated service user). Use **`.matrix.secrets.example.py`** → copy to **`.matrix.secrets.py`** (gitignored) — see **`docs/testing/CREDENTIALS_AND_SECRETS.md`**. Optional **`LOGIN_PASSWORD`** in that file supports Hermes-style manual re-login when the access token rotates; never commit the real file.
 
+#### Runtime env vars
+
+`MatrixConfig.from_env()` loads bot credentials from environment variables for `~/Hestia-runtime`-style deployments:
+
+| Env variable | Maps to `MatrixConfig` field |
+|--------------|------------------------------|
+| `HESTIA_MATRIX_HOMESERVER` | `homeserver` (default: `https://matrix.org`) |
+| `HESTIA_MATRIX_USER_ID` | `user_id` |
+| `HESTIA_MATRIX_DEVICE_ID` | `device_id` (default: `hestia-bot`) |
+| `HESTIA_MATRIX_ACCESS_TOKEN` | `access_token` |
+| `HESTIA_MATRIX_ALLOWED_ROOMS` | `allowed_rooms` (comma-separated room IDs or aliases) |
+
+Example `config.runtime.py` usage:
+
+```python
+from hestia.config import HestiaConfig, MatrixConfig
+
+cfg = HestiaConfig.default()
+cfg.matrix = MatrixConfig.from_env()
+```
+
 ### 2.4 Session and room model
 
 **Recommended default: one Matrix room ↔ one Hestia session** for predictable testing and isolation.

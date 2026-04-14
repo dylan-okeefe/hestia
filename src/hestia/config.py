@@ -91,6 +91,34 @@ class MatrixConfig:
     rate_limit_edits_seconds: float = 1.5
     sync_timeout_ms: int = 30000  # Long-poll timeout for /sync
 
+    @classmethod
+    def from_env(cls, environ: dict[str, str] | None = None) -> MatrixConfig:
+        """Load Matrix configuration from environment variables.
+
+        Reads:
+            HESTIA_MATRIX_HOMESERVER
+            HESTIA_MATRIX_USER_ID
+            HESTIA_MATRIX_DEVICE_ID
+            HESTIA_MATRIX_ACCESS_TOKEN
+            HESTIA_MATRIX_ALLOWED_ROOMS (comma-separated room IDs or aliases)
+        """
+        import os
+
+        env = environ if environ is not None else os.environ
+        allowed_rooms_raw = env.get("HESTIA_MATRIX_ALLOWED_ROOMS", "")
+        allowed_rooms = (
+            [r.strip() for r in allowed_rooms_raw.split(",") if r.strip()]
+            if allowed_rooms_raw
+            else []
+        )
+        return cls(
+            homeserver=env.get("HESTIA_MATRIX_HOMESERVER", "https://matrix.org"),
+            user_id=env.get("HESTIA_MATRIX_USER_ID", ""),
+            device_id=env.get("HESTIA_MATRIX_DEVICE_ID", "hestia-bot"),
+            access_token=env.get("HESTIA_MATRIX_ACCESS_TOKEN", ""),
+            allowed_rooms=allowed_rooms,
+        )
+
 
 @dataclass
 class HestiaConfig:

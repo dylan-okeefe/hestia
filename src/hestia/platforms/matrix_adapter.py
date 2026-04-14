@@ -15,6 +15,7 @@ from nio import (
 )
 
 from hestia.config import MatrixConfig
+from hestia.errors import PlatformError
 from hestia.platforms.base import IncomingMessageCallback, Platform
 
 logger = logging.getLogger(__name__)
@@ -108,7 +109,7 @@ class MatrixAdapter(Platform):
             return response.event_id
         else:
             logger.error("Failed to send message to %s: %s", room_id, response)
-            raise RuntimeError(f"Failed to send message: {response}")
+            raise PlatformError(f"Failed to send message: {response}")
 
     async def edit_message(self, user: str, msg_id: str, text: str) -> None:
         """Edit a message in-place, rate-limited to avoid abuse flags."""
@@ -148,6 +149,7 @@ class MatrixAdapter(Platform):
             logger.debug("Edited message %s in %s", msg_id, room_id)
         else:
             logger.warning("Failed to edit message %s: %s", msg_id, response)
+            raise PlatformError(f"Failed to edit message: {response}")
 
     async def send_error(self, user: str, text: str) -> None:
         """Send an error message to a Matrix room."""
