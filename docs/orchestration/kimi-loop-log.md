@@ -8,6 +8,18 @@
 
 ---
 
+## 2026-04-14 — Loop: L14 — docs/runtime manual smoke (Kimi) → merged (queue complete)
+
+**Kimi:** `.kimi-done`: `LOOP=L14`, commit **`7965fc2`**, **466 passed**, **2 skipped**. Report: [`docs/handoffs/HESTIA_L14_REPORT_20260413.md`](../handoffs/HESTIA_L14_REPORT_20260413.md).
+
+**Review (Cursor):** Re-ran full pytest — **466 passed**, **2 skipped**, only pre-existing aiosqlite warning. Docs delivered: `runtime-feature-testing.md`, `matrix-manual-smoke.md`, README Matrix links, credentials sync, HANDOFF_STATE pointer.
+
+**Git:** Fast-forward `feature/l14-docs-runtime-manual` → `develop` (plus follow-up doc commit `5d5a414` for credentials naming consistency).
+
+**Queue:** L10–L14 chain complete. `KIMI_CURRENT.md` set to idle/complete state; maintainer next step is final pass + `git push`.
+
+---
+
 ## 2026-04-14 — Loop: L13 — scheduler Matrix cron/one-shot (Kimi) → merged
 
 **Kimi:** `.kimi-done`: `LOOP=L13`, commit **`30037e6`**, **466 passed**, **2 skipped**. Report: [`docs/handoffs/HESTIA_L13_REPORT_20260413.md`](../handoffs/HESTIA_L13_REPORT_20260413.md).

@@ -3,7 +3,7 @@
 > **Purpose:** Handoff contract between Claude (Cowork) and Cursor for reviewing Kimi's output and orchestrating the next phase.
 >
 > **Last updated:** 2026-04-14
-> **Last updated by:** Cursor (**L13** merged to `develop`; **L14** queued)
+> **Last updated by:** Cursor (**L14** merged; L10–L14 queue complete on `develop`)
 
 ---
 
@@ -62,7 +62,7 @@ Dylan can **defer per-loop review** to Cursor for a **queued multi-loop run** (s
 
 - **Branch:** `develop` (local **ahead of** `origin/develop` until you `git push` — includes Phase 7 cleanup + orchestration docs)
 - **Phase 7:** **Merged** — commit **`265003b`** on `develop` ("fix: phase 7 cleanup — bugs, security, dead code").
-- **Active Kimi work:** **L14** (docs: runtime worktrees + matrix manual smoke + README + credentials sync). **L13** merged (`develop` tip: scheduler `--session-id` / `--platform`+`--platform-user` binding and Matrix delivery tests). Chain: [`docs/prompts/KIMI_LOOPS_L10_L14.md`](prompts/KIMI_LOOPS_L10_L14.md). Pointer: [`docs/prompts/KIMI_CURRENT.md`](prompts/KIMI_CURRENT.md).
+- **Active Kimi work:** **None** — **L10–L14 complete** and merged to `develop` (latest: L14 docs/operator runbooks). Chain: [`docs/prompts/KIMI_LOOPS_L10_L14.md`](prompts/KIMI_LOOPS_L10_L14.md). Pointer: [`docs/prompts/KIMI_CURRENT.md`](prompts/KIMI_CURRENT.md).
 
 **Phase 7 summary (merged):**
 
@@ -104,7 +104,7 @@ Dylan can **defer per-loop review** to Cursor for a **queued multi-loop run** (s
 
 | Branch | Role |
 |--------|------|
-| `develop` | **Tip** — through **L13** merged; **L14** next (`feature/l14-docs-runtime-manual`). Run `git log -1 --oneline` |
+| `develop` | **Tip** — through **L14** merged; queue complete. Run `git log -1 --oneline` |
 | `feature/phase-14-cleanup-release-prep` | Merged into `develop` |
 | `feature/phase-13-audit` | Merged into `develop` |
 | `feature/phase-12-skills` | Merged into `develop` |
@@ -132,7 +132,8 @@ Dylan can **defer per-loop review** to Cursor for a **queued multi-loop run** (s
 
 | Snapshot | Count |
 |----------|-------|
-| Last `pytest` on `develop` after **L13** merge (2026-04-14) | **466 passed**, **2 skipped** (`matrix_e2e`) |
+| Last `pytest` on `develop` after **L14** merge (2026-04-14) | **466 passed**, **2 skipped** (`matrix_e2e`) |
+| Snapshot after **L13** merge (2026-04-14) | **466 passed**, **2 skipped** (`matrix_e2e`) |
 | Snapshot after **L12** merge (2026-04-14) | **455 passed**, **2 skipped** (`matrix_e2e`) |
 | Snapshot after **L11** merge (2026-04-14) | **455 passed** |
 | Snapshot after **L10** merge (2026-04-14) | **442 passed** |
@@ -173,7 +174,8 @@ Through **ADR-024** (skills, L07). L09 adds cleanup/release prep; no new ADR req
 1. ~~Phase 7 cleanup~~  
 2. ~~**L01 Matrix**~~  
 3. ~~**L01–L09 Kimi queue**~~ — complete on `develop`  
-4. Long-term: `docs/roadmap/future-systems-deferred-roadmap.md`
+4. ~~**L10–L14 queue**~~ — complete on `develop`
+5. Long-term: `docs/roadmap/future-systems-deferred-roadmap.md`
 5. Runtime worktree discipline: see [`docs/orchestration/runtime-feature-testing.md`](orchestration/runtime-feature-testing.md)  
 
 ---

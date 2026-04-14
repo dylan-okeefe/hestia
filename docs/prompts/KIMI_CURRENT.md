@@ -2,21 +2,21 @@
 
 **Orchestrator:** Cursor updates this file after each review.
 
-**Last set by:** Cursor — 2026-04-14 (**L13 merged; L14 active**)
+**Last set by:** Cursor — 2026-04-14 (**L14 merged; L10–L14 chain complete**)
 
 ---
 
 ## Current task
 
-**Active loop:** **L14** — [`../orchestration/kimi-loops/L14-docs-runtime-manual-smoke.md`](../orchestration/kimi-loops/L14-docs-runtime-manual-smoke.md)
+**Active loop:** **None (queue complete)**
 
 **Full chain:** [`KIMI_LOOPS_L10_L14.md`](KIMI_LOOPS_L10_L14.md)
 
-**Branch:** Create **`feature/l14-docs-runtime-manual`** from **`develop`** (must include L13 merge).
+**Branch:** stay on **`develop`** for maintainer final pass and push.
 
-**Kimi prompt:** Point Kimi at **`KIMI_CURRENT.md`** + the **L14** spec (§-1 merge baseline, §0 carry-forward, goals, handoff + `.kimi-done` with `LOOP=L14`).
+**Kimi prompt:** N/A until a new loop is queued.
 
-**Scope:** Docs finalization (runtime worktrees + manual Matrix smoke + README links + credentials sync + handoff state pointer).
+**Scope:** L10–L14 queue completed; awaiting Dylan maintainer pass + push/release steps.
 
 ---
 
