@@ -11,6 +11,14 @@ Ubuntu with llama.cpp + Qwen 3.5 9B. It is built by a three-tool workflow:
 3. **Dylan** — GitHub merge/push when ready, and **final** pass over the repo after
    a queued multi-loop run (Cursor handles per-loop review and the next prompt in between)
 
+**Who runs Kimi and git between loops:** For queued work, **Cursor** runs
+`./scripts/kimi-run-current.sh`, watches completion (`.kimi-done`), reviews diffs,
+fixes trivial issues or tightens prompts, **merges feature branches to `develop`**,
+advances `KIMI_CURRENT.md` / carry-forward, and starts the next loop. **Dylan** does
+not need to operate Kimi or manage that git flow by hand unless they choose to;
+Dylan’s main jobs are direction, secrets on the machine, and **push / release**
+when Cursor says the queue (or a milestone) is green.
+
 ## Before doing anything, read:
 
 1. `docs/HANDOFF_STATE.md` — Current phase, review status, bugs, git state.
@@ -85,7 +93,7 @@ src/hestia/
   tools/              # Tool registry + built-ins
   artifacts/          # Artifact storage
   persistence/        # Database layer (SessionStore, SchedulerStore)
-  platforms/          # Platform ABC + adapters (CLI, Telegram)
+  platforms/          # Platform ABC + adapters (CLI, Telegram, Matrix)
   policy/             # Policy engine
 ```
 
