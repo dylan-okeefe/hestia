@@ -3,7 +3,7 @@
 > **Purpose:** Handoff contract between Claude (Cowork) and Cursor for reviewing Kimi's output and orchestrating the next phase.
 >
 > **Last updated:** 2026-04-14
-> **Last updated by:** Cursor (**L12** merged to `develop`; **L13** queued)
+> **Last updated by:** Cursor (**L13** merged to `develop`; **L14** queued)
 
 ---
 
@@ -62,7 +62,7 @@ Dylan can **defer per-loop review** to Cursor for a **queued multi-loop run** (s
 
 - **Branch:** `develop` (local **ahead of** `origin/develop` until you `git push` — includes Phase 7 cleanup + orchestration docs)
 - **Phase 7:** **Merged** — commit **`265003b`** on `develop` ("fix: phase 7 cleanup — bugs, security, dead code").
-- **Active Kimi work:** **L13** (scheduler cron/one-shot + Matrix delivery + CLI session binding). **L12** merged (`develop` tip: Matrix E2E harness + `matrix_e2e` marker + `matrix_test_send.py` + credentials doc). Chain: [`docs/prompts/KIMI_LOOPS_L10_L14.md`](prompts/KIMI_LOOPS_L10_L14.md). Pointer: [`docs/prompts/KIMI_CURRENT.md`](prompts/KIMI_CURRENT.md).
+- **Active Kimi work:** **L14** (docs: runtime worktrees + matrix manual smoke + README + credentials sync). **L13** merged (`develop` tip: scheduler `--session-id` / `--platform`+`--platform-user` binding and Matrix delivery tests). Chain: [`docs/prompts/KIMI_LOOPS_L10_L14.md`](prompts/KIMI_LOOPS_L10_L14.md). Pointer: [`docs/prompts/KIMI_CURRENT.md`](prompts/KIMI_CURRENT.md).
 
 **Phase 7 summary (merged):**
 
@@ -104,7 +104,7 @@ Dylan can **defer per-loop review** to Cursor for a **queued multi-loop run** (s
 
 | Branch | Role |
 |--------|------|
-| `develop` | **Tip** — through **L12** merged; **L13** next (`feature/l13-scheduler-matrix-cron`). Run `git log -1 --oneline` |
+| `develop` | **Tip** — through **L13** merged; **L14** next (`feature/l14-docs-runtime-manual`). Run `git log -1 --oneline` |
 | `feature/phase-14-cleanup-release-prep` | Merged into `develop` |
 | `feature/phase-13-audit` | Merged into `develop` |
 | `feature/phase-12-skills` | Merged into `develop` |
@@ -132,7 +132,8 @@ Dylan can **defer per-loop review** to Cursor for a **queued multi-loop run** (s
 
 | Snapshot | Count |
 |----------|-------|
-| Last `pytest` on `develop` after **L12** merge (2026-04-14) | **455 passed**, **2 skipped** (`matrix_e2e`) |
+| Last `pytest` on `develop` after **L13** merge (2026-04-14) | **466 passed**, **2 skipped** (`matrix_e2e`) |
+| Snapshot after **L12** merge (2026-04-14) | **455 passed**, **2 skipped** (`matrix_e2e`) |
 | Snapshot after **L11** merge (2026-04-14) | **455 passed** |
 | Snapshot after **L10** merge (2026-04-14) | **442 passed** |
 | Snapshot after L09 merge (2026-04-13) | **437 passed** |

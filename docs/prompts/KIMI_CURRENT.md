@@ -2,21 +2,21 @@
 
 **Orchestrator:** Cursor updates this file after each review.
 
-**Last set by:** Cursor — 2026-04-14 (**L12 merged; L13 active**)
+**Last set by:** Cursor — 2026-04-14 (**L13 merged; L14 active**)
 
 ---
 
 ## Current task
 
-**Active loop:** **L13** — [`../orchestration/kimi-loops/L13-scheduler-matrix-cron.md`](../orchestration/kimi-loops/L13-scheduler-matrix-cron.md)
+**Active loop:** **L14** — [`../orchestration/kimi-loops/L14-docs-runtime-manual-smoke.md`](../orchestration/kimi-loops/L14-docs-runtime-manual-smoke.md)
 
 **Full chain:** [`KIMI_LOOPS_L10_L14.md`](KIMI_LOOPS_L10_L14.md)
 
-**Branch:** Create **`feature/l13-scheduler-matrix-cron`** from **`develop`** (must include L12 merge).
+**Branch:** Create **`feature/l14-docs-runtime-manual`** from **`develop`** (must include L13 merge).
 
-**Kimi prompt:** Point Kimi at **`KIMI_CURRENT.md`** + the **L13** spec (§-1 merge baseline, §0 carry-forward, goals, handoff + `.kimi-done` with `LOOP=L13`).
+**Kimi prompt:** Point Kimi at **`KIMI_CURRENT.md`** + the **L14** spec (§-1 merge baseline, §0 carry-forward, goals, handoff + `.kimi-done` with `LOOP=L14`).
 
-**Scope:** Scheduler cron/one-shot with Matrix delivery; CLI session binding for Matrix-scheduled tasks; tests + policy checks; teardown.
+**Scope:** Docs finalization (runtime worktrees + manual Matrix smoke + README links + credentials sync + handoff state pointer).
 
 ---
 

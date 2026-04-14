@@ -2,7 +2,10 @@
 
 ## Review carry-forward
 
-- *(Cursor: fill from L13 review.)*
+- **Orchestrator semantics (non-blocking):** After `DONE`, outer `except` can still record `failure_store` for delivery errors; remains noisy but non-blocking.
+- **Runtime parity (optional):** `~/Hestia-runtime/config.runtime.py` still ad-hoc Telegram env; optional `MatrixConfig.from_env()` / `.matrix.secrets.py` parity note in docs.
+- **Housekeeping:** pre-existing aiosqlite thread warnings in pytest.
+- **L13 landed:** scheduler now supports `--session-id` / `--platform` + `--platform-user`; ensure manual docs mention Matrix scheduling path.
 
 **Branch:** `feature/l14-docs-runtime-manual` from **`develop`** (includes **L13**).
 

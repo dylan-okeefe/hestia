@@ -8,6 +8,18 @@
 
 ---
 
+## 2026-04-14 — Loop: L13 — scheduler Matrix cron/one-shot (Kimi) → merged
+
+**Kimi:** `.kimi-done`: `LOOP=L13`, commit **`30037e6`**, **466 passed**, **2 skipped**. Report: [`docs/handoffs/HESTIA_L13_REPORT_20260413.md`](../handoffs/HESTIA_L13_REPORT_20260413.md).
+
+**Review (Cursor):** Re-ran full pytest — **466 passed**, **2 skipped** (`matrix_e2e`), only pre-existing aiosqlite thread warnings.
+
+**Git:** Fast-forward `feature/l13-scheduler-matrix-cron` → `develop`.
+
+**Queue:** `KIMI_CURRENT.md` → **L14** [`L14-docs-runtime-manual-smoke.md`](kimi-loops/L14-docs-runtime-manual-smoke.md); **`## Review carry-forward`** filled from L13 handoff.
+
+---
+
 ## 2026-04-14 — Loop: L12 — Matrix E2E two-user (Kimi) → merged
 
 **Kimi:** `.kimi-done`: `LOOP=L12`, commit **`f5c9297`**, **455 passed**, **2 skipped** (`matrix_e2e`). Report: [`docs/handoffs/HESTIA_L12_REPORT_20260413.md`](../handoffs/HESTIA_L12_REPORT_20260413.md).
