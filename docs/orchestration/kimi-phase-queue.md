@@ -17,6 +17,8 @@
 | 12 | `feature/l12-matrix-e2e-two-user` | [`kimi-loops/L12-matrix-e2e-two-user.md`](kimi-loops/L12-matrix-e2e-two-user.md) |
 | 13 | `feature/l13-scheduler-matrix-cron` | [`kimi-loops/L13-scheduler-matrix-cron.md`](kimi-loops/L13-scheduler-matrix-cron.md) |
 | 14 | `feature/l14-docs-runtime-manual` | [`kimi-loops/L14-docs-runtime-manual-smoke.md`](kimi-loops/L14-docs-runtime-manual-smoke.md) |
+| 15 | `feature/l15-security-hardening` | [`kimi-loops/L15-security-bug-fixes.md`](kimi-loops/L15-security-bug-fixes.md) |
+| 16 | `feature/l16-pre-public-cleanup` | [`kimi-loops/L16-pre-public-cleanup.md`](kimi-loops/L16-pre-public-cleanup.md) |
 
 **Chain index (L10–L14):** [`docs/prompts/KIMI_LOOPS_L10_L14.md`](../prompts/KIMI_LOOPS_L10_L14.md) · **Credentials:** [`docs/testing/CREDENTIALS_AND_SECRETS.md`](../testing/CREDENTIALS_AND_SECRETS.md)
 

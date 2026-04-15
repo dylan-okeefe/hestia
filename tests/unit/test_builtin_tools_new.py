@@ -114,15 +114,15 @@ class TestHttpGet:
         assert result == "Test response content"
         mock_client.get.assert_called_once_with("http://1.1.1.1/test")
 
-    def test_ssrf_blocks_private_ips(self):
-        """SSRF protection blocks private IP ranges."""
-        assert _is_url_safe("http://127.0.0.1/secret") is not None
-        assert _is_url_safe("http://10.0.0.1/internal") is not None
-        assert _is_url_safe("http://192.168.1.1/router") is not None
-        assert _is_url_safe("http://172.16.0.1/internal") is not None
-        assert _is_url_safe("http://169.254.169.254/latest/meta-data/") is not None
+    def test_preflight_blocks_invalid_schemes(self):
+        """Pre-flight check blocks invalid schemes and missing hostnames."""
+        assert _is_url_safe("file:///etc/passwd") is not None
+        assert _is_url_safe("ftp://example.com/file") is not None
+        assert _is_url_safe("example.com/path") is not None
+        assert _is_url_safe("http:///path") is not None
 
-    def test_ssrf_allows_public_ips(self):
-        """SSRF protection allows public IP ranges."""
+    def test_preflight_allows_public_and_private_hostnames(self):
+        """Pre-flight allows all valid HTTP(S) URLs; transport blocks private IPs."""
         assert _is_url_safe("http://1.1.1.1/") is None
         assert _is_url_safe("https://93.184.216.34/") is None
+        assert _is_url_safe("http://127.0.0.1/secret") is None

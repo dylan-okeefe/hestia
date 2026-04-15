@@ -62,7 +62,7 @@ Dylan can **defer per-loop review** to Cursor for a **queued multi-loop run** (s
 
 - **Branch:** `develop` (local **ahead of** `origin/develop` until you `git push` — includes Phase 7 cleanup + orchestration docs)
 - **Phase 7:** **Merged** — commit **`265003b`** on `develop` ("fix: phase 7 cleanup — bugs, security, dead code").
-- **Active Kimi work:** **None** — **L10–L14 complete** and merged to `develop` (latest: L14 docs/operator runbooks). Chain: [`docs/prompts/KIMI_LOOPS_L10_L14.md`](prompts/KIMI_LOOPS_L10_L14.md). Pointer: [`docs/prompts/KIMI_CURRENT.md`](prompts/KIMI_CURRENT.md).
+- **Active Kimi work:** **L15–L16 queued** (pre-public hardening). L15 = security & bug fixes; L16 = cleanup & polish. Pointer: [`docs/prompts/KIMI_CURRENT.md`](prompts/KIMI_CURRENT.md).
 
 **Phase 7 summary (merged):**
 
@@ -89,7 +89,8 @@ Dylan can **defer per-loop review** to Cursor for a **queued multi-loop run** (s
 9. ~~**L07 Phase 12**~~ — Done (`12d7531` on `develop`)  
 10. ~~**L08 Phase 13**~~ — Done (`381a543` on `develop`)  
 11. ~~**L09 Phase 14**~~ — Done (`71c09b1` on `develop`)  
-12. **L10–L14** — **Queued** (see [`kimi-phase-queue.md`](orchestration/kimi-phase-queue.md) rows 10–14, [`KIMI_LOOPS_L10_L14.md`](prompts/KIMI_LOOPS_L10_L14.md))
+12. ~~**L10–L14**~~ — Done (see [`kimi-phase-queue.md`](orchestration/kimi-phase-queue.md) rows 10–14)
+13. **L15–L16** — **Queued** (pre-public hardening: security fixes + cleanup/polish)
 
 **Earlier prompts (reference only):**
 
@@ -175,8 +176,9 @@ Through **ADR-024** (skills, L07). L09 adds cleanup/release prep; no new ADR req
 2. ~~**L01 Matrix**~~  
 3. ~~**L01–L09 Kimi queue**~~ — complete on `develop`  
 4. ~~**L10–L14 queue**~~ — complete on `develop`
-5. Long-term: `docs/roadmap/future-systems-deferred-roadmap.md`
-5. Runtime worktree discipline: see [`docs/orchestration/runtime-feature-testing.md`](orchestration/runtime-feature-testing.md)  
+5. **L15–L16** — pre-public hardening (security, cleanup, polish)
+6. Long-term: `docs/roadmap/future-systems-deferred-roadmap.md`
+7. Runtime worktree discipline: see [`docs/orchestration/runtime-feature-testing.md`](orchestration/runtime-feature-testing.md)  
 
 ---
 

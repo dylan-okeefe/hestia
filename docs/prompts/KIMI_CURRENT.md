@@ -2,21 +2,29 @@
 
 **Orchestrator:** Cursor updates this file after each review.
 
-**Last set by:** Cursor — 2026-04-14 (**L14 merged; L10–L14 chain complete**)
+**Last set by:** Cursor — 2026-04-15 (**L15 queued — security & bug fixes**)
 
 ---
 
 ## Current task
 
-**Active loop:** **None (queue complete)**
+**Active loop:** **L15** — Security & bug fixes (pre-public hardening)
 
-**Full chain:** [`KIMI_LOOPS_L10_L14.md`](KIMI_LOOPS_L10_L14.md)
+**Spec:** [`../orchestration/kimi-loops/L15-security-bug-fixes.md`](../orchestration/kimi-loops/L15-security-bug-fixes.md)
 
-**Branch:** stay on **`develop`** for maintainer final pass and push.
+**Branch:** `feature/l15-security-hardening` (create from `develop`)
 
-**Kimi prompt:** N/A until a new loop is queued.
+**Kimi prompt:** Read `docs/prompts/KIMI_CURRENT.md`, then execute the full spec at the linked file. Create the branch, implement every section (§1–§5), run tests + ruff after each commit, write the handoff report and `.kimi-done` artifact.
 
-**Scope:** L10–L14 queue completed; awaiting Dylan maintainer pass + push/release steps.
+**Scope:** Fix SSRF (redirect + DNS rebinding), terminal process group kill, NameError guard cleanup, atomic inline index write, allowed_users deny-all default.
+
+---
+
+## Queue (after L15)
+
+| Order | Spec |
+|-------|------|
+| L16 | [`L16-pre-public-cleanup.md`](../orchestration/kimi-loops/L16-pre-public-cleanup.md) — archive handoffs, skills docs, asyncpg optional, README fixes, lazy imports, model_name validation |
 
 ---
 
