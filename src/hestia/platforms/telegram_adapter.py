@@ -121,9 +121,12 @@ class TelegramAdapter(Platform):
         )
 
     def _is_allowed(self, user_id: int, username: str | None) -> bool:
-        """Check if a user is in the allowed list."""
+        """Check if a user is in the allowed list.
+
+        Empty list = deny all (require explicit opt-in).
+        """
         if not self._config.allowed_users:
-            return True  # No whitelist = allow all
+            return False
 
         allowed = self._config.allowed_users
         return str(user_id) in allowed or (username is not None and username in allowed)

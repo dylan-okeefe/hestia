@@ -62,7 +62,9 @@ class TelegramConfig:
     """Configuration for the Telegram adapter."""
 
     bot_token: str = ""
-    allowed_users: list[str] = field(default_factory=list)
+    allowed_users: list[str] = field(
+        default_factory=list
+    )  # Empty list denies all users. Populate with user IDs or usernames to allow access.
     rate_limit_edits_seconds: float = 1.5
     http_version: str = "1.1"  # Force HTTP/1.1 for Telegram API stability
     fallback_ips: list[str] = field(

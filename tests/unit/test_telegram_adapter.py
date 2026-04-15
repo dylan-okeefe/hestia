@@ -40,8 +40,8 @@ class TestTelegramAdapterBasics:
         with pytest.raises(ValueError, match="bot_token is required"):
             TelegramAdapter(cfg)
 
-    def test_allowed_users_empty_allows_all(self, adapter: TelegramAdapter) -> None:
-        assert adapter._is_allowed(12345, "testuser") is True
+    def test_empty_allowed_users_denies_all(self, adapter: TelegramAdapter) -> None:
+        assert adapter._is_allowed(12345, "testuser") is False
 
     def test_allowed_users_by_id(self, telegram_config: TelegramConfig) -> None:
         telegram_config.allowed_users = ["12345"]
@@ -153,9 +153,12 @@ class TestTelegramAdapterAsync:
     @pytest.mark.asyncio
     async def test_handle_message_calls_on_message_callback(
         self,
-        adapter: TelegramAdapter,
+        telegram_config: TelegramConfig,
     ) -> None:
         """Verify the callback receives (platform, user, text)."""
+        telegram_config.allowed_users = ["12345"]
+        adapter = TelegramAdapter(telegram_config)
+
         received_args: tuple[str, str, str] | None = None
 
         async def on_message(platform: str, user: str, text: str) -> None:
@@ -281,8 +284,14 @@ class TestTelegramAdapterAsync:
         assert mock_bot.edit_message_text.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_handle_start_sends_welcome(self, adapter: TelegramAdapter) -> None:
+    async def test_handle_start_sends_welcome(
+        self,
+        telegram_config: TelegramConfig,
+    ) -> None:
         """Verify /start command sends welcome message."""
+        telegram_config.allowed_users = ["12345"]
+        adapter = TelegramAdapter(telegram_config)
+
         mock_update = MagicMock(spec=Update)
         mock_user = MagicMock(spec=User)
         mock_user.id = 12345
