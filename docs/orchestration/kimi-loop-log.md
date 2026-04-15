@@ -8,6 +8,26 @@
 
 ---
 
+## 2026-04-15 — Loop: L15 — Security & bug fixes (Kimi) → merged
+
+**Kimi:** `.kimi-done`: `LOOP=L15`, commit **`d5a57f8`** (tip **`a5468d5`** with handoff), **472 passed**, **6 skipped**. Report: [`docs/handoffs/HESTIA_L15_REPORT_20260415.md`](../handoffs/HESTIA_L15_REPORT_20260415.md).
+
+**Review (Cursor):** Re-ran full pytest — **472 passed**, **6 skipped**. Ruff: 165 pre-existing errors, no new violations. Spot-checked all 5 security/bug fixes:
+
+1. **SSRF transport-layer fix** — `SSRFSafeTransport` intercepts every connection at transport layer, validates resolved IPs against blocked ranges. Pre-flight `_is_url_safe()` kept for user-friendly errors (scheme/hostname only, no DNS). Redirect SSRF and DNS rebinding both addressed.
+2. **Terminal process group kill** — `start_new_session=True` + `os.killpg()` with SIGKILL. Fallback chain: killpg → proc.kill → ProcessLookupError. Stale "Phase 1c" comment removed.
+3. **NameError guards removed** — `allowed_tools`, `policy_snapshot`, `slot_snapshot` initialized at top of `process_turn()`. Both `except NameError` blocks removed.
+4. **Atomic inline index write** — `tempfile.mkstemp()` + `os.replace()` with cleanup on failure.
+5. **allowed_users deny-all** — Empty list now returns `False` in `_is_allowed()`. Config docstring updated.
+
+**New tests:** `test_terminal.py` (process group kill, timeout), `test_http_get_ssrf.py` (redirect blocking, transport-layer checks), `test_artifacts.py` (atomic write), `test_telegram_adapter.py` (empty allowed_users denied).
+
+**Git:** Fast-forward `feature/l15-security-hardening` → `develop` (tip `a5468d5`).
+
+**Queue:** `KIMI_CURRENT.md` → **L16** [`L16-pre-public-cleanup.md`](kimi-loops/L16-pre-public-cleanup.md); **`## Review carry-forward`** filled with lazy import note and pre-existing ruff debt.
+
+---
+
 ## 2026-04-14 — Loop: L14 — docs/runtime manual smoke (Kimi) → merged (queue complete)
 
 **Kimi:** `.kimi-done`: `LOOP=L14`, commit **`7965fc2`**, **466 passed**, **2 skipped**. Report: [`docs/handoffs/HESTIA_L14_REPORT_20260413.md`](../handoffs/HESTIA_L14_REPORT_20260413.md).

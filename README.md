@@ -74,6 +74,25 @@ hestia --config config.py telegram
 
 **Artifacts** — When tool outputs are too large for the conversation (files, HTTP responses, command output), they're automatically saved to disk and replaced with a preview + handle. The model can read the full artifact when it needs to. This keeps conversations focused without losing data.
 
+### Skills (experimental)
+
+Hestia includes a skills framework for defining multi-step workflows as decorated Python functions. Skills declare their required tools and capabilities, and can be indexed for inclusion in the system prompt.
+
+```python
+from hestia.skills import skill, SkillState
+
+@skill(
+    name="daily_briefing",
+    description="Summarize today's calendar and weather",
+    required_tools=["http_get", "memory_search"],
+    state=SkillState.DRAFT,
+)
+async def daily_briefing(context):
+    ...
+```
+
+This system is functional but not yet integrated into the orchestrator's tool-calling flow. A `run_skill` meta-tool and built-in skill library are planned for a future release. See [ADR-024](docs/adr/ADR-024-skills-user-defined-python-functions.md) for the design rationale.
+
 ---
 
 ## Platforms

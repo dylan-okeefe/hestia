@@ -15,6 +15,7 @@ class SkillState(StrEnum):
     """
 
     DRAFT = "draft"
+    EXPERIMENTAL = "experimental"
     TESTED = "tested"
     TRUSTED = "trusted"
     DEPRECATED = "deprecated"

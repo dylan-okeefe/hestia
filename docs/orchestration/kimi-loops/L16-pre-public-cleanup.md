@@ -2,7 +2,10 @@
 
 ## Review carry-forward
 
-- *(filled after L15 review)*
+- **Lazy `import base64` in `artifacts/store.py`:** L15 added `os` and `tempfile` at module level but left `import base64` inside `_save_inline_index()`. Move it to module level in §5.
+- **Pre-existing ruff debt:** 165 ruff errors across the codebase (pre-existing, not from L15). Not in scope for this loop.
+- **aiosqlite thread warnings:** Pre-existing pytest housekeeping item. Not blocking.
+- **L15 changed `_is_url_safe` to skip DNS resolution** — the docstring update is good, no further carry-forward.
 
 **Branch:** `feature/l16-pre-public-cleanup` from **`develop`** (includes **L15**).
 
