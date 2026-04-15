@@ -1,6 +1,8 @@
 """Terminal/shell command tool."""
 
 import asyncio
+import os
+import signal
 
 from hestia.tools.capabilities import SHELL_EXEC
 from hestia.tools.metadata import tool
@@ -23,7 +25,7 @@ from hestia.tools.metadata import tool
         "required": ["command"],
     },
     max_inline_chars=4000,
-    requires_confirmation=True,  # Phase 1c will enforce this
+    requires_confirmation=True,
     tags=["system"],
     capabilities=[SHELL_EXEC],
 )
@@ -33,15 +35,18 @@ async def terminal(command: str, timeout: float = 30.0) -> str:
         command,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        start_new_session=True,
     )
     try:
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except TimeoutError:
         try:
-            proc.kill()
-        except PermissionError:
-            # May fail in sandboxed environments; process will exit on its own
-            pass
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except (PermissionError, ProcessLookupError, OSError):
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
         await proc.wait()
         return f"TIMEOUT after {timeout}s"
 
