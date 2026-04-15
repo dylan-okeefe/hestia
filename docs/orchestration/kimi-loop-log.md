@@ -8,6 +8,28 @@
 
 ---
 
+## 2026-04-15 — Loop: L16 — Pre-public cleanup (Kimi) → merged (L15–L16 queue complete)
+
+**Kimi:** `.kimi-done`: `LOOP=L16`, commit **`db1298f`**, **474 passed**, **6 skipped**.
+
+**Review (Cursor):** Re-ran full pytest — **474 passed**, **6 skipped**. Spot-checked all 7 sections:
+
+1. **Handoff files archived** — `docs/HANDOFF_STATE.md` + 16 handoff reports git-removed. Copied to `~/vault/Projects/Hestia-Handoff-Archive/`.
+2. **Skills documented** — New "Skills (experimental)" section in README with `@skill` decorator example, linked to ADR-024.
+3. **asyncpg optional** — Moved from `dependencies` to `[project.optional-dependencies] postgres`. `db.py` adds helpful `ImportError` with install instruction.
+4. **README security** — Config file execution warning added.
+5. **Lazy imports moved** — `base64` in `store.py`, `re` in `engine.py`, `json` in `trace_store.py` moved to module level. `httpx` in `http_get.py` already at top (done in L15).
+6. **model_name default** — Changed to empty string. `InferenceClient.__init__` validates and raises `ValueError`. Example config updated.
+7. **Quickstart reordered** — Prerequisites section with llama.cpp setup added before install commands. PostgreSQL extra documented.
+
+**Cleanup:** `.kimi-output-l16.log` was accidentally tracked; removed. `.gitignore` broadened to `.kimi-output*.log`.
+
+**Git:** Fast-forward `feature/l16-pre-public-cleanup` → `develop`.
+
+**Queue:** L15–L16 complete. All 15 pre-public review items addressed.
+
+---
+
 ## 2026-04-15 — Loop: L15 — Security & bug fixes (Kimi) → merged
 
 **Kimi:** `.kimi-done`: `LOOP=L15`, commit **`d5a57f8`** (tip **`a5468d5`** with handoff), **472 passed**, **6 skipped**. Report: [`docs/handoffs/HESTIA_L15_REPORT_20260415.md`](../handoffs/HESTIA_L15_REPORT_20260415.md).
