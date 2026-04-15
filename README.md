@@ -38,6 +38,20 @@ You send Hestia a message — through the terminal, Telegram, or Matrix. Here's 
 
 ## Quickstart
 
+### Prerequisites
+
+Hestia connects to a [llama.cpp](https://github.com/ggerganov/llama.cpp) server for inference. Start it before running Hestia:
+
+```bash
+# Download and build llama.cpp (see their README for details)
+# Then start the server with your model:
+llama-server -m your-model.gguf -c 8192 --port 8001
+```
+
+Hestia connects to `http://localhost:8001` by default. See [Running on your hardware](#running-on-your-hardware) for GPU-specific options.
+
+### Install and run
+
 ```bash
 git clone https://github.com/dylanokeefe/hestia.git
 cd hestia
