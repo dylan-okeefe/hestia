@@ -1,7 +1,9 @@
 """ArtifactStore with inline + file-backed storage and TTL."""
 
 import json
+import os
 import secrets
+import tempfile
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -75,17 +77,24 @@ class ArtifactStore:
 
     def _save_inline_index(self) -> None:
         """Save inline artifact index to disk."""
-        index_path = self._root / "inline.json"
         import base64
 
+        index_path = self._root / "inline.json"
         data = {
             "content": {
                 handle: base64.b64encode(content).decode("ascii")
                 for handle, content in self._inline.items()
             }
         }
-        with open(index_path, "w") as f:
-            json.dump(data, f)
+        # Write to temp file + atomic rename to prevent corruption on crash
+        fd, tmp_path = tempfile.mkstemp(dir=self._root, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(data, f)
+            os.replace(tmp_path, index_path)
+        except BaseException:
+            os.unlink(tmp_path)
+            raise
 
     def _generate_handle(self) -> str:
         """Generate an opaque handle.
