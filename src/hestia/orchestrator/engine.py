@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 import uuid
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
@@ -298,8 +299,6 @@ class Orchestrator:
                                 and msg.content
                                 and "artifact://" in msg.content
                             ):
-                                import re
-
                                 handles = re.findall(
                                     r"artifact://([a-zA-Z0-9_-]+)", msg.content
                                 )

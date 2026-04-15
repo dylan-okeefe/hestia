@@ -1,5 +1,6 @@
 """ArtifactStore with inline + file-backed storage and TTL."""
 
+import base64
 import json
 import os
 import secrets
@@ -71,14 +72,10 @@ class ArtifactStore:
             with open(index_path) as f:
                 data = json.load(f)
                 for handle, content_b64 in data.get("content", {}).items():
-                    import base64
-
                     self._inline[handle] = base64.b64decode(content_b64)
 
     def _save_inline_index(self) -> None:
         """Save inline artifact index to disk."""
-        import base64
-
         index_path = self._root / "inline.json"
         data = {
             "content": {

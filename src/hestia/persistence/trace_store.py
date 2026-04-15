@@ -5,6 +5,7 @@ This is the foundation for analysis features — you can't analyze what you don'
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -87,8 +88,6 @@ class TraceStore:
 
     async def record(self, trace: TraceRecord) -> None:
         """Persist a trace record."""
-        import json
-
         sql = sa.text(
             "INSERT INTO traces (id, session_id, turn_id, started_at, ended_at, "
             "user_input_summary, tools_called, tool_call_count, delegated, outcome, "
@@ -127,8 +126,6 @@ class TraceStore:
         self, limit: int = 20, outcome: str | None = None
     ) -> list[TraceRecord]:
         """List recent traces with optional outcome filter."""
-        import json
-
         if outcome:
             sql = sa.text(
                 "SELECT id, session_id, turn_id, started_at, ended_at, "
@@ -190,8 +187,6 @@ class TraceStore:
 
     def _row_to_trace(self, row: Any) -> TraceRecord:
         """Convert a database row to a TraceRecord."""
-        import json
-
         started_at = row.started_at
         if isinstance(started_at, str):
             started_at = datetime.fromisoformat(started_at)
