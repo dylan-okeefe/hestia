@@ -265,6 +265,8 @@ Register it in your config or CLI setup and it's available to the model.
 
 **User allowlists.** Telegram and Matrix adapters support allowlists. Only authorized users or rooms can interact with the bot.
 
+**Config file execution.** Hestia config files are Python modules loaded via `importlib`. This means a config file can execute arbitrary code — this is intentional (it lets you compute config values, import secrets from environment variables, etc.), but you should treat config files with the same caution as any executable script. Never load a config file from an untrusted source.
+
 ---
 
 ## Running on your hardware
