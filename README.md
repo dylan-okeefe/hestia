@@ -206,6 +206,14 @@ config = HestiaConfig(
 
 CLI flags (`--config`, `--db-path`, `--inference-url`, `--verbose`) override config values.
 
+**PostgreSQL.** SQLite is the default and requires no extra dependencies. For PostgreSQL, install the `postgres` extra:
+
+```bash
+uv sync --extra postgres
+# or
+pip install hestia[postgres]
+```
+
 ---
 
 ## Built-in tools

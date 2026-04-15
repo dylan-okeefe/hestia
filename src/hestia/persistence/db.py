@@ -9,6 +9,15 @@ from hestia.errors import PersistenceError
 from hestia.persistence.schema import metadata
 
 
+def _asyncpg_available() -> bool:
+    """Check if asyncpg is installed."""
+    try:
+        import asyncpg  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
 class Database:
     """Async database connection manager using SQLAlchemy Core."""
 
@@ -20,6 +29,11 @@ class Database:
                  sqlite+aiosqlite:///path/to/db.db
                  postgresql+asyncpg://user:pw@host:5432/db
         """
+        if url.startswith("postgresql") and not _asyncpg_available():
+            raise ImportError(
+                "PostgreSQL support requires the 'postgres' extra: "
+                "pip install hestia[postgres]"
+            )
         self._url = url
         self._engine: AsyncEngine | None = None
 
