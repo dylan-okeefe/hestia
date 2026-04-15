@@ -70,6 +70,11 @@ class InferenceClient:
             model_name: Model name to use in requests
             timeout: Default timeout for chat requests (seconds)
         """
+        if not model_name:
+            raise ValueError(
+                "inference.model_name is required — set it to your llama.cpp model filename "
+                "(e.g. 'my-model-Q4_K_M.gguf')"
+            )
         self.base_url = base_url.rstrip("/")
         self.model_name = model_name
         self.timeout = timeout

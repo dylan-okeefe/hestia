@@ -487,7 +487,6 @@ source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },
     { name = "alembic" },
-    { name = "asyncpg" },
     { name = "click" },
     { name = "croniter" },
     { name = "httpx" },
@@ -496,6 +495,11 @@ dependencies = [
     { name = "python-dateutil" },
     { name = "python-telegram-bot" },
     { name = "sqlalchemy", extra = ["asyncio"] },
+]
+
+[package.optional-dependencies]
+postgres = [
+    { name = "asyncpg" },
 ]
 
 [package.dev-dependencies]
@@ -510,7 +514,7 @@ dev = [
 requires-dist = [
     { name = "aiosqlite", specifier = ">=0.22.1" },
     { name = "alembic", specifier = ">=1.18.4" },
-    { name = "asyncpg", specifier = ">=0.31.0" },
+    { name = "asyncpg", marker = "extra == 'postgres'", specifier = ">=0.31.0" },
     { name = "click", specifier = ">=8.1.8" },
     { name = "croniter", specifier = ">=2.0" },
     { name = "httpx", specifier = ">=0.28.1" },
@@ -520,6 +524,7 @@ requires-dist = [
     { name = "python-telegram-bot", specifier = ">=21.0" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.49" },
 ]
+provides-extras = ["postgres"]
 
 [package.metadata.requires-dev]
 dev = [

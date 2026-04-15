@@ -16,7 +16,7 @@ class TestDefaultConfig:
 
         # Inference defaults
         assert cfg.inference.base_url == "http://localhost:8001"
-        assert cfg.inference.model_name == "Qwen3.5-9B-UD-Q4_K_XL.gguf"
+        assert cfg.inference.model_name == ""
         assert cfg.inference.default_reasoning_budget == 2048
         assert cfg.inference.max_tokens == 1024
 
@@ -83,7 +83,7 @@ config = HestiaConfig(
         assert cfg.system_prompt == "Custom prompt"
         assert cfg.verbose is True
         # Other values use defaults
-        assert cfg.inference.model_name == "Qwen3.5-9B-UD-Q4_K_XL.gguf"
+        assert cfg.inference.model_name == ""
 
     def test_from_file_rejects_missing_config_var(self, tmp_path):
         """File without config variable raises TypeError."""

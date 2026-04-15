@@ -174,7 +174,7 @@ from hestia.config import (
 config = HestiaConfig(
     inference=InferenceConfig(
         base_url="http://localhost:8001",
-        model_name="Qwen3.5-9B-UD-Q4_K_XL.gguf",
+        model_name="your-model-Q4_K_M.gguf",  # Must match your GGUF filename
         default_reasoning_budget=2048,
         max_tokens=1024,
     ),

@@ -7,8 +7,8 @@ from hestia.config import (
     HestiaConfig,
     IdentityConfig,
     InferenceConfig,
-    SlotConfig,
     SchedulerConfig,
+    SlotConfig,
     StorageConfig,
     TelegramConfig,
 )
@@ -16,7 +16,7 @@ from hestia.config import (
 config = HestiaConfig(
     inference=InferenceConfig(
         base_url="http://127.0.0.1:8001",
-        model_name="Qwen3.5-9B-UD-Q4_K_XL.gguf",
+        model_name="your-model-Q4_K_M.gguf",  # Must match the filename of your GGUF model
         default_reasoning_budget=2048,
         max_tokens=1024,
     ),

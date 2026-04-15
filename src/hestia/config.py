@@ -28,7 +28,7 @@ class InferenceConfig:
     """Configuration for the llama.cpp inference server."""
 
     base_url: str = "http://localhost:8001"
-    model_name: str = "Qwen3.5-9B-UD-Q4_K_XL.gguf"
+    model_name: str = ""
     default_reasoning_budget: int = 2048
     max_tokens: int = 1024
 

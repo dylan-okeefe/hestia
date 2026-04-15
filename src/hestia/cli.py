@@ -294,7 +294,10 @@ def cli(
     # Build subsystems from config
     db = Database(cfg.storage.database_url)
     artifact_store = ArtifactStore(cfg.storage.artifacts_dir)
-    inference = InferenceClient(cfg.inference.base_url, cfg.inference.model_name)
+    # Allow empty model_name for commands that don't need inference; commands
+    # that do will validate before use.
+    model_name = cfg.inference.model_name or "dummy"
+    inference = InferenceClient(cfg.inference.base_url, model_name)
     session_store = SessionStore(db)
     policy = DefaultPolicyEngine(
         default_reasoning_budget=cfg.inference.default_reasoning_budget
@@ -427,6 +430,11 @@ def init(ctx: click.Context) -> None:
 def chat(ctx: click.Context) -> None:
     """Start an interactive chat session."""
     app: CliAppContext = ctx.obj["app"]
+    if not app.config.inference.model_name:
+        raise ValueError(
+            "inference.model_name is required — set it to your llama.cpp model filename "
+            "(e.g. 'my-model-Q4_K_M.gguf')"
+        )
     app.confirm_callback = CliConfirmHandler()
 
     async def _chat() -> None:
@@ -495,6 +503,11 @@ def chat(ctx: click.Context) -> None:
 def ask(ctx: click.Context, message: str) -> None:
     """Send a single message and get a response."""
     app: CliAppContext = ctx.obj["app"]
+    if not app.config.inference.model_name:
+        raise ValueError(
+            "inference.model_name is required — set it to your llama.cpp model filename "
+            "(e.g. 'my-model-Q4_K_M.gguf')"
+        )
     app.confirm_callback = CliConfirmHandler()
 
     async def _ask() -> None:
@@ -1074,6 +1087,11 @@ def run_telegram(ctx: click.Context) -> None:
     """Run Hestia as a Telegram bot (blocks until Ctrl-C)."""
     ctx.obj["confirm_callback"] = None
     cfg: HestiaConfig = ctx.obj["config"]
+    if not cfg.inference.model_name:
+        raise ValueError(
+            "inference.model_name is required — set it to your llama.cpp model filename "
+            "(e.g. 'my-model-Q4_K_M.gguf')"
+        )
     db: Database = ctx.obj["db"]
     inference: InferenceClient = ctx.obj["inference"]
     session_store: SessionStore = ctx.obj["session_store"]
@@ -1195,6 +1213,11 @@ def run_matrix(ctx: click.Context) -> None:
     """Run Hestia as a Matrix bot (blocks until Ctrl-C)."""
     ctx.obj["confirm_callback"] = None
     cfg: HestiaConfig = ctx.obj["config"]
+    if not cfg.inference.model_name:
+        raise ValueError(
+            "inference.model_name is required — set it to your llama.cpp model filename "
+            "(e.g. 'my-model-Q4_K_M.gguf')"
+        )
     db: Database = ctx.obj["db"]
     inference: InferenceClient = ctx.obj["inference"]
     session_store: SessionStore = ctx.obj["session_store"]
