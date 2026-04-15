@@ -156,6 +156,10 @@ class Orchestrator:
 
             trace_record_id: str | None = None
 
+            allowed_tools: list[str] | None = None
+            policy_snapshot: str = json.dumps({"error": "policy not initialized"})
+            slot_snapshot: str = json.dumps({"error": "slot not initialized"})
+
             try:
                 # Start processing
                 await self._transition(turn, TurnState.BUILDING_CONTEXT)
@@ -367,22 +371,19 @@ class Orchestrator:
                             user_input_summary = raw_summary
 
                         # Build policy snapshot using policy engine methods
-                        try:
-                            reasoning_budget = turn.reasoning_budget
-                            if reasoning_budget is None:
-                                reasoning_budget = self._policy.reasoning_budget(
-                                    session, turn.iterations
-                                )
-                            policy_snapshot = json.dumps(
-                                {
-                                    "reasoning_budget": reasoning_budget,
-                                    "turn_token_budget": self._policy.turn_token_budget(session),
-                                    "tool_filter_active": allowed_tools is not None,
-                                },
-                                default=str,
+                        reasoning_budget = turn.reasoning_budget
+                        if reasoning_budget is None:
+                            reasoning_budget = self._policy.reasoning_budget(
+                                session, turn.iterations
                             )
-                        except NameError:
-                            policy_snapshot = json.dumps({"error": "policy not initialized"})
+                        policy_snapshot = json.dumps(
+                            {
+                                "reasoning_budget": reasoning_budget,
+                                "turn_token_budget": self._policy.turn_token_budget(session),
+                                "tool_filter_active": allowed_tools is not None,
+                            },
+                            default=str,
+                        )
 
                         # Build slot snapshot
                         try:
@@ -400,8 +401,6 @@ class Orchestrator:
                                 },
                                 default=str,
                             )
-                        except NameError:
-                            slot_snapshot = json.dumps({"error": "slot not initialized"})
                         except (TypeError, AttributeError):
                             slot_snapshot = json.dumps(
                                 {"error": "slot snapshot serialization failed"}
