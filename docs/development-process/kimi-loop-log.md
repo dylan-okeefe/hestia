@@ -8,6 +8,28 @@
 
 ---
 
+## 2026-04-15 — Loop: L18 — Post-public cleanup + v0.2.1 release (Kimi) → merged, tagged v0.2.1
+
+**Kimi:** `.kimi-done`: `LOOP=L18`, tip `b5d4eb0`, v0.2.1 tag `6f1747c`, main `902f615`. **478 passed, 6 skipped** on both `develop` and `main` (up from 474 baseline — 4 new tests).
+
+**Trigger:** Second-round pre-public review. 1 real bug + 4 polish/cleanup items.
+
+**Review (Cursor):** Re-ran full pytest — **478 passed, 6 skipped**. Spot-checked all 7 sections:
+
+1. **`save_memory` tool-name bug fix** — `src/hestia/audit/checks.py` all 10 references updated (`memory_write` → `save_memory`) including finding message and variable names. Positive regression test + negative test (stale alias → no finding) both present in `tests/unit/test_audit.py`. Remaining `memory_write` references verified intentional: 3 in the negative test, 1 in `tools/capabilities.py` for the `MEMORY_WRITE = "memory_write"` capability label (correctly unchanged per spec).
+2. **Atomic per-artifact metadata write** — New `_atomic_write_json()` helper at `artifacts/store.py:78`. Both `_save_inline_index()` (line 102) and the per-handle `{handle}.json` write (line 162) route through it. Deduplicated the atomic pattern.
+3. **Internal docs moved** — `docs/orchestration/`, `docs/prompts/`, `docs/reviews/`, and selected `docs/design/` internal-process files → `docs/development-process/` with explanatory README, `design-artifacts/`, `reviews/`, and `prompts/` subdirs. `runtime-feature-testing.md` stayed in `docs/` (operator doc, not process doc). All cross-references updated including `.cursorrules` and `scripts/kimi-run-current.sh`.
+4. **CI mypy baseline** — `docs/development-process/mypy-baseline.txt` records the 44 pre-existing errors. `.github/workflows/ci.yml` switched to count-based comparison: `CURRENT > BASELINE` fails the step. Honest CI signal without blocking on existing debt.
+5. **CHANGELOG + version bump** — `[0.2.1] — 2026-04-15` section at top of CHANGELOG; `pyproject.toml` bumped to `0.2.1`; `uv.lock` synced.
+6. **Release** — `develop` → `main` via `--no-ff` merge commit `902f615 Release v0.2.1`. Annotated tag `v0.2.1` at `6f1747c` on main. `main`, `develop`, and tag all pushed to origin.
+7. **Branch cleanup** — `feature/l18-post-public-cleanup` deleted locally and remotely; `git remote prune origin`.
+
+**Queue:** L18 complete. No active loop. `docs/development-process/prompts/KIMI_CURRENT.md` reset to "idle" placeholder.
+
+**Next:** All five items from the second-round review are addressed. Repo is public-clean.
+
+---
+
 ## 2026-04-15 — Loop: L16 — Pre-public cleanup (Kimi) → merged (L15–L16 queue complete)
 
 **Kimi:** `.kimi-done`: `LOOP=L16`, commit **`db1298f`**, **474 passed**, **6 skipped**.
