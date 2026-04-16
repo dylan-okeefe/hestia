@@ -5,6 +5,23 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-04-15
+
+### Fixed
+- `SecurityAuditor` trace-pattern check now uses the real tool name `save_memory`
+  instead of the stale alias `memory_write`. The "save_memory after http_get"
+  warning previously never fired on real data.
+- `ArtifactStore` per-artifact metadata writes are now atomic
+  (`tempfile.mkstemp` + `os.replace`), matching the inline-index fix from v0.2.0.
+
+### Changed
+- AI-orchestration documentation (`docs/orchestration/`, `docs/prompts/`, internal
+  reviews and brainstorms) moved to `docs/development-process/` with an
+  explanatory README. The public `docs/` tree now contains only user-facing
+  documentation, ADRs, and operator runbooks.
+- CI mypy step is now baseline-aware: 44 pre-existing errors are recorded in
+  `docs/development-process/mypy-baseline.txt`; new errors fail CI.
+
 ## [0.2.0] — 2026-04-15
 
 ### Added

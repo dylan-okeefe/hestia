@@ -23,7 +23,7 @@
 
 ```text
 HESTIA_KIMI_DONE=1
-SPEC=docs/orchestration/kimi-loops/L08-phase-13-audit.md
+SPEC=docs/development-process/kimi-loops/L08-phase-13-audit.md
 BRANCH=feature/phase-13-audit
 PYTEST=<last line of pytest -q>
 GIT_HEAD=<git rev-parse HEAD>

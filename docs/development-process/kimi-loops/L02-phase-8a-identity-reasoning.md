@@ -18,7 +18,7 @@
 
 ```text
 HESTIA_KIMI_DONE=1
-SPEC=docs/orchestration/kimi-loops/L02-phase-8a-identity-reasoning.md
+SPEC=docs/development-process/kimi-loops/L02-phase-8a-identity-reasoning.md
 BRANCH=feature/phase-8a-identity-reasoning
 PYTEST=<last line of pytest -q>
 GIT_HEAD=<git rev-parse HEAD>

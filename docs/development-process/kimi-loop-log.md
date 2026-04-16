@@ -102,7 +102,7 @@
 
 ## 2026-04-14 — Orchestration: split L10 into L10–L14 chain (Cursor)
 
-**No Kimi run.** Broke work into **five** loops: **L10** (orchestrator + Matrix env only), **L11** (mock inference full tool + memory + teardown), **L12** (Matrix two-user E2E), **L13** (scheduler cron/one-shot + Matrix delivery + CLI session binding note), **L14** (runtime-feature-testing doc, matrix-manual-smoke, README, sync credentials doc). Added [`docs/testing/CREDENTIALS_AND_SECRETS.md`](../testing/CREDENTIALS_AND_SECRETS.md), [`docs/prompts/KIMI_LOOPS_L10_L14.md`](../prompts/KIMI_LOOPS_L10_L14.md), `L11`–`L14` specs; trimmed **L10** spec; updated queue, `KIMI_CURRENT`, `HANDOFF_STATE`, `KIMI_PHASE_15` (L10-only).
+**No Kimi run.** Broke work into **five** loops: **L10** (orchestrator + Matrix env only), **L11** (mock inference full tool + memory + teardown), **L12** (Matrix two-user E2E), **L13** (scheduler cron/one-shot + Matrix delivery + CLI session binding note), **L14** (runtime-feature-testing doc, matrix-manual-smoke, README, sync credentials doc). Added [`docs/testing/CREDENTIALS_AND_SECRETS.md`](../testing/CREDENTIALS_AND_SECRETS.md), [`prompts/KIMI_LOOPS_L10_L14.md`](prompts/KIMI_LOOPS_L10_L14.md), `L11`–`L14` specs; trimmed **L10** spec; updated queue, `KIMI_CURRENT`, `KIMI_PHASE_15` (L10-only).
 
 ---
 
@@ -113,9 +113,9 @@
 - **`IllegalTransitionError`** (`done` → `failed`) when user already saw a final assistant message — orchestrator marks **`DONE`** then **`respond_callback`** (or nearby) throws; outer **`except`** attempts **`FAILED`** from a terminal state.
 - Model answered “what time is it?” without **`current_time`** — policy allows tools on **`matrix`**; needs tests / nudges.
 
-**Artifacts:** New loop spec [`kimi-loops/L10-matrix-realworld-runtime-testing.md`](kimi-loops/L10-matrix-realworld-runtime-testing.md), Kimi prompt [`docs/prompts/KIMI_PHASE_15_MATRIX_REALWORLD_PROMPT.md`](../prompts/KIMI_PHASE_15_MATRIX_REALWORLD_PROMPT.md), queue row **10**, `KIMI_CURRENT.md` → L10, `HANDOFF_STATE.md` updated.
+**Artifacts:** New loop spec [`kimi-loops/L10-matrix-realworld-runtime-testing.md`](kimi-loops/L10-matrix-realworld-runtime-testing.md), Kimi prompt [`prompts/KIMI_PHASE_15_MATRIX_REALWORLD_PROMPT.md`](prompts/KIMI_PHASE_15_MATRIX_REALWORLD_PROMPT.md), queue row **10**, `KIMI_CURRENT.md` → L10, `HANDOFF_STATE.md` updated.
 
-**Process:** L10 Part D instructs Kimi to add **`docs/orchestration/runtime-feature-testing.md`** — workflow for extra git worktrees per feature branch so **`~/Hestia-runtime`** stays stable.
+**Process:** L10 Part D instructs Kimi to add **`docs/runtime-feature-testing.md`** — workflow for extra git worktrees per feature branch so **`~/Hestia-runtime`** stays stable.
 
 ---
 

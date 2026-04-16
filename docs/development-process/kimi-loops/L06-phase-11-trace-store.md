@@ -24,7 +24,7 @@
 
 ```text
 HESTIA_KIMI_DONE=1
-SPEC=docs/orchestration/kimi-loops/L06-phase-11-trace-store.md
+SPEC=docs/development-process/kimi-loops/L06-phase-11-trace-store.md
 BRANCH=feature/phase-11-trace-store
 PYTEST=<last line of pytest -q>
 GIT_HEAD=<git rev-parse HEAD>
