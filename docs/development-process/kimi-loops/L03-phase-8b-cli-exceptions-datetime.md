@@ -35,7 +35,7 @@
 
 ```text
 HESTIA_KIMI_DONE=1
-SPEC=docs/orchestration/kimi-loops/L03-phase-8b-cli-exceptions-datetime.md
+SPEC=docs/development-process/kimi-loops/L03-phase-8b-cli-exceptions-datetime.md
 BRANCH=feature/phase-8b-cli-exceptions-datetime
 PYTEST=<last line of pytest -q>
 GIT_HEAD=<git rev-parse HEAD>

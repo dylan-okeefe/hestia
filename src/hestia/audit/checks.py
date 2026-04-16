@@ -461,44 +461,44 @@ class SecurityAuditor:
             return
 
         # Check for suspicious patterns
-        memory_write_after_http = 0
+        save_memory_after_http = 0
         excessive_terminal_calls = 0
         suspicious_writes = 0
 
         for trace in recent_traces:
             tools = trace.tools_called
 
-            # Pattern: memory_write after http_get (potential data exfiltration path)
+            # Pattern: save_memory after http_get (potential data exfiltration path)
             has_http = False
-            has_memory_write_after_http = False
+            has_save_memory_after_http = False
             terminal_count = 0
 
             for tool in tools:
                 if tool == "http_get":
                     has_http = True
-                elif tool == "memory_write" and has_http:
-                    has_memory_write_after_http = True
+                elif tool == "save_memory" and has_http:
+                    has_save_memory_after_http = True
                 elif tool == "terminal":
                     terminal_count += 1
 
-            if has_memory_write_after_http:
-                memory_write_after_http += 1
+            if has_save_memory_after_http:
+                save_memory_after_http += 1
 
             if terminal_count > 3:
                 excessive_terminal_calls += 1
 
-        if memory_write_after_http > 0:
+        if save_memory_after_http > 0:
             report.add_finding(
                 "warning",
                 "traces",
-                f"Found {memory_write_after_http} trace(s) with memory_write after http_get",
+                f"Found {save_memory_after_http} trace(s) with save_memory after http_get",
                 {
-                    "count": memory_write_after_http,
+                    "count": save_memory_after_http,
                     "note": "Potential data exfiltration path - verify this is intended behavior",
                 },
             )
             report.trace_issues.append(
-                f"{memory_write_after_http} trace(s) with memory_write after http_get"
+                f"{save_memory_after_http} trace(s) with save_memory after http_get"
             )
 
         if excessive_terminal_calls > 0:

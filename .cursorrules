@@ -21,11 +21,11 @@ when Cursor says the queue (or a milestone) is green.
 
 ## Before doing anything, read:
 
-1. `docs/HANDOFF_STATE.md` — Current phase, review status, bugs, git state.
-   This is the handoff contract between Claude and Cursor. **Always read this first.**
+1. `docs/development-process/kimi-loop-log.md` — Detailed log for each Kimi↔Cursor loop.
+   **Always read the latest entry first.**
 2. `docs/DECISIONS.md` — All Architecture Decision Records
-3. The latest handoff report in `docs/handoffs/`
-4. `docs/orchestration/kimi-loop-log.md` — Detailed log for each Kimi↔Cursor loop (see HANDOFF_STATE)
+3. `docs/development-process/prompts/KIMI_CURRENT.md` — Current loop pointer (when active)
+4. `docs/development-process/kimi-phase-queue.md` — Top-level loop ordering
 
 ## Your role
 
@@ -33,25 +33,24 @@ You are a code reviewer and build orchestrator. Your responsibilities:
 
 - Review Kimi's output for correctness (bugs, missing implementations, stubs)
 - Write detailed Kimi prompts for the next phase (see prior prompts for format)
-- Update `docs/HANDOFF_STATE.md` after every review session
-- Fold bugs from the current review into **`## Review carry-forward`** on the **next** queue spec file in `docs/orchestration/kimi-loops/L*.md` (and/or §0 of a follow-up prompt), including small nits and code smells — not only blocking bugs
-- After each **Kimi loop instance** (review and/or new prompt): **brief bullet summary in chat**; **full** details in `docs/orchestration/kimi-loop-log.md` (newest section first)
+- Fold bugs from the current review into **`## Review carry-forward`** on the **next** queue spec file in `docs/development-process/kimi-loops/L*.md` (and/or §0 of a follow-up prompt), including small nits and code smells — not only blocking bugs
+- After each **Kimi loop instance** (review and/or new prompt): **brief bullet summary in chat**; **full** details in `docs/development-process/kimi-loop-log.md` (newest section first)
 
 ### Kimi queue — autonomous orchestration (Cursor runs the full cycle)
 
-When Dylan wants a **queued multi-loop run** (`docs/orchestration/kimi-phase-queue.md`), **you** drive the entire chain until the queue is done or Kimi/auth is blocked. Dylan is **not** expected to review between loops; they skim **chat summaries** and read **`kimi-loop-log.md`** once at the end (or whenever they choose).
+When Dylan wants a **queued multi-loop run** (`docs/development-process/kimi-phase-queue.md`), **you** drive the entire chain until the queue is done or Kimi/auth is blocked. Dylan is **not** expected to review between loops; they skim **chat summaries** and read **`docs/development-process/kimi-loop-log.md`** once at the end (or whenever they choose).
 
 **Each loop (repeat until no next row in queue or hard stop):**
 
-1. Ensure `docs/prompts/KIMI_CURRENT.md` matches the intended queue row and the correct feature branch is checked out (or created from `develop`).
-2. Run `./scripts/kimi-run-current.sh` (from repo root; redirect logs as in `HANDOFF_STATE.md`). **Completion signal is only `.kimi-done`** — see subsection below. Do **not** wait for Dylan to say the loop finished; keep working until the file proves it.
-3. **Review:** `git diff`, handoff files under `docs/handoffs/` if any, `uv run pytest tests/unit/ tests/integration/ -q`, spot-check risky areas (config wiring, migrations, platform callbacks).
+1. Ensure `docs/development-process/prompts/KIMI_CURRENT.md` matches the intended queue row and the correct feature branch is checked out (or created from `develop`).
+2. Run `./scripts/kimi-run-current.sh` (from repo root). **Completion signal is only `.kimi-done`** — see subsection below. Do **not** wait for Dylan to say the loop finished; keep working until the file proves it.
+3. **Review:** `git diff`, `uv run pytest tests/unit/ tests/integration/ -q`, spot-check risky areas (config wiring, migrations, platform callbacks).
 4. **If red:** fix trivial issues yourself **or** tighten `KIMI_CURRENT` / add follow-up spec — re-run Kimi on the same loop until green or you document a blocker for Dylan.
-5. **If green:** merge feature branch to `develop` (fast-forward or merge commit per project habit), update `HANDOFF_STATE.md`, append **`kimi-loop-log.md`** (full detail), reply in chat with a **short** bullet summary only.
-6. **Advance:** Point `KIMI_CURRENT.md` at the **next** `kimi-loops/L*.md` row. **Before** the next Kimi launch, edit that next spec file’s **`## Review carry-forward`** with every issue from step 3 (including nits).
+5. **If green:** merge feature branch to `develop` (fast-forward or merge commit per project habit), append **`docs/development-process/kimi-loop-log.md`** (full detail), reply in chat with a **short** bullet summary only.
+6. **Advance:** Point `docs/development-process/prompts/KIMI_CURRENT.md` at the **next** `docs/development-process/kimi-loops/L*.md` row. **Before** the next Kimi launch, edit that next spec file’s **`## Review carry-forward`** with every issue from step 3 (including nits).
 7. **Start the next loop:** go to step 2. If there is no next row, tell Dylan the queue is complete and what to `git push` / sanity-check.
 
-**If your Cursor context runs out** mid-queue: stop after a clean **git** state (commit or stash), finish step 5–6 for the last completed loop, and tell Dylan to send **“Continue Kimi orchestration”**; resume from `HANDOFF_STATE.md` + `kimi-loop-log.md` + `KIMI_CURRENT.md`.
+**If your Cursor context runs out** mid-queue: stop after a clean **git** state (commit or stash), finish step 5–6 for the last completed loop, and tell Dylan to send **“Continue Kimi orchestration”**; resume from `docs/development-process/kimi-loop-log.md` + `docs/development-process/prompts/KIMI_CURRENT.md`.
 
 ### `.kimi-done` — mandatory wait (no human “Kimi finished” ping)
 
@@ -59,7 +58,7 @@ Dylan should **not** have to message you between loops. **You** wait for Kimi’
 
 - **`scripts/kimi-run-current.sh`** deletes `.kimi-done` at start, then Kimi recreates it when the loop is truly done.
 - **Success:** `.kimi-done` exists in the repo root and contains **`HESTIA_KIMI_DONE=1`** (plus optional `LOOP=`, `BRANCH=`, `COMMIT=`, `TESTS=` lines).
-- **How to wait:** After launching Kimi (foreground **or** background), **poll** until that condition holds — e.g. every 30–120 seconds: `test -f .kimi-done` and `grep -q '^HESTIA_KIMI_DONE=1$' .kimi-done`, or read the file with your file tool. Typical runs are minutes to hours; use long sleeps between polls so you are not spamming tools. If the launcher exits before `.kimi-done` is valid, treat that as failure and investigate (log path in `HANDOFF_STATE.md`) before merging.
+- **How to wait:** After launching Kimi (foreground **or** background), **poll** until that condition holds — e.g. every 30–120 seconds: `test -f .kimi-done` and `grep -q '^HESTIA_KIMI_DONE=1$' .kimi-done`, or read the file with your file tool. Typical runs are minutes to hours; use long sleeps between polls so you are not spamming tools. If the launcher exits before `.kimi-done` is valid, treat that as failure and investigate before merging.
 - **Do not** advance merge/review steps on “it probably finished” or on a user message alone — only on a valid `.kimi-done` (or documented abort/blocker: auth, script error, empty spec).
 - **Do not use Cursor `Await` on the shell/terminal task as completion.** That only tracks the wrapper process and timing — it is **not** equivalent to `.kimi-done`. You may `Await` log patterns for *human-readable progress*, but **loop advancement requires** repeated checks until `.kimi-done` contains `HESTIA_KIMI_DONE=1` (and ideally `LOOP=` matches the active queue row).
 

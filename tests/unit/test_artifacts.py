@@ -233,3 +233,34 @@ class TestAtomicInlineIndex:
 
         # Original file should still be valid and unchanged
         assert index_path.read_text() == original_data
+
+
+class TestAtomicMetadataWrite:
+    """Tests for atomic write of per-artifact metadata."""
+
+    def test_per_artifact_metadata_atomic_write(self, temp_store, tmp_path):
+        """The {handle}.json metadata file must be written atomically."""
+        handle = temp_store.store(b"hello", content_type="text/plain")
+        metadata_path = tmp_path / f"{handle}.json"
+        assert metadata_path.exists()
+        with open(metadata_path) as f:
+            data = json.load(f)
+        assert data["handle"] == handle
+
+    def test_per_artifact_metadata_survives_crash(self, temp_store, tmp_path, monkeypatch):
+        """If json.dump raises mid-write, original metadata file is unchanged."""
+        handle = temp_store.store(b"before", content_type="text/plain")
+        metadata_path = tmp_path / f"{handle}.json"
+        assert metadata_path.exists()
+        original_data = metadata_path.read_text()
+
+        def failing_dump(*args, **kwargs):
+            raise RuntimeError("simulated crash")
+
+        monkeypatch.setattr(json, "dump", failing_dump)
+
+        with pytest.raises(RuntimeError, match="simulated crash"):
+            temp_store._atomic_write_json(metadata_path, {"handle": "new"})
+
+        # Original file should still be valid and unchanged
+        assert metadata_path.read_text() == original_data

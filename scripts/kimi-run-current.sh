@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run Kimi non-interactively against docs/prompts/KIMI_CURRENT.md (see Kimi CLI: --prompt, --yolo, Ralph loop).
+# Run Kimi non-interactively against docs/development-process/prompts/KIMI_CURRENT.md (see Kimi CLI: --prompt, --yolo, Ralph loop).
 # Default UI: --quiet (final message only). Full stream: KIMI_VERBOSE=1 ./scripts/kimi-run-current.sh
 # File logging (no stdout spam): KIMI_DEBUG=1 — Kimi writes debug trace to ~/.kimi/logs/kimi.log (see Kimi CLI --debug).
 #   Second terminal: tail -f ~/.kimi/logs/kimi.log
@@ -11,7 +11,7 @@ cd "$ROOT"
 rm -f .kimi-done
 
 PROMPT="$(cat <<'EOF'
-You are working in this Git repository. Open docs/prompts/KIMI_CURRENT.md and execute the entire "Current task" section, including every linked file it references (especially under docs/design/). Follow the design specs literally: code changes, tests, commits, push, handoff updates, and the .kimi-done artifact described in the active design doc. Do not skip the final orchestration steps.
+You are working in this Git repository. Open docs/development-process/prompts/KIMI_CURRENT.md and execute the entire "Current task" section, including every linked file it references (especially under docs/development-process/design-artifacts/). Follow the design specs literally: code changes, tests, commits, push, handoff updates, and the .kimi-done artifact described in the active design doc. Do not skip the final orchestration steps.
 EOF
 )"
 

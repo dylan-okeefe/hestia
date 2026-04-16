@@ -19,7 +19,7 @@ Finalize **operator documentation** so Dylan (and CI) know how to run everything
 
 ## Deliverables
 
-1. **`docs/orchestration/runtime-feature-testing.md`** (~80 lines) — stable `~/Hestia-runtime` vs feature worktrees, separate DB/slots, Matrix test room, merge discipline (content from original L10 Part D).
+1. **`docs/runtime-feature-testing.md`** (~80 lines) — stable `~/Hestia-runtime` vs feature worktrees, separate DB/slots, Matrix test room, merge discipline (content from original L10 Part D).
 2. **`docs/testing/matrix-manual-smoke.md`** (~120 lines max) — two accounts, env vars, `hestia matrix`, tester CLI examples, **per-tool** paste lines, **memory cleanup** (`hestia memory list` / `remove`), scheduler notes if L13 landed.
 3. **`README.md`** — Matrix subsection: link to manual smoke + `matrix-integration.md` + credentials doc.
 4. **`docs/HANDOFF_STATE.md`** — one bullet pointing to `runtime-feature-testing.md`.

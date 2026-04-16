@@ -23,7 +23,7 @@
 
 ```text
 HESTIA_KIMI_DONE=1
-SPEC=docs/orchestration/kimi-loops/L05-phase-10-memory-epochs.md
+SPEC=docs/development-process/kimi-loops/L05-phase-10-memory-epochs.md
 BRANCH=feature/phase-10-memory-epochs
 PYTEST=<last line of pytest -q>
 GIT_HEAD=<git rev-parse HEAD>

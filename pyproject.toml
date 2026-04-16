@@ -1,6 +1,6 @@
 [project]
 name = "hestia"
-version = "0.2.0"
+version = "0.2.1"
 description = "Local-first personal assistant framework for consumer GPU LLMs"
 readme = "README.md"
 authors = [
@@ -57,6 +57,7 @@ select = [
 ]
 
 [tool.mypy]
+# 44 pre-existing errors are baselined in docs/development-process/mypy-baseline.txt
 python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true

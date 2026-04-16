@@ -3,7 +3,7 @@
 ## Review carry-forward
 
 - **Test baseline:** **`435 passed`** on `develop` after L08 merge — keep unit/integration green.
-- **Three open issues from Phase 7–13 review** (see `docs/reviews/phase-7-13-review-april-13.md`):
+- **Three open issues from Phase 7–13 review** (see `docs/development-process/reviews/phase-7-13-review-april-13.md`):
   1. `utcnow()` inconsistently adopted — many files still use `datetime.now()` or `datetime.utcnow()`.
   2. Remaining bare/broad `except Exception` catches in orchestrator and CLI.
   3. Enriched failure bundle fields (`request_summary`, `policy_snapshot`, `slot_snapshot`, `trace_id`) not populated by orchestrator.
@@ -146,7 +146,7 @@ Add a new version section for `v0.1.0` (move items from `[Unreleased]` as approp
 
 ```text
 HESTIA_KIMI_DONE=1
-SPEC=docs/orchestration/kimi-loops/L09-phase-14-cleanup-release-prep.md
+SPEC=docs/development-process/kimi-loops/L09-phase-14-cleanup-release-prep.md
 BRANCH=feature/phase-14-cleanup-release-prep
 PYTEST=<last line of pytest -q>
 GIT_HEAD=<git rev-parse HEAD>
