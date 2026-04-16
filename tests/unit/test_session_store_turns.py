@@ -4,6 +4,7 @@ from datetime import datetime
 
 import pytest
 
+from hestia.core.types import SessionState
 from hestia.orchestrator.types import Turn, TurnState, TurnTransition
 from hestia.persistence.db import Database
 from hestia.persistence.sessions import SessionStore
@@ -207,3 +208,52 @@ class TestCreateSession:
         assert session1.platform_user == session2.platform_user
         assert session1.id != session2.id
         assert session1.platform == session2.platform
+
+    @pytest.mark.asyncio
+    async def test_create_session_archives_previous(self, store):
+        """create_session with archive_previous marks old session ARCHIVED."""
+        # Create initial session
+        session1 = await store.get_or_create_session("cli", "testuser")
+        assert session1.state == SessionState.ACTIVE
+
+        # Create new session with archive_previous
+        session2 = await store.create_session("cli", "testuser", archive_previous=session1)
+
+        # New session is ACTIVE
+        assert session2.state == SessionState.ACTIVE
+        assert session2.id != session1.id
+
+        # Old session is now ARCHIVED
+        fetched1 = await store.get_session(session1.id)
+        assert fetched1.state == SessionState.ARCHIVED
+
+    @pytest.mark.asyncio
+    async def test_get_or_create_skips_archived(self, store):
+        """get_or_create_session creates new session if existing is ARCHIVED."""
+        # Create and then archive a session
+        session1 = await store.get_or_create_session("cli", "testuser")
+        await store.archive_session(session1.id)
+
+        # Verify it's archived
+        fetched = await store.get_session(session1.id)
+        assert fetched.state == SessionState.ARCHIVED
+
+        # get_or_create_session should create a new one, not return archived
+        session2 = await store.get_or_create_session("cli", "testuser")
+        assert session2.id != session1.id
+        assert session2.state == SessionState.ACTIVE
+
+
+class TestArchiveSession:
+    """Tests for archive_session method."""
+
+    @pytest.mark.asyncio
+    async def test_archive_session_marks_archived(self, store):
+        """archive_session transitions session to ARCHIVED state."""
+        session = await store.get_or_create_session("cli", "testuser")
+        assert session.state == SessionState.ACTIVE
+
+        await store.archive_session(session.id)
+
+        fetched = await store.get_session(session.id)
+        assert fetched.state == SessionState.ARCHIVED

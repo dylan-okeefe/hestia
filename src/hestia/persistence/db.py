@@ -2,10 +2,20 @@
 
 from typing import Any
 
+import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from hestia.errors import PersistenceError
 from hestia.persistence.schema import metadata
+
+
+def _asyncpg_available() -> bool:
+    """Check if asyncpg is installed."""
+    try:
+        import asyncpg  # noqa: F401
+        return True
+    except ImportError:
+        return False
 
 
 class Database:
@@ -19,6 +29,11 @@ class Database:
                  sqlite+aiosqlite:///path/to/db.db
                  postgresql+asyncpg://user:pw@host:5432/db
         """
+        if url.startswith("postgresql") and not _asyncpg_available():
+            raise ImportError(
+                "PostgreSQL support requires the 'postgres' extra: "
+                "pip install hestia[postgres]"
+            )
         self._url = url
         self._engine: AsyncEngine | None = None
 
@@ -66,4 +81,3 @@ class Database:
             return result
 
 
-import sqlalchemy as sa  # noqa: E402

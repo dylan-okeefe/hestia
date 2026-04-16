@@ -1,0 +1,32 @@
+"""Docker Compose for Matrix e2e test infrastructure.
+
+This sets up:
+- Synapse (Matrix homeserver) for testing
+- Hestia would connect to this server for e2e tests
+
+Usage:
+    docker-compose -f tests/e2e/docker-compose.yml up -d
+    # Run tests
+    docker-compose -f tests/e2e/docker-compose.yml down
+"""
+
+services:
+  synapse:
+    image: matrixdotorg/synapse:latest
+    container_name: hestia-test-synapse
+    environment:
+      - SYNAPSE_SERVER_NAME=localhost
+      - SYNAPSE_REPORT_STATS=no
+    volumes:
+      - synapse-data:/data
+    ports:
+      - "8008:8008"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8008/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  synapse-data:

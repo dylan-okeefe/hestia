@@ -16,7 +16,6 @@ class TurnState(Enum):
     EXECUTING_TOOLS = "executing_tools"  # dispatching tool calls
     AWAITING_USER = "awaiting_user"  # paused for confirmation
     AWAITING_SUBAGENT = "awaiting_subagent"  # reserved for Phase 3
-    COMPRESSING = "compressing"  # reserved for Phase 3
     RETRYING = "retrying"  # transient error, backing off
     DONE = "done"  # final answer produced
     FAILED = "failed"  # terminal error, no recovery
@@ -46,4 +45,5 @@ class Turn:
     tool_calls_made: int = 0  # cumulative count
     final_response: str | None = None  # populated on DONE
     error: str | None = None  # populated on FAILED
+    reasoning_budget: int = 2048  # reasoning tokens budgeted for this turn
     transitions: list[TurnTransition] = field(default_factory=list)

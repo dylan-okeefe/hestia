@@ -105,12 +105,29 @@ class TestTurnTokenBudget:
 
 
 class TestDelegation:
-    """Tests for delegation policy (Phase 1b: always false)."""
+    """Tests for should_delegate policy."""
 
-    def test_no_delegation_in_phase_1b(self, policy, sample_session):
-        """Delegation is disabled in Phase 1b."""
+    def test_no_delegation_for_benign_tasks(self, policy, sample_session):
+        """Ordinary tasks do not trigger delegation heuristics."""
         assert not policy.should_delegate(sample_session, "any task")
-        assert not policy.should_delegate(sample_session, "complex multi-step task")
+        assert not policy.should_delegate(sample_session, "hello")
+
+    def test_delegation_keywords(self, policy, sample_session):
+        """User can ask explicitly for delegation."""
+        assert policy.should_delegate(sample_session, "use a subagent for this")
+        assert policy.should_delegate(sample_session, "please delegate this task")
+
+    def test_subagent_session_never_delegates(self, policy, sample_session):
+        """Avoid recursive policy delegation inside subagent turns."""
+        from dataclasses import replace
+
+        sub = replace(sample_session, platform="subagent")
+        assert not policy.should_delegate(
+            sub,
+            "delegate everything to a subagent",
+            tool_chain_length=99,
+            projected_tool_calls=9,
+        )
 
 
 class TestSlotEviction:
@@ -129,3 +146,108 @@ class TestToolResultMaxChars:
         """Default is 8000 chars."""
         assert policy.tool_result_max_chars("any_tool") == 8000
         assert policy.tool_result_max_chars("read_file") == 8000
+
+
+class TestFilterTools:
+    """Tests for capability-based tool filtering."""
+
+    def test_subagent_blocks_shell_and_write(self, policy, sample_session, tmp_path):
+        from dataclasses import replace
+
+        from hestia.artifacts.store import ArtifactStore
+        from hestia.tools.builtin import current_time, make_write_file_tool, terminal
+        from hestia.tools.registry import ToolRegistry
+
+        reg = ToolRegistry(ArtifactStore(tmp_path / "art"))
+        reg.register(current_time)
+        reg.register(terminal)
+        reg.register(make_write_file_tool([str(tmp_path)]))
+        names = reg.list_names()
+        sub = replace(sample_session, platform="subagent")
+        filtered = policy.filter_tools(sub, names, reg)
+        assert "terminal" not in filtered
+        assert "write_file" not in filtered
+        assert "current_time" in filtered
+
+    def test_scheduler_tick_blocks_shell(self, policy, sample_session, tmp_path):
+        from hestia.artifacts.store import ArtifactStore
+        from hestia.runtime_context import scheduler_tick_active
+        from hestia.tools.builtin import current_time, terminal
+        from hestia.tools.registry import ToolRegistry
+
+        reg = ToolRegistry(ArtifactStore(tmp_path / "art"))
+        reg.register(current_time)
+        reg.register(terminal)
+        names = reg.list_names()
+        token = scheduler_tick_active.set(True)
+        try:
+            filtered = policy.filter_tools(sample_session, names, reg)
+        finally:
+            scheduler_tick_active.reset(token)
+        assert "terminal" not in filtered
+        assert "current_time" in filtered
+
+    def test_cli_allows_terminal(self, policy, sample_session, tmp_path):
+        from hestia.artifacts.store import ArtifactStore
+        from hestia.tools.builtin import current_time, terminal
+        from hestia.tools.registry import ToolRegistry
+
+        reg = ToolRegistry(ArtifactStore(tmp_path / "art"))
+        reg.register(current_time)
+        reg.register(terminal)
+        names = reg.list_names()
+        cli_sess = sample_session  # platform "test" is not subagent/scheduler
+        filtered = policy.filter_tools(cli_sess, names, reg)
+        assert filtered == names
+
+
+class TestReasoningBudget:
+    """Tests for reasoning_budget policy."""
+
+    def test_default_reasoning_budget(self, policy):
+        """Default reasoning budget is 2048."""
+        budget = policy.reasoning_budget(None, 0)  # type: ignore[arg-type]
+        assert budget == 2048
+
+    def test_custom_default_reasoning_budget(self):
+        """Custom default reasoning budget is respected."""
+        custom_policy = DefaultPolicyEngine(default_reasoning_budget=4096)
+        budget = custom_policy.reasoning_budget(None, 0)  # type: ignore[arg-type]
+        assert budget == 4096
+
+    def test_subagent_gets_smaller_budget(self, sample_session):
+        """Subagent sessions get capped at 1024 tokens."""
+        from dataclasses import replace
+
+        policy = DefaultPolicyEngine(default_reasoning_budget=2048)
+        subagent_session = replace(sample_session, platform="subagent")
+
+        budget = policy.reasoning_budget(subagent_session, 0)
+        assert budget == 1024
+
+    def test_subagent_budget_capped_even_with_high_default(self, sample_session):
+        """Subagent budget is capped at 1024 even with high default."""
+        from dataclasses import replace
+
+        policy = DefaultPolicyEngine(default_reasoning_budget=8192)
+        subagent_session = replace(sample_session, platform="subagent")
+
+        budget = policy.reasoning_budget(subagent_session, 0)
+        assert budget == 1024
+
+    def test_non_subagent_gets_full_budget(self, sample_session):
+        """Non-subagent sessions get the full default budget."""
+        policy = DefaultPolicyEngine(default_reasoning_budget=4096)
+
+        budget = policy.reasoning_budget(sample_session, 0)
+        assert budget == 4096
+
+    def test_iteration_parameter_ignored_for_now(self, sample_session):
+        """Iteration parameter doesn't affect budget (reserved for future)."""
+        policy = DefaultPolicyEngine(default_reasoning_budget=2048)
+
+        budget_first = policy.reasoning_budget(sample_session, 0)
+        budget_second = policy.reasoning_budget(sample_session, 1)
+        budget_tenth = policy.reasoning_budget(sample_session, 9)
+
+        assert budget_first == budget_second == budget_tenth == 2048

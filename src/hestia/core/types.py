@@ -7,6 +7,13 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
+from hestia.core.clock import utcnow
+
+
+def _utc_now() -> datetime:
+    """Return timezone-aware UTC now."""
+    return utcnow()
+
 
 @dataclass
 class ToolCall:
@@ -26,7 +33,7 @@ class Message:
     tool_calls: list[ToolCall] | None = None
     tool_call_id: str | None = None
     reasoning_content: str | None = None
-    created_at: datetime = field(default_factory=lambda: datetime.now().replace(tzinfo=None))
+    created_at: datetime = field(default_factory=_utc_now)
 
 
 @dataclass
@@ -70,6 +77,23 @@ class Session:
     temperature: SessionTemperature
 
 
+@dataclass
+class ScheduledTask:
+    """A scheduled task for autonomous execution."""
+
+    id: str
+    session_id: str
+    prompt: str
+    description: str | None
+    cron_expression: str | None  # Exactly one of cron_expression or fire_at must be set
+    fire_at: datetime | None
+    enabled: bool
+    created_at: datetime
+    last_run_at: datetime | None
+    next_run_at: datetime | None
+    last_error: str | None
+
+
 class TurnState(Enum):
     """Turn processing states."""
 
@@ -79,7 +103,6 @@ class TurnState(Enum):
     EXECUTING_TOOLS = "executing_tools"
     AWAITING_SUBAGENT = "awaiting_subagent"
     AWAITING_USER = "awaiting_user"
-    COMPRESSING = "compressing"
     RETRYING = "retrying"
     DONE = "done"
     FAILED = "failed"

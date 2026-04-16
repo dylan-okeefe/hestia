@@ -1,5 +1,6 @@
 """Unit tests for ArtifactStore."""
 
+import json
 
 import pytest
 
@@ -195,3 +196,40 @@ class TestMetadataRoundTrip:
         assert metadata.content_type == "application/octet-stream"
         assert metadata.source_tool == "test_tool"
         assert metadata.size_bytes == 4
+
+
+class TestAtomicInlineIndex:
+    """Tests for atomic write of inline index."""
+
+    def test_inline_index_atomic_write(self, temp_store, tmp_path):
+        """After _save_inline_index(), the file exists and is valid JSON."""
+        temp_store.store(b"hello", content_type="text/plain")
+        index_path = tmp_path / "inline.json"
+        assert index_path.exists()
+        with open(index_path) as f:
+            data = json.load(f)
+        assert "content" in data
+
+    def test_inline_index_survives_crash(self, temp_store, tmp_path, monkeypatch):
+        """If json.dump raises mid-write, original inline.json is unchanged."""
+        # Create a valid inline index first
+        temp_store.store(b"before", content_type="text/plain")
+        index_path = tmp_path / "inline.json"
+        assert index_path.exists()
+        original_data = index_path.read_text()
+
+        # Add more content, then make json.dump fail
+        temp_store._inline["new_handle"] = b"after"
+
+        original_dump = json.dump
+
+        def failing_dump(*args, **kwargs):
+            raise RuntimeError("simulated crash")
+
+        monkeypatch.setattr(json, "dump", failing_dump)
+
+        with pytest.raises(RuntimeError, match="simulated crash"):
+            temp_store._save_inline_index()
+
+        # Original file should still be valid and unchanged
+        assert index_path.read_text() == original_data

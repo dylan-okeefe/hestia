@@ -7,6 +7,7 @@ from typing import Any
 
 import sqlalchemy as sa
 
+from hestia.core.clock import utcnow
 from hestia.core.types import (
     Message,
     Session,
@@ -21,7 +22,7 @@ from hestia.persistence.schema import messages, sessions
 
 def _generate_session_id(platform: str, platform_user: str) -> str:
     """Generate a sortable, debuggable session ID."""
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    timestamp = utcnow().strftime("%Y%m%d%H%M%S")
     short_uuid = uuid.uuid4().hex[:8]
     return f"{platform}_{platform_user}_{timestamp}_{short_uuid}"
 
@@ -58,7 +59,7 @@ class SessionStore:
                 update = (
                     sa.update(sessions)
                     .where(sessions.c.id == row.id)
-                    .values(last_active_at=datetime.now())
+                    .values(last_active_at=utcnow())
                 )
                 await conn.execute(update)
                 await conn.commit()
@@ -66,7 +67,7 @@ class SessionStore:
 
         # Create new session
         session_id = _generate_session_id(platform, platform_user)
-        now = datetime.now()
+        now = utcnow()
         new_session = Session(
             id=session_id,
             platform=platform,
@@ -97,18 +98,39 @@ class SessionStore:
 
         return new_session
 
+    async def archive_session(self, session_id: str) -> None:
+        """Mark a session as ARCHIVED. Used when /reset creates a successor."""
+        update = (
+            sa.update(sessions)
+            .where(sessions.c.id == session_id)
+            .values(
+                state=SessionState.ARCHIVED.value,
+                last_active_at=utcnow(),
+            )
+        )
+        async with self._db.engine.connect() as conn:
+            await conn.execute(update)
+            await conn.commit()
+
     async def create_session(
         self,
         platform: str,
         platform_user: str,
+        archive_previous: Session | None = None,
     ) -> Session:
-        """Create a new session row, regardless of whether an active one exists.
+        """Create a new session row. Optionally archives a previous session atomically.
 
         Used by /reset and similar flows where the caller explicitly wants a
         fresh session for an existing user.
+
+        Args:
+            platform: Platform identifier (e.g., "cli", "matrix")
+            platform_user: User identifier on that platform
+            archive_previous: If provided, archive this session in the same transaction
+                so we never end up with two ACTIVE sessions for the same user.
         """
         session_id = _generate_session_id(platform, platform_user)
-        now = datetime.now()
+        now = utcnow()
         new_session = Session(
             id=session_id,
             platform=platform,
@@ -134,6 +156,12 @@ class SessionStore:
         )
 
         async with self._db.engine.connect() as conn:
+            if archive_previous is not None:
+                await conn.execute(
+                    sa.update(sessions)
+                    .where(sessions.c.id == archive_previous.id)
+                    .values(state=SessionState.ARCHIVED.value, last_active_at=utcnow())
+                )
             await conn.execute(insert)
             await conn.commit()
 
@@ -183,7 +211,7 @@ class SessionStore:
                 tool_calls=tool_calls_json,
                 tool_call_id=msg.tool_call_id,
                 reasoning_content=msg.reasoning_content,
-                created_at=msg.created_at if msg.created_at else datetime.now(),
+                created_at=msg.created_at if msg.created_at else utcnow(),
             )
             await conn.execute(insert)
 
@@ -191,7 +219,7 @@ class SessionStore:
             update = (
                 sa.update(sessions)
                 .where(sessions.c.id == session_id)
-                .values(last_active_at=datetime.now())
+                .values(last_active_at=utcnow())
             )
             await conn.execute(update)
             await conn.commit()
@@ -214,7 +242,7 @@ class SessionStore:
             .where(sessions.c.id == session_id)
             .values(
                 state=SessionState.ARCHIVED.value,
-                last_active_at=datetime.now(),
+                last_active_at=utcnow(),
             )
         )
 
@@ -222,17 +250,29 @@ class SessionStore:
             await conn.execute(update)
             await conn.commit()
 
-    async def assign_slot(self, session_id: str, slot_id: int) -> None:
-        """Assign a slot to a session and mark it hot."""
-        update = (
-            sa.update(sessions)
-            .where(sessions.c.id == session_id)
-            .values(
-                slot_id=slot_id,
-                temperature=SessionTemperature.HOT.value,
-                last_active_at=datetime.now(),
-            )
-        )
+    async def assign_slot(
+        self,
+        session_id: str,
+        slot_id: int,
+        clear_saved_path: bool = False,
+    ) -> None:
+        """Assign a live slot to a session and mark it hot.
+
+        Args:
+            session_id: Which session
+            slot_id: Live slot index on the inference server
+            clear_saved_path: If True, also clear slot_saved_path. Use when the
+                session was WARM (disk-backed) and we've now restored into a
+                live slot, so the disk path is stale.
+        """
+        values = {
+            "slot_id": slot_id,
+            "temperature": SessionTemperature.HOT.value,
+            "last_active_at": utcnow(),
+        }
+        if clear_saved_path:
+            values["slot_saved_path"] = None
+        update = sa.update(sessions).where(sessions.c.id == session_id).values(**values)
 
         async with self._db.engine.connect() as conn:
             await conn.execute(update)
@@ -242,18 +282,37 @@ class SessionStore:
         self,
         session_id: str,
         demote_to: SessionTemperature = SessionTemperature.WARM,
+        saved_path: str | None = None,
     ) -> None:
-        """Release a slot from a session."""
+        """Release the slot and record the disk path where its state lives.
+
+        Args:
+            session_id: Which session to release
+            demote_to: Target temperature (WARM if we saved to disk, COLD if we erased)
+            saved_path: If demoting to WARM, the path on disk where slot state was saved
+        """
         update = (
             sa.update(sessions)
             .where(sessions.c.id == session_id)
             .values(
                 slot_id=None,
+                slot_saved_path=saved_path,
                 temperature=demote_to.value,
-                last_active_at=datetime.now(),
+                last_active_at=utcnow(),
             )
         )
 
+        async with self._db.engine.connect() as conn:
+            await conn.execute(update)
+            await conn.commit()
+
+    async def update_saved_path(self, session_id: str, saved_path: str) -> None:
+        """Update just the slot_saved_path field. Used after slot_save checkpoint."""
+        update = (
+            sa.update(sessions)
+            .where(sessions.c.id == session_id)
+            .values(slot_saved_path=saved_path)
+        )
         async with self._db.engine.connect() as conn:
             await conn.execute(update)
             await conn.commit()
@@ -326,7 +385,7 @@ class SessionStore:
             .where(turns.c.id == turn.id)
             .values(
                 state=turn.state.value,
-                last_transition_at=datetime.now(),
+                last_transition_at=utcnow(),
                 iteration=turn.iterations,
                 error=turn.error,
             )
@@ -336,16 +395,13 @@ class SessionStore:
             await conn.execute(update)
             await conn.commit()
 
-    async def append_transition(
-        self, turn_id: str, transition: "TurnTransition"
-    ) -> None:
+    async def append_transition(self, turn_id: str, transition: "TurnTransition") -> None:
         """Append a transition to the turn_transitions table."""
         from hestia.persistence.schema import turn_transitions
 
         # Get next idx for this turn
-        idx_query = (
-            sa.select(sa.func.coalesce(sa.func.max(turn_transitions.c.idx), -1) + 1)
-            .where(turn_transitions.c.turn_id == turn_id)
+        idx_query = sa.select(sa.func.coalesce(sa.func.max(turn_transitions.c.idx), -1) + 1).where(
+            turn_transitions.c.turn_id == turn_id
         )
 
         async with self._db.engine.connect() as conn:
@@ -365,8 +421,8 @@ class SessionStore:
 
     async def get_turn(self, turn_id: str) -> "Turn | None":
         """Get a turn by ID (without transitions)."""
-        from hestia.persistence.schema import turns
         from hestia.orchestrator.types import Turn, TurnState
+        from hestia.persistence.schema import turns
 
         query = sa.select(turns).where(turns.c.id == turn_id)
 
@@ -389,12 +445,10 @@ class SessionStore:
                 )
             return None
 
-    async def list_turns_for_session(
-        self, session_id: str, limit: int = 50
-    ) -> list["Turn"]:
+    async def list_turns_for_session(self, session_id: str, limit: int = 50) -> list["Turn"]:
         """List turns for a session, newest first."""
-        from hestia.persistence.schema import turns
         from hestia.orchestrator.types import Turn, TurnState
+        from hestia.persistence.schema import turns
 
         query = (
             sa.select(turns)
@@ -422,3 +476,89 @@ class SessionStore:
                 )
                 for row in rows
             ]
+
+    async def list_stale_turns(self) -> list["Turn"]:
+        """List all turns not in a terminal state. Used for crash recovery."""
+        from hestia.orchestrator.types import Turn, TurnState
+        from hestia.persistence.schema import turns
+
+        terminal_states = ["done", "failed"]
+        query = sa.select(turns).where(sa.not_(turns.c.state.in_(terminal_states)))
+
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(query)
+            rows = result.fetchall()
+            return [
+                Turn(
+                    id=row.id,
+                    session_id=row.session_id,
+                    state=TurnState(row.state),
+                    user_message=None,
+                    started_at=row.started_at,
+                    completed_at=None,
+                    iterations=row.iteration,
+                    tool_calls_made=0,
+                    final_response=None,
+                    error=row.error,
+                    transitions=[],
+                )
+                for row in rows
+            ]
+
+    async def fail_turn(self, turn_id: str, error: str) -> None:
+        """Force a turn into FAILED state. Used for crash recovery."""
+        from hestia.persistence.schema import turns
+
+        update = (
+            sa.update(turns)
+            .where(turns.c.id == turn_id)
+            .values(
+                state="failed",
+                error=error,
+                last_transition_at=utcnow(),
+            )
+        )
+        async with self._db.engine.connect() as conn:
+            await conn.execute(update)
+            await conn.commit()
+
+    # --- Stats queries for CLI status command ---
+
+    async def count_sessions_by_state(self) -> dict[str, int]:
+        """Count sessions grouped by state.
+
+        Returns:
+            Dict mapping state name to count.
+        """
+        query = sa.select(sessions.c.state, sa.func.count(sessions.c.id)).group_by(sessions.c.state)
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(query)
+            rows = result.fetchall()
+            return {row.state: row[1] for row in rows}
+
+    async def turn_stats_since(self, since: datetime) -> dict[str, int]:
+        """Count turns by terminal state since a given time.
+
+        Args:
+            since: Only count turns started at or after this time.
+
+        Returns:
+            Dict mapping state name to count (only includes terminal states
+            that have at least one turn).
+        """
+        from hestia.persistence.schema import turns
+
+        query = (
+            sa.select(turns.c.state, sa.func.count(turns.c.id))
+            .where(
+                sa.and_(
+                    turns.c.started_at >= since,
+                    turns.c.state.in_(["done", "failed"]),
+                )
+            )
+            .group_by(turns.c.state)
+        )
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(query)
+            rows = result.fetchall()
+            return {row.state: row[1] for row in rows}

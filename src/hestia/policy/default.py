@@ -1,5 +1,7 @@
 """Default policy engine with conservative decisions."""
 
+from typing import TYPE_CHECKING
+
 from hestia.core.types import Session
 from hestia.errors import InferenceServerError, InferenceTimeoutError
 from hestia.policy.engine import (
@@ -7,6 +9,10 @@ from hestia.policy.engine import (
     RetryAction,
     RetryDecision,
 )
+from hestia.runtime_context import scheduler_tick_active
+
+if TYPE_CHECKING:
+    from hestia.tools.registry import ToolRegistry
 
 
 class DefaultPolicyEngine(PolicyEngine):
@@ -16,20 +22,65 @@ class DefaultPolicyEngine(PolicyEngine):
     to customize behavior.
     """
 
-    def __init__(self, ctx_window: int = 32768) -> None:
+    def __init__(
+        self, ctx_window: int = 32768, default_reasoning_budget: int = 2048
+    ) -> None:
         """Initialize with context window size.
 
         Args:
             ctx_window: Total context window size in tokens. Default assumes
                        llama-server with 32K slots.
+            default_reasoning_budget: Default reasoning token budget.
         """
         self.ctx_window = ctx_window
+        self._default_reasoning_budget = default_reasoning_budget
 
-    def should_delegate(self, session: Session, task_description: str) -> bool:
-        """Never delegate in Phase 1b.
+    def should_delegate(
+        self,
+        session: Session,
+        task_description: str,
+        tool_chain_length: int = 0,
+        projected_tool_calls: int = 0,
+    ) -> bool:
+        """Decide whether to delegate to a subagent.
 
-        Phase 1c will add delegation logic.
+        Delegation is recommended when:
+        - Tool chain is getting long (>5 calls so far)
+        - Task appears complex (keywords like "research", "analyze", "investigate")
+        - User explicitly requests delegation
+
+        Args:
+            session: Current session
+            task_description: Description of the task
+            tool_chain_length: Number of tool calls made so far in this turn
+            projected_tool_calls: Estimated remaining tool calls needed
+
+        Returns:
+            True if delegation is recommended
         """
+        # Never recurse: subagent runs use platform "subagent"
+        if session.platform == "subagent":
+            return False
+
+        # Explicit user request for delegation
+        delegation_keywords = ["delegate", "subagent", "spawn task", "background task"]
+        task_lower = task_description.lower()
+        if any(kw in task_lower for kw in delegation_keywords):
+            return True
+
+        # Long tool chain - offload to subagent to keep parent context clean
+        if tool_chain_length > 5:
+            return True
+
+        # Complex research tasks that might involve many steps
+        research_keywords = ["research", "investigate", "analyze deeply", "comprehensive"]
+        if any(kw in task_lower for kw in research_keywords):
+            return True
+
+        # High projected tool usage
+        if projected_tool_calls > 3:
+            return True
+
         return False
 
     def should_compress(self, session: Session, tokens_used: int, tokens_budget: int) -> bool:
@@ -84,3 +135,53 @@ class DefaultPolicyEngine(PolicyEngine):
         Individual tools can override via registry metadata.
         """
         return 8000
+
+    def filter_tools(
+        self,
+        session: Session,
+        tool_names: list[str],
+        registry: "ToolRegistry",
+    ) -> list[str]:
+        """Filter available tools based on session context.
+
+        Subagents are denied shell_exec and write_local to prevent
+        uncontrolled modifications. Scheduler is denied shell_exec
+        for headless safety.
+
+        Args:
+            session: Current session
+            tool_names: List of tool names to filter
+            registry: Tool registry for looking up capabilities
+
+        Returns:
+            Filtered list of allowed tool names
+        """
+        from hestia.tools.capabilities import SHELL_EXEC, WRITE_LOCAL
+
+        if session.platform == "subagent":
+            # Subagents: block shell_exec and write_local
+            blocked = {SHELL_EXEC, WRITE_LOCAL}
+            return [
+                name
+                for name in tool_names
+                if not (set(registry.describe(name).capabilities) & blocked)
+            ]
+
+        if session.platform == "scheduler" or scheduler_tick_active.get():
+            # Scheduler: block shell_exec for headless safety
+            blocked = {SHELL_EXEC}
+            return [
+                name
+                for name in tool_names
+                if not (set(registry.describe(name).capabilities) & blocked)
+            ]
+
+        # CLI and other platforms: allow all tools
+        return tool_names
+
+    def reasoning_budget(self, session: Session, iteration: int) -> int:
+        """Use the configured default. Subagents get a smaller budget."""
+        base = self._default_reasoning_budget
+        if session is not None and session.platform == "subagent":
+            return min(base, 1024)  # subagents don't need deep reasoning
+        return base

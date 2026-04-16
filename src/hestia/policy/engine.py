@@ -3,8 +3,12 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
+from typing import TYPE_CHECKING
 
 from hestia.core.types import Session
+
+if TYPE_CHECKING:
+    from hestia.tools.registry import ToolRegistry
 
 
 class RetryAction(Enum):
@@ -32,7 +36,13 @@ class PolicyEngine(ABC):
     """
 
     @abstractmethod
-    def should_delegate(self, session: Session, task_description: str) -> bool:
+    def should_delegate(
+        self,
+        session: Session,
+        task_description: str,
+        tool_chain_length: int = 0,
+        projected_tool_calls: int = 0,
+    ) -> bool:
         """Should this task be delegated to a subagent?"""
         ...
 
@@ -59,4 +69,22 @@ class PolicyEngine(ABC):
     @abstractmethod
     def tool_result_max_chars(self, tool_name: str) -> int:
         """Maximum characters to include for a tool result."""
+        ...
+
+    @abstractmethod
+    def filter_tools(
+        self,
+        session: Session,
+        tool_names: list[str],
+        registry: "ToolRegistry",
+    ) -> list[str]:
+        """Filter available tools based on session context.
+
+        Returns the subset of tool_names allowed for this session.
+        """
+        ...
+
+    @abstractmethod
+    def reasoning_budget(self, session: Session, iteration: int) -> int:
+        """How many reasoning tokens to budget for this inference call."""
         ...

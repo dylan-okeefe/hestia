@@ -78,7 +78,9 @@ class TestBasicBuilding:
         ]
         new_msg = Message(role="user", content="How are you?")
 
-        result = await builder.build(sample_session, history, "You are helpful.", [], new_user_message=new_msg)
+        result = await builder.build(
+            sample_session, history, "You are helpful.", [], new_user_message=new_msg
+        )
 
         # Should have 4 messages: system, first_user, assistant, new_user
         assert len(result.messages) == 4
@@ -97,7 +99,9 @@ class TestBasicBuilding:
         history = [Message(role="user", content="Hi")]
         new_msg = Message(role="user", content="Bye")
 
-        result = await builder.build(sample_session, history, "System prompt here.", [], new_user_message=new_msg)
+        result = await builder.build(
+            sample_session, history, "System prompt here.", [], new_user_message=new_msg
+        )
 
         assert result.messages[0].role == "system"
         assert result.messages[0].content == "System prompt here."
@@ -110,7 +114,9 @@ class TestBasicBuilding:
         history = [Message(role="user", content="First")]
         new_msg = Message(role="user", content="Latest")
 
-        result = await builder.build(sample_session, history, "System", [], new_user_message=new_msg)
+        result = await builder.build(
+            sample_session, history, "System", [], new_user_message=new_msg
+        )
 
         assert result.messages[-1].role == "user"
         assert result.messages[-1].content == "Latest"
@@ -131,7 +137,9 @@ class TestFirstUserProtection:
         ]
         new_msg = Message(role="user", content="New")
 
-        result = await builder.build(sample_session, history, "System", [], new_user_message=new_msg)
+        result = await builder.build(
+            sample_session, history, "System", [], new_user_message=new_msg
+        )
 
         # Find first user message in result
         first_user_in_result = None
@@ -163,7 +171,9 @@ class TestTruncation:
         ]
         new_msg = Message(role="user", content="New question")
 
-        result = await builder.build(sample_session, history, "System", [], new_user_message=new_msg)
+        result = await builder.build(
+            sample_session, history, "System", [], new_user_message=new_msg
+        )
 
         # Result should be valid
         assert result.tokens_used <= result.tokens_budget or result.truncated_count > 0
@@ -181,7 +191,9 @@ class TestTruncation:
         ]
         new_msg = Message(role="user", content="NEW")
 
-        result = await builder.build(sample_session, history, "System" + "x" * 500, [], new_user_message=new_msg)
+        result = await builder.build(
+            sample_session, history, "System" + "x" * 500, [], new_user_message=new_msg
+        )
 
         # With tight budget, OLDEST should be dropped but RECENT kept
         contents = [m.content for m in result.messages]
@@ -211,7 +223,9 @@ class TestToolCallPairs:
         ]
         new_msg = Message(role="user", content="Final question")
 
-        result = await builder.build(sample_session, history, "System", [], new_user_message=new_msg)
+        result = await builder.build(
+            sample_session, history, "System", [], new_user_message=new_msg
+        )
 
         # Either both tool messages are present or neither
         tool_messages = [m for m in result.messages if m.role in ("tool", "assistant")]
@@ -233,7 +247,9 @@ class TestTokenBudgeting:
         history = [Message(role="user", content="x" * 1000) for _ in range(20)]
         new_msg = Message(role="user", content="New")
 
-        result = await builder.build(sample_session, history, "System", [], new_user_message=new_msg)
+        result = await builder.build(
+            sample_session, history, "System", [], new_user_message=new_msg
+        )
 
         assert result.tokens_used <= result.tokens_budget
 
@@ -246,7 +262,9 @@ class TestTokenBudgeting:
         history = [Message(role="user", content="Test")]
         new_msg = Message(role="user", content="New")
 
-        result = await builder.build(sample_session, history, "System", [], new_user_message=new_msg)
+        result = await builder.build(
+            sample_session, history, "System", [], new_user_message=new_msg
+        )
 
         # Should be able to fit more with higher body factor
         # (counts appear smaller)
@@ -279,7 +297,9 @@ class TestEdgeCases:
         history = [Message(role="user", content="x" * 1000)]
         new_msg = Message(role="user", content="New" + "y" * 1000)
 
-        result = await builder.build(sample_session, history, "System" + "z" * 1000, [], new_user_message=new_msg)
+        result = await builder.build(
+            sample_session, history, "System" + "z" * 1000, [], new_user_message=new_msg
+        )
 
         # Should return system + new_user as best effort
         assert result.messages[0].role == "system"

@@ -4,6 +4,7 @@ from typing import Any
 
 from hestia.artifacts.store import ArtifactStore
 from hestia.errors import ArtifactExpiredError, ArtifactNotFoundError
+from hestia.tools.capabilities import READ_LOCAL
 from hestia.tools.metadata import tool
 
 
@@ -28,6 +29,7 @@ def make_read_artifact_tool(store: ArtifactStore) -> Any:
         },
         max_inline_chars=8000,
         tags=["artifacts"],
+        capabilities=[READ_LOCAL],
     )
     async def read_artifact(handle: str) -> str:
         """Read an artifact by handle."""

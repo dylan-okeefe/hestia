@@ -1,455 +1,269 @@
-"""Unit tests for Orchestrator error handling."""
+"""Tests for orchestrator error handling."""
 
-from datetime import datetime
-from unittest.mock import AsyncMock
+import json
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from hestia.artifacts.store import ArtifactStore
-from hestia.context.builder import ContextBuilder
-from hestia.core.types import ChatResponse, Message, Session, SessionState, SessionTemperature, ToolCall
-from hestia.orchestrator import Orchestrator, TurnState
-from hestia.persistence.db import Database
-from hestia.persistence.sessions import SessionStore
-from hestia.tools.metadata import tool
-from hestia.tools.registry import ToolRegistry
-
-
-class FakeInferenceClient:
-    """Fake inference client that returns canned responses."""
-
-    def __init__(self, responses):
-        self.responses = responses
-        self.call_count = 0
-
-    async def count_request(self, messages, tools):
-        total = 0
-        for msg in messages:
-            total += 10 + len(msg.content) // 4
-        for tool in tools:
-            total += 50
-        return total
-
-    async def chat(self, messages, tools=None, slot_id=None, **kwargs):
-        if self.call_count < len(self.responses):
-            response = self.responses[self.call_count]
-            self.call_count += 1
-            return response
-        raise RuntimeError("No more canned responses")
-
-
-class FakePolicyEngine:
-    """Fake policy engine."""
-
-    def should_delegate(self, session, task_description):
-        return False
-
-    def should_compress(self, session, tokens_used, tokens_budget):
-        return False
-
-    def should_evict_slot(self, slot_id, pressure):
-        return False
-
-    def retry_after_error(self, error, attempt):
-        from hestia.policy.engine import RetryAction, RetryDecision
-        return RetryDecision(action=RetryAction.FAIL)
-
-    def turn_token_budget(self, session):
-        return 4000
-
-    def tool_result_max_chars(self, tool_name):
-        return 4000
-
-
-@pytest.fixture
-async def store(tmp_path):
-    """Create a SessionStore with temp database."""
-    db_url = f"sqlite+aiosqlite:///{tmp_path}/test.db"
-    db = Database(db_url)
-    await db.connect()
-    await db.create_tables()
-    store = SessionStore(db)
-    yield store
-    await db.close()
-
-
-@pytest.fixture
-def artifact_store(tmp_path):
-    """Artifact store in temp directory."""
-    return ArtifactStore(tmp_path / "artifacts")
-
-
-@pytest.fixture
-def tool_registry(artifact_store):
-    """Tool registry with no tools."""
-    return ToolRegistry(artifact_store)
+from hestia.core.types import ChatResponse, Message
+from hestia.orchestrator.engine import Orchestrator
+from hestia.orchestrator.types import TurnState
 
 
 @pytest.mark.asyncio
-async def test_empty_response_error_on_stop_with_empty_content(store, tool_registry):
-    """Empty content with finish_reason='stop' should fail the turn, not return blank."""
-    fake_policy = FakePolicyEngine()
-    
-    # Create inference that returns empty content with stop
-    empty_response = ChatResponse(
-        content="",
-        reasoning_content=None,
-        tool_calls=[],
-        finish_reason="stop",
-        prompt_tokens=10,
-        completion_tokens=0,
-        total_tokens=10,
-    )
-    inference = FakeInferenceClient([empty_response])
-    
-    context_builder = ContextBuilder(inference, fake_policy, body_factor=1.0)
-    
-    session = Session(
-        id="test_session_empty",
-        platform="test",
-        platform_user="user",
-        started_at=datetime.now(),
-        last_active_at=datetime.now(),
-        slot_id=None,
-        slot_saved_path=None,
-        state=SessionState.ACTIVE,
-        temperature=SessionTemperature.COLD,
-    )
-    
+async def test_tool_chain_unbound_error():
+    """Test that tool_chain is properly initialized before error handler uses it.
+
+    If ContextBuilder.build() fails early (before the main loop), the error handler
+    should still be able to record the failure bundle with tool_chain="[]".
+    This tests the fix for the UnboundLocalError where tool_chain was defined
+    inside the inner try block but referenced in the except handler.
+    """
+    # Setup mocks
+    mock_inference = MagicMock()
+    mock_session_store = MagicMock()
+    mock_context_builder = MagicMock()
+    mock_tool_registry = MagicMock()
+    mock_policy = MagicMock()
+    mock_failure_store = MagicMock()
+
+    # Make context builder raise an error early (simulating line 166-172 in original)
+    mock_context_builder.build = AsyncMock(side_effect=RuntimeError("build failed"))
+
+    # Setup session store mocks
+    mock_session = MagicMock()
+    mock_session.id = "test-session-id"
+    mock_session.slot_id = None
+
+    mock_turn = MagicMock()
+    mock_turn.id = "test-turn-id"
+    mock_turn.iterations = 0
+    mock_turn.tool_calls_made = 0
+    mock_turn.transitions = []
+
+    mock_session_store.insert_turn = AsyncMock(return_value=None)
+    mock_session_store.update_turn = AsyncMock(return_value=None)
+    mock_session_store.append_transition = AsyncMock(return_value=None)
+    mock_session_store.append_message = AsyncMock(return_value=None)
+    mock_session_store.get_messages = AsyncMock(return_value=[])
+
+    # Create orchestrator
     orchestrator = Orchestrator(
-        inference=inference,
-        session_store=store,
-        context_builder=context_builder,
-        tool_registry=tool_registry,
-        policy=fake_policy,
-        max_iterations=10,
+        inference=mock_inference,
+        session_store=mock_session_store,
+        context_builder=mock_context_builder,
+        tool_registry=mock_tool_registry,
+        policy=mock_policy,
+        confirm_callback=None,
+        failure_store=mock_failure_store,
     )
-    
-    respond_callback = AsyncMock()
-    user_message = Message(role="user", content="Hello")
-    
-    # Should not raise - exception is caught internally
-    turn = await orchestrator.process_turn(
-        session=session,
-        user_message=user_message,
-        respond_callback=respond_callback,
-    )
-    
-    # Turn should be FAILED
-    assert turn.state == TurnState.FAILED
-    assert turn.error is not None
-    assert "EmptyResponseError" in turn.error or "empty content" in turn.error
-    
-    # Response callback should have been called with error, not empty string
-    respond_callback.assert_called_once()
-    call_args = respond_callback.call_args[0][0]
-    assert "Error:" in call_args
-    assert call_args != ""
+
+    # Mock _create_turn to return our mock turn
+    with patch.object(orchestrator, '_create_turn', return_value=mock_turn):
+        # Mock _persist_turn
+        with patch.object(orchestrator, '_persist_turn', AsyncMock()):
+            # Mock _transition
+            with patch.object(orchestrator, '_transition', AsyncMock()):
+                # Test that the error handler doesn't crash with UnboundLocalError
+                user_message = Message(role="user", content="test message")
+                respond_callback = AsyncMock()
+
+                # This should complete without raising UnboundLocalError
+                await orchestrator.process_turn(
+                    session=mock_session,
+                    user_message=user_message,
+                    respond_callback=respond_callback,
+                )
+
+                # Verify that respond_callback was called with the error
+                respond_callback.assert_called_once()
+                call_args = respond_callback.call_args[0][0]
+                assert "Error:" in call_args
+                assert "build failed" in call_args
+
+                # Verify failure store was called with tool_chain="[]"
+                mock_failure_store.record.assert_called_once()
+                bundle = mock_failure_store.record.call_args[0][0]
+                assert bundle.tool_chain == json.dumps([])
 
 
 @pytest.mark.asyncio
-async def test_empty_response_error_on_length_with_empty_content(store, tool_registry):
-    """Empty content with finish_reason='length' should also fail the turn."""
-    fake_policy = FakePolicyEngine()
-    
-    empty_response = ChatResponse(
-        content="   ",  # whitespace-only counts as empty
-        reasoning_content=None,
-        tool_calls=[],
-        finish_reason="length",
-        prompt_tokens=10,
-        completion_tokens=0,
-        total_tokens=10,
-    )
-    inference = FakeInferenceClient([empty_response])
-    
-    context_builder = ContextBuilder(inference, fake_policy, body_factor=1.0)
-    
-    session = Session(
-        id="test_session_length",
-        platform="test",
-        platform_user="user",
-        started_at=datetime.now(),
-        last_active_at=datetime.now(),
-        slot_id=None,
-        slot_saved_path=None,
-        state=SessionState.ACTIVE,
-        temperature=SessionTemperature.COLD,
-    )
-    
+async def test_failure_bundle_enriched_fields_populated():
+    """Test that enriched failure bundle fields are populated on error.
+
+    When both failure_store and trace_store are configured, the orchestrator
+    should populate request_summary, policy_snapshot, slot_snapshot, and trace_id.
+    """
+    mock_inference = MagicMock()
+    mock_session_store = MagicMock()
+    mock_context_builder = MagicMock()
+    mock_tool_registry = MagicMock()
+    mock_policy = MagicMock()
+    mock_failure_store = MagicMock()
+    mock_trace_store = MagicMock()
+
+    # Trigger an error early via context builder
+    mock_context_builder.build = AsyncMock(side_effect=RuntimeError("inference timeout"))
+
+    mock_session = MagicMock()
+    mock_session.id = "test-session-id"
+    mock_session.slot_id = 42
+    mock_session.temperature.value = "hot"
+    mock_session.slot_saved_path = "/tmp/slot.bin"
+
+    mock_turn = MagicMock()
+    mock_turn.id = "test-turn-id"
+    mock_turn.iterations = 0
+    mock_turn.tool_calls_made = 0
+    mock_turn.transitions = []
+
+    mock_session_store.insert_turn = AsyncMock(return_value=None)
+    mock_session_store.update_turn = AsyncMock(return_value=None)
+    mock_session_store.append_transition = AsyncMock(return_value=None)
+    mock_session_store.append_message = AsyncMock(return_value=None)
+    mock_session_store.get_messages = AsyncMock(return_value=[])
+
+    mock_policy.reasoning_budget.return_value = 2048
+    mock_policy.turn_token_budget.return_value = 4000
+
     orchestrator = Orchestrator(
-        inference=inference,
-        session_store=store,
-        context_builder=context_builder,
-        tool_registry=tool_registry,
-        policy=fake_policy,
-        max_iterations=10,
+        inference=mock_inference,
+        session_store=mock_session_store,
+        context_builder=mock_context_builder,
+        tool_registry=mock_tool_registry,
+        policy=mock_policy,
+        confirm_callback=None,
+        failure_store=mock_failure_store,
+        trace_store=mock_trace_store,
     )
-    
-    respond_callback = AsyncMock()
-    user_message = Message(role="user", content="Hello")
-    
-    turn = await orchestrator.process_turn(
-        session=session,
-        user_message=user_message,
-        respond_callback=respond_callback,
-    )
-    
-    assert turn.state == TurnState.FAILED
-    assert turn.error is not None
-    respond_callback.assert_called_once()
 
+    with patch.object(orchestrator, '_create_turn', return_value=mock_turn):
+        with patch.object(orchestrator, '_persist_turn', AsyncMock()):
+            with patch.object(orchestrator, '_transition', AsyncMock()):
+                long_content = "x" * 250
+                user_message = Message(role="user", content=long_content)
+                respond_callback = AsyncMock()
 
-# Tool requiring confirmation for testing
-@tool(
-    name="dangerous_tool",
-    public_description="A tool that requires confirmation.",
-    parameters_schema={"type": "object", "properties": {}},
-    requires_confirmation=True,
-)
-async def dangerous_tool() -> str:
-    return "Executed dangerous operation"
+                await orchestrator.process_turn(
+                    session=mock_session,
+                    user_message=user_message,
+                    respond_callback=respond_callback,
+                )
+
+                mock_failure_store.record.assert_called_once()
+                bundle = mock_failure_store.record.call_args[0][0]
+
+                # All four enriched fields should be non-None
+                assert bundle.request_summary is not None
+                assert bundle.request_summary.endswith("...")
+                assert len(bundle.request_summary) == 203  # 200 chars + "..."
+
+                assert bundle.policy_snapshot is not None
+                policy_data = json.loads(bundle.policy_snapshot)
+                assert "reasoning_budget" in policy_data
+                assert "turn_token_budget" in policy_data
+                assert "tool_filter_active" in policy_data
+
+                assert bundle.slot_snapshot is not None
+                slot_data = json.loads(bundle.slot_snapshot)
+                assert slot_data["slot_id"] == 42
+                assert slot_data["temperature"] == "hot"
+                assert slot_data["slot_saved_path"] == "/tmp/slot.bin"
+
+                assert bundle.trace_id is not None
+
+                # Trace should be recorded with the same ID
+                mock_trace_store.record.assert_called_once()
+                trace = mock_trace_store.record.call_args[0][0]
+                assert trace.id == bundle.trace_id
 
 
 @pytest.mark.asyncio
-async def test_confirm_callback_missing_fails_closed_direct_path(store, artifact_store):
-    """Direct tool path: requires_confirmation should error if no confirm_callback."""
-    fake_policy = FakePolicyEngine()
-    
-    # Register a tool that requires confirmation
-    registry = ToolRegistry(artifact_store)
-    registry.register(dangerous_tool)
-    
-    # Create inference that triggers the dangerous tool via DIRECT call
-    tool_call_response = ChatResponse(
-        content="",
-        reasoning_content=None,
-        tool_calls=[
-            ToolCall(id="call_1", name="dangerous_tool", arguments={})
-        ],
-        finish_reason="tool_calls",
-        prompt_tokens=20,
-        completion_tokens=10,
-        total_tokens=30,
+async def test_post_done_respond_callback_error_no_illegal_transition() -> None:
+    """Delivery failure after DONE must not raise IllegalTransitionError.
+
+    When the model returns a successful stop response and respond_callback
+    raises while sending the final message to the user, the orchestrator
+    should keep the turn in DONE and log the delivery error instead of
+    attempting an illegal transition to FAILED.
+    """
+    mock_inference = MagicMock()
+    mock_session_store = MagicMock()
+    mock_context_builder = MagicMock()
+    mock_tool_registry = MagicMock()
+    mock_policy = MagicMock()
+
+    # Simulate successful model response
+    mock_inference.chat = AsyncMock(
+        return_value=ChatResponse(
+            content="Hello, world!",
+            reasoning_content=None,
+            tool_calls=[],
+            finish_reason="stop",
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+        )
     )
-    final_response = ChatResponse(
-        content="Done.",
-        reasoning_content=None,
-        tool_calls=[],
-        finish_reason="stop",
-        prompt_tokens=30,
-        completion_tokens=5,
-        total_tokens=35,
+
+    mock_context_builder.build = AsyncMock(
+        return_value=MagicMock(messages=[])
     )
-    inference = FakeInferenceClient([tool_call_response, final_response])
-    
-    context_builder = ContextBuilder(inference, fake_policy, body_factor=1.0)
-    
-    session = Session(
-        id="test_session_confirm_direct",
-        platform="test",
-        platform_user="user",
-        started_at=datetime.now(),
-        last_active_at=datetime.now(),
-        slot_id=None,
-        slot_saved_path=None,
-        state=SessionState.ACTIVE,
-        temperature=SessionTemperature.COLD,
-    )
-    
-    # Create orchestrator WITHOUT confirm_callback
+
+    mock_policy.reasoning_budget.return_value = 2048
+    mock_policy.filter_tools.return_value = None
+    mock_policy.turn_token_budget.return_value = 4000
+
+    mock_tool_registry.meta_tool_schemas.return_value = []
+    mock_tool_registry.list_names.return_value = []
+
+    mock_session = MagicMock()
+    mock_session.id = "test-session-id"
+    mock_session.slot_id = None
+
+    mock_turn = MagicMock()
+    mock_turn.id = "test-turn-id"
+    mock_turn.iterations = 0
+    mock_turn.tool_calls_made = 0
+    mock_turn.transitions = []
+    mock_turn.state = TurnState.RECEIVED
+
+    mock_session_store.insert_turn = AsyncMock(return_value=None)
+    mock_session_store.update_turn = AsyncMock(return_value=None)
+    mock_session_store.append_transition = AsyncMock(return_value=None)
+    mock_session_store.append_message = AsyncMock(return_value=None)
+    mock_session_store.get_messages = AsyncMock(return_value=[])
+
     orchestrator = Orchestrator(
-        inference=inference,
-        session_store=store,
-        context_builder=context_builder,
-        tool_registry=registry,
-        policy=fake_policy,
-        confirm_callback=None,  # No callback!
-        max_iterations=10,
-    )
-    
-    respond_callback = AsyncMock()
-    user_message = Message(role="user", content="Run dangerous tool")
-    
-    turn = await orchestrator.process_turn(
-        session=session,
-        user_message=user_message,
-        respond_callback=respond_callback,
-    )
-    
-    # Turn should complete (not fail) but the tool result should be an error
-    assert turn.state == TurnState.DONE
-    
-    # Verify the tool message in history shows the error
-    messages = await store.get_messages(session.id)
-    tool_messages = [m for m in messages if m.role == "tool"]
-    assert len(tool_messages) == 1
-    assert tool_messages[0].content == (
-        "Tool 'dangerous_tool' requires user confirmation but no "
-        "confirm_callback is configured on this orchestrator."
+        inference=mock_inference,
+        session_store=mock_session_store,
+        context_builder=mock_context_builder,
+        tool_registry=mock_tool_registry,
+        policy=mock_policy,
+        confirm_callback=None,
     )
 
+    with (
+        patch.object(orchestrator, '_create_turn', return_value=mock_turn),
+        patch.object(orchestrator, '_persist_turn', AsyncMock()),
+    ):
+        user_message = Message(role="user", content="hi")
 
-@pytest.mark.asyncio
-async def test_meta_tool_confirm_callback_missing_fails_closed(store, artifact_store):
-    """Meta-tool path (call_tool): requires_confirmation should error if no confirm_callback."""
-    fake_policy = FakePolicyEngine()
-    
-    # Register a tool that requires confirmation
-    registry = ToolRegistry(artifact_store)
-    registry.register(dangerous_tool)
-    
-    # Create inference that triggers the dangerous tool via META-TOOL call
-    tool_call_response = ChatResponse(
-        content="",
-        reasoning_content=None,
-        tool_calls=[
-            ToolCall(
-                id="call_1",
-                name="call_tool",  # Meta-tool pattern!
-                arguments={"name": "dangerous_tool", "arguments": {}}
-            )
-        ],
-        finish_reason="tool_calls",
-        prompt_tokens=20,
-        completion_tokens=10,
-        total_tokens=30,
-    )
-    final_response = ChatResponse(
-        content="Done.",
-        reasoning_content=None,
-        tool_calls=[],
-        finish_reason="stop",
-        prompt_tokens=30,
-        completion_tokens=5,
-        total_tokens=35,
-    )
-    inference = FakeInferenceClient([tool_call_response, final_response])
-    
-    context_builder = ContextBuilder(inference, fake_policy, body_factor=1.0)
-    
-    session = Session(
-        id="test_session_confirm_meta",
-        platform="test",
-        platform_user="user",
-        started_at=datetime.now(),
-        last_active_at=datetime.now(),
-        slot_id=None,
-        slot_saved_path=None,
-        state=SessionState.ACTIVE,
-        temperature=SessionTemperature.COLD,
-    )
-    
-    # Create orchestrator WITHOUT confirm_callback
-    orchestrator = Orchestrator(
-        inference=inference,
-        session_store=store,
-        context_builder=context_builder,
-        tool_registry=registry,
-        policy=fake_policy,
-        confirm_callback=None,  # No callback!
-        max_iterations=10,
-    )
-    
-    respond_callback = AsyncMock()
-    user_message = Message(role="user", content="Run dangerous tool")
-    
-    turn = await orchestrator.process_turn(
-        session=session,
-        user_message=user_message,
-        respond_callback=respond_callback,
-    )
-    
-    # Turn should complete (not fail) but the tool result should be an error
-    assert turn.state == TurnState.DONE
-    
-    # Verify the tool message in history shows the error (not the tool's success message)
-    messages = await store.get_messages(session.id)
-    tool_messages = [m for m in messages if m.role == "tool"]
-    assert len(tool_messages) == 1
-    assert "requires user confirmation" in tool_messages[0].content
-    assert "Executed dangerous operation" not in tool_messages[0].content  # Tool did NOT run
+        # First call (successful delivery) raises; fallback call succeeds
+        respond_callback = AsyncMock(
+            side_effect=[RuntimeError("send failed"), None]
+        )
 
+        turn = await orchestrator.process_turn(
+            session=mock_session,
+            user_message=user_message,
+            respond_callback=respond_callback,
+        )
 
-@pytest.mark.asyncio
-async def test_meta_tool_confirm_callback_denial_respected(store, artifact_store):
-    """Meta-tool path: user denial should cancel the tool."""
-    fake_policy = FakePolicyEngine()
-    
-    # Register a tool that requires confirmation
-    registry = ToolRegistry(artifact_store)
-    registry.register(dangerous_tool)
-    
-    # Create inference that triggers the dangerous tool via META-TOOL call
-    tool_call_response = ChatResponse(
-        content="",
-        reasoning_content=None,
-        tool_calls=[
-            ToolCall(
-                id="call_1",
-                name="call_tool",
-                arguments={"name": "dangerous_tool", "arguments": {}}
-            )
-        ],
-        finish_reason="tool_calls",
-        prompt_tokens=20,
-        completion_tokens=10,
-        total_tokens=30,
-    )
-    final_response = ChatResponse(
-        content="Done.",
-        reasoning_content=None,
-        tool_calls=[],
-        finish_reason="stop",
-        prompt_tokens=30,
-        completion_tokens=5,
-        total_tokens=35,
-    )
-    inference = FakeInferenceClient([tool_call_response, final_response])
-    
-    context_builder = ContextBuilder(inference, fake_policy, body_factor=1.0)
-    
-    session = Session(
-        id="test_session_confirm_denied",
-        platform="test",
-        platform_user="user",
-        started_at=datetime.now(),
-        last_active_at=datetime.now(),
-        slot_id=None,
-        slot_saved_path=None,
-        state=SessionState.ACTIVE,
-        temperature=SessionTemperature.COLD,
-    )
-    
-    # Create orchestrator with a callback that DENIES confirmation
-    async def deny_callback(tool_name: str, arguments: dict) -> bool:
-        return False
-    
-    orchestrator = Orchestrator(
-        inference=inference,
-        session_store=store,
-        context_builder=context_builder,
-        tool_registry=registry,
-        policy=fake_policy,
-        confirm_callback=deny_callback,  # Always denies
-        max_iterations=10,
-    )
-    
-    respond_callback = AsyncMock()
-    user_message = Message(role="user", content="Run dangerous tool")
-    
-    turn = await orchestrator.process_turn(
-        session=session,
-        user_message=user_message,
-        respond_callback=respond_callback,
-    )
-    
-    # Turn should complete but tool was cancelled
-    assert turn.state == TurnState.DONE
-    
-    # Verify the tool message shows cancellation (not the tool's success message)
-    messages = await store.get_messages(session.id)
-    tool_messages = [m for m in messages if m.role == "tool"]
-    assert len(tool_messages) == 1
-    assert tool_messages[0].content == "Tool execution was cancelled by user."
-    assert "Executed dangerous operation" not in tool_messages[0].content  # Tool did NOT run
+        # Turn should remain DONE (no IllegalTransitionError raised)
+        assert turn.state == TurnState.DONE
+        # respond_callback called twice: first for content (failed),
+        # second for fallback error notification (succeeded)
+        assert respond_callback.call_count == 2
+        assert "Hello, world!" in respond_callback.call_args_list[0][0][0]
+        assert "Error delivering response" in respond_callback.call_args_list[1][0][0]

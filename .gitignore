@@ -12,6 +12,13 @@ build/
 # uv
 .venv/
 
+# Kimi orchestration (local only; never commit)
+.kimi-done
+.kimi-output*.log
+
+# Runtime worktree local state (see ~/Hestia-runtime/config.runtime.py)
+/runtime-data/
+
 # Hestia local state
 .hestia/
 *.db
@@ -28,6 +35,14 @@ build/
 # Secrets
 .env
 .env.*
+
+# Matrix — copy from .matrix.secrets.example.py; see docs/testing/CREDENTIALS_AND_SECRETS.md
+.matrix.secrets.py
+
+# Claude Code / MCP tooling (personal config, not for repo)
+.claude/
+.mcp.json
+CLAUDE.md
 
 # Alembic
 migrations/__pycache__/

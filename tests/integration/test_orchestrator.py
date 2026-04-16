@@ -66,7 +66,13 @@ class FakeInferenceClient:
 class FakePolicyEngine:
     """Fake policy engine for testing."""
 
-    def should_delegate(self, session, task_description):
+    def should_delegate(
+        self,
+        session,
+        task_description,
+        tool_chain_length: int = 0,
+        projected_tool_calls: int = 0,
+    ):
         return False
 
     def should_compress(self, session, tokens_used, tokens_budget):
@@ -80,11 +86,17 @@ class FakePolicyEngine:
 
         return RetryDecision(action=RetryAction.FAIL)
 
+    def filter_tools(self, session, tool_names, registry):
+        return tool_names
+
     def turn_token_budget(self, session):
         return 4000
 
     def tool_result_max_chars(self, tool_name):
         return 4000
+
+    def reasoning_budget(self, session, iteration):
+        return 2048
 
 
 @pytest.fixture
@@ -212,9 +224,7 @@ async def test_turn_with_tool_calls(
     tool_call_response = ChatResponse(
         content="",
         reasoning_content=None,
-        tool_calls=[
-            ToolCall(id="call_1", name="list_tools", arguments={"tag": None})
-        ],
+        tool_calls=[ToolCall(id="call_1", name="list_tools", arguments={"tag": None})],
         finish_reason="tool_calls",
         prompt_tokens=20,
         completion_tokens=10,

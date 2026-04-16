@@ -31,10 +31,11 @@ class TestAllowedTransitions:
         assert TurnState.FAILED in allowed
 
     def test_executing_tools_can_loop_or_fail(self):
-        """EXECUTING_TOOLS can loop to BUILDING_CONTEXT or go to AWAITING_USER/FAILED."""
+        """EXECUTING_TOOLS can loop to BUILDING_CONTEXT or go to AWAITING_USER/FAILED/SUBAGENT."""
         allowed = ALLOWED_TRANSITIONS[TurnState.EXECUTING_TOOLS]
         assert TurnState.BUILDING_CONTEXT in allowed
         assert TurnState.AWAITING_USER in allowed
+        assert TurnState.AWAITING_SUBAGENT in allowed
         assert TurnState.FAILED in allowed
 
     def test_retrying_can_await_or_fail(self):
@@ -47,10 +48,11 @@ class TestAllowedTransitions:
         assert ALLOWED_TRANSITIONS[TurnState.DONE] == set()
         assert ALLOWED_TRANSITIONS[TurnState.FAILED] == set()
 
-    def test_phase3_states_empty(self):
-        """AWAITING_SUBAGENT and COMPRESSING are reserved for Phase 3."""
-        assert ALLOWED_TRANSITIONS[TurnState.AWAITING_SUBAGENT] == set()
-        assert ALLOWED_TRANSITIONS[TurnState.COMPRESSING] == set()
+    def test_phase5_states_wired(self):
+        """AWAITING_SUBAGENT transitions wired in Phase 5."""
+        # AWAITING_SUBAGENT: can return to EXECUTING_TOOLS or fail
+        assert TurnState.EXECUTING_TOOLS in ALLOWED_TRANSITIONS[TurnState.AWAITING_SUBAGENT]
+        assert TurnState.FAILED in ALLOWED_TRANSITIONS[TurnState.AWAITING_SUBAGENT]
 
 
 # Module-level tests for assert_transition (avoiding pytest-asyncio class issues)

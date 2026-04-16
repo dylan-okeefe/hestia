@@ -193,7 +193,7 @@ editing history.
   - Every turn has a complete transition audit trail in the database,
     which makes post-mortem debugging tractable.
   - Illegal transitions (e.g., skipping `BUILDING_CONTEXT`) fail loudly
-    at the source rather than corrupting state silently.
+    at the source rather than corrupt state silently.
   - The `AWAITING_SUBAGENT` and `COMPRESSING` states are reserved but
     have no transitions wired yet — they'll light up in Phase 3 without
     requiring a schema migration.
@@ -202,3 +202,316 @@ editing history.
     and the direct-tool dispatch path. If `confirm_callback` is `None`
     the orchestrator fails closed with an error result; if the callback
     returns `False` the tool is cancelled.
+
+## ADR-013: SlotManager owns KV-cache slot lifecycle with LRU eviction
+
+- **Status:** Accepted
+- **Date:** 2026-04-09
+- **Context:** llama.cpp's server exposes a fixed pool of KV-cache slots
+  (configured at startup via `-np N`). Slots dramatically reduce prompt
+  processing time for continuation turns because the model reuses the
+  cached state instead of re-ingesting the full conversation. But the
+  pool is small — on our RTX 3060 we plan to run with 4 slots — and
+  multiple sessions can outnumber available slots, so something has to
+  decide which sessions get live slots at any moment.
+
+  Without a dedicated manager, each adapter would grow its own ad-hoc
+  slot handling, which would quickly diverge and leave stale state in
+  the database.
+
+- **Decision:**
+  1. Introduce `SlotManager` as a new policy layer on top of
+     `InferenceClient`. It owns the slot-id-to-session-id assignment
+     map, the on-disk directory for saved slot state, and the pool size.
+  2. Sessions have a temperature: `COLD` (no slot, no disk state),
+     `WARM` (disk-backed, can be restored), `HOT` (live slot assigned).
+     The manager transitions sessions through these states via the
+     `SessionStore` as the single source of truth.
+  3. `acquire(session)` guarantees the session has a live slot at turn
+     start, restoring from disk if WARM, allocating fresh if COLD, or
+     reusing the existing slot if HOT. If the pool is full, the
+     least-recently-used session is evicted (save to disk + erase slot +
+     demote to WARM) and its slot is reassigned.
+  4. `save(session)` checkpoints slot state to disk after each successful
+     turn without demoting temperature. The slot stays HOT; the disk
+     file is a backup for eventual eviction or server restart.
+  5. All SlotManager operations are serialized by a single asyncio Lock.
+     Per-turn work inside the orchestrator runs outside the lock.
+
+- **Consequences:**
+  - Session resumption is fast: a WARM session's next turn skips the
+    prompt re-ingestion entirely because llama.cpp restores the KV cache
+    from disk.
+  - The pool size is a hard tuning knob — too small and sessions thrash,
+    too big and GPU memory runs out. We start at 4 for the 3060 build
+    and plan to expose it as a CLI option.
+  - Eviction is LRU by `last_active_at`. More sophisticated policies
+    (priority, user-pinning) can replace `_pick_lru_victim` without
+    changing the public API.
+  - If the inference server restarts, all in-memory slot assignments
+    vanish but disk state survives. The manager detects the mismatch
+    via the `_assignments` map check in `acquire()` and transparently
+    reallocates + restores. This is best-effort — if the restart
+    happens mid-turn, that turn will fail and the user will have to
+    retry.
+  - Save failures during eviction propagate as hard errors rather than
+    silently leaking state. The alternative (swallowing and continuing)
+    would leave the database believing a session is WARM with a saved
+    path that doesn't exist on disk.
+
+## ADR-014: Scheduler runs scheduled tasks via the existing Orchestrator
+
+- **Status:** Accepted
+- **Date:** 2026-04-09
+- **Context:** Hestia needs to fire LLM turns at user-defined times — both
+  recurring ("every weekday at 9am, summarize my Matrix unread") and one-shot
+  ("remind me at 3pm"). Without a dedicated scheduler, every adapter would
+  end up reinventing this loop, and the natural place for it (cron + a
+  daemon process) lives outside Hestia entirely, which loses session
+  continuity and KV-cache reuse.
+
+- **Decision:**
+  1. Introduce a `Scheduler` class that owns a single asyncio loop. The loop
+     wakes on a fixed tick interval, queries `SchedulerStore.list_due_tasks`,
+     and fires each due task by invoking the existing `Orchestrator.process_turn`
+     with the task's prompt as a synthetic user message.
+  2. Scheduled tasks are persisted in a new `scheduled_tasks` table that
+     stores either a `cron_expression` (recurring) or `fire_at` timestamp
+     (one-shot), never both. `next_run_at` is computed eagerly with
+     `croniter` and updated after every run.
+  3. The Scheduler does not own its own `InferenceClient` or `SlotManager` —
+     it receives an already-built `Orchestrator`. This guarantees scheduled
+     turns share the same slot pool, calibration, and policy as
+     interactive turns.
+  4. Task results are delivered via a `response_callback` injected at
+     construction. The CLI daemon prints to stdout. Future adapters
+     (Matrix, Telegram) will route the response back to the originating
+     channel.
+  5. One-shot tasks auto-disable after firing because `_compute_next_run`
+     returns `None` for them. Recurring tasks advance `next_run_at` to
+     the next cron occurrence.
+  6. The loop is cancellable via an `asyncio.Event`. `stop()` is fast and
+     idempotent.
+
+- **Consequences:**
+  - Scheduled and interactive turns are indistinguishable from the
+    Orchestrator's perspective, so all the Phase 1c invariants
+    (transition validation, EmptyResponseError guard, confirmation
+    enforcement) apply uniformly.
+  - Scheduled turns benefit from KV-cache reuse: a recurring task that
+    runs against the same session every morning will warm-restore the
+    slot from disk on each fire.
+  - Task firing is sequential within a tick. If a task takes 30 seconds
+    and ten tasks are due at once, the tenth waits five minutes. This is
+    fine for Phase 2b — the realistic load is single-digit tasks per day.
+    A worker pool can be added later without changing the public API.
+  - Cron expressions are evaluated in the process's local timezone, not
+    UTC. This matches user intuition for "every weekday at 9am" but
+    needs to be documented.
+  - One-shot tasks scheduled in the past are silently disabled (their
+    `next_run_at` is `None` from the start). The CLI rejects past
+    `--at` values up front so the user gets a clear error.
+  - Adding `croniter` is the first non-stdlib runtime dependency outside
+    httpx/sqlalchemy/click. It's small, stable, and widely used; the
+    alternative (hand-rolled cron parsing) is not worth the bug surface.
+
+## ADR-015: HestiaConfig is a typed Python dataclass loaded from a Python file
+
+- **Status:** Accepted
+- **Date:** 2026-04-10
+- **Context:** Configuration was scattered across Click CLI options and
+  constructor arguments in cli.py. Adding platform adapters (Telegram,
+  Matrix) would require passing many new options through the CLI, making
+  the interface unwieldy and hard to validate.
+
+- **Decision:**
+  1. Introduce `HestiaConfig` as a top-level dataclass with sub-configs
+     for inference, slots, scheduler, and storage. Config files are
+     Python files that define a `config` variable, loaded via
+     `importlib`.
+  2. CLI options override config values when explicitly provided. If no
+     config file is given, sensible defaults apply.
+  3. Config is type-checked at load time (it's a Python import, not a
+     YAML parse). IDE autocompletion works on the config file.
+
+- **Consequences:**
+  - Platform adapters (Phase 3+) can add their own config sub-objects
+    (TelegramConfig, MatrixConfig) without growing the CLI option list.
+  - Config files are version-controllable, diffable, and self-documenting.
+  - Users who don't want a config file can use CLI options exclusively
+    and get the same behavior as today.
+  - The tradeoff vs. TOML/YAML is that config files are executable code.
+    This is acceptable for a single-user local tool; it would not be
+    acceptable for a multi-tenant service.
+
+## ADR-016: Telegram adapter forces HTTP/1.1, rate-limits edits, and whitelists users
+
+- **Status:** Accepted
+- **Date:** 2026-04-10
+- **Context:** The Hermes predecessor used python-telegram-bot with default
+  HTTP/2 and had intermittent connection failures. Edit-message spam caused
+  Telegram 429 (rate limit) errors. No access control allowed anyone who
+  found the bot to interact with it.
+
+- **Decision:**
+  1. Force HTTP/1.1 on all Telegram API calls via httpx `http2=False`.
+     HTTP/2 multiplexing offers no benefit for a single-user bot and
+     causes instability with Telegram's servers.
+  2. Rate-limit `edit_message` to at most one call per 1.5 seconds per
+     message. Track last-edit time per message ID and sleep if needed.
+  3. Introduce `allowed_users` in TelegramConfig: a list of user IDs
+     and/or usernames. Empty list = allow all (for testing). Non-empty
+     list = whitelist.
+  4. TelegramAdapter implements Platform ABC without special-casing.
+     The orchestrator is unaware it's talking to Telegram.
+
+- **Consequences:**
+  - HTTP/1.1 means slightly higher overhead per request but eliminates
+    the intermittent failures seen in Hermes.
+  - Rate limiting means status updates during long tool runs may lag
+    by up to 1.5 seconds. This is acceptable; the alternative is 429s.
+  - The allowed_users whitelist is checked on every incoming message.
+    In production with a single user, the list has one entry.
+
+## ADR-017: Long-term memory uses SQLite FTS5, not vector search
+
+- **Status:** Accepted
+- **Date:** 2026-04-10
+- **Context:** The agent needs persistent, searchable notes that survive across
+  sessions. The two main approaches are vector search (embedding-based
+  similarity) and full-text search (keyword/phrase matching).
+
+- **Decision:**
+  1. Use SQLite FTS5 virtual tables for memory search. The table stores
+     content, tags, session_id, and created_at. Search uses BM25 ranking.
+  2. MemoryStore handles its own DDL because SQLAlchemy doesn't support
+     FTS5 virtual tables through metadata.create_all().
+  3. Memory tools (search_memory, save_memory, list_memories) use the
+     factory pattern (make_*_tool) to bind to a MemoryStore instance,
+     same as read_artifact.
+  4. No vector DB, no embeddings, no external services. FTS5 is built
+     into SQLite and requires zero additional dependencies.
+
+- **Consequences:**
+  - FTS5 search is keyword-based, not semantic. "car" won't find
+    memories about "automobile". This is acceptable for a personal
+    assistant where the user's own vocabulary is consistent.
+  - FTS5 is extremely fast (sub-millisecond for typical query volumes).
+    No GPU memory consumed, no embedding model loaded.
+  - Vector search can be added later as a plugin (e.g., sqlite-vec)
+    without changing the MemoryStore interface. The search() method
+    signature stays the same.
+  - The FTS5 table lives in the same SQLite database as everything
+    else. A separate memory database (as originally designed) adds
+    complexity with no current benefit.
+
+## ADR-018: Subagent delegation uses same-process, different-slot architecture
+
+- **Status:** Accepted
+- **Date:** 2026-04-10
+- **Context:** Complex tasks may require extensive tool chaining that bloats the
+  parent context. We need a way to offload work to subagents while keeping the
+  parent context bounded. Options include: separate processes (multiprocessing),
+  separate threads, or same-process with different slots.
+
+- **Decision:**
+  1. Subagents run in the **same process** as the parent orchestrator but with
+     a **different session and slot** (per ADR-005). This avoids IPC complexity
+     while still providing isolation via separate KV-cache slots.
+  2. The `delegate_task` tool spawns a subagent by:
+     - Creating a new session via SessionStore
+     - Running a separate turn via the same Orchestrator
+     - Archiving the subagent session when done
+  3. Results are returned via a `SubagentResult` envelope that caps parent
+     context growth at ~300 tokens regardless of subagent work volume.
+  4. State machine supports `AWAITING_SUBAGENT` for tracking delegation status.
+  5. Timeout is enforced via asyncio.wait_for(); subagents that timeout are
+     terminated and return a timeout status.
+
+- **Consequences:**
+  - A crashing subagent could crash the parent (same process). This is acceptable
+    for a personal assistant where the user is present and can restart.
+  - No IPC overhead, no serialization complexity.
+  - Subagents benefit from SlotManager's save/restore for KV-cache persistence.
+  - The parent can only have one active subagent at a time per session (can be
+    relaxed later with task IDs if needed).
+  - Subagent transcripts are stored as regular session history, not artifacts
+    (this may change in future if storage becomes an issue).
+
+## ADR-019: Capability labels and session-aware tool filtering
+
+- **Status:** Accepted
+- **Date:** 2026-04-10
+- **Context:** Tools had informal `tags` but no security-oriented labels. All
+  registered tools were visible to every session type, including subagents and
+  scheduler-driven turns that run without a human at the keyboard.
+
+- **Decision:**
+  1. Add a `capabilities` list on `ToolMetadata` using a small fixed vocabulary
+     (`read_local`, `write_local`, `shell_exec`, `network_egress`, `memory_read`,
+     `memory_write`, `orchestration`).
+  2. Extend `PolicyEngine` with `filter_tools(session, names, registry)`;
+     `DefaultPolicyEngine` removes tools whose capabilities intersect a blocked set
+     for `platform=subagent` and for scheduler execution.
+  3. Scheduler turns use the same persisted session as interactive CLI, so
+     scheduler mode is detected with `contextvars` (`scheduler_tick_active`)
+     set for the duration of `Scheduler._fire_task` → `process_turn`.
+
+- **Consequences:** Tool listings and `call_tool` dispatch must respect the
+  filtered set. Subagents cannot run shell or arbitrary local writes by default.
+
+## ADR-020: Typed failure bundles
+
+- **Status:** Accepted
+- **Date:** 2026-04-10
+- **Context:** Failed turns stored only a string on the turn row; no stable
+  classification for dashboards, alerts, or future failure analysis.
+
+- **Decision:**
+  1. Introduce `FailureClass` enum and `classify_error()` mapping from
+     `HestiaError` subclasses (plus string heuristics for generic exceptions).
+  2. Persist `failure_bundles` rows (session, turn, class, severity, message,
+     tool chain JSON, timestamp) via `FailureStore`, optionally wired on the
+     orchestrator.
+  3. Table is defined in SQLAlchemy `schema.py` and upgraded via Alembic for
+     existing databases.
+
+- **Consequences:** Foundation for CLI/scheduler reporting and future
+  postmortem tooling without changing the hot-path turn state machine.
+
+## ADR-021: Matrix adapter with room-based session mapping and allowlist
+
+- **Status:** Accepted
+- **Date:** 2026-04-12
+- **Context:** ADR-007 positions Matrix as a v1 interface alongside CLI/Telegram.
+  The Matrix adapter needs to support automation-first use cases: scripted
+  clients, CI-friendly end-to-end tests, and headless operation. Unlike
+  Telegram's user-based model, Matrix is room-centric.
+
+- **Decision:**
+  1. Use `matrix-nio` (asyncio-first, pure Python) for Matrix protocol support.
+     This aligns with Phase 4 asyncio design in the revised architecture.
+  2. Session mapping: one Matrix room = one Hestia session. The room ID
+     (`!abc:server`) is the `platform_user`. This provides predictable
+     isolation for testing and avoids thread-per-session complexity.
+  3. Security via `allowed_rooms` whitelist in `MatrixConfig`. Empty list
+     denies all inbound (secure default). The bot only responds to rooms
+     explicitly listed.
+  4. Rate-limit `edit_message` to one call per 1.5 seconds per message,
+     same pattern as Telegram. This avoids homeserver abuse flags.
+  5. Unencrypted rooms only for v1. E2EE support via `matrix-nio` e2ee
+     module is deferred — it requires a crypto store and more complex
+     device management.
+  6. Status updates use Matrix's `m.replace` relation (message edits).
+     The orchestrator's status line pattern works unchanged.
+  7. Tool confirmation: deferred to post-v1. For now, destructive tools
+     without confirmation callback fail closed with an error message.
+     Future: implement "reply YES <nonce>" pattern for approval.
+
+- **Consequences:**
+  - Matrix sessions are isolated by room. Two rooms = two sessions even
+    if the same human is in both.
+  - The bot cannot be used in E2EE rooms until E2EE support is added.
+  - CI/integration tests can use a dedicated test room with a test account.
+  - No inline buttons for confirmation; users see error messages for
+    destructive operations requiring confirmation.

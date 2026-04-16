@@ -106,7 +106,7 @@ class ToolRegistry:
 
         try:
             raw = await meta.handler(**arguments)
-        except Exception as e:
+        except (TypeError, ValueError, OSError) as e:
             return ToolCallResult(
                 status="error",
                 content=f"{type(e).__name__}: {e}",
@@ -115,9 +115,7 @@ class ToolRegistry:
             )
 
         # Normalize to string
-        content_str = (
-            json.dumps(raw, indent=2) if isinstance(raw, (dict, list)) else str(raw)
-        )
+        content_str = json.dumps(raw, indent=2) if isinstance(raw, (dict, list)) else str(raw)
 
         return self._postprocess(content_str, meta)
 
@@ -201,13 +199,23 @@ class ToolRegistry:
 
         return [list_tools_schema, call_tool_schema]
 
-    async def meta_list_tools(self, tag: str | None = None) -> str:
-        """Handler for the list_tools meta-tool."""
+    async def meta_list_tools(
+        self, tag: str | None = None, allowed_names: list[str] | None = None
+    ) -> str:
+        """Handler for the list_tools meta-tool.
+
+        Args:
+            tag: Optional tag filter
+            allowed_names: Optional list of allowed tool names (for session filtering)
+        """
         names = self.list_names(tag=tag)
+        if allowed_names is not None:
+            names = [n for n in names if n in allowed_names]
         lines = []
         for n in names:
             m = self._tools[n]
-            lines.append(f"- {n}: {m.public_description}")
+            caps = ", ".join(m.capabilities) or "none"
+            lines.append(f"- {n}: {m.public_description} [caps: {caps}]")
         return "\n".join(lines) if lines else "(no tools)"
 
     async def meta_call_tool(self, name: str, arguments: dict[str, Any]) -> ToolCallResult:
