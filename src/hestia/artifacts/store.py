@@ -1,6 +1,7 @@
 """ArtifactStore with inline + file-backed storage and TTL."""
 
 import base64
+import contextlib
 import json
 import os
 import secrets
@@ -74,6 +75,21 @@ class ArtifactStore:
                 for handle, content_b64 in data.get("content", {}).items():
                     self._inline[handle] = base64.b64decode(content_b64)
 
+    def _atomic_write_json(self, path: Path, data: dict) -> None:
+        """Write JSON to disk atomically: temp file in same dir + os.replace().
+
+        Prevents corruption if the process crashes mid-write.
+        """
+        fd, tmp_path = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(data, f)
+            os.replace(tmp_path, path)
+        except BaseException:
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(tmp_path)
+            raise
+
     def _save_inline_index(self) -> None:
         """Save inline artifact index to disk."""
         index_path = self._root / "inline.json"
@@ -83,15 +99,7 @@ class ArtifactStore:
                 for handle, content in self._inline.items()
             }
         }
-        # Write to temp file + atomic rename to prevent corruption on crash
-        fd, tmp_path = tempfile.mkstemp(dir=self._root, suffix=".tmp")
-        try:
-            with os.fdopen(fd, "w") as f:
-                json.dump(data, f)
-            os.replace(tmp_path, index_path)
-        except BaseException:
-            os.unlink(tmp_path)
-            raise
+        self._atomic_write_json(index_path, data)
 
     def _generate_handle(self) -> str:
         """Generate an opaque handle.
@@ -151,8 +159,7 @@ class ArtifactStore:
 
         # Store metadata
         metadata_path = self._root / f"{handle}.json"
-        with open(metadata_path, "w") as f:
-            json.dump(asdict(metadata), f)
+        self._atomic_write_json(metadata_path, asdict(metadata))
 
         return handle
 
