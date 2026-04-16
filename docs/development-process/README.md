@@ -41,3 +41,9 @@ how much was AI-driven vs. human-driven, where the failure modes were. Anyone
 trying to reproduce the methodology has the full record.
 
 If you are only interested in *using* Hestia, ignore this directory entirely.
+
+## mypy baseline
+
+`mypy-baseline.txt` lists the 44 pre-existing mypy errors as of v0.2.1.
+CI fails on any *new* error. To fix one of these baseline errors, fix it in the
+source and remove the matching line from the baseline in the same commit.
