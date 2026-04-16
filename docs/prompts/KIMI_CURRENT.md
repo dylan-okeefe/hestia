@@ -2,21 +2,28 @@
 
 **Orchestrator:** Cursor updates this file after each review.
 
-**Last set by:** Cursor — 2026-04-15 (**L17 queued — release v0.2.0**)
+**Last set by:** Cursor — 2026-04-15 (**L18 queued — post-public cleanup + v0.2.1 release**)
 
 ---
 
 ## Current task
 
-**Active loop:** **L17** — Release v0.2.0 (promote develop → main, tag, branch cleanup)
+**Active loop:** **L18** — Post-public cleanup + v0.2.1 release
 
-**Spec:** [`../orchestration/kimi-loops/L17-release-v0.2.0.md`](../orchestration/kimi-loops/L17-release-v0.2.0.md)
+**Spec:** [`../orchestration/kimi-loops/L18-post-public-cleanup-v0.2.1.md`](../orchestration/kimi-loops/L18-post-public-cleanup-v0.2.1.md)
 
-**Branch:** This loop operates directly on `develop` and `main`. No new feature branch.
+**Branch:** `feature/l18-post-public-cleanup` (create from `develop`).
 
-**Kimi prompt:** Read `docs/prompts/KIMI_CURRENT.md`, then execute the full spec at the linked file. Follow every phase (1–7) in order. Stop and report immediately if any phase fails. Write the `.kimi-done` artifact at the end.
+**Kimi prompt:** Read `docs/prompts/KIMI_CURRENT.md`, then execute the full spec at the linked file. Implement every section §1–§7 in order. Stop and report immediately if any section fails. Write the `.kimi-done` artifact at the end (do not commit it).
 
-**Scope:** Pre-flight verification, tag development-history-snapshot, prep v0.2.0 commits, promote develop → main, tag v0.2.0, push, branch cleanup, gc, final verification.
+**Scope:**
+- §1 Fix `SecurityAuditor` `memory_write` → `save_memory` tool-name bug (+ test)
+- §2 Atomic per-artifact metadata write
+- §3 Move internal AI-orchestration docs to `docs/development-process/` with explanatory README; update all cross-references
+- §4 Make CI mypy honest (baseline 44 errors, fail on new ones)
+- §5 CHANGELOG + version bump for v0.2.1
+- §6 Promote `develop` → `main`, tag v0.2.1, push
+- §7 Branch cleanup + final test verification on both branches
 
 ---
 
