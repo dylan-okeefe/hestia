@@ -271,15 +271,42 @@ class TestSecurityAuditor:
         """Test trace check detects suspicious patterns."""
         # Create a mock trace with suspicious pattern
         trace = MagicMock()
+        trace.tools_called = ["http_get", "save_memory"]
+        mock_trace_store.list_recent.return_value = [trace]
+
+        auditor = SecurityAuditor(config, trace_store=mock_trace_store)
+        report = await auditor.run_audit()
+
+        warnings = [f for f in report.findings if f.severity == "warning" and "save_memory" in f.message]
+        assert len(warnings) == 1
+        assert "save_memory after http_get" in warnings[0].message
+
+    @pytest.mark.asyncio
+    async def test_audit_detects_save_memory_after_http_in_trace(self, config, mock_trace_store):
+        """The trace-pattern check must use the real tool name (save_memory),
+        not a stale alias (memory_write)."""
+        trace = MagicMock()
+        trace.tools_called = ["http_get", "save_memory"]
+        mock_trace_store.list_recent.return_value = [trace]
+
+        auditor = SecurityAuditor(config, trace_store=mock_trace_store)
+        report = await auditor.run_audit()
+
+        warnings = [f for f in report.findings if f.severity == "warning" and "save_memory after http_get" in f.message]
+        assert len(warnings) == 1
+
+    @pytest.mark.asyncio
+    async def test_audit_no_finding_for_stale_memory_write_alias(self, config, mock_trace_store):
+        """The wrong tool name (memory_write) must not produce a finding."""
+        trace = MagicMock()
         trace.tools_called = ["http_get", "memory_write"]
         mock_trace_store.list_recent.return_value = [trace]
 
         auditor = SecurityAuditor(config, trace_store=mock_trace_store)
         report = await auditor.run_audit()
 
-        warnings = [f for f in report.findings if f.severity == "warning" and "memory_write" in f.message]
-        assert len(warnings) == 1
-        assert "memory_write after http_get" in warnings[0].message
+        warnings = [f for f in report.findings if f.severity == "warning" and "after http_get" in f.message]
+        assert len(warnings) == 0
 
     @pytest.mark.asyncio
     async def test_trace_check_excessive_terminal(self, config, mock_trace_store):
