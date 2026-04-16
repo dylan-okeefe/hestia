@@ -5,7 +5,7 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## [0.1.0] — 2026-04-13
+## [0.2.0] — 2026-04-15
 
 ### Added
 - `MatrixAdapter` implementing Platform ABC with `matrix-nio`
@@ -102,6 +102,11 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `SessionStore` with SQLAlchemy Core async
 - Database schema and connection management
 - Calibration measurement tooling
+
+## [0.1.0] — 2026-04-09
+
+Initial milestone tag marking completion of Phase 1c (orchestrator + CLI). Not a
+public release — see [0.2.0] for the first public version.
 
 ## [0.0.0] — 2026-04-09
 

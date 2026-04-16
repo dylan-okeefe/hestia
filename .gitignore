@@ -39,6 +39,11 @@ build/
 # Matrix — copy from .matrix.secrets.example.py; see docs/testing/CREDENTIALS_AND_SECRETS.md
 .matrix.secrets.py
 
+# Claude Code / MCP tooling (personal config, not for repo)
+.claude/
+.mcp.json
+CLAUDE.md
+
 # Alembic
 migrations/__pycache__/
 migrations/versions/__pycache__/
