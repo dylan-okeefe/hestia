@@ -98,7 +98,7 @@ Optional:
 | KV slots | Same tree’s `runtime-data/slots` |
 | Artifacts | Same tree’s `runtime-data/artifacts` |
 
-Use a **dedicated** worktree or DB file for automation so you can `rm -rf runtime-data/` if teardown fails. See [`docs/orchestration/runtime-feature-testing.md`](../orchestration/runtime-feature-testing.md).
+Use a **dedicated** worktree or DB file for automation so you can `rm -rf runtime-data/` if teardown fails. See [`docs/runtime-feature-testing.md`](../runtime-feature-testing.md).
 
 ---
 

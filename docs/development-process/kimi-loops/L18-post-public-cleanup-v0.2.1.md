@@ -290,8 +290,8 @@ Update or remove every reference in:
 - `docs/HANDOFF_STATE.md` — file is **gone** (deleted in L16). If any other doc still links to it, leave the broken link or note it; do not recreate the file.
 - `docs/development-process/kimi-phase-queue.md` itself — paths in its tables now need updating to `kimi-loops/L*.md` (relative to its new location, paths inside the dir are unchanged).
 - `docs/development-process/kimi-loops/L*.md` — many of these reference each other. Since they all moved together, intra-directory paths still work. Fix only the ones that reference *external* paths (e.g. `../HANDOFF_STATE.md`, `../../scripts/kimi-run-current.sh`).
-- `scripts/kimi-run-current.sh` — references `docs/prompts/KIMI_CURRENT.md`. Update to `docs/development-process/prompts/KIMI_CURRENT.md` **or** delete the script (it is itself an internal-process tool; consider moving it to `docs/development-process/scripts/`).
-- `.cursorrules` — references `docs/HANDOFF_STATE.md`, `docs/orchestration/kimi-phase-queue.md`, `docs/prompts/KIMI_CURRENT.md`, `docs/orchestration/kimi-loops/`, etc. Update all paths.
+- `scripts/kimi-run-current.sh` — references `docs/development-process/prompts/KIMI_CURRENT.md`.
+- `.cursorrules` — references `docs/development-process/kimi-phase-queue.md`, `docs/development-process/prompts/KIMI_CURRENT.md`, `docs/development-process/kimi-loops/`, etc. Update all paths.
 - `.cursor/rules/*.mdc` if any exist — check and update.
 - `README.md` — should not reference any of these paths directly. Verify with grep.
 - `CHANGELOG.md` — may have changelog entries that reference loop specs by old path; update or leave (changelog history is immutable in spirit).
@@ -315,7 +315,7 @@ If you are restarting Kimi-driven development, write a new loop spec in
 
 ### Update the script (if kept in `scripts/`)
 
-`scripts/kimi-run-current.sh` line 14 contains the path `docs/prompts/KIMI_CURRENT.md`. Update to `docs/development-process/prompts/KIMI_CURRENT.md`. Or move the script to `docs/development-process/scripts/kimi-run-current.sh` and update the `.cursorrules` reference accordingly. Either is fine; pick the one with fewer downstream changes.
+`scripts/kimi-run-current.sh` line 14 contains the path `docs/development-process/prompts/KIMI_CURRENT.md`. Or move the script to `docs/development-process/scripts/kimi-run-current.sh` and update the `.cursorrules` reference accordingly. Either is fine; pick the one with fewer downstream changes.
 
 ### Tests
 
@@ -429,7 +429,7 @@ Add a new section at the top (above `[0.2.0]`):
   (`tempfile.mkstemp` + `os.replace`), matching the inline-index fix from v0.2.0.
 
 ### Changed
-- AI-orchestration documentation (`docs/orchestration/`, `docs/prompts/`, internal
+- AI-orchestration documentation (`docs/development-process/`, including prompts and internal
   reviews and brainstorms) moved to `docs/development-process/` with an
   explanatory README. The public `docs/` tree now contains only user-facing
   documentation, ADRs, and operator runbooks.

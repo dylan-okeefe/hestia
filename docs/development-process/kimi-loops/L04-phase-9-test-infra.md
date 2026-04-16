@@ -29,7 +29,7 @@ If scope is too large for one run, split commits by subsection but finish all th
 
 ```text
 HESTIA_KIMI_DONE=1
-SPEC=docs/orchestration/kimi-loops/L04-phase-9-test-infra.md
+SPEC=docs/development-process/kimi-loops/L04-phase-9-test-infra.md
 BRANCH=feature/phase-9-test-infra
 PYTEST=<last line of pytest -q>
 GIT_HEAD=<git rev-parse HEAD>

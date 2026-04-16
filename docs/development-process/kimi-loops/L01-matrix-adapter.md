@@ -21,7 +21,7 @@
 
 ```text
 HESTIA_KIMI_DONE=1
-SPEC=docs/orchestration/kimi-loops/L01-matrix-adapter.md
+SPEC=docs/development-process/kimi-loops/L01-matrix-adapter.md
 BRANCH=feature/matrix-adapter
 PYTEST=<last line of pytest -q>
 GIT_HEAD=<git rev-parse HEAD>

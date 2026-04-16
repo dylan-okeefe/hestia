@@ -2,7 +2,7 @@
 
 **Target branch:** Continue on **`feature/phase-6-hardening`** (do **not** merge to `develop` unless Dylan says so). Rebase or pull the latest on that branch before starting.
 
-**Read first:** `docs/HANDOFF_STATE.md`, `docs/prompts/KIMI_PHASE_6_PROMPT.md` (§5–§7 — this prompt finishes what was skipped), `docs/DECISIONS.md` (ADR-019 and ADR-020 are **already** merged — do not duplicate them).
+**Read first:** `docs/development-process/prompts/KIMI_PHASE_6_PROMPT.md` (§5–§7 — this prompt finishes what was skipped), `docs/DECISIONS.md` (ADR-019 and ADR-020 are **already** merged — do not duplicate them).
 
 **Quality bar:** `uv run pytest tests/unit/ tests/integration/`, `uv run ruff check src/ tests/`, `uv run mypy src/hestia` (fix new errors you introduce). Conventional commits; one commit per logical section where practical.
 

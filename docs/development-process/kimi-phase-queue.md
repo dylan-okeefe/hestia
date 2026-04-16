@@ -1,8 +1,8 @@
-# Kimi phase queue (Cursor advances `docs/prompts/KIMI_CURRENT.md` after each green review)
+# Kimi phase queue (Cursor advances `docs/development-process/prompts/KIMI_CURRENT.md` after each green review)
 
 | Order | Branch (suggested) | Executor spec |
 |-------|-------------------|----------------|
-| 0 | `feature/phase-7-cleanup` | [`docs/design/kimi-hestia-phase-7-cleanup.md`](../design/kimi-hestia-phase-7-cleanup.md) |
+| 0 | `feature/phase-7-cleanup` | [`design-artifacts/kimi-hestia-phase-7-cleanup.md`](design-artifacts/kimi-hestia-phase-7-cleanup.md) |
 | 1 | `feature/matrix-adapter` | [`kimi-loops/L01-matrix-adapter.md`](kimi-loops/L01-matrix-adapter.md) |
 | 2 | `feature/phase-8a-identity-reasoning` | [`kimi-loops/L02-phase-8a-identity-reasoning.md`](kimi-loops/L02-phase-8a-identity-reasoning.md) |
 | 3 | `feature/phase-8b-cli-exceptions-datetime` | [`kimi-loops/L03-phase-8b-cli-exceptions-datetime.md`](kimi-loops/L03-phase-8b-cli-exceptions-datetime.md) |
@@ -22,7 +22,7 @@
 | 17 | *(develop + main)* | [`kimi-loops/L17-release-v0.2.0.md`](kimi-loops/L17-release-v0.2.0.md) |
 | 18 | `feature/l18-post-public-cleanup` | [`kimi-loops/L18-post-public-cleanup-v0.2.1.md`](kimi-loops/L18-post-public-cleanup-v0.2.1.md) |
 
-**Chain index (L10–L14):** [`docs/prompts/KIMI_LOOPS_L10_L14.md`](../prompts/KIMI_LOOPS_L10_L14.md) · **Credentials:** [`docs/testing/CREDENTIALS_AND_SECRETS.md`](../testing/CREDENTIALS_AND_SECRETS.md)
+**Chain index (L10–L14):** [`prompts/KIMI_LOOPS_L10_L14.md`](prompts/KIMI_LOOPS_L10_L14.md) · **Credentials:** [`docs/testing/CREDENTIALS_AND_SECRETS.md`](../testing/CREDENTIALS_AND_SECRETS.md)
 
 **Authoritative detail** for Phases 8–13 lives in [`docs/design/hestia-phase-8-plus-roadmap.md`](../design/hestia-phase-8-plus-roadmap.md). Each `L*.md` file names sections to implement and the **`.kimi-done`** contract.
 
