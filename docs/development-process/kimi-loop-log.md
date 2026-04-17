@@ -8,6 +8,46 @@
 
 ---
 
+## 2026-04-17 — Loop: L21 — Context resilience + handoff summaries + Hermes untangle (Kimi) → merged to develop
+
+**Kimi:** `.kimi-done`: `LOOP=L21`, final commit `cdc2f63`, `TESTS=passed=540 failed=0 skipped=6` on `feature/l21-context-resilience-handoff`. 9 spec sections, 11 Kimi commits (one §, + one ruff style fix, + one end-of-loop checklist tidy). Ralph loop hit max-steps=100 once at §5/§6 boundary; one manual re-run of `kimi-run-current.sh` completed §6-§9 and wrote `.kimi-done`.
+
+**Trigger:** Dylan's reported "⚠️ Context length exceeded (15,228 tokens). Cannot compress further." in Matrix during a post-merge check. Investigation showed the error originated from Hermes/Silas (`~/.hermes/hermes-agent/run_agent.py`), not Hestia. But it exposed that **Hestia silently truncated history on overflow** with no summarization and no user signal. L21 makes that failure mode loud and recoverable.
+
+**What shipped:**
+
+1. **§1 Session handoff summaries** — new `src/hestia/memory/handoff.py` with `SessionHandoffSummarizer` + `HandoffResult`. On `close_session` with `handoff_summarizer` configured, generates a 2-3 sentence prose recap (<=350 chars) and persists it as a memory entry tagged `["handoff", session.platform]`. Skips trivial sessions (< `min_messages` user turns).
+2. **§2 History compressor** — new `src/hestia/context/compressor.py`. `HistoryCompressor` protocol + `InferenceHistoryCompressor` default that calls the same `InferenceClient` with a small prompt (<=400 chars output). `ContextBuilder` now accepts `compressor` + `compress_on_overflow` and splices the summary into the effective system prompt of the turn that overflowed.
+3. **§3 Loud overflow signal** — `ContextBuilder.build()` raises `ContextTooLargeError` when the protected block (system + first-user + new-user) alone exceeds the budget. `Orchestrator.process_turn` catches it, records a `FailureClass.CONTEXT_OVERFLOW` bundle, calls `platform.send_system_warning`, and best-effort kicks the handoff summarizer.
+4. **§4 Config** — `HandoffConfig` and `CompressionConfig` added to `HestiaConfig`. `TrustConfig.household` / `TrustConfig.developer` enable both by default; `paranoid` leaves them off. Unit tests assert defaults and preset fan-out.
+5. **§5 Platform warning channel** — abstract `Platform.send_system_warning(user, text)` with `⚠️`-prefixed implementations for CLI (stderr click echo), Telegram (dedicated message, not rate-limited), Matrix (plain text reply, no retry storm).
+6. **§6 Hermes-untangle docs** — new `deploy/hestia-llama.alt-port.service.example` (port 8002, `/opt/hestia/slots`), expanded `deploy/README.md` with Mode A (dedicated) vs Mode B (shared) tradeoffs, new `docs/guides/runtime-setup.md` (base_url / slot_dir selection + isolation smoke-test), ADR-0015 for llama-server coexistence. Historical `Hermes predecessor` ADR / docstring references left alone as agreed.
+7. **§7 Context-resilience docs** — README "Context budget and long sessions", updated `docs/runtime-feature-testing.md`, ADR-0014.
+8. **§8 Version bump** — `pyproject.toml` → `0.4.0`, `CHANGELOG.md` `[0.4.0]` section, `uv.lock` regenerated.
+9. **§9 Handoff report** — `docs/handoffs/L21-context-resilience-handoff.md`.
+
+**Review (Cursor):**
+
+- Re-ran `uv run pytest tests/unit/ tests/integration/ -q` on `feature/l21...` tip: **540 passed / 0 failed / 6 skipped** (baseline 514 → +26 new).
+- Mypy still at 44 errors (unchanged; L22 owns the cleanup).
+- **Real bug found (review pattern #2 from `.cursorrules`):** `HandoffConfig` and `CompressionConfig` were defined, merged into `TrustConfig` presets, and unit-tested — but `cli.py` never instantiated `SessionHandoffSummarizer` or `InferenceHistoryCompressor`, and never read `cfg.handoff` or `cfg.compression`. L21 was dead code in the actual Telegram/Matrix/CLI runtime.
+
+**Cursor fix commit `5ece0bf fix(cli): wire HandoffConfig and CompressionConfig into the runtime`:**
+
+- Added `ContextBuilder.enable_compression(compressor)` helper.
+- `cli.py` now builds an `InferenceHistoryCompressor(inference, max_chars=cfg.compression.max_chars)` and calls `enable_compression` when `cfg.compression.enabled`.
+- `cli.py` builds `SessionHandoffSummarizer(...)` when `cfg.handoff.enabled`, stores it on `CliAppContext.handoff_summarizer`, threads it through `make_orchestrator()` and the subagent `orchestrator_factory()`.
+- Regression guard: `tests/unit/test_cli_handoff_compression_wiring.py` (3 tests).
+- Final test count: **543 passed / 0 failed / 6 skipped**. Mypy still 44.
+
+**Merge:** `feature/l21-context-resilience-handoff` → `develop` via `--no-ff` merge commit `d6b7cd3`. Pushed.
+
+**Queue:** L21 complete. `docs/development-process/prompts/KIMI_CURRENT.md` to be repointed at L22 next.
+
+**Next:** L22 — mypy cleanup + CI strictness for `hestia.policy.*` and `hestia.core.*`. Followed by L23 (platform confirmation callbacks), L24 (prompt injection + egress audit), L25 (email adapter), L26 (reflection loop), L27 (style profile).
+
+---
+
 ## 2026-04-17 — Loop: L19 — Slot-save basename fix + ctx-window alignment + v0.2.2 release (Kimi) → merged, tagged v0.2.2
 
 **Kimi:** `.kimi-done`: `LOOP=L19`, develop tip `c46dc7a`, main `255dc2b`, v0.2.2 tag `3decc9f`. Alembic migration `2cf4ef820e46`. **485 passed, 6 skipped** on both `develop` and `main` (up from 478 baseline — 7 new tests).

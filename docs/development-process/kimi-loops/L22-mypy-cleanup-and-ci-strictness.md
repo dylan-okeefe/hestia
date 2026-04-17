@@ -2,7 +2,36 @@
 
 ## Review carry-forward
 
-From L21 review (to be filled when L21 merges).
+From **L21 review** (merged to `develop` in commit `d6b7cd3`):
+
+1. **Review pattern #2 already hit on L21** — `HandoffConfig` and
+   `CompressionConfig` were defined on `HestiaConfig`, merged into
+   `TrustConfig` presets, and unit-tested, but `cli.py` never
+   instantiated `SessionHandoffSummarizer` or `InferenceHistoryCompressor`.
+   Cursor shipped a follow-up `fix(cli): wire HandoffConfig and
+   CompressionConfig into the runtime` (commit `5ece0bf`). **Action for
+   L22:** when adding new config fields, also grep `src/hestia/cli.py`
+   and every `platforms/*.py` adapter for a reference — fail-fast if
+   the field isn't read anywhere. Consider adding this as an audit check
+   in a later loop.
+2. **Ruff debt in cli.py** — `uv run ruff check src/hestia/cli.py`
+   reports 9 pre-existing errors (SIM108 ternary opportunities, an unused
+   `db` assignment). Not blocking, but L22 can clean these while it's in
+   `cli.py` anyway. If you do, keep the fix in its own `style:` commit.
+3. **Ruff debt in `tests/`** — 164 total ruff errors across the tests
+   tree, almost all pre-existing. Out of scope for L22, but if Kimi
+   touches a test file for a mypy fix and ruff complains about
+   adjacent lines, either silence with `# noqa` or include the fix —
+   don't leave partial cleanup.
+4. **Session-close handoff** — with L21 wired in, any new flow that
+   creates sessions (reflection proposals in L26, email replies in L25,
+   etc.) should route teardown through `Orchestrator.close_session`, not
+   `SessionStore.archive_session` directly. Called out now so future
+   loops don't bypass the summarizer.
+5. **Coexistence guide lives in `docs/guides/runtime-setup.md`** — if
+   L22's mypy work touches the calibration / slot-dir machinery, keep
+   the Mode A / Mode B wording there intact; the guide now has one
+   canonical location.
 
 **Branch:** `feature/l22-mypy-cleanup` from **`develop`**.
 
