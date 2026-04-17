@@ -115,7 +115,10 @@ async def test_acquire_warm_session_restores_from_disk(store, slot_dir):
 
     assert assignment.slot_id == 0
     assert assignment.restored_from_disk is True
-    assert inference.calls == [("slot_restore", (0, "test_session.bin"))]
+    # Filename is derived from session.id (sanitized), not from the DB's
+    # stored saved_path value.
+    expected_filename = f"{session.id}.bin"
+    assert inference.calls == [("slot_restore", (0, expected_filename))]
 
     # Session is now HOT, saved_path cleared
     fetched = await store.get_session(session.id)
@@ -432,8 +435,13 @@ async def test_slot_save_sends_basename_only(store, slot_dir):
 
 
 @pytest.mark.asyncio
-async def test_slot_restore_normalizes_legacy_absolute_paths(store, slot_dir):
-    """Restore extracts basename even if DB holds a legacy absolute path."""
+async def test_slot_restore_derives_filename_from_session_id(store, slot_dir):
+    """Restore derives filename from session.id (sanitized), ignoring the
+    DB's stored `slot_saved_path` contents.
+
+    This self-heals legacy rows that may hold absolute paths or values with
+    characters llama.cpp rejects (e.g. Matrix `!room:server.org`).
+    """
     inference = FakeInferenceClient()
     manager = SlotManager(
         inference=inference,
@@ -444,6 +452,8 @@ async def test_slot_restore_normalizes_legacy_absolute_paths(store, slot_dir):
 
     session = await store.get_or_create_session("cli", "user1")
     await store.assign_slot(session.id, slot_id=0)
+    # Seed the DB with a poisoned legacy absolute path — restore must ignore
+    # it and derive the filename from session.id instead.
     await store.release_slot(
         session.id,
         demote_to=SessionTemperature.WARM,
@@ -454,7 +464,9 @@ async def test_slot_restore_normalizes_legacy_absolute_paths(store, slot_dir):
     assignment = await manager.acquire(session)
 
     assert assignment.restored_from_disk is True
-    assert inference.calls == [("slot_restore", (0, "session_x.bin"))]
+    expected_filename = f"{session.id}.bin"
+    assert inference.calls == [("slot_restore", (0, expected_filename))]
+    assert "/" not in inference.calls[0][1][1]
 
 
 @pytest.mark.asyncio
@@ -505,3 +517,60 @@ async def test_update_saved_path_stores_basename(store, slot_dir):
     assert fetched.slot_saved_path is not None
     assert "/" not in fetched.slot_saved_path
     assert fetched.slot_saved_path.endswith(".bin")
+
+
+def test_sanitize_slot_filename_matrix_room_id():
+    """Matrix room IDs contain `!` and `:` which llama.cpp rejects."""
+    from hestia.inference.slot_manager import _sanitize_slot_filename
+
+    raw = "matrix_!FlnJLehKjOiKBdEmTn:matrix.org_20260417173312_4a303ebb"
+    clean = _sanitize_slot_filename(raw)
+    assert "!" not in clean
+    assert ":" not in clean
+    assert clean == "matrix__FlnJLehKjOiKBdEmTn_matrix.org_20260417173312_4a303ebb"
+
+
+def test_sanitize_slot_filename_leaves_safe_chars_alone():
+    """Telegram-style IDs are already safe: `[A-Za-z0-9._-]` is preserved."""
+    from hestia.inference.slot_manager import _sanitize_slot_filename
+
+    raw = "telegram_8550496999_20260417173312_abcd.suffix-1"
+    assert _sanitize_slot_filename(raw) == raw
+
+
+def test_sanitize_slot_filename_replaces_path_separators_and_unicode():
+    from hestia.inference.slot_manager import _sanitize_slot_filename
+
+    assert _sanitize_slot_filename("a/b\\c d") == "a_b_c_d"
+    assert _sanitize_slot_filename("user_\u00e9") == "user__"  # accented char → _
+
+
+@pytest.mark.asyncio
+async def test_save_sanitizes_matrix_room_id_in_filename(store, slot_dir):
+    """Save against a Matrix-shaped session.id sends a llama.cpp-safe filename."""
+    inference = FakeInferenceClient()
+    manager = SlotManager(
+        inference=inference,
+        session_store=store,
+        slot_dir=slot_dir,
+        pool_size=4,
+    )
+
+    session = await store.get_or_create_session(
+        "matrix", "!FlnJLehKjOiKBdEmTn:matrix.org"
+    )
+    await manager.acquire(session)
+    session = await store.get_session(session.id)
+
+    await manager.save(session)
+
+    save_calls = [c for c in inference.calls if c[0] == "slot_save"]
+    assert len(save_calls) == 1
+    _, (slot_id, filename) = save_calls[0]
+    assert "!" not in filename
+    assert ":" not in filename
+    assert "/" not in filename
+    assert filename.endswith(".bin")
+
+    fetched = await store.get_session(session.id)
+    assert fetched.slot_saved_path == filename
