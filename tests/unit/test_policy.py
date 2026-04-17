@@ -251,3 +251,29 @@ class TestReasoningBudget:
         budget_tenth = policy.reasoning_budget(sample_session, 9)
 
         assert budget_first == budget_second == budget_tenth == 2048
+
+
+class TestCtxWindowWiring:
+    """Tests for ctx_window default and config wiring."""
+
+    def test_ctx_window_default_is_8k(self):
+        """DefaultPolicyEngine ctx_window defaults to 8192."""
+        policy = DefaultPolicyEngine()
+        assert policy.ctx_window == 8192
+
+    def test_turn_token_budget_uses_ctx_window(self):
+        """Budget reflects the configured ctx_window ceiling."""
+        policy = DefaultPolicyEngine(ctx_window=8192)
+        budget = policy.turn_token_budget(None)  # type: ignore[arg-type]
+        expected = int(8192 * 0.85) - 2048
+        assert budget == expected
+        assert budget > 0
+
+    def test_cli_passes_ctx_window_from_config(self):
+        """_make_policy wires HestiaConfig.inference.context_length into the engine."""
+        from hestia.cli import _make_policy
+        from hestia.config import HestiaConfig, InferenceConfig
+
+        cfg = HestiaConfig(inference=InferenceConfig(context_length=32768))
+        policy = _make_policy(cfg)
+        assert policy.ctx_window == 32768

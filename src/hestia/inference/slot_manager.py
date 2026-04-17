@@ -91,7 +91,8 @@ class SlotManager:
                     slot_id = await self._allocate_slot(session.id)
                     try:
                         if session.slot_saved_path:
-                            await self._inference.slot_restore(slot_id, session.slot_saved_path)
+                            filename = Path(session.slot_saved_path).name
+                            await self._inference.slot_restore(slot_id, filename)
                             await self._store.assign_slot(
                                 session.id, slot_id, clear_saved_path=True
                             )
@@ -116,7 +117,8 @@ class SlotManager:
                         await self._store.assign_slot(session.id, slot_id)
                         return SlotAssignment(slot_id=slot_id, restored_from_disk=False)
 
-                    await self._inference.slot_restore(slot_id, session.slot_saved_path)
+                    filename = Path(session.slot_saved_path).name
+                    await self._inference.slot_restore(slot_id, filename)
                     await self._store.assign_slot(session.id, slot_id, clear_saved_path=True)
                     return SlotAssignment(slot_id=slot_id, restored_from_disk=True)
                 except (OSError, PersistenceError, httpx.HTTPError, RuntimeError):
@@ -141,10 +143,12 @@ class SlotManager:
             return
         saved_path = self._slot_path_for(session.id)
         async with self._lock:
-            await self._inference.slot_save(session.slot_id, str(saved_path))
+            # llama.cpp rejects path separators in `filename`; pass basename only.
+            # Actual on-disk location is controlled by llama-server's --slot-save-path.
+            await self._inference.slot_save(session.slot_id, saved_path.name)
         # Note: we do NOT demote temperature here. Slot is still HOT; this is
         # just a checkpoint. slot_saved_path is updated so eviction knows where to find it.
-        await self._store.update_saved_path(session.id, str(saved_path))
+        await self._store.update_saved_path(session.id, saved_path.name)
 
     async def evict_by_id(self, session_id: str) -> None:
         """Forcibly evict a specific session from its slot. Saves state to disk first."""
@@ -181,12 +185,12 @@ class SlotManager:
 
         slot_id = session.slot_id
         saved_path = self._slot_path_for(session_id)
-        await self._inference.slot_save(slot_id, str(saved_path))
+        await self._inference.slot_save(slot_id, saved_path.name)
         await self._inference.slot_erase(slot_id)
         await self._store.release_slot(
             session_id,
             demote_to=SessionTemperature.WARM,
-            saved_path=str(saved_path),
+            saved_path=saved_path.name,
         )
         del self._assignments[slot_id]
         logger.info("Evicted session %s from slot %d", session_id, slot_id)

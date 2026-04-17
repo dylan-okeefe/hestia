@@ -29,6 +29,8 @@ class InferenceConfig:
 
     base_url: str = "http://localhost:8001"
     model_name: str = ""
+    # Per-slot context budget; should equal llama-server's --ctx-size / --parallel
+    context_length: int = 8192
     default_reasoning_budget: int = 2048
     max_tokens: int = 1024
 
@@ -38,6 +40,13 @@ class SlotConfig:
     """Configuration for the SlotManager."""
 
     slot_dir: Path = field(default_factory=lambda: Path("slots"))
+    """Directory where llama-server persists slot snapshots. **Must match
+    `llama-server --slot-save-path`.** Hestia sends only the basename to
+    llama.cpp; llama-server writes the file here. Hestia itself does not
+    write to this directory — it is purely a declaration of where slot
+    files will land so that out-of-band cleanup (gc, TTL, etc.) knows
+    where to look.
+    """
     pool_size: int = 4
 
 

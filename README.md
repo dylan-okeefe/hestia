@@ -303,14 +303,14 @@ llama-server \
   -np 4 \
   -c 16384 \
   --flash-attn \
-  --cache-type-k q4_0 \
-  --cache-type-v q4_0 \
+  --cache-type-k turbo3 \
+  --cache-type-v turbo3 \
   --slot-save-path /path/to/slots \
   --jinja \
   --port 8001
 ```
 
-The flags that matter: `-np 4` sets 4 KV-cache slots (match `SlotConfig.pool_size`). `--cache-type-k q4_0` and `--cache-type-v q4_0` quantize the KV-cache, saving roughly 4x VRAM. `--slot-save-path` enables save/restore so Hestia can checkpoint and resume sessions from disk.
+The flags that matter: `-np 4` sets 4 KV-cache slots (match `SlotConfig.pool_size`). `--cache-type-k turbo3` and `--cache-type-v turbo3` quantize the KV-cache to ~3 bits per value (more compact than the older `q4_0`), which roughly doubles the context you can fit in the same VRAM on RTX 30/40-series GPUs. `--slot-save-path` enables save/restore so Hestia can checkpoint and resume sessions from disk.
 
 ### What makes Hestia efficient
 

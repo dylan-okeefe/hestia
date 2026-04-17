@@ -53,6 +53,14 @@ logger = logging.getLogger(__name__)
 DEFAULT_CALIBRATION_PATH = Path("docs/calibration.json")
 
 
+def _make_policy(cfg: HestiaConfig) -> DefaultPolicyEngine:
+    """Build the policy engine from config."""
+    return DefaultPolicyEngine(
+        ctx_window=cfg.inference.context_length,
+        default_reasoning_budget=cfg.inference.default_reasoning_budget,
+    )
+
+
 class CliResponseHandler:
     """Handles responses from the orchestrator in CLI mode."""
 
@@ -299,9 +307,7 @@ def cli(
     model_name = cfg.inference.model_name or "dummy"
     inference = InferenceClient(cfg.inference.base_url, model_name)
     session_store = SessionStore(db)
-    policy = DefaultPolicyEngine(
-        default_reasoning_budget=cfg.inference.default_reasoning_budget
-    )
+    policy = _make_policy(cfg)
 
     # Compile identity from SOUL.md (default path) when present
     identity_compiler = IdentityCompiler(cfg.identity)
