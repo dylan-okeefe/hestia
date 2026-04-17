@@ -19,6 +19,7 @@ from hestia.errors import (
     classify_error,
 )
 from hestia.inference.slot_manager import SlotManager
+from hestia.memory.handoff import SessionHandoffSummarizer
 from hestia.orchestrator.transitions import assert_transition
 from hestia.orchestrator.types import Turn, TurnState, TurnTransition
 from hestia.persistence.sessions import SessionStore
@@ -59,6 +60,7 @@ class Orchestrator:
         slot_manager: SlotManager | None = None,
         failure_store: "FailureStore | None" = None,
         trace_store: "TraceStore | None" = None,
+        handoff_summarizer: SessionHandoffSummarizer | None = None,
     ):
         """Initialize the orchestrator.
 
@@ -74,6 +76,7 @@ class Orchestrator:
                 When None, falls back to session.slot_id (legacy behavior).
             failure_store: Optional store for recording failure bundles.
             trace_store: Optional store for recording execution traces.
+            handoff_summarizer: Optional summarizer for session-close summaries.
         """
         self._inference = inference
         self._store = session_store
@@ -85,6 +88,7 @@ class Orchestrator:
         self._slot_manager = slot_manager
         self._failure_store = failure_store
         self._trace_store = trace_store
+        self._handoff_summarizer = handoff_summarizer
 
     async def recover_stale_turns(self) -> int:
         """Mark any turns in non-terminal states as FAILED.
@@ -105,6 +109,26 @@ class Orchestrator:
                 )
                 count += 1
         return count
+
+    async def close_session(self, session_id: str) -> None:
+        """Close a session, optionally generating a handoff summary.
+
+        Archives the session and, if a handoff summarizer is configured,
+        generates a summary of the conversation before archiving.
+        """
+        session = await self._store.get_session(session_id)
+        if session is None:
+            logger.warning("close_session called for unknown session %s", session_id)
+            return
+
+        if self._handoff_summarizer is not None:
+            try:
+                history = await self._store.get_messages(session_id)
+                await self._handoff_summarizer.summarize_and_store(session, history)
+            except Exception:  # noqa: BLE001 — handoff is best-effort
+                logger.warning("Handoff summarizer failed for %s", session_id, exc_info=True)
+
+        await self._store.archive_session(session_id)
 
     async def _set_typing(
         self, platform: Platform | None, platform_user: str | None, typing: bool
