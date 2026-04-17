@@ -65,7 +65,7 @@ def _calculate_next_run(
             base_time = utcnow()
         try:
             itr = croniter(cron_expr, base_time)
-            return cast(datetime, itr.get_next(datetime))
+            return itr.get_next(datetime)
         except (ValueError, TypeError) as e:
             raise PersistenceError(f"Invalid cron expression '{cron_expr}': {e}") from e
 
@@ -359,7 +359,7 @@ class SchedulerStore:
             cron_expression=row.cron_expression,
             fire_at=_ensure_utc(row.fire_at),
             enabled=bool(row.enabled) if row.enabled is not None else False,
-            created_at=_ensure_utc(row.created_at) if row.created_at is not None else utcnow(),
+            created_at=_ensure_utc(row.created_at) or utcnow(),
             last_run_at=_ensure_utc(row.last_run_at),
             next_run_at=_ensure_utc(row.next_run_at),
             last_error=row.last_error,

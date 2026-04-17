@@ -6,6 +6,7 @@ import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from collections.abc import Callable, Coroutine
 from typing import Any
 
 import click
@@ -1162,7 +1163,9 @@ def run_telegram(ctx: click.Context) -> None:
 
     from hestia.platforms.telegram_adapter import TelegramAdapter
 
-    def _make_telegram_scheduler_callback(adapter: TelegramAdapter, session_store: SessionStore):
+    def _make_telegram_scheduler_callback(
+        adapter: TelegramAdapter, session_store: SessionStore
+    ) -> Callable[[ScheduledTask, str], Coroutine[Any, Any, None]]:
         """Create a scheduler response callback that routes to Telegram."""
 
         async def callback(task: ScheduledTask, text: str) -> None:
@@ -1292,7 +1295,9 @@ def run_matrix(ctx: click.Context) -> None:
 
     from hestia.platforms.matrix_adapter import MatrixAdapter
 
-    def _make_matrix_scheduler_callback(adapter: MatrixAdapter, session_store: SessionStore):
+    def _make_matrix_scheduler_callback(
+        adapter: MatrixAdapter, session_store: SessionStore
+    ) -> Callable[[ScheduledTask, str], Coroutine[Any, Any, None]]:
         """Create a scheduler response callback that routes to Matrix."""
 
         async def callback(task: ScheduledTask, text: str) -> None:
