@@ -2,6 +2,7 @@
 
 from typing import TYPE_CHECKING
 
+from hestia.config import TrustConfig
 from hestia.core.types import Session
 from hestia.errors import InferenceServerError, InferenceTimeoutError
 from hestia.policy.engine import (
@@ -23,7 +24,10 @@ class DefaultPolicyEngine(PolicyEngine):
     """
 
     def __init__(
-        self, ctx_window: int = 8192, default_reasoning_budget: int = 2048
+        self,
+        ctx_window: int = 8192,
+        default_reasoning_budget: int = 2048,
+        trust: TrustConfig | None = None,
     ) -> None:
         """Initialize with context window size.
 
@@ -32,9 +36,12 @@ class DefaultPolicyEngine(PolicyEngine):
                 your llama-server's `--ctx-size / --parallel`. Default
                 (8K) matches `deploy/hestia-llama.service` out of the box.
             default_reasoning_budget: Default reasoning token budget.
+            trust: Trust profile for auto-approval and capability gating.
+                Defaults to paranoid (safest posture).
         """
         self.ctx_window = ctx_window
         self._default_reasoning_budget = default_reasoning_budget
+        self._trust = trust if trust is not None else TrustConfig()
 
     def should_delegate(
         self,
@@ -137,6 +144,13 @@ class DefaultPolicyEngine(PolicyEngine):
         """
         return 8000
 
+    def auto_approve(self, tool_name: str, session: Session) -> bool:
+        """Return True if the trust profile auto-approves this tool."""
+        approved = self._trust.auto_approve_tools
+        if "*" in approved:
+            return True
+        return tool_name in approved
+
     def filter_tools(
         self,
         session: Session,
@@ -160,8 +174,13 @@ class DefaultPolicyEngine(PolicyEngine):
         from hestia.tools.capabilities import SHELL_EXEC, WRITE_LOCAL
 
         if session.platform == "subagent":
-            # Subagents: block shell_exec and write_local
-            blocked = {SHELL_EXEC, WRITE_LOCAL}
+            blocked: set[str] = set()
+            if not self._trust.subagent_shell_exec:
+                blocked.add(SHELL_EXEC)
+            if not self._trust.subagent_write_local:
+                blocked.add(WRITE_LOCAL)
+            if not blocked:
+                return tool_names
             return [
                 name
                 for name in tool_names
@@ -169,7 +188,8 @@ class DefaultPolicyEngine(PolicyEngine):
             ]
 
         if session.platform == "scheduler" or scheduler_tick_active.get():
-            # Scheduler: block shell_exec for headless safety
+            if self._trust.scheduler_shell_exec:
+                return tool_names
             blocked = {SHELL_EXEC}
             return [
                 name
