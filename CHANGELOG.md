@@ -5,6 +5,21 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- `TrustConfig` with three preset profiles (paranoid, household, developer)
+  for per-platform capability gates. Default is paranoid — no behavior change
+  for existing installs.
+- `web_search` builtin tool with a Tavily provider. Disabled by default;
+  opt in via `WebSearchConfig` in `config.py`.
+- `hestia config` now reports the active trust profile and web search status.
+
+### Changed
+- `DefaultPolicy.filter_tools` now gates scheduler SHELL_EXEC and subagent
+  SHELL_EXEC/WRITE_LOCAL restrictions on `TrustConfig` flags. Default
+  behavior unchanged.
+- `Orchestrator` consults `PolicyEngine.auto_approve()` before rejecting a
+  `requires_confirmation` tool with a missing confirm_callback.
+
 ### Fixed
 - `SlotManager` now sanitizes session IDs when building slot filenames,
   replacing any character outside `[A-Za-z0-9._-]` with `_`. llama.cpp's

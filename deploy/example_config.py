@@ -11,6 +11,7 @@ from hestia.config import (
     SlotConfig,
     StorageConfig,
     TelegramConfig,
+    TrustConfig,
 )
 
 config = HestiaConfig(
@@ -39,6 +40,7 @@ config = HestiaConfig(
     identity=IdentityConfig(
         soul_path=Path("/opt/hestia") / DEFAULT_SOUL_MD_PATH.name,
     ),
+    # trust=TrustConfig.household(),  # Uncomment for personal deployments
     system_prompt="You are Hestia, a helpful personal assistant.",
     max_iterations=10,
 )

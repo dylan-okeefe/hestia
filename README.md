@@ -174,6 +174,40 @@ Hestia compiles your soul document into a compact identity view on startup. The 
 
 ---
 
+## Trust profiles
+
+Hestia's default posture is strict: `terminal` and `write_file` both require
+explicit user confirmation, the scheduler cannot call shell commands, and
+subagents cannot shell or write files. This is safe for a fresh install, but
+it's often more restrictive than you want for a single-operator personal
+deployment.
+
+Three presets live in `TrustConfig`:
+
+- **`TrustConfig.paranoid()`** (default) — current behavior. Every `terminal`
+  or `write_file` call on Telegram/Matrix/scheduler is blocked unless you wire
+  a custom confirm callback. Scheduler and subagents can't shell or write.
+
+- **`TrustConfig.household()`** (recommended for personal use) —
+  auto-approves `terminal` and `write_file` on headless platforms, lets the
+  scheduler run shell commands, lets subagents shell and write.
+
+- **`TrustConfig.developer()`** — auto-approves everything. Dev/test only.
+
+Opt in inside your `config.py`:
+
+```python
+from hestia.config import HestiaConfig, TrustConfig
+config = HestiaConfig(
+    ...,
+    trust=TrustConfig.household(),
+)
+```
+
+See `hestia config` for the active profile.
+
+---
+
 ## Configuration
 
 Config is a Python file that defines a `config` variable of type `HestiaConfig`. Python (not YAML, not TOML) because you get IDE autocompletion, type checking, and the ability to compute values at load time.
@@ -246,7 +280,29 @@ pip install hestia[postgres]
 | `list_memories` | Lists recent memories | No |
 | `delegate_task` | Spawns a subagent with its own context | No |
 
-Tools marked **Yes** require you to approve before they run. In headless mode (scheduler, daemon), these tools are denied instead — they fail closed, not open.
+Tools marked **Yes** require you to approve before they run. In headless mode (scheduler, daemon), these tools are denied by default — they fail closed, not open. You can change this with a trust profile (see [Trust profiles](#trust-profiles)).
+
+### Web search
+
+Hestia ships a `web_search` tool that activates when you configure a provider
+in your `config.py`:
+
+```python
+from hestia.config import HestiaConfig, WebSearchConfig
+config = HestiaConfig(
+    ...,
+    web_search=WebSearchConfig(
+        provider="tavily",
+        api_key="tvly-...",   # https://tavily.com/ — free tier is 1000/month
+        max_results=5,
+    ),
+)
+```
+
+Tavily is the only built-in provider today. Without a configured provider,
+the tool simply isn't registered — the model won't see it in its tool list.
+Combined with `http_get`, this gives Hestia search-then-fetch capability for
+daily research and news tasks.
 
 ### Writing your own tools
 
@@ -275,7 +331,7 @@ Register it in your config or CLI setup and it's available to the model.
 
 **Capability labels.** Every tool declares what it can do: `read_local`, `write_local`, `shell_exec`, `network_egress`, `memory_read`, `memory_write`, `orchestration`. The policy engine uses these to restrict access by context — subagents can't execute shell commands, scheduled tasks can't write files.
 
-**Confirmation enforcement.** Dangerous tools require explicit user approval. If no confirmation mechanism is available (headless mode), the tool is denied. This is enforced on both the direct path and the meta-tool path.
+**Confirmation enforcement.** Dangerous tools require explicit user approval. If no confirmation mechanism is available (headless mode), the tool is denied unless the active trust profile auto-approves it. This is enforced on both the direct path and the meta-tool path.
 
 **User allowlists.** Telegram and Matrix adapters support allowlists. Only authorized users or rooms can interact with the bot.
 
