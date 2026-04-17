@@ -6,6 +6,7 @@ import pytest
 
 from hestia.context.builder import ContextBuilder
 from hestia.core.types import Message, Session, SessionState, SessionTemperature, ToolSchema
+from hestia.errors import ContextTooLargeError
 from hestia.policy.default import DefaultPolicyEngine
 
 
@@ -288,8 +289,8 @@ class TestEdgeCases:
         assert not result.kept_first_user  # No first user in empty history
 
     @pytest.mark.asyncio
-    async def test_best_effort_when_protected_overflow(self, fake_client, sample_session):
-        """When even protected messages overflow, returns best effort."""
+    async def test_protected_overflow_raises(self, fake_client, sample_session):
+        """When protected messages exceed budget, raises ContextTooLargeError."""
         # Tiny budget
         policy = DefaultPolicyEngine(ctx_window=50)
         builder = ContextBuilder(fake_client, policy, body_factor=1.0)
@@ -297,14 +298,10 @@ class TestEdgeCases:
         history = [Message(role="user", content="x" * 1000)]
         new_msg = Message(role="user", content="New" + "y" * 1000)
 
-        result = await builder.build(
-            sample_session, history, "System" + "z" * 1000, [], new_user_message=new_msg
-        )
-
-        # Should return system + new_user as best effort
-        assert result.messages[0].role == "system"
-        assert result.messages[-1].role == "user"
-        assert not result.kept_first_user  # Couldn't fit first user
+        with pytest.raises(ContextTooLargeError):
+            await builder.build(
+                sample_session, history, "System" + "z" * 1000, [], new_user_message=new_msg
+            )
 
 
 class TestFromCalibrationFile:

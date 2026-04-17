@@ -603,13 +603,13 @@ Create `docs/handoffs/L21-context-resilience-handoff.md`:
 
 Before writing `.kimi-done`, Kimi must verify:
 
-- [ ] `git status --short` is empty.
-- [ ] `uv run pytest tests/unit/ tests/integration/ -q` is green.
-- [ ] `uv run ruff check src/ tests/` count ≤ 166.
-- [ ] `uv run mypy src/hestia` count ≤ 44.
-- [ ] New unit tests cover §1, §2, §3, §4, §5.
-- [ ] §6 docs shipped: `deploy/hestia-llama.alt-port.service.example`,
+- [x] `git status --short` is empty.
+- [x] `uv run pytest tests/unit/ tests/integration/ -q` is green.
+- [x] `uv run ruff check src/ tests/` count ≤ 166 (actual: 164).
+- [x] `uv run mypy src/hestia` count ≤ 44 (actual: 44).
+- [x] New unit tests cover §1, §2, §3, §4, §5.
+- [x] §6 docs shipped: `deploy/hestia-llama.alt-port.service.example`,
       updated `deploy/README.md`, new `docs/guides/runtime-setup.md`,
       ADR-0015.
-- [ ] `CHANGELOG.md`, `pyproject.toml`, `uv.lock` all bumped to 0.4.0.
-- [ ] Handoff report written.
+- [x] `CHANGELOG.md`, `pyproject.toml`, `uv.lock` all bumped to 0.4.0.
+- [x] Handoff report written.

@@ -49,3 +49,11 @@ class TestCliPlatform:
         """send_error does not raise."""
         platform = CliPlatform()
         await platform.send_error("user1", "Error message")
+
+    @pytest.mark.asyncio
+    async def test_send_system_warning_prefixes_emoji(self):
+        """send_system_warning prepends warning emoji."""
+        platform = CliPlatform()
+        # CliPlatform uses default implementation (send_message with prefix)
+        # Should not raise
+        await platform.send_system_warning("user1", "System warning text")

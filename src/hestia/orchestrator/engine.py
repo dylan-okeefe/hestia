@@ -12,6 +12,7 @@ from hestia.core.clock import utcnow
 from hestia.core.inference import InferenceClient
 from hestia.core.types import Message, Session, ToolCall
 from hestia.errors import (
+    ContextTooLargeError,
     EmptyResponseError,
     IllegalTransitionError,
     PersistenceError,
@@ -19,6 +20,7 @@ from hestia.errors import (
     classify_error,
 )
 from hestia.inference.slot_manager import SlotManager
+from hestia.memory.handoff import SessionHandoffSummarizer
 from hestia.orchestrator.transitions import assert_transition
 from hestia.orchestrator.types import Turn, TurnState, TurnTransition
 from hestia.persistence.sessions import SessionStore
@@ -59,6 +61,7 @@ class Orchestrator:
         slot_manager: SlotManager | None = None,
         failure_store: "FailureStore | None" = None,
         trace_store: "TraceStore | None" = None,
+        handoff_summarizer: SessionHandoffSummarizer | None = None,
     ):
         """Initialize the orchestrator.
 
@@ -74,6 +77,7 @@ class Orchestrator:
                 When None, falls back to session.slot_id (legacy behavior).
             failure_store: Optional store for recording failure bundles.
             trace_store: Optional store for recording execution traces.
+            handoff_summarizer: Optional summarizer for session-close summaries.
         """
         self._inference = inference
         self._store = session_store
@@ -85,6 +89,7 @@ class Orchestrator:
         self._slot_manager = slot_manager
         self._failure_store = failure_store
         self._trace_store = trace_store
+        self._handoff_summarizer = handoff_summarizer
 
     async def recover_stale_turns(self) -> int:
         """Mark any turns in non-terminal states as FAILED.
@@ -105,6 +110,26 @@ class Orchestrator:
                 )
                 count += 1
         return count
+
+    async def close_session(self, session_id: str) -> None:
+        """Close a session, optionally generating a handoff summary.
+
+        Archives the session and, if a handoff summarizer is configured,
+        generates a summary of the conversation before archiving.
+        """
+        session = await self._store.get_session(session_id)
+        if session is None:
+            logger.warning("close_session called for unknown session %s", session_id)
+            return
+
+        if self._handoff_summarizer is not None:
+            try:
+                history = await self._store.get_messages(session_id)
+                await self._handoff_summarizer.summarize_and_store(session, history)
+            except Exception:  # noqa: BLE001 — handoff is best-effort
+                logger.warning("Handoff summarizer failed for %s", session_id, exc_info=True)
+
+        await self._store.archive_session(session_id)
 
     async def _set_typing(
         self, platform: Platform | None, platform_user: str | None, typing: bool
@@ -329,6 +354,102 @@ class Orchestrator:
                 else:
                     # Max iterations reached
                     raise Exception(f"Max iterations ({self._max_iterations}) exceeded")
+
+            except ContextTooLargeError as exc:
+                await self._set_typing(platform, platform_user, False)
+
+                # Kick off handoff summarizer before we lose the history
+                if self._handoff_summarizer is not None:
+                    try:
+                        history = await self._store.get_messages(session.id)
+                        await self._handoff_summarizer.summarize_and_store(session, history)
+                    except Exception:  # noqa: BLE001 — best-effort
+                        logger.warning(
+                            "Handoff summarizer failed during overflow handling for %s",
+                            session.id,
+                            exc_info=True,
+                        )
+
+                if turn.state not in (TurnState.DONE, TurnState.FAILED):
+                    await self._transition(turn, TurnState.FAILED)
+                    turn.error = str(exc)
+                    raw_budget = self._policy.turn_token_budget(session)
+                    warning_text = (
+                        f"This session has grown past my context budget "
+                        f"({raw_budget:,} tokens per slot). I've saved a summary "
+                        "of our conversation. Type /reset to start fresh, and "
+                        "I'll keep the summary for reference."
+                    )
+                    if platform is not None:
+                        await platform.send_system_warning(platform_user or "", warning_text)
+                    else:
+                        await respond_callback(f"⚠️ {warning_text}")
+
+                # Record failure bundle
+                if self._failure_store is not None:
+                    try:
+                        from hestia.persistence.failure_store import FailureBundle
+
+                        raw_summary = user_message.content or ""
+                        if len(raw_summary) > 200:
+                            user_input_summary = raw_summary[:200] + "..."
+                        else:
+                            user_input_summary = raw_summary
+
+                        reasoning_budget = turn.reasoning_budget
+                        if reasoning_budget is None:
+                            reasoning_budget = self._policy.reasoning_budget(
+                                session, turn.iterations
+                            )
+                        policy_snapshot = json.dumps(
+                            {
+                                "reasoning_budget": reasoning_budget,
+                                "turn_token_budget": self._policy.turn_token_budget(session),
+                                "tool_filter_active": allowed_tools is not None,
+                            },
+                            default=str,
+                        )
+
+                        try:
+                            temp_value = None
+                            if hasattr(session, "temperature") and session.temperature is not None:
+                                if hasattr(session.temperature, "value"):
+                                    temp_value = session.temperature.value
+                                else:
+                                    temp_value = str(session.temperature)
+                            slot_snapshot = json.dumps(
+                                {
+                                    "slot_id": session.slot_id,
+                                    "temperature": temp_value,
+                                    "slot_saved_path": getattr(session, "slot_saved_path", None),
+                                },
+                                default=str,
+                            )
+                        except (TypeError, AttributeError):
+                            slot_snapshot = json.dumps(
+                                {"error": "slot snapshot serialization failed"}
+                            )
+
+                        if self._trace_store is not None:
+                            trace_record_id = str(uuid.uuid4())
+
+                        bundle = FailureBundle(
+                            id=str(uuid.uuid4()),
+                            session_id=session.id,
+                            turn_id=turn.id,
+                            failure_class="context_overflow",
+                            severity="medium",
+                            error_message=str(exc),
+                            tool_chain=json.dumps(tool_chain),
+                            created_at=utcnow(),
+                            request_summary=user_input_summary,
+                            policy_snapshot=policy_snapshot,
+                            slot_snapshot=slot_snapshot,
+                            trace_id=trace_record_id,
+                        )
+                        await self._failure_store.record(bundle)
+                    except Exception as record_err:  # noqa: BLE001
+                        logger.error("Failed to record failure bundle: %s", record_err)
 
             except IllegalTransitionError:
                 raise  # Re-raise state machine errors

@@ -251,6 +251,24 @@ class TestTelegramAdapterAsync:
         )
 
     @pytest.mark.asyncio
+    async def test_send_system_warning_sends_warning_message(
+        self, adapter: TelegramAdapter
+    ) -> None:
+        """Verify send_system_warning prepends warning indicator."""
+        mock_app = MagicMock(spec=Application)
+        mock_bot = AsyncMock(spec=Bot)
+        mock_app.bot = mock_bot
+        adapter._app = mock_app
+
+        await adapter.send_system_warning("12345", "Context budget exceeded")
+
+        mock_bot.send_message.assert_called_once_with(
+            chat_id=12345,
+            text="⚠️ Context budget exceeded",
+            parse_mode="Markdown",
+        )
+
+    @pytest.mark.asyncio
     async def test_send_message_raises_when_not_started(self, adapter: TelegramAdapter) -> None:
         """Verify proper error when trying to send before start."""
         with pytest.raises(RuntimeError, match="not started"):

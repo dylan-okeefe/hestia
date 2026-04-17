@@ -5,33 +5,21 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.4.0]
+
 ### Added
-- `TrustConfig` with three preset profiles (paranoid, household, developer)
-  for per-platform capability gates. Default is paranoid — no behavior change
-  for existing installs.
-- `web_search` builtin tool with a Tavily provider. Disabled by default;
-  opt in via `WebSearchConfig` in `config.py`.
-- `hestia config` now reports the active trust profile and web search status.
+- `HandoffConfig` controls automatic session-close summaries.
+- `CompressionConfig` enables `HistoryCompressor` to splice summaries of
+  dropped history into context when the budget is tight.
+- `send_system_warning` on `Platform` ABC for out-of-band operator messaging.
 
 ### Changed
-- `DefaultPolicy.filter_tools` now gates scheduler SHELL_EXEC and subagent
-  SHELL_EXEC/WRITE_LOCAL restrictions on `TrustConfig` flags. Default
-  behavior unchanged.
-- `Orchestrator` consults `PolicyEngine.auto_approve()` before rejecting a
-  `requires_confirmation` tool with a missing confirm_callback.
+- `ContextBuilder.build` raises `ContextTooLargeError` when protected context
+  exceeds budget instead of silently best-efforting.
+- `TrustConfig.household()` / `developer()` now imply handoff and compression.
 
 ### Fixed
-- `SlotManager` now sanitizes session IDs when building slot filenames,
-  replacing any character outside `[A-Za-z0-9._-]` with `_`. llama.cpp's
-  `/slots?action=save|restore` validator rejects path separators **and**
-  characters like `!` and `:`, which are present in every Matrix room ID
-  (e.g. `!abc:matrix.org`). v0.2.2 fixed the path-separator case but
-  missed the broader character set, so Matrix turns still logged `HTTP
-  400 "Invalid filename"` and could not persist slot state. The restore
-  path now derives the filename from `session.id` the same way save does
-  — the DB's `slot_saved_path` is treated as a "has snapshot" flag, not
-  as the source of truth for the filename — which self-heals any legacy
-  rows containing unsafe characters without needing a new migration.
+- (none — no prior regressions)
 
 ## [0.2.2] — 2026-04-17
 

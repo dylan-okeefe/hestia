@@ -4,8 +4,10 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from hestia.context.compressor import HistoryCompressor
 from hestia.core.inference import InferenceClient
 from hestia.core.types import Message, Session, ToolSchema
+from hestia.errors import ContextTooLargeError
 from hestia.policy.engine import PolicyEngine
 
 
@@ -53,6 +55,8 @@ class ContextBuilder:
         identity_prefix: str | None = None,
         memory_epoch_prefix: str | None = None,
         skill_index_prefix: str | None = None,
+        compressor: HistoryCompressor | None = None,
+        compress_on_overflow: bool = False,
     ):
         """Initialize with inference client and policy.
 
@@ -64,6 +68,8 @@ class ContextBuilder:
             identity_prefix: Optional compiled identity view to prepend to system prompt
             memory_epoch_prefix: Optional compiled memory epoch to prepend to system prompt
             skill_index_prefix: Optional skill index to prepend to system prompt
+            compressor: Optional history compressor for overflow recovery
+            compress_on_overflow: Whether to compress dropped history
         """
         self._inference = inference_client
         self._policy = policy
@@ -72,6 +78,8 @@ class ContextBuilder:
         self._identity_prefix = identity_prefix
         self._memory_epoch_prefix = memory_epoch_prefix
         self._skill_index_prefix = skill_index_prefix
+        self._compressor = compressor
+        self._compress_on_overflow = compress_on_overflow
 
     def set_identity_prefix(self, identity_prefix: str | None) -> None:
         """Set the identity prefix to prepend to system prompts.
@@ -96,6 +104,16 @@ class ContextBuilder:
             skill_index_prefix: Skill index text, or None to clear
         """
         self._skill_index_prefix = skill_index_prefix
+
+    def enable_compression(self, compressor: HistoryCompressor) -> None:
+        """Attach a history compressor and turn on overflow compression.
+
+        Called by the CLI wiring when ``CompressionConfig.enabled`` is true,
+        so builders constructed via :meth:`from_calibration_file` can still
+        opt in to compression without reconstructing.
+        """
+        self._compressor = compressor
+        self._compress_on_overflow = True
 
     @classmethod
     def from_calibration_file(
@@ -172,9 +190,15 @@ class ContextBuilder:
         # 3. Skill index
         # 4. Base system prompt
 
-        effective_identity = identity_prefix if identity_prefix is not None else self._identity_prefix
-        effective_memory_epoch = memory_epoch_prefix if memory_epoch_prefix is not None else self._memory_epoch_prefix
-        effective_skill_index = skill_index_prefix if skill_index_prefix is not None else self._skill_index_prefix
+        effective_identity = (
+            identity_prefix if identity_prefix is not None else self._identity_prefix
+        )
+        effective_memory_epoch = (
+            memory_epoch_prefix if memory_epoch_prefix is not None else self._memory_epoch_prefix
+        )
+        effective_skill_index = (
+            skill_index_prefix if skill_index_prefix is not None else self._skill_index_prefix
+        )
 
         effective_prompt = system_prompt
         memory_epoch_included = False
@@ -214,22 +238,15 @@ class ContextBuilder:
         protected_count = self._apply_correction(protected_body, has_tools=len(tools) > 0)
 
         if protected_count > raw_budget:
-            # Even protected messages don't fit - this is bad
-            # Return just system (+ new_user if available) as best effort
-            best_effort = [system_msg]
-            if new_user_message is not None:
-                best_effort.append(new_user_message)
-            return BuildResult(
-                messages=best_effort,
-                tokens_used=await self._count_messages(best_effort, len(tools) > 0),
-                tokens_budget=raw_budget,
-                truncated_count=len(history),
-                kept_first_user=False,
-                memory_epoch_included=False,
+            raise ContextTooLargeError(
+                f"Protected context ({protected_count} tokens) exceeds per-slot budget "
+                f"({raw_budget}). System+identity+memory_epoch+skill_index+new_user is "
+                "too large to fit. Reduce identity, memory_epoch, or run /reset."
             )
 
         # Add remaining history messages (newest first) while they fit
         included_history: list[Message] = []
+        dropped_history: list[Message] = []
 
         # Walk history in reverse (newest first)
         history_candidates = list(reversed(history))
@@ -270,6 +287,7 @@ class ContextBuilder:
                         # Can't fit pair, skip both
                         i += len(pair_msgs)
                         truncated_count += len(pair_msgs)
+                        dropped_history.extend(pair_msgs)
                         continue
 
             # Regular message - try to add it
@@ -281,6 +299,7 @@ class ContextBuilder:
             else:
                 # Doesn't fit, skip it and all older messages
                 truncated_count += len(history_candidates) - i
+                dropped_history.extend(history_candidates[i:])
                 break
 
             i += 1
@@ -288,6 +307,44 @@ class ContextBuilder:
         # Assemble final message list in chronological order
         # system, first_user, [history in chronological order], new_user
         final_messages = list(protected_top)  # system + first_user
+
+        # Optionally compress dropped history and splice summary
+        if (
+            self._compressor is not None
+            and self._compress_on_overflow
+            and dropped_history
+        ):
+            summary = await self._compressor.summarize(list(reversed(dropped_history)))
+            if summary:
+                summary_msg = Message(
+                    role="system",
+                    content=f"[PRIOR CONTEXT SUMMARY]\n{summary}",
+                )
+                # Insert right after system_msg (index 0)
+                test_with_summary = list(final_messages)
+                test_with_summary.insert(1, summary_msg)
+                summary_count = await self._count_messages(
+                    test_with_summary, len(tools) > 0
+                )
+                if summary_count <= raw_budget:
+                    final_messages.insert(1, summary_msg)
+                else:
+                    # Retry once: drop oldest included message and try again
+                    if included_history:
+                        included_history.pop()
+                        test_with_summary = list(final_messages)
+                        # Rebuild without oldest
+                        test_with_summary = list(protected_top)
+                        test_with_summary.insert(1, summary_msg)
+                        test_with_summary.extend(reversed(included_history))
+                        test_with_summary.extend(protected_bottom)
+                        summary_count = await self._count_messages(
+                            test_with_summary, len(tools) > 0
+                        )
+                        if summary_count <= raw_budget:
+                            final_messages = test_with_summary
+                            truncated_count += 1
+                        # else: fall back to no compression
 
         # Add included history in chronological order (reverse back)
         final_messages.extend(reversed(included_history))

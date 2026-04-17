@@ -81,6 +81,21 @@ class TestMatrixAdapter:
             assert "Something went wrong" in call_args[1]
 
     @pytest.mark.asyncio
+    async def test_send_system_warning_routes_through_send_message(self):
+        """send_system_warning should route through send_message with prefix."""
+        cfg = MatrixConfig(access_token="test_token", user_id="@bot:matrix.org")
+        adapter = MatrixAdapter(cfg)
+
+        with patch.object(adapter, "send_message", new_callable=AsyncMock) as mock_send:
+            await adapter.send_system_warning("!room:matrix.org", "Context budget exceeded")
+
+            mock_send.assert_called_once()
+            call_args = mock_send.call_args[0]
+            assert call_args[0] == "!room:matrix.org"
+            assert "⚠️" in call_args[1]
+            assert "Context budget exceeded" in call_args[1]
+
+    @pytest.mark.asyncio
     async def test_rate_limiting_tracks_last_edit_time(self):
         """edit_message should track last edit time for rate limiting."""
         from nio import RoomSendResponse

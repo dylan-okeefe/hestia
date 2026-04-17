@@ -196,6 +196,46 @@ class TrustConfig:
 
 
 @dataclass
+class HandoffConfig:
+    """Controls session-close summary generation.
+
+    Disabled by default. When enabled, the orchestrator generates a
+    2-3 sentence summary at session close and stores it as a memory
+    entry with tag ``handoff``.
+
+    Example::
+
+        config = HestiaConfig(
+            handoff=HandoffConfig(enabled=True, min_messages=4, max_chars=350),
+        )
+    """
+
+    enabled: bool = False
+    min_messages: int = 4  # skip very short sessions
+    max_chars: int = 350
+
+
+@dataclass
+class CompressionConfig:
+    """Controls in-turn history compression on overflow.
+
+    Disabled by default. When enabled, the context builder calls a
+    :class:`~hestia.context.compressor.HistoryCompressor` on dropped
+    messages and splices the summary back into the effective system
+    prompt for that turn.
+
+    Example::
+
+        config = HestiaConfig(
+            compression=CompressionConfig(enabled=True, max_chars=400),
+        )
+    """
+
+    enabled: bool = False
+    max_chars: int = 400
+
+
+@dataclass
 class WebSearchConfig:
     """Configuration for the web_search tool.
 
@@ -229,6 +269,8 @@ class HestiaConfig:
     identity: IdentityConfig = field(default_factory=IdentityConfig)
     trust: TrustConfig = field(default_factory=TrustConfig)
     web_search: WebSearchConfig = field(default_factory=WebSearchConfig)
+    handoff: HandoffConfig = field(default_factory=HandoffConfig)
+    compression: CompressionConfig = field(default_factory=CompressionConfig)
     system_prompt: str = "You are a helpful assistant."
     max_iterations: int = 10
     verbose: bool = False
@@ -256,6 +298,25 @@ class HestiaConfig:
                 f"got {type(config).__name__}"
             )
         return config
+
+    @classmethod
+    def for_trust(cls, trust: TrustConfig) -> HestiaConfig:
+        """Create a config with handoff/compression implied by the trust preset.
+
+        - ``paranoid()`` → handoff=False, compression=False
+        - ``household()`` → handoff=True, compression=True
+        - ``developer()`` → handoff=True, compression=True
+
+        Example::
+
+            config = HestiaConfig.for_trust(TrustConfig.household())
+        """
+        enable = trust not in (TrustConfig.paranoid(), TrustConfig())
+        return cls(
+            trust=trust,
+            handoff=HandoffConfig(enabled=enable),
+            compression=CompressionConfig(enabled=enable),
+        )
 
     @classmethod
     def default(cls) -> HestiaConfig:
