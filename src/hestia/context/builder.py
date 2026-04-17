@@ -105,6 +105,16 @@ class ContextBuilder:
         """
         self._skill_index_prefix = skill_index_prefix
 
+    def enable_compression(self, compressor: HistoryCompressor) -> None:
+        """Attach a history compressor and turn on overflow compression.
+
+        Called by the CLI wiring when ``CompressionConfig.enabled`` is true,
+        so builders constructed via :meth:`from_calibration_file` can still
+        opt in to compression without reconstructing.
+        """
+        self._compressor = compressor
+        self._compress_on_overflow = True
+
     @classmethod
     def from_calibration_file(
         cls,

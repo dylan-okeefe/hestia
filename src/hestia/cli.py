@@ -14,6 +14,7 @@ import httpx
 from hestia.artifacts.store import ArtifactStore
 from hestia.config import HestiaConfig
 from hestia.context.builder import ContextBuilder
+from hestia.context.compressor import InferenceHistoryCompressor
 from hestia.core.clock import utcnow
 from hestia.core.inference import InferenceClient
 from hestia.core.types import Message, ScheduledTask, Session
@@ -22,6 +23,7 @@ from hestia.identity import IdentityCompiler
 from hestia.inference import SlotManager
 from hestia.logging_config import setup_logging
 from hestia.memory import MemoryEpochCompiler, MemoryStore
+from hestia.memory.handoff import SessionHandoffSummarizer
 from hestia.orchestrator import Orchestrator
 from hestia.persistence.db import Database
 from hestia.persistence.failure_store import FailureStore
@@ -114,6 +116,7 @@ class CliAppContext:
     confirm_callback: Any = None
     epoch_compiler: MemoryEpochCompiler | None = None
     skill_index_builder: SkillIndexBuilder | None = None
+    handoff_summarizer: SessionHandoffSummarizer | None = None
 
     async def bootstrap_db(self) -> None:
         """Connect to database and create tables."""
@@ -138,6 +141,7 @@ class CliAppContext:
             slot_manager=self.slot_manager,
             failure_store=self.failure_store,
             trace_store=self.trace_store,
+            handoff_summarizer=self.handoff_summarizer,
         )
 
 
@@ -321,6 +325,12 @@ def cli(
     if compiled_identity:
         context_builder.set_identity_prefix(compiled_identity)
 
+    # Overflow-recovery compression (L21). Off by default; opt in via CompressionConfig.
+    if cfg.compression.enabled:
+        context_builder.enable_compression(
+            InferenceHistoryCompressor(inference, max_chars=cfg.compression.max_chars)
+        )
+
     # Memory store for long-term memory
     memory_store = MemoryStore(db)
 
@@ -359,6 +369,16 @@ def cli(
     trace_store = TraceStore(db)
     skill_store = SkillStore(db)
 
+    # Session-close handoff summarizer (L21). Off by default; opt in via HandoffConfig.
+    handoff_summarizer: SessionHandoffSummarizer | None = None
+    if cfg.handoff.enabled:
+        handoff_summarizer = SessionHandoffSummarizer(
+            inference=inference,
+            memory_store=memory_store,
+            max_chars=cfg.handoff.max_chars,
+            min_messages=cfg.handoff.min_messages,
+        )
+
     def orchestrator_factory() -> Orchestrator:
         """Fresh orchestrator for subagent turns (shares registry and stores)."""
         return Orchestrator(
@@ -372,6 +392,7 @@ def cli(
             slot_manager=slot_manager,
             failure_store=failure_store,
             trace_store=trace_store,
+            handoff_summarizer=handoff_summarizer,
         )
 
     tool_registry.register(make_delegate_task_tool(session_store, orchestrator_factory))
@@ -400,6 +421,7 @@ def cli(
         confirm_callback=None,
         epoch_compiler=epoch_compiler,
         skill_index_builder=skill_index_builder,
+        handoff_summarizer=handoff_summarizer,
     )
 
     # Also expose raw objects for daemon/bot commands that access ctx.obj directly
