@@ -254,7 +254,7 @@ class Orchestrator:
                             await self._transition(turn, TurnState.EXECUTING_TOOLS)
                         else:
                             tool_results = await self._execute_tool_calls(
-                                session.id, chat_response.tool_calls, allowed_tools
+                                session, chat_response.tool_calls, allowed_tools
                             )
 
                         # Add tool results to history
@@ -522,13 +522,13 @@ class Orchestrator:
         await self._store.update_turn(turn)
 
     async def _execute_tool_calls(
-        self, session_id: str, tool_calls: list[ToolCall], allowed_tools: list[str] | None = None
+        self, session: Session, tool_calls: list[ToolCall], allowed_tools: list[str] | None = None
     ) -> list[Message]:
         """Execute tool calls and return result messages."""
         result_messages = []
 
         for tc in tool_calls:
-            result = await self._dispatch_tool_call(tc, allowed_tools)
+            result = await self._dispatch_tool_call(session, tc, allowed_tools)
 
             msg = Message(
                 role="tool",
@@ -575,7 +575,7 @@ class Orchestrator:
         return messages
 
     async def _dispatch_tool_call(
-        self, tc: ToolCall, allowed_tools: list[str] | None = None
+        self, session: Session, tc: ToolCall, allowed_tools: list[str] | None = None
     ) -> ToolCallResult:
         """Dispatch a single tool call, handling meta-tools and direct tool calls.
 
@@ -639,24 +639,31 @@ class Orchestrator:
                 )
 
             if inner_meta.requires_confirmation:
-                if self._confirm_callback is None:
+                if self._policy.auto_approve(name, session):
+                    # Trust profile auto-approves this tool for this session context.
+                    pass
+                elif self._confirm_callback is None:
                     return ToolCallResult(
                         status="error",
                         content=(
                             f"Tool '{name}' requires user confirmation but no "
-                            "confirm_callback is configured on this orchestrator."
+                            "confirm_callback is configured and the trust profile does "
+                            "not auto-approve it. Add the tool to "
+                            "TrustConfig.auto_approve_tools, or run via a platform that "
+                            "supports confirmation (CLI)."
                         ),
                         artifact_handle=None,
                         truncated=False,
                     )
-                confirmed = await self._confirm_callback(name, arguments)
-                if not confirmed:
-                    return ToolCallResult(
-                        status="error",
-                        content="Tool execution was cancelled by user.",
-                        artifact_handle=None,
-                        truncated=False,
-                    )
+                else:
+                    confirmed = await self._confirm_callback(name, arguments)
+                    if not confirmed:
+                        return ToolCallResult(
+                            status="error",
+                            content="Tool execution was cancelled by user.",
+                            artifact_handle=None,
+                            truncated=False,
+                        )
 
             return await self._tools.meta_call_tool(name, arguments)
 
@@ -673,23 +680,30 @@ class Orchestrator:
             )
 
         if meta.requires_confirmation:
-            if self._confirm_callback is None:
+            if self._policy.auto_approve(tc.name, session):
+                # Trust profile auto-approves this tool for this session context.
+                pass
+            elif self._confirm_callback is None:
                 return ToolCallResult(
                     status="error",
                     content=(
                         f"Tool '{tc.name}' requires user confirmation but no "
-                        "confirm_callback is configured on this orchestrator."
+                        "confirm_callback is configured and the trust profile does "
+                        "not auto-approve it. Add the tool to "
+                        "TrustConfig.auto_approve_tools, or run via a platform that "
+                        "supports confirmation (CLI)."
                     ),
                     artifact_handle=None,
                     truncated=False,
                 )
-            confirmed = await self._confirm_callback(tc.name, tc.arguments or {})
-            if not confirmed:
-                return ToolCallResult(
-                    status="error",
-                    content="Tool execution was cancelled by user.",
-                    artifact_handle=None,
-                    truncated=False,
-                )
+            else:
+                confirmed = await self._confirm_callback(tc.name, tc.arguments or {})
+                if not confirmed:
+                    return ToolCallResult(
+                        status="error",
+                        content="Tool execution was cancelled by user.",
+                        artifact_handle=None,
+                        truncated=False,
+                    )
 
         return await self._tools.call(tc.name, tc.arguments or {})
