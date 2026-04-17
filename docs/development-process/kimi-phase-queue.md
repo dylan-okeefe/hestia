@@ -22,6 +22,7 @@
 | 17 | *(develop + main)* | [`kimi-loops/L17-release-v0.2.0.md`](kimi-loops/L17-release-v0.2.0.md) |
 | 18 | `feature/l18-post-public-cleanup` | [`kimi-loops/L18-post-public-cleanup-v0.2.1.md`](kimi-loops/L18-post-public-cleanup-v0.2.1.md) |
 | 19 | `feature/l19-slot-save-and-ctx-alignment` | [`kimi-loops/L19-slot-save-and-ctx-alignment-v0.2.2.md`](kimi-loops/L19-slot-save-and-ctx-alignment-v0.2.2.md) |
+| 20 | `feature/l20-trust-config-and-web-search` | [`kimi-loops/L20-trust-config-and-web-search.md`](kimi-loops/L20-trust-config-and-web-search.md) |
 
 **Chain index (L10–L14):** [`prompts/KIMI_LOOPS_L10_L14.md`](prompts/KIMI_LOOPS_L10_L14.md) · **Credentials:** [`docs/testing/CREDENTIALS_AND_SECRETS.md`](../testing/CREDENTIALS_AND_SECRETS.md)
 
