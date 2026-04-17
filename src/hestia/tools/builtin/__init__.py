@@ -13,6 +13,7 @@ from hestia.tools.builtin.memory_tools import (
 from hestia.tools.builtin.read_artifact import make_read_artifact_tool
 from hestia.tools.builtin.read_file import make_read_file_tool
 from hestia.tools.builtin.terminal import terminal
+from hestia.tools.builtin.web_search import make_web_search_tool
 from hestia.tools.builtin.write_file import make_write_file_tool
 from hestia.tools.capabilities import (
     MEMORY_READ,
@@ -35,6 +36,7 @@ __all__ = [
     "make_read_file_tool",
     "make_save_memory_tool",
     "make_search_memory_tool",
+    "make_web_search_tool",
     "make_write_file_tool",
     "MEMORY_READ",
     "MEMORY_WRITE",

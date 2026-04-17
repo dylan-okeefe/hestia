@@ -132,6 +132,87 @@ class MatrixConfig:
 
 
 @dataclass
+class TrustConfig:
+    """How much latitude to grant the agent in headless contexts.
+
+    Hestia's threat model for personal-use deployments is "operator is the
+    only user; trust the model to act on operator's behalf." This differs
+    from multi-tenant SaaS. TrustConfig lets operators pick the posture that
+    matches their deployment.
+
+    Defaults here match the `paranoid` preset: safest posture for a fresh
+    install or OSS download. Operators should explicitly opt into `household`
+    or `developer` via `TrustConfig.household()` / `TrustConfig.developer()`
+    in their `config.py`.
+    """
+
+    # Tools that auto-approve without a confirm_callback on headless platforms.
+    # When a tool with requires_confirmation=True is called and no confirm_callback
+    # is configured (Telegram, Matrix, scheduler), the tool runs anyway iff its
+    # name is in this list.
+    # Example for household use: ["terminal", "write_file"]
+    auto_approve_tools: list[str] = field(default_factory=list)
+
+    # Allow scheduler tick sessions to call SHELL_EXEC-capable tools.
+    # When False (default), the policy engine strips shell_exec tools from the
+    # model's available tool list during scheduler ticks.
+    scheduler_shell_exec: bool = False
+
+    # Allow subagent sessions to call SHELL_EXEC-capable tools.
+    subagent_shell_exec: bool = False
+
+    # Allow subagent sessions to call WRITE_LOCAL-capable tools.
+    subagent_write_local: bool = False
+
+    @classmethod
+    def paranoid(cls) -> TrustConfig:
+        """Strictest posture. Current default. Auto-approves nothing; scheduler
+        and subagents cannot shell or write."""
+        return cls()
+
+    @classmethod
+    def household(cls) -> TrustConfig:
+        """Recommended posture for single-operator personal deployments.
+        Auto-approves terminal and write_file on headless platforms;
+        scheduler and subagents can shell and write."""
+        return cls(
+            auto_approve_tools=["terminal", "write_file"],
+            scheduler_shell_exec=True,
+            subagent_shell_exec=True,
+            subagent_write_local=True,
+        )
+
+    @classmethod
+    def developer(cls) -> TrustConfig:
+        """Most permissive posture. Auto-approves everything;
+        all capabilities available everywhere. Intended for development/testing
+        only — do not use in a deployment exposed to other users."""
+        return cls(
+            auto_approve_tools=["*"],  # wildcard — matches any tool name
+            scheduler_shell_exec=True,
+            subagent_shell_exec=True,
+            subagent_write_local=True,
+        )
+
+
+@dataclass
+class WebSearchConfig:
+    """Configuration for the web_search tool.
+
+    Default `provider=""` disables the tool entirely — it won't register
+    in the tool registry if unconfigured. Operators opt in by setting
+    provider + api_key in their config.py.
+    """
+
+    provider: str = ""  # "tavily" | "brave" | "" (disabled)
+    api_key: str = ""
+    max_results: int = 5
+    include_raw_content: bool = False  # Tavily: fetch + extract main content
+    search_depth: str = "basic"  # Tavily: "basic" | "advanced"
+    time_range: str | None = None  # Tavily: "day" | "week" | "month" | "year" | None
+
+
+@dataclass
 class HestiaConfig:
     """Top-level Hestia configuration.
 
@@ -146,6 +227,8 @@ class HestiaConfig:
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
     matrix: MatrixConfig = field(default_factory=MatrixConfig)
     identity: IdentityConfig = field(default_factory=IdentityConfig)
+    trust: TrustConfig = field(default_factory=TrustConfig)
+    web_search: WebSearchConfig = field(default_factory=WebSearchConfig)
     system_prompt: str = "You are a helpful assistant."
     max_iterations: int = 10
     verbose: bool = False

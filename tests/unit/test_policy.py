@@ -201,6 +201,140 @@ class TestFilterTools:
         assert filtered == names
 
 
+class TestAutoApprove:
+    """Tests for auto_approve policy."""
+
+    def test_paranoid_denies_all(self, sample_session):
+        from hestia.config import TrustConfig
+        from hestia.policy.default import DefaultPolicyEngine
+
+        policy = DefaultPolicyEngine(trust=TrustConfig.paranoid())
+        assert not policy.auto_approve("terminal", sample_session)
+        assert not policy.auto_approve("write_file", sample_session)
+        assert not policy.auto_approve("any_tool", sample_session)
+
+    def test_household_approves_terminal_and_write_file(self, sample_session):
+        from hestia.config import TrustConfig
+        from hestia.policy.default import DefaultPolicyEngine
+
+        policy = DefaultPolicyEngine(trust=TrustConfig.household())
+        assert policy.auto_approve("terminal", sample_session)
+        assert policy.auto_approve("write_file", sample_session)
+        assert not policy.auto_approve("some_other_tool", sample_session)
+
+    def test_developer_approves_wildcard(self, sample_session):
+        from hestia.config import TrustConfig
+        from hestia.policy.default import DefaultPolicyEngine
+
+        policy = DefaultPolicyEngine(trust=TrustConfig.developer())
+        assert policy.auto_approve("any_tool_name", sample_session)
+        assert policy.auto_approve("terminal", sample_session)
+
+
+class TestFilterToolsTrust:
+    """Tests for filter_tools with TrustConfig."""
+
+    def test_subagent_paranoid_blocks_shell_and_write(self, sample_session, tmp_path):
+        from dataclasses import replace
+
+        from hestia.artifacts.store import ArtifactStore
+        from hestia.config import TrustConfig
+        from hestia.policy.default import DefaultPolicyEngine
+        from hestia.tools.builtin import current_time, make_write_file_tool, terminal
+        from hestia.tools.registry import ToolRegistry
+
+        policy = DefaultPolicyEngine(trust=TrustConfig.paranoid())
+        reg = ToolRegistry(ArtifactStore(tmp_path / "art"))
+        reg.register(current_time)
+        reg.register(terminal)
+        reg.register(make_write_file_tool([str(tmp_path)]))
+        names = reg.list_names()
+        sub = replace(sample_session, platform="subagent")
+        filtered = policy.filter_tools(sub, names, reg)
+        assert "terminal" not in filtered
+        assert "write_file" not in filtered
+        assert "current_time" in filtered
+
+    def test_subagent_household_allows_all(self, sample_session, tmp_path):
+        from dataclasses import replace
+
+        from hestia.artifacts.store import ArtifactStore
+        from hestia.config import TrustConfig
+        from hestia.policy.default import DefaultPolicyEngine
+        from hestia.tools.builtin import current_time, make_write_file_tool, terminal
+        from hestia.tools.registry import ToolRegistry
+
+        policy = DefaultPolicyEngine(trust=TrustConfig.household())
+        reg = ToolRegistry(ArtifactStore(tmp_path / "art"))
+        reg.register(current_time)
+        reg.register(terminal)
+        reg.register(make_write_file_tool([str(tmp_path)]))
+        names = reg.list_names()
+        sub = replace(sample_session, platform="subagent")
+        filtered = policy.filter_tools(sub, names, reg)
+        assert "terminal" in filtered
+        assert "write_file" in filtered
+        assert "current_time" in filtered
+
+    def test_subagent_partial_config(self, sample_session, tmp_path):
+        from dataclasses import replace
+
+        from hestia.artifacts.store import ArtifactStore
+        from hestia.config import TrustConfig
+        from hestia.policy.default import DefaultPolicyEngine
+        from hestia.tools.builtin import current_time, make_write_file_tool, terminal
+        from hestia.tools.registry import ToolRegistry
+
+        trust = TrustConfig(subagent_shell_exec=True, subagent_write_local=False)
+        policy = DefaultPolicyEngine(trust=trust)
+        reg = ToolRegistry(ArtifactStore(tmp_path / "art"))
+        reg.register(current_time)
+        reg.register(terminal)
+        reg.register(make_write_file_tool([str(tmp_path)]))
+        names = reg.list_names()
+        sub = replace(sample_session, platform="subagent")
+        filtered = policy.filter_tools(sub, names, reg)
+        assert "terminal" in filtered
+        assert "write_file" not in filtered
+        assert "current_time" in filtered
+
+    def test_scheduler_paranoid_blocks_shell(self, sample_session, tmp_path):
+        from hestia.artifacts.store import ArtifactStore
+        from hestia.config import TrustConfig
+        from hestia.policy.default import DefaultPolicyEngine
+        from hestia.tools.builtin import current_time, terminal
+        from hestia.tools.registry import ToolRegistry
+
+        policy = DefaultPolicyEngine(trust=TrustConfig.paranoid())
+        reg = ToolRegistry(ArtifactStore(tmp_path / "art"))
+        reg.register(current_time)
+        reg.register(terminal)
+        names = reg.list_names()
+        sched = sample_session
+        sched.platform = "scheduler"
+        filtered = policy.filter_tools(sched, names, reg)
+        assert "terminal" not in filtered
+        assert "current_time" in filtered
+
+    def test_scheduler_household_allows_shell(self, sample_session, tmp_path):
+        from hestia.artifacts.store import ArtifactStore
+        from hestia.config import TrustConfig
+        from hestia.policy.default import DefaultPolicyEngine
+        from hestia.tools.builtin import current_time, terminal
+        from hestia.tools.registry import ToolRegistry
+
+        policy = DefaultPolicyEngine(trust=TrustConfig.household())
+        reg = ToolRegistry(ArtifactStore(tmp_path / "art"))
+        reg.register(current_time)
+        reg.register(terminal)
+        names = reg.list_names()
+        sched = sample_session
+        sched.platform = "scheduler"
+        filtered = policy.filter_tools(sched, names, reg)
+        assert "terminal" in filtered
+        assert "current_time" in filtered
+
+
 class TestReasoningBudget:
     """Tests for reasoning_budget policy."""
 

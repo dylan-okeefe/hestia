@@ -84,3 +84,6 @@ class FakePolicyEngine:
 
     def reasoning_budget(self, session, iteration):
         return 2048
+
+    def auto_approve(self, tool_name, session):
+        return False
