@@ -58,6 +58,7 @@ def _make_policy(cfg: HestiaConfig) -> DefaultPolicyEngine:
     return DefaultPolicyEngine(
         ctx_window=cfg.inference.context_length,
         default_reasoning_budget=cfg.inference.default_reasoning_budget,
+        trust=cfg.trust,
     )
 
 
@@ -1723,6 +1724,16 @@ def policy_show(ctx: click.Context) -> None:
         click.echo("")
 
         # Tool filtering by session type
+        # Trust profile
+        click.echo("-" * 40)
+        click.echo("TRUST PROFILE")
+        click.echo("-" * 40)
+        click.echo(f"  auto_approve_tools: {cfg.trust.auto_approve_tools or '(none)'}")
+        click.echo(f"  scheduler_shell_exec: {cfg.trust.scheduler_shell_exec}")
+        click.echo(f"  subagent_shell_exec: {cfg.trust.subagent_shell_exec}")
+        click.echo(f"  subagent_write_local: {cfg.trust.subagent_write_local}")
+        click.echo("")
+
         click.echo("-" * 40)
         click.echo("TOOL AVAILABILITY BY SESSION TYPE")
         click.echo("-" * 40)
