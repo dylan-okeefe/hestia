@@ -1,7 +1,7 @@
 """Core types for skill execution."""
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 
 @dataclass
@@ -60,7 +60,7 @@ class SkillContext:
         """
         if self._memory_store is None:
             raise RuntimeError("No memory store configured in skill context")
-        return await self._memory_store.search(query, limit=limit)
+        return cast("list[Any]", await self._memory_store.search(query, limit=limit))
 
     async def save_memory(self, content: str, tags: list[str] | None = None) -> Any:
         """Save a memory.
