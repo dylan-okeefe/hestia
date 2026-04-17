@@ -51,6 +51,8 @@ class TelegramAdapter(Platform):
         # Start polling
         await self._app.initialize()
         await self._app.start()
+        if self._app.updater is None:
+            raise RuntimeError("Telegram application updater is not available")
         await self._app.updater.start_polling(
             poll_interval=1.0,
             timeout=int(self._config.long_poll_timeout_seconds),
@@ -61,7 +63,8 @@ class TelegramAdapter(Platform):
     async def stop(self) -> None:
         """Stop the Telegram adapter."""
         if self._app is not None:
-            await self._app.updater.stop()
+            if self._app.updater is not None:
+                await self._app.updater.stop()
             await self._app.stop()
             await self._app.shutdown()
             self._app = None
