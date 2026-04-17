@@ -1,6 +1,6 @@
 """Unit tests for TrustConfig presets."""
 
-from hestia.config import TrustConfig
+from hestia.config import HestiaConfig, TrustConfig
 
 
 class TestTrustConfigPresets:
@@ -30,3 +30,31 @@ class TestTrustConfigPresets:
         assert developer.scheduler_shell_exec is True
         assert developer.subagent_shell_exec is True
         assert developer.subagent_write_local is True
+
+
+class TestHestiaConfigForTrust:
+    """Tests for HestiaConfig.for_trust mapping."""
+
+    def test_paranoid_disables_handoff_and_compression(self):
+        """paranoid() implies handoff=False, compression=False."""
+        cfg = HestiaConfig.for_trust(TrustConfig.paranoid())
+        assert cfg.handoff.enabled is False
+        assert cfg.compression.enabled is False
+
+    def test_household_enables_handoff_and_compression(self):
+        """household() implies handoff=True, compression=True."""
+        cfg = HestiaConfig.for_trust(TrustConfig.household())
+        assert cfg.handoff.enabled is True
+        assert cfg.compression.enabled is True
+
+    def test_developer_enables_handoff_and_compression(self):
+        """developer() implies handoff=True, compression=True."""
+        cfg = HestiaConfig.for_trust(TrustConfig.developer())
+        assert cfg.handoff.enabled is True
+        assert cfg.compression.enabled is True
+
+    def test_default_is_paranoid(self):
+        """Default HestiaConfig matches paranoid preset."""
+        default = HestiaConfig.default()
+        assert default.handoff.enabled is False
+        assert default.compression.enabled is False

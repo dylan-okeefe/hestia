@@ -300,5 +300,24 @@ class HestiaConfig:
         return config
 
     @classmethod
+    def for_trust(cls, trust: TrustConfig) -> HestiaConfig:
+        """Create a config with handoff/compression implied by the trust preset.
+
+        - ``paranoid()`` → handoff=False, compression=False
+        - ``household()`` → handoff=True, compression=True
+        - ``developer()`` → handoff=True, compression=True
+
+        Example::
+
+            config = HestiaConfig.for_trust(TrustConfig.household())
+        """
+        enable = trust not in (TrustConfig.paranoid(), TrustConfig())
+        return cls(
+            trust=trust,
+            handoff=HandoffConfig(enabled=enable),
+            compression=CompressionConfig(enabled=enable),
+        )
+
+    @classmethod
     def default(cls) -> HestiaConfig:
         return cls()
