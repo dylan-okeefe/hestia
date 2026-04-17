@@ -145,6 +145,15 @@ class CliAppContext:
         )
 
 
+def _require_scheduler_store(app: CliAppContext) -> SchedulerStore:
+    """Return the scheduler store or raise a clear error."""
+    if app.scheduler_store is None:
+        raise click.UsageError(
+            "Scheduler is not configured. Set `scheduler.enabled = True` in your config."
+        )
+    return app.scheduler_store
+
+
 class CliConfirmHandler:
     """Handles tool confirmation in CLI mode."""
 
@@ -614,6 +623,7 @@ def status(ctx: click.Context) -> None:
 
     async def _status() -> None:
         await app.bootstrap_db()
+        store = _require_scheduler_store(app)
 
         # 1. Inference health
         click.echo("Inference:")
@@ -646,7 +656,7 @@ def status(ctx: click.Context) -> None:
 
         # 4. Scheduled tasks
         click.echo("\nScheduled Tasks:")
-        stats = await app.scheduler_store.summary_stats()
+        stats = await store.summary_stats()
         click.echo(f"  Enabled: {stats['enabled_count']}")
         if stats["next_run_at"]:
             # Convert UTC to local time for display
@@ -799,6 +809,7 @@ def schedule_add(
 
     async def _add() -> None:
         await app.bootstrap_db()
+        store = _require_scheduler_store(app)
 
         # Resolve target session
         if session_id is not None:
@@ -812,7 +823,7 @@ def schedule_add(
             session = await app.session_store.get_or_create_session("cli", "default")
 
         try:
-            task = await app.scheduler_store.create_task(
+            task = await store.create_task(
                 session_id=session.id,
                 prompt=prompt,
                 description=description,
@@ -841,8 +852,9 @@ def schedule_list(ctx: click.Context) -> None:
 
     async def _list() -> None:
         await app.bootstrap_db()
+        store = _require_scheduler_store(app)
 
-        tasks = await app.scheduler_store.list_tasks_for_session(session_id=None, include_disabled=True)
+        tasks = await store.list_tasks_for_session(session_id=None, include_disabled=True)
 
         if not tasks:
             click.echo("No scheduled tasks.")
@@ -895,8 +907,9 @@ def schedule_show(ctx: click.Context, task_id: str) -> None:
 
     async def _show() -> None:
         await app.bootstrap_db()
+        store = _require_scheduler_store(app)
 
-        task = await app.scheduler_store.get_task(task_id)
+        task = await store.get_task(task_id)
 
         if task is None:
             click.echo(f"Task not found: {task_id}", err=True)
@@ -930,9 +943,10 @@ def schedule_run(ctx: click.Context, task_id: str) -> None:
 
     async def _run() -> None:
         await app.bootstrap_db()
+        store = _require_scheduler_store(app)
 
         # Verify task exists
-        task = await app.scheduler_store.get_task(task_id)
+        task = await store.get_task(task_id)
         if task is None:
             click.echo(f"Task not found: {task_id}", err=True)
             sys.exit(1)
@@ -945,7 +959,7 @@ def schedule_run(ctx: click.Context, task_id: str) -> None:
             click.echo(f"[{task.id}] {text}")
 
         scheduler = Scheduler(
-            scheduler_store=app.scheduler_store,
+            scheduler_store=store,
             session_store=app.session_store,
             orchestrator=orchestrator,
             response_callback=response_callback,
@@ -973,8 +987,9 @@ def schedule_enable(ctx: click.Context, task_id: str) -> None:
 
     async def _enable() -> None:
         await app.bootstrap_db()
+        store = _require_scheduler_store(app)
 
-        success = await app.scheduler_store.set_enabled(task_id, True)
+        success = await store.set_enabled(task_id, True)
         if not success:
             click.echo(f"Task not found: {task_id}", err=True)
             sys.exit(1)
@@ -992,8 +1007,9 @@ def schedule_disable(ctx: click.Context, task_id: str) -> None:
 
     async def _disable() -> None:
         await app.bootstrap_db()
+        store = _require_scheduler_store(app)
 
-        success = await app.scheduler_store.disable_task(task_id)
+        success = await store.disable_task(task_id)
 
         if not success:
             click.echo(f"Task not found: {task_id}", err=True)
@@ -1013,8 +1029,9 @@ def schedule_remove(ctx: click.Context, task_id: str) -> None:
 
     async def _remove() -> None:
         await app.bootstrap_db()
+        store = _require_scheduler_store(app)
 
-        success = await app.scheduler_store.delete_task(task_id)
+        success = await store.delete_task(task_id)
         if not success:
             click.echo(f"Task not found: {task_id}", err=True)
             sys.exit(1)
