@@ -387,7 +387,7 @@ These are what earn Hestia its "built for 12 GB" claim:
 
 - **Accurate token budgeting** via `/tokenize`. Two-number calibration takes
   ~5ms per count.
-- **KV-cache quantization** (`--cache-type-k q4_0 --cache-type-v q4_0`).
+- **KV-cache quantization** (`--cache-type-k turbo3 --cache-type-v turbo3`).
   ~4x KV-cache compression.
 - **Flash attention** always on (`--flash-attn`).
 - **Meta-tool pattern** saves ~2,900 tokens per request.
