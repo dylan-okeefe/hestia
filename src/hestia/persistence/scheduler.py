@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 import sqlalchemy as sa
 from croniter import croniter
@@ -65,7 +65,7 @@ def _calculate_next_run(
             base_time = utcnow()
         try:
             itr = croniter(cron_expr, base_time)
-            return itr.get_next(datetime)
+            return cast(datetime, itr.get_next(datetime))
         except (ValueError, TypeError) as e:
             raise PersistenceError(f"Invalid cron expression '{cron_expr}': {e}") from e
 
