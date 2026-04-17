@@ -12,6 +12,7 @@ from hestia.core.clock import utcnow
 from hestia.core.inference import InferenceClient
 from hestia.core.types import Message, Session, ToolCall
 from hestia.errors import (
+    ContextTooLargeError,
     EmptyResponseError,
     IllegalTransitionError,
     PersistenceError,
@@ -353,6 +354,97 @@ class Orchestrator:
                 else:
                     # Max iterations reached
                     raise Exception(f"Max iterations ({self._max_iterations}) exceeded")
+
+            except ContextTooLargeError as exc:
+                await self._set_typing(platform, platform_user, False)
+
+                # Kick off handoff summarizer before we lose the history
+                if self._handoff_summarizer is not None:
+                    try:
+                        history = await self._store.get_messages(session.id)
+                        await self._handoff_summarizer.summarize_and_store(session, history)
+                    except Exception:  # noqa: BLE001 — best-effort
+                        logger.warning(
+                            "Handoff summarizer failed during overflow handling for %s",
+                            session.id,
+                            exc_info=True,
+                        )
+
+                if turn.state not in (TurnState.DONE, TurnState.FAILED):
+                    await self._transition(turn, TurnState.FAILED)
+                    turn.error = str(exc)
+                    raw_budget = self._policy.turn_token_budget(session)
+                    await respond_callback(
+                        f"⚠️ This session has grown past my context budget "
+                        f"({raw_budget:,} tokens per slot). I've saved a summary of our conversation. "
+                        "Type /reset to start fresh, and I'll keep the summary for reference."
+                    )
+
+                # Record failure bundle
+                if self._failure_store is not None:
+                    try:
+                        from hestia.persistence.failure_store import FailureBundle
+
+                        raw_summary = user_message.content or ""
+                        if len(raw_summary) > 200:
+                            user_input_summary = raw_summary[:200] + "..."
+                        else:
+                            user_input_summary = raw_summary
+
+                        reasoning_budget = turn.reasoning_budget
+                        if reasoning_budget is None:
+                            reasoning_budget = self._policy.reasoning_budget(
+                                session, turn.iterations
+                            )
+                        policy_snapshot = json.dumps(
+                            {
+                                "reasoning_budget": reasoning_budget,
+                                "turn_token_budget": self._policy.turn_token_budget(session),
+                                "tool_filter_active": allowed_tools is not None,
+                            },
+                            default=str,
+                        )
+
+                        try:
+                            temp_value = None
+                            if hasattr(session, "temperature") and session.temperature is not None:
+                                if hasattr(session.temperature, "value"):
+                                    temp_value = session.temperature.value
+                                else:
+                                    temp_value = str(session.temperature)
+                            slot_snapshot = json.dumps(
+                                {
+                                    "slot_id": session.slot_id,
+                                    "temperature": temp_value,
+                                    "slot_saved_path": getattr(session, "slot_saved_path", None),
+                                },
+                                default=str,
+                            )
+                        except (TypeError, AttributeError):
+                            slot_snapshot = json.dumps(
+                                {"error": "slot snapshot serialization failed"}
+                            )
+
+                        if self._trace_store is not None:
+                            trace_record_id = str(uuid.uuid4())
+
+                        bundle = FailureBundle(
+                            id=str(uuid.uuid4()),
+                            session_id=session.id,
+                            turn_id=turn.id,
+                            failure_class="context_overflow",
+                            severity="medium",
+                            error_message=str(exc),
+                            tool_chain=json.dumps(tool_chain),
+                            created_at=utcnow(),
+                            request_summary=user_input_summary,
+                            policy_snapshot=policy_snapshot,
+                            slot_snapshot=slot_snapshot,
+                            trace_id=trace_record_id,
+                        )
+                        await self._failure_store.record(bundle)
+                    except Exception as record_err:  # noqa: BLE001
+                        logger.error("Failed to record failure bundle: %s", record_err)
 
             except IllegalTransitionError:
                 raise  # Re-raise state machine errors

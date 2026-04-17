@@ -7,6 +7,7 @@ from pathlib import Path
 from hestia.context.compressor import HistoryCompressor
 from hestia.core.inference import InferenceClient
 from hestia.core.types import Message, Session, ToolSchema
+from hestia.errors import ContextTooLargeError
 from hestia.policy.engine import PolicyEngine
 
 
@@ -221,18 +222,10 @@ class ContextBuilder:
         protected_count = self._apply_correction(protected_body, has_tools=len(tools) > 0)
 
         if protected_count > raw_budget:
-            # Even protected messages don't fit - this is bad
-            # Return just system (+ new_user if available) as best effort
-            best_effort = [system_msg]
-            if new_user_message is not None:
-                best_effort.append(new_user_message)
-            return BuildResult(
-                messages=best_effort,
-                tokens_used=await self._count_messages(best_effort, len(tools) > 0),
-                tokens_budget=raw_budget,
-                truncated_count=len(history),
-                kept_first_user=False,
-                memory_epoch_included=False,
+            raise ContextTooLargeError(
+                f"Protected context ({protected_count} tokens) exceeds per-slot budget "
+                f"({raw_budget}). System+identity+memory_epoch+skill_index+new_user is "
+                "too large to fit. Reduce identity, memory_epoch, or run /reset."
             )
 
         # Add remaining history messages (newest first) while they fit
