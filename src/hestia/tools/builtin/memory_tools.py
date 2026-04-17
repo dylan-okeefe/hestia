@@ -2,7 +2,7 @@
 
 import contextvars
 from collections.abc import Callable, Coroutine
-from typing import Any
+from typing import Any, cast
 
 from hestia.memory.store import MemoryStore
 from hestia.tools.capabilities import MEMORY_READ, MEMORY_WRITE
@@ -48,7 +48,7 @@ def make_search_memory_tool(
             lines.append(f"[{mem.id}] ({date}){tags} {mem.content}")
         return "\n".join(lines)
 
-    return search_memory
+    return cast("Callable[..., Coroutine[Any, Any, str]]", search_memory)
 
 
 def make_save_memory_tool(
@@ -79,7 +79,7 @@ def make_save_memory_tool(
         preview = content[:80] + ("..." if len(content) > 80 else "")
         return f"Saved memory {mem.id}: {preview}"
 
-    return save_memory
+    return cast("Callable[..., Coroutine[Any, Any, str]]", save_memory)
 
 
 def make_list_memories_tool(
@@ -116,4 +116,4 @@ def make_list_memories_tool(
             lines.append(f"[{mem.id}] ({date}){tags} {mem.content}")
         return "\n".join(lines)
 
-    return list_memories
+    return cast("Callable[..., Coroutine[Any, Any, str]]", list_memories)
