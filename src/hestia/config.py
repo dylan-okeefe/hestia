@@ -29,7 +29,8 @@ class InferenceConfig:
 
     base_url: str = "http://localhost:8001"
     model_name: str = ""
-    context_length: int = 8192  # Per-slot context budget; should equal llama-server's --ctx-size / --parallel
+    # Per-slot context budget; should equal llama-server's --ctx-size / --parallel
+    context_length: int = 8192
     default_reasoning_budget: int = 2048
     max_tokens: int = 1024
 
