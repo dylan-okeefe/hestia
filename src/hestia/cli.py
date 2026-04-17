@@ -1770,7 +1770,18 @@ def policy_show(ctx: click.Context) -> None:
         click.echo("CONTEXT & COMPRESSION")
         click.echo("-" * 40)
         click.echo(f"  Context window: {policy_engine.ctx_window} tokens")
-        click.echo(f"  Turn token budget: {policy_engine.turn_token_budget(None)} tokens")
+        synthetic_session = Session(
+            id="diagnostic",
+            platform="cli",
+            platform_user="diagnostic",
+            started_at=utcnow(),
+            last_active_at=utcnow(),
+            slot_id=None,
+            slot_saved_path=None,
+            state=SessionState.ACTIVE,
+            temperature=SessionTemperature.HOT,
+        )
+        click.echo(f"  Turn token budget: {policy_engine.turn_token_budget(synthetic_session)} tokens")
         click.echo("  Compression threshold: 85% of budget")
         click.echo("")
 
