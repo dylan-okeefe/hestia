@@ -5,6 +5,23 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.4.1]
+
+### Fixed
+- Unchecked `Optional` access on SchedulerStore and SkillState that could NPE
+  in CLI commands.
+- Telegram adapter `Updater` lifecycle raised when `stop()` was called before
+  `start()`.
+- `turn_token_budget` NPE in `hestia check` with no active session.
+- Strict coercion for ScheduledTask row conversion prevents NULL `enabled`
+  from passing a truthiness check incorrectly.
+- Tool call dispatch rejects malformed `arguments` payloads instead of
+  passing `None` into the registry.
+
+### Changed
+- CI now runs `mypy src/hestia` with no baseline (0 errors).
+- `hestia.policy.*` and `hestia.core.*` are strict-typed.
+
 ## [0.4.0]
 
 ### Added
