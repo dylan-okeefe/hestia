@@ -1,6 +1,7 @@
 """Tool metadata and decorator."""
 
 from dataclasses import dataclass, field
+from collections.abc import Callable
 from typing import Any
 
 from hestia.tools.types import ToolHandler
@@ -30,7 +31,7 @@ def tool(
     requires_confirmation: bool = False,
     tags: list[str] | None = None,
     capabilities: list[str] | None = None,
-) -> Any:
+) -> Callable[[ToolHandler], ToolHandler]:
     """Decorator to register a tool.
 
     Attaches ToolMetadata to the function so it can be discovered and registered

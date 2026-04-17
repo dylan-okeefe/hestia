@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from typing import Any
 
 from telegram import Update
 from telegram.error import TelegramError
@@ -30,7 +31,7 @@ class TelegramAdapter(Platform):
             raise ValueError("Telegram bot_token is required")
 
         self._config = config
-        self._app: Application | None = None
+        self._app: Application[Any, Any, Any, Any, Any, Any] | None = None
         self._on_message: IncomingMessageCallback | None = None
         self._last_edit_times: dict[str, float] = {}  # msg_id -> last edit timestamp
 
@@ -51,6 +52,8 @@ class TelegramAdapter(Platform):
         # Start polling
         await self._app.initialize()
         await self._app.start()
+        if self._app.updater is None:
+            raise RuntimeError("Telegram application updater is not available")
         await self._app.updater.start_polling(
             poll_interval=1.0,
             timeout=int(self._config.long_poll_timeout_seconds),
@@ -61,7 +64,8 @@ class TelegramAdapter(Platform):
     async def stop(self) -> None:
         """Stop the Telegram adapter."""
         if self._app is not None:
-            await self._app.updater.stop()
+            if self._app.updater is not None:
+                await self._app.updater.stop()
             await self._app.stop()
             await self._app.shutdown()
             self._app = None
@@ -131,7 +135,7 @@ class TelegramAdapter(Platform):
         allowed = self._config.allowed_users
         return str(user_id) in allowed or (username is not None and username in allowed)
 
-    async def _handle_start(self, update: Update, context) -> None:
+    async def _handle_start(self, update: Update, context: Any) -> None:
         """Handle /start command."""
         if update.effective_user is None or update.effective_message is None:
             return
@@ -144,7 +148,7 @@ class TelegramAdapter(Platform):
             "Hestia is running. Send me a message to start a conversation."
         )
 
-    async def _handle_message(self, update: Update, context) -> None:
+    async def _handle_message(self, update: Update, context: Any) -> None:
         """Handle incoming text messages."""
         if update.effective_user is None or update.effective_message is None:
             return

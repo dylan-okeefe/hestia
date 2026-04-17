@@ -731,6 +731,13 @@ class Orchestrator:
         if tc.name == "call_tool":
             name = tc.arguments.get("name") if tc.arguments else None
             arguments = tc.arguments.get("arguments") if tc.arguments else {}
+            if not isinstance(arguments, dict):
+                return ToolCallResult(
+                    status="error",
+                    content=f"Malformed arguments for tool '{tc.name}'.",
+                    artifact_handle=None,
+                    truncated=False,
+                )
             if not name:
                 return ToolCallResult(
                     status="error",

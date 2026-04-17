@@ -108,7 +108,7 @@ class MatrixAdapter(Platform):
 
         if isinstance(response, RoomSendResponse):
             logger.debug("Sent message to %s, event_id=%s", room_id, response.event_id)
-            return response.event_id
+            return str(response.event_id)
         else:
             logger.error("Failed to send message to %s: %s", room_id, response)
             raise PlatformError(f"Failed to send message: {response}")

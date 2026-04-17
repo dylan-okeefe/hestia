@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 import sqlalchemy as sa
 
@@ -184,7 +185,7 @@ class MemoryStore:
             result = await conn.execute(sql)
             return result.scalar() or 0
 
-    def _row_to_memory(self, row) -> Memory:
+    def _row_to_memory(self, row: Any) -> Memory:
         """Convert a database row to a Memory dataclass."""
         created_at = row.created_at
         if isinstance(created_at, str):

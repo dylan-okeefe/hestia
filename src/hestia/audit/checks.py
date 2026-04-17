@@ -253,8 +253,8 @@ class SecurityAuditor:
             for tool in tool_names:
                 if tool not in subagent_tools:
                     meta = self.tool_registry.describe(tool)
-                    caps = set(meta.capabilities)
-                    if SHELL_EXEC in caps or "write_local" in caps:
+                    cap_set = set(meta.capabilities)
+                    if SHELL_EXEC in cap_set or "write_local" in cap_set:
                         report.add_finding(
                             "info",
                             "capabilities",

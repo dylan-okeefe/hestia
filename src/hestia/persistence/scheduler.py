@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 import sqlalchemy as sa
 from croniter import croniter
@@ -193,7 +193,7 @@ class SchedulerStore:
         Returns:
             List of tasks for the session
         """
-        conditions: list = []
+        conditions: list[Any] = []
         if session_id is not None:
             conditions.append(scheduled_tasks.c.session_id == session_id)
         if not include_disabled:
@@ -255,7 +255,7 @@ class SchedulerStore:
                     next_run_at = None
 
             # Update the task
-            values = {
+            values: dict[str, Any] = {
                 "last_run_at": now,
                 "next_run_at": next_run_at,
                 "last_error": error,
@@ -278,7 +278,7 @@ class SchedulerStore:
                 description=task.description,
                 cron_expression=task.cron_expression,
                 fire_at=task.fire_at,
-                enabled=values.get("enabled", task.enabled),
+                enabled=bool(values.get("enabled", task.enabled)),
                 created_at=task.created_at,
                 last_run_at=now,
                 next_run_at=next_run_at,
@@ -358,8 +358,8 @@ class SchedulerStore:
             description=row.description,
             cron_expression=row.cron_expression,
             fire_at=_ensure_utc(row.fire_at),
-            enabled=row.enabled,
-            created_at=_ensure_utc(row.created_at),
+            enabled=bool(row.enabled) if row.enabled is not None else False,
+            created_at=_ensure_utc(row.created_at) or utcnow(),
             last_run_at=_ensure_utc(row.last_run_at),
             next_run_at=_ensure_utc(row.next_run_at),
             last_error=row.last_error,
