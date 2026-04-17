@@ -1592,6 +1592,9 @@ def skill_promote(ctx: click.Context, name: str) -> None:
         }
 
         new_state = transitions.get(record.state)
+        if new_state is None:
+            click.echo(f"Skill '{name}' has no valid promotion path from '{record.state.value}'", err=True)
+            sys.exit(1)
         if new_state == record.state:
             click.echo(f"Skill '{name}' is already at state '{record.state.value}'")
             return
@@ -1630,6 +1633,9 @@ def skill_demote(ctx: click.Context, name: str) -> None:
         }
 
         new_state = transitions.get(record.state)
+        if new_state is None:
+            click.echo(f"Skill '{name}' has no valid demotion path from '{record.state.value}'", err=True)
+            sys.exit(1)
         if new_state == record.state:
             click.echo(f"Skill '{name}' is already at state '{record.state.value}'")
             return
