@@ -251,7 +251,9 @@ class TestTelegramAdapterAsync:
         )
 
     @pytest.mark.asyncio
-    async def test_send_system_warning_sends_warning_message(self, adapter: TelegramAdapter) -> None:
+    async def test_send_system_warning_sends_warning_message(
+        self, adapter: TelegramAdapter
+    ) -> None:
         """Verify send_system_warning prepends warning indicator."""
         mock_app = MagicMock(spec=Application)
         mock_bot = AsyncMock(spec=Bot)

@@ -376,8 +376,9 @@ class Orchestrator:
                     raw_budget = self._policy.turn_token_budget(session)
                     warning_text = (
                         f"This session has grown past my context budget "
-                        f"({raw_budget:,} tokens per slot). I've saved a summary of our conversation. "
-                        "Type /reset to start fresh, and I'll keep the summary for reference."
+                        f"({raw_budget:,} tokens per slot). I've saved a summary "
+                        "of our conversation. Type /reset to start fresh, and "
+                        "I'll keep the summary for reference."
                     )
                     if platform is not None:
                         await platform.send_system_warning(platform_user or "", warning_text)

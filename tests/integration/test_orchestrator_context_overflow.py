@@ -1,13 +1,11 @@
 """Integration test for orchestrator handling of ContextTooLargeError."""
 
-from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from hestia.artifacts.store import ArtifactStore
 from hestia.context.builder import ContextBuilder
-from hestia.core.types import ChatResponse, Message, Session, SessionState, SessionTemperature
-from hestia.errors import ContextTooLargeError
+from hestia.core.types import ChatResponse, Message
 from hestia.memory.handoff import SessionHandoffSummarizer
 from hestia.memory.store import MemoryStore
 from hestia.orchestrator.engine import Orchestrator
@@ -15,7 +13,6 @@ from hestia.persistence.db import Database
 from hestia.persistence.failure_store import FailureStore
 from hestia.persistence.sessions import SessionStore
 from hestia.tools.registry import ToolRegistry
-from hestia.artifacts.store import ArtifactStore
 
 
 class ExplodingInferenceClient:
@@ -41,7 +38,9 @@ class ExplodingInferenceClient:
 
 
 class FakePolicyEngine:
-    def should_delegate(self, session, task_description, tool_chain_length=0, projected_tool_calls=0):
+    def should_delegate(
+        self, session, task_description, tool_chain_length=0, projected_tool_calls=0
+    ):
         return False
 
     def should_compress(self, session, tokens_used, tokens_budget):

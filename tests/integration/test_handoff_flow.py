@@ -19,7 +19,7 @@ class FakeInferenceClient:
         total = 0
         for msg in messages:
             total += 10 + len(msg.content) // 4
-        for tool in tools:
+        for _tool in tools:
             total += 50
         return total
 
@@ -39,7 +39,9 @@ class FakeInferenceClient:
 
 
 class FakePolicyEngine:
-    def should_delegate(self, session, task_description, tool_chain_length=0, projected_tool_calls=0):
+    def should_delegate(
+        self, session, task_description, tool_chain_length=0, projected_tool_calls=0
+    ):
         return False
 
     def should_compress(self, session, tokens_used, tokens_budget):
@@ -95,9 +97,10 @@ async def memory_store(db):
 async def test_full_handoff_cycle(session_store, memory_store):
     """Full cycle: start session, record turns, close, assert handoff memory."""
     from pathlib import Path
+
+    from hestia.artifacts.store import ArtifactStore
     from hestia.context.builder import ContextBuilder
     from hestia.tools.registry import ToolRegistry
-    from hestia.artifacts.store import ArtifactStore
 
     inference = FakeInferenceClient()
     policy = FakePolicyEngine()
@@ -120,7 +123,7 @@ async def test_full_handoff_cycle(session_store, memory_store):
         handoff_summarizer=summarizer,
     )
 
-    session = Session(
+    test_session = Session(
         id="handoff_test_session",
         platform="test",
         platform_user="user1",

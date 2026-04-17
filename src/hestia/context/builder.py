@@ -180,9 +180,15 @@ class ContextBuilder:
         # 3. Skill index
         # 4. Base system prompt
 
-        effective_identity = identity_prefix if identity_prefix is not None else self._identity_prefix
-        effective_memory_epoch = memory_epoch_prefix if memory_epoch_prefix is not None else self._memory_epoch_prefix
-        effective_skill_index = skill_index_prefix if skill_index_prefix is not None else self._skill_index_prefix
+        effective_identity = (
+            identity_prefix if identity_prefix is not None else self._identity_prefix
+        )
+        effective_memory_epoch = (
+            memory_epoch_prefix if memory_epoch_prefix is not None else self._memory_epoch_prefix
+        )
+        effective_skill_index = (
+            skill_index_prefix if skill_index_prefix is not None else self._skill_index_prefix
+        )
 
         effective_prompt = system_prompt
         memory_epoch_included = False
@@ -315,7 +321,7 @@ class ContextBuilder:
                 else:
                     # Retry once: drop oldest included message and try again
                     if included_history:
-                        oldest = included_history.pop()
+                        included_history.pop()
                         test_with_summary = list(final_messages)
                         # Rebuild without oldest
                         test_with_summary = list(protected_top)

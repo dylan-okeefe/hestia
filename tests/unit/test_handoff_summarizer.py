@@ -4,7 +4,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from hestia.config import HandoffConfig
 from hestia.core.types import ChatResponse, Message, Session, SessionState, SessionTemperature
 from hestia.memory.handoff import HandoffResult, SessionHandoffSummarizer
 
@@ -110,7 +109,9 @@ class TestSkipConditions:
         mock_inference.chat.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_empty_response_returns_none(self, mock_inference, mock_memory_store, sample_session):
+    async def test_empty_response_returns_none(
+        self, mock_inference, mock_memory_store, sample_session
+    ):
         """If the model returns an empty summary, return None."""
         mock_inference.chat.return_value = ChatResponse(
             content="",
@@ -183,7 +184,9 @@ class TestMemoryRecordShape:
     """Tests for the shape of the stored memory record."""
 
     @pytest.mark.asyncio
-    async def test_tags_include_handoff_and_platform(self, mock_inference, mock_memory_store, sample_session):
+    async def test_tags_include_handoff_and_platform(
+        self, mock_inference, mock_memory_store, sample_session
+    ):
         """Memory tags must include 'handoff' and the session platform."""
         mock_inference.chat.return_value = ChatResponse(
             content="Summary here",

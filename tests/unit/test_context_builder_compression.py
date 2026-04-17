@@ -1,7 +1,7 @@
 """Unit tests for ContextBuilder with history compression enabled."""
 
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -108,13 +108,16 @@ class TestCompressionEnabled:
 
         # Should have a system message with the summary
         summary_msgs = [
-            m for m in result.messages if m.role == "system" and "PRIOR CONTEXT SUMMARY" in m.content
+            m for m in result.messages
+            if m.role == "system" and "PRIOR CONTEXT SUMMARY" in m.content
         ]
         assert len(summary_msgs) == 1
         assert "Dropped messages summary" in summary_msgs[0].content
 
     @pytest.mark.asyncio
-    async def test_compressor_called_with_dropped_messages(self, fake_client, policy, sample_session):
+    async def test_compressor_called_with_dropped_messages(
+        self, fake_client, policy, sample_session
+    ):
         """Compressor receives dropped messages in chronological order."""
         compressor = FakeCompressor("Summary")
         builder = ContextBuilder(
