@@ -2,7 +2,32 @@
 
 ## Review carry-forward
 
-From L22 review (to be filled when L22 merges).
+From **L22 review** (merged to `develop` in commit `75ea2b5`):
+
+1. **Mypy is now at 0 with strict on `hestia.policy.*` and `hestia.core.*`.**
+   New code in L23 must not regress this. Adapter-level code in
+   `hestia.platforms.*` is **not yet** strict, but don't add `Any`-typed
+   callbacks unless there's a clear reason. Prefer `Awaitable[bool]`,
+   `Callable[[str], Awaitable[None]]`, etc., matching the patterns
+   already in `orchestrator/engine.py`.
+2. **`SchedulerStore` None-handling pattern** (L22 §3, commit `85d7fd6`)
+   — when L23 adds per-confirmation storage, don't silently fall back
+   if a store isn't configured; raise or log-and-fail, matching the
+   `_require_scheduler_store` pattern. This keeps debug output honest
+   when operators misconfigure a bot.
+3. **ADR numbering** — L21 shipped ADR-0014 (context resilience) and
+   ADR-0015 (llama-server coexistence). This spec mentioned
+   "ADR-0015 platform-confirmation-callbacks" — **renumber to
+   ADR-0016** before writing.
+4. **No new ruff debt** — cli.py has 9 pre-existing ruff errors
+   (SIM108, unused `db`). If L23 touches those files and ruff
+   complains, include the fix in a separate `style:` commit, same as
+   L21. Don't leave partial cleanup.
+5. **L21 handoff summarizer routing** — when the Telegram / Matrix
+   confirmation flow has to abort a turn (timeout or ❌), route the
+   session teardown through `Orchestrator.close_session` if the
+   session is being closed, not `SessionStore.archive_session` —
+   otherwise the L21 handoff summary is silently skipped.
 
 **Branch:** `feature/l23-platform-confirmation` from **`develop`**.
 
@@ -66,7 +91,8 @@ Target version: **0.5.0** (minor — new inter-platform behavior).
 - Integration: end-to-end Matrix confirmation against the mock homeserver in
   `tests/integration/test_memory_matrix_mock.py`.
 - README: update trust profiles section with the new confirmation flow.
-- ADR-0015 `platform-confirmation-callbacks.md` documenting the decision.
+- ADR-0016 `platform-confirmation-callbacks.md` documenting the decision
+  (ADR-0014 and ADR-0015 were taken by L21).
 
 ---
 
