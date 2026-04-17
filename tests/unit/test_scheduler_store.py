@@ -423,3 +423,51 @@ class TestDeleteTask:
     async def test_delete_missing_task(self, scheduler_store):
         result = await scheduler_store.delete_task("task_nonexistent")
         assert result is False
+
+
+class TestRowToTask:
+    """Tests for _row_to_task coercion."""
+
+    def test_null_enabled_defaults_to_false(self, scheduler_store):
+        """A row with NULL enabled must coerce to False, not None."""
+        from datetime import datetime, timezone
+        from types import SimpleNamespace
+
+        row = SimpleNamespace(
+            id="task_001",
+            session_id="sess_001",
+            prompt="test",
+            description=None,
+            cron_expression=None,
+            fire_at=None,
+            enabled=None,
+            created_at=datetime.now(timezone.utc),
+            last_run_at=None,
+            next_run_at=None,
+            last_error=None,
+        )
+        task = scheduler_store._row_to_task(row)
+        assert task.enabled is False
+
+    def test_null_created_at_defaults_to_now(self, scheduler_store):
+        """A row with NULL created_at must default to utcnow()."""
+        from datetime import datetime, timezone
+        from types import SimpleNamespace
+
+        before = datetime.now(timezone.utc)
+        row = SimpleNamespace(
+            id="task_002",
+            session_id="sess_001",
+            prompt="test",
+            description=None,
+            cron_expression=None,
+            fire_at=None,
+            enabled=True,
+            created_at=None,
+            last_run_at=None,
+            next_run_at=None,
+            last_error=None,
+        )
+        task = scheduler_store._row_to_task(row)
+        after = datetime.now(timezone.utc)
+        assert before <= task.created_at <= after
