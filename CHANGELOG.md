@@ -5,6 +5,19 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- `SlotManager` now sanitizes session IDs when building slot filenames,
+  replacing any character outside `[A-Za-z0-9._-]` with `_`. llama.cpp's
+  `/slots?action=save|restore` validator rejects path separators **and**
+  characters like `!` and `:`, which are present in every Matrix room ID
+  (e.g. `!abc:matrix.org`). v0.2.2 fixed the path-separator case but
+  missed the broader character set, so Matrix turns still logged `HTTP
+  400 "Invalid filename"` and could not persist slot state. The restore
+  path now derives the filename from `session.id` the same way save does
+  — the DB's `slot_saved_path` is treated as a "has snapshot" flag, not
+  as the source of truth for the filename — which self-heals any legacy
+  rows containing unsafe characters without needing a new migration.
+
 ## [0.2.2] — 2026-04-17
 
 ### Fixed

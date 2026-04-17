@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -15,6 +16,20 @@ from hestia.errors import PersistenceError
 from hestia.persistence.sessions import SessionStore
 
 logger = logging.getLogger(__name__)
+
+_UNSAFE_SLOT_FILENAME_CHARS = re.compile(r"[^A-Za-z0-9._-]")
+
+
+def _sanitize_slot_filename(session_id: str) -> str:
+    """Sanitize a session_id for use in a llama.cpp slot filename.
+
+    llama.cpp's /slots?action=save|restore validator rejects path separators
+    AND other characters like `!` and `:`, which appear in Matrix room IDs
+    (e.g. `!abc:matrix.org`). Replace anything outside `[A-Za-z0-9._-]` with
+    `_`. Session IDs already include a timestamp plus random suffix so
+    post-sanitization collisions are negligible in practice.
+    """
+    return _UNSAFE_SLOT_FILENAME_CHARS.sub("_", session_id)
 
 
 @dataclass
@@ -91,7 +106,10 @@ class SlotManager:
                     slot_id = await self._allocate_slot(session.id)
                     try:
                         if session.slot_saved_path:
-                            filename = Path(session.slot_saved_path).name
+                            # Derive filename from session.id so save and restore
+                            # agree on sanitization; DB value is just a flag that
+                            # a snapshot exists.
+                            filename = self._slot_path_for(session.id).name
                             await self._inference.slot_restore(slot_id, filename)
                             await self._store.assign_slot(
                                 session.id, slot_id, clear_saved_path=True
@@ -117,7 +135,7 @@ class SlotManager:
                         await self._store.assign_slot(session.id, slot_id)
                         return SlotAssignment(slot_id=slot_id, restored_from_disk=False)
 
-                    filename = Path(session.slot_saved_path).name
+                    filename = self._slot_path_for(session.id).name
                     await self._inference.slot_restore(slot_id, filename)
                     await self._store.assign_slot(session.id, slot_id, clear_saved_path=True)
                     return SlotAssignment(slot_id=slot_id, restored_from_disk=True)
@@ -213,4 +231,4 @@ class SlotManager:
         return session_list[0].id
 
     def _slot_path_for(self, session_id: str) -> Path:
-        return self._slot_dir / f"{session_id}.bin"
+        return self._slot_dir / f"{_sanitize_slot_filename(session_id)}.bin"
