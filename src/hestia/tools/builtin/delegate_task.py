@@ -6,7 +6,7 @@ import asyncio
 import uuid
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from hestia.core.clock import utcnow
 from hestia.core.types import Message
@@ -216,4 +216,4 @@ def make_delegate_task_tool(
             # Archive the subagent session
             await session_store.archive_session(subagent_session.id)
 
-    return delegate_task
+    return cast("Callable[..., Coroutine[Any, Any, str]]", delegate_task)
