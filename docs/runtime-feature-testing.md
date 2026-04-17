@@ -83,6 +83,45 @@ Never point a feature worktree at the **production** Matrix room. Create a dedic
 
 ---
 
+## Scripted context-overflow test
+
+To verify that the context-overflow warning fires at the right threshold:
+
+```bash
+uv run python scripts/force_long_session.py
+```
+
+Expected output:
+
+```
+OK: ContextTooLargeError raised as expected
+    Protected context (X tokens) exceeds per-slot budget (Y). ...
+```
+
+This creates a session with a tiny context budget (50 tokens) and feeds it 20
+user/assistant pairs plus a large system prompt. The protected block
+(system + new user) exceeds the budget, triggering `ContextTooLargeError` and
+printing the user-visible warning text.
+
+To test compression and handoff in a real runtime, enable them in your config:
+
+```python
+from hestia.config import HestiaConfig, HandoffConfig, CompressionConfig
+
+config = HestiaConfig(
+    ...,
+    handoff=HandoffConfig(enabled=True),
+    compression=CompressionConfig(enabled=True),
+)
+```
+
+Then start a session and send enough messages to fill the context window.
+When history is dropped, you should see a `[PRIOR CONTEXT SUMMARY]` system
+message in the model's context. When the session is closed (or the protected
+block overflows), a handoff summary should appear in `memory.search(tags=["handoff"])`.
+
+---
+
 ## Quick reference
 
 ```bash

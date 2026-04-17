@@ -208,6 +208,71 @@ See `hestia config` for the active profile.
 
 ---
 
+## Context budget and long sessions
+
+Hestia's context is divided into three tiers:
+
+1. **Per-slot context budget** — set by `InferenceConfig.context_length` (should equal
+   llama-server's `--ctx-size / --parallel`). This is the hard ceiling.
+2. **Protected block** — system prompt + compiled identity + memory epoch + skill index
+   + the new user message. This block is never dropped.
+3. **History** — previous turns. Oldest messages are dropped first when the budget
+   is tight.
+
+When history is dropped, it is gone from the model's view for that turn. Two
+opt-in features help preserve continuity:
+
+### History compression
+
+When enabled, dropped history is summarized by a quick inference call and the
+summary is spliced into the system prompt for that turn only. This gives the
+model a breadcrumb of what was discussed without consuming the full token cost.
+
+```python
+from hestia.config import HestiaConfig, CompressionConfig
+
+config = HestiaConfig(
+    ...,
+    compression=CompressionConfig(enabled=True, max_chars=400),
+)
+```
+
+### Session handoff summaries
+
+When enabled, Hestia generates a 2-3 sentence summary when a session closes and
+stores it as a memory entry tagged `handoff`. The next time you talk to Hestia,
+this summary is available to the model via the normal memory search tools.
+
+```python
+from hestia.config import HestiaConfig, HandoffConfig
+
+config = HestiaConfig(
+    ...,
+    handoff=HandoffConfig(enabled=True, min_messages=4, max_chars=350),
+)
+```
+
+Both features are disabled by default. `TrustConfig.household()` and
+`TrustConfig.developer()` imply `enabled=True` for both.
+
+### What happens when the protected block exceeds budget
+
+If your identity, memory epoch, and system prompt together are larger than the
+per-slot budget, Hestia raises a visible warning instead of silently truncating:
+
+```
+⚠️ This session has grown past my context budget (8,192 tokens per slot).
+I've saved a summary of our conversation. Type /reset to start fresh,
+and I'll keep the summary for reference.
+```
+
+Options to fix it:
+- Reduce `IdentityConfig.max_tokens` or shorten `SOUL.md`.
+- Increase `--ctx-size / --parallel` (requires more VRAM).
+- Run `/reset` to archive the session and start fresh.
+
+---
+
 ## Configuration
 
 Config is a Python file that defines a `config` variable of type `HestiaConfig`. Python (not YAML, not TOML) because you get IDE autocompletion, type checking, and the ability to compute values at load time.
