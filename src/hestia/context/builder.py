@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from hestia.context.compressor import HistoryCompressor
 from hestia.core.inference import InferenceClient
 from hestia.core.types import Message, Session, ToolSchema
 from hestia.policy.engine import PolicyEngine
@@ -53,6 +54,8 @@ class ContextBuilder:
         identity_prefix: str | None = None,
         memory_epoch_prefix: str | None = None,
         skill_index_prefix: str | None = None,
+        compressor: HistoryCompressor | None = None,
+        compress_on_overflow: bool = False,
     ):
         """Initialize with inference client and policy.
 
@@ -64,6 +67,8 @@ class ContextBuilder:
             identity_prefix: Optional compiled identity view to prepend to system prompt
             memory_epoch_prefix: Optional compiled memory epoch to prepend to system prompt
             skill_index_prefix: Optional skill index to prepend to system prompt
+            compressor: Optional history compressor for overflow recovery
+            compress_on_overflow: Whether to compress dropped history
         """
         self._inference = inference_client
         self._policy = policy
@@ -72,6 +77,8 @@ class ContextBuilder:
         self._identity_prefix = identity_prefix
         self._memory_epoch_prefix = memory_epoch_prefix
         self._skill_index_prefix = skill_index_prefix
+        self._compressor = compressor
+        self._compress_on_overflow = compress_on_overflow
 
     def set_identity_prefix(self, identity_prefix: str | None) -> None:
         """Set the identity prefix to prepend to system prompts.
@@ -230,6 +237,7 @@ class ContextBuilder:
 
         # Add remaining history messages (newest first) while they fit
         included_history: list[Message] = []
+        dropped_history: list[Message] = []
 
         # Walk history in reverse (newest first)
         history_candidates = list(reversed(history))
@@ -270,6 +278,7 @@ class ContextBuilder:
                         # Can't fit pair, skip both
                         i += len(pair_msgs)
                         truncated_count += len(pair_msgs)
+                        dropped_history.extend(pair_msgs)
                         continue
 
             # Regular message - try to add it
@@ -281,6 +290,7 @@ class ContextBuilder:
             else:
                 # Doesn't fit, skip it and all older messages
                 truncated_count += len(history_candidates) - i
+                dropped_history.extend(history_candidates[i:])
                 break
 
             i += 1
@@ -288,6 +298,44 @@ class ContextBuilder:
         # Assemble final message list in chronological order
         # system, first_user, [history in chronological order], new_user
         final_messages = list(protected_top)  # system + first_user
+
+        # Optionally compress dropped history and splice summary
+        if (
+            self._compressor is not None
+            and self._compress_on_overflow
+            and dropped_history
+        ):
+            summary = await self._compressor.summarize(list(reversed(dropped_history)))
+            if summary:
+                summary_msg = Message(
+                    role="system",
+                    content=f"[PRIOR CONTEXT SUMMARY]\n{summary}",
+                )
+                # Insert right after system_msg (index 0)
+                test_with_summary = list(final_messages)
+                test_with_summary.insert(1, summary_msg)
+                summary_count = await self._count_messages(
+                    test_with_summary, len(tools) > 0
+                )
+                if summary_count <= raw_budget:
+                    final_messages.insert(1, summary_msg)
+                else:
+                    # Retry once: drop oldest included message and try again
+                    if included_history:
+                        oldest = included_history.pop()
+                        test_with_summary = list(final_messages)
+                        # Rebuild without oldest
+                        test_with_summary = list(protected_top)
+                        test_with_summary.insert(1, summary_msg)
+                        test_with_summary.extend(reversed(included_history))
+                        test_with_summary.extend(protected_bottom)
+                        summary_count = await self._count_messages(
+                            test_with_summary, len(tools) > 0
+                        )
+                        if summary_count <= raw_budget:
+                            final_messages = test_with_summary
+                            truncated_count += 1
+                        # else: fall back to no compression
 
         # Add included history in chronological order (reverse back)
         final_messages.extend(reversed(included_history))
