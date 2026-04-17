@@ -18,6 +18,11 @@ From L20 review (trust config + web search):
   lesson for Hestia is that we silently truncate on overflow without any
   summarization or user-visible signal.** Full analysis:
   [`reviews/context-overflow-analysis-april-17.md`](../reviews/context-overflow-analysis-april-17.md).
+- Related untangle work — see §6 below. Hestia's runtime today is pointed at
+  `hermes-llama.service` (port 8001, slot dir under `~/.hermes/cache/slots/`).
+  Hestia has its own `deploy/hestia-llama.service` unit but it's not actually
+  used on Dylan's box. L21 must document the coexistence modes and make it
+  trivial for operators to run a dedicated llama-server.
 
 **Branch:** `feature/l21-context-resilience-handoff` from **`develop`**.
 
@@ -439,7 +444,88 @@ with the expected prefix and formatting.
 
 ---
 
-## §6 — Docs
+## §6 — Untangle Hestia's runtime from Hermes
+
+### Problem
+
+Dylan's `~/Hestia-runtime/config.runtime.py` currently has:
+
+```python
+InferenceConfig(base_url="http://127.0.0.1:8001", …)
+SlotConfig(slot_dir=Path.home() / ".hermes" / "cache" / "slots", …)
+```
+
+The llama-server on `127.0.0.1:8001` is actually
+`/home/dylan/.config/systemd/user/hermes-llama.service`, not
+`deploy/hestia-llama.service`. Hestia and Hermes therefore:
+
+- Share the same `llama-server` process (and its 3-slot pool → 16 K per slot).
+- Write KV-cache snapshots into the **same directory** (`~/.hermes/cache/slots/`).
+- Block each other when either side's long prompt holds the server.
+- Confuse operators: if `hermes-llama.service` stops, Hestia breaks even
+  though `deploy/hestia-llama.service` exists as a valid unit.
+
+This is how the "Cannot compress further" message from Silas ended up in
+Dylan's Matrix room **during a Hestia post-merge check** — the two bots
+literally share a llama-server *and* a Matrix room. The Silas identity in
+`~/Hestia-runtime/SOUL.md` makes this even more confusing because Hestia
+*also* introduces itself as "Silas" (Dylan's operator choice) — so the two
+bots present as the same person in the UI.
+
+This loop does not rip Silas out of Hestia (Dylan's SOUL.md is an operator
+concern), but it does make the llama-server and slot storage clean.
+
+### Fix (docs + example configs, no code)
+
+1. **Default-deploy unit stays port 8001** so existing docs keep working. Add
+   a second drop-in example `deploy/hestia-llama.alt-port.service.example`
+   that runs on `8002`, stores slots under `/opt/hestia/slots` (or
+   `$HOME/.hestia/cache/slots/`), and is safe to run alongside an existing
+   Hermes llama-server. Document the tradeoffs in `deploy/README.md`:
+
+   - **Mode A (dedicated):** Hestia runs its own llama-server, no sharing.
+     Best for reliability and clear ctx budget.
+   - **Mode B (shared):** Hestia points at an existing llama-server (e.g.
+     Hermes's). Saves VRAM at the cost of coupling and noisy-neighbor slot
+     evictions. `slot_dir` must match the server's `--slot-save-path`.
+
+2. **Runtime guide:** new `docs/guides/runtime-setup.md` that walks through
+   populating `config.runtime.py`. Explicitly call out:
+   - How to pick a `base_url` and matching `slot_dir`.
+   - The symptom of a mis-matched `slot_dir` (400 "Invalid filename" or
+     phantom slot-restore failures).
+   - How to verify isolation with
+     `curl http://127.0.0.1:800X/health && curl -s http://127.0.0.1:800X/v1/models`.
+   - Per-slot ctx calculation: `--ctx-size / --parallel`.
+
+3. **Update `README.md` quickstart** to stop implying a single shared server
+   is normal. Quickstart should spin up `deploy/hestia-llama.service`
+   (dedicated, Mode A). "Sharing with another local LLM service" is a note
+   in `docs/guides/runtime-setup.md`, not the default flow.
+
+4. **Add a coexistence ADR**: `docs/development-process/decisions/ADR-0015-llama-server-coexistence.md`
+   recording why Hestia does not try to auto-detect or auto-launch a
+   llama-server, and why it expects the operator to run a dedicated one per
+   agent identity by default.
+
+### Tests
+
+Docs-only, no test additions. Kimi should however grep the repo at the end
+of the section for any residual `~/.hermes` or `hermes-llama` references
+**in non-historical docs or source**. Acceptable references:
+
+- `docs/DECISIONS.md` ADRs that cite Hermes as the predecessor project —
+  leave alone (historical).
+- `src/hestia/platforms/telegram_adapter.py` docstring mentioning
+  "Hermes experience" — leave alone (historical).
+
+### Commit
+
+`docs: untangle runtime setup from Hermes llama-server coexistence`
+
+---
+
+## §7 — Docs: context resilience & handoff summaries
 
 - Add a new section to `README.md` → "Context budget and long sessions"
   explaining the three tiers (per-slot ctx, protected block, history), how
@@ -458,7 +544,7 @@ with the expected prefix and formatting.
 
 ---
 
-## §7 — Version bump and changelog
+## §8 — Version bump and changelog
 
 1. Bump `pyproject.toml` version from `0.3.0` → `0.4.0`.
 2. Run `uv lock` and commit the resulting `uv.lock` in the **same commit** as
@@ -487,11 +573,11 @@ with the expected prefix and formatting.
 
 ---
 
-## §8 — Handoff report
+## §9 — Handoff report
 
 Create `docs/handoffs/L21-context-resilience-handoff.md`:
 
-- What shipped (§1-§7).
+- What shipped (§1-§8).
 - Test counts before and after.
 - Any blockers or deferred items.
 - Confirmation that the four post-loop checks (§0) passed.
@@ -522,5 +608,8 @@ Before writing `.kimi-done`, Kimi must verify:
 - [ ] `uv run ruff check src/ tests/` count ≤ 166.
 - [ ] `uv run mypy src/hestia` count ≤ 44.
 - [ ] New unit tests cover §1, §2, §3, §4, §5.
+- [ ] §6 docs shipped: `deploy/hestia-llama.alt-port.service.example`,
+      updated `deploy/README.md`, new `docs/guides/runtime-setup.md`,
+      ADR-0015.
 - [ ] `CHANGELOG.md`, `pyproject.toml`, `uv.lock` all bumped to 0.4.0.
 - [ ] Handoff report written.

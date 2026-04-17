@@ -28,6 +28,8 @@
 | 23 | `feature/l23-platform-confirmation` | [`kimi-loops/L23-platform-confirmation-callbacks.md`](kimi-loops/L23-platform-confirmation-callbacks.md) |
 | 24 | `feature/l24-injection-detection` | [`kimi-loops/L24-prompt-injection-detection-and-egress-audit.md`](kimi-loops/L24-prompt-injection-detection-and-egress-audit.md) |
 | 25 | `feature/l25-email-adapter` | [`kimi-loops/L25-email-adapter-read-and-draft.md`](kimi-loops/L25-email-adapter-read-and-draft.md) |
+| 26 | `feature/l26-reflection-loop` | [`kimi-loops/L26-reflection-loop-proposals.md`](kimi-loops/L26-reflection-loop-proposals.md) |
+| 27 | `feature/l27-style-profile` | [`kimi-loops/L27-personality-that-learns-style-profile.md`](kimi-loops/L27-personality-that-learns-style-profile.md) |
 
 **Chain index (L10–L14):** [`prompts/KIMI_LOOPS_L10_L14.md`](prompts/KIMI_LOOPS_L10_L14.md) · **Credentials:** [`docs/testing/CREDENTIALS_AND_SECRETS.md`](../testing/CREDENTIALS_AND_SECRETS.md)
 
