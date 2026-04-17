@@ -8,6 +8,36 @@
 
 ---
 
+## 2026-04-17 — Loop: L19 — Slot-save basename fix + ctx-window alignment + v0.2.2 release (Kimi) → merged, tagged v0.2.2
+
+**Kimi:** `.kimi-done`: `LOOP=L19`, develop tip `c46dc7a`, main `255dc2b`, v0.2.2 tag `3decc9f`. Alembic migration `2cf4ef820e46`. **485 passed, 6 skipped** on both `develop` and `main` (up from 478 baseline — 7 new tests).
+
+**Trigger:** Three real bugs surfaced while running v0.2.1 against the live Hermes-shared llama-server on the 3060 12GB during post-L18 runtime setup.
+
+**Review (Cursor):** Verified all 6 sections:
+
+1. **Slot-save basename fix** (`src/hestia/inference/slot_manager.py`) — `save()` and `_evict_session_locked()` now send `saved_path.name` to llama.cpp; `slot_restore` defensively takes `.name` of whatever the DB holds so legacy absolute-path rows are handled. New tests in `tests/unit/test_slot_manager.py` assert basename-only behavior across save/restore/evict/update paths. Alembic revision `2cf4ef820e46_normalize_slot_saved_path_to_basename.py` rewrites any legacy `sessions.slot_saved_path` values containing `/` down to the basename.
+2. **`ctx_window` wired from config** — New `InferenceConfig.context_length` field (default `8192`) in `src/hestia/config.py`. `cli.py:59` now passes `cfg.inference.context_length` into `DefaultPolicyEngine`. Policy default updated from 32768 → 8192 with clarified "per-slot, not total" docstring. New regression tests in `tests/unit/test_policy.py` cover default + config-override behavior.
+3. **README KV-cache quant consistency** — `README.md` lines 306–313 changed `q4_0` → `turbo3`; explanatory paragraph updated to describe turbo3's ~3-bit packing and its benefit over q4_0 on RTX 30/40-series. `deploy/README.md` low-VRAM q4_0 example left intact (correct for <8GB / older hardware).
+4. **Deploy alignment** — `deploy/hestia-llama.service` ExecStart updated to `--ctx-size 32768 --parallel 4 --cache-type-k turbo3 --cache-type-v turbo3`, making per-slot budget = 8192, matching the new policy default and the new `InferenceConfig.context_length` default out of the box.
+5. **CHANGELOG + version bump** — `[0.2.2] — 2026-04-17` section at top; `pyproject.toml` bumped to `0.2.2`; `uv.lock` synced.
+6. **Release** — `develop` → `main` via `--no-ff` merge commit `255dc2b Release v0.2.2`. Annotated tag `v0.2.2` at `3decc9f` on main. `main`, `develop`, and tag all pushed to origin.
+
+**Also (orchestration):** cherry-picked the L19 queue commit off `main` back onto `develop` after an initial mis-commit to `main` — `main` preserved at `32ffe4e` (v0.2.1 sync point) until the proper §6 release merge.
+
+**Runtime follow-up (Cursor, out-of-loop):**
+
+- Discarded the local runtime-only slot-save patch on `src/hestia/inference/slot_manager.py` in the `hestia-runtime` worktree; merged `develop` in (commit tree now contains the proper upstream fix).
+- Set `InferenceConfig.context_length=16384` in `~/Hestia-runtime/config.runtime.py` — matches the shared Hermes llama-server's per-slot budget (`-c 49152 -np 3`), not the v0.2.2 default (8192).
+- `hestia-telegram.service` (new systemd --user unit) started pre-L19 and restarted onto v0.2.2 code cleanly; Telegram adapter reconnected, scheduler running.
+- Runtime DB note: alembic stamp is no-op there because the worktree's `alembic.ini` points `sqlalchemy.url` at `./hestia.db` relative to invocation, not `./runtime-data/hestia.db`; and the DB was originally bootstrapped by `initialize_schema()` rather than alembic, so it has no `alembic_version` row. Harmless for now — L19 migration was also redundant since the DB's single `slot_saved_path` is already a basename. **Flag for future loop:** align `alembic.ini` to the runtime DB location and/or stamp the existing DB.
+
+**Queue:** L19 complete. No active loop. `docs/development-process/prompts/KIMI_CURRENT.md` reset to "idle" placeholder.
+
+**Next:** Three live-hardware bugs from the v0.2.1 runtime exposure are fixed. Ready for another feature direction or further field-testing of v0.2.2.
+
+---
+
 ## 2026-04-15 — Loop: L18 — Post-public cleanup + v0.2.1 release (Kimi) → merged, tagged v0.2.1
 
 **Kimi:** `.kimi-done`: `LOOP=L18`, tip `b5d4eb0`, v0.2.1 tag `6f1747c`, main `902f615`. **478 passed, 6 skipped** on both `develop` and `main` (up from 474 baseline — 4 new tests).
