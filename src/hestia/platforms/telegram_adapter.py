@@ -31,7 +31,7 @@ class TelegramAdapter(Platform):
             raise ValueError("Telegram bot_token is required")
 
         self._config = config
-        self._app: Application | None = None
+        self._app: Application[Any, Any, Any, Any, Any, Any] | None = None
         self._on_message: IncomingMessageCallback | None = None
         self._last_edit_times: dict[str, float] = {}  # msg_id -> last edit timestamp
 

@@ -6,6 +6,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime
+from typing import Any
 
 from hestia.core.clock import utcnow
 from hestia.core.types import Message, ScheduledTask, SessionState
@@ -38,7 +39,7 @@ class Scheduler:
         self._response_callback = response_callback
         self._tick_interval = tick_interval_seconds
         self._stop_event = asyncio.Event()
-        self._loop_task: asyncio.Task | None = None
+        self._loop_task: asyncio.Task[Any] | None = None
 
     async def start(self) -> None:
         """Start the background loop. Returns immediately."""

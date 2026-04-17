@@ -193,7 +193,7 @@ class SchedulerStore:
         Returns:
             List of tasks for the session
         """
-        conditions: list = []
+        conditions: list[Any] = []
         if session_id is not None:
             conditions.append(scheduled_tasks.c.session_id == session_id)
         if not include_disabled:

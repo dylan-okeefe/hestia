@@ -158,7 +158,7 @@ def _require_scheduler_store(app: CliAppContext) -> SchedulerStore:
 class CliConfirmHandler:
     """Handles tool confirmation in CLI mode."""
 
-    async def __call__(self, tool_name: str, arguments: dict) -> bool:
+    async def __call__(self, tool_name: str, arguments: dict[str, Any]) -> bool:
         """Prompt user for confirmation."""
         click.echo(f"\nTool call requested: {tool_name}")
         click.echo(f"Arguments: {arguments}")

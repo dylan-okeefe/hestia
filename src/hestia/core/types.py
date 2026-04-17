@@ -129,7 +129,7 @@ class FunctionSchema(BaseModel):
 
     name: str
     description: str
-    parameters: dict  # JSON Schema
+    parameters: dict[str, Any]  # JSON Schema
 
 
 class ToolSchema(BaseModel):

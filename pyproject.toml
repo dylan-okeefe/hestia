@@ -59,7 +59,6 @@ select = [
 ]
 
 [tool.mypy]
-# 44 pre-existing errors are baselined in docs/development-process/mypy-baseline.txt
 python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
@@ -70,8 +69,14 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
-module = ["nio", "nio.*", "asyncpg", "asyncpg.*"]
+module = ["nio", "asyncpg"]
 ignore_missing_imports = true
+
+
+
+[[tool.mypy.overrides]]
+module = ["hestia.policy.*", "hestia.core.*"]
+strict = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
