@@ -23,13 +23,14 @@ class DefaultPolicyEngine(PolicyEngine):
     """
 
     def __init__(
-        self, ctx_window: int = 32768, default_reasoning_budget: int = 2048
+        self, ctx_window: int = 8192, default_reasoning_budget: int = 2048
     ) -> None:
         """Initialize with context window size.
 
         Args:
-            ctx_window: Total context window size in tokens. Default assumes
-                       llama-server with 32K slots.
+            ctx_window: **Per-slot** context window in tokens. Must match
+                your llama-server's `--ctx-size / --parallel`. Default
+                (8K) matches `deploy/hestia-llama.service` out of the box.
             default_reasoning_budget: Default reasoning token budget.
         """
         self.ctx_window = ctx_window
