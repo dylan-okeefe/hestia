@@ -5,6 +5,31 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.2.2] — 2026-04-17
+
+### Fixed
+- `SlotManager` now passes only the basename of a slot file to llama.cpp's
+  `/slots?action=save|restore` endpoint. Previously Hestia sent absolute
+  paths, which llama.cpp rejects (HTTP 400 "Invalid filename"), causing
+  every turn to log an error and no session state ever reached disk. A
+  one-time migration normalizes any existing `sessions.slot_saved_path`
+  values to basenames.
+- `DefaultPolicyEngine.ctx_window` is now wired through `HestiaConfig.inference.context_length`
+  (new field). Previously the policy always used the 32768 default
+  regardless of the user's actual llama-server `--ctx-size / --parallel`
+  settings, silently over-committing the turn token budget on typical
+  12GB deployments.
+
+### Changed
+- `SlotConfig.slot_dir` docstring clarified: this must match llama-server's
+  `--slot-save-path`. Hestia does **not** write to this directory; it is
+  a declaration so out-of-band cleanup knows where to look.
+- README quickstart now shows `turbo3` KV-cache quantization (matching
+  `deploy/hestia-llama.service`), not `q4_0`.
+- `DefaultPolicyEngine.ctx_window` default changed from 32768 to 8192 to
+  match `deploy/hestia-llama.service` out of the box. Users on larger
+  servers should set `InferenceConfig.context_length` explicitly.
+
 ## [0.2.1] — 2026-04-15
 
 ### Fixed

@@ -115,7 +115,7 @@ async def test_acquire_warm_session_restores_from_disk(store, slot_dir):
 
     assert assignment.slot_id == 0
     assert assignment.restored_from_disk is True
-    assert inference.calls == [("slot_restore", (0, "/slots/test_session.bin"))]
+    assert inference.calls == [("slot_restore", (0, "test_session.bin"))]
 
     # Session is now HOT, saved_path cleared
     fetched = await store.get_session(session.id)
@@ -404,3 +404,104 @@ async def test_acquire_warm_rolls_back_assignment_on_restore_failure(store, slot
     # SessionStore should still show WARM
     refetched = await store.get_session(session.id)
     assert refetched.temperature == SessionTemperature.WARM
+
+
+@pytest.mark.asyncio
+async def test_slot_save_sends_basename_only(store, slot_dir):
+    """slot_save receives only the basename, never an absolute path."""
+    inference = FakeInferenceClient()
+    manager = SlotManager(
+        inference=inference,
+        session_store=store,
+        slot_dir=slot_dir,
+        pool_size=4,
+    )
+
+    session = await store.get_or_create_session("cli", "user1")
+    await manager.acquire(session)
+    session = await store.get_session(session.id)
+
+    inference.calls.clear()
+    await manager.save(session)
+
+    assert len(inference.calls) == 1
+    call_name, (slot_id, filename) = inference.calls[0]
+    assert call_name == "slot_save"
+    assert "/" not in filename
+    assert filename.endswith(".bin")
+
+
+@pytest.mark.asyncio
+async def test_slot_restore_normalizes_legacy_absolute_paths(store, slot_dir):
+    """Restore extracts basename even if DB holds a legacy absolute path."""
+    inference = FakeInferenceClient()
+    manager = SlotManager(
+        inference=inference,
+        session_store=store,
+        slot_dir=slot_dir,
+        pool_size=4,
+    )
+
+    session = await store.get_or_create_session("cli", "user1")
+    await store.assign_slot(session.id, slot_id=0)
+    await store.release_slot(
+        session.id,
+        demote_to=SessionTemperature.WARM,
+        saved_path="/old/abs/path/session_x.bin",
+    )
+
+    session = await store.get_session(session.id)
+    assignment = await manager.acquire(session)
+
+    assert assignment.restored_from_disk is True
+    assert inference.calls == [("slot_restore", (0, "session_x.bin"))]
+
+
+@pytest.mark.asyncio
+async def test_evict_stores_basename_in_db(store, slot_dir):
+    """After eviction, the DB holds a basename, not an absolute path."""
+    inference = FakeInferenceClient()
+    manager = SlotManager(
+        inference=inference,
+        session_store=store,
+        slot_dir=slot_dir,
+        pool_size=1,
+    )
+
+    session_a = await store.get_or_create_session("cli", "user1")
+    await manager.acquire(session_a)
+    session_a = await store.get_session(session_a.id)
+    await manager.save(session_a)
+
+    # Evict A by acquiring B
+    session_b = await store.get_or_create_session("cli", "user2")
+    await manager.acquire(session_b)
+
+    fetched_a = await store.get_session(session_a.id)
+    assert fetched_a.temperature == SessionTemperature.WARM
+    assert fetched_a.slot_saved_path is not None
+    assert "/" not in fetched_a.slot_saved_path
+    assert fetched_a.slot_saved_path.endswith(".bin")
+
+
+@pytest.mark.asyncio
+async def test_update_saved_path_stores_basename(store, slot_dir):
+    """After save(), update_saved_path stores the basename in the DB."""
+    inference = FakeInferenceClient()
+    manager = SlotManager(
+        inference=inference,
+        session_store=store,
+        slot_dir=slot_dir,
+        pool_size=4,
+    )
+
+    session = await store.get_or_create_session("cli", "user1")
+    await manager.acquire(session)
+    session = await store.get_session(session.id)
+
+    await manager.save(session)
+
+    fetched = await store.get_session(session.id)
+    assert fetched.slot_saved_path is not None
+    assert "/" not in fetched.slot_saved_path
+    assert fetched.slot_saved_path.endswith(".bin")
