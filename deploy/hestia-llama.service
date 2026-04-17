@@ -11,8 +11,8 @@ ExecStart=/usr/local/bin/llama-server \
     --host 127.0.0.1 \
     --port 8001 \
     --n-gpu-layers 99 \
-    --ctx-size 16384 \
-    --slots 4 \
+    --ctx-size 32768 \
+    --parallel 4 \
     --flash-attn on \
     --cache-type-k turbo3 \
     --cache-type-v turbo3 \

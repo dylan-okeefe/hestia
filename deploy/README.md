@@ -165,8 +165,8 @@ The `hestia-llama.service` template uses these flags:
 | `--host` | `127.0.0.1` | Listen on localhost only |
 | `--port` | `8001` | Must match `InferenceConfig.base_url` |
 | `--n-gpu-layers` | `99` | Offload all layers to GPU |
-| `--ctx-size` | `16384` | Total context length across all slots |
-| `--slots` | `4` | Must match `SlotConfig.pool_size` |
+| `--ctx-size` | `32768` | Total context length across all slots |
+| `--parallel` | `4` | Must match `SlotConfig.pool_size` |
 | `--flash-attn` | `on` | Flash attention (always recommended) |
 | `--cache-type-k` | `turbo3` | KV-cache key quantization (~4x VRAM savings) |
 | `--cache-type-v` | `turbo3` | KV-cache value quantization |
@@ -183,7 +183,7 @@ The `hestia-llama.service` template uses these flags:
 
 **12 GB VRAM (default):**
 ```
---ctx-size 16384 --slots 4 --cache-type-k turbo3 --cache-type-v turbo3
+--ctx-size 32768 --parallel 4 --cache-type-k turbo3 --cache-type-v turbo3
 ```
 
 **24 GB VRAM:**
