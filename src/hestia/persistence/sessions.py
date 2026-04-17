@@ -1,9 +1,11 @@
 """Session persistence layer."""
 
+from __future__ import annotations
+
 import json
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
 
@@ -18,6 +20,9 @@ from hestia.core.types import (
 from hestia.errors import PersistenceError
 from hestia.persistence.db import Database
 from hestia.persistence.schema import messages, sessions
+
+if TYPE_CHECKING:
+    from hestia.orchestrator.types import Turn, TurnTransition
 
 
 def _generate_session_id(platform: str, platform_user: str) -> str:
@@ -359,7 +364,7 @@ class SessionStore:
 
     # --- Turn persistence ---
 
-    async def insert_turn(self, turn: "Turn") -> None:
+    async def insert_turn(self, turn: Turn) -> None:
         """Insert a new turn into the database."""
         from hestia.persistence.schema import turns
 
@@ -376,7 +381,7 @@ class SessionStore:
             await conn.execute(insert)
             await conn.commit()
 
-    async def update_turn(self, turn: "Turn") -> None:
+    async def update_turn(self, turn: Turn) -> None:
         """Update a turn's state and completion info."""
         from hestia.persistence.schema import turns
 
@@ -395,7 +400,7 @@ class SessionStore:
             await conn.execute(update)
             await conn.commit()
 
-    async def append_transition(self, turn_id: str, transition: "TurnTransition") -> None:
+    async def append_transition(self, turn_id: str, transition: TurnTransition) -> None:
         """Append a transition to the turn_transitions table."""
         from hestia.persistence.schema import turn_transitions
 
@@ -419,7 +424,7 @@ class SessionStore:
             await conn.execute(insert)
             await conn.commit()
 
-    async def get_turn(self, turn_id: str) -> "Turn | None":
+    async def get_turn(self, turn_id: str) -> Turn | None:
         """Get a turn by ID (without transitions)."""
         from hestia.orchestrator.types import Turn, TurnState
         from hestia.persistence.schema import turns
@@ -445,7 +450,7 @@ class SessionStore:
                 )
             return None
 
-    async def list_turns_for_session(self, session_id: str, limit: int = 50) -> list["Turn"]:
+    async def list_turns_for_session(self, session_id: str, limit: int = 50) -> list[Turn]:
         """List turns for a session, newest first."""
         from hestia.orchestrator.types import Turn, TurnState
         from hestia.persistence.schema import turns
@@ -477,7 +482,7 @@ class SessionStore:
                 for row in rows
             ]
 
-    async def list_stale_turns(self) -> list["Turn"]:
+    async def list_stale_turns(self) -> list[Turn]:
         """List all turns not in a terminal state. Used for crash recovery."""
         from hestia.orchestrator.types import Turn, TurnState
         from hestia.persistence.schema import turns
