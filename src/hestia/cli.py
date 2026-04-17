@@ -42,6 +42,7 @@ from hestia.tools.builtin import (
     make_read_file_tool,
     make_save_memory_tool,
     make_search_memory_tool,
+    make_web_search_tool,
     make_write_file_tool,
     terminal,
 )
@@ -338,6 +339,11 @@ def cli(
     tool_registry.register(make_search_memory_tool(memory_store))
     tool_registry.register(make_save_memory_tool(memory_store))
     tool_registry.register(make_list_memories_tool(memory_store))
+
+    # Register web search if configured
+    web_search_tool = make_web_search_tool(cfg.web_search)
+    if web_search_tool is not None:
+        tool_registry.register(web_search_tool)
 
     # Slot manager for KV-cache persistence
     slot_manager = SlotManager(
@@ -1859,6 +1865,17 @@ def policy_show(ctx: click.Context) -> None:
         click.echo("    - InferenceServerError")
         click.echo("  Non-transient errors (fail immediately):")
         click.echo("    - All other exceptions")
+        click.echo("")
+
+        # Web search status
+        click.echo("-" * 40)
+        click.echo("WEB SEARCH")
+        click.echo("-" * 40)
+        if cfg.web_search.provider:
+            click.echo(f"  Provider: {cfg.web_search.provider}")
+            click.echo(f"  Max results: {cfg.web_search.max_results}")
+        else:
+            click.echo("  Web search: disabled")
         click.echo("")
 
     asyncio.run(_show())
