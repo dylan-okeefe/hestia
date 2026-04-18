@@ -8,6 +8,28 @@
 
 ---
 
+## 2026-04-18 — Loop: L32b — `ContextBuilder` named ordered prefix-layer registry (Kimi clean run) → merged to develop
+
+**Kimi:** Second clean mini-loop in a row. 3 commits, valid `.kimi-done`, ~9 minutes wall time. Confirms the chunking strategy stays under the per-turn step ceiling reliably.
+
+**What shipped:**
+
+- Per-call `identity_prefix`, `memory_epoch_prefix`, `skill_index_prefix`, `style_prefix` kwargs **removed** from `ContextBuilder.build()`. Setters (`set_identity_prefix`, `set_memory_epoch_prefix`, etc.) are now the only path to set prefixes.
+- Four parallel `if effective_x: parts.append(effective_x)` blocks replaced by an ordered `_PrefixLayer` registry. Assembly is a single comprehension: `parts = [layer.value for layer in self._prefix_layers() if layer.value]`.
+- `src/hestia/orchestrator/engine.py` had **one real caller** still passing kwargs (`context_builder.build(..., style_prefix=...)`) — Kimi's §1 grep caught it and migrated to `set_style_prefix` before the build. Two test files (`test_injection_orchestrator.py`, `test_style_profile_context.py`) similarly migrated.
+- New `tests/unit/test_context_builder_prefix_registry.py` (4 tests): order is locked, omitted layers don't leave double-blanks, all-omitted falls through to system prompt only, and `inspect.signature(ContextBuilder.build)` no longer contains the four kwargs (lock against re-introduction).
+- `src/hestia/context/builder.py` net **−10 lines**: 64 lines vs 74 before.
+
+**Review (Cursor):**
+
+- Full gate on the branch tip: **`708 passed, 6 skipped`** (+4 from L32a's 704 — exactly the 4 new registry tests). `uv run mypy src/hestia` → **0**. `uv run ruff check src/` → **44** (no regression).
+
+**Merge:** `feature/l32b-context-prefix-registry` → `develop` via `--no-ff` merge commit `e74ed46`.
+
+**Queue advance:** `KIMI_CURRENT.md` → **L32c** (per-message `/tokenize` cache + ADR-0021).
+
+---
+
 ## 2026-04-18 — Loop: L32a — delete dead `TurnState` and `ToolResult` from `core/types.py` (Kimi clean run) → merged to develop
 
 **Kimi:** First mini-loop in the new sub-letter chunking strategy. **Clean run** — all 3 spec commits landed, valid `.kimi-done` written without intervention. Run time: ~5 minutes (well under the per-turn step ceiling). Confirms the chunking + `--max-steps-per-turn=250` headroom works.

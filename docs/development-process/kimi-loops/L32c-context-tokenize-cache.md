@@ -6,11 +6,12 @@
 
 ## Review carry-forward
 
-From L32b (merged at `<TBD>`):
+From L32b (merged at `e74ed46`):
 
-- Test baseline: **<TBD> passed, 6 skipped** (Cursor fills in before launch).
-- Mypy 0. Ruff ≤ 44.
+- Test baseline: **708 passed, 6 skipped**.
+- Mypy 0. Ruff 44 — must not regress.
 - Prefix-layer registry (`_PrefixLayer`) is the assembly path now — touch `_prefix_layers()` if you need to invalidate per-prefix.
+- `ContextBuilder.build()` no longer accepts `*_prefix` kwargs — use the setters.
 
 From the external code-quality review:
 
