@@ -48,9 +48,11 @@ from hestia.tools.builtin import (
     current_time,
     http_get,
     make_delegate_task_tool,
+    make_delete_memory_tool,
     make_email_tools,
     make_list_dir_tool,
     make_list_memories_tool,
+    make_read_artifact_tool,
     make_read_file_tool,
     make_save_memory_tool,
     make_search_memory_tool,
@@ -120,6 +122,7 @@ class CliAppContext:
     memory_store: MemoryStore
     failure_store: FailureStore
     trace_store: TraceStore
+    artifact_store: ArtifactStore
     scheduler_store: SchedulerStore | None = None
     skill_store: SkillStore | None = None
     proposal_store: ProposalStore | None = None
@@ -386,6 +389,8 @@ def cli(
     tool_registry.register(make_search_memory_tool(memory_store))
     tool_registry.register(make_save_memory_tool(memory_store))
     tool_registry.register(make_list_memories_tool(memory_store))
+    tool_registry.register(make_delete_memory_tool(memory_store))
+    tool_registry.register(make_read_artifact_tool(artifact_store))
 
     # Register web search if configured
     web_search_tool = make_web_search_tool(cfg.web_search)
@@ -466,6 +471,7 @@ def cli(
         memory_store=memory_store,
         failure_store=failure_store,
         trace_store=trace_store,
+        artifact_store=artifact_store,
         scheduler_store=scheduler_store,
         skill_store=skill_store,
         proposal_store=proposal_store,
