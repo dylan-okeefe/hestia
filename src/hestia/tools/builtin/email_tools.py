@@ -312,3 +312,68 @@ def make_email_tools(config: EmailConfig) -> list[Any]:
         email_move,
         email_flag,
     ]
+
+
+def make_email_search_and_read_tool(adapter: EmailAdapter) -> Any:
+    """Factory for the composite email_search_and_read tool.
+
+    Returns ``None`` when the adapter is unconfigured so the caller can skip
+    registration.
+    """
+    if not adapter.config.imap_host:
+        return None
+
+    @tool(
+        name="email_search_and_read",
+        public_description=(
+            "Search emails and read matching messages in a single IMAP session. "
+            "Returns a list of dicts with uid, from, subject, snippet, and body. "
+            "SMTP send is unchanged — this tool is read-only."
+        ),
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": (
+                        "Search query using simplified IMAP syntax. "
+                        "Supported: FROM:<addr>, SUBJECT:<text>, SINCE:<YYYY-MM-DD>."
+                    ),
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of messages to return (default: 5)",
+                },
+            },
+            "required": ["query"],
+        },
+        max_inline_chars=8000,
+        requires_confirmation=False,
+        tags=["email", "builtin"],
+        capabilities=[NETWORK_EGRESS],
+    )
+    async def email_search_and_read(query: str, limit: int = 5) -> list[dict[str, Any]]:
+        """Search emails and read matching messages in one IMAP round trip."""
+        folder = adapter.config.default_folder
+        results: list[dict[str, Any]] = []
+        async with adapter.imap_session(folder=folder):
+            uids = await adapter.search_messages(query, folder=folder)
+            for uid in uids[:limit]:
+                try:
+                    msg = await adapter.read_message(uid)
+                except Exception:
+                    continue
+                body = msg.get("body", "")
+                snippet = body[:200] if len(body) > 200 else body
+                results.append(
+                    {
+                        "uid": uid,
+                        "from": msg["headers"].get("from", ""),
+                        "subject": msg["headers"].get("subject", ""),
+                        "snippet": snippet,
+                        "body": body,
+                    }
+                )
+        return results
+
+    return email_search_and_read
