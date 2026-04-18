@@ -167,6 +167,7 @@ class TelegramAdapter(Platform):
             reply_markup=reply_markup,
         )
 
+        assert req.future is not None
         try:
             return await asyncio.wait_for(
                 req.future, timeout=self._confirmation_timeout_seconds

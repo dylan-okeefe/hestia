@@ -6,9 +6,11 @@ This is the foundation for analysis features — you can't analyze what you don'
 from __future__ import annotations
 
 import json
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 import sqlalchemy as sa
 
@@ -51,7 +53,7 @@ class TraceStore:
         self._db = db
 
     async def create_table(self) -> None:
-        """Create the traces table if it doesn't exist."""
+        """Create the traces and egress_events tables if they don't exist."""
         ddl = """
         CREATE TABLE IF NOT EXISTS traces (
             id TEXT PRIMARY KEY,
@@ -78,12 +80,37 @@ class TraceStore:
         idx_outcome = "CREATE INDEX IF NOT EXISTS idx_traces_outcome ON traces(outcome)"
         idx_created = "CREATE INDEX IF NOT EXISTS idx_traces_created ON traces(started_at)"
 
+        egress_ddl = """
+        CREATE TABLE IF NOT EXISTS egress_events (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            url TEXT NOT NULL,
+            domain TEXT NOT NULL,
+            status INTEGER,
+            size INTEGER,
+            created_at TEXT NOT NULL
+        )
+        """
+        idx_egress_session = (
+            "CREATE INDEX IF NOT EXISTS idx_egress_session ON egress_events(session_id, created_at)"
+        )
+        idx_egress_domain = (
+            "CREATE INDEX IF NOT EXISTS idx_egress_domain ON egress_events(domain, created_at)"
+        )
+        idx_egress_created = (
+            "CREATE INDEX IF NOT EXISTS idx_egress_created ON egress_events(created_at)"
+        )
+
         async with self._db.engine.connect() as conn:
             await conn.execute(sa.text(ddl))
             await conn.execute(sa.text(idx_session))
             await conn.execute(sa.text(idx_turn))
             await conn.execute(sa.text(idx_outcome))
             await conn.execute(sa.text(idx_created))
+            await conn.execute(sa.text(egress_ddl))
+            await conn.execute(sa.text(idx_egress_session))
+            await conn.execute(sa.text(idx_egress_domain))
+            await conn.execute(sa.text(idx_egress_created))
             await conn.commit()
 
     async def record(self, trace: TraceRecord) -> None:
@@ -184,6 +211,81 @@ class TraceStore:
             result = await conn.execute(sql, params)
             rows = result.fetchall()
             return {row[0]: row[1] for row in rows}
+
+    async def record_egress(
+        self,
+        session_id: str,
+        url: str,
+        status: int | None,
+        size: int | None,
+    ) -> None:
+        """Persist an egress event.
+
+        Best-effort: never raises.
+        """
+        try:
+            domain = urlparse(url).hostname or "unknown"
+        except Exception:
+            domain = "unknown"
+
+        sql = sa.text(
+            "INSERT INTO egress_events (id, session_id, url, domain, status, size, created_at) "
+            "VALUES (:id, :session_id, :url, :domain, :status, :size, :created_at)"
+        )
+
+        async with self._db.engine.connect() as conn:
+            await conn.execute(
+                sql,
+                {
+                    "id": str(uuid.uuid4()),
+                    "session_id": session_id,
+                    "url": url,
+                    "domain": domain,
+                    "status": status,
+                    "size": size,
+                    "created_at": datetime.now().isoformat(),
+                },
+            )
+            await conn.commit()
+
+    async def egress_summary(
+        self,
+        since: datetime | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return domain-level egress aggregation.
+
+        Each row contains:
+        - domain
+        - total_requests
+        - failure_count (status is NULL or status >= 400)
+        """
+        if since:
+            sql = sa.text(
+                "SELECT domain, COUNT(*) as total_requests, "
+                "SUM(CASE WHEN status IS NULL OR status >= 400 THEN 1 ELSE 0 END) as failure_count "
+                "FROM egress_events WHERE created_at >= :since "
+                "GROUP BY domain ORDER BY total_requests DESC"
+            )
+            params = {"since": since.isoformat()}
+        else:
+            sql = sa.text(
+                "SELECT domain, COUNT(*) as total_requests, "
+                "SUM(CASE WHEN status IS NULL OR status >= 400 THEN 1 ELSE 0 END) as failure_count "
+                "FROM egress_events GROUP BY domain ORDER BY total_requests DESC"
+            )
+            params = {}
+
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(sql, params)
+            rows = result.fetchall()
+            return [
+                {
+                    "domain": row.domain,
+                    "total_requests": row.total_requests,
+                    "failure_count": row.failure_count,
+                }
+                for row in rows
+            ]
 
     def _row_to_trace(self, row: Any) -> TraceRecord:
         """Convert a database row to a TraceRecord."""

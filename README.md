@@ -390,6 +390,8 @@ Register it in your config or CLI setup and it's available to the model.
 
 ## Security
 
+For the full security policy and responsible-disclosure process, see [`SECURITY.md`](SECURITY.md).
+
 **Path sandboxing.** File tools (`read_file`, `write_file`, `list_dir`) can only access directories listed in `storage.allowed_roots`. Attempts to read `/etc/shadow` or write to `~/.ssh` are rejected before the tool runs.
 
 **SSRF protection.** `http_get` blocks requests to private IP ranges (localhost, 10.x, 172.16.x, 192.168.x, 169.254.x) to prevent the model from probing internal services or cloud metadata endpoints.
@@ -397,6 +399,10 @@ Register it in your config or CLI setup and it's available to the model.
 **Capability labels.** Every tool declares what it can do: `read_local`, `write_local`, `shell_exec`, `network_egress`, `memory_read`, `memory_write`, `orchestration`. The policy engine uses these to restrict access by context — subagents can't execute shell commands, scheduled tasks can't write files.
 
 **Confirmation enforcement.** Dangerous tools require explicit user approval. If no confirmation mechanism is available (headless mode), the tool is denied unless the active trust profile auto-approves it. This is enforced on both the direct path and the meta-tool path.
+
+**Prompt-injection detection.** Tool results are scanned for known injection patterns and anomalous entropy before they enter the model context. Hits are annotated (never blocked) so the model treats the content as untrusted. Configurable via `SecurityConfig`.
+
+**Egress auditing.** Every outbound HTTP request from `http_get` and `web_search` is logged to the trace store. Use `hestia audit egress --since=7d` to review domain-level aggregates and spot anomalies.
 
 **User allowlists.** Telegram and Matrix adapters support allowlists. Only authorized users or rooms can interact with the bot.
 

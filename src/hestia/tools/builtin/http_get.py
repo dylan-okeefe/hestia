@@ -1,13 +1,17 @@
 """HTTP GET tool with SSRF protection."""
 
 import ipaddress
+import logging
 import socket
 from urllib.parse import urlparse
 
 import httpx
 
+from hestia.tools.builtin.memory_tools import current_session_id, current_trace_store
 from hestia.tools.capabilities import NETWORK_EGRESS
 from hestia.tools.metadata import tool
+
+logger = logging.getLogger(__name__)
 
 # IP ranges that must never be fetched
 _BLOCKED_RANGES = [
@@ -105,5 +109,22 @@ async def http_get(url: str, timeout_seconds: int = 30) -> str:
         timeout=timeout_seconds,
     ) as client:
         response = await client.get(url)
+        await _record_egress(str(response.url), response.status_code, len(response.content))
         response.raise_for_status()
         return response.text
+
+
+async def _record_egress(url: str, status: int, size: int) -> None:
+    """Best-effort egress logging via the current trace store."""
+    trace_store = current_trace_store.get()
+    session_id = current_session_id.get()
+    if trace_store is not None and session_id is not None:
+        try:
+            await trace_store.record_egress(
+                session_id=session_id,
+                url=url,
+                status=status,
+                size=size,
+            )
+        except Exception:
+            logger.debug("Failed to record egress event", exc_info=True)
