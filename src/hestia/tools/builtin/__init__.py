@@ -8,6 +8,7 @@ from hestia.tools.builtin.list_dir import make_list_dir_tool
 from hestia.tools.builtin.memory_tools import (
     current_session_id,
     current_trace_store,
+    make_delete_memory_tool,
     make_list_memories_tool,
     make_save_memory_tool,
     make_search_memory_tool,
@@ -35,6 +36,7 @@ __all__ = [
     "http_get",
     "make_list_dir_tool",
     "make_delegate_task_tool",
+    "make_delete_memory_tool",
     "make_list_memories_tool",
     "make_read_artifact_tool",
     "make_read_file_tool",

@@ -127,3 +127,22 @@ def make_list_memories_tool(
         return "\n".join(lines)
 
     return cast("Callable[..., Coroutine[Any, Any, str]]", list_memories)
+
+
+def make_delete_memory_tool(store: MemoryStore) -> Callable[..., Coroutine[Any, Any, str]]:
+    """Tool: delete a memory record by id. Requires confirmation by default."""
+
+    @tool(
+        name="delete_memory",
+        public_description="Delete a memory record by its id. Use list_memories to find ids.",
+        tags=["memory", "builtin"],
+        capabilities=[MEMORY_WRITE],
+        requires_confirmation=True,
+    )
+    async def delete_memory(memory_id: str) -> str:
+        deleted = await store.delete(memory_id)
+        if not deleted:
+            return f"No memory with id {memory_id}"
+        return f"Deleted memory {memory_id}"
+
+    return cast("Callable[..., Coroutine[Any, Any, str]]", delete_memory)

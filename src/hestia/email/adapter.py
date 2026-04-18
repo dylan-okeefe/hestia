@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import email
+import email.utils
 import html
 import imaplib
 import re
@@ -15,7 +16,7 @@ from datetime import UTC, datetime
 from email.message import EmailMessage
 from typing import Any
 
-import bleach  # type: ignore[import-untyped]
+import nh3
 
 from hestia.config import EmailConfig
 
@@ -128,7 +129,7 @@ class EmailAdapter:
         """Strip HTML tags and decode entities."""
         if not self.config.sanitize_html:
             return raw_html
-        cleaned: str = bleach.clean(raw_html, tags=[], strip=True)
+        cleaned: str = nh3.clean(raw_html, tags=set())
         return html.unescape(cleaned)
 
     def _fetch_headers(self, conn: imaplib.IMAP4_SSL, uid: str, folder: str) -> dict[str, Any]:
@@ -277,17 +278,32 @@ class EmailAdapter:
         return await asyncio.to_thread(_run)
 
     @staticmethod
+    def _imap_quote(value: str) -> str:
+        """Escape a string for use inside an IMAP quoted string."""
+        return value.replace("\\", "\\\\").replace('"', '\\"')
+
+    @staticmethod
     def _parse_search_query(query: str) -> str:
-        """Convert simplified query to IMAP SEARCH criteria."""
+        """Convert simplified query to IMAP SEARCH criteria.
+
+        Supported grammar:
+          FROM:<addr>    → (FROM "<addr>")
+          SUBJECT:<text> → (SUBJECT "<text>")
+          SINCE:<YYYY-MM-DD> → (SINCE "DD-Mon-YYYY")
+          <bare token>   → (SUBJECT "<token>")
+
+        Raises:
+            EmailAdapterError: If a SINCE: token contains an invalid date.
+        """
         parts: list[str] = []
         tokens = query.split()
         i = 0
         while i < len(tokens):
             token = tokens[i]
             if token.upper().startswith("FROM:"):
-                parts.append(f'FROM "{token[5:]}"')
+                parts.append(f'FROM "{EmailAdapter._imap_quote(token[5:])}"')
             elif token.upper().startswith("SUBJECT:"):
-                parts.append(f'SUBJECT "{token[8:]}"')
+                parts.append(f'SUBJECT "{EmailAdapter._imap_quote(token[8:])}"')
             elif token.upper().startswith("SINCE:"):
                 date_str = token[6:]
                 try:
@@ -295,10 +311,12 @@ class EmailAdapter:
                     imap_date = dt.strftime("%d-%b-%Y")
                     parts.append(f'SINCE "{imap_date}"')
                 except ValueError:
-                    parts.append(f'SUBJECT "{token}"')
+                    raise EmailAdapterError(
+                        f"Invalid SINCE date: {date_str!r}; expected YYYY-MM-DD"
+                    ) from None
             else:
                 # Default: treat as subject search
-                parts.append(f'SUBJECT "{token}"')
+                parts.append(f'SUBJECT "{EmailAdapter._imap_quote(token)}"')
             i += 1
         if not parts:
             parts.append("ALL")
@@ -325,7 +343,10 @@ class EmailAdapter:
                 msg["To"] = to
                 if reply_to:
                     msg["Reply-To"] = reply_to
-                msg["Date"] = email.utils.format_datetime(datetime.now(UTC))  # type: ignore[attr-defined]
+                msg["Date"] = email.utils.format_datetime(datetime.now(UTC))
+                if "Message-ID" not in msg:
+                    domain = self.config.username.split("@")[-1]
+                    msg["Message-ID"] = email.utils.make_msgid(domain=domain)
                 msg.set_content(body)
 
                 raw = msg.as_bytes()
@@ -350,8 +371,9 @@ class EmailAdapter:
                         latest = uids[-1]
                         return latest.decode() if isinstance(latest, bytes) else str(latest)
 
-                # Fallback: return a placeholder
-                return "draft-unknown"
+                raise EmailAdapterError(
+                    f"Created draft but could not locate it in Drafts by Message-ID {mid!r}"
+                )
             finally:
                 conn.close()
                 conn.logout()
@@ -365,6 +387,10 @@ class EmailAdapter:
         """
 
         def _run() -> str:
+            if draft_id == "draft-unknown":
+                raise EmailAdapterError(
+                    "Cannot send draft with placeholder ID 'draft-unknown'"
+                )
             # 1. Fetch draft
             imap = self._imap_connect()
             try:
