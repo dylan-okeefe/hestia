@@ -5,6 +5,27 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.7.0]
+
+### Added
+- `ReflectionRunner` three-pass pipeline (pattern mining → proposal generation →
+  queue write) in `src/hestia/reflection/runner.py`.
+- `Proposal` schema and `ProposalStore` with `pending/accepted/rejected/deferred/expired`
+  lifecycle in `src/hestia/reflection/store.py`.
+- `ReflectionConfig` dataclass (`enabled`, `cron`, `idle_minutes`, `lookback_turns`,
+  `proposals_per_run`, `expire_days`, `model_override`) wired through `HestiaConfig`.
+- Scheduler integration: `ReflectionScheduler` checks cron + idle rules and runs
+  reflection during the scheduler daemon loop.
+- Session-start hook: when pending proposals exist, the orchestrator injects a
+  one-time system note on the first turn of a new session.
+- CLI surface: `hestia reflection status/list/show/accept/reject/defer/run/history`.
+- ADR-0018 documenting the three-pass design and why proposals are never auto-applied.
+- `docs/guides/reflection-tuning.md` with operator guidance on interpreting proposals,
+  tuning cron / lookback, and handling false positives.
+- Unit tests: `tests/unit/test_reflection_runner.py`, `tests/unit/test_proposal_lifecycle.py`.
+- Integration tests: `tests/integration/test_reflection_scheduler.py`,
+  `tests/integration/test_session_start_proposals.py`.
+
 ## [0.6.0]
 
 ### Added

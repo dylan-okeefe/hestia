@@ -285,6 +285,19 @@ class SecurityConfig:
 
 
 @dataclass
+class ReflectionConfig:
+    """Configuration for the reflection loop (self-improvement during idle hours)."""
+
+    enabled: bool = False
+    cron: str = "0 3 * * *"
+    idle_minutes: int = 15
+    lookback_turns: int = 100
+    proposals_per_run: int = 5
+    expire_days: int = 14
+    model_override: str | None = None  # if operator wants a smaller model
+
+
+@dataclass
 class WebSearchConfig:
     """Configuration for the web_search tool.
 
@@ -322,6 +335,7 @@ class HestiaConfig:
     compression: CompressionConfig = field(default_factory=CompressionConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
     email: EmailConfig = field(default_factory=EmailConfig)
+    reflection: ReflectionConfig = field(default_factory=ReflectionConfig)
     system_prompt: str = "You are a helpful assistant."
     max_iterations: int = 10
     verbose: bool = False

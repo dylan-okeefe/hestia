@@ -35,6 +35,9 @@ from hestia.persistence.sessions import SessionStore
 from hestia.persistence.skill_store import SkillStore
 from hestia.persistence.trace_store import TraceStore
 from hestia.policy.default import DefaultPolicyEngine
+from hestia.reflection.runner import ReflectionRunner
+from hestia.reflection.scheduler import ReflectionScheduler
+from hestia.reflection.store import ProposalStore
 from hestia.scheduler import Scheduler
 from hestia.skills.index import SkillIndexBuilder
 from hestia.skills.state import SkillState
@@ -116,6 +119,7 @@ class CliAppContext:
     trace_store: TraceStore
     scheduler_store: SchedulerStore | None = None
     skill_store: SkillStore | None = None
+    proposal_store: ProposalStore | None = None
     verbose: bool = False
     confirm_callback: Any = None
     epoch_compiler: MemoryEpochCompiler | None = None
@@ -131,6 +135,8 @@ class CliAppContext:
         await self.trace_store.create_table()
         if self.skill_store is not None:
             await self.skill_store.create_table()
+        if self.proposal_store is not None:
+            await self.proposal_store.create_table()
 
     def make_injection_scanner(self) -> InjectionScanner:
         """Create an InjectionScanner from config."""
@@ -154,6 +160,7 @@ class CliAppContext:
             trace_store=self.trace_store,
             handoff_summarizer=self.handoff_summarizer,
             injection_scanner=self.make_injection_scanner(),
+            proposal_store=self.proposal_store,
         )
 
 
@@ -393,6 +400,7 @@ def cli(
     scheduler_store = SchedulerStore(db)
     trace_store = TraceStore(db)
     skill_store = SkillStore(db)
+    proposal_store = ProposalStore(db)
 
     # Session-close handoff summarizer (L21). Off by default; opt in via HandoffConfig.
     handoff_summarizer: SessionHandoffSummarizer | None = None
@@ -424,6 +432,7 @@ def cli(
             trace_store=trace_store,
             handoff_summarizer=handoff_summarizer,
             injection_scanner=scanner,
+            proposal_store=proposal_store,
         )
 
     tool_registry.register(make_delegate_task_tool(session_store, orchestrator_factory))
@@ -448,6 +457,7 @@ def cli(
         trace_store=trace_store,
         scheduler_store=scheduler_store,
         skill_store=skill_store,
+        proposal_store=proposal_store,
         verbose=cfg.verbose,
         confirm_callback=None,
         epoch_compiler=epoch_compiler,
@@ -468,6 +478,7 @@ def cli(
     ctx.obj["failure_store"] = failure_store
     ctx.obj["trace_store"] = trace_store
     ctx.obj["skill_store"] = skill_store
+    ctx.obj["proposal_store"] = proposal_store
 
 
 
@@ -1086,6 +1097,7 @@ def schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None:
     memory_store: MemoryStore = ctx.obj["memory_store"]
     failure_store: FailureStore = ctx.obj["failure_store"]
     trace_store: TraceStore = ctx.obj["trace_store"]
+    proposal_store: ProposalStore = ctx.obj["proposal_store"]
 
     # Use config tick interval if not specified via CLI
     tick = tick_interval if tick_interval is not None else cfg.scheduler.tick_interval_seconds
@@ -1116,6 +1128,7 @@ def schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None:
             failure_store=failure_store,
             trace_store=trace_store,
             injection_scanner=scanner,
+            proposal_store=proposal_store,
         )
 
         scheduler = Scheduler(
@@ -1126,13 +1139,27 @@ def schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None:
             tick_interval_seconds=tick,
         )
 
+        # Reflection scheduler (opt-in via ReflectionConfig.enabled)
+        reflection_runner = ReflectionRunner(
+            config=cfg.reflection,
+            inference=inference,
+            trace_store=trace_store,
+            proposal_store=proposal_store,
+        )
+        reflection_scheduler = ReflectionScheduler(
+            config=cfg.reflection,
+            runner=reflection_runner,
+            session_store=session_store,
+        )
+
         await scheduler.start()
         click.echo(f"Scheduler daemon started (tick={tick}s). Press Ctrl-C to stop.")
 
         try:
-            # Wait forever until interrupted
+            # Wait forever until interrupted, checking reflection each minute
             while True:
-                await asyncio.sleep(1)
+                await asyncio.sleep(60)
+                await reflection_scheduler.tick()
         except asyncio.CancelledError:
             pass
         finally:
@@ -2204,6 +2231,233 @@ def policy_show(ctx: click.Context) -> None:
         click.echo("")
 
     asyncio.run(_show())
+
+
+# ---------------------------------------------------------------------------
+# Reflection commands
+# ---------------------------------------------------------------------------
+
+@cli.group(name="reflection")
+def reflection() -> None:
+    """Manage reflection proposals."""
+    pass
+
+
+@reflection.command(name="status")
+@click.pass_context
+def reflection_status(ctx: click.Context) -> None:
+    """Show proposal counts by status."""
+    app: CliAppContext = ctx.obj["app"]
+
+    async def _status() -> None:
+        await app.bootstrap_db()
+        if app.proposal_store is None:
+            click.echo("Proposal store not configured.", err=True)
+            sys.exit(1)
+        counts = await app.proposal_store.count_by_status()
+        for status in ("pending", "accepted", "rejected", "deferred", "expired"):
+            click.echo(f"  {status}: {counts.get(status, 0)}")
+
+    asyncio.run(_status())
+
+
+@reflection.command(name="list")
+@click.option("--status", default="pending", help="Filter by status")
+@click.pass_context
+def reflection_list(ctx: click.Context, status: str) -> None:
+    """List proposals."""
+    app: CliAppContext = ctx.obj["app"]
+
+    async def _list() -> None:
+        await app.bootstrap_db()
+        if app.proposal_store is None:
+            click.echo("Proposal store not configured.", err=True)
+            sys.exit(1)
+        proposals = await app.proposal_store.list_by_status(status=status, limit=100)  # type: ignore[arg-type]
+        if not proposals:
+            click.echo("No proposals found.")
+            return
+        click.echo(f"{'ID':<20} {'Type':<18} {'Confidence':<12} {'Summary'}")
+        click.echo("-" * 80)
+        for p in proposals:
+            summary = p.summary[:40] + "..." if len(p.summary) > 40 else p.summary
+            click.echo(f"{p.id:<20} {p.type:<18} {p.confidence:<12.2f} {summary}")
+
+    asyncio.run(_list())
+
+
+@reflection.command(name="show")
+@click.argument("proposal_id")
+@click.pass_context
+def reflection_show(ctx: click.Context, proposal_id: str) -> None:
+    """Show full details of a proposal."""
+    app: CliAppContext = ctx.obj["app"]
+
+    async def _show() -> None:
+        await app.bootstrap_db()
+        if app.proposal_store is None:
+            click.echo("Proposal store not configured.", err=True)
+            sys.exit(1)
+        p = await app.proposal_store.get(proposal_id)
+        if p is None:
+            click.echo(f"Proposal not found: {proposal_id}", err=True)
+            sys.exit(1)
+        click.echo(f"ID:          {p.id}")
+        click.echo(f"Type:        {p.type}")
+        click.echo(f"Status:      {p.status}")
+        click.echo(f"Confidence:  {p.confidence:.2f}")
+        click.echo(f"Created:     {p.created_at}")
+        click.echo(f"Expires:     {p.expires_at}")
+        click.echo(f"Evidence:    {', '.join(p.evidence)}")
+        click.echo(f"Summary:     {p.summary}")
+        click.echo(f"Action:      {p.action}")
+        if p.review_note:
+            click.echo(f"Review note: {p.review_note}")
+
+    asyncio.run(_show())
+
+
+@reflection.command(name="accept")
+@click.argument("proposal_id")
+@click.pass_context
+def reflection_accept(ctx: click.Context, proposal_id: str) -> None:
+    """Accept a proposal (marks it accepted; does not auto-apply)."""
+    app: CliAppContext = ctx.obj["app"]
+
+    async def _accept() -> None:
+        await app.bootstrap_db()
+        if app.proposal_store is None:
+            click.echo("Proposal store not configured.", err=True)
+            sys.exit(1)
+        p = await app.proposal_store.get(proposal_id)
+        if p is None:
+            click.echo(f"Proposal not found: {proposal_id}", err=True)
+            sys.exit(1)
+        await app.proposal_store.update_status(proposal_id, "accepted", review_note="Accepted by operator")
+        click.echo(f"Accepted proposal {proposal_id}")
+        # TODO: In a future loop, implement dry-run application based on proposal.type
+
+    asyncio.run(_accept())
+
+
+@reflection.command(name="reject")
+@click.argument("proposal_id")
+@click.option("--note", default=None, help="Optional rejection note")
+@click.pass_context
+def reflection_reject(ctx: click.Context, proposal_id: str, note: str | None) -> None:
+    """Reject a proposal."""
+    app: CliAppContext = ctx.obj["app"]
+
+    async def _reject() -> None:
+        await app.bootstrap_db()
+        if app.proposal_store is None:
+            click.echo("Proposal store not configured.", err=True)
+            sys.exit(1)
+        p = await app.proposal_store.get(proposal_id)
+        if p is None:
+            click.echo(f"Proposal not found: {proposal_id}", err=True)
+            sys.exit(1)
+        await app.proposal_store.update_status(proposal_id, "rejected", review_note=note or "Rejected by operator")
+        click.echo(f"Rejected proposal {proposal_id}")
+
+    asyncio.run(_reject())
+
+
+@reflection.command(name="defer")
+@click.argument("proposal_id")
+@click.option("--until", default=None, help="Defer until ISO datetime (e.g. 2026-05-01T00:00:00)")
+@click.pass_context
+def reflection_defer(ctx: click.Context, proposal_id: str, until: str | None) -> None:
+    """Defer a proposal."""
+    app: CliAppContext = ctx.obj["app"]
+
+    async def _defer() -> None:
+        await app.bootstrap_db()
+        if app.proposal_store is None:
+            click.echo("Proposal store not configured.", err=True)
+            sys.exit(1)
+        p = await app.proposal_store.get(proposal_id)
+        if p is None:
+            click.echo(f"Proposal not found: {proposal_id}", err=True)
+            sys.exit(1)
+        note = "Deferred by operator"
+        if until:
+            note = f"Deferred by operator until {until}"
+        await app.proposal_store.update_status(proposal_id, "deferred", review_note=note)
+        click.echo(f"Deferred proposal {proposal_id}")
+
+    asyncio.run(_defer())
+
+
+@reflection.command(name="run")
+@click.option("--now", is_flag=True, help="Trigger reflection immediately")
+@click.pass_context
+def reflection_run(ctx: click.Context, now: bool) -> None:
+    """Run reflection manually (requires --now)."""
+    app: CliAppContext = ctx.obj["app"]
+
+    if not now:
+        click.echo("Use --now to trigger reflection manually.", err=True)
+        sys.exit(1)
+
+    async def _run() -> None:
+        await app.bootstrap_db()
+        if app.proposal_store is None:
+            click.echo("Proposal store not configured.", err=True)
+            sys.exit(1)
+        from hestia.config import ReflectionConfig
+        from hestia.reflection.runner import ReflectionRunner
+
+        cfg = app.config.reflection
+        # Force enable for manual run
+        manual_cfg = ReflectionConfig(
+            enabled=True,
+            cron=cfg.cron,
+            idle_minutes=cfg.idle_minutes,
+            lookback_turns=cfg.lookback_turns,
+            proposals_per_run=cfg.proposals_per_run,
+            expire_days=cfg.expire_days,
+            model_override=cfg.model_override,
+        )
+        runner = ReflectionRunner(
+            config=manual_cfg,
+            inference=app.inference,
+            trace_store=app.trace_store,
+            proposal_store=app.proposal_store,
+        )
+        proposals = await runner.run()
+        if proposals:
+            click.echo(f"Generated {len(proposals)} proposal(s):")
+            for p in proposals:
+                click.echo(f"  - {p.id}: {p.type} ({p.confidence:.2f}) {p.summary[:60]}")
+        else:
+            click.echo("No proposals generated.")
+
+    asyncio.run(_run())
+
+
+@reflection.command(name="history")
+@click.pass_context
+def reflection_history(ctx: click.Context) -> None:
+    """Show past proposals and their outcomes."""
+    app: CliAppContext = ctx.obj["app"]
+
+    async def _history() -> None:
+        await app.bootstrap_db()
+        if app.proposal_store is None:
+            click.echo("Proposal store not configured.", err=True)
+            sys.exit(1)
+        proposals = await app.proposal_store.list_by_status(limit=100)
+        if not proposals:
+            click.echo("No proposals found.")
+            return
+        click.echo(f"{'ID':<20} {'Type':<18} {'Status':<12} {'Confidence':<12} {'Summary'}")
+        click.echo("-" * 90)
+        for p in proposals:
+            summary = p.summary[:35] + "..." if len(p.summary) > 35 else p.summary
+            click.echo(f"{p.id:<20} {p.type:<18} {p.status:<12} {p.confidence:<12.2f} {summary}")
+
+    asyncio.run(_history())
 
 
 def main() -> None:
