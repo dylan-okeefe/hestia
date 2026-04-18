@@ -8,6 +8,31 @@
 
 ---
 
+## 2026-04-18 — Loop: L27 — interaction-style profile (Kimi) → merged to develop
+
+**Kimi:** `.kimi-done` valid for L27 (`LOOP=L27`, branch `feature/l27-style-profile`, feature commit `8280198`, `MYPY_FINAL_ERRORS=0`). Kimi-reported pytest summary in `.kimi-done` did not match a local re-run on the same tree (see below).
+
+**What shipped:**
+
+1. Style metrics persistence + `StyleProfileBuilder` (`src/hestia/style/*`) with vocab-backed formality heuristic and completion-token length proxy.
+2. Context-builder addendum (`[STYLE PROFILE] …`) with token cap; orchestrator hooks to refresh profile after turns.
+3. Scheduler nightly tick (idle-gated, aligned with L26 reflection scheduling).
+4. CLI: inspect/reset style profile; `StyleConfig` on `HestiaConfig`.
+5. ADR-0019 (style vs identity), README + changelog, version **0.7.1** (`pyproject.toml` + `uv.lock`).
+
+**Review (Cursor):**
+
+- Kimi had left `docs/handoffs/L27-style-profile-handoff.md` untracked; committed as `b4238fb` on the feature branch before merge.
+- Full gate on branch tip: **`652 passed, 6 skipped`** (658 tests collected); `uv run mypy src/hestia` → **0** errors.
+- Pre-existing `aiosqlite` worker-thread warnings in `tests/unit/test_injection_scanner.py` (unchanged by L27).
+- Lockfile already matched **0.7.1**; no post-merge lockfile drift fix needed.
+
+**Merge:** `feature/l27-style-profile` → `develop` via merge commit `bc3fef8`. Pushed.
+
+**Queue:** Row **L27** is the last entry in `kimi-phase-queue.md`. `KIMI_CURRENT.md` reset to **idle** (no next spec until the queue is extended).
+
+---
+
 ## 2026-04-18 — Loop: L26 — reflection loop + proposal queue (Kimi) → merged to develop
 
 **Kimi:** `.kimi-done` valid for L26 (`LOOP=L26`, branch `feature/l26-reflection-loop`, commit `8762ac8`, tests `637 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`).
