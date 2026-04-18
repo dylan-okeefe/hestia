@@ -30,6 +30,14 @@
 | 25 | `feature/l25-email-adapter` | [`kimi-loops/L25-email-adapter-read-and-draft.md`](kimi-loops/L25-email-adapter-read-and-draft.md) |
 | 26 | `feature/l26-reflection-loop` | [`kimi-loops/L26-reflection-loop-proposals.md`](kimi-loops/L26-reflection-loop-proposals.md) |
 | 27 | `feature/l27-style-profile` | [`kimi-loops/L27-personality-that-learns-style-profile.md`](kimi-loops/L27-personality-that-learns-style-profile.md) |
+| 28 | `feature/l28-critical-bugs` | [`kimi-loops/L28-critical-bugs-and-deps.md`](kimi-loops/L28-critical-bugs-and-deps.md) |
+| 29 | `feature/l29-reliability-secrets` | [`kimi-loops/L29-reliability-and-secrets.md`](kimi-loops/L29-reliability-and-secrets.md) |
+| 30 | `feature/l30-cli-decomposition` | [`kimi-loops/L30-cli-decomposition.md`](kimi-loops/L30-cli-decomposition.md) |
+| 31 | `feature/l31-engine-cleanup` | [`kimi-loops/L31-engine-cleanup.md`](kimi-loops/L31-engine-cleanup.md) |
+| 32 | `feature/l32-context-and-deadcode` | [`kimi-loops/L32-context-builder-and-dead-code.md`](kimi-loops/L32-context-builder-and-dead-code.md) |
+| 33 | `feature/l33-perf-and-polish` | [`kimi-loops/L33-email-pool-scanner-skills.md`](kimi-loops/L33-email-pool-scanner-skills.md) |
+| 34 | `feature/l34-public-release-polish` | [`kimi-loops/L34-public-release-polish.md`](kimi-loops/L34-public-release-polish.md) |
+| 35 | *(develop + main)* | [`kimi-loops/L35-release-v0.8.0.md`](kimi-loops/L35-release-v0.8.0.md) |
 
 **Chain index (L10–L14):** [`prompts/KIMI_LOOPS_L10_L14.md`](prompts/KIMI_LOOPS_L10_L14.md) · **Credentials:** [`docs/testing/CREDENTIALS_AND_SECRETS.md`](../testing/CREDENTIALS_AND_SECRETS.md)
 
