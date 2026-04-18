@@ -186,6 +186,7 @@ class Orchestrator:
             turn = self._create_turn(session.id, user_message)
             await self._persist_turn(turn)
             tool_chain: list[str] = []  # Initialize before inner try block
+            delegated: bool = False
 
             await self._set_typing(platform, platform_user, True)
 
@@ -533,7 +534,7 @@ class Orchestrator:
                             user_input_summary=user_input_summary,
                             tools_called=tool_chain,
                             tool_call_count=len(tool_chain),
-                            delegated=locals().get("delegated", False),
+                            delegated=delegated,
                             outcome=outcome,
                             artifact_handles=artifact_handles,
                             prompt_tokens=total_prompt_tokens if total_prompt_tokens > 0 else None,
