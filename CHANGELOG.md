@@ -5,6 +5,21 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.7.6] — 2026-04-18
+
+### Changed
+- **Dead-code removal (L32a).** Deleted unused `TurnState` enum and `ToolResult`
+  dataclass from `src/hestia/core/types.py`. The orchestrator already maintains
+  its own `TurnState` in `src/hestia/orchestrator/types.py`; the duplicate in
+  `core/types.py` was a booby trap for future contributors. `ToolResult` was
+  never imported anywhere — the codebase uses `Message(role="tool", ...)`.
+
+### Added
+- Regression test module:
+  - `tests/unit/test_core_types_dead_code_removed.py` — asserts that
+    `TurnState`, `TERMINAL_STATES`, and `ToolResult` are absent from
+    `hestia.core.types` and that the orchestrator's `TurnState` still exists.
+
 ## [0.7.5] — 2026-04-18
 
 ### Changed
