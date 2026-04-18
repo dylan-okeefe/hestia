@@ -14,6 +14,10 @@ class ToolCallResult:
     artifact_handle: str | None
     truncated: bool
 
+    @classmethod
+    def error(cls, content: str) -> "ToolCallResult":
+        return cls(status="error", content=content, artifact_handle=None, truncated=False)
+
 
 # Type for tool handler functions
 ToolHandler = Callable[..., Awaitable[Any]]
