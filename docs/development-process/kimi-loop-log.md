@@ -8,6 +8,33 @@
 
 ---
 
+## 2026-04-18 — Loop: L32c — `ContextBuilder` per-message `/tokenize` cache (Kimi clean run) → merged to develop · CLOSES L32 ARC
+
+**Kimi:** Third clean mini-loop in a row. 5 commits, valid `.kimi-done`, ~20 minutes wall time. The L32 split strategy is fully validated: **0 human commits across L32a + L32b + L32c**, no per-turn step ceiling hits, all gates green at every step.
+
+**What shipped:**
+
+- `ContextBuilder` now keeps a `_tokenize_cache: dict[tuple[str, str], int]` keyed on `(role, content)`. Per-message tokenize results survive across builds for the lifetime of the builder instance.
+- New private `_count_tokens(message)` checks the cache before issuing a `/tokenize` call; new `_join_overhead` is computed once per build and reused as the constant approximation for join cost.
+- Trim window selection now sums cached counts plus the constant overhead instead of POSTing the joined candidate string each iteration. Amortized **O(1) `/tokenize` calls per build for unchanged messages** (was O(N)).
+- New `tests/unit/test_context_builder_tokenize_cache.py` (181 lines, ~6 tests): cache hits across rebuilds, single new tokenize call when one new message is added, parity with the joined-string baseline within ±1 boundary message, `(role, content)` is the cache key (independent of `created_at`).
+- Many existing context-builder tests + integration tests gained explicit `tokenize` stubs (Kimi noticed several were relying on a fall-through behavior that the cache change tightened — the test fixture updates kept them honest).
+- New ADR: `docs/adr/ADR-0021-context-builder-prefix-registry-and-tokenize-cache.md` covers both L32b (registry) and L32c (cache) as a coherent rework.
+- New handoff: `docs/handoffs/L32-context-rework-handoff.md` summarizes the full L32 arc with final test/mypy/ruff numbers.
+
+**Review (Cursor):**
+
+- Full gate on the branch tip: **`712 passed, 6 skipped`** (+4 from L32b's 708). `uv run mypy src/hestia` → **0**. `uv run ruff check src/` → **44** (no regression).
+- One harmless noise edit: Kimi reverted `KIMI_CURRENT.md` to a stale snapshot at some step. Discarded with `git checkout --` before merge — not part of the spec, not committed.
+
+**Merge:** `feature/l32c-context-tokenize-cache` → `develop` via `--no-ff` merge commit `6b6fb36`.
+
+**L32 arc summary:** v0.7.5 → v0.7.8. Tests 701 → 712 (+11 new regression tests across the arc). Mypy 0 throughout. Ruff 44 throughout. **Three consecutive clean Kimi runs with zero per-turn step ceiling hits** — vs L29/L30/L31 where every monolithic loop tripped the ceiling. The mini-loop chunking strategy works.
+
+**Queue advance:** `KIMI_CURRENT.md` → **L33a** (InjectionScanner threshold tuning + structured-content filters).
+
+---
+
 ## 2026-04-18 — Loop: L32b — `ContextBuilder` named ordered prefix-layer registry (Kimi clean run) → merged to develop
 
 **Kimi:** Second clean mini-loop in a row. 3 commits, valid `.kimi-done`, ~9 minutes wall time. Confirms the chunking strategy stays under the per-turn step ceiling reliably.

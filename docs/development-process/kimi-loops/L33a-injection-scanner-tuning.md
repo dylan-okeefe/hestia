@@ -6,10 +6,11 @@
 
 ## Review carry-forward
 
-From L32c (merged at `<TBD>`):
+From L32c (merged at `6b6fb36`):
 
-- Test baseline: **<TBD>**.
-- Mypy 0. Ruff ≤ 44.
+- Test baseline: **712 passed, 6 skipped**.
+- Mypy 0. Ruff 44 — must not regress.
+- `ContextBuilder` now caches tokenize results — if you touch `SecurityConfig` and need to ensure scanner runs in tests, just construct it; no scanner-specific tokenize concerns here.
 
 From the external code-quality review:
 
