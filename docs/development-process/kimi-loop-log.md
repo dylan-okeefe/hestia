@@ -8,6 +8,38 @@
 
 ---
 
+## 2026-04-18 — Loop: L28 — critical correctness bugs + dependency hygiene (Kimi) → merged to develop
+
+**Kimi:** `.kimi-done` valid for L28 (`LOOP=L28`, branch `feature/l28-critical-bugs`, final commit `f2a3db6`, tests `673 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`). Loop ran ~17 minutes end-to-end (well under the 100-step max-iteration budget that bit L24).
+
+**What shipped (per spec section):**
+
+1. **§1 — `bleach` → `nh3`.** `nh3>=0.2.17` added to `pyproject.toml`; `nh3.clean(raw_html, tags=set())` replaces `bleach.clean(...)` in `email/adapter.py`. Lockfile synced in same loop. Bonus regression test for `<script>` tag stripping.
+2. **§2 — Tool registration.** `read_artifact` now registered in `cli.py` against `ArtifactStore`. New `make_delete_memory_tool` with `requires_confirmation=True` (correct default for a destructive memory op). Both surface in `hestia tools list` (covered by `tests/integration/test_cli_tools_registered.py`).
+3. **§3 — Email Message-ID + draft-unknown removal.** `create_draft` now generates `email.utils.make_msgid(domain=...)` before append; `send_draft("draft-unknown")` raises `EmailAdapterError` explicitly so callers can never accept the sentinel. Regression tests in `tests/unit/test_email_create_draft.py`.
+4. **§4 — IMAP injection escape.** New `_imap_quote(value)` static helper applied to every `FROM "..."` / `SUBJECT "..."` / fallback interpolation. Malformed `SINCE:` now raises `EmailAdapterError` instead of falling through to a subject search. Coverage: `tests/unit/test_email_search_parser.py` includes the explicit injection-attempt regression (`FROM:alice" OR ALL HEADER X "` no longer escapes the quoted criterion).
+5. **§5 — Dead `StyleProfileBuilder.get_profile_dict` removed.** Anti-regression test (`tests/unit/test_style_builder_no_dead_method.py`) `assert not hasattr(StyleProfileBuilder, "get_profile_dict")` so no one re-adds the stub.
+6. **§6 — Version + lockfile.** Bumped to `0.7.2`; `uv.lock` reflects both the version bump and the `nh3` addition (no post-merge drift this time).
+7. **§7 — Handoff doc.**
+
+**Review (Cursor):**
+
+- Re-ran full gate on the branch tip: **`673 passed, 6 skipped`** (was `652 passed, 6 skipped` before L28; +21 net new tests, all from L28's regression coverage). `uv run mypy src/hestia` → **0**.
+- `uv run ruff check src/hestia tests` reports **243 errors**, but `develop` baseline at L28 start was **245** — L28 reduced ruff debt by 2 (incidental). Pre-existing baseline; folded into L29 carry-forward as a non-blocking item.
+- Diff inspection: `_imap_quote` is a `@staticmethod` (called via `EmailAdapter._imap_quote(...)`) — fine. `make_msgid` uses `domain=username.split("@")[-1]` as suggested. `delete_memory` uses `MEMORY_WRITE` capability with confirmation gate, matching the project's destructive-tool pattern.
+- Lockfile shape correct (`hestia` package version `0.7.2`; `nh3` resolved at `0.3.4`).
+
+**Merge:** `feature/l28-critical-bugs` → `develop` via `--no-ff` merge commit `dcc54c5`. Pushed.
+
+**Queue advance:** `KIMI_CURRENT.md` moved to **L29**; L29 carry-forward updated with (a) ruff baseline of 243 errors as a non-blocking note, (b) the new test-count baseline of 673 to preserve through subsequent loops.
+
+**Suggested coverage gaps to fold into future loops** (no L28 blocker):
+
+- No test asserts `EmailAdapterError` propagates as a tool-error `ToolCallResult` end-to-end via the orchestrator dispatch path. L31 (engine cleanup) is a natural place to add this when extracting `ToolCallResult.error`.
+- No integration test exercises `delete_memory`'s confirmation flow on Telegram/Matrix — confirmed via unit, not via the platform adapters. Consider when L30/L33 touch that area.
+
+---
+
 ## 2026-04-18 — Loop: L27 — interaction-style profile (Kimi) → merged to develop
 
 **Kimi:** `.kimi-done` valid for L27 (`LOOP=L27`, branch `feature/l27-style-profile`, feature commit `8280198`, `MYPY_FINAL_ERRORS=0`). Kimi-reported pytest summary in `.kimi-done` did not match a local re-run on the same tree (see below).

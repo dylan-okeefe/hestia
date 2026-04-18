@@ -2,7 +2,13 @@
 
 ## Review carry-forward
 
-(Populated by Cursor after L28 review.)
+From **L28 review (Cursor, 2026-04-18, merged as `dcc54c5`):**
+
+- L28 shipped clean (673 passed / 6 skipped / 0 mypy). No L28 blockers.
+- **Pre-existing ruff debt: 243 errors** in `src/hestia` + `tests` on `develop` after L28 (was 245 before; L28 incidentally fixed 2). Non-blocking for L29, but **do not introduce new ruff errors** — `uv run ruff check src/hestia tests` count must be ≤ 243 at the end of L29.
+- New test-count baseline: **673 passed / 6 skipped**. Subsequent loops must hold or exceed.
+- Coverage gap noted at L28 review (soft target — implement only if it falls naturally out of an L29 section): integration test for `delete_memory` confirmation flow on Telegram/Matrix adapters.
+- Lockfile hygiene held this loop. Continue: `uv lock` in the same logical commit as any version bump.
 
 From **external review (2026-04-18)** — verified against `develop` after L28 lands:
 

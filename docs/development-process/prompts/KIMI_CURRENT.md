@@ -2,28 +2,30 @@
 
 **Orchestrator:** Cursor updates this file after each review.
 
-**Last set by:** Cursor — 2026-04-18 (L28 queued — critical bug fixes + dependency hygiene)
+**Last set by:** Cursor — 2026-04-18 (L29 queued — reliability surface, secrets hygiene, stale docs)
 
 ---
 
 ## Current task
 
-**Active loop:** **L28** — fix the seven correctness/security bugs identified by external reviewers (bleach missing, read_artifact unregistered, email Message-ID, IMAP injection, malformed SINCE fallthrough, dead StyleProfileBuilder stub, draft-unknown UID sentinel) with regression tests for each.
+**Active loop:** **L29** — make schedulers fail loudly, support credentials-from-environment, narrow `WebSearchConfig.provider` to its actual support matrix, refresh `SECURITY.md` for 0.7.x, consolidate ADR directories.
 
-**Spec:** [`../kimi-loops/L28-critical-bugs-and-deps.md`](../kimi-loops/L28-critical-bugs-and-deps.md)
+**Spec:** [`../kimi-loops/L29-reliability-and-secrets.md`](../kimi-loops/L29-reliability-and-secrets.md)
 
-**Branch:** `feature/l28-critical-bugs` from `develop` tip `e2d64a0`.
+**Branch:** `feature/l29-reliability-secrets` from `develop` tip `dcc54c5` (post-L28 merge).
 
 **Kimi prompt:** Read this file, then execute the full spec at the linked file. Implement each section in order, run required tests, update docs/handoff, and write `.kimi-done` exactly as specified.
 
 **Scope (summary, see spec for detail):**
 
-- Replace archived `bleach` with maintained `nh3` and add to `pyproject.toml`/`uv.lock`.
-- Register `read_artifact` in CLI and add `delete_memory` tool.
-- Fix `EmailAdapter.create_draft` to assign a real `Message-ID`; remove `draft-unknown` sentinel; raise on UID-lookup miss.
-- Escape IMAP quotes in `_parse_search_query`; raise on malformed `SINCE:` instead of silent subject-search fallthrough.
-- Delete dead `StyleProfileBuilder.get_profile_dict` stub.
-- Bump version to **0.7.2**; CHANGELOG; lockfile in same commit.
+- Reflection scheduler & runner: failure ring buffer surfaced via `hestia reflection status`.
+- Style scheduler: failure ring buffer surfaced via `hestia style show`.
+- Visible warnings on missing `SOUL.md` / `docs/calibration.json`; honor `HESTIA_SOUL_PATH` / `HESTIA_CALIBRATION_PATH`.
+- `EmailConfig.password_env` for credentials from environment.
+- `WebSearchConfig.provider`: drop unimplemented `"brave"` from the public type.
+- `SECURITY.md` rewrite for 0.7.x, TrustConfig, egress audit, scanner.
+- ADR consolidation: move `docs/development-process/decisions/*.md` into `docs/adr/`.
+- Bump version to **0.7.3**; CHANGELOG; lockfile in same commit.
 
 **Do not merge to `develop` in this loop.** Push the feature branch and stop only after writing `.kimi-done`.
 
@@ -32,22 +34,19 @@
 ## Reference
 
 - Queue: [`../kimi-phase-queue.md`](../kimi-phase-queue.md)
-- Prior loop: [`../kimi-loops/L27-personality-that-learns-style-profile.md`](../kimi-loops/L27-personality-that-learns-style-profile.md)
-- External reviews driving L28–L35: see the L28 spec's `## Review carry-forward` section.
+- Prior loop: [`../kimi-loops/L28-critical-bugs-and-deps.md`](../kimi-loops/L28-critical-bugs-and-deps.md) (merged at `dcc54c5`)
 
 ---
 
 ## `.kimi-done` contract (mandatory, see `.cursorrules`)
 
-At successful completion, write `./.kimi-done` with at minimum:
-
 ```
 HESTIA_KIMI_DONE=1
-LOOP=L28
-BRANCH=feature/l28-critical-bugs
+LOOP=L29
+BRANCH=feature/l29-reliability-secrets
 COMMIT=<final commit sha>
 TESTS=<pytest summary, e.g. "passed=N failed=0 skipped=M">
 MYPY_FINAL_ERRORS=<count>
 ```
 
-If blocked, still write `.kimi-done` with `HESTIA_KIMI_DONE=0` and a `BLOCKER=<reason>` line.
+If blocked, set `HESTIA_KIMI_DONE=0` and add `BLOCKER=<reason>`.
