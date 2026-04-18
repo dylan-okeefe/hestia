@@ -5,6 +5,30 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.7.2] — 2026-04-18
+
+### Fixed
+- Replaced archived `bleach` dependency with actively-maintained `nh3` for HTML
+  sanitization in email bodies. `nh3` is Rust-backed and ships type stubs.
+- Registered missing `read_artifact` tool in CLI tool registry.
+- Added `delete_memory` tool (requires confirmation) to complement `save_memory`,
+  `search_memory`, and `list_memories`.
+- `EmailAdapter.create_draft` now generates a real `Message-ID` before IMAP
+  `APPEND`, fixing the UID lookup that previously always fell back to the
+  `"draft-unknown"` sentinel.
+- Removed `"draft-unknown"` sentinel: `create_draft` raises `EmailAdapterError`
+  when the draft cannot be located by Message-ID, and `send_draft` rejects the
+  placeholder ID explicitly.
+- Hardened `_parse_search_query` against IMAP injection: all interpolated tokens
+  are quoted with backslash/quote escaping before entering IMAP `SEARCH`
+  criteria.
+- Malformed `SINCE:` dates (e.g. `2026-99-99`) now raise `EmailAdapterError`
+  instead of silently falling through to a subject search.
+
+### Removed
+- Dead `StyleProfileBuilder.get_profile_dict()` synchronous stub. The real
+  async implementation lives on `StyleStore`.
+
 ## [0.7.1]
 
 ### Added
