@@ -1,7 +1,8 @@
 """Decorator for defining skills."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 from hestia.skills.state import SkillState
 
@@ -68,7 +69,7 @@ def skill(
             file_path=getattr(func, "__module__", None),
         )
         # Attach to function
-        setattr(func, "__hestia_skill__", definition)
+        func.__hestia_skill__ = definition  # type: ignore[attr-defined]
         return func
 
     return decorator

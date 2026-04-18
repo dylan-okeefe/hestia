@@ -11,8 +11,8 @@ import asyncio
 import json
 import logging
 import uuid
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -62,7 +62,7 @@ class ConfirmationStore:
         Returns:
             The created ``ConfirmationRequest`` (await ``request.future``).
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         req = ConfirmationRequest(
             id=str(uuid.uuid4()),
             tool_name=tool_name,
@@ -102,7 +102,7 @@ class ConfirmationStore:
 
     def _gc(self) -> None:
         """Remove expired, unresolved requests and fail their futures."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         expired = [
             rid
             for rid, req in self._pending.items()

@@ -14,7 +14,7 @@ class TestCliToolsRegistered:
 
     def test_registry_contains_tools_via_callback(self) -> None:
         """Use click's invoke with a callback to capture the registry."""
-        from hestia.cli import CliAppContext
+        from hestia.app import CliAppContext
 
         runner = CliRunner()
         with (
@@ -31,7 +31,7 @@ class TestCliToolsRegistered:
                 from click import get_current_context
 
                 ctx = get_current_context()
-                app: CliAppContext = ctx.obj["app"]
+                app: CliAppContext = ctx.obj
                 nonlocal captured_registry
                 captured_registry = app.tool_registry
 

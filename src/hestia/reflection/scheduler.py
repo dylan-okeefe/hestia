@@ -118,8 +118,9 @@ class ReflectionScheduler:
         # SessionStore doesn't expose a list_recently_active method, so we
         # query via the underlying database engine directly.
         import sqlalchemy as sa
-        from hestia.persistence.schema import sessions
+
         from hestia.core.types import SessionState
+        from hestia.persistence.schema import sessions
 
         sql = sa.select(sa.func.count(sessions.c.id)).where(
             sa.and_(

@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import Any
 
 import sqlalchemy as sa
 from croniter import croniter

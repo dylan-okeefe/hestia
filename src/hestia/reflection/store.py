@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -19,7 +18,7 @@ if TYPE_CHECKING:
 class ProposalStore:
     """Typed CRUD wrapper for proposal persistence."""
 
-    def __init__(self, db: "Database") -> None:
+    def __init__(self, db: Database) -> None:
         self._db = db
 
     async def create_table(self) -> None:
