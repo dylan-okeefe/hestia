@@ -271,6 +271,14 @@ config = HestiaConfig(
 # Disable: identity=IdentityConfig(soul_path=None)
 ```
 
+You can also override the path via environment variables (useful when running
+Hestia from outside the project root):
+
+```bash
+export HESTIA_SOUL_PATH=/path/to/SOUL.md
+export HESTIA_CALIBRATION_PATH=/path/to/calibration.json
+```
+
 Hestia compiles your soul document into a compact identity view on startup. The full soul doc isn't injected raw — it's extracted, bounded, and cached under `.hestia/compiled_identity.txt` for efficiency. Keep the soul document reasonably short (under 1000 words). The compiled view is truncated to `max_tokens`, so put the most important traits first.
 
 ---

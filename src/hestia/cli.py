@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 import sys
 from collections.abc import Callable, Coroutine
 from contextvars import ContextVar
@@ -357,12 +358,38 @@ def cli(
     session_store = SessionStore(db)
     policy = _make_policy(cfg)
 
-    # Compile identity from SOUL.md (default path) when present
+    # Honor environment overrides for personality / calibration paths
+    env_soul = os.environ.get("HESTIA_SOUL_PATH")
+    if env_soul:
+        cfg.identity.soul_path = Path(env_soul)
+    env_calibration = os.environ.get("HESTIA_CALIBRATION_PATH")
+    calibration_path = Path(env_calibration) if env_calibration else DEFAULT_CALIBRATION_PATH
+
+    # Compile identity from SOUL.md when present
     identity_compiler = IdentityCompiler(cfg.identity)
     compiled_identity = identity_compiler.get_compiled_text()
 
+    soul_path = cfg.identity.soul_path
+    if soul_path is not None and not soul_path.exists():
+        click.echo(
+            click.style(
+                f"Warning: personality file not found at {soul_path}", fg="yellow"
+            ),
+            err=True,
+        )
+        logger.warning("SOUL.md not found at %s", soul_path)
+
+    if not calibration_path.exists():
+        click.echo(
+            click.style(
+                f"Warning: calibration file not found at {calibration_path} — using defaults",
+                fg="yellow",
+            ),
+            err=True,
+        )
+        logger.warning("Calibration file not found at %s", calibration_path)
+
     # Context builder with calibration and optional identity
-    calibration_path = Path("docs/calibration.json")
     context_builder = ContextBuilder.from_calibration_file(inference, policy, calibration_path)
     if compiled_identity:
         context_builder.set_identity_prefix(compiled_identity)
