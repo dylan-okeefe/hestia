@@ -5,6 +5,21 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.7.3] — 2026-04-18
+
+### Added
+- Reflection scheduler failure visibility: `ReflectionScheduler` now records failures in a ring buffer (max 20) keyed by stage (`mining`, `proposal`, `tick`). `hestia reflection status` prints scheduler health including failure count and last errors.
+- Style scheduler failure visibility: `StyleScheduler` records failures in the same ring-buffer pattern. `hestia style show` displays a `Failures:` section when the scheduler is degraded.
+- `EmailConfig.password_env` for credentials-from-environment. The env-var pattern is now the primary recommendation in `docs/guides/email-setup.md`.
+- `HESTIA_SOUL_PATH` and `HESTIA_CALIBRATION_PATH` environment overrides. The CLI warns (yellow, stderr) when `SOUL.md` or `docs/calibration.json` is missing.
+
+### Fixed
+- `WebSearchConfig.provider` narrowed from `str` to `Literal["tavily", ""]` to match the actual support matrix. Removed unimplemented `"brave"` from docstring.
+
+### Changed
+- `SECURITY.md` refreshed for 0.7.x: supported versions table updated, new "Trust profiles" subsection, new "Egress audit" subsection, new "Prompt-injection scanner" subsection, and a real disclosure address (GitHub Security Advisories).
+- ADRs consolidated: moved `docs/development-process/decisions/*.md` into `docs/adr/`. Updated cross-references in `README.md`, handoffs, and `KIMI_CURRENT.md`.
+
 ## [0.7.2] — 2026-04-18
 
 ### Fixed
