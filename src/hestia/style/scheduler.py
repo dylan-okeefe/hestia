@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
-from typing import TYPE_CHECKING
+from collections import deque
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING, Any
 
 from croniter import croniter
 
@@ -34,6 +35,30 @@ class StyleScheduler:
         self._builder = builder
         self._session_store = session_store
         self._last_run_at: datetime | None = None
+        self._failure_log: deque[tuple[datetime, str, str, str]] = deque(maxlen=20)
+        self.failure_count = 0
+
+    def _record_failure(self, stage: str, exc: Exception) -> None:
+        self._failure_log.append(
+            (datetime.now(UTC), stage, type(exc).__name__, str(exc)[:200])
+        )
+        self.failure_count += 1
+
+    def status(self) -> dict[str, Any]:
+        return {
+            "ok": self.failure_count == 0,
+            "failure_count": self.failure_count,
+            "last_errors": [
+                {
+                    "timestamp": ts.isoformat(),
+                    "stage": stage,
+                    "type": exc_type,
+                    "message": msg,
+                }
+                for ts, stage, exc_type, msg in self._failure_log
+            ],
+            "last_run_at": self._last_run_at,
+        }
 
     async def tick(self, now: datetime | None = None) -> None:
         """Check if style rebuild is due and idle, then run if appropriate."""
@@ -55,6 +80,7 @@ class StyleScheduler:
             await self._builder.build_all()
             logger.info("Style profile rebuild complete")
         except Exception as e:  # noqa: BLE001
+            self._record_failure("build", e)
             logger.exception("Style profile rebuild failed: %s", e)
 
     def _is_due(self, now: datetime) -> bool:

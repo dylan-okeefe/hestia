@@ -4,6 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
+
+
+class EmailConfigError(ValueError):
+    """Raised when email configuration is invalid."""
+
+    pass
 
 # Default location for operator-authored personality (compiled identity; see ADR-022).
 DEFAULT_SOUL_MD_PATH = Path("SOUL.md")
@@ -269,10 +276,26 @@ class EmailConfig:
     smtp_port: int = 587
     username: str = ""
     password: str = ""  # or app-password
+    password_env: str | None = None  # env-var name to read password from
     default_folder: str = "INBOX"
     max_fetch: int = 50
     sanitize_html: bool = True
     injection_scan: bool = True  # inherits from SecurityConfig
+
+    @property
+    def resolved_password(self) -> str:
+        """Return password, preferring password_env if set."""
+        if self.password_env:
+            import os
+
+            val = os.environ.get(self.password_env)
+            if val is None:
+                raise EmailConfigError(
+                    f"Email password_env '{self.password_env}' is set "
+                    "but the environment variable is not defined"
+                )
+            return val
+        return self.password
 
 
 @dataclass
@@ -316,7 +339,7 @@ class WebSearchConfig:
     provider + api_key in their config.py.
     """
 
-    provider: str = ""  # "tavily" | "brave" | "" (disabled)
+    provider: Literal["tavily", ""] = ""  # "tavily" or "" (disabled)
     api_key: str = ""
     max_results: int = 5
     include_raw_content: bool = False  # Tavily: fetch + extract main content

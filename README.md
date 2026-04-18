@@ -158,7 +158,7 @@ hestia reflection history
 
 When pending proposals exist, Hestia injects a one-time system note at the start of the next session: "You have N pending reflection proposal(s)... summarize the top 3 and ask whether to accept/reject/defer."
 
-See [docs/guides/reflection-tuning.md](docs/guides/reflection-tuning.md) for tuning guidance and [ADR-0018](docs/development-process/decisions/ADR-0018-reflection-loop-architecture.md) for architecture rationale.
+See [docs/guides/reflection-tuning.md](docs/guides/reflection-tuning.md) for tuning guidance and [ADR-0018](docs/adr/ADR-0018-reflection-loop-architecture.md) for architecture rationale.
 
 ### Style profile (opt-in)
 
@@ -269,6 +269,14 @@ config = HestiaConfig(
 
 # Other paths: soul_path=Path("deploy/SOUL.md")
 # Disable: identity=IdentityConfig(soul_path=None)
+```
+
+You can also override the path via environment variables (useful when running
+Hestia from outside the project root):
+
+```bash
+export HESTIA_SOUL_PATH=/path/to/SOUL.md
+export HESTIA_CALIBRATION_PATH=/path/to/calibration.json
 ```
 
 Hestia compiles your soul document into a compact identity view on startup. The full soul doc isn't injected raw — it's extracted, bounded, and cached under `.hestia/compiled_identity.txt` for efficiency. Keep the soul document reasonably short (under 1000 words). The compiled view is truncated to `max_tokens`, so put the most important traits first.

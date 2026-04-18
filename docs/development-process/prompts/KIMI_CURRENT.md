@@ -24,7 +24,7 @@
 - `EmailConfig.password_env` for credentials from environment.
 - `WebSearchConfig.provider`: drop unimplemented `"brave"` from the public type.
 - `SECURITY.md` rewrite for 0.7.x, TrustConfig, egress audit, scanner.
-- ADR consolidation: move `docs/development-process/decisions/*.md` into `docs/adr/`.
+- ADR consolidation: moved historical decision records into `docs/adr/`.
 - Bump version to **0.7.3**; CHANGELOG; lockfile in same commit.
 
 **Do not merge to `develop` in this loop.** Push the feature branch and stop only after writing `.kimi-done`.

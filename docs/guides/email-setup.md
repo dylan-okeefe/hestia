@@ -25,32 +25,42 @@ diagnostic.
 
 ---
 
-## 2. Create `.email.secrets.py`
+## 2. Store credentials in environment variables (recommended)
 
-Create a file named `.email.secrets.py` in your project root (the same
-directory as `.matrix.secrets.py`).  Add it to `.gitignore` if it isn't
-already.
+Set your app password in an environment variable so it never lives in source
+control:
 
-```python
-# .email.secrets.py — keep this file private (chmod 600)
-IMAP_HOST = "imap.gmail.com"
-SMTP_HOST = "smtp.gmail.com"
-USERNAME = "you@gmail.com"
-PASSWORD = "abcd efgh ijkl mnop"
+```bash
+export HESTIA_EMAIL_PASSWORD="abcd efgh ijkl mnop"
 ```
 
-Or for Fastmail:
+For Fastmail:
 
-```python
-IMAP_HOST = "imap.fastmail.com"
-SMTP_HOST = "smtp.fastmail.com"
-USERNAME = "you@fastmail.com"
-PASSWORD = "your-app-password"
+```bash
+export HESTIA_EMAIL_PASSWORD="your-app-password"
 ```
 
 ---
 
 ## 3. Wire it into your `config.py`
+
+Use `password_env` so Hestia reads the password at runtime:
+
+```python
+from hestia.config import HestiaConfig, EmailConfig
+
+config = HestiaConfig(
+    email=EmailConfig(
+        imap_host="imap.gmail.com",
+        smtp_host="smtp.gmail.com",
+        username="you@gmail.com",
+        password_env="HESTIA_EMAIL_PASSWORD",
+    ),
+    # ... rest of your config
+)
+```
+
+If you prefer, you can still use a local secrets file (keep it out of git):
 
 ```python
 from hestia.config import HestiaConfig, EmailConfig

@@ -45,9 +45,10 @@ class EmailAdapter:
         if not self.config.imap_host:
             raise EmailAdapterError("imap_host is not configured")
         conn = imaplib.IMAP4_SSL(self.config.imap_host, self.config.imap_port)
-        if not self.config.username or not self.config.password:
+        pwd = self.config.resolved_password
+        if not self.config.username or not pwd:
             raise EmailAdapterError("username and password are required for IMAP")
-        ok, data = conn.login(self.config.username, self.config.password)
+        ok, data = conn.login(self.config.username, pwd)
         if ok != "OK":
             raise EmailAdapterError(f"IMAP login failed: {ok}")
         return conn
@@ -57,9 +58,10 @@ class EmailAdapter:
             raise EmailAdapterError("smtp_host is not configured")
         smtp = smtplib.SMTP(self.config.smtp_host, self.config.smtp_port)
         smtp.starttls()
-        if not self.config.username or not self.config.password:
+        pwd = self.config.resolved_password
+        if not self.config.username or not pwd:
             raise EmailAdapterError("username and password are required for SMTP")
-        smtp.login(self.config.username, self.config.password)
+        smtp.login(self.config.username, pwd)
         return smtp
 
     @staticmethod

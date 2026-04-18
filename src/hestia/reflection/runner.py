@@ -39,11 +39,17 @@ class ReflectionRunner:
         inference: InferenceClient,
         trace_store: TraceStore,
         proposal_store: ProposalStore,
+        on_failure: Any | None = None,
     ) -> None:
         self._config = config
         self._inference = inference
         self._trace_store = trace_store
         self._proposal_store = proposal_store
+        self._on_failure = on_failure
+
+    def _record_failure(self, stage: str, exc: Exception) -> None:
+        if self._on_failure is not None:
+            self._on_failure(stage, exc)
 
     async def run(self) -> list[Proposal]:
         """Execute the full three-pass pipeline.
@@ -116,6 +122,7 @@ class ReflectionRunner:
         try:
             response = await self._inference.chat(messages=messages, tools=[])
         except Exception as e:  # noqa: BLE001
+            self._record_failure("mining", e)
             logger.exception("Pattern mining inference call failed: %s", e)
             return []
 
@@ -144,6 +151,7 @@ class ReflectionRunner:
         try:
             response = await self._inference.chat(messages=messages, tools=[])
         except Exception as e:  # noqa: BLE001
+            self._record_failure("proposal", e)
             logger.exception("Proposal generation inference call failed: %s", e)
             return []
 
