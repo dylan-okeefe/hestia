@@ -2,7 +2,13 @@
 
 ## Review carry-forward
 
-From L26 review (to be filled when L26 merges).
+From **L26 review** (merged to `develop` in commit `8eac5a0`):
+
+- Reflection loop and proposal queue shipped at `0.7.0` with `mypy=0`; L27 must preserve both (`uv run mypy src/hestia` remains 0 and full suite remains green).
+- L26 introduced operator-approved proposals; keep L27 style adaptation distinct (automatic but transparent, resettable, and bounded).
+- Reuse L26 trace/mining infrastructure rather than duplicating storage paths.
+- Existing pytest `aiosqlite` thread-shutdown warnings are pre-existing; do not hide them unless intentionally fixed with tests.
+- Lockfile hygiene: if version changes, commit `uv.lock` in the same logical bump commit.
 
 **Branch:** `feature/l27-style-profile` from **`develop`**.
 

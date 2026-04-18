@@ -8,6 +8,28 @@
 
 ---
 
+## 2026-04-18 — Loop: L26 — reflection loop + proposal queue (Kimi) → merged to develop
+
+**Kimi:** `.kimi-done` valid for L26 (`LOOP=L26`, branch `feature/l26-reflection-loop`, commit `8762ac8`, tests `637 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`).
+
+**What shipped:**
+
+1. Reflection subsystem (`src/hestia/reflection/*`) with runner, scheduler hooks, proposal store/types, and prompts.
+2. Proposal lifecycle surfaced in orchestrator/session-start paths and CLI controls.
+3. New docs/ADR/handoff for L26 plus README/changelog updates.
+4. Version bump to 0.7.0.
+
+**Review (Cursor):**
+
+- Re-ran full gate on branch: `637 passed, 6 skipped`; `mypy src/hestia` clean (0).
+- Post-merge found lockfile drift (`uv.lock` still reflected 0.6.0). Resolved with follow-up commit on develop: `980d14f chore(lockfile): sync uv.lock to 0.7.0`.
+
+**Merge:** `feature/l26-reflection-loop` → `develop` via `--no-ff` merge commit `8eac5a0`. Pushed.
+
+**Queue advance:** `KIMI_CURRENT.md` moved to L27; L27 review carry-forward populated from L26 findings.
+
+---
+
 ## 2026-04-18 — Loop: L25 — email adapter (IMAP read + SMTP draft) (Kimi) → merged to develop
 
 **Kimi:** `.kimi-done` valid for L25 on `feature/l25-email-adapter` (`COMMIT=bdbbd93`, tests `620 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`).
