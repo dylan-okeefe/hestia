@@ -84,9 +84,10 @@ class TestEntropyHeuristic:
         assert not result.triggered
 
     def test_high_entropy_random_text(self, scanner):
-        # Random printable ASCII has high entropy
+        # Random high-entropy text that does not match structured filters
         random.seed(42)
-        content = "".join(random.choices(string.printable, k=600))
+        charset = string.ascii_letters + " !@#$%^&*()_[]|:\'\".,~"
+        content = "".join(random.choices(charset, k=600))
         result = scanner.scan(content)
         assert result.triggered
         assert any("high-entropy" in r for r in result.reasons)
