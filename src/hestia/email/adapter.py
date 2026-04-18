@@ -6,12 +6,15 @@ All blocking stdlib I/O is dispatched via asyncio.to_thread.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import email
 import email.utils
 import html
 import imaplib
 import re
 import smtplib
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from email.message import EmailMessage
 from typing import Any
@@ -36,6 +39,39 @@ class EmailAdapter:
 
     def __init__(self, config: EmailConfig) -> None:
         self.config = config
+        self._imap_session_var: contextvars.ContextVar[
+            imaplib.IMAP4_SSL | None
+        ] = contextvars.ContextVar("_imap_session_var", default=None)
+
+    # ------------------------------------------------------------------
+    # IMAP session management
+    # ------------------------------------------------------------------
+
+    @asynccontextmanager
+    async def imap_session(
+        self, *, folder: str = "INBOX"
+    ) -> AsyncGenerator[imaplib.IMAP4_SSL, None]:
+        """Async context manager that reuses an active IMAP session when nested.
+
+        Creates a new connection on the outermost call, selects *folder*, and
+        ensures ``logout()`` is called on exit even if the body raises.
+        """
+        existing = self._imap_session_var.get(None)
+        if existing is not None:
+            yield existing
+            return
+
+        conn = self._imap_connect()
+        try:
+            conn.select(folder)
+            self._imap_session_var.set(conn)
+            yield conn
+        finally:
+            self._imap_session_var.set(None)
+            try:
+                conn.close()
+            finally:
+                conn.logout()
 
     # ------------------------------------------------------------------
     # IMAP helpers
