@@ -164,6 +164,12 @@ class TrustConfig:
     # Allow subagent sessions to call WRITE_LOCAL-capable tools.
     subagent_write_local: bool = False
 
+    # Allow subagent sessions to trigger email_send.
+    subagent_email_send: bool = False
+
+    # Allow scheduler ticks to trigger email_send.
+    scheduler_email_send: bool = False
+
     @classmethod
     def paranoid(cls) -> TrustConfig:
         """Strictest posture. Current default. Auto-approves nothing; scheduler
@@ -254,6 +260,22 @@ class CompressionConfig:
 
 
 @dataclass
+class EmailConfig:
+    """Configuration for email integration (IMAP read + SMTP draft/send)."""
+
+    imap_host: str = ""
+    imap_port: int = 993
+    smtp_host: str = ""
+    smtp_port: int = 587
+    username: str = ""
+    password: str = ""  # or app-password
+    default_folder: str = "INBOX"
+    max_fetch: int = 50
+    sanitize_html: bool = True
+    injection_scan: bool = True  # inherits from SecurityConfig
+
+
+@dataclass
 class SecurityConfig:
     """Security-related toggles for Hestia."""
 
@@ -299,6 +321,7 @@ class HestiaConfig:
     handoff: HandoffConfig = field(default_factory=HandoffConfig)
     compression: CompressionConfig = field(default_factory=CompressionConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
+    email: EmailConfig = field(default_factory=EmailConfig)
     system_prompt: str = "You are a helpful assistant."
     max_iterations: int = 10
     verbose: bool = False

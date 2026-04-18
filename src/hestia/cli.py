@@ -42,6 +42,7 @@ from hestia.tools.builtin import (
     current_time,
     http_get,
     make_delegate_task_tool,
+    make_email_tools,
     make_list_dir_tool,
     make_list_memories_tool,
     make_read_file_tool,
@@ -374,6 +375,10 @@ def cli(
     web_search_tool = make_web_search_tool(cfg.web_search)
     if web_search_tool is not None:
         tool_registry.register(web_search_tool)
+
+    # Register email tools if configured
+    for email_tool in make_email_tools(cfg.email):
+        tool_registry.register(email_tool)
 
     # Slot manager for KV-cache persistence
     slot_manager = SlotManager(
@@ -1866,6 +1871,119 @@ def audit_egress(ctx: click.Context, since: str) -> None:
     asyncio.run(_egress())
 
 
+# ------------------------------------------------------------------
+# Email CLI
+# ------------------------------------------------------------------
+
+@cli.group()
+@click.pass_context
+def email(ctx: click.Context) -> None:
+    """Email integration commands."""
+    pass
+
+
+@email.command(name="check")
+@click.pass_context
+def email_check(ctx: click.Context) -> None:
+    """Check email connectivity (IMAP login test)."""
+    app: CliAppContext = ctx.obj["app"]
+    cfg = app.config
+
+    if not cfg.email.imap_host:
+        click.echo("Email is not configured. Set email.imap_host in your config.", err=True)
+        sys.exit(1)
+
+    from hestia.email.adapter import EmailAdapter
+
+    async def _check() -> None:
+        adapter = EmailAdapter(cfg.email)
+        try:
+            messages = await adapter.list_messages(limit=1)
+        except Exception as exc:
+            click.echo(f"Email check failed: {type(exc).__name__}: {exc}", err=True)
+            sys.exit(1)
+        click.echo(f"IMAP connection OK ({cfg.email.imap_host}:{cfg.email.imap_port})")
+        click.echo(f"Default folder: {cfg.email.default_folder}")
+        click.echo(f"Messages found: {len(messages)}")
+
+    asyncio.run(_check())
+
+
+@email.command(name="list")
+@click.option("--folder", default="INBOX", help="IMAP folder")
+@click.option("--limit", default=5, help="Max messages")
+@click.option("--unread-only", is_flag=True, default=False)
+@click.pass_context
+def email_list_cmd(
+    ctx: click.Context, folder: str, limit: int, unread_only: bool
+) -> None:
+    """List recent emails."""
+    app: CliAppContext = ctx.obj["app"]
+    cfg = app.config
+
+    if not cfg.email.imap_host:
+        click.echo("Email is not configured.", err=True)
+        sys.exit(1)
+
+    from hestia.email.adapter import EmailAdapter
+
+    async def _list() -> None:
+        adapter = EmailAdapter(cfg.email)
+        try:
+            messages = await adapter.list_messages(
+                folder=folder, limit=limit, unread_only=unread_only
+            )
+        except Exception as exc:
+            click.echo(f"Failed: {type(exc).__name__}: {exc}", err=True)
+            sys.exit(1)
+        if not messages:
+            click.echo("No messages found.")
+            return
+        for m in messages:
+            click.echo(
+                f"[{m['message_id']}] {m['from']} | {m['subject']} | {m['date']}"
+            )
+
+    asyncio.run(_list())
+
+
+@email.command(name="read")
+@click.argument("message_id")
+@click.pass_context
+def email_read_cmd(ctx: click.Context, message_id: str) -> None:
+    """Read a single email by IMAP UID."""
+    app: CliAppContext = ctx.obj["app"]
+    cfg = app.config
+
+    if not cfg.email.imap_host:
+        click.echo("Email is not configured.", err=True)
+        sys.exit(1)
+
+    from hestia.email.adapter import EmailAdapter
+
+    async def _read() -> None:
+        adapter = EmailAdapter(cfg.email)
+        try:
+            result = await adapter.read_message(message_id)
+        except Exception as exc:
+            click.echo(f"Failed: {type(exc).__name__}: {exc}", err=True)
+            sys.exit(1)
+        headers = result["headers"]
+        click.echo(f"From: {headers['from']}")
+        click.echo(f"To: {headers['to']}")
+        click.echo(f"Subject: {headers['subject']}")
+        click.echo(f"Date: {headers['date']}")
+        click.echo("")
+        click.echo(result["body"])
+        if result["attachments"]:
+            click.echo("")
+            click.echo("Attachments:")
+            for att in result["attachments"]:
+                click.echo(f"  - {att['filename']} ({att['content_type']})")
+
+    asyncio.run(_read())
+
+
 @cli.group()
 @click.pass_context
 def policy(ctx: click.Context) -> None:
@@ -1880,6 +1998,7 @@ def policy_show(ctx: click.Context) -> None:
 
     from hestia.core.types import Session, SessionState, SessionTemperature
     from hestia.tools.capabilities import (
+        EMAIL_SEND,
         MEMORY_READ,
         MEMORY_WRITE,
         NETWORK_EGRESS,
@@ -1935,8 +2054,10 @@ def policy_show(ctx: click.Context) -> None:
         click.echo("-" * 40)
         click.echo(f"  auto_approve_tools: {cfg.trust.auto_approve_tools or '(none)'}")
         click.echo(f"  scheduler_shell_exec: {cfg.trust.scheduler_shell_exec}")
+        click.echo(f"  scheduler_email_send: {cfg.trust.scheduler_email_send}")
         click.echo(f"  subagent_shell_exec: {cfg.trust.subagent_shell_exec}")
         click.echo(f"  subagent_write_local: {cfg.trust.subagent_write_local}")
+        click.echo(f"  subagent_email_send: {cfg.trust.subagent_email_send}")
         click.echo("")
 
         click.echo("-" * 40)
@@ -1982,11 +2103,15 @@ def policy_show(ctx: click.Context) -> None:
                                 reason = "shell_exec"
                             elif WRITE_LOCAL in caps:
                                 reason = "write_local"
+                            elif EMAIL_SEND in caps:
+                                reason = "email_send"
                             else:
                                 reason = "other"
                         elif platform == "scheduler":
                             if SHELL_EXEC in caps:
                                 reason = "shell_exec"
+                            elif EMAIL_SEND in caps:
+                                reason = "email_send"
                             else:
                                 reason = "other"
                         else:
@@ -2009,6 +2134,7 @@ def policy_show(ctx: click.Context) -> None:
             WRITE_LOCAL: [],
             MEMORY_READ: [],
             MEMORY_WRITE: [],
+            EMAIL_SEND: [],
         }
 
         for tool in all_tools:

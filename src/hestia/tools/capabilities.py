@@ -19,5 +19,8 @@ NETWORK_EGRESS = "network_egress"
 MEMORY_READ = "memory_read"
 MEMORY_WRITE = "memory_write"
 
+# Email
+EMAIL_SEND = "email_send"
+
 # Orchestration
 ORCHESTRATION = "orchestration"
