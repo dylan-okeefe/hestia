@@ -5,6 +5,26 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.7.1]
+
+### Added
+- `StyleProfile` system for per-user interaction-style adaptation.
+  - `StyleConfig` dataclass (`enabled`, `min_turns_to_activate`, `lookback_days`, `cron`)
+    wired through `HestiaConfig`.
+  - `StyleProfileStore` with `style_profiles(platform, platform_user, metric, value_json,
+    updated_at)` table.
+  - `StyleProfileBuilder` recomputes four metrics nightly from traces: `preferred_length`,
+    `formality`, `top_topics`, `activity_window`. No LLM calls in v1.
+  - `StyleScheduler` shares the same idle gate as `ReflectionScheduler` and runs via
+    cron in the scheduler daemon.
+  - `ContextBuilder` gains a `style_prefix` slot injected as the last prefix layer.
+  - Orchestrator wires style prefix per-session when enabled and threshold is met.
+  - CLI surface: `hestia style show`, `hestia style reset`, `hestia style disable`.
+  - ADR-0019 documenting the separation between operator-authored identity and
+    observed style profile.
+  - Privacy note: style metrics live only in the local SQLite DB and never leave
+    the machine.
+
 ## [0.7.0]
 
 ### Added

@@ -285,6 +285,16 @@ class SecurityConfig:
 
 
 @dataclass
+class StyleConfig:
+    """Configuration for the interaction-style profile system."""
+
+    enabled: bool = False
+    min_turns_to_activate: int = 20
+    lookback_days: int = 30
+    cron: str = "15 3 * * *"
+
+
+@dataclass
 class ReflectionConfig:
     """Configuration for the reflection loop (self-improvement during idle hours)."""
 
@@ -336,6 +346,7 @@ class HestiaConfig:
     security: SecurityConfig = field(default_factory=SecurityConfig)
     email: EmailConfig = field(default_factory=EmailConfig)
     reflection: ReflectionConfig = field(default_factory=ReflectionConfig)
+    style: StyleConfig = field(default_factory=StyleConfig)
     system_prompt: str = "You are a helpful assistant."
     max_iterations: int = 10
     verbose: bool = False
