@@ -8,6 +8,30 @@
 
 ---
 
+## 2026-04-18 — Loop: L33a — `InjectionScanner` threshold tuning + structured-content filters (Kimi clean run) → merged to develop
+
+**Kimi:** Fourth clean mini-loop in a row. 4 commits, valid `.kimi-done`, ~26 minutes wall time (longer than L32 loops because the new tests exercise large synthetic blobs and the inner pytest run is the dominant cost).
+
+**What shipped (BEHAVIOR CHANGE):**
+
+- Default `InjectionScanner.entropy_threshold` raised from **4.2 → 5.5**. Docstring documents the empirical baselines (English ~4.0–4.5, JSON ~5.0–5.5, base64 ~6.0+).
+- New private `_looks_structured(content)` helper: returns True for content that is parseable JSON, looks like base64-only (≥ 100 chars and ≥ 80% in `[A-Za-z0-9+/=]`), or looks CSS/HTML-ish (high `{`/`}`/`;` density or balanced `<…>` pairs).
+- When `_looks_structured(content) is True` and `SecurityConfig.injection_skip_filters_for_structured` is True (the new default), the entropy gate is **skipped**. The regex pattern check still runs unconditionally — known prompt-injection phrases ("ignore previous instructions", etc.) get flagged regardless of structure.
+- New `SecurityConfig.injection_entropy_threshold: float = 5.5` and `SecurityConfig.injection_skip_filters_for_structured: bool = True`.
+- `src/hestia/app.py` updated to pass the new settings into the scanner factory.
+- New `tests/unit/test_injection_scanner_tuning.py` (~7 tests): minified JSON / base64 / CSS no longer false-positive; injection phrases inside JSON still flagged; English text under threshold; high-entropy random bytes still flagged when not structured; toggle disabling skip-filters restores the old behavior.
+
+**Review (Cursor):**
+
+- Full gate on the branch tip: **`719 passed, 6 skipped`** (+7 from L32c's 712 — exactly the new tuning module). `uv run mypy src/hestia` → **0**. `uv run ruff check src/` → **44** (no regression).
+- Behavior change captured under `[0.7.9]` in CHANGELOG with explicit "BEHAVIOR CHANGE" callout.
+
+**Merge:** `feature/l33a-injection-scanner-tuning` → `develop` via `--no-ff` merge commit `d28cdad`.
+
+**Queue advance:** `KIMI_CURRENT.md` → **L33b** (EmailAdapter per-invocation IMAP session reuse + `email_search_and_read` composite tool).
+
+---
+
 ## 2026-04-18 — Loop: L32c — `ContextBuilder` per-message `/tokenize` cache (Kimi clean run) → merged to develop · CLOSES L32 ARC
 
 **Kimi:** Third clean mini-loop in a row. 5 commits, valid `.kimi-done`, ~20 minutes wall time. The L32 split strategy is fully validated: **0 human commits across L32a + L32b + L32c**, no per-turn step ceiling hits, all gates green at every step.

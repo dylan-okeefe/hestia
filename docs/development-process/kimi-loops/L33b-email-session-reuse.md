@@ -6,10 +6,11 @@
 
 ## Review carry-forward
 
-From L33a (merged at `<TBD>`):
+From L33a (merged at `d28cdad`):
 
-- Test baseline: **<TBD>**.
-- Mypy 0. Ruff ≤ 44.
+- Test baseline: **719 passed, 6 skipped**.
+- Mypy 0. Ruff 44 — must not regress.
+- `SecurityConfig` gained `injection_entropy_threshold` and `injection_skip_filters_for_structured` — unrelated to email scope, but if email content flows through scanner in any test, the new defaults apply.
 
 From the external code-quality review:
 
