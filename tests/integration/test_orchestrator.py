@@ -20,9 +20,13 @@ class FakeInferenceClient:
 
     def __init__(self, responses=None):
         """Initialize with optional list of responses."""
+        self.model_name = "fake-model"
         self.responses = responses or []
         self.call_count = 0
         self.closed = False
+
+    async def tokenize(self, text: str) -> list[int]:
+        return [0] * (len(text) // 4 + 1)
 
     async def count_request(self, messages, tools):
         """Simple char-based token count."""

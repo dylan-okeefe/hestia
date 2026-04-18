@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from hestia.context.compressor import HistoryCompressor
-from hestia.core.inference import InferenceClient
+from hestia.core.inference import InferenceClient, _message_to_dict
 from hestia.core.types import Message, Session, ToolSchema
 from hestia.errors import ContextTooLargeError
 from hestia.policy.engine import PolicyEngine
@@ -89,6 +89,8 @@ class ContextBuilder:
         self._style_prefix = style_prefix
         self._compressor = compressor
         self._compress_on_overflow = compress_on_overflow
+        self._tokenize_cache: dict[tuple[str, str], int] = {}
+        self._join_overhead = 0
 
     def set_identity_prefix(self, identity_prefix: str | None) -> None:
         """Set the identity prefix to prepend to system prompts.
@@ -187,6 +189,11 @@ class ContextBuilder:
         4. Never split tool_call / tool_result pairs
         5. Return messages in chronological order
 
+        The per-message tokenize cache survives across ``build()`` calls on
+        the same builder instance. If the inference client URL or model
+        changes, construct a new ``ContextBuilder`` — the cache does not
+        invalidate reactively.
+
         Args:
             session: Current session
             history: Previous messages in the session
@@ -240,9 +247,40 @@ class ContextBuilder:
                 "too large to fit. Reduce identity, memory_epoch, or run /reset."
             )
 
+        # Compute constant join-overhead once per build.
+        # We measure the incremental token cost of adding a second message
+        # to a single-message request body; this comma/array overhead is
+        # roughly constant for each additional message beyond the protected
+        # set.  Total trim-window tokens ≈
+        #   sum(_count_tokens(m) for m in window) + len(window) * join_overhead
+        self._join_overhead = 0
+        _m1: Message | None = None
+        _m2: Message | None = None
+        if len(history) >= 2:
+            _m1, _m2 = history[0], history[1]
+        elif len(protected_top + protected_bottom) >= 2:
+            _combo = protected_top + protected_bottom
+            _m1, _m2 = _combo[0], _combo[1]
+        if _m1 is not None and _m2 is not None:
+            _single_body = json.dumps(
+                {"model": self._inference.model_name, "messages": [_message_to_dict(_m1)]}
+            )
+            _combined_body = json.dumps(
+                {
+                    "model": self._inference.model_name,
+                    "messages": [_message_to_dict(_m1), _message_to_dict(_m2)],
+                }
+            )
+            _single_count = len(await self._inference.tokenize(_single_body))
+            _combined_count = len(await self._inference.tokenize(_combined_body))
+            self._join_overhead = (
+                _combined_count - _single_count - await self._count_tokens(_m2)
+            )
+
         # Add remaining history messages (newest first) while they fit
         included_history: list[Message] = []
         dropped_history: list[Message] = []
+        window_body = 0  # cached body tokens for included_history beyond protected
 
         # Walk history in reverse (newest first)
         history_candidates = list(reversed(history))
@@ -273,10 +311,15 @@ class ContextBuilder:
 
                 if found_pair:
                     # Try to add both messages
-                    test_messages = protected_top + included_history + pair_msgs + protected_bottom
-                    count = await self._count_messages(test_messages, len(tools) > 0)
+                    pair_window_body = (
+                        sum([await self._count_tokens(m) for m in pair_msgs])
+                        + len(pair_msgs) * self._join_overhead
+                    )
+                    candidate_body = protected_body + window_body + pair_window_body
+                    count = self._apply_correction(candidate_body, len(tools) > 0)
                     if count <= raw_budget:
                         included_history.extend(pair_msgs)
+                        window_body += pair_window_body
                         i += len(pair_msgs)
                         continue
                     else:
@@ -287,11 +330,13 @@ class ContextBuilder:
                         continue
 
             # Regular message - try to add it
-            test_messages = protected_top + included_history + [msg] + protected_bottom
-            count = await self._count_messages(test_messages, len(tools) > 0)
+            msg_window_body = await self._count_tokens(msg) + self._join_overhead
+            candidate_body = protected_body + window_body + msg_window_body
+            count = self._apply_correction(candidate_body, len(tools) > 0)
 
             if count <= raw_budget:
                 included_history.append(msg)
+                window_body += msg_window_body
             else:
                 # Doesn't fit, skip it and all older messages
                 truncated_count += len(history_candidates) - i
@@ -359,6 +404,32 @@ class ContextBuilder:
             kept_first_user=first_user_msg is not None,
             memory_epoch_included=memory_epoch_included,
         )
+
+    def _render_message(self, message: Message) -> str:
+        """Render a single message to the same JSON representation used by
+        :meth:`InferenceClient.count_request`.
+        """
+        return json.dumps(_message_to_dict(message))
+
+    async def _count_tokens(self, message: Message) -> int:
+        """Count tokens for a single message, with per-builder caching.
+
+        Cache key is ``(role, content)`` so identical messages survive
+        object re-creation between turns.
+
+        Args:
+            message: Message to count
+
+        Returns:
+            Token count for the rendered message dict
+        """
+        key = (message.role, message.content or "")
+        if key in self._tokenize_cache:
+            return self._tokenize_cache[key]
+        tokens = await self._inference.tokenize(self._render_message(message))
+        count = len(tokens)
+        self._tokenize_cache[key] = count
+        return count
 
     async def _count_body(self, messages: list[Message]) -> int:
         """Count tokens for message body only (no tools).

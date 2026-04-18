@@ -77,8 +77,12 @@ class FakeInferenceClient:
     """Fake inference client for testing."""
 
     def __init__(self, responses):
+        self.model_name = "fake-model"
         self.responses = responses
         self.call_count = 0
+
+    async def tokenize(self, text: str) -> list[int]:
+        return [0] * (len(text) // 4 + 1)
 
     async def chat(self, messages, tools=None, slot_id=None, **kwargs):
         response = self.responses[self.call_count]

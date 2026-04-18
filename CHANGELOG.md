@@ -5,6 +5,26 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.7.8] — 2026-04-18
+
+### Changed
+- **ContextBuilder per-message `/tokenize` cache (L32c).** The trim loop
+  previously issued O(N) HTTP calls per build — one round trip per candidate
+  message.  Per-message token counts are now cached (keyed on
+  `(role, content)`) for the lifetime of the builder instance.  A constant
+  join-overhead approximation replaces the concatenated-string tokenization
+  in the loop, reducing amortized tokenize calls to O(1) per build for
+  unchanged messages.  Protected and final counts still use the full
+  `count_request` path for accuracy.
+
+### Added
+- `tests/unit/test_context_builder_tokenize_cache.py` — asserts cache hits
+  across repeated builds, one-call invalidation on new messages, parity
+  with the old joined-string baseline (±1 message at the boundary), and
+  that `(role, content)` is the cache key (not `created_at`).
+- ADR-0021 documenting both the L32b prefix-layer registry and the L32c
+  tokenize cache.
+
 ## [0.7.7] — 2026-04-18
 
 ### Changed

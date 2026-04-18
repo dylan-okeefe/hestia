@@ -20,9 +20,13 @@ class TrackedInferenceClient:
     """Fake inference client that records all slot and chat operations."""
 
     def __init__(self, responses: list[ChatResponse]):
+        self.model_name = "fake-model"
         self.responses = responses
         self.call_count = 0
         self.calls: list[tuple[str, tuple[Any, ...]]] = []
+
+    async def tokenize(self, text: str) -> list[int]:
+        return [0] * (len(text) // 4 + 1)
 
     async def slot_save(self, slot_id: int, filename: str) -> None:
         self.calls.append(("slot_save", (slot_id, filename)))

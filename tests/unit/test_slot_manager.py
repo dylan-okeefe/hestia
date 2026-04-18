@@ -14,8 +14,12 @@ class FakeInferenceClient:
     """Fake inference client that records slot operations."""
 
     def __init__(self):
+        self.model_name = "fake-model"
         self.calls: list[tuple[str, tuple[Any, ...]]] = []
         self._saved_paths: dict[int, str] = {}  # slot_id -> path
+
+    async def tokenize(self, text: str) -> list[int]:
+        return [0] * (len(text) // 4 + 1)
 
     async def slot_save(self, slot_id: int, filename: str) -> None:
         self.calls.append(("slot_save", (slot_id, filename)))
