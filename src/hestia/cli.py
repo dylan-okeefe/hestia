@@ -3,11 +3,11 @@
 import asyncio
 import logging
 import sys
+from collections.abc import Callable, Coroutine
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from collections.abc import Callable, Coroutine
 from typing import Any
 
 import click
@@ -15,7 +15,6 @@ import httpx
 
 from hestia.artifacts.store import ArtifactStore
 from hestia.config import HestiaConfig
-from hestia.security import InjectionScanner
 from hestia.context.builder import ContextBuilder
 from hestia.context.compressor import InferenceHistoryCompressor
 from hestia.core.clock import utcnow
@@ -39,11 +38,12 @@ from hestia.reflection.runner import ReflectionRunner
 from hestia.reflection.scheduler import ReflectionScheduler
 from hestia.reflection.store import ProposalStore
 from hestia.scheduler import Scheduler
+from hestia.security import InjectionScanner
+from hestia.skills.index import SkillIndexBuilder
+from hestia.skills.state import SkillState
 from hestia.style.builder import StyleProfileBuilder
 from hestia.style.scheduler import StyleScheduler
 from hestia.style.store import StyleProfileStore
-from hestia.skills.index import SkillIndexBuilder
-from hestia.skills.state import SkillState
 from hestia.tools.builtin import (
     current_time,
     http_get,

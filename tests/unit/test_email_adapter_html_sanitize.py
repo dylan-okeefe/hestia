@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from hestia.email.adapter import EmailAdapter, EmailConfig
 
 

@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import json
 import re
 import statistics
 from datetime import datetime, timedelta
-from typing import Any
 
 import sqlalchemy as sa
 

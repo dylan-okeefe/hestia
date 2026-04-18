@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import email
+import email.utils
 import html
 import imaplib
 import re
@@ -312,7 +313,7 @@ class EmailAdapter:
                 except ValueError:
                     raise EmailAdapterError(
                         f"Invalid SINCE date: {date_str!r}; expected YYYY-MM-DD"
-                    )
+                    ) from None
             else:
                 # Default: treat as subject search
                 parts.append(f'SUBJECT "{EmailAdapter._imap_quote(token)}"')
@@ -342,7 +343,7 @@ class EmailAdapter:
                 msg["To"] = to
                 if reply_to:
                     msg["Reply-To"] = reply_to
-                msg["Date"] = email.utils.format_datetime(datetime.now(UTC))  # type: ignore[attr-defined]
+                msg["Date"] = email.utils.format_datetime(datetime.now(UTC))
                 if "Message-ID" not in msg:
                     domain = self.config.username.split("@")[-1]
                     msg["Message-ID"] = email.utils.make_msgid(domain=domain)

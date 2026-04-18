@@ -75,13 +75,15 @@ class TestCreateDraft:
         mock_imap_cls = self._mock_imap(("OK", [b""]))
 
         async def _run() -> None:
-            with patch("hestia.email.adapter.imaplib.IMAP4_SSL", mock_imap_cls):
-                with pytest.raises(EmailAdapterError) as exc_info:
-                    await adapter.create_draft(
-                        to="recipient@test.com",
-                        subject="Test",
-                        body="Body",
-                    )
+            with (
+                patch("hestia.email.adapter.imaplib.IMAP4_SSL", mock_imap_cls),
+                pytest.raises(EmailAdapterError) as exc_info,
+            ):
+                await adapter.create_draft(
+                    to="recipient@test.com",
+                    subject="Test",
+                    body="Body",
+                )
             assert "draft-unknown" not in str(exc_info.value)
             assert "Message-ID" in str(exc_info.value)
 
