@@ -5,6 +5,37 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.7.5] — 2026-04-18
+
+### Changed
+- **Orchestrator engine cleanup (L31).** Pure refactor of `process_turn` and
+  `_dispatch_tool_call` in `src/hestia/orchestrator/engine.py`:
+  - Extracted `_build_failure_bundle(...)` to eliminate ~120 lines of duplicated
+    failure-bundle construction across the `ContextTooLargeError` and generic
+    `Exception` handlers.
+  - Hoisted `delegated` and `tool_chain` to the top of the outer `try` block,
+    removing the defensive `locals().get("delegated", False)` smell.
+  - Removed the duplicate `get_messages` round-trip after `DONE`; artifact
+    handles are now accumulated directly from `ToolCallResult.artifact_handle`
+    during tool dispatch, deleting the regex-based `re.findall(r"artifact://...")`
+    recovery path.
+  - Extracted `_check_confirmation(...)` to deduplicate the confirmation gate
+    across the `call_tool` meta branch and the direct-tool branch.
+  - Added `ToolCallResult.error(content)` classmethod in
+    `src/hestia/tools/types.py`; replaced 8+ long-form error constructions in
+    `engine.py`.
+  - File shrank from 903 lines to ≤ 750 (target met).
+
+### Added
+- Regression test modules:
+  - `tests/unit/test_orchestrator_failure_bundle.py` — parity coverage for
+    `_build_failure_bundle` from both error paths.
+  - `tests/unit/test_orchestrator_confirmation_helper.py` — unit coverage for
+    `_check_confirmation` (no-confirm, approved, denied, no-callback).
+  - `tests/unit/test_orchestrator_artifact_accumulation.py` — asserts that
+    artifact handles flow from `ToolCallResult` into trace records and that the
+    regex recovery path is gone.
+
 ## [0.7.4] — 2026-04-18
 
 ### Changed
