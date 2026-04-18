@@ -5,6 +5,14 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.7.9] — 2026-04-18
+
+### Changed
+- **Behavior change:** Default `InjectionScanner.entropy_threshold` raised from 4.2 to 5.5, and structured content (JSON / base64 / CSS) now skips the entropy gate while still running the regex pattern check. This dramatically reduces false-positive annotations on tool outputs. Tunable via `SecurityConfig.injection_entropy_threshold` and `SecurityConfig.injection_skip_filters_for_structured`.
+
+### Added
+- `tests/unit/test_injection_scanner_tuning.py` — regression coverage for the new structured-content filters and threshold change.
+
 ## [0.7.8] — 2026-04-18
 
 ### Changed
