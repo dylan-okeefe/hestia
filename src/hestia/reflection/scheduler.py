@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from collections import deque
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from croniter import croniter
@@ -35,6 +36,30 @@ class ReflectionScheduler:
         self._runner = runner
         self._session_store = session_store
         self._last_run_at: datetime | None = None
+        self._failure_log: deque[tuple[datetime, str, str, str]] = deque(maxlen=20)
+        self.failure_count = 0
+
+    def _record_failure(self, stage: str, exc: Exception) -> None:
+        self._failure_log.append(
+            (datetime.now(UTC), stage, type(exc).__name__, str(exc)[:200])
+        )
+        self.failure_count += 1
+
+    def status(self) -> dict[str, Any]:
+        return {
+            "ok": self.failure_count == 0,
+            "failure_count": self.failure_count,
+            "last_errors": [
+                {
+                    "timestamp": ts.isoformat(),
+                    "stage": stage,
+                    "type": exc_type,
+                    "message": msg,
+                }
+                for ts, stage, exc_type, msg in self._failure_log
+            ],
+            "last_run_at": self._last_run_at,
+        }
 
     async def tick(self, now: datetime | None = None) -> list[Any]:
         """Check if reflection is due and idle, then run if appropriate.
@@ -61,6 +86,7 @@ class ReflectionScheduler:
             proposals = await self._runner.run()
             return proposals
         except Exception as e:  # noqa: BLE001
+            self._record_failure("tick", e)
             logger.exception("Reflection run failed: %s", e)
             return []
 

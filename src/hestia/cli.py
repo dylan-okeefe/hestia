@@ -128,6 +128,7 @@ class CliAppContext:
     proposal_store: ProposalStore | None = None
     style_store: StyleProfileStore | None = None
     style_builder: StyleProfileBuilder | None = None
+    reflection_scheduler: ReflectionScheduler | None = None
     verbose: bool = False
     confirm_callback: Any = None
     epoch_compiler: MemoryEpochCompiler | None = None
@@ -418,6 +419,20 @@ def cli(
     style_store = StyleProfileStore(db)
     style_builder = StyleProfileBuilder(db, style_store, cfg.style)
 
+    # Reflection scheduler (used by daemon and status commands)
+    reflection_runner = ReflectionRunner(
+        config=cfg.reflection,
+        inference=inference,
+        trace_store=trace_store,
+        proposal_store=proposal_store,
+    )
+    reflection_scheduler = ReflectionScheduler(
+        config=cfg.reflection,
+        runner=reflection_runner,
+        session_store=session_store,
+    )
+    reflection_runner._on_failure = reflection_scheduler._record_failure
+
     # Session-close handoff summarizer (L21). Off by default; opt in via HandoffConfig.
     handoff_summarizer: SessionHandoffSummarizer | None = None
     if cfg.handoff.enabled:
@@ -477,6 +492,7 @@ def cli(
         proposal_store=proposal_store,
         style_store=style_store,
         style_builder=style_builder,
+        reflection_scheduler=reflection_scheduler,
         verbose=cfg.verbose,
         confirm_callback=None,
         epoch_compiler=epoch_compiler,
@@ -500,6 +516,7 @@ def cli(
     ctx.obj["proposal_store"] = proposal_store
     ctx.obj["style_store"] = style_store
     ctx.obj["style_builder"] = style_builder
+    ctx.obj["reflection_scheduler"] = reflection_scheduler
 
 
 
@@ -1164,26 +1181,6 @@ def schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None:
             tick_interval_seconds=tick,
         )
 
-        # Reflection scheduler (opt-in via ReflectionConfig.enabled)
-        reflection_runner = ReflectionRunner(
-            config=cfg.reflection,
-            inference=inference,
-            trace_store=trace_store,
-            proposal_store=proposal_store,
-        )
-        reflection_scheduler = ReflectionScheduler(
-            config=cfg.reflection,
-            runner=reflection_runner,
-            session_store=session_store,
-        )
-
-        # Style profile scheduler (opt-in via StyleConfig.enabled)
-        style_scheduler = StyleScheduler(
-            config=cfg.style,
-            builder=style_builder,
-            session_store=session_store,
-        )
-
         await scheduler.start()
         click.echo(f"Scheduler daemon started (tick={tick}s). Press Ctrl-C to stop.")
 
@@ -1191,7 +1188,8 @@ def schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None:
             # Wait forever until interrupted, checking reflection each minute
             while True:
                 await asyncio.sleep(60)
-                await reflection_scheduler.tick()
+                if app.reflection_scheduler is not None:
+                    await app.reflection_scheduler.tick()
         except asyncio.CancelledError:
             pass
         finally:
@@ -2352,17 +2350,39 @@ def reflection() -> None:
 @reflection.command(name="status")
 @click.pass_context
 def reflection_status(ctx: click.Context) -> None:
-    """Show proposal counts by status."""
+    """Show reflection scheduler health and proposal counts."""
     app: CliAppContext = ctx.obj["app"]
 
     async def _status() -> None:
         await app.bootstrap_db()
-        if app.proposal_store is None:
-            click.echo("Proposal store not configured.", err=True)
-            sys.exit(1)
-        counts = await app.proposal_store.count_by_status()
-        for status in ("pending", "accepted", "rejected", "deferred", "expired"):
-            click.echo(f"  {status}: {counts.get(status, 0)}")
+
+        # Scheduler health
+        if app.reflection_scheduler is not None:
+            sched_status = app.reflection_scheduler.status()
+            ok = "ok" if sched_status["ok"] else "degraded"
+            click.echo(f"Scheduler: {ok} ({sched_status['failure_count']} failure(s))")
+            if sched_status["last_run_at"]:
+                click.echo(f"Last run: {sched_status['last_run_at'].isoformat()}")
+            else:
+                click.echo("Last run: never")
+            if sched_status["last_errors"]:
+                click.echo("Last errors:")
+                for err in sched_status["last_errors"]:
+                    click.echo(
+                        f"  {err['timestamp']}  {err['stage']:<10} {err['type']:<20} {err['message']}"
+                    )
+        else:
+            click.echo("Scheduler: not configured")
+
+        # Proposal counts
+        if app.proposal_store is not None:
+            click.echo("")
+            click.echo("Proposals:")
+            counts = await app.proposal_store.count_by_status()
+            for status in ("pending", "accepted", "rejected", "deferred", "expired"):
+                click.echo(f"  {status}: {counts.get(status, 0)}")
+        else:
+            click.echo("Proposal store: not configured")
 
     asyncio.run(_status())
 
