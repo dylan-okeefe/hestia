@@ -326,6 +326,9 @@ class EmailAdapter:
                 if reply_to:
                     msg["Reply-To"] = reply_to
                 msg["Date"] = email.utils.format_datetime(datetime.now(UTC))  # type: ignore[attr-defined]
+                if "Message-ID" not in msg:
+                    domain = self.config.username.split("@")[-1]
+                    msg["Message-ID"] = email.utils.make_msgid(domain=domain)
                 msg.set_content(body)
 
                 raw = msg.as_bytes()
@@ -350,8 +353,9 @@ class EmailAdapter:
                         latest = uids[-1]
                         return latest.decode() if isinstance(latest, bytes) else str(latest)
 
-                # Fallback: return a placeholder
-                return "draft-unknown"
+                raise EmailAdapterError(
+                    f"Created draft but could not locate it in Drafts by Message-ID {mid!r}"
+                )
             finally:
                 conn.close()
                 conn.logout()
@@ -365,6 +369,10 @@ class EmailAdapter:
         """
 
         def _run() -> str:
+            if draft_id == "draft-unknown":
+                raise EmailAdapterError(
+                    "Cannot send draft with placeholder ID 'draft-unknown'"
+                )
             # 1. Fetch draft
             imap = self._imap_connect()
             try:
