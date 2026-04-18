@@ -230,14 +230,3 @@ class StyleProfileBuilder:
             histogram[hour] += 1
 
         return histogram
-
-    def get_profile_dict(
-        self, platform: str, platform_user: str
-    ) -> dict[str, Any]:
-        """Return the current profile as a plain dict (synchronous wrapper).
-
-        Note: this is intended for CLI display; callers must await metric
-        lookups if running in an async context.
-        """
-        # This method exists for type completeness but is not used internally.
-        return {}
