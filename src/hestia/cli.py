@@ -129,6 +129,7 @@ class CliAppContext:
     style_store: StyleProfileStore | None = None
     style_builder: StyleProfileBuilder | None = None
     reflection_scheduler: ReflectionScheduler | None = None
+    style_scheduler: StyleScheduler | None = None
     verbose: bool = False
     confirm_callback: Any = None
     epoch_compiler: MemoryEpochCompiler | None = None
@@ -433,6 +434,12 @@ def cli(
     )
     reflection_runner._on_failure = reflection_scheduler._record_failure
 
+    style_scheduler = StyleScheduler(
+        config=cfg.style,
+        builder=style_builder,
+        session_store=session_store,
+    )
+
     # Session-close handoff summarizer (L21). Off by default; opt in via HandoffConfig.
     handoff_summarizer: SessionHandoffSummarizer | None = None
     if cfg.handoff.enabled:
@@ -493,6 +500,7 @@ def cli(
         style_store=style_store,
         style_builder=style_builder,
         reflection_scheduler=reflection_scheduler,
+        style_scheduler=style_scheduler,
         verbose=cfg.verbose,
         confirm_callback=None,
         epoch_compiler=epoch_compiler,
@@ -517,6 +525,7 @@ def cli(
     ctx.obj["style_store"] = style_store
     ctx.obj["style_builder"] = style_builder
     ctx.obj["reflection_scheduler"] = reflection_scheduler
+    ctx.obj["style_scheduler"] = style_scheduler
 
 
 
@@ -1190,6 +1199,8 @@ def schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None:
                 await asyncio.sleep(60)
                 if app.reflection_scheduler is not None:
                     await app.reflection_scheduler.tick()
+                if app.style_scheduler is not None:
+                    await app.style_scheduler.tick()
         except asyncio.CancelledError:
             pass
         finally:
@@ -2079,6 +2090,17 @@ def style_show(ctx: click.Context, platform: str | None, user: str | None) -> No
         click.echo(f"Style profile for {platform}/{platform_user}:")
         for m in metrics:
             click.echo(f"  {m.metric}: {m.value_json}")
+
+        if app.style_scheduler is not None:
+            sched_status = app.style_scheduler.status()
+            if not sched_status["ok"]:
+                click.echo("")
+                click.echo("Failures:")
+                click.echo(f"  Total: {sched_status['failure_count']}")
+                for err in sched_status["last_errors"]:
+                    click.echo(
+                        f"  {err['timestamp']}  {err['type']:<20} {err['message']}"
+                    )
 
     asyncio.run(_show())
 
