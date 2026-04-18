@@ -277,17 +277,32 @@ class EmailAdapter:
         return await asyncio.to_thread(_run)
 
     @staticmethod
+    def _imap_quote(value: str) -> str:
+        """Escape a string for use inside an IMAP quoted string."""
+        return value.replace("\\", "\\\\").replace('"', '\\"')
+
+    @staticmethod
     def _parse_search_query(query: str) -> str:
-        """Convert simplified query to IMAP SEARCH criteria."""
+        """Convert simplified query to IMAP SEARCH criteria.
+
+        Supported grammar:
+          FROM:<addr>    → (FROM "<addr>")
+          SUBJECT:<text> → (SUBJECT "<text>")
+          SINCE:<YYYY-MM-DD> → (SINCE "DD-Mon-YYYY")
+          <bare token>   → (SUBJECT "<token>")
+
+        Raises:
+            EmailAdapterError: If a SINCE: token contains an invalid date.
+        """
         parts: list[str] = []
         tokens = query.split()
         i = 0
         while i < len(tokens):
             token = tokens[i]
             if token.upper().startswith("FROM:"):
-                parts.append(f'FROM "{token[5:]}"')
+                parts.append(f'FROM "{EmailAdapter._imap_quote(token[5:])}"')
             elif token.upper().startswith("SUBJECT:"):
-                parts.append(f'SUBJECT "{token[8:]}"')
+                parts.append(f'SUBJECT "{EmailAdapter._imap_quote(token[8:])}"')
             elif token.upper().startswith("SINCE:"):
                 date_str = token[6:]
                 try:
@@ -295,10 +310,12 @@ class EmailAdapter:
                     imap_date = dt.strftime("%d-%b-%Y")
                     parts.append(f'SINCE "{imap_date}"')
                 except ValueError:
-                    parts.append(f'SUBJECT "{token}"')
+                    raise EmailAdapterError(
+                        f"Invalid SINCE date: {date_str!r}; expected YYYY-MM-DD"
+                    )
             else:
                 # Default: treat as subject search
-                parts.append(f'SUBJECT "{token}"')
+                parts.append(f'SUBJECT "{EmailAdapter._imap_quote(token)}"')
             i += 1
         if not parts:
             parts.append("ALL")
