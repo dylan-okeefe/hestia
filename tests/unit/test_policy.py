@@ -405,7 +405,7 @@ class TestCtxWindowWiring:
 
     def test_cli_passes_ctx_window_from_config(self):
         """_make_policy wires HestiaConfig.inference.context_length into the engine."""
-        from hestia.cli import _make_policy
+        from hestia.app import _make_policy
         from hestia.config import HestiaConfig, InferenceConfig
 
         cfg = HestiaConfig(inference=InferenceConfig(context_length=32768))

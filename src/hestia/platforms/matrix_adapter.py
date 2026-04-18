@@ -212,7 +212,7 @@ class MatrixAdapter(Platform):
             return await asyncio.wait_for(
                 req.future, timeout=self._confirmation_timeout_seconds
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             self._confirmation_store.cancel(req.id)
             return False
         finally:

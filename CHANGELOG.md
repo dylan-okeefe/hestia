@@ -5,6 +5,40 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.7.4] — 2026-04-18
+
+### Changed
+- **`cli.py` decomposition (ADR-0020).** Split the 2,569-line monolith into:
+  - `src/hestia/app.py` (≈1,520 lines) — `CliAppContext`, `make_app(config)`,
+    lazy subsystem properties, idempotent `bootstrap_db()`, single
+    `make_orchestrator()` constructor, and all `_cmd_*` async command
+    implementations (chat, ask, schedule, reflection, skill, style, audit,
+    email, status, health, policy, failures).
+  - `src/hestia/platforms/runners.py` (≈245 lines) — `run_telegram(app, config)`,
+    `run_matrix(app, config)`, and a shared `run_platform(...)` polling helper.
+  - `src/hestia/cli.py` (≤ 600 lines) — slim Click definitions only; every
+    command is `@run_async`-decorated and reads `app: CliAppContext` from
+    `ctx.obj`.
+  - Pure refactor: identical test suite (691 passed, 6 skipped, 0 mypy errors)
+    apart from new tests covering `app.py` and `runners.py` wiring.
+
+### Added
+- `run_async` decorator (in `hestia.app`) that converts an `async def cmd(app, ...)`
+  function into a Click-compatible sync handler running on a fresh event loop.
+- ADR-0020: cli.py decomposition rationale and module ownership boundaries.
+
+### Fixed
+- `Orchestrator(...)` is now constructed in exactly one place
+  (`CliAppContext.make_orchestrator()`); `cli.py`, `schedule daemon`,
+  `telegram`, and `matrix` all go through it. Adding a new dependency to the
+  orchestrator is now a single-call-site change.
+- Dropped the duplicated raw `ctx.obj["..."]` dict layer; commands read from
+  the typed `CliAppContext` only.
+- Ruff cleanup: 64 auto-fixable lints in cli/persistence/skills/platforms
+  resolved (unused imports, import-sort, `OSError`/`IOError` alias,
+  `datetime.UTC`, etc.). Remaining `ruff check src/` count is now 44
+  (down from 255 on develop).
+
 ## [0.7.3] — 2026-04-18
 
 ### Added

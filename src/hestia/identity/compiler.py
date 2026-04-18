@@ -12,7 +12,6 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass
-from pathlib import Path
 
 from hestia.config import IdentityConfig
 
@@ -181,7 +180,7 @@ class IdentityCompiler:
                 source_hash=cached_hash,
                 truncated=truncated_str == "truncated=True",
             )
-        except (IOError, OSError):
+        except OSError:
             return None
 
     def _check_cache_any(self) -> CompileResult | None:
@@ -209,7 +208,7 @@ class IdentityCompiler:
                 source_hash=cached_hash,
                 truncated=truncated_str == "truncated=True",
             )
-        except (IOError, OSError):
+        except OSError:
             return None
 
     def _save_cache(self, result: CompileResult) -> None:
@@ -227,7 +226,7 @@ class IdentityCompiler:
                 f"{result.text}"
             )
             cache_path.write_text(cache_content, encoding="utf-8")
-        except (IOError, OSError):
+        except OSError:
             # Cache failure is non-fatal
             pass
 

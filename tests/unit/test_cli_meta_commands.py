@@ -43,7 +43,7 @@ def sample_session():
 @pytest.mark.asyncio
 async def test_meta_command_quit(store, sample_session, capsys):
     """/quit should signal exit."""
-    from hestia.cli import _handle_meta_command
+    from hestia.app import _handle_meta_command
 
     should_exit, new_session = await _handle_meta_command("/quit", sample_session, store)
 
@@ -54,7 +54,7 @@ async def test_meta_command_quit(store, sample_session, capsys):
 @pytest.mark.asyncio
 async def test_meta_command_exit(store, sample_session):
     """/exit should also signal exit."""
-    from hestia.cli import _handle_meta_command
+    from hestia.app import _handle_meta_command
 
     should_exit, new_session = await _handle_meta_command("/exit", sample_session, store)
 
@@ -64,7 +64,7 @@ async def test_meta_command_exit(store, sample_session):
 @pytest.mark.asyncio
 async def test_meta_command_help(store, sample_session, capsys):
     """/help should print help and not exit."""
-    from hestia.cli import _handle_meta_command
+    from hestia.app import _handle_meta_command
 
     should_exit, new_session = await _handle_meta_command("/help", sample_session, store)
 
@@ -75,7 +75,7 @@ async def test_meta_command_help(store, sample_session, capsys):
 @pytest.mark.asyncio
 async def test_meta_command_session(store, sample_session):
     """/session should print session metadata."""
-    from hestia.cli import _handle_meta_command
+    from hestia.app import _handle_meta_command
 
     should_exit, new_session = await _handle_meta_command("/session", sample_session, store)
 
@@ -86,7 +86,7 @@ async def test_meta_command_session(store, sample_session):
 @pytest.mark.asyncio
 async def test_meta_command_history_empty(store, sample_session):
     """/history on empty session should print '(empty)'."""
-    from hestia.cli import _handle_meta_command
+    from hestia.app import _handle_meta_command
 
     should_exit, new_session = await _handle_meta_command("/history", sample_session, store)
 
@@ -96,7 +96,7 @@ async def test_meta_command_history_empty(store, sample_session):
 @pytest.mark.asyncio
 async def test_meta_command_reset_creates_new_session_same_user(store):
     """/reset should create a new session for the same user and archive the old one."""
-    from hestia.cli import _handle_meta_command
+    from hestia.app import _handle_meta_command
     from hestia.core.types import SessionState
 
     # First create a real session in the database
@@ -122,7 +122,7 @@ async def test_meta_command_reset_creates_new_session_same_user(store):
 @pytest.mark.asyncio
 async def test_meta_command_unknown(store, sample_session):
     """Unknown commands should print error and not exit."""
-    from hestia.cli import _handle_meta_command
+    from hestia.app import _handle_meta_command
 
     should_exit, new_session = await _handle_meta_command("/unknown_command", sample_session, store)
 
@@ -133,7 +133,7 @@ async def test_meta_command_unknown(store, sample_session):
 @pytest.mark.asyncio
 async def test_meta_command_with_whitespace(store, sample_session):
     """Commands with whitespace should be handled."""
-    from hestia.cli import _handle_meta_command
+    from hestia.app import _handle_meta_command
 
     should_exit, _ = await _handle_meta_command("  /quit  ", sample_session, store)
 

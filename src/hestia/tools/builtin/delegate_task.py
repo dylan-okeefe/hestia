@@ -161,7 +161,7 @@ def make_delegate_task_tool(
             async def _noop_respond(_: str) -> None:
                 return None
 
-            async def run_subagent() -> "Turn":
+            async def run_subagent() -> Turn:
                 turn = await orchestrator.process_turn(
                     session=subagent_session,
                     user_message=user_message,
