@@ -158,7 +158,7 @@ hestia reflection history
 
 When pending proposals exist, Hestia injects a one-time system note at the start of the next session: "You have N pending reflection proposal(s)... summarize the top 3 and ask whether to accept/reject/defer."
 
-See [docs/guides/reflection-tuning.md](docs/guides/reflection-tuning.md) for tuning guidance and [ADR-0018](docs/development-process/decisions/ADR-0018-reflection-loop-architecture.md) for architecture rationale.
+See [docs/guides/reflection-tuning.md](docs/guides/reflection-tuning.md) for tuning guidance and [ADR-0018](docs/adr/ADR-0018-reflection-loop-architecture.md) for architecture rationale.
 
 ### Style profile (opt-in)
 
