@@ -5,6 +5,21 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.7.7] — 2026-04-18
+
+### Changed
+- **ContextBuilder prefix-layer registry (L32b).** Replaced the four optional
+  `*_prefix` kwargs on `ContextBuilder.build()` with a private `_PrefixLayer`
+  registry. Assembly order (`identity → memory_epoch → skill_index → style →
+  system_prompt`) is now data, not code; adding a fifth layer in a future loop
+  will require only one line in `_prefix_layers()` and one setter. No real call
+  site used the per-call kwargs — the orchestrator already relied on setters.
+
+### Added
+- `tests/unit/test_context_builder_prefix_registry.py` — asserts documented
+  layer order, skipped-layer behaviour, fall-through to bare system prompt, and
+  that `build()` no longer accepts prefix kwargs.
+
 ## [0.7.6] — 2026-04-18
 
 ### Changed

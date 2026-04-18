@@ -252,13 +252,13 @@ class Orchestrator:
 
                 # Build context
                 tools = self._tools.meta_tool_schemas()
+                self._builder.set_style_prefix(style_prefix)
                 build_result = await self._builder.build(
                     session=session,
                     history=history,
                     system_prompt=effective_system_prompt,
                     tools=tools,
                     new_user_message=user_message,
-                    style_prefix=style_prefix,
                 )
 
                 # Acquire slot for this turn (if SlotManager is configured)
@@ -344,13 +344,13 @@ class Orchestrator:
 
                         # Rebuild context with new history
                         history = await self._store.get_messages(session.id)
+                        self._builder.set_style_prefix(style_prefix)
                         build_result = await self._builder.build(
                             session=session,
                             history=history,
                             system_prompt=system_prompt,
                             tools=tools,
                             new_user_message=None,  # Continuing turn, no new user message
-                            style_prefix=style_prefix,
                         )
 
                         turn.tool_calls_made += len(chat_response.tool_calls)

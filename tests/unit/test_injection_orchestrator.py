@@ -1,7 +1,7 @@
 """Tests that the orchestrator wires the injection scanner on tool results."""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 from hestia.core.types import Message, Session, SessionState, ToolCall
 from hestia.orchestrator import Orchestrator
@@ -53,6 +53,7 @@ def mock_policy():
 def mock_context_builder():
     builder = AsyncMock()
     builder.build.return_value.messages = []
+    builder.set_style_prefix = Mock()
     return builder
 
 
