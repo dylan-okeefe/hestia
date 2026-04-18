@@ -2,7 +2,6 @@
 
 import json
 import logging
-import re
 import uuid
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
@@ -325,14 +324,16 @@ class Orchestrator:
 
                         if use_policy_delegation:
                             await self._transition(turn, TurnState.AWAITING_SUBAGENT)
-                            tool_results = await self._execute_policy_delegation(
+                            tool_results, handles = await self._execute_policy_delegation(
                                 user_message, chat_response.tool_calls
                             )
+                            artifact_handles.extend(handles)
                             await self._transition(turn, TurnState.EXECUTING_TOOLS)
                         else:
-                            tool_results = await self._execute_tool_calls(
+                            tool_results, handles = await self._execute_tool_calls(
                                 session, chat_response.tool_calls, allowed_tools
                             )
+                            artifact_handles.extend(handles)
 
                         # Add tool results to history
                         for result_msg in tool_results:
@@ -369,18 +370,6 @@ class Orchestrator:
                         await self._transition(turn, TurnState.DONE)
                         turn.final_response = content
                         await respond_callback(content)
-
-                        # Collect artifact handles from successful tool results
-                        for msg in await self._store.get_messages(session.id):
-                            if (
-                                msg.role == "tool"
-                                and msg.content
-                                and "artifact://" in msg.content
-                            ):
-                                handles = re.findall(
-                                    r"artifact://([a-zA-Z0-9_-]+)", msg.content
-                                )
-                                artifact_handles.extend(handles)
 
                         # Save slot checkpoint after successful turn (don't fail turn if save fails)
                         if self._slot_manager is not None:
@@ -685,13 +674,16 @@ class Orchestrator:
 
     async def _execute_tool_calls(
         self, session: Session, tool_calls: list[ToolCall], allowed_tools: list[str] | None = None
-    ) -> list[Message]:
-        """Execute tool calls and return result messages."""
-        result_messages = []
+    ) -> tuple[list[Message], list[str]]:
+        """Execute tool calls and return result messages and artifact handles."""
+        result_messages: list[Message] = []
+        artifact_handles: list[str] = []
 
         for tc in tool_calls:
             result = await self._dispatch_tool_call(session, tc, allowed_tools)
             result = self._scan_tool_result(result)
+            if result.artifact_handle:
+                artifact_handles.append(result.artifact_handle)
 
             msg = Message(
                 role="tool",
@@ -701,13 +693,13 @@ class Orchestrator:
             )
             result_messages.append(msg)
 
-        return result_messages
+        return result_messages, artifact_handles
 
     async def _execute_policy_delegation(
         self,
         user_message: Message,
         tool_calls: list[ToolCall],
-    ) -> list[Message]:
+    ) -> tuple[list[Message], list[str]]:
         """Run delegate_task once; map output to one message per model tool_call_id."""
         task = (user_message.content or "").strip() or "(no user text)"
         lines = [f"{tc.name} {json.dumps(tc.arguments or {})}" for tc in tool_calls]
@@ -721,6 +713,10 @@ class Orchestrator:
         body = result.content
         if result.status != "ok":
             body = f"[delegation error] {body}"
+
+        artifact_handles: list[str] = []
+        if result.artifact_handle:
+            artifact_handles.append(result.artifact_handle)
 
         messages: list[Message] = []
         for i, tc in enumerate(tool_calls):
@@ -736,7 +732,7 @@ class Orchestrator:
                     created_at=utcnow(),
                 )
             )
-        return messages
+        return messages, artifact_handles
 
     async def _dispatch_tool_call(
         self, session: Session, tc: ToolCall, allowed_tools: list[str] | None = None
