@@ -8,6 +8,38 @@
 
 ---
 
+## 2026-04-17 — Loop: L22 — mypy cleanup + CI strictness ratchet (Kimi) → merged to develop
+
+**Kimi:** `.kimi-done`: `LOOP=L22`, final commit `0986130`, `TESTS=545 passed, 6 skipped, 0 failed`, `MYPY_FINAL_ERRORS=0` on `feature/l22-mypy-cleanup`. 14 Kimi commits covering every §1-§8 category from `reviews/mypy-errors-april-17.md`. Ralph max-steps hit twice across three launches; each resume picked up from git state.
+
+**What shipped (44 → 0 mypy errors):**
+
+1. **§1 Third-party stubs** — `types-croniter` dev dep added; `nio` and `asyncpg` marked `ignore_missing_imports = true` (they're optional; no public stubs).
+2. **§2 Forward references** — `hestia.persistence.sessions` now uses `from __future__ import annotations` + `TYPE_CHECKING` imports for `Turn` / `TurnTransition`. Fixes 7 errors without runtime cost.
+3. **§3 Optional attribute access (real bugs)** — every unchecked `.value` / `.x` access on a `SomeType | None` now either guards or raises. Notable fixes: `cli.py` SchedulerStore accessor (missing config → explicit error), Telegram Updater lifecycle None-guard, SkillState None check, CLI check command passing `None` into `DefaultPolicyEngine.turn_token_budget` (now builds a synthetic Session). 16 errors, ~12 of them latent bugs.
+4. **§4 Factory returns** — memory-tool factories and `delegate_task` factory now return the declared `Tool` type instead of `Any`.
+5. **§5 DB row → dataclass** — `SchedulerStore._row_to_task` (and callers) now coerce with explicit casts/`.as_string()` rather than dumping `Any` through; `ScheduledTask` gets strict field-by-field construction. New `tests/unit/test_scheduler_store.py` covers the edge cases.
+6. **§6 Function annotations** — legacy helpers in `audit/checks.py`, `scheduler/engine.py`, `tools/metadata.py`, `artifacts/store.py` got signatures.
+7. **§7 Orchestrator tool args** — `Orchestrator._dispatch_tool` narrows the argument type at the boundary rather than trusting `Any`.
+8. **§8 CI strictness** — `docs/development-process/mypy-baseline.txt` retired; `.github/workflows/ci.yml` now runs `uv run mypy src/hestia` directly (no count-based compare). `pyproject.toml` `[[tool.mypy.overrides]] strict = true` for `hestia.policy.*` and `hestia.core.*` — the first ratchet step.
+
+Plus `chore: bump version to 0.4.1`, `docs: L22 handoff report`.
+
+**Review (Cursor):**
+
+- Full suite on `feature/l22-mypy-cleanup` tip: **545 passed / 0 failed / 6 skipped** (baseline 543 → +2 from new scheduler-store tests).
+- `uv run mypy src/hestia` → `Success: no issues found in 69 source files`.
+- Spot-checked a few of the "real bug" fixes: SchedulerStore None → error is correct behaviour (previously would AttributeError on first scheduler call with no config); Updater None-guard in Telegram adapter means stopping the bot before start no longer raises; SkillState None check means `/skills update` with an unknown skill now errors cleanly instead of crashing.
+- No wiring gaps found this time (the L21 review lesson — "did you wire it in cli.py?" — doesn't apply; L22 was pure debt-paydown, no new features).
+
+**Merge:** `feature/l22-mypy-cleanup` → `develop` via `--no-ff` merge commit `75ea2b5`. Pushed. CI on `develop` should now be honest (mypy green, no baseline).
+
+**Queue:** L22 complete. Next up: L23 — platform confirmation callbacks (Telegram inline keyboard + Matrix reply pattern), targeted at v0.5.0.
+
+**Next:** L23, L24, L25, L26, L27 in sequence as queued. Each loop's review carry-forward gets populated at loop start.
+
+---
+
 ## 2026-04-17 — Loop: L21 — Context resilience + handoff summaries + Hermes untangle (Kimi) → merged to develop
 
 **Kimi:** `.kimi-done`: `LOOP=L21`, final commit `cdc2f63`, `TESTS=passed=540 failed=0 skipped=6` on `feature/l21-context-resilience-handoff`. 9 spec sections, 11 Kimi commits (one §, + one ruff style fix, + one end-of-loop checklist tidy). Ralph loop hit max-steps=100 once at §5/§6 boundary; one manual re-run of `kimi-run-current.sh` completed §6-§9 and wrote `.kimi-done`.

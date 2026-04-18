@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import sys
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -1182,19 +1183,34 @@ def run_telegram(ctx: click.Context) -> None:
 
         adapter = TelegramAdapter(cfg.telegram)
 
+        current_telegram_user: ContextVar[str] = ContextVar(
+            "current_telegram_user", default=""
+        )
+
+        async def _telegram_confirm_callback(
+            tool_name: str, arguments: dict[str, object]
+        ) -> bool:
+            """Async confirmation callback wired to Telegram inline keyboard."""
+            platform_user = current_telegram_user.get()
+            if not platform_user:
+                logger.warning(
+                    "Telegram confirmation requested without bound platform_user; denying tool '%s'",
+                    tool_name,
+                )
+                return False
+            return await adapter.request_confirmation(platform_user, tool_name, arguments)
+
         orchestrator = Orchestrator(
             inference=inference,
             session_store=session_store,
             context_builder=context_builder,
             tool_registry=tool_registry,
             policy=policy,
+            confirm_callback=_telegram_confirm_callback,
             max_iterations=cfg.max_iterations,
             slot_manager=slot_manager,
             failure_store=failure_store,
             trace_store=trace_store,
-            # No confirm_callback for Telegram — tools requiring confirmation
-            # (e.g., write_file) will refuse to run and tell the model why.
-            # TODO: Implement confirmation via Telegram inline keyboard buttons.
         )
 
         # Recover stale turns from previous crash
@@ -1207,19 +1223,22 @@ def run_telegram(ctx: click.Context) -> None:
 
         async def on_message(platform_name: str, platform_user: str, text: str) -> None:
             """Handle incoming Telegram message."""
+            token = current_telegram_user.set(platform_user)
             # Get or create session for this user (DB-backed, survives restarts)
-            if platform_user not in user_sessions:
-                session = await session_store.get_or_create_session("telegram", platform_user)
-                user_sessions[platform_user] = session
-            else:
-                session = user_sessions[platform_user]
-
-            user_message = Message(role="user", content=text)
-
-            async def respond(response_text: str) -> None:
-                await adapter.send_message(platform_user, response_text)
-
             try:
+                if platform_user not in user_sessions:
+                    session = await session_store.get_or_create_session(
+                        "telegram", platform_user
+                    )
+                    user_sessions[platform_user] = session
+                else:
+                    session = user_sessions[platform_user]
+
+                user_message = Message(role="user", content=text)
+
+                async def respond(response_text: str) -> None:
+                    await adapter.send_message(platform_user, response_text)
+
                 await orchestrator.process_turn(
                     session=session,
                     user_message=user_message,
@@ -1231,6 +1250,8 @@ def run_telegram(ctx: click.Context) -> None:
             except Exception as e:  # Outermost boundary — intentionally broad
                 logger.exception("Turn failed for user %s", platform_user)
                 await adapter.send_error(platform_user, f"Turn failed: {e}")
+            finally:
+                current_telegram_user.reset(token)
 
         await adapter.start(on_message)
         click.echo("Telegram bot started. Press Ctrl-C to stop.")
@@ -1314,19 +1335,32 @@ def run_matrix(ctx: click.Context) -> None:
 
         adapter = MatrixAdapter(cfg.matrix)
 
+        current_matrix_room: ContextVar[str] = ContextVar("current_matrix_room", default="")
+
+        async def _matrix_confirm_callback(
+            tool_name: str, arguments: dict[str, object]
+        ) -> bool:
+            """Async confirmation callback wired to Matrix reply pattern."""
+            room_id = current_matrix_room.get()
+            if not room_id:
+                logger.warning(
+                    "Matrix confirmation requested without bound room_id; denying tool '%s'",
+                    tool_name,
+                )
+                return False
+            return await adapter.request_confirmation(room_id, tool_name, arguments)
+
         orchestrator = Orchestrator(
             inference=inference,
             session_store=session_store,
             context_builder=context_builder,
             tool_registry=tool_registry,
             policy=policy,
+            confirm_callback=_matrix_confirm_callback,
             max_iterations=cfg.max_iterations,
             slot_manager=slot_manager,
             failure_store=failure_store,
             trace_store=trace_store,
-            # No confirm_callback for Matrix — tools requiring confirmation
-            # (e.g., write_file) will refuse to run and tell the model why.
-            # TODO: Implement confirmation via Matrix reply pattern.
         )
 
         # Recover stale turns from previous crash
@@ -1339,19 +1373,22 @@ def run_matrix(ctx: click.Context) -> None:
 
         async def on_message(platform_name: str, platform_user: str, text: str) -> None:
             """Handle incoming Matrix message."""
+            token = current_matrix_room.set(platform_user)
             # Get or create session for this room (DB-backed, survives restarts)
-            if platform_user not in room_sessions:
-                session = await session_store.get_or_create_session("matrix", platform_user)
-                room_sessions[platform_user] = session
-            else:
-                session = room_sessions[platform_user]
-
-            user_message = Message(role="user", content=text)
-
-            async def respond(response_text: str) -> None:
-                await adapter.send_message(platform_user, response_text)
-
             try:
+                if platform_user not in room_sessions:
+                    session = await session_store.get_or_create_session(
+                        "matrix", platform_user
+                    )
+                    room_sessions[platform_user] = session
+                else:
+                    session = room_sessions[platform_user]
+
+                user_message = Message(role="user", content=text)
+
+                async def respond(response_text: str) -> None:
+                    await adapter.send_message(platform_user, response_text)
+
                 await orchestrator.process_turn(
                     session=session,
                     user_message=user_message,
@@ -1363,6 +1400,8 @@ def run_matrix(ctx: click.Context) -> None:
             except Exception as e:  # Outermost boundary — intentionally broad
                 logger.exception("Turn failed for room %s", platform_user)
                 await adapter.send_error(platform_user, f"Turn failed: {e}")
+            finally:
+                current_matrix_room.reset(token)
 
         await adapter.start(on_message)
         click.echo("Matrix bot started. Press Ctrl-C to stop.")

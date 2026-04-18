@@ -31,6 +31,14 @@ class TestTrustConfigPresets:
         assert developer.subagent_shell_exec is True
         assert developer.subagent_write_local is True
 
+    def test_prompt_on_mobile_preset(self):
+        """prompt_on_mobile auto-approves nothing but keeps household flags."""
+        mobile = TrustConfig.prompt_on_mobile()
+        assert mobile.auto_approve_tools == []
+        assert mobile.scheduler_shell_exec is True
+        assert mobile.subagent_shell_exec is True
+        assert mobile.subagent_write_local is True
+
 
 class TestHestiaConfigForTrust:
     """Tests for HestiaConfig.for_trust mapping."""

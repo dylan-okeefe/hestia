@@ -7,12 +7,13 @@ import logging
 import time
 from typing import Any
 
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import TelegramError
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
 from hestia.config import TelegramConfig
 from hestia.platforms.base import IncomingMessageCallback, Platform
+from hestia.platforms.confirmation import ConfirmationStore, render_args_for_human_review
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,8 @@ class TelegramAdapter(Platform):
         self._app: Application[Any, Any, Any, Any, Any, Any] | None = None
         self._on_message: IncomingMessageCallback | None = None
         self._last_edit_times: dict[str, float] = {}  # msg_id -> last edit timestamp
+        self._confirmation_store = ConfirmationStore()
+        self._confirmation_timeout_seconds = 60.0
 
     @property
     def name(self) -> str:
@@ -48,6 +51,7 @@ class TelegramAdapter(Platform):
         # Register handlers
         self._app.add_handler(CommandHandler("start", self._handle_start))
         self._app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message))
+        self._app.add_handler(CallbackQueryHandler(self._handle_callback_query))
 
         # Start polling
         await self._app.initialize()
@@ -124,6 +128,53 @@ class TelegramAdapter(Platform):
             text=f"⚠️ {text}",
         )
 
+    async def request_confirmation(
+        self, user: str, tool_name: str, arguments: dict[str, Any]
+    ) -> bool:
+        """Send an inline-keyboard confirmation prompt and wait for operator response.
+
+        Returns ``True`` on ✅, ``False`` on ❌ or timeout.
+        """
+        if self._app is None:
+            raise RuntimeError("Telegram adapter not started")
+
+        chat_id = int(user)
+        prompt = render_args_for_human_review(tool_name, arguments)
+        text = (
+            f"🔒 Tool *{tool_name}* wants to run:\n"
+            f"```json\n{prompt}\n```\n"
+            f"Approve within {int(self._confirmation_timeout_seconds)}s?"
+        )
+
+        req = self._confirmation_store.create(
+            tool_name=tool_name,
+            arguments=arguments,
+            timeout_seconds=self._confirmation_timeout_seconds,
+        )
+
+        keyboard = [
+            [
+                InlineKeyboardButton("✅", callback_data=f"confirm:{req.id}:yes"),
+                InlineKeyboardButton("❌", callback_data=f"confirm:{req.id}:no"),
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await self._app.bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            parse_mode="Markdown",
+            reply_markup=reply_markup,
+        )
+
+        try:
+            return await asyncio.wait_for(
+                req.future, timeout=self._confirmation_timeout_seconds
+            )
+        except asyncio.TimeoutError:
+            self._confirmation_store.cancel(req.id)
+            return False
+
     def _is_allowed(self, user_id: int, username: str | None) -> bool:
         """Check if a user is in the allowed list.
 
@@ -168,3 +219,45 @@ class TelegramAdapter(Platform):
                 str(user_id),
                 update.effective_message.text,
             )
+
+    async def _handle_callback_query(self, update: Update, context: Any) -> None:
+        """Handle inline-keyboard button presses for confirmations."""
+        if update.callback_query is None or update.callback_query.data is None:
+            return
+
+        data = update.callback_query.data
+        if not data.startswith("confirm:"):
+            return
+
+        parts = data.split(":")
+        if len(parts) != 3:
+            await update.callback_query.answer("Invalid confirmation.")
+            return
+
+        _prefix, request_id, answer = parts
+        approved = answer == "yes"
+
+        resolved = self._confirmation_store.resolve(request_id, approved)
+
+        if resolved:
+            await update.callback_query.answer(
+                "Approved." if approved else "Cancelled."
+            )
+            # Update the original message to remove the keyboard
+            msg = update.callback_query.message
+            if msg is not None:
+                try:
+                    original_text = getattr(msg, "text", None) or ""
+                    # Strip the "Approve within ...?" line
+                    lines = original_text.split("\n")
+                    new_lines = [ln for ln in lines if not ln.startswith("Approve")]
+                    new_text = "\n".join(new_lines)
+                    status = "✅ Approved" if approved else "❌ Denied"
+                    await update.callback_query.edit_message_text(
+                        text=f"{status}\n{new_text}",
+                        parse_mode="Markdown",
+                    )
+                except TelegramError as e:
+                    logger.debug("Failed to update confirmation message: %s", e)
+        else:
+            await update.callback_query.answer("This confirmation has expired.")
