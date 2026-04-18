@@ -8,6 +8,30 @@
 
 ---
 
+## 2026-04-18 — Loop: L23 — Telegram + Matrix confirmation callbacks (Kimi + Cursor fix) → merged to develop
+
+**Kimi:** `.kimi-done` loop completed on `feature/l23-platform-confirmation`; final review/merge landed as `7e2ebe0` (feature commit) and merge commit `f56e9ad` on `develop`.
+
+**What shipped:**
+
+1. Telegram inline-keyboard confirmation flow (`✅/❌`) for `requires_confirmation=True` tools.
+2. Matrix reply-pattern confirmation (`yes/no` reply to confirmation event).
+3. Shared confirmation infra in `src/hestia/platforms/confirmation.py` (`ConfirmationRequest`, `ConfirmationStore`, args renderer).
+4. `TrustConfig.prompt_on_mobile()` preset.
+5. New unit/integration coverage for Telegram, Matrix, and confirmation store.
+
+**Review findings (Cursor):**
+
+- Full suite executed before merge: `573 passed, 6 skipped`.
+- Found and fixed one real concurrency bug in `cli.py`: confirmation callbacks were bound to shared mutable `_current_telegram_user` / `_current_matrix_room`, which could cross-route confirmations under concurrent chats.
+- Fix applied in the same feature commit by switching to per-turn `ContextVar` binding for platform user/room during `process_turn`.
+
+**Merge:** `feature/l23-platform-confirmation` → `develop` via `--no-ff` merge commit `f56e9ad`. Pushed.
+
+**Queue advance:** `KIMI_CURRENT.md` repointed to L24 and L24 `## Review carry-forward` populated with L23 findings.
+
+---
+
 ## 2026-04-17 — Loop: L22 — mypy cleanup + CI strictness ratchet (Kimi) → merged to develop
 
 **Kimi:** `.kimi-done`: `LOOP=L22`, final commit `0986130`, `TESTS=545 passed, 6 skipped, 0 failed`, `MYPY_FINAL_ERRORS=0` on `feature/l22-mypy-cleanup`. 14 Kimi commits covering every §1-§8 category from `reviews/mypy-errors-april-17.md`. Ralph max-steps hit twice across three launches; each resume picked up from git state.

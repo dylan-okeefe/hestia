@@ -2,66 +2,42 @@
 
 **Orchestrator:** Cursor updates this file after each review.
 
-**Last set by:** Cursor — 2026-04-17 (L23 queued — Telegram + Matrix confirmation callbacks)
+**Last set by:** Cursor — 2026-04-18 (L24 queued — injection detection + egress audit)
 
 ---
 
 ## Current task
 
-**Active loop:** **L23** — Wire real tool-confirmation callbacks into
-Telegram (inline keyboard) and Matrix (reply pattern), complementing
-L20's `TrustConfig.auto_approve_tools`. After L23, operators who
-**want** a mobile confirm prompt on `terminal` / `write_file` /
-`email_send` calls finally have one that works.
+**Active loop:** **L24** — Add prompt-injection detection on tool results and
+network egress auditing before email integration lands.
 
-**Spec:** [`../kimi-loops/L23-platform-confirmation-callbacks.md`](../kimi-loops/L23-platform-confirmation-callbacks.md)
+**Spec:** [`../kimi-loops/L24-prompt-injection-detection-and-egress-audit.md`](../kimi-loops/L24-prompt-injection-detection-and-egress-audit.md)
 
-**Branch:** `feature/l23-platform-confirmation` (already created from
-`develop` tip `75ea2b5`).
+**Branch:** `feature/l24-injection-detection` from `develop` tip `f56e9ad`.
 
-**Kimi prompt:** Read this file, then execute the full spec at the
-linked file. Implement every section §1 through §5 in order; §0 review
-carry-forward from L22 is already populated. Stop and report
-immediately if any section fails. Write the `.kimi-done` artifact at
-the end (do not commit it).
+**Kimi prompt:** Read this file, then execute the full spec at the linked file.
+Implement every section in order. Stop and report immediately if any section
+fails. Write the `.kimi-done` artifact at the end (do not commit it).
 
 **Scope (summary, see spec for detail):**
 
-- §1 Telegram inline-keyboard confirmation callback, implemented in
-  `src/hestia/platforms/telegram_adapter.py` and wired from
-  `cli.py:1146-1148` (the TODO).
-- §2 Matrix reply-pattern confirmation in
-  `src/hestia/platforms/matrix_adapter.py`, wired from
-  `cli.py:1276-1278` TODO.
-- §3 Shared infrastructure: `src/hestia/platforms/confirmation.py`
-  with `ConfirmationRequest` dataclass and `ConfirmationStore`
-  (in-memory v1).
-- §4 `TrustConfig.prompt_on_mobile()` preset method.
-- §5 Unit + integration tests, README update, **ADR-0016**
-  (ADR-0014/0015 were taken by L21).
+- Add `src/hestia/security/injection.py` scanner with regex + entropy heuristic.
+- Invoke scanner on tool results before they are returned to orchestrator.
+- Record egress events for `http_get` and `web_search` via trace store.
+- Add `hestia audit egress --since=7d` domain-level reporting.
+- Add `SecurityConfig` and wire through `HestiaConfig`.
+- Add tests/docs + ADR.
 
-**Do not merge to `develop` in this loop.** Push the feature branch
-and stop after `.kimi-done`.
-
-**Constraints (from L22 review carry-forward):**
-
-- Preserve `mypy src/hestia` at 0 errors. New platform code is not
-  strict-typed yet, but don't add `Any` callbacks without reason.
-- If you touch ruff-dirty lines in `cli.py`, fix them in a separate
-  `style:` commit.
-- Confirmation-timeout / denial paths that close the session must go
-  through `Orchestrator.close_session`, not
-  `SessionStore.archive_session` — otherwise the L21 handoff
-  summarizer gets skipped.
+**Do not merge to `develop` in this loop.** Push the feature branch and stop
+after `.kimi-done`.
 
 ---
 
 ## Reference
 
 - Queue: [`../kimi-phase-queue.md`](../kimi-phase-queue.md)
-- L20 trust profile: [`../kimi-loops/L20-trust-config-and-web-search.md`](../kimi-loops/L20-trust-config-and-web-search.md)
-- Capability audit (primary motivation):
-  [`../reviews/capability-audit-april-17.md`](../reviews/capability-audit-april-17.md)
+- Prior loop: [`../kimi-loops/L23-platform-confirmation-callbacks.md`](../kimi-loops/L23-platform-confirmation-callbacks.md)
+- Capability audit: [`../reviews/capability-audit-april-17.md`](../reviews/capability-audit-april-17.md)
 
 ---
 
@@ -71,11 +47,11 @@ At successful completion, write `./.kimi-done` with at minimum:
 
 ```
 HESTIA_KIMI_DONE=1
-LOOP=L23
-BRANCH=feature/l23-platform-confirmation
+LOOP=L24
+BRANCH=feature/l24-injection-detection
 COMMIT=<final commit sha>
 TESTS=<pytest summary, e.g. "passed=N failed=0 skipped=M">
-MYPY_FINAL_ERRORS=0
+MYPY_FINAL_ERRORS=<count>
 ```
 
 If blocked, still write `.kimi-done` with `HESTIA_KIMI_DONE=0` and a

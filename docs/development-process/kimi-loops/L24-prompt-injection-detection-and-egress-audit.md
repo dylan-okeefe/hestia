@@ -2,7 +2,13 @@
 
 ## Review carry-forward
 
-From L23 review (to be filled).
+From **L23 review** (merged to `develop` in commit `f56e9ad`):
+
+- Mobile confirmation callbacks shipped for Telegram and Matrix. Keep the new `ConfirmationStore` behavior additive; L24 must not regress these flows.
+- **Concurrency lesson from L23:** callback routing must remain per-turn scoped (ContextVar-safe), never global mutable state keyed by "current room/user".
+- Keep `mypy src/hestia` at 0 and full test suite green (`uv run pytest tests/unit/ tests/integration/ -q`).
+- L23 introduced ADR-0016; use the next available ADR number for L24 docs updates.
+- Existing pytest run produced pre-existing `aiosqlite` thread-shutdown warnings; do not hide them in this loop unless the change is intentional and test-backed.
 
 **Branch:** `feature/l24-injection-detection` from **`develop`**.
 
