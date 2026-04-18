@@ -371,6 +371,7 @@ class CliAppContext:
         return InjectionScanner(
             enabled=self.config.security.injection_scanner_enabled,
             entropy_threshold=self.config.security.injection_entropy_threshold,
+            skip_filters_for_structured=self.config.security.injection_skip_filters_for_structured,
         )
 
     def make_orchestrator(self) -> Orchestrator:

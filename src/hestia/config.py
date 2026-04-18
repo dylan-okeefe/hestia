@@ -303,7 +303,8 @@ class SecurityConfig:
     """Security-related toggles for Hestia."""
 
     injection_scanner_enabled: bool = True
-    injection_entropy_threshold: float = 4.2
+    injection_entropy_threshold: float = 5.5
+    injection_skip_filters_for_structured: bool = True
     egress_audit_enabled: bool = True
 
 
