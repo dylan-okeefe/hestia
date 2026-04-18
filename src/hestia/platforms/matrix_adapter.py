@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from typing import Any
 
 from nio import (
     AsyncClient,
@@ -17,6 +18,7 @@ from nio import (
 from hestia.config import MatrixConfig
 from hestia.errors import PlatformError
 from hestia.platforms.base import IncomingMessageCallback, Platform
+from hestia.platforms.confirmation import ConfirmationStore, render_args_for_human_review
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +46,10 @@ class MatrixAdapter(Platform):
         self._last_edit_times: dict[str, float] = {}  # event_id -> last edit timestamp
         self._sync_task: asyncio.Task[None] | None = None
         self._stop_event: asyncio.Event | None = None
+        self._confirmation_store = ConfirmationStore()
+        self._confirmation_timeout_seconds = 60.0
+        # Maps original confirmation event_id -> request_id so we can correlate replies
+        self._pending_confirmations: dict[str, str] = {}
 
     @property
     def name(self) -> str:
@@ -176,6 +182,41 @@ class MatrixAdapter(Platform):
         except Exception as e:  # noqa: BLE001
             logger.debug("Failed to redact message %s: %s", msg_id, e)
 
+    async def request_confirmation(
+        self, user: str, tool_name: str, arguments: dict[str, Any]
+    ) -> bool:
+        """Post a confirmation prompt and wait for a 'yes'/'no' reply.
+
+        Returns ``True`` on 'yes', ``False`` on 'no' or timeout.
+        """
+        if self._client is None:
+            raise RuntimeError("Matrix adapter not started")
+
+        prompt = render_args_for_human_review(tool_name, arguments)
+        text = (
+            f"🔒 Tool '{tool_name}' wants to run with: {prompt}. "
+            f"Reply 'yes' or 'no' within {int(self._confirmation_timeout_seconds)}s."
+        )
+
+        event_id = await self.send_message(user, text)
+
+        req = self._confirmation_store.create(
+            tool_name=tool_name,
+            arguments=arguments,
+            timeout_seconds=self._confirmation_timeout_seconds,
+        )
+        self._pending_confirmations[event_id] = req.id
+
+        try:
+            return await asyncio.wait_for(
+                req.future, timeout=self._confirmation_timeout_seconds
+            )
+        except asyncio.TimeoutError:
+            self._confirmation_store.cancel(req.id)
+            return False
+        finally:
+            self._pending_confirmations.pop(event_id, None)
+
     def _is_allowed(self, room_id: str) -> bool:
         """Check if a room is in the allowed list."""
         if not self._config.allowed_rooms:
@@ -210,9 +251,6 @@ class MatrixAdapter(Platform):
         self, room: MatrixRoom, event: RoomMessageText
     ) -> None:
         """Handle incoming room messages."""
-        if self._on_message is None:
-            return
-
         # Ignore our own messages
         if event.sender == self._config.user_id:
             return
@@ -226,6 +264,21 @@ class MatrixAdapter(Platform):
         body = event.body
         if not body or not body.strip():
             return  # Ignore empty/whitespace messages
+
+        # Check if this is a reply to a pending confirmation (internal adapter concern)
+        in_reply_to = self._extract_in_reply_to(event)
+        if in_reply_to and in_reply_to in self._pending_confirmations:
+            request_id = self._pending_confirmations[in_reply_to]
+            reply_text = body.strip().lower()
+            if reply_text in ("yes", "y"):
+                self._confirmation_store.resolve(request_id, True)
+            elif reply_text in ("no", "n"):
+                self._confirmation_store.resolve(request_id, False)
+            # Don't route confirmation replies to the orchestrator
+            return
+
+        if self._on_message is None:
+            return
 
         # Strip HTML if formatted_body exists (we only want plain text for the model)
         # body is already plain text per matrix spec
@@ -244,3 +297,22 @@ class MatrixAdapter(Platform):
             room.room_id,
             body.strip(),
         )
+
+    @staticmethod
+    def _extract_in_reply_to(event: RoomMessageText) -> str | None:
+        """Extract the event_id this message is replying to, if any."""
+        try:
+            source: dict[str, Any] = event.source
+            content = source.get("content", {})
+            if not isinstance(content, dict):
+                return None
+            relates_to = content.get("m.relates_to", {})
+            if not isinstance(relates_to, dict):
+                return None
+            in_reply_to = relates_to.get("m.in_reply_to", {})
+            if not isinstance(in_reply_to, dict):
+                return None
+            event_id = in_reply_to.get("event_id")
+            return event_id if isinstance(event_id, str) else None
+        except Exception:  # noqa: BLE001
+            return None

@@ -194,6 +194,24 @@ class TrustConfig:
             subagent_write_local=True,
         )
 
+    @classmethod
+    def prompt_on_mobile(cls) -> TrustConfig:
+        """Mobile-confirmation posture.
+
+        Auto-approves nothing (confirmation prompt on every
+        ``requires_confirmation=True`` tool), but keeps the rest of the
+        ``household`` defaults: scheduler and subagents can shell and write.
+        Use this when you run Hestia on Telegram or Matrix and want an
+        explicit ✅/❌ prompt on your phone for ``terminal``, ``write_file``,
+        and ``email_send``.
+        """
+        return cls(
+            auto_approve_tools=[],
+            scheduler_shell_exec=True,
+            subagent_shell_exec=True,
+            subagent_write_local=True,
+        )
+
 
 @dataclass
 class HandoffConfig:
