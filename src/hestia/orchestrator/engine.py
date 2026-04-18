@@ -22,6 +22,7 @@ from hestia.inference.slot_manager import SlotManager
 from hestia.memory.handoff import SessionHandoffSummarizer
 from hestia.orchestrator.transitions import assert_transition
 from hestia.orchestrator.types import Turn, TurnState, TurnTransition
+from hestia.persistence.failure_store import FailureBundle
 from hestia.persistence.sessions import SessionStore
 from hestia.platforms.base import Platform
 from hestia.policy.engine import PolicyEngine, RetryAction
@@ -200,8 +201,6 @@ class Orchestrator:
             trace_record_id: str | None = None
 
             allowed_tools: list[str] | None = None
-            policy_snapshot: str = json.dumps({"error": "policy not initialized"})
-            slot_snapshot: str = json.dumps({"error": "slot not initialized"})
 
             try:
                 # Start processing
@@ -554,7 +553,7 @@ class Orchestrator:
         *,
         session: Session,
         turn: Turn,
-        error: BaseException,
+        error: Exception,
         user_input: str,
         failure_kind: str,
         allowed_tools: list[str] | None,
@@ -564,8 +563,6 @@ class Orchestrator:
 
         Centralises slot snapshot, policy snapshot JSON, and input summary
         truncation; previously duplicated across two except blocks."""
-        from hestia.persistence.failure_store import FailureBundle
-
         if failure_kind == "context_too_large":
             failure_class = "context_overflow"
             severity = "medium"
@@ -574,10 +571,7 @@ class Orchestrator:
             failure_class = failure_class.value
 
         raw_summary = user_input
-        if len(raw_summary) > 200:
-            user_input_summary = raw_summary[:200] + "..."
-        else:
-            user_input_summary = raw_summary
+        user_input_summary = raw_summary[:200] + "..." if len(raw_summary) > 200 else raw_summary
 
         reasoning_budget = turn.reasoning_budget
         if reasoning_budget is None:
