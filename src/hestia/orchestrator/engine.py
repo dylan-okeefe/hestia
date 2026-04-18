@@ -29,6 +29,7 @@ from hestia.reflection.store import ProposalStore
 from hestia.security import InjectionScanner
 from hestia.style.context import format_style_prefix_from_data
 from hestia.tools.builtin import current_session_id, current_trace_store
+from hestia.tools.metadata import ToolMetadata
 from hestia.tools.registry import ToolNotFoundError, ToolRegistry
 from hestia.tools.types import ToolCallResult
 
@@ -734,6 +735,48 @@ class Orchestrator:
             )
         return messages, artifact_handles
 
+    async def _check_confirmation(
+        self,
+        *,
+        tool: ToolMetadata,
+        tool_name: str,
+        arguments: dict[str, Any],
+        session: Session,
+    ) -> ToolCallResult | None:
+        """Return None if approved (or if the tool does not require confirmation),
+        or a ToolCallResult(error=...) if denied / unable to confirm."""
+        if not tool.requires_confirmation:
+            return None
+
+        if self._policy.auto_approve(tool_name, session):
+            # Trust profile auto-approves this tool for this session context.
+            return None
+
+        if self._confirm_callback is None:
+            return ToolCallResult(
+                status="error",
+                content=(
+                    f"Tool '{tool_name}' requires user confirmation but no "
+                    "confirm_callback is configured and the trust profile does "
+                    "not auto-approve it. Add the tool to "
+                    "TrustConfig.auto_approve_tools, or run via a platform that "
+                    "supports confirmation (CLI)."
+                ),
+                artifact_handle=None,
+                truncated=False,
+            )
+
+        confirmed = await self._confirm_callback(tool_name, arguments)
+        if not confirmed:
+            return ToolCallResult(
+                status="error",
+                content="Tool execution was cancelled by user.",
+                artifact_handle=None,
+                truncated=False,
+            )
+
+        return None
+
     async def _dispatch_tool_call(
         self, session: Session, tc: ToolCall, allowed_tools: list[str] | None = None
     ) -> ToolCallResult:
@@ -805,32 +848,11 @@ class Orchestrator:
                     truncated=False,
                 )
 
-            if inner_meta.requires_confirmation:
-                if self._policy.auto_approve(name, session):
-                    # Trust profile auto-approves this tool for this session context.
-                    pass
-                elif self._confirm_callback is None:
-                    return ToolCallResult(
-                        status="error",
-                        content=(
-                            f"Tool '{name}' requires user confirmation but no "
-                            "confirm_callback is configured and the trust profile does "
-                            "not auto-approve it. Add the tool to "
-                            "TrustConfig.auto_approve_tools, or run via a platform that "
-                            "supports confirmation (CLI)."
-                        ),
-                        artifact_handle=None,
-                        truncated=False,
-                    )
-                else:
-                    confirmed = await self._confirm_callback(name, arguments)
-                    if not confirmed:
-                        return ToolCallResult(
-                            status="error",
-                            content="Tool execution was cancelled by user.",
-                            artifact_handle=None,
-                            truncated=False,
-                        )
+            confirm_result = await self._check_confirmation(
+                tool=inner_meta, tool_name=name, arguments=arguments, session=session
+            )
+            if confirm_result is not None:
+                return confirm_result
 
             return await self._tools.meta_call_tool(name, arguments)
 
@@ -846,32 +868,11 @@ class Orchestrator:
                 truncated=False,
             )
 
-        if meta.requires_confirmation:
-            if self._policy.auto_approve(tc.name, session):
-                # Trust profile auto-approves this tool for this session context.
-                pass
-            elif self._confirm_callback is None:
-                return ToolCallResult(
-                    status="error",
-                    content=(
-                        f"Tool '{tc.name}' requires user confirmation but no "
-                        "confirm_callback is configured and the trust profile does "
-                        "not auto-approve it. Add the tool to "
-                        "TrustConfig.auto_approve_tools, or run via a platform that "
-                        "supports confirmation (CLI)."
-                    ),
-                    artifact_handle=None,
-                    truncated=False,
-                )
-            else:
-                confirmed = await self._confirm_callback(tc.name, tc.arguments or {})
-                if not confirmed:
-                    return ToolCallResult(
-                        status="error",
-                        content="Tool execution was cancelled by user.",
-                        artifact_handle=None,
-                        truncated=False,
-                    )
+        confirm_result = await self._check_confirmation(
+            tool=meta, tool_name=tc.name, arguments=tc.arguments or {}, session=session
+        )
+        if confirm_result is not None:
+            return confirm_result
 
         result = await self._tools.call(tc.name, tc.arguments or {})
         return self._scan_tool_result(result)
