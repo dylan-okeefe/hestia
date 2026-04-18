@@ -18,6 +18,11 @@ from hestia.tools.registry import ToolRegistry
 class ExplodingInferenceClient:
     """Inference client that raises ContextTooLargeError on count_request."""
 
+    model_name = "fake-model"
+
+    async def tokenize(self, text: str) -> list[int]:
+        return [0] * (len(text) // 4 + 1)
+
     async def count_request(self, messages, tools):
         # Simulate a huge count that always exceeds budget
         return 99999

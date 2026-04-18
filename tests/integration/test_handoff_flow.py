@@ -15,6 +15,11 @@ from hestia.persistence.sessions import SessionStore
 class FakeInferenceClient:
     """Fake inference client for testing."""
 
+    model_name = "fake-model"
+
+    async def tokenize(self, text: str) -> list[int]:
+        return [0] * (len(text) // 4 + 1)
+
     async def count_request(self, messages, tools):
         total = 0
         for msg in messages:

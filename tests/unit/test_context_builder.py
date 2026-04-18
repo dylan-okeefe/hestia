@@ -16,6 +16,12 @@ class FakeInferenceClient:
     Counts tokens by character count (not realistic but deterministic).
     """
 
+    def __init__(self) -> None:
+        self.model_name = "fake-model"
+
+    async def tokenize(self, text: str) -> list[int]:
+        return [0] * (len(text) // 4 + 1)
+
     async def count_request(self, messages: list[Message], tools: list[ToolSchema]) -> int:
         """Simple char-based token count for testing."""
         total = 0

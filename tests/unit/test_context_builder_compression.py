@@ -13,6 +13,12 @@ from hestia.policy.default import DefaultPolicyEngine
 class FakeInferenceClient:
     """Fake inference client that counts tokens by character length."""
 
+    def __init__(self) -> None:
+        self.model_name = "fake-model"
+
+    async def tokenize(self, text: str) -> list[int]:
+        return [0] * (len(text) // 4 + 1)
+
     async def count_request(self, messages, tools):
         total = 0
         for msg in messages:

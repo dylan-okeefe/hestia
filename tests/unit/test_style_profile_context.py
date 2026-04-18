@@ -10,6 +10,11 @@ from hestia.policy.default import DefaultPolicyEngine
 
 
 class FakeInference:
+    model_name = "fake-model"
+
+    async def tokenize(self, text: str) -> list[int]:
+        return [0] * len(text.split())
+
     async def count_request(self, messages, tools=None):
         return sum(len((m.content or "").split()) for m in messages)
 

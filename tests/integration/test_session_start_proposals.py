@@ -14,6 +14,11 @@ from hestia.reflection.types import Proposal
 
 
 class FakeInference:
+    model_name = "fake-model"
+
+    async def tokenize(self, text: str) -> list[int]:
+        return [0] * (len(text) // 4 + 1)
+
     async def count_request(self, messages, tools=None):
         return 10
 
