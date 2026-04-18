@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 
 
 class EmailConfigError(ValueError):
@@ -338,7 +339,7 @@ class WebSearchConfig:
     provider + api_key in their config.py.
     """
 
-    provider: str = ""  # "tavily" | "brave" | "" (disabled)
+    provider: Literal["tavily", ""] = ""  # "tavily" or "" (disabled)
     api_key: str = ""
     max_results: int = 5
     include_raw_content: bool = False  # Tavily: fetch + extract main content

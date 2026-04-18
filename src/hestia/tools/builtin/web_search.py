@@ -90,8 +90,7 @@ def make_web_search_tool(config: WebSearchConfig) -> Any:
     if config.provider != "tavily":
         raise ValueError(
             f"Unsupported web_search provider: {config.provider!r} "
-            "(currently only 'tavily' is implemented; add a provider branch "
-            "in web_search.py to extend)"
+            "(only 'tavily' is currently wired)"
         )
 
     @tool(
