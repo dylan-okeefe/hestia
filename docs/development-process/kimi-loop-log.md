@@ -8,6 +8,54 @@
 
 ---
 
+## 2026-04-18 — Loop: L30 — `cli.py` decomposition into `app.py` + `platforms/runners.py` (Kimi → Cursor finish) → merged to develop
+
+**Kimi:** Started L30 from `feature/l30-cli-decomposition` (off `develop` tip `bbed167`). Created `src/hestia/app.py` (~1,500 lines), `src/hestia/platforms/runners.py` (~245 lines), and rewrote `src/hestia/cli.py` down to ~575 lines — but **never committed any of it** before hitting the `--max-ralph-iterations` (100) ceiling and exiting. **No `.kimi-done` was written.** Resume id captured but not used; the working tree was already in a recoverable state and the remaining work was small enough that another Kimi spin-up would have cost more than the manual fix-up.
+
+**Cursor finish (manual):**
+
+1. Removed dangling `@cli.command()` / `@click.option(...)` / `@click.pass_context` decorators in `cli.py` lines 240-243 (orphaned from a removed command body).
+2. Added `_cmd_schedule_add` to the import list from `hestia.app` (Kimi referenced it without importing).
+3. Restored missing `_cmd_schedule_enable` and `_cmd_schedule_run` helpers in `app.py` (Kimi had dropped them entirely).
+4. Wired `schedule enable`, `schedule run`, and `schedule daemon` properly under the `@schedule` group (Kimi had left `schedule_daemon` as a bare top-level function, never registered as a subcommand).
+5. Dropped bogus `task.run_count` / `task.failure_count` lines from `_cmd_schedule_show` (those attributes do not exist on `ScheduledTask`).
+6. Removed the `config.reflection.enabled` gate from the `reflection_scheduler` lazy property so the `hestia reflection status` patched-`__init__` test contract continues to hold; the `enabled` check moved to the daemon tick site.
+7. Added missing `import sys` in `app.py` (referenced ~10×, never imported — module loaded only because `sys.exit` is resolved lazily).
+8. Constrained `reflection_scheduler` construction to require a non-`None` `proposal_store` (mypy fix).
+9. `ruff check src/ --fix` cleared 64 lints (unused imports, `OSError`/`IOError` alias, `datetime.UTC`, etc.). One auto-fix replaced `setattr(func, "__hestia_skill__", definition)` in `skills/decorator.py` with a direct attribute write that mypy rejected; restored the assignment with a `# type: ignore[attr-defined]`.
+
+**What shipped:**
+
+| Module | Lines | Responsibility |
+| --- | --- | --- |
+| `src/hestia/cli.py` | 588 | Click definitions only. |
+| `src/hestia/app.py` | 1,525 | `CliAppContext`, `make_app`, lazy subsystem properties, idempotent `bootstrap_db()`, single `make_orchestrator()` constructor, all `_cmd_*` async commands. |
+| `src/hestia/platforms/runners.py` | 245 | `run_platform`, `run_telegram(app, config)`, `run_matrix(app, config)`. |
+
+- `Orchestrator(...)` now constructed in **one** place (`CliAppContext.make_orchestrator()`); the previous three-call-site drift (`cli()`, `schedule_daemon`, `run_telegram` / `run_matrix`) is gone.
+- `run_async` decorator removes per-command `asyncio.run(_inner())` boilerplate.
+- `ctx.obj` is the typed `CliAppContext` only; the parallel raw-dict layer is removed.
+- ADR-0020 documents the split + module ownership boundaries.
+- Bumped to `0.7.4`; `uv.lock` synced; CHANGELOG + handoff written.
+
+**Review (Cursor):**
+
+- Full gate on the branch tip: **`691 passed, 6 skipped`** (no test count change vs L29 — pure refactor as specified). `uv run mypy src/hestia` → **0**.
+- **Ruff project-wide count: 255 → 44** (massive cleanup, per ADR-0020 expectation that decomposing the monolith would naturally drop the E501 backlog plus the auto-fix pass).
+- Lockfile clean (`hestia` package version `0.7.4` matches `pyproject.toml`).
+- Same pre-existing `aiosqlite` `RuntimeError: Event loop is closed` test-teardown warnings as L28/L29; not L30's concern.
+
+**Merge:** `feature/l30-cli-decomposition` → `develop` via `--no-ff` merge commit `30a224f`.
+
+**Queue advance:** `KIMI_CURRENT.md` will move to **L31** (orchestrator engine cleanup). L31 carry-forward: ruff baseline tightened to **44** (no regressions allowed), test baseline **691**, note that Kimi's max-iterations is a real risk on long refactor loops — L31 must be sized to fit comfortably under 100 steps.
+
+**Suggested coverage gaps** (no L30 blocker, fold into future loops if natural):
+
+- `_cmd_schedule_run` and `_cmd_schedule_enable` paths are exercised end-to-end by `tests/unit/test_cli_scheduler.py` but with no explicit coverage that the daemon-tick gate (`if app.config.reflection.enabled and app.reflection_scheduler is not None`) actually short-circuits when reflection is disabled. Add when L31 touches the orchestrator path.
+- The `run_platform` shared helper in `runners.py` has no direct unit test — adapter integration tests cover it implicitly. Could add a fake-adapter unit test when L33 touches platform runners.
+
+---
+
 ## 2026-04-18 — Loop: L29 — reliability surface, secrets hygiene, ADR consolidation (Kimi) → merged to develop
 
 **Kimi:** Loop ran ~18 minutes; **all 9 spec section commits landed** but Kimi hit `--max-ralph-iterations` (100) immediately after the handoff commit (`378b2e8`) and exited with code 1 **before writing `.kimi-done`**. Resume id `005cdc7a-0213-4e15-9ec6-9c0f26b16572` recorded but not used — Cursor verified completion independently and wrote a valid `.kimi-done` (`HESTIA_KIMI_DONE=1`, `LOOP=L29`, `COMMIT=378b2e8`, `TESTS=passed=691 failed=0 skipped=6`, `MYPY_FINAL_ERRORS=0`) with a `NOTE=` field documenting the orchestration shortcut.

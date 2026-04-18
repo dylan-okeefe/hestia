@@ -33,7 +33,14 @@ Branch from `develop` post-L30. `git status` clean. Record baseline pytest/mypy.
 
 ### §0 — Cleanup carry-forward
 
-(Cursor populates from L30 review.)
+From L30 (merged at `30a224f`, all manually rescued from a Kimi `max-ralph-iterations` exit — see L30 handoff for the full list, the items below are the ones L31 should still be aware of):
+
+1. **Hard ruff baseline: 44.** `uv run ruff check src/` returns 44 errors at the L30 merge commit. **L31 must not regress this number.** The remaining lints are mostly `E501` (27), `SIM105` (5), `F841` (3), `SIM108` (3), `B027` (2), `E712` (2), `F401` (1), `SIM103` (1) — none in the orchestrator engine. If you touch the orchestrator and notice an easy `SIM105` (`try/except/pass` → `contextlib.suppress`) cleanup, take it as a freebie; do **not** make a project-wide ruff sweep part of L31.
+2. **Test baseline: 691 passed, 6 skipped, 0 mypy errors.** Pure refactors must hit the same numbers (your new tests in §7 push the total up; that is fine).
+3. **Kimi step budget.** L29 and L30 both hit `--max-ralph-iterations=100` and exited mid-flight. Your spec is **9 commits + 3 new test files**; that should fit comfortably under 100 steps if you do **not** chase ruff cleanups, do **not** rewrite unrelated code, and write `.kimi-done` immediately after the last commit lands. Push the branch and stop.
+4. **`Orchestrator(...)` is now constructed in exactly one place** — `CliAppContext.make_orchestrator()` in `src/hestia/app.py`. If §6 (`ToolCallResult.error`) or any §1–§5 change requires updating call-site signatures, you only need to touch `make_orchestrator()` plus the orchestrator engine and its tests. Do not search-and-replace other files.
+5. **`schedule run` daemon-tick gate** — the L30 fix gates reflection-scheduler ticks behind `app.config.reflection.enabled`. If your L31 work touches the orchestrator's interaction with the reflection runner, leave that gate alone.
+6. **Pre-existing `aiosqlite` `RuntimeError: Event loop is closed` test-teardown warnings** are still present and unrelated to L31.
 
 ### §1 — Extract `_build_failure_bundle`
 

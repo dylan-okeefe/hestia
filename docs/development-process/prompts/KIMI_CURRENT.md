@@ -2,41 +2,44 @@
 
 **Orchestrator:** Cursor updates this file after each review.
 
-**Last set by:** Cursor — 2026-04-18 (L30 queued — cli.py decomposition + bootstrap module)
+**Last set by:** Cursor — 2026-04-18 (L30 merged at `30a224f`; L31 queued — orchestrator engine cleanup)
 
 ---
 
 ## Current task
 
-**Active loop:** **L30** — split the 2,569-line `cli.py` into `hestia/app.py` (subsystem wiring), `hestia/platforms/runners.py` (platform polling loops), and a slim `cli.py` (Click definitions only ≤ 600 lines). Establish `CliAppContext.make_orchestrator()` as the **only** Orchestrator constructor. Drop the raw `ctx.obj["..."]` dict layer.
+**Active loop:** **L31** — orchestrator engine cleanup. `process_turn` in `src/hestia/orchestrator/engine.py` is ~500 lines with two duplicated failure-bundle blocks, a defensive `locals().get("delegated", False)` smell, a duplicated history fetch, and a regex-based artifact-handle recovery that should pull from `ToolCallResult.artifact_handle` instead. `_dispatch_tool_call` duplicates its confirmation check and constructs `ToolCallResult(status="error", ...)` 8+ times.
 
-**Spec:** [`../kimi-loops/L30-cli-decomposition.md`](../kimi-loops/L30-cli-decomposition.md)
+**Spec:** [`../kimi-loops/L31-engine-cleanup.md`](../kimi-loops/L31-engine-cleanup.md)
 
-**Branch:** `feature/l30-cli-decomposition` from `develop` tip `bbed167` (post-L29 merge).
+**Branch:** `feature/l31-engine-cleanup` from `develop` tip `30a224f` (post-L30 merge).
 
-**Kimi prompt:** Read this file, then execute the full spec at the linked file. Implement each section in order, run required tests, update docs/handoff, and write `.kimi-done` exactly as specified.
+**Kimi prompt:** Read this file, then execute the full spec at the linked file. Implement each section in order, run required tests, update docs/handoff, and write `.kimi-done` exactly as specified. **Do not** chase project-wide ruff cleanups — your scope is the orchestrator engine.
 
 **Scope (summary, see spec for detail):**
 
-- New `src/hestia/app.py` owning `CliAppContext`, `make_app(config)`, lazy `inference_client`, idempotent `bootstrap_db()`, single `make_orchestrator()`.
-- New `src/hestia/platforms/runners.py` with `run_telegram(app, config)` / `run_matrix(app, config)` and a shared `run_platform(...)` polling helper.
-- Drop every `ctx.obj["..."]` raw read in `cli.py` — typed `app` only.
-- Replace every direct `Orchestrator(...)` construction with `app.make_orchestrator()`.
-- Add `run_async` decorator to remove the per-command `asyncio.run` boilerplate.
-- `cli.py` ≤ 600 lines.
-- Bump version to **0.7.4**; CHANGELOG; lockfile.
-- ADR-0020 documenting the split.
+- Extract `_build_failure_bundle(...)` — kill the duplicated except-block bodies.
+- Hoist `delegated` and `tool_chain` to the top of `process_turn`'s outer try; drop `locals().get(...)`.
+- Single `await self._store.get_messages(session.id)` call per turn.
+- Accumulate artifact handles from `ToolCallResult.artifact_handle` during dispatch; delete the `re.findall(r"artifact://...")` recovery path.
+- Extract `_check_confirmation(...)` — call from both branches of `_dispatch_tool_call`.
+- New `ToolCallResult.error(content)` classmethod; replace every long-form error construction in `engine.py`.
+- 3 new regression test modules (failure bundle parity, confirmation helper, artifact accumulation).
+- Bump version to **0.7.5**; CHANGELOG; lockfile; handoff.
 
-**Pure refactor.** No new behavior. No new commands. Test suite must remain identical (≥ 691 passed; same 6 skipped) apart from new tests added for the new modules.
+**Pure refactor.** No new fields on `Session`, `Turn`, `ToolCallResult`, or `FailureBundle` other than the `error` classmethod. Existing engine tests must pass unchanged. `wc -l src/hestia/orchestrator/engine.py` target ≤ 750 (down from current 903).
 
-**Do not merge to `develop`.** Push the feature branch and stop after writing `.kimi-done`.
+**Step budget:** 9 commits + 3 new test files. Fit under 100 steps. Write `.kimi-done` the moment the last commit lands. Push the branch and stop.
+
+**Do not merge to `develop`.**
 
 ---
 
 ## Reference
 
 - Queue: [`../kimi-phase-queue.md`](../kimi-phase-queue.md)
-- Prior loop: [`../kimi-loops/L29-reliability-and-secrets.md`](../kimi-loops/L29-reliability-and-secrets.md) (merged at `bbed167`)
+- Prior loop: [`../kimi-loops/L30-cli-decomposition.md`](../kimi-loops/L30-cli-decomposition.md) (merged at `30a224f`; ADR-0020; v0.7.4)
+- Loop log: [`../kimi-loop-log.md`](../kimi-loop-log.md) — read the L30 entry for context on the carry-forward items.
 
 ---
 
@@ -44,8 +47,8 @@
 
 ```
 HESTIA_KIMI_DONE=1
-LOOP=L30
-BRANCH=feature/l30-cli-decomposition
+LOOP=L31
+BRANCH=feature/l31-engine-cleanup
 COMMIT=<final commit sha>
 TESTS=<pytest summary>
 MYPY_FINAL_ERRORS=<count>
