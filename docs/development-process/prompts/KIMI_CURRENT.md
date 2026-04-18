@@ -2,32 +2,30 @@
 
 **Orchestrator:** Cursor updates this file after each review.
 
-**Last set by:** Cursor — 2026-04-18 (L25 queued — email adapter read + draft)
+**Last set by:** Cursor — 2026-04-18 (L26 queued — reflection loop + proposal queue)
 
 ---
 
 ## Current task
 
-**Active loop:** **L25** — implement email integration (IMAP read/search/list +
-SMTP/IMAP draft flow, with send gated by confirmation behavior from L23).
+**Active loop:** **L26** — implement the reflection loop (pattern mining,
+proposal generation, and pending proposal queue surfaced at session start).
 
-**Spec:** [`../kimi-loops/L25-email-adapter-read-and-draft.md`](../kimi-loops/L25-email-adapter-read-and-draft.md)
+**Spec:** [`../kimi-loops/L26-reflection-loop-proposals.md`](../kimi-loops/L26-reflection-loop-proposals.md)
 
-**Branch:** `feature/l25-email-adapter` from `develop` tip `c88c60e`.
+**Branch:** `feature/l26-reflection-loop` from `develop` tip `da68436`.
 
 **Kimi prompt:** Read this file, then execute the full spec at the linked file.
-Implement every section in order, including tests/docs/handoff and `.kimi-done`.
-Stop and report immediately if any section fails.
+Implement every section in order, run tests, update docs/handoff, and write
+`.kimi-done` exactly as specified.
 
 **Scope (summary, see spec for detail):**
 
-- Add `EmailAdapter` tool provider and `EmailConfig` wiring.
-- Implement `email_list`, `email_read`, `email_search`, `email_draft`,
-  `email_send`, `email_move`, `email_flag`.
-- Keep send operations confirmation-gated and disabled in subagent/scheduler by
-  default trust settings.
-- Add integration and sanitization tests.
-- Add setup docs and changelog/version updates.
+- Add `ReflectionRunner` three-pass pipeline.
+- Add proposal schema/storage with `pending/accepted/rejected/deferred/expired` lifecycle.
+- Add scheduler integration for reflection runs during idle hours.
+- Add session-start hook that surfaces pending proposals.
+- Add CLI for listing/accepting/rejecting/defering proposals.
 
 **Do not merge to `develop` in this loop.** Push the feature branch and stop
 only after writing `.kimi-done`.
@@ -37,7 +35,7 @@ only after writing `.kimi-done`.
 ## Reference
 
 - Queue: [`../kimi-phase-queue.md`](../kimi-phase-queue.md)
-- Prior loop: [`../kimi-loops/L24-prompt-injection-detection-and-egress-audit.md`](../kimi-loops/L24-prompt-injection-detection-and-egress-audit.md)
+- Prior loop: [`../kimi-loops/L25-email-adapter-read-and-draft.md`](../kimi-loops/L25-email-adapter-read-and-draft.md)
 - Brainstorm source: [`../design-artifacts/brainstorm-april-13.md`](../design-artifacts/brainstorm-april-13.md)
 
 ---
@@ -48,8 +46,8 @@ At successful completion, write `./.kimi-done` with at minimum:
 
 ```
 HESTIA_KIMI_DONE=1
-LOOP=L25
-BRANCH=feature/l25-email-adapter
+LOOP=L26
+BRANCH=feature/l26-reflection-loop
 COMMIT=<final commit sha>
 TESTS=<pytest summary, e.g. "passed=N failed=0 skipped=M">
 MYPY_FINAL_ERRORS=<count>

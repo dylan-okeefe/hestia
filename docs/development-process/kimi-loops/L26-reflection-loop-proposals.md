@@ -2,7 +2,13 @@
 
 ## Review carry-forward
 
-From L25 review (to be filled when L25 merges).
+From **L25 review** (merged to `develop` in commit `da68436`):
+
+- Email adapter shipped with send gating and mypy=0. Keep that baseline: `uv run mypy src/hestia` must remain 0 in L26.
+- Full suite baseline is now `620 passed, 6 skipped`; do not regress.
+- L25 introduced `email` modules and tools; reflection mining should include these tool-chain patterns but avoid overfitting to one-off email actions.
+- Preserve L24 security posture: proposals generated from traces/tool outputs should not execute anything automatically and should remain review-gated.
+- Existing `aiosqlite` thread-shutdown warnings are pre-existing test noise; do not hide them unless intentionally fixed with tests.
 
 **Branch:** `feature/l26-reflection-loop` from **`develop`**.
 

@@ -8,6 +8,29 @@
 
 ---
 
+## 2026-04-18 — Loop: L25 — email adapter (IMAP read + SMTP draft) (Kimi) → merged to develop
+
+**Kimi:** `.kimi-done` valid for L25 on `feature/l25-email-adapter` (`COMMIT=bdbbd93`, tests `620 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`).
+
+**What shipped:**
+
+1. New email integration modules and tools (`email_list`, `email_read`, `email_search`, `email_draft`, `email_send`, `email_move`, `email_flag`).
+2. `EmailConfig` wiring in `HestiaConfig` and CLI registration.
+3. Confirmation-sensitive behavior for send operations aligned with L23 mobile confirmations.
+4. New docs: `docs/guides/email-setup.md` and L25 handoff report.
+5. Version bump artifacts to 0.6.0 (`pyproject.toml` + `uv.lock` + changelog).
+
+**Review (Cursor):**
+
+- Re-ran full gate on branch tip: `620 passed, 6 skipped`; `mypy src/hestia` clean (0 errors).
+- No merge blockers found; only pre-existing `aiosqlite` thread-shutdown pytest warnings remained.
+
+**Merge:** `feature/l25-email-adapter` → `develop` via `--no-ff` merge commit `da68436`. Pushed.
+
+**Queue advance:** `KIMI_CURRENT.md` moved to L26; L26 carry-forward populated from L25 review findings.
+
+---
+
 ## 2026-04-18 — Loop: L24 — prompt-injection detection + egress auditing (Kimi) → merged to develop
 
 **Kimi:** loop completed with `.kimi-done` (`LOOP=L24`, branch `feature/l24-injection-detection`, commit `cf2e7ed`, tests `597 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`). Initial Kimi run hit max-steps at 100; resumed session completed and wrote valid `.kimi-done`.
