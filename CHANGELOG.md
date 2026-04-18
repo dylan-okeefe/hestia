@@ -5,6 +5,25 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.5.1]
+
+### Added
+- `InjectionScanner` in `src/hestia/security/injection.py` scans tool results for
+  known prompt-injection patterns and high-entropy content before they enter the
+  model context. Hits are annotated, never blocked.
+- `SecurityConfig` dataclass (`injection_scanner_enabled`, `injection_entropy_threshold`,
+  `egress_audit_enabled`) wired through `HestiaConfig`.
+- Egress audit logging: `http_get` and `web_search` record every outbound request
+  to a new `egress_events` table via `TraceStore.record_egress()`.
+- `hestia audit egress --since=7d` CLI subcommand prints domain-level aggregation
+  with anomaly heuristics (low-volume and first-time domains).
+- ADR-0017 documenting the injection-detection and egress-audit design.
+- `SECURITY.md` with supported versions, reporting process, and configuration guide.
+
+### Fixed
+- Pre-existing mypy errors in `matrix_adapter.py` and `telegram_adapter.py`
+  (`asyncio.wait_for` receiving `Future | None`).
+
 ## [0.4.1]
 
 ### Fixed

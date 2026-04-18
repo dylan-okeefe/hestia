@@ -13,6 +13,7 @@ import httpx
 
 from hestia.config import WebSearchConfig
 from hestia.tools.builtin.http_get import SSRFSafeTransport
+from hestia.tools.builtin.memory_tools import current_session_id, current_trace_store
 from hestia.tools.capabilities import NETWORK_EGRESS
 from hestia.tools.metadata import tool
 
@@ -50,9 +51,11 @@ async def _tavily_search(
         try:
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
+            await _record_egress(str(exc.request.url), exc.response.status_code if exc.response else None, 0)
             raise WebSearchError(
                 f"Tavily request failed: {exc.response.status_code} {exc.response.text[:200]}"
             ) from exc
+        await _record_egress(str(response.url), response.status_code, len(response.content))
         data = response.json()
 
     results = data.get("results") or []
@@ -151,3 +154,19 @@ def make_web_search_tool(config: WebSearchConfig) -> Any:
         return _format_results(results)
 
     return web_search
+
+
+async def _record_egress(url: str, status: int | None, size: int) -> None:
+    """Best-effort egress logging via the current trace store."""
+    trace_store = current_trace_store.get()
+    session_id = current_session_id.get()
+    if trace_store is not None and session_id is not None:
+        try:
+            await trace_store.record_egress(
+                session_id=session_id,
+                url=url,
+                status=status,
+                size=size,
+            )
+        except Exception:
+            pass

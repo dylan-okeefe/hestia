@@ -254,6 +254,15 @@ class CompressionConfig:
 
 
 @dataclass
+class SecurityConfig:
+    """Security-related toggles for Hestia."""
+
+    injection_scanner_enabled: bool = True
+    injection_entropy_threshold: float = 4.2
+    egress_audit_enabled: bool = True
+
+
+@dataclass
 class WebSearchConfig:
     """Configuration for the web_search tool.
 
@@ -289,6 +298,7 @@ class HestiaConfig:
     web_search: WebSearchConfig = field(default_factory=WebSearchConfig)
     handoff: HandoffConfig = field(default_factory=HandoffConfig)
     compression: CompressionConfig = field(default_factory=CompressionConfig)
+    security: SecurityConfig = field(default_factory=SecurityConfig)
     system_prompt: str = "You are a helpful assistant."
     max_iterations: int = 10
     verbose: bool = False

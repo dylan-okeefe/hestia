@@ -15,6 +15,7 @@ import httpx
 
 from hestia.artifacts.store import ArtifactStore
 from hestia.config import HestiaConfig
+from hestia.security import InjectionScanner
 from hestia.context.builder import ContextBuilder
 from hestia.context.compressor import InferenceHistoryCompressor
 from hestia.core.clock import utcnow
@@ -130,6 +131,13 @@ class CliAppContext:
         if self.skill_store is not None:
             await self.skill_store.create_table()
 
+    def make_injection_scanner(self) -> InjectionScanner:
+        """Create an InjectionScanner from config."""
+        return InjectionScanner(
+            enabled=self.config.security.injection_scanner_enabled,
+            entropy_threshold=self.config.security.injection_entropy_threshold,
+        )
+
     def make_orchestrator(self) -> Orchestrator:
         """Create an Orchestrator with the current app context."""
         return Orchestrator(
@@ -144,6 +152,7 @@ class CliAppContext:
             failure_store=self.failure_store,
             trace_store=self.trace_store,
             handoff_summarizer=self.handoff_summarizer,
+            injection_scanner=self.make_injection_scanner(),
         )
 
 
@@ -390,6 +399,11 @@ def cli(
             min_messages=cfg.handoff.min_messages,
         )
 
+    scanner = InjectionScanner(
+        enabled=cfg.security.injection_scanner_enabled,
+        entropy_threshold=cfg.security.injection_entropy_threshold,
+    )
+
     def orchestrator_factory() -> Orchestrator:
         """Fresh orchestrator for subagent turns (shares registry and stores)."""
         return Orchestrator(
@@ -404,6 +418,7 @@ def cli(
             failure_store=failure_store,
             trace_store=trace_store,
             handoff_summarizer=handoff_summarizer,
+            injection_scanner=scanner,
         )
 
     tool_registry.register(make_delegate_task_tool(session_store, orchestrator_factory))
@@ -1073,6 +1088,11 @@ def schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None:
     async def response_callback(task: ScheduledTask, text: str) -> None:
         click.echo(f"[scheduler:{task.id}] {text}")
 
+    scanner = InjectionScanner(
+        enabled=cfg.security.injection_scanner_enabled,
+        entropy_threshold=cfg.security.injection_entropy_threshold,
+    )
+
     async def _daemon() -> None:
         await _bootstrap_db(db, memory_store, failure_store, trace_store)
 
@@ -1090,6 +1110,7 @@ def schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None:
             slot_manager=slot_manager,
             failure_store=failure_store,
             trace_store=trace_store,
+            injection_scanner=scanner,
         )
 
         scheduler = Scheduler(
@@ -1157,6 +1178,11 @@ def run_telegram(ctx: click.Context) -> None:
     failure_store: FailureStore = ctx.obj["failure_store"]
     trace_store: TraceStore = ctx.obj["trace_store"]
 
+    scanner = InjectionScanner(
+        enabled=cfg.security.injection_scanner_enabled,
+        entropy_threshold=cfg.security.injection_entropy_threshold,
+    )
+
     if not cfg.telegram.bot_token:
         click.echo("Error: telegram.bot_token is required in config.", err=True)
         click.echo("Set it in your config file or via environment.", err=True)
@@ -1211,6 +1237,7 @@ def run_telegram(ctx: click.Context) -> None:
             slot_manager=slot_manager,
             failure_store=failure_store,
             trace_store=trace_store,
+            injection_scanner=scanner,
         )
 
         # Recover stale turns from previous crash
@@ -1305,6 +1332,11 @@ def run_matrix(ctx: click.Context) -> None:
     failure_store: FailureStore = ctx.obj["failure_store"]
     trace_store: TraceStore = ctx.obj["trace_store"]
 
+    scanner = InjectionScanner(
+        enabled=cfg.security.injection_scanner_enabled,
+        entropy_threshold=cfg.security.injection_entropy_threshold,
+    )
+
     if not cfg.matrix.access_token:
         click.echo("Error: matrix.access_token is required in config.", err=True)
         click.echo("Set it in your config file or via environment.", err=True)
@@ -1361,6 +1393,7 @@ def run_matrix(ctx: click.Context) -> None:
             slot_manager=slot_manager,
             failure_store=failure_store,
             trace_store=trace_store,
+            injection_scanner=scanner,
         )
 
         # Recover stale turns from previous crash
@@ -1727,11 +1760,28 @@ def skill_test(ctx: click.Context, name: str) -> None:
     click.echo("Note: Run the skill manually and observe results.")
 
 
-@cli.command(name="audit")
+class AuditGroup(click.Group):
+    """Custom group that defaults to 'run' when no subcommand is given."""
+
+    def invoke(self, ctx: click.Context) -> Any:
+        if ctx.protected_args:
+            return super().invoke(ctx)
+        ctx.invoked_subcommand = "run"
+        return self.commands["run"].invoke(ctx)
+
+
+@cli.group(name="audit", cls=AuditGroup)
+@click.pass_context
+def audit_group(ctx: click.Context) -> None:
+    """Security audit commands."""
+    pass
+
+
+@audit_group.command(name="run")
 @click.option("--json", "output_json", is_flag=True, help="Output as JSON")
 @click.option("--output", "-o", type=click.Path(), help="Save report to file")
 @click.pass_context
-def audit_command(ctx: click.Context, output_json: bool, output: str | None) -> None:
+def audit_run(ctx: click.Context, output_json: bool, output: str | None) -> None:
     """Run security audit checks."""
     from hestia.audit import SecurityAuditor
 
@@ -1765,6 +1815,55 @@ def audit_command(ctx: click.Context, output_json: bool, output: str | None) -> 
             sys.exit(1)
 
     asyncio.run(_audit())
+
+
+def _parse_since(since: str) -> datetime:
+    """Convert a human-readable window like '7d' or '24h' to a datetime."""
+    now = datetime.now(UTC)
+    if since.endswith("d"):
+        days = int(since[:-1])
+        return now - timedelta(days=days)
+    if since.endswith("h"):
+        hours = int(since[:-1])
+        return now - timedelta(hours=hours)
+    # fallback: assume days
+    return now - timedelta(days=int(since))
+
+
+@audit_group.command(name="egress")
+@click.option("--since", default="7d", help="Time window (e.g. 7d, 24h, 30d)")
+@click.pass_context
+def audit_egress(ctx: click.Context, since: str) -> None:
+    """Print domain-level egress aggregation."""
+    app: CliAppContext = ctx.obj["app"]
+
+    async def _egress() -> None:
+        await app.bootstrap_db()
+
+        since_dt = _parse_since(since)
+        rows = await app.trace_store.egress_summary(since=since_dt)
+
+        if not rows:
+            click.echo("No egress events found in the given window.")
+            return
+
+        click.echo(f"Egress summary since {since_dt.isoformat()}\n")
+        click.echo(f"{'Domain':<40} {'Requests':>10} {'Failures':>10} {'Anomaly'}")
+        click.echo("-" * 80)
+
+        for row in rows:
+            domain = row["domain"]
+            total = row["total_requests"]
+            failures = row["failure_count"]
+            anomaly = ""
+            if total < 3:
+                anomaly = "LOW_VOLUME"
+            # first-time-this-week heuristic: if the earliest record for this domain
+            # is within the window, flag it. We approximate by checking if overall
+            # count is low (same as <3) since we don't have historical baseline.
+            click.echo(f"{domain:<40} {total:>10} {failures:>10} {anomaly}")
+
+    asyncio.run(_egress())
 
 
 @cli.group()

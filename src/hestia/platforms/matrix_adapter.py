@@ -207,6 +207,7 @@ class MatrixAdapter(Platform):
         )
         self._pending_confirmations[event_id] = req.id
 
+        assert req.future is not None
         try:
             return await asyncio.wait_for(
                 req.future, timeout=self._confirmation_timeout_seconds

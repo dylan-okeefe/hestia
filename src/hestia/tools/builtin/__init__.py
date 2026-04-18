@@ -6,6 +6,7 @@ from hestia.tools.builtin.http_get import http_get
 from hestia.tools.builtin.list_dir import make_list_dir_tool
 from hestia.tools.builtin.memory_tools import (
     current_session_id,
+    current_trace_store,
     make_list_memories_tool,
     make_save_memory_tool,
     make_search_memory_tool,
@@ -27,6 +28,7 @@ from hestia.tools.capabilities import (
 
 __all__ = [
     "current_session_id",
+    "current_trace_store",
     "current_time",
     "http_get",
     "make_list_dir_tool",

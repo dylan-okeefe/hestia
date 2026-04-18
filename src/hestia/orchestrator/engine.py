@@ -26,7 +26,8 @@ from hestia.orchestrator.types import Turn, TurnState, TurnTransition
 from hestia.persistence.sessions import SessionStore
 from hestia.platforms.base import Platform
 from hestia.policy.engine import PolicyEngine, RetryAction
-from hestia.tools.builtin import current_session_id
+from hestia.security import InjectionScanner
+from hestia.tools.builtin import current_session_id, current_trace_store
 from hestia.tools.registry import ToolNotFoundError, ToolRegistry
 from hestia.tools.types import ToolCallResult
 
@@ -62,6 +63,7 @@ class Orchestrator:
         failure_store: "FailureStore | None" = None,
         trace_store: "TraceStore | None" = None,
         handoff_summarizer: SessionHandoffSummarizer | None = None,
+        injection_scanner: InjectionScanner | None = None,
     ):
         """Initialize the orchestrator.
 
@@ -90,6 +92,7 @@ class Orchestrator:
         self._failure_store = failure_store
         self._trace_store = trace_store
         self._handoff_summarizer = handoff_summarizer
+        self._injection_scanner = injection_scanner
 
     async def recover_stale_turns(self) -> int:
         """Mark any turns in non-terminal states as FAILED.
@@ -165,6 +168,9 @@ class Orchestrator:
         """
         # Set session context for tools that need to know the current session
         session_token = current_session_id.set(session.id)
+        trace_token: Any = None
+        if self._trace_store is not None:
+            trace_token = current_trace_store.set(self._trace_store)
 
         try:
             turn = self._create_turn(session.id, user_message)
@@ -605,6 +611,8 @@ class Orchestrator:
         finally:
             # Clear session context when turn processing completes
             current_session_id.reset(session_token)
+            if trace_token is not None:
+                current_trace_store.reset(trace_token)
 
     def _create_turn(self, session_id: str, user_message: Message) -> Turn:
         """Create a new Turn instance."""
@@ -642,6 +650,15 @@ class Orchestrator:
         await self._store.append_transition(turn.id, transition)
         await self._store.update_turn(turn)
 
+    def _scan_tool_result(self, result: ToolCallResult) -> ToolCallResult:
+        """Run injection scanner over a tool result, annotating if triggered."""
+        if self._injection_scanner is None or not result.content:
+            return result
+        scan = self._injection_scanner.scan(result.content)
+        if scan.triggered:
+            result.content = self._injection_scanner.wrap(result.content, scan.reasons)
+        return result
+
     async def _execute_tool_calls(
         self, session: Session, tool_calls: list[ToolCall], allowed_tools: list[str] | None = None
     ) -> list[Message]:
@@ -650,6 +667,7 @@ class Orchestrator:
 
         for tc in tool_calls:
             result = await self._dispatch_tool_call(session, tc, allowed_tools)
+            result = self._scan_tool_result(result)
 
             msg = Message(
                 role="tool",
@@ -675,6 +693,7 @@ class Orchestrator:
             "delegate_task",
             {"task": task, "context": context},
         )
+        result = self._scan_tool_result(result)
         body = result.content
         if result.status != "ok":
             body = f"[delegation error] {body}"
@@ -834,4 +853,5 @@ class Orchestrator:
                         truncated=False,
                     )
 
-        return await self._tools.call(tc.name, tc.arguments or {})
+        result = await self._tools.call(tc.name, tc.arguments or {})
+        return self._scan_tool_result(result)
