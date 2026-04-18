@@ -6,11 +6,12 @@
 
 ## Review carry-forward
 
-From L32a (merged at `<TBD>`):
+From L32a (merged at `7ea4a53`):
 
-- Test baseline: **704 passed, 6 skipped** (or whatever pytest reports post-L32a — Cursor will fill in before launching L32b).
+- Test baseline: **704 passed, 6 skipped**.
 - Mypy baseline: **0**.
-- Ruff baseline: **44**.
+- Ruff baseline: **44** — must not regress.
+- `hestia.core.types.TurnState` no longer exists; if you encounter any old code accidentally importing it, rewrite the import to `from hestia.orchestrator.types import TurnState`.
 
 From the external code-quality review:
 

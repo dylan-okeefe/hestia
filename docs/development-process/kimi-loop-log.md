@@ -8,6 +8,29 @@
 
 ---
 
+## 2026-04-18 — Loop: L32a — delete dead `TurnState` and `ToolResult` from `core/types.py` (Kimi clean run) → merged to develop
+
+**Kimi:** First mini-loop in the new sub-letter chunking strategy. **Clean run** — all 3 spec commits landed, valid `.kimi-done` written without intervention. Run time: ~5 minutes (well under the per-turn step ceiling). Confirms the chunking + `--max-steps-per-turn=250` headroom works.
+
+**What shipped:**
+
+- `TurnState` enum + `TERMINAL_STATES` constant removed from `src/hestia/core/types.py`.
+- `ToolResult` dataclass removed from `src/hestia/core/types.py`.
+- `Enum` and related unused imports cleaned up.
+- New `tests/unit/test_core_types_dead_code_removed.py` locks the contract: asserts `TurnState`/`TERMINAL_STATES`/`ToolResult` are absent from `hestia.core.types`, and `TurnState` is still importable from `hestia.orchestrator.types`.
+
+**Review (Cursor):**
+
+- Full gate on the branch tip: **`704 passed, 6 skipped`** (+3 from L31's 701 — exactly the 3 new tests in the regression module). `uv run mypy src/hestia` → **0**. `uv run ruff check src/` → **44** (no regression).
+- §1 grep pre-flight passed (no consumer outside the dead code itself), so no caller-side changes were needed.
+- `core/types.py` is now ~75 lines (was ~100) and contains only the live types: `Message`, `Session`, `SessionState`, `SessionTemperature`, `ScheduledTask`, `Turn`, `Capability`.
+
+**Merge:** `feature/l32a-delete-dead-types` → `develop` via `--no-ff` merge commit `7ea4a53`.
+
+**Queue advance:** `KIMI_CURRENT.md` → **L32b** (named ordered prefix-layer registry in `ContextBuilder`).
+
+---
+
 ## 2026-04-18 — Loop: L31 — orchestrator engine cleanup (Kimi → Cursor finish) → merged to develop
 
 **Kimi:** Started L31 from `feature/l31-engine-cleanup` (off `develop` tip `30a224f`). **All 9 spec commits landed** (extract `_build_failure_bundle`, hoist `delegated`/`tool_chain`, single `get_messages`, accumulate artifact handles from `ToolCallResult`, extract `_check_confirmation`, `ToolCallResult.error` classmethod, regression tests, version bump, handoff). Then Kimi hit `--max-steps-per-turn=100` (the **per-iteration step ceiling**, distinct from `--max-ralph-iterations` which was already `-1`) and exited. **No `.kimi-done` was written.** The uncommitted working tree contained ~60 lines of cosmetic compaction noise (collapsing dataclass kwargs onto single lines, stripping comments and blank lines, removing docstring detail) — not bug fixes.
