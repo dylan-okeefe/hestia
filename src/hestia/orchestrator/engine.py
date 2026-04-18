@@ -753,26 +753,20 @@ class Orchestrator:
             return None
 
         if self._confirm_callback is None:
-            return ToolCallResult(
-                status="error",
-                content=(
+            return ToolCallResult.error(
+                (
                     f"Tool '{tool_name}' requires user confirmation but no "
                     "confirm_callback is configured and the trust profile does "
                     "not auto-approve it. Add the tool to "
                     "TrustConfig.auto_approve_tools, or run via a platform that "
                     "supports confirmation (CLI)."
                 ),
-                artifact_handle=None,
-                truncated=False,
             )
 
         confirmed = await self._confirm_callback(tool_name, arguments)
         if not confirmed:
-            return ToolCallResult(
-                status="error",
-                content="Tool execution was cancelled by user.",
-                artifact_handle=None,
-                truncated=False,
+            return ToolCallResult.error(
+                "Tool execution was cancelled by user.",
             )
 
         return None
@@ -792,11 +786,8 @@ class Orchestrator:
             and tc.name not in ("call_tool", "list_tools")
             and tc.name not in allowed_tools
         ):
-            return ToolCallResult(
-                status="error",
-                content=f"Tool '{tc.name}' is not available in this session context.",
-                artifact_handle=None,
-                truncated=False,
+            return ToolCallResult.error(
+                f"Tool '{tc.name}' is not available in this session context.",
             )
 
         # Handle meta-tools
@@ -814,38 +805,26 @@ class Orchestrator:
             name = tc.arguments.get("name") if tc.arguments else None
             arguments = tc.arguments.get("arguments") if tc.arguments else {}
             if not isinstance(arguments, dict):
-                return ToolCallResult(
-                    status="error",
-                    content=f"Malformed arguments for tool '{tc.name}'.",
-                    artifact_handle=None,
-                    truncated=False,
+                return ToolCallResult.error(
+                    f"Malformed arguments for tool '{tc.name}'.",
                 )
             if not name:
-                return ToolCallResult(
-                    status="error",
-                    content="Missing 'name' argument for call_tool",
-                    artifact_handle=None,
-                    truncated=False,
+                return ToolCallResult.error(
+                    "Missing 'name' argument for call_tool",
                 )
 
             # Check if inner tool is allowed
             if allowed_tools is not None and name not in allowed_tools:
-                return ToolCallResult(
-                    status="error",
-                    content=f"Tool '{name}' is not available in this session context.",
-                    artifact_handle=None,
-                    truncated=False,
+                return ToolCallResult.error(
+                    f"Tool '{name}' is not available in this session context.",
                 )
 
             # Confirmation enforcement: check the INNER tool's metadata before dispatch
             try:
                 inner_meta = self._tools.describe(name)
             except ToolNotFoundError:
-                return ToolCallResult(
-                    status="error",
-                    content=f"Tool not found: {name}",
-                    artifact_handle=None,
-                    truncated=False,
+                return ToolCallResult.error(
+                    f"Tool not found: {name}",
                 )
 
             confirm_result = await self._check_confirmation(
@@ -861,11 +840,8 @@ class Orchestrator:
         try:
             meta = self._tools.describe(tc.name)
         except ToolNotFoundError:
-            return ToolCallResult(
-                status="error",
-                content=f"Unknown tool: {tc.name}",
-                artifact_handle=None,
-                truncated=False,
+            return ToolCallResult.error(
+                f"Unknown tool: {tc.name}",
             )
 
         confirm_result = await self._check_confirmation(
