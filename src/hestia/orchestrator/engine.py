@@ -440,65 +440,17 @@ class Orchestrator:
                 # Record failure bundle
                 if self._failure_store is not None:
                     try:
-                        from hestia.persistence.failure_store import FailureBundle
-
-                        raw_summary = user_message.content or ""
-                        if len(raw_summary) > 200:
-                            user_input_summary = raw_summary[:200] + "..."
-                        else:
-                            user_input_summary = raw_summary
-
-                        reasoning_budget = turn.reasoning_budget
-                        if reasoning_budget is None:
-                            reasoning_budget = self._policy.reasoning_budget(
-                                session, turn.iterations
-                            )
-                        policy_snapshot = json.dumps(
-                            {
-                                "reasoning_budget": reasoning_budget,
-                                "turn_token_budget": self._policy.turn_token_budget(session),
-                                "tool_filter_active": allowed_tools is not None,
-                            },
-                            default=str,
+                        bundle = self._build_failure_bundle(
+                            session=session,
+                            turn=turn,
+                            error=exc,
+                            user_input=user_message.content or "",
+                            failure_kind="context_too_large",
+                            allowed_tools=allowed_tools,
+                            tool_chain=tool_chain,
                         )
-
-                        try:
-                            temp_value = None
-                            if hasattr(session, "temperature") and session.temperature is not None:
-                                if hasattr(session.temperature, "value"):
-                                    temp_value = session.temperature.value
-                                else:
-                                    temp_value = str(session.temperature)
-                            slot_snapshot = json.dumps(
-                                {
-                                    "slot_id": session.slot_id,
-                                    "temperature": temp_value,
-                                    "slot_saved_path": getattr(session, "slot_saved_path", None),
-                                },
-                                default=str,
-                            )
-                        except (TypeError, AttributeError):
-                            slot_snapshot = json.dumps(
-                                {"error": "slot snapshot serialization failed"}
-                            )
-
-                        if self._trace_store is not None:
-                            trace_record_id = str(uuid.uuid4())
-
-                        bundle = FailureBundle(
-                            id=str(uuid.uuid4()),
-                            session_id=session.id,
-                            turn_id=turn.id,
-                            failure_class="context_overflow",
-                            severity="medium",
-                            error_message=str(exc),
-                            tool_chain=json.dumps(tool_chain),
-                            created_at=utcnow(),
-                            request_summary=user_input_summary,
-                            policy_snapshot=policy_snapshot,
-                            slot_snapshot=slot_snapshot,
-                            trace_id=trace_record_id,
-                        )
+                        if bundle.trace_id is not None:
+                            trace_record_id = bundle.trace_id
                         await self._failure_store.record(bundle)
                     except Exception as record_err:  # noqa: BLE001
                         logger.error("Failed to record failure bundle: %s", record_err)
@@ -531,71 +483,17 @@ class Orchestrator:
                     # Record failure bundle if store is configured
                 if self._failure_store is not None:
                     try:
-                        from hestia.persistence.failure_store import FailureBundle
-
-                        failure_class, severity = classify_error(e)
-
-                        # Build request summary (truncate with ... if > 200 chars)
-                        raw_summary = user_message.content or ""
-                        if len(raw_summary) > 200:
-                            user_input_summary = raw_summary[:200] + "..."
-                        else:
-                            user_input_summary = raw_summary
-
-                        # Build policy snapshot using policy engine methods
-                        reasoning_budget = turn.reasoning_budget
-                        if reasoning_budget is None:
-                            reasoning_budget = self._policy.reasoning_budget(
-                                session, turn.iterations
-                            )
-                        policy_snapshot = json.dumps(
-                            {
-                                "reasoning_budget": reasoning_budget,
-                                "turn_token_budget": self._policy.turn_token_budget(session),
-                                "tool_filter_active": allowed_tools is not None,
-                            },
-                            default=str,
+                        bundle = self._build_failure_bundle(
+                            session=session,
+                            turn=turn,
+                            error=e,
+                            user_input=user_message.content or "",
+                            failure_kind="exception",
+                            allowed_tools=allowed_tools,
+                            tool_chain=tool_chain,
                         )
-
-                        # Build slot snapshot
-                        try:
-                            temp_value = None
-                            if hasattr(session, "temperature") and session.temperature is not None:
-                                if hasattr(session.temperature, "value"):
-                                    temp_value = session.temperature.value
-                                else:
-                                    temp_value = str(session.temperature)
-                            slot_snapshot = json.dumps(
-                                {
-                                    "slot_id": session.slot_id,
-                                    "temperature": temp_value,
-                                    "slot_saved_path": getattr(session, "slot_saved_path", None),
-                                },
-                                default=str,
-                            )
-                        except (TypeError, AttributeError):
-                            slot_snapshot = json.dumps(
-                                {"error": "slot snapshot serialization failed"}
-                            )
-
-                        # Link trace ID if trace store is configured
-                        if self._trace_store is not None:
-                            trace_record_id = str(uuid.uuid4())
-
-                        bundle = FailureBundle(
-                            id=str(uuid.uuid4()),
-                            session_id=session.id,
-                            turn_id=turn.id,
-                            failure_class=failure_class.value,
-                            severity=severity,
-                            error_message=str(e),
-                            tool_chain=json.dumps(tool_chain),
-                            created_at=utcnow(),
-                            request_summary=user_input_summary,
-                            policy_snapshot=policy_snapshot,
-                            slot_snapshot=slot_snapshot,
-                            trace_id=trace_record_id,
-                        )
+                        if bundle.trace_id is not None:
+                            trace_record_id = bundle.trace_id
                         await self._failure_store.record(bundle)
                     except Exception as record_err:  # noqa: BLE001
                         # Outermost boundary — intentionally broad to avoid masking original error
@@ -659,6 +557,85 @@ class Orchestrator:
             current_session_id.reset(session_token)
             if trace_token is not None:
                 current_trace_store.reset(trace_token)
+
+    def _build_failure_bundle(
+        self,
+        *,
+        session: Session,
+        turn: Turn,
+        error: BaseException,
+        user_input: str,
+        failure_kind: str,
+        allowed_tools: list[str] | None,
+        tool_chain: list[str],
+    ) -> "FailureBundle":
+        """Construct a FailureBundle from common turn state.
+
+        Centralises slot snapshot, policy snapshot JSON, and input summary
+        truncation; previously duplicated across two except blocks."""
+        from hestia.persistence.failure_store import FailureBundle
+
+        if failure_kind == "context_too_large":
+            failure_class = "context_overflow"
+            severity = "medium"
+        else:
+            failure_class, severity = classify_error(error)
+            failure_class = failure_class.value
+
+        raw_summary = user_input
+        if len(raw_summary) > 200:
+            user_input_summary = raw_summary[:200] + "..."
+        else:
+            user_input_summary = raw_summary
+
+        reasoning_budget = turn.reasoning_budget
+        if reasoning_budget is None:
+            reasoning_budget = self._policy.reasoning_budget(session, turn.iterations)
+        policy_snapshot = json.dumps(
+            {
+                "reasoning_budget": reasoning_budget,
+                "turn_token_budget": self._policy.turn_token_budget(session),
+                "tool_filter_active": allowed_tools is not None,
+            },
+            default=str,
+        )
+
+        try:
+            temp_value = None
+            if hasattr(session, "temperature") and session.temperature is not None:
+                if hasattr(session.temperature, "value"):
+                    temp_value = session.temperature.value
+                else:
+                    temp_value = str(session.temperature)
+            slot_snapshot = json.dumps(
+                {
+                    "slot_id": session.slot_id,
+                    "temperature": temp_value,
+                    "slot_saved_path": getattr(session, "slot_saved_path", None),
+                },
+                default=str,
+            )
+        except (TypeError, AttributeError):
+            slot_snapshot = json.dumps({"error": "slot snapshot serialization failed"})
+
+        trace_id = None
+        if self._trace_store is not None:
+            trace_id = str(uuid.uuid4())
+
+        return FailureBundle(
+            id=str(uuid.uuid4()),
+            session_id=session.id,
+            turn_id=turn.id,
+            failure_class=failure_class,
+            severity=severity,
+            error_message=str(error),
+            tool_chain=json.dumps(tool_chain),
+            created_at=utcnow(),
+            request_summary=user_input_summary,
+            policy_snapshot=policy_snapshot,
+            slot_snapshot=slot_snapshot,
+            trace_id=trace_id,
+        )
 
     def _create_turn(self, session_id: str, user_message: Message) -> Turn:
         """Create a new Turn instance."""
