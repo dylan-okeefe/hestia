@@ -1,6 +1,8 @@
-"""Unit tests for ContextBuilder style prefix integration."""
+"""Unit tests for ContextBuilder prefix-layer registry."""
 
 from __future__ import annotations
+
+import inspect
 
 import pytest
 
@@ -37,12 +39,13 @@ def session():
 
 
 @pytest.mark.asyncio
-async def test_style_prefix_appended_last(builder, session):
-    """Style prefix should appear after identity, memory_epoch, and skill_index."""
+async def test_layers_in_documented_order(builder, session):
+    """All four prefixes appear in the documented canonical order."""
     builder.set_identity_prefix("[IDENTITY]")
     builder.set_memory_epoch_prefix("[MEMORY]")
     builder.set_skill_index_prefix("[SKILLS]")
     builder.set_style_prefix("[STYLE] tone: casual.")
+
     result = await builder.build(
         session=session,
         history=[],
@@ -63,8 +66,10 @@ async def test_style_prefix_appended_last(builder, session):
 
 
 @pytest.mark.asyncio
-async def test_style_prefix_omitted_when_none(builder, session):
-    """When style_prefix is None, it should not appear in the effective prompt."""
+async def test_omitted_layer_skipped(builder, session):
+    """Only identity set; no double blank lines where omitted layers would be."""
+    builder.set_identity_prefix("[IDENTITY]")
+
     result = await builder.build(
         session=session,
         history=[],
@@ -73,14 +78,14 @@ async def test_style_prefix_omitted_when_none(builder, session):
     )
 
     system_msg = result.messages[0]
-    assert "[STYLE]" not in system_msg.content
-    assert system_msg.content == "Base prompt"
+    assert system_msg.role == "system"
+    assert system_msg.content == "[IDENTITY]\n\nBase prompt"
+    assert "\n\n\n\n" not in system_msg.content
 
 
 @pytest.mark.asyncio
-async def test_style_prefix_setter(builder, session):
-    """set_style_prefix should update the default style prefix."""
-    builder.set_style_prefix("[STYLE] setter test.")
+async def test_all_omitted_falls_through_to_system_prompt_only(builder, session):
+    """No setters called; assembled prompt is exactly the input system prompt."""
     result = await builder.build(
         session=session,
         history=[],
@@ -89,4 +94,15 @@ async def test_style_prefix_setter(builder, session):
     )
 
     system_msg = result.messages[0]
-    assert "[STYLE] setter test." in system_msg.content
+    assert system_msg.role == "system"
+    assert system_msg.content == "Base prompt"
+
+
+def test_build_signature_no_prefix_kwargs():
+    """build() no longer accepts per-call prefix overrides."""
+    sig = inspect.signature(ContextBuilder.build)
+    params = sig.parameters
+    assert "identity_prefix" not in params
+    assert "memory_epoch_prefix" not in params
+    assert "skill_index_prefix" not in params
+    assert "style_prefix" not in params
