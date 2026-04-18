@@ -344,8 +344,34 @@ pip install hestia[postgres]
 | `save_memory` | Saves a note to long-term memory | No |
 | `list_memories` | Lists recent memories | No |
 | `delegate_task` | Spawns a subagent with its own context | No |
+| `email_list` | List emails in an IMAP folder | No |
+| `email_read` | Read a single email by UID | No |
+| `email_search` | Search emails (FROM/SUBJECT/SINCE) | No |
+| `email_draft` | Create a draft in the Drafts folder | No |
+| `email_send` | Send a previously created draft | **Yes** |
+| `email_move` | Move a message to another folder | No |
+| `email_flag` | Mark read/unread/starred | No |
 
 Tools marked **Yes** require you to approve before they run. In headless mode (scheduler, daemon), these tools are denied by default — they fail closed, not open. You can change this with a trust profile (see [Trust profiles](#trust-profiles)).
+
+### Email
+
+Hestia can read your email via IMAP and draft (but not auto-send) replies via
+SMTP. Send requires explicit confirmation. See the [email setup guide](docs/guides/email-setup.md) for walkthroughs for Gmail and Fastmail.
+
+```python
+from hestia.config import HestiaConfig, EmailConfig
+from .email.secrets import IMAP_HOST, SMTP_HOST, USERNAME, PASSWORD
+
+config = HestiaConfig(
+    email=EmailConfig(
+        imap_host=IMAP_HOST,
+        smtp_host=SMTP_HOST,
+        username=USERNAME,
+        password=PASSWORD,
+    ),
+)
+```
 
 ### Web search
 

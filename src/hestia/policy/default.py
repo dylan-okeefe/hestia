@@ -161,7 +161,8 @@ class DefaultPolicyEngine(PolicyEngine):
 
         Subagents are denied shell_exec and write_local to prevent
         uncontrolled modifications. Scheduler is denied shell_exec
-        for headless safety.
+        for headless safety. Both are denied email_send unless the
+        trust profile explicitly allows it.
 
         Args:
             session: Current session
@@ -171,7 +172,7 @@ class DefaultPolicyEngine(PolicyEngine):
         Returns:
             Filtered list of allowed tool names
         """
-        from hestia.tools.capabilities import SHELL_EXEC, WRITE_LOCAL
+        from hestia.tools.capabilities import EMAIL_SEND, SHELL_EXEC, WRITE_LOCAL
 
         if session.platform == "subagent":
             blocked: set[str] = set()
@@ -179,6 +180,8 @@ class DefaultPolicyEngine(PolicyEngine):
                 blocked.add(SHELL_EXEC)
             if not self._trust.subagent_write_local:
                 blocked.add(WRITE_LOCAL)
+            if not self._trust.subagent_email_send:
+                blocked.add(EMAIL_SEND)
             if not blocked:
                 return tool_names
             return [
@@ -188,9 +191,13 @@ class DefaultPolicyEngine(PolicyEngine):
             ]
 
         if session.platform == "scheduler" or scheduler_tick_active.get():
-            if self._trust.scheduler_shell_exec:
+            blocked = set()
+            if not self._trust.scheduler_shell_exec:
+                blocked.add(SHELL_EXEC)
+            if not self._trust.scheduler_email_send:
+                blocked.add(EMAIL_SEND)
+            if not blocked:
                 return tool_names
-            blocked = {SHELL_EXEC}
             return [
                 name
                 for name in tool_names

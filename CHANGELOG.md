@@ -5,6 +5,32 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.6.0]
+
+### Added
+- `EmailAdapter` in `src/hestia/email/adapter.py` with IMAP read/search and
+  SMTP/IMAP draft flow. Uses stdlib `imaplib`/`smtplib` + `bleach` for HTML
+  sanitization.
+- `EmailConfig` dataclass (`imap_host`, `smtp_host`, `username`, `password`,
+  `sanitize_html`, etc.) wired through `HestiaConfig`.
+- Email tools: `email_list`, `email_read`, `email_search`, `email_draft`,
+  `email_send`, `email_move`, `email_flag`. `email_send` requires confirmation
+  (`requires_confirmation=True`) and is gated by trust profile.
+- `TrustConfig.subagent_email_send` and `TrustConfig.scheduler_email_send`
+  (both default `False`) to prevent headless contexts from triggering outbound
+  mail.
+- `EMAIL_SEND` capability label for policy-engine filtering.
+- `hestia email check/list/read` CLI commands for operator diagnostics.
+- `docs/guides/email-setup.md` with app-password walkthroughs for Gmail and
+  Fastmail.
+- Integration test `tests/integration/test_email_roundtrip.py` mocking IMAP
+  and SMTP for draft → list → send workflow.
+- Unit test `tests/unit/test_email_sanitization.py` covering HTML stripping,
+  body truncation, injection scanner interaction, and search query parsing.
+
+### Changed
+- Bumped version to 0.6.0 (minor — new platform-level capability).
+
 ## [0.5.1]
 
 ### Added
