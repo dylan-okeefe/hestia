@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from email.message import EmailMessage
 from typing import Any
 
-import bleach  # type: ignore[import-untyped]
+import nh3
 
 from hestia.config import EmailConfig
 
@@ -128,7 +128,7 @@ class EmailAdapter:
         """Strip HTML tags and decode entities."""
         if not self.config.sanitize_html:
             return raw_html
-        cleaned: str = bleach.clean(raw_html, tags=[], strip=True)
+        cleaned: str = nh3.clean(raw_html, tags=set())
         return html.unescape(cleaned)
 
     def _fetch_headers(self, conn: imaplib.IMAP4_SSL, uid: str, folder: str) -> dict[str, Any]:
