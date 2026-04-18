@@ -140,3 +140,16 @@ skills = sa.Table(
     sa.Index("idx_skills_state", "state"),
     sa.Index("idx_skills_name", "name"),
 )
+
+style_profiles = sa.Table(
+    "style_profiles",
+    metadata,
+    sa.Column("platform", sa.String, nullable=False),
+    sa.Column("platform_user", sa.String, nullable=False),
+    sa.Column("metric", sa.String, nullable=False),
+    sa.Column("value_json", sa.Text, nullable=False),
+    sa.Column("updated_at", sa.DateTime, nullable=False),
+    sa.PrimaryKeyConstraint("platform", "platform_user", "metric"),
+    sa.Index("idx_style_profiles_user", "platform", "platform_user"),
+    sa.Index("idx_style_profiles_updated", "updated_at"),
+)

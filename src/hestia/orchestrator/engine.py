@@ -28,13 +28,16 @@ from hestia.platforms.base import Platform
 from hestia.policy.engine import PolicyEngine, RetryAction
 from hestia.reflection.store import ProposalStore
 from hestia.security import InjectionScanner
+from hestia.style.context import format_style_prefix_from_data
 from hestia.tools.builtin import current_session_id, current_trace_store
 from hestia.tools.registry import ToolNotFoundError, ToolRegistry
 from hestia.tools.types import ToolCallResult
 
 if TYPE_CHECKING:
+    from hestia.config import StyleConfig
     from hestia.persistence.failure_store import FailureStore
     from hestia.persistence.trace_store import TraceStore
+    from hestia.style.store import StyleProfileStore
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +69,8 @@ class Orchestrator:
         handoff_summarizer: SessionHandoffSummarizer | None = None,
         injection_scanner: InjectionScanner | None = None,
         proposal_store: ProposalStore | None = None,
+        style_store: "StyleProfileStore | None" = None,
+        style_config: "StyleConfig | None" = None,
     ):
         """Initialize the orchestrator.
 
@@ -96,6 +101,8 @@ class Orchestrator:
         self._handoff_summarizer = handoff_summarizer
         self._injection_scanner = injection_scanner
         self._proposal_store = proposal_store
+        self._style_store = style_store
+        self._style_config = style_config
 
     async def recover_stale_turns(self) -> int:
         """Mark any turns in non-terminal states as FAILED.
@@ -224,6 +231,25 @@ class Orchestrator:
                             + system_prompt
                         )
 
+                # Resolve style prefix if enabled
+                style_prefix: str | None = None
+                if (
+                    self._style_store is not None
+                    and self._style_config is not None
+                    and self._style_config.enabled
+                ):
+                    from datetime import timedelta
+
+                    since = utcnow() - timedelta(days=self._style_config.lookback_days)
+                    turn_count = await self._style_store.count_turns_in_window(
+                        session.platform, session.platform_user, since
+                    )
+                    if turn_count >= self._style_config.min_turns_to_activate:
+                        metrics = await self._style_store.get_profile_dict(
+                            session.platform, session.platform_user
+                        )
+                        style_prefix = format_style_prefix_from_data(metrics)
+
                 # Build context
                 tools = self._tools.meta_tool_schemas()
                 build_result = await self._builder.build(
@@ -232,6 +258,7 @@ class Orchestrator:
                     system_prompt=effective_system_prompt,
                     tools=tools,
                     new_user_message=user_message,
+                    style_prefix=style_prefix,
                 )
 
                 # Acquire slot for this turn (if SlotManager is configured)
@@ -321,6 +348,7 @@ class Orchestrator:
                             system_prompt=system_prompt,
                             tools=tools,
                             new_user_message=None,  # Continuing turn, no new user message
+                            style_prefix=style_prefix,
                         )
 
                         turn.tool_calls_made += len(chat_response.tool_calls)

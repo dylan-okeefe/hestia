@@ -55,6 +55,7 @@ class ContextBuilder:
         identity_prefix: str | None = None,
         memory_epoch_prefix: str | None = None,
         skill_index_prefix: str | None = None,
+        style_prefix: str | None = None,
         compressor: HistoryCompressor | None = None,
         compress_on_overflow: bool = False,
     ):
@@ -68,6 +69,7 @@ class ContextBuilder:
             identity_prefix: Optional compiled identity view to prepend to system prompt
             memory_epoch_prefix: Optional compiled memory epoch to prepend to system prompt
             skill_index_prefix: Optional skill index to prepend to system prompt
+            style_prefix: Optional style profile addendum to prepend to system prompt
             compressor: Optional history compressor for overflow recovery
             compress_on_overflow: Whether to compress dropped history
         """
@@ -78,6 +80,7 @@ class ContextBuilder:
         self._identity_prefix = identity_prefix
         self._memory_epoch_prefix = memory_epoch_prefix
         self._skill_index_prefix = skill_index_prefix
+        self._style_prefix = style_prefix
         self._compressor = compressor
         self._compress_on_overflow = compress_on_overflow
 
@@ -104,6 +107,14 @@ class ContextBuilder:
             skill_index_prefix: Skill index text, or None to clear
         """
         self._skill_index_prefix = skill_index_prefix
+
+    def set_style_prefix(self, style_prefix: str | None) -> None:
+        """Set the style profile prefix to prepend to system prompts.
+
+        Args:
+            style_prefix: Style profile text, or None to clear
+        """
+        self._style_prefix = style_prefix
 
     def enable_compression(self, compressor: HistoryCompressor) -> None:
         """Attach a history compressor and turn on overflow compression.
@@ -154,6 +165,7 @@ class ContextBuilder:
         identity_prefix: str | None = None,
         memory_epoch_prefix: str | None = None,
         skill_index_prefix: str | None = None,
+        style_prefix: str | None = None,
     ) -> BuildResult:
         """Build the message list for a new turn.
 
@@ -174,6 +186,7 @@ class ContextBuilder:
             identity_prefix: Optional compiled identity view to prepend to system prompt
             memory_epoch_prefix: Optional compiled memory epoch to prepend to system prompt
             skill_index_prefix: Optional skill index to prepend to system prompt
+            style_prefix: Optional style profile addendum to prepend to system prompt
 
         Returns:
             BuildResult with messages and bookkeeping
@@ -188,7 +201,8 @@ class ContextBuilder:
         # 1. Compiled identity view (from SOUL.md when configured)
         # 2. Compiled memory epoch
         # 3. Skill index
-        # 4. Base system prompt
+        # 4. Style profile addendum
+        # 5. Base system prompt
 
         effective_identity = (
             identity_prefix if identity_prefix is not None else self._identity_prefix
@@ -199,9 +213,15 @@ class ContextBuilder:
         effective_skill_index = (
             skill_index_prefix if skill_index_prefix is not None else self._skill_index_prefix
         )
+        effective_style_prefix = (
+            style_prefix if style_prefix is not None else self._style_prefix
+        )
 
         effective_prompt = system_prompt
         memory_epoch_included = False
+
+        if effective_style_prefix:
+            effective_prompt = effective_style_prefix + "\n\n" + effective_prompt
 
         if effective_skill_index:
             effective_prompt = effective_skill_index + "\n\n" + effective_prompt

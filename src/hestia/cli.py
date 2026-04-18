@@ -39,6 +39,9 @@ from hestia.reflection.runner import ReflectionRunner
 from hestia.reflection.scheduler import ReflectionScheduler
 from hestia.reflection.store import ProposalStore
 from hestia.scheduler import Scheduler
+from hestia.style.builder import StyleProfileBuilder
+from hestia.style.scheduler import StyleScheduler
+from hestia.style.store import StyleProfileStore
 from hestia.skills.index import SkillIndexBuilder
 from hestia.skills.state import SkillState
 from hestia.tools.builtin import (
@@ -120,6 +123,8 @@ class CliAppContext:
     scheduler_store: SchedulerStore | None = None
     skill_store: SkillStore | None = None
     proposal_store: ProposalStore | None = None
+    style_store: StyleProfileStore | None = None
+    style_builder: StyleProfileBuilder | None = None
     verbose: bool = False
     confirm_callback: Any = None
     epoch_compiler: MemoryEpochCompiler | None = None
@@ -137,6 +142,8 @@ class CliAppContext:
             await self.skill_store.create_table()
         if self.proposal_store is not None:
             await self.proposal_store.create_table()
+        if self.style_store is not None:
+            await self.style_store.create_table()
 
     def make_injection_scanner(self) -> InjectionScanner:
         """Create an InjectionScanner from config."""
@@ -161,6 +168,8 @@ class CliAppContext:
             handoff_summarizer=self.handoff_summarizer,
             injection_scanner=self.make_injection_scanner(),
             proposal_store=self.proposal_store,
+            style_store=self.style_store,
+            style_config=self.config.style,
         )
 
 
@@ -401,6 +410,8 @@ def cli(
     trace_store = TraceStore(db)
     skill_store = SkillStore(db)
     proposal_store = ProposalStore(db)
+    style_store = StyleProfileStore(db)
+    style_builder = StyleProfileBuilder(db, style_store, cfg.style)
 
     # Session-close handoff summarizer (L21). Off by default; opt in via HandoffConfig.
     handoff_summarizer: SessionHandoffSummarizer | None = None
@@ -458,6 +469,8 @@ def cli(
         scheduler_store=scheduler_store,
         skill_store=skill_store,
         proposal_store=proposal_store,
+        style_store=style_store,
+        style_builder=style_builder,
         verbose=cfg.verbose,
         confirm_callback=None,
         epoch_compiler=epoch_compiler,
@@ -479,6 +492,8 @@ def cli(
     ctx.obj["trace_store"] = trace_store
     ctx.obj["skill_store"] = skill_store
     ctx.obj["proposal_store"] = proposal_store
+    ctx.obj["style_store"] = style_store
+    ctx.obj["style_builder"] = style_builder
 
 
 
@@ -1098,6 +1113,8 @@ def schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None:
     failure_store: FailureStore = ctx.obj["failure_store"]
     trace_store: TraceStore = ctx.obj["trace_store"]
     proposal_store: ProposalStore = ctx.obj["proposal_store"]
+    style_store: StyleProfileStore = ctx.obj["style_store"]
+    style_builder: StyleProfileBuilder = ctx.obj["style_builder"]
 
     # Use config tick interval if not specified via CLI
     tick = tick_interval if tick_interval is not None else cfg.scheduler.tick_interval_seconds
@@ -1129,6 +1146,8 @@ def schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None:
             trace_store=trace_store,
             injection_scanner=scanner,
             proposal_store=proposal_store,
+            style_store=style_store,
+            style_config=cfg.style,
         )
 
         scheduler = Scheduler(
@@ -1149,6 +1168,13 @@ def schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None:
         reflection_scheduler = ReflectionScheduler(
             config=cfg.reflection,
             runner=reflection_runner,
+            session_store=session_store,
+        )
+
+        # Style profile scheduler (opt-in via StyleConfig.enabled)
+        style_scheduler = StyleScheduler(
+            config=cfg.style,
+            builder=style_builder,
             session_store=session_store,
         )
 
@@ -1209,6 +1235,7 @@ def run_telegram(ctx: click.Context) -> None:
     memory_store: MemoryStore = ctx.obj["memory_store"]
     failure_store: FailureStore = ctx.obj["failure_store"]
     trace_store: TraceStore = ctx.obj["trace_store"]
+    style_store: StyleProfileStore = ctx.obj["style_store"]
 
     scanner = InjectionScanner(
         enabled=cfg.security.injection_scanner_enabled,
@@ -1270,6 +1297,8 @@ def run_telegram(ctx: click.Context) -> None:
             failure_store=failure_store,
             trace_store=trace_store,
             injection_scanner=scanner,
+            style_store=style_store,
+            style_config=cfg.style,
         )
 
         # Recover stale turns from previous crash
@@ -1363,6 +1392,7 @@ def run_matrix(ctx: click.Context) -> None:
     memory_store: MemoryStore = ctx.obj["memory_store"]
     failure_store: FailureStore = ctx.obj["failure_store"]
     trace_store: TraceStore = ctx.obj["trace_store"]
+    style_store: StyleProfileStore = ctx.obj["style_store"]
 
     scanner = InjectionScanner(
         enabled=cfg.security.injection_scanner_enabled,
@@ -1426,6 +1456,8 @@ def run_matrix(ctx: click.Context) -> None:
             failure_store=failure_store,
             trace_store=trace_store,
             injection_scanner=scanner,
+            style_store=style_store,
+            style_config=cfg.style,
         )
 
         # Recover stale turns from previous crash
@@ -2009,6 +2041,74 @@ def email_read_cmd(ctx: click.Context, message_id: str) -> None:
                 click.echo(f"  - {att['filename']} ({att['content_type']})")
 
     asyncio.run(_read())
+
+
+@cli.group()
+@click.pass_context
+def style(ctx: click.Context) -> None:
+    """Manage interaction-style profile."""
+    pass
+
+
+@style.command(name="show")
+@click.option("--platform", default=None)
+@click.option("--user", default=None)
+@click.pass_context
+def style_show(ctx: click.Context, platform: str | None, user: str | None) -> None:
+    """Pretty-print the current style profile for a user."""
+    app: CliAppContext = ctx.obj["app"]
+
+    async def _show() -> None:
+        await app.bootstrap_db()
+        if app.style_store is None:
+            click.echo("Style store not available", err=True)
+            sys.exit(1)
+
+        platform = platform or "cli"
+        platform_user = user or "default"
+
+        metrics = await app.style_store.list_metrics(platform, platform_user)
+        if not metrics:
+            click.echo(f"No style profile found for {platform}/{platform_user}.")
+            return
+
+        click.echo(f"Style profile for {platform}/{platform_user}:")
+        for m in metrics:
+            click.echo(f"  {m.metric}: {m.value_json}")
+
+    asyncio.run(_show())
+
+
+@style.command(name="reset")
+@click.option("--platform", default=None)
+@click.option("--user", default=None)
+@click.pass_context
+def style_reset(ctx: click.Context, platform: str | None, user: str | None) -> None:
+    """Wipe the style profile so it rebuilds from scratch."""
+    app: CliAppContext = ctx.obj["app"]
+
+    async def _reset() -> None:
+        await app.bootstrap_db()
+        if app.style_store is None:
+            click.echo("Style store not available", err=True)
+            sys.exit(1)
+
+        platform = platform or "cli"
+        platform_user = user or "default"
+
+        count = await app.style_store.delete_profile(platform, platform_user)
+        click.echo(f"Deleted {count} metric(s) for {platform}/{platform_user}.")
+
+    asyncio.run(_reset())
+
+
+@style.command(name="disable")
+@click.pass_context
+def style_disable(ctx: click.Context) -> None:
+    """Disable style profile injection globally."""
+    app: CliAppContext = ctx.obj["app"]
+    app.config.style.enabled = False
+    click.echo("Style profile disabled. Re-enable by setting style.enabled = True in config.")
 
 
 @cli.group()

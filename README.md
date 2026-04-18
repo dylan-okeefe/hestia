@@ -160,6 +160,54 @@ When pending proposals exist, Hestia injects a one-time system note at the start
 
 See [docs/guides/reflection-tuning.md](docs/guides/reflection-tuning.md) for tuning guidance and [ADR-0018](docs/development-process/decisions/ADR-0018-reflection-loop-architecture.md) for architecture rationale.
 
+### Style profile (opt-in)
+
+Hestia can learn *how* you prefer to communicate without modifying your identity (`SOUL.md`). The style profile tracks lightweight, observable signals per platform × user:
+
+- **Preferred response length** — median completion tokens for turns you don't ask to shorten/lengthen
+- **Formality** — ratio of technical vocabulary in your messages
+- **Top topics** — most frequent memory tags in recent sessions
+- **Activity window** — hour-of-day histogram of your usage
+
+These metrics live only in your local SQLite database. They never leave the machine.
+
+Enable in your config:
+
+```python
+from hestia.config import HestiaConfig, StyleConfig
+
+config = HestiaConfig(
+    style=StyleConfig(
+        enabled=True,
+        min_turns_to_activate=20,  # don't inject until enough data
+        lookback_days=30,
+        cron="15 3 * * *",         # 15 min after reflection run
+    )
+)
+```
+
+When activated, a short `[STYLE]` addendum is injected into the system prompt:
+
+```
+[STYLE] Recent tone: technical. Preferred response length: ~150 tokens.
+Active topics this week: python, deployment, sqlite.
+```
+
+CLI controls:
+
+```bash
+# View current profile
+hestia style show
+
+# Wipe and relearn from scratch
+hestia style reset
+
+# Temporarily disable injection
+hestia style disable
+```
+
+Style is always additive — it only appends a small addendum, never edits `SOUL.md` or memory epochs. You can reset or disable it without side effects. See [ADR-0019](docs/adr/ADR-0019-style-profile-vs-identity.md) for the design rationale.
+
 ---
 
 ## Platforms
