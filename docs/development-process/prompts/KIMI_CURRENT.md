@@ -2,39 +2,41 @@
 
 **Orchestrator:** Cursor updates this file after each review.
 
-**Last set by:** Cursor — 2026-04-18 (L29 queued — reliability surface, secrets hygiene, stale docs)
+**Last set by:** Cursor — 2026-04-18 (L30 queued — cli.py decomposition + bootstrap module)
 
 ---
 
 ## Current task
 
-**Active loop:** **L29** — make schedulers fail loudly, support credentials-from-environment, narrow `WebSearchConfig.provider` to its actual support matrix, refresh `SECURITY.md` for 0.7.x, consolidate ADR directories.
+**Active loop:** **L30** — split the 2,569-line `cli.py` into `hestia/app.py` (subsystem wiring), `hestia/platforms/runners.py` (platform polling loops), and a slim `cli.py` (Click definitions only ≤ 600 lines). Establish `CliAppContext.make_orchestrator()` as the **only** Orchestrator constructor. Drop the raw `ctx.obj["..."]` dict layer.
 
-**Spec:** [`../kimi-loops/L29-reliability-and-secrets.md`](../kimi-loops/L29-reliability-and-secrets.md)
+**Spec:** [`../kimi-loops/L30-cli-decomposition.md`](../kimi-loops/L30-cli-decomposition.md)
 
-**Branch:** `feature/l29-reliability-secrets` from `develop` tip `dcc54c5` (post-L28 merge).
+**Branch:** `feature/l30-cli-decomposition` from `develop` tip `bbed167` (post-L29 merge).
 
 **Kimi prompt:** Read this file, then execute the full spec at the linked file. Implement each section in order, run required tests, update docs/handoff, and write `.kimi-done` exactly as specified.
 
 **Scope (summary, see spec for detail):**
 
-- Reflection scheduler & runner: failure ring buffer surfaced via `hestia reflection status`.
-- Style scheduler: failure ring buffer surfaced via `hestia style show`.
-- Visible warnings on missing `SOUL.md` / `docs/calibration.json`; honor `HESTIA_SOUL_PATH` / `HESTIA_CALIBRATION_PATH`.
-- `EmailConfig.password_env` for credentials from environment.
-- `WebSearchConfig.provider`: drop unimplemented `"brave"` from the public type.
-- `SECURITY.md` rewrite for 0.7.x, TrustConfig, egress audit, scanner.
-- ADR consolidation: moved historical decision records into `docs/adr/`.
-- Bump version to **0.7.3**; CHANGELOG; lockfile in same commit.
+- New `src/hestia/app.py` owning `CliAppContext`, `make_app(config)`, lazy `inference_client`, idempotent `bootstrap_db()`, single `make_orchestrator()`.
+- New `src/hestia/platforms/runners.py` with `run_telegram(app, config)` / `run_matrix(app, config)` and a shared `run_platform(...)` polling helper.
+- Drop every `ctx.obj["..."]` raw read in `cli.py` — typed `app` only.
+- Replace every direct `Orchestrator(...)` construction with `app.make_orchestrator()`.
+- Add `run_async` decorator to remove the per-command `asyncio.run` boilerplate.
+- `cli.py` ≤ 600 lines.
+- Bump version to **0.7.4**; CHANGELOG; lockfile.
+- ADR-0020 documenting the split.
 
-**Do not merge to `develop` in this loop.** Push the feature branch and stop only after writing `.kimi-done`.
+**Pure refactor.** No new behavior. No new commands. Test suite must remain identical (≥ 691 passed; same 6 skipped) apart from new tests added for the new modules.
+
+**Do not merge to `develop`.** Push the feature branch and stop after writing `.kimi-done`.
 
 ---
 
 ## Reference
 
 - Queue: [`../kimi-phase-queue.md`](../kimi-phase-queue.md)
-- Prior loop: [`../kimi-loops/L28-critical-bugs-and-deps.md`](../kimi-loops/L28-critical-bugs-and-deps.md) (merged at `dcc54c5`)
+- Prior loop: [`../kimi-loops/L29-reliability-and-secrets.md`](../kimi-loops/L29-reliability-and-secrets.md) (merged at `bbed167`)
 
 ---
 
@@ -42,11 +44,11 @@
 
 ```
 HESTIA_KIMI_DONE=1
-LOOP=L29
-BRANCH=feature/l29-reliability-secrets
+LOOP=L30
+BRANCH=feature/l30-cli-decomposition
 COMMIT=<final commit sha>
-TESTS=<pytest summary, e.g. "passed=N failed=0 skipped=M">
+TESTS=<pytest summary>
 MYPY_FINAL_ERRORS=<count>
 ```
 
-If blocked, set `HESTIA_KIMI_DONE=0` and add `BLOCKER=<reason>`.
+If blocked, `HESTIA_KIMI_DONE=0` + `BLOCKER=<reason>`.

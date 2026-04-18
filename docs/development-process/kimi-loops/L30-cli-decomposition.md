@@ -2,7 +2,14 @@
 
 ## Review carry-forward
 
-(Cursor populates after L29 review.)
+From **L29 review (Cursor, 2026-04-18, merged as `bbed167`):**
+
+- L29 shipped clean (691 passed / 6 skipped / 0 mypy). Failure ring buffers + env-var secrets + ADR consolidation all landed.
+- **Ruff baseline raised to 255** (was 243 after L28; L29 added 11 `E501` line-too-long, all in L29-touched files). L30 must end at **≤ 255** ruff errors. Because L30 rewrites `cli.py` wholesale, this should drop substantially — aim to bring it back below 245 if possible. Do not introduce any new rule violations beyond the existing E501 baseline.
+- Test baseline raised to **691 passed / 6 skipped**. Hold or exceed.
+- Kimi hit `--max-ralph-iterations` at the very end of L29 (after all code commits, before `.kimi-done`). To avoid a repeat, L30 sections are smaller and the §-1 baseline run + §6 sanity check can be batched into the same Kimi step rather than treated as separate iterations.
+- Mid-step debris on L29: an uncommitted `app: CliAppContext = ctx.obj["app"]` line in `schedule_daemon`. L30 makes this obsolete by deleting all raw `ctx.obj["..."]` access — but explicitly verify with the grep checks in §-1 below.
+- Coverage gap soft-target (don't go out of your way): integration test exercising the `delete_memory` confirmation flow on a platform adapter (was queued from L28 review).
 
 From **external code-quality review (2026-04-18)**, verified against `develop`:
 
