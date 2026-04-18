@@ -107,6 +107,59 @@ async def daily_briefing(context):
 
 This system is functional but not yet integrated into the orchestrator's tool-calling flow. A `run_skill` meta-tool and built-in skill library are planned for a future release. See [ADR-024](docs/adr/ADR-024-skills-user-defined-python-functions.md) for the design rationale.
 
+### Reflection loop (opt-in)
+
+When enabled, Hestia reviews recent conversation traces during idle hours and generates concrete improvement proposals. Proposals are **never auto-applied** — they queue for operator review and can be accepted, rejected, or deferred via CLI.
+
+Example proposals:
+- "User corrected timezone formatting 3 times → add `preferred_timezone` to SOUL.md"
+- "`read_file` → `search_memory` → `save_memory` chain appeared 8 times → register a 'research_and_remember' chain"
+
+Enable in your config:
+
+```python
+from hestia.config import HestiaConfig, ReflectionConfig
+
+config = HestiaConfig(
+    reflection=ReflectionConfig(
+        enabled=True,
+        cron="0 3 * * *",        # 3 AM daily
+        idle_minutes=15,         # skip if session was active within 15 min
+        lookback_turns=100,      # analyze last 100 traces
+        proposals_per_run=5,     # max proposals per run
+        expire_days=14,          # proposals expire after 14 days
+    )
+)
+```
+
+CLI walkthrough:
+
+```bash
+# Check pending proposal count
+hestia reflection status
+
+# List pending proposals
+hestia reflection list --status pending
+
+# Review a proposal in detail
+hestia reflection show prop_abc123
+
+# Accept, reject, or defer
+hestia reflection accept prop_abc123
+hestia reflection reject prop_abc123 --note "Not useful"
+hestia reflection defer prop_abc123 --until 2026-05-01T00:00:00
+
+# Manually trigger a reflection run
+hestia reflection run --now
+
+# View history
+hestia reflection history
+```
+
+When pending proposals exist, Hestia injects a one-time system note at the start of the next session: "You have N pending reflection proposal(s)... summarize the top 3 and ask whether to accept/reject/defer."
+
+See [docs/guides/reflection-tuning.md](docs/guides/reflection-tuning.md) for tuning guidance and [ADR-0018](docs/development-process/decisions/ADR-0018-reflection-loop-architecture.md) for architecture rationale.
+
 ---
 
 ## Platforms

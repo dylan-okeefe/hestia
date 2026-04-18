@@ -26,6 +26,7 @@ from hestia.orchestrator.types import Turn, TurnState, TurnTransition
 from hestia.persistence.sessions import SessionStore
 from hestia.platforms.base import Platform
 from hestia.policy.engine import PolicyEngine, RetryAction
+from hestia.reflection.store import ProposalStore
 from hestia.security import InjectionScanner
 from hestia.tools.builtin import current_session_id, current_trace_store
 from hestia.tools.registry import ToolNotFoundError, ToolRegistry
@@ -64,6 +65,7 @@ class Orchestrator:
         trace_store: "TraceStore | None" = None,
         handoff_summarizer: SessionHandoffSummarizer | None = None,
         injection_scanner: InjectionScanner | None = None,
+        proposal_store: ProposalStore | None = None,
     ):
         """Initialize the orchestrator.
 
@@ -93,6 +95,7 @@ class Orchestrator:
         self._trace_store = trace_store
         self._handoff_summarizer = handoff_summarizer
         self._injection_scanner = injection_scanner
+        self._proposal_store = proposal_store
 
     async def recover_stale_turns(self) -> int:
         """Mark any turns in non-terminal states as FAILED.
@@ -206,12 +209,27 @@ class Orchestrator:
                 # Persist the new user message (now it's in the store for future turns)
                 await self._store.append_message(session.id, user_message)
 
+                # Session-start hook: inject pending proposals note on first turn
+                effective_system_prompt = system_prompt
+                if (
+                    self._proposal_store is not None
+                    and not history
+                ):
+                    pending_count = await self._proposal_store.pending_count()
+                    if pending_count > 0:
+                        effective_system_prompt = (
+                            f"You have {pending_count} pending reflection proposal(s) from the last review. "
+                            "If the user greets you or asks 'what's new', summarize the top 3 and ask whether "
+                            "to accept/reject/defer. Do not apply any proposal without an explicit accept.\n\n"
+                            + system_prompt
+                        )
+
                 # Build context
                 tools = self._tools.meta_tool_schemas()
                 build_result = await self._builder.build(
                     session=session,
                     history=history,
-                    system_prompt=system_prompt,
+                    system_prompt=effective_system_prompt,
                     tools=tools,
                     new_user_message=user_message,
                 )
