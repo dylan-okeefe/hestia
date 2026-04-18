@@ -11,6 +11,12 @@ from hestia.errors import ContextTooLargeError
 from hestia.policy.engine import PolicyEngine
 
 
+@dataclass(frozen=True)
+class _PrefixLayer:
+    name: str
+    value: str | None
+
+
 @dataclass
 class BuildResult:
     """Result of building context for a turn."""
@@ -155,6 +161,15 @@ class ContextBuilder:
 
         return cls(inference_client, policy, body_factor, meta_tool_overhead)
 
+    def _prefix_layers(self) -> list[_PrefixLayer]:
+        """Return prefix layers in canonical assembly order."""
+        return [
+            _PrefixLayer("identity", self._identity_prefix),
+            _PrefixLayer("memory_epoch", self._memory_epoch_prefix),
+            _PrefixLayer("skill_index", self._skill_index_prefix),
+            _PrefixLayer("style", self._style_prefix),
+        ]
+
     async def build(
         self,
         session: Session,
@@ -162,10 +177,6 @@ class ContextBuilder:
         system_prompt: str,
         tools: list[ToolSchema],
         new_user_message: Message | None = None,
-        identity_prefix: str | None = None,
-        memory_epoch_prefix: str | None = None,
-        skill_index_prefix: str | None = None,
-        style_prefix: str | None = None,
     ) -> BuildResult:
         """Build the message list for a new turn.
 
@@ -183,10 +194,6 @@ class ContextBuilder:
             tools: Available tools (for overhead calculation)
             new_user_message: The new user message for this turn, or None for
                             continuation turns (e.g., during tool chains)
-            identity_prefix: Optional compiled identity view to prepend to system prompt
-            memory_epoch_prefix: Optional compiled memory epoch to prepend to system prompt
-            skill_index_prefix: Optional skill index to prepend to system prompt
-            style_prefix: Optional style profile addendum to prepend to system prompt
 
         Returns:
             BuildResult with messages and bookkeeping
@@ -196,42 +203,11 @@ class ContextBuilder:
 
         truncated_count = 0
 
-        # Build effective system prompt with optional prefixes
-        # Assembly order per roadmap §10.1:
-        # 1. Compiled identity view (from SOUL.md when configured)
-        # 2. Compiled memory epoch
-        # 3. Skill index
-        # 4. Style profile addendum
-        # 5. Base system prompt
-
-        effective_identity = (
-            identity_prefix if identity_prefix is not None else self._identity_prefix
-        )
-        effective_memory_epoch = (
-            memory_epoch_prefix if memory_epoch_prefix is not None else self._memory_epoch_prefix
-        )
-        effective_skill_index = (
-            skill_index_prefix if skill_index_prefix is not None else self._skill_index_prefix
-        )
-        effective_style_prefix = (
-            style_prefix if style_prefix is not None else self._style_prefix
-        )
-
-        effective_prompt = system_prompt
-        memory_epoch_included = False
-
-        if effective_style_prefix:
-            effective_prompt = effective_style_prefix + "\n\n" + effective_prompt
-
-        if effective_skill_index:
-            effective_prompt = effective_skill_index + "\n\n" + effective_prompt
-
-        if effective_memory_epoch:
-            effective_prompt = effective_memory_epoch + "\n\n" + effective_prompt
-            memory_epoch_included = True
-
-        if effective_identity:
-            effective_prompt = effective_identity + "\n\n" + effective_prompt
+        # Build effective system prompt from registered prefix layers
+        parts = [layer.value for layer in self._prefix_layers() if layer.value]
+        parts.append(system_prompt)
+        effective_prompt = "\n\n".join(parts)
+        memory_epoch_included = self._memory_epoch_prefix is not None
 
         # Create system message
         system_msg = Message(role="system", content=effective_prompt)
