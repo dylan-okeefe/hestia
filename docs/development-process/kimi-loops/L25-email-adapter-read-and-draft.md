@@ -2,7 +2,13 @@
 
 ## Review carry-forward
 
-From L24 review (to be filled).
+From **L24 review** (merged to `develop` in commit `c88c60e`):
+
+- L24 shipped `SecurityConfig`, injection scanner, and egress trace capture. Email content in L25 must flow through the same scanner path (do not bypass annotation wrappers).
+- Keep `mypy src/hestia` at 0 and full suite green (`uv run pytest tests/unit/ tests/integration/ -q`).
+- Preserve L23 confirmation semantics for `email_send`: explicit approval required, no hidden auto-send fallback.
+- Kimi left `uv.lock` unstaged in L24; include lockfile updates in the same version-bump commit this loop.
+- Existing `aiosqlite` thread-shutdown warnings are pre-existing; don't mask them unless intentionally fixing with tests.
 
 **Branch:** `feature/l25-email-adapter` from **`develop`**.
 

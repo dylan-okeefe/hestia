@@ -8,6 +8,29 @@
 
 ---
 
+## 2026-04-18 — Loop: L24 — prompt-injection detection + egress auditing (Kimi) → merged to develop
+
+**Kimi:** loop completed with `.kimi-done` (`LOOP=L24`, branch `feature/l24-injection-detection`, commit `cf2e7ed`, tests `597 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`). Initial Kimi run hit max-steps at 100; resumed session completed and wrote valid `.kimi-done`.
+
+**What shipped:**
+
+1. New security scanner module `src/hestia/security/injection.py` with regex + entropy heuristics.
+2. Tool-result annotation path wired through orchestrator/tool handling so suspicious content is wrapped with a security note rather than blocked.
+3. Egress trace capture added for network tools (`http_get` and `web_search`) with audit reporting command flow in CLI.
+4. `SecurityConfig` added and threaded through runtime config.
+5. Docs delivered: `SECURITY.md`, ADR-0017, L24 handoff report, README/changelog updates.
+
+**Review (Cursor):**
+
+- Re-ran full gate on feature branch: `597 passed, 6 skipped`; `mypy src/hestia` clean (0 errors).
+- Found one post-run hygiene issue: `uv.lock` contained `0.5.1` bump but was left unstaged. Added follow-up commit `8b9d9ca chore(lockfile): sync uv.lock for 0.5.1` and pushed before merge.
+
+**Merge:** `feature/l24-injection-detection` → `develop` via `--no-ff` merge commit `c88c60e`. Pushed.
+
+**Queue advance:** `KIMI_CURRENT.md` moved to L25; `L25` review carry-forward populated with L24 constraints.
+
+---
+
 ## 2026-04-18 — Loop: L23 — Telegram + Matrix confirmation callbacks (Kimi + Cursor fix) → merged to develop
 
 **Kimi:** `.kimi-done` loop completed on `feature/l23-platform-confirmation`; final review/merge landed as `7e2ebe0` (feature commit) and merge commit `f56e9ad` on `develop`.
