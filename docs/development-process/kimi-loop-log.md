@@ -8,6 +8,40 @@
 
 ---
 
+## 2026-04-18 — Loop: L31 — orchestrator engine cleanup (Kimi → Cursor finish) → merged to develop
+
+**Kimi:** Started L31 from `feature/l31-engine-cleanup` (off `develop` tip `30a224f`). **All 9 spec commits landed** (extract `_build_failure_bundle`, hoist `delegated`/`tool_chain`, single `get_messages`, accumulate artifact handles from `ToolCallResult`, extract `_check_confirmation`, `ToolCallResult.error` classmethod, regression tests, version bump, handoff). Then Kimi hit `--max-steps-per-turn=100` (the **per-iteration step ceiling**, distinct from `--max-ralph-iterations` which was already `-1`) and exited. **No `.kimi-done` was written.** The uncommitted working tree contained ~60 lines of cosmetic compaction noise (collapsing dataclass kwargs onto single lines, stripping comments and blank lines, removing docstring detail) — not bug fixes.
+
+**Cursor finish (manual):**
+
+1. Discarded the noise diff (`git checkout -- src/hestia/orchestrator/engine.py`).
+2. Verified the three "must be empty" gates pass on the L31 branch: `git grep 'ToolCallResult(status="error"' -- src/hestia` → 0; `git grep 'locals().get(' -- src/hestia` → 0; `git grep 're.findall(.*artifact' -- src/hestia` → 0.
+3. Wrote `.kimi-done` with the final commit sha (`86f5ee6`), test summary (`701 passed, 6 skipped`), `MYPY_FINAL_ERRORS=0`, and a `NOTE=` documenting the per-turn step ceiling.
+
+**What shipped:**
+
+- `Orchestrator._build_failure_bundle(...)` collapses the duplicated `ContextTooLargeError` and generic `Exception` failure-bundle blocks (previously ~60 lines × 2).
+- `delegated` and `tool_chain` declared at the top of the outer `try` in `process_turn`; the defensive `locals().get("delegated", False)` is gone.
+- `process_turn` calls `await self._store.get_messages(session.id)` exactly once per turn (was twice — once at the top, once after DONE for artifact mining).
+- Artifact handles are now accumulated from `ToolCallResult.artifact_handle` during dispatch into a `turn_artifact_handles: list[str]`. The `re.findall(r"artifact://...")` recovery path is gone.
+- `_check_confirmation(...)` is the one place the confirmation logic lives; both `_dispatch_tool_call` branches call it.
+- New `ToolCallResult.error(content)` classmethod in `src/hestia/tools/types.py`; every long-form `ToolCallResult(status="error", content=..., artifact_handle=None, truncated=False)` in `engine.py` now goes through it.
+- 3 new regression test modules (`test_orchestrator_failure_bundle.py`, `test_orchestrator_confirmation_helper.py`, `test_orchestrator_artifact_accumulation.py`) covering the dedup-parity contracts.
+- `engine.py` at **848 lines** (target was ≤ 750; the extra 100 lines are real complexity in `process_turn` that wasn't part of the dedup spec — left alone for a future loop).
+- Bumped to `0.7.5`; `uv.lock` synced; CHANGELOG + handoff written.
+
+**Review (Cursor):**
+
+- Full gate on the branch tip: **`701 passed, 6 skipped`** (+10 from L30's 691 — exactly the 3 new test modules' worth, 11 minus 1 fixture parametrization tweak). `uv run mypy src/hestia` → **0**. `uv run ruff check src/` → **44** (no regression from L30's baseline).
+
+**Merge:** `feature/l31-engine-cleanup` → `develop` via `--no-ff` merge commit `2f20850`.
+
+**Pattern call-out:** L29, L30, L31 all hit `--max-steps-per-turn=100` (the per-iteration step ceiling). The Kimi CLI exposes that flag — Cursor bumped the launcher to `--max-steps-per-turn 250` for headroom and **also** split the originally-monolithic L32 (ContextBuilder + dead-code purge) and L33 (email pool + scanner + skills + style polish) into 6 mini-loops (L32a/b/c, L33a/b/c). Each mini-loop is ≤ 5 commits with a single theme and one new test module, sized to fit comfortably under 100 steps even without the launcher bump. See `kimi-phase-queue.md` for the new ordering.
+
+**Queue advance:** `KIMI_CURRENT.md` → **L32a** (delete dead `TurnState` and `ToolResult` from `core/types.py`, ≤ 3 commits, the smallest possible thing — also a clean test of the new size).
+
+---
+
 ## 2026-04-18 — Loop: L30 — `cli.py` decomposition into `app.py` + `platforms/runners.py` (Kimi → Cursor finish) → merged to develop
 
 **Kimi:** Started L30 from `feature/l30-cli-decomposition` (off `develop` tip `bbed167`). Created `src/hestia/app.py` (~1,500 lines), `src/hestia/platforms/runners.py` (~245 lines), and rewrote `src/hestia/cli.py` down to ~575 lines — but **never committed any of it** before hitting the `--max-ralph-iterations` (100) ceiling and exiting. **No `.kimi-done` was written.** Resume id captured but not used; the working tree was already in a recoverable state and the remaining work was small enough that another Kimi spin-up would have cost more than the manual fix-up.
