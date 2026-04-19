@@ -8,6 +8,29 @@
 
 ---
 
+## 2026-04-19 — Loop: L37 — code cleanup sweep + ruff baseline 43 → 23 (clean Kimi run; one theme per commit) → merged to develop
+
+**Kimi:** Clean run, 4 commits exactly to budget, ~17 minutes wall time (`exit_code: 0`, `elapsed_ms: 1017597`). Valid `.kimi-done` with `LOOP=L37`, `COMMIT=976441a`, `TESTS=778 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`. **Second overnight loop landed cleanly.**
+
+**What shipped (one theme per commit):**
+
+- `d0f69bb refactor(engine+platforms+commands)`: removed dead `hasattr()` probes on typed dataclasses inside `_build_failure_bundle` (engine.py); same pattern in `slot_snapshot`; deleted the no-op `app = app if isinstance(app, CliAppContext) else app` in `run_platform` (mypy is satisfied without it); fixed the `_cmd_schedule_add` over-indent in `commands.py`. (Copilot #5/7/10)
+- `60898e4 refactor(cli)`: hoisted `schedule_disable`, `schedule_remove`, and `init` from `cli.py` inline bodies into `_cmd_schedule_disable`, `_cmd_schedule_remove`, `_cmd_init` in `commands.py`. `cli.py`'s wrappers are now thin `@run_async` delegations matching every other command. (Copilot #8)
+- `04453b1 style(ruff)`: 20 fixes across `audit/checks.py`, `memory/epochs.py`, `platforms/base.py`, `policy/default.py`, etc. **No `# noqa` introduced** — every fix is a real code improvement or mechanical line break.
+- `976441a chore(release)`: pyproject `0.8.1.dev0` → `0.8.1.dev1`; uv.lock synced; 40-line handoff with the per-file ruff before/after table.
+
+**Review (Cursor):**
+
+- Diff is 12 files, +187 / -116. All in scope. No new test files.
+- Re-ran full gate: **778 passed, 6 skipped** (unchanged). `mypy src/hestia` → **0 errors in 91 source files**. `ruff check src/` → **23** (down 20 — exactly hit spec's "fix at least 20" target). Spot-checked the handoff's ruff before/after table — accurate.
+- The audit/checks.py note in the handoff is interesting: Kimi removed an unused `suspicious_writes` variable AND touched the `check_path_allowed` import to silence F401 — this is the right move (the import has a side effect).
+
+**Merge:** `feature/l37-code-cleanup-sweep` → `develop` via `--no-ff` merge commit `c44544f`.
+
+**Queue advance:** `KIMI_CURRENT.md` → **L38** (delegation keyword consolidation + `*_disable` persistence audit — final overnight loop).
+
+---
+
 ## 2026-04-19 — Loop: L36 — `app.py` decomposition: extract `commands.py` (clean Kimi run; behavior-preserving refactor) → merged to develop
 
 **Kimi:** Clean run, 3 commits, ~14 minutes wall time (`exit_code: 0`, `elapsed_ms: 858221`). Valid `.kimi-done` with `LOOP=L36`, `COMMIT=0c98048`, `TESTS=778 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`. **First overnight loop landed cleanly.**
