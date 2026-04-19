@@ -404,12 +404,13 @@ class EmailAdapter:
         Returns a status string.
         """
 
+        if draft_id == "draft-unknown":
+            raise EmailAdapterError(
+                "Cannot send draft with placeholder ID 'draft-unknown'"
+            )
+
         async with self.imap_session(folder="Drafts") as imap:
             def _run() -> str:
-                if draft_id == "draft-unknown":
-                    raise EmailAdapterError(
-                        "Cannot send draft with placeholder ID 'draft-unknown'"
-                    )
                 # 1. Fetch draft
                 msg = self._fetch_full(imap, draft_id, "Drafts")
 
