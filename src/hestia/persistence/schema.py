@@ -17,6 +17,24 @@ sessions = sa.Table(
     sa.Column("state", sa.String, nullable=False),  # active/idle/archived
     sa.Column("temperature", sa.String, nullable=False),  # hot/warm/cold
     sa.Index("idx_sessions_platform_user", "platform", "platform_user", "state"),
+    # Partial unique index: at most one ACTIVE session per (platform, platform_user).
+    # Backs the INSERT ... ON CONFLICT DO NOTHING upsert in
+    # SessionStore.get_or_create_session, which is the TOCTOU-safe path replacing
+    # the old SELECT-then-INSERT race window. SQLite and PostgreSQL both support
+    # partial unique indexes with identical syntax for the WHERE clause used here.
+    sa.Index(
+        "ux_sessions_active_user",
+        "platform",
+        "platform_user",
+        unique=True,
+        # Note: stored value is the lowercase ``SessionState.ACTIVE.value`` —
+        # the enum *name* is "ACTIVE" but ``.value`` is "active" and that is
+        # what gets persisted. The WHERE predicate must match the persisted
+        # value exactly for the partial index (and the matching ON CONFLICT
+        # WHERE in get_or_create_session) to apply.
+        sqlite_where=sa.text("state = 'active'"),
+        postgresql_where=sa.text("state = 'active'"),
+    ),
 )
 
 messages = sa.Table(

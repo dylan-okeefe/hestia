@@ -173,41 +173,61 @@ class TestCreateSession:
     """Tests for create_session method."""
 
     @pytest.mark.asyncio
-    async def test_create_session_always_creates_new(self, store):
-        """create_session always creates a new session, even if one exists."""
-        # First, create a session via get_or_create_session
+    async def test_create_session_with_archive_creates_new(self, store):
+        """create_session(archive_previous=...) supersedes the old session."""
         session1 = await store.get_or_create_session("cli", "testuser")
         original_id = session1.id
 
-        # Now call create_session with the same platform/platform_user
-        session2 = await store.create_session("cli", "testuser")
+        # Call create_session with archive_previous to atomically supersede.
+        # This is the only safe usage when an ACTIVE session exists for the
+        # user — leaving archive_previous=None would create a duplicate ACTIVE
+        # row, which the partial unique index ux_sessions_active_user (added
+        # in v0.8.0 to fix the get_or_create TOCTOU race) now correctly
+        # forbids.
+        session2 = await store.create_session("cli", "testuser", archive_previous=session1)
 
-        # Should be different sessions
         assert session2.id != original_id
         assert session2.platform == "cli"
         assert session2.platform_user == "testuser"
+        assert session2.state == SessionState.ACTIVE
 
-        # Both should exist in the database
+        # Old session row is preserved but ARCHIVED; new session is ACTIVE.
         fetched1 = await store.get_session(session1.id)
         fetched2 = await store.get_session(session2.id)
         assert fetched1 is not None
         assert fetched2 is not None
-        assert fetched1.id == session1.id
-        assert fetched2.id == session2.id
+        assert fetched1.state == SessionState.ARCHIVED
+        assert fetched2.state == SessionState.ACTIVE
 
     @pytest.mark.asyncio
     async def test_create_session_same_user_new_identity(self, store):
         """create_session preserves user identity while creating fresh session."""
-        # Create initial session
         session1 = await store.get_or_create_session("matrix", "@user:matrix.org")
 
-        # Reset creates new session for same user
-        session2 = await store.create_session("matrix", "@user:matrix.org")
+        session2 = await store.create_session(
+            "matrix", "@user:matrix.org", archive_previous=session1
+        )
 
-        # User identity preserved, session is new
         assert session1.platform_user == session2.platform_user
         assert session1.id != session2.id
         assert session1.platform == session2.platform
+
+    @pytest.mark.asyncio
+    async def test_create_session_without_archive_violates_unique_index(self, store):
+        """create_session(archive_previous=None) for an existing ACTIVE user fails.
+
+        Documents the post-hotfix contract: callers that want a fresh session
+        for a user with an existing ACTIVE row MUST pass ``archive_previous``
+        so the supersession happens in a single transaction. The partial
+        unique index ``ux_sessions_active_user`` rejects the second INSERT
+        otherwise.
+        """
+        from sqlalchemy.exc import IntegrityError
+
+        await store.get_or_create_session("cli", "duplicate-user")
+
+        with pytest.raises(IntegrityError):
+            await store.create_session("cli", "duplicate-user")
 
     @pytest.mark.asyncio
     async def test_create_session_archives_previous(self, store):
