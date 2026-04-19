@@ -5,6 +5,21 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.7.11] — 2026-04-18
+
+### Changed
+- **Skills experimental feature flag (L33c).** The `@skill` decorator and `hestia skill *` CLI commands now require `HESTIA_EXPERIMENTAL_SKILLS=1`. Without it, users get a clear `ExperimentalFeatureError` instead of silent no-op behavior.
+- **Policy engine keyword extraction tunable.** `DefaultPolicyEngine.should_delegate` now reads research keywords from `PolicyConfig.delegation_keywords` (defaults to `DEFAULT_DELEGATION_KEYWORDS`). Setting `delegation_keywords=()` disables keyword-based delegation entirely.
+- `_format_datetime` hoisted from closure inside `_cmd_schedule_show` to module scope in `src/hestia/app.py`.
+
+### Added
+- `ExperimentalFeatureError` exception type in `src/hestia/errors.py`.
+- `PolicyConfig` dataclass with `delegation_keywords` field.
+- ADR-0022 documenting the skills preview feature-flag decision.
+- `tests/unit/test_skills_feature_flag.py` — regression coverage for the flag gate.
+- `tests/unit/test_policy_delegation_keywords.py` — regression coverage for custom and empty keyword configs.
+- `tests/unit/test_matrix_adapter.py` — regression coverage for `_extract_in_reply_to` schema validation contract.
+
 ## [0.7.10] — 2026-04-18
 
 ### Changed
