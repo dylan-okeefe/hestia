@@ -5,6 +5,37 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Towards 0.8.0
+
+The next tagged release will roll up everything from L20 through L34:
+
+- **L20** — Trust profiles (`TrustConfig`) and web-search integration (`web_search` tool via Tavily).
+- **L21** — Context resilience: session handoff summaries, history compression, loud `ContextTooLargeError` warnings, and `send_system_warning` platform channel.
+- **L22** — Mypy strictness ratchet: 44 → 0 errors, CI now fails on any new type error.
+- **L23** — Platform confirmation callbacks (Telegram inline keyboard, Matrix reply pattern) with shared `ConfirmationStore`.
+- **L24** — Prompt-injection detection (`InjectionScanner`) and egress auditing (`hestia audit egress`).
+- **L25** — Email adapter (IMAP read/search + SMTP draft/send with confirmation gate).
+- **L26** — Reflection loop (three-pass pipeline: pattern mining → proposal generation → queue write) with CLI lifecycle controls.
+- **L27** — Style profile (per-user interaction-style learning without modifying identity).
+- **L28** — Critical correctness bugs (`nh3` replacing `bleach`, `read_artifact` registration, `delete_memory`, Message-ID generation, IMAP injection hardening).
+- **L29** — Reliability surface (scheduler failure visibility, missing-file warnings, env-var secrets hygiene, ADR consolidation).
+- **L30** — CLI decomposition: 2,569-line `cli.py` monolith split into `app.py` + `platforms/runners.py` + slim `cli.py`.
+- **L31** — Orchestrator engine cleanup (deduplicated failure bundles, hoisted state, single `get_messages`, artifact accumulation, `ToolCallResult.error`).
+- **L32** — Context-builder rework: dead-code removal, ordered prefix-layer registry, per-message `/tokenize` cache.
+- **L33** — Perf-and-polish arc: injection-scanner threshold tuning + structured-content filters, IMAP session reuse + composite `email_search_and_read`, skills experimental flag.
+- **L34** — Public-release polish (README model recommendations, deployment docs, demo placeholder, email guide rewrite, CHANGELOG curation).
+
+## [0.7.12] — 2026-04-18
+
+### Changed
+- **README model recommendations.** New "Recommended models" table under "Running on your hardware" with concrete GGUF picks (Llama-3.1-8B Q4_K_M, Qwen 2.5 7B Q4_K_M, Llama-3.2-3B Q5_K_M, Qwen 2.5 14B Q4_K_M) and quantization guidance.
+- **README deployment section expanded.** New "Running Hestia as a daemon" section documents all unit files in `deploy/`, shows systemd enable/start sequences, and cross-links env-var configuration (`HESTIA_SOUL_PATH`, `HESTIA_CALIBRATION_PATH`, `HESTIA_EXPERIMENTAL_SKILLS`, `EMAIL_APP_PASSWORD`).
+- **Email setup guide rewritten.** Env-var workflow (`password_env`) is now the unequivocal primary path; plaintext `password=` example is demoted to an "ephemeral testing only" callout. Added design-rationale references to L25 handoff and L29 ADR consolidation.
+
+### Added
+- README "Demo" placeholder with asciinema link placeholder, screenshot path placeholder, and a short text transcript.
+- Unreleased "Towards 0.8.0" preface block summarizing the L20–L34 feature arc.
+
 ## [0.7.11] — 2026-04-18
 
 ### Changed
