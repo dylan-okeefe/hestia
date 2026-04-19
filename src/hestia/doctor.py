@@ -46,6 +46,7 @@ async def run_checks(app: CliAppContext) -> list[CheckResult]:
         _check_sqlite_dbs_readable,
         _check_llamacpp_reachable,
         _check_platform_prereqs,
+        _check_voice_prerequisites,
         _check_trust_preset_resolves,
         _check_memory_epoch,
     ]
@@ -284,6 +285,39 @@ async def _check_platform_prereqs(app: CliAppContext) -> CheckResult:
     if not enabled:
         return CheckResult("platform_prereqs", True, "no platforms configured")
     return CheckResult("platform_prereqs", True, f"enabled: {', '.join(enabled)}")
+
+
+async def _check_voice_prerequisites(app: CliAppContext) -> CheckResult:
+    """Verify voice dependencies are present when the extra is installed."""
+    import importlib.util
+
+    if importlib.util.find_spec("hestia.voice.pipeline") is None:
+        return CheckResult(
+            "voice_prerequisites",
+            True,
+            "voice module not available",
+        )
+
+    if importlib.util.find_spec("faster_whisper") is None:
+        return CheckResult(
+            "voice_prerequisites",
+            True,
+            "voice extra not installed",
+        )
+
+    # Verify piper is also present (TTS dependency)
+    if importlib.util.find_spec("piper") is None:
+        return CheckResult(
+            "voice_prerequisites",
+            False,
+            "faster-whisper present but piper-tts missing; voice extra incomplete",
+        )
+
+    return CheckResult(
+        "voice_prerequisites",
+        True,
+        "voice extra installed (faster-whisper + piper-tts)",
+    )
 
 
 async def _check_trust_preset_resolves(app: CliAppContext) -> CheckResult:
