@@ -8,6 +8,59 @@
 
 ---
 
+## 2026-04-19 — v0.8.0 release seal: Cursor in-process work (no Kimi loop) — TOCTOU hotfix + .cursorrules + CHANGELOG amend + tag re-place + main fast-forward
+
+**Context:** Dylan returned to a develop branch already containing the L36-L38 overnight queue plus a local `v0.8.0` tag at the L35d merge (`c5f68ea`). The L36-L38 work had been merged to develop *after* the local tag was placed — a release-discipline mistake that needed correcting before the tag went public. Dylan wrote a comprehensive launch plan (`docs/development-process/prompts/v0.8.0-release-and-voice-launch.md`) covering five tracks: pre-tag hotfix, release seal, .cursorrules update, post-release Copilot backlog, and the voice adapter arc. This loop covers tracks 1-3; tracks 4-5 are queued as feature-branch specs (no merge to develop) per the new merge discipline rule.
+
+**No Kimi run** — the hotfix was small enough that Cursor did it in-process. Five Cursor commits across three branches.
+
+### Recon findings
+
+- Local `v0.8.0` tag existed at `c5f68ea` (L35d merge) but was NOT pushed to `origin`. Salvageable.
+- `origin/develop` was at `a8d3793` (L38 merge) — Dylan had already pushed develop without the tag and without merging to main.
+- Local `main` was at a bogus `7f2af27` ("Merge develop into main for v0.8.0 release") that the previous Cursor session had created prematurely. `origin/main` was still at `255dc2b` (`v0.2.2`).
+- A new `feature/voice-call-setup` branch existed (Dylan-created, two docs commits) containing the launch plan + an updated pre-release-plan + a `docs/experiments/telegram-voice-smoke-test.md` doc that ships in v0.8.0 then gets deleted after Phase A subsumes it.
+
+### Sequence executed
+
+1. **Reset:** Deleted local `v0.8.0` tag; force-set local `main` back to `origin/main` (`255dc2b`).
+2. **Merge planning docs:** `feature/voice-call-setup` → `develop` (`6a37882`). Pure docs, no code.
+3. **.cursorrules update (Track 3):** Added "Post-release merge discipline" section (~52 lines) codifying that no feature branch merges to `develop` after a release tag is placed until a new release-prep doc names the next version's scope. Includes pre-tag hotfix exception, planning-doc exception, and a worked example using exactly the L36-L38 mistake as the cautionary tale. Commit `8e0ad2f` on develop.
+4. **TOCTOU hotfix (Track 1):** Branched `feature/hotfix-session-race`. Two commits:
+   - `8cf3265 fix(persistence): partial unique index ux_sessions_active_user + runtime migration` — schema.py adds `sa.Index(..., unique=True, sqlite_where=sa.text("state = 'active'"), postgresql_where=...)`; new `src/hestia/persistence/migrations/__init__.py` with a single idempotent `m001_sessions_active_unique` migration (`CREATE UNIQUE INDEX IF NOT EXISTS ... WHERE state = 'active'`); db.py `create_tables()` calls `apply_runtime_migrations(engine)` after `metadata.create_all` so existing on-disk DBs gain the index transparently.
+   - `0fb2839 fix(persistence): TOCTOU-safe get_or_create_session via INSERT ON CONFLICT` — replaced the SELECT-then-INSERT race window with a single dialect-aware `INSERT ... ON CONFLICT DO NOTHING RETURNING id`. On conflict, falls through to a SELECT of the existing winner and bumps `last_active_at`. Dispatch on `conn.dialect.name` covers sqlite + postgresql; other dialects raise `PersistenceError` rather than silently re-introducing the race.
+   - **New tests** (`tests/unit/test_sessions_race.py`, 4 tests): 20-coroutine storm for one user converges on a single session id with one ACTIVE row; same storm for two distinct users yields one session each (not crossed); archive + concurrent recreate yields one new ACTIVE row; guard test that the partial unique index exists after `create_tables`.
+   - **Updated tests** (`tests/unit/test_session_store_turns.py`, `TestCreateSession`): the two pre-existing tests asserting "create_session can produce duplicate ACTIVE rows for the same user without archive_previous" were documenting the same bug. Updated to use `archive_previous` (the only safe pattern); added a third test asserting `IntegrityError` is raised when a caller violates the new contract.
+   - **Bug found in test development:** Initial implementation used `WHERE state = 'ACTIVE'` (uppercase) in both the partial index and the `on_conflict_do_nothing.index_where`, but `SessionState.ACTIVE.value` is `"active"` (lowercase). The race tests caught this immediately — they showed 20 ACTIVE rows persisting. Fixed all three sites to use lowercase.
+5. **Hotfix merge:** `feature/hotfix-session-race` → develop via `--no-ff` merge `176b5fa`.
+6. **CHANGELOG amend (Track 2.a):** `c2e3193 docs(changelog): amend [0.8.0]` — date bumped to 2026-04-19, new TOCTOU bullet under Bug fixes & hardening, new "### Refactoring" section covering L36/L37/L38, new "### Known issues — deferred to v0.8.1+" section enumerating the six Copilot findings with a pointer to the L40 backlog spec, stats refreshed (783 → 789 tests, 18 Kimi loops, ruff baseline noted accurately).
+7. **Version bump (Track 2.b):** `b1e81ae chore(release)` — pyproject.toml `0.8.1.dev2` → `0.8.0`; `uv.lock` regenerated (single dep update: hestia itself).
+8. **Tag (Track 2.c):** Annotated tag `v0.8.0` placed at `b1e81ae`. Tag message lists the eight-month arc highlights and points at CHANGELOG for detail.
+9. **Main fast-forward:** Plain FF was impossible because main carried a no-op release-merge commit (`255dc2b` had identical tree to merge-base `c46dc7a` — Dylan's earlier release-merge style). Did `git merge --no-ff develop -m "Merge develop into main for v0.8.0 release"` instead. Result: `5155917` on main.
+10. **Final gate from main:** `pytest tests/unit/ tests/integration/ tests/cli/ tests/docs/ -q` → **789 passed, 6 skipped** in 135s. `mypy src/hestia` → **0 errors in 92 source files** (the +1 vs L38's 91 is the new `migrations/__init__.py` module). `ruff check src/` → **23 errors** (unchanged from L37 baseline; no ruff debt added).
+
+### What's still queued (Tracks 4 + 5)
+
+These are intentionally NOT merged to develop. Per the new `.cursorrules` rule, they wait until a v0.8.1 release-prep doc names them in scope.
+
+- **Track 4 (L40)** — Copilot cleanup backlog spec. Six items: sequential tool dispatch, `should_evict_slot` stub, `for_trust` identity comparison, EmailAdapter bare excepts, `prompt_on_mobile` docstring drift, three open `# TODO(L*)` markers. Spec lives at `docs/development-process/kimi-loops/L40-copilot-cleanup-backlog.md`.
+- **Track 5 (L41-L43)** — Voice adapter arc. Three specs:
+  - **L41** shared infrastructure (pipeline, VAD, VoiceConfig, `hestia[voice]` extra, voice-setup.md docs).
+  - **L42** Phase A: Telegram bot voice messages (forks from L41 branch).
+  - **L43** Phase B: Telegram voice calls via pyrogram + py-tgcalls userbot, ADR-0024 for the two-account model (forks from L41 branch).
+
+### Post-loop state
+
+- Develop tip: `b1e81ae`. Main tip: `5155917`. Tag `v0.8.0` at `b1e81ae`.
+- KIMI_CURRENT advanced to "no active loop, awaiting Dylan's three pushes". Lists L40-L43 as queued feature-branch work that does NOT merge to develop until v0.8.1 release-prep names them.
+- Push commands for Dylan: `git push origin develop && git push origin main && git push origin v0.8.0`.
+
+### Verdict
+
+Five Cursor commits, one Kimi-shaped task (the TOCTOU hotfix) handled in-process because it was small enough that Kimi-loop overhead would dwarf the work. The orchestration mistake from the prior session (premature L36-L38 merge to develop after a local tag) was salvageable because the tag wasn't pushed; it would have forced a v0.8.1 patch release if it had been. The new `.cursorrules` rule prevents the same shape of mistake from happening once a tag is public — and the worked example in the rule documents the *exact* mistake that motivated it, so future Cursors can pattern-match.
+
+---
+
 ## 2026-04-19 — Loop: L38 — delegation keyword consolidation + `*_disable` persistence audit (clean Kimi run; final overnight loop) → merged to develop
 
 **Kimi:** Clean run, 3 commits (under the 5-budget — Kimi consolidated commit 1 and the disable-audit work into the policy refactor since the audit found nothing else needing change), ~17 minutes wall time (`exit_code: 0`, `elapsed_ms: 1038111`). Valid `.kimi-done` with `LOOP=L38`, `COMMIT=e896c84`, `TESTS=784 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`. **Final overnight loop landed cleanly. Three-loop overnight chain went 3-for-3 autonomous.**
