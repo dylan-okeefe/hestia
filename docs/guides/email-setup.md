@@ -2,7 +2,7 @@
 
 Hestia can read your email via IMAP, draft replies, and (with explicit
 confirmation) send them via SMTP.  This guide walks through creating an app
-password, populating `.email.secrets.py`, and running the connectivity
+password, storing it in an environment variable, and running the connectivity
 diagnostic.
 
 ---
@@ -25,26 +25,29 @@ diagnostic.
 
 ---
 
-## 2. Store credentials in environment variables (recommended)
+## 2. Store the password in an environment variable
 
-Set your app password in an environment variable so it never lives in source
-control:
+**Recommended:** set your app password in an environment variable so it never
+lives in source control:
 
 ```bash
-export HESTIA_EMAIL_PASSWORD="abcd efgh ijkl mnop"
+export EMAIL_APP_PASSWORD="abcd efgh ijkl mnop"
 ```
 
 For Fastmail:
 
 ```bash
-export HESTIA_EMAIL_PASSWORD="your-app-password"
+export EMAIL_APP_PASSWORD="your-app-password"
 ```
+
+Load this in your shell profile, systemd service `Environment=` line, or
+container secret so Hestia receives it at runtime.
 
 ---
 
 ## 3. Wire it into your `config.py`
 
-Use `password_env` so Hestia reads the password at runtime:
+Use `password_env` so Hestia resolves the password from the environment:
 
 ```python
 from hestia.config import HestiaConfig, EmailConfig
@@ -54,28 +57,15 @@ config = HestiaConfig(
         imap_host="imap.gmail.com",
         smtp_host="smtp.gmail.com",
         username="you@gmail.com",
-        password_env="HESTIA_EMAIL_PASSWORD",
+        password_env="EMAIL_APP_PASSWORD",
     ),
     # ... rest of your config
 )
 ```
 
-If you prefer, you can still use a local secrets file (keep it out of git):
-
-```python
-from hestia.config import HestiaConfig, EmailConfig
-from .email.secrets import IMAP_HOST, SMTP_HOST, USERNAME, PASSWORD
-
-config = HestiaConfig(
-    email=EmailConfig(
-        imap_host=IMAP_HOST,
-        smtp_host=SMTP_HOST,
-        username=USERNAME,
-        password=PASSWORD,
-    ),
-    # ... rest of your config
-)
-```
+> **Ephemeral testing only:** you can pass a plaintext `password=` string
+> directly to `EmailConfig` for quick local experiments. Do **not** commit
+> plaintext passwords to version control.
 
 ---
 
@@ -118,7 +108,7 @@ Once configured, the model sees these tools:
 ### Sending is two-step
 
 1. The model calls `email_draft(to, subject, body)` — no confirmation needed.
-2. The model calls `email_send(draft_id)` — this triggers the L23 confirmation
+2. The model calls `email_send(draft_id)` — this triggers the confirmation
    flow (✅/❌ on Telegram, reply on Matrix, or CLI prompt).
 
 If no confirmation callback is available (e.g. scheduler), `email_send` is
@@ -135,4 +125,17 @@ blocked unless the trust profile explicitly allows it.
 - **Subagents and scheduler** cannot trigger `email_send` by default. Enable
   with `TrustConfig.subagent_email_send = True` or
   `TrustConfig.scheduler_email_send = True` if you need this.
-- Store `.email.secrets.py` with `chmod 600` — it contains credentials.
+
+---
+
+## Design rationale
+
+The env-var-first credential pattern was introduced in **L29** (reliability and
+secrets hygiene) and consolidated alongside the ADR migration in that loop. The
+original email adapter design and IMAP/SMTP draft flow are documented in the
+**L25 handoff**:
+[`docs/handoffs/L25-email-adapter-read-and-draft-handoff.md`](../handoffs/L25-email-adapter-read-and-draft-handoff.md).
+
+For the broader secrets-hygiene ADR, see
+[`docs/adr/ADR-0016-configuration-and-secrets.md`](../adr/ADR-0016-configuration-and-secrets.md)
+(consolidated from `docs/development-process/decisions/` in L29).
