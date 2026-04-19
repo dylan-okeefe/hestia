@@ -6,12 +6,15 @@ All blocking stdlib I/O is dispatched via asyncio.to_thread.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import email
 import email.utils
 import html
 import imaplib
 import re
 import smtplib
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from email.message import EmailMessage
 from typing import Any
@@ -36,6 +39,39 @@ class EmailAdapter:
 
     def __init__(self, config: EmailConfig) -> None:
         self.config = config
+        self._imap_session_var: contextvars.ContextVar[
+            imaplib.IMAP4_SSL | None
+        ] = contextvars.ContextVar("_imap_session_var", default=None)
+
+    # ------------------------------------------------------------------
+    # IMAP session management
+    # ------------------------------------------------------------------
+
+    @asynccontextmanager
+    async def imap_session(
+        self, *, folder: str = "INBOX"
+    ) -> AsyncGenerator[imaplib.IMAP4_SSL, None]:
+        """Async context manager that reuses an active IMAP session when nested.
+
+        Creates a new connection on the outermost call, selects *folder*, and
+        ensures ``logout()`` is called on exit even if the body raises.
+        """
+        existing = self._imap_session_var.get(None)
+        if existing is not None:
+            yield existing
+            return
+
+        conn = self._imap_connect()
+        try:
+            conn.select(folder)
+            self._imap_session_var.set(conn)
+            yield conn
+        finally:
+            self._imap_session_var.set(None)
+            try:
+                conn.close()
+            finally:
+                conn.logout()
 
     # ------------------------------------------------------------------
     # IMAP helpers
@@ -189,10 +225,8 @@ class EmailAdapter:
         ``message_id`` is the IMAP UID (numeric string).
         """
 
-        def _run() -> list[dict[str, Any]]:
-            conn = self._imap_connect()
-            try:
-                conn.select(folder)
+        async with self.imap_session(folder=folder) as conn:
+            def _run() -> list[dict[str, Any]]:
                 if unread_only:
                     ok, data = conn.uid("SEARCH", "UNSEEN")
                 else:
@@ -221,11 +255,8 @@ class EmailAdapter:
                     except EmailAdapterError:
                         continue
                 return results
-            finally:
-                conn.close()
-                conn.logout()
 
-        return await asyncio.to_thread(_run)
+            return await asyncio.to_thread(_run)
 
     async def read_message(self, message_id: str) -> dict[str, Any]:
         """Fetch full message body by IMAP UID.
@@ -233,10 +264,8 @@ class EmailAdapter:
         Returns dict with keys: headers, body, attachments.
         """
 
-        def _run() -> dict[str, Any]:
-            conn = self._imap_connect()
-            try:
-                conn.select(self.config.default_folder)
+        async with self.imap_session(folder=self.config.default_folder) as conn:
+            def _run() -> dict[str, Any]:
                 msg = self._fetch_full(conn, message_id, self.config.default_folder)
                 body, attachments = self._extract_body(msg)
                 return {
@@ -250,11 +279,8 @@ class EmailAdapter:
                     "body": body,
                     "attachments": attachments,
                 }
-            finally:
-                conn.close()
-                conn.logout()
 
-        return await asyncio.to_thread(_run)
+            return await asyncio.to_thread(_run)
 
     async def search_messages(self, query: str, folder: str = "INBOX") -> list[str]:
         """Search messages using a simplified query syntax.
@@ -263,21 +289,16 @@ class EmailAdapter:
         Returns list of IMAP UIDs.
         """
 
-        def _run() -> list[str]:
-            conn = self._imap_connect()
-            try:
-                conn.select(folder)
+        async with self.imap_session(folder=folder) as conn:
+            def _run() -> list[str]:
                 criteria = self._parse_search_query(query)
                 ok, data = conn.uid("SEARCH", None, criteria)  # type: ignore[arg-type]
                 if ok != "OK" or not data or data[0] is None:
                     return []
                 uids = data[0].split()
                 return [u.decode() if isinstance(u, bytes) else str(u) for u in uids]
-            finally:
-                conn.close()
-                conn.logout()
 
-        return await asyncio.to_thread(_run)
+            return await asyncio.to_thread(_run)
 
     @staticmethod
     def _imap_quote(value: str) -> str:
@@ -336,9 +357,8 @@ class EmailAdapter:
         Returns the new IMAP UID (draft_id).
         """
 
-        def _run() -> str:
-            conn = self._imap_connect()
-            try:
+        async with self.imap_session(folder="Drafts") as conn:
+            def _run() -> str:
                 msg = EmailMessage()
                 msg["Subject"] = subject
                 msg["From"] = self.config.username
@@ -352,7 +372,6 @@ class EmailAdapter:
                 msg.set_content(body)
 
                 raw = msg.as_bytes()
-                conn.select("Drafts")
                 ok, data = conn.append(
                     "Drafts",
                     None,
@@ -376,11 +395,8 @@ class EmailAdapter:
                 raise EmailAdapterError(
                     f"Created draft but could not locate it in Drafts by Message-ID {mid!r}"
                 )
-            finally:
-                conn.close()
-                conn.logout()
 
-        return await asyncio.to_thread(_run)
+            return await asyncio.to_thread(_run)
 
     async def send_draft(self, draft_id: str) -> str:
         """Read a draft from IMAP Drafts, send via SMTP, move to Sent.
@@ -388,15 +404,14 @@ class EmailAdapter:
         Returns a status string.
         """
 
-        def _run() -> str:
-            if draft_id == "draft-unknown":
-                raise EmailAdapterError(
-                    "Cannot send draft with placeholder ID 'draft-unknown'"
-                )
-            # 1. Fetch draft
-            imap = self._imap_connect()
-            try:
-                imap.select("Drafts")
+        if draft_id == "draft-unknown":
+            raise EmailAdapterError(
+                "Cannot send draft with placeholder ID 'draft-unknown'"
+            )
+
+        async with self.imap_session(folder="Drafts") as imap:
+            def _run() -> str:
+                # 1. Fetch draft
                 msg = self._fetch_full(imap, draft_id, "Drafts")
 
                 # 2. Send via SMTP
@@ -414,28 +429,20 @@ class EmailAdapter:
 
                 to_addr = msg.get("To", "unknown")
                 return f"Sent message to {to_addr} (draft {draft_id})"
-            finally:
-                imap.close()
-                imap.logout()
 
-        return await asyncio.to_thread(_run)
+            return await asyncio.to_thread(_run)
 
     async def move_message(self, message_id: str, folder: str) -> str:
         """Move a message to another folder."""
 
-        def _run() -> str:
-            conn = self._imap_connect()
-            try:
-                conn.select(self.config.default_folder)
+        async with self.imap_session(folder=self.config.default_folder) as conn:
+            def _run() -> str:
                 conn.uid("COPY", message_id, folder)
                 conn.uid("STORE", message_id, "+FLAGS", r"(\Deleted)")
                 conn.expunge()
                 return f"Moved message {message_id} to {folder}"
-            finally:
-                conn.close()
-                conn.logout()
 
-        return await asyncio.to_thread(_run)
+            return await asyncio.to_thread(_run)
 
     async def flag_message(self, message_id: str, flag: str) -> str:
         """Set a flag on a message.
@@ -446,10 +453,8 @@ class EmailAdapter:
         ``starred`` → ``\\Flagged``.
         """
 
-        def _run() -> str:
-            conn = self._imap_connect()
-            try:
-                conn.select(self.config.default_folder)
+        async with self.imap_session(folder=self.config.default_folder) as conn:
+            def _run() -> str:
                 flag_upper = flag.upper()
                 if flag_upper in ("READ", "SEEN"):
                     imap_flag = "\\Seen"
@@ -466,8 +471,5 @@ class EmailAdapter:
 
                 conn.uid("STORE", message_id, action, f"({imap_flag})")
                 return f"Flagged message {message_id} with {imap_flag} ({action})"
-            finally:
-                conn.close()
-                conn.logout()
 
-        return await asyncio.to_thread(_run)
+            return await asyncio.to_thread(_run)

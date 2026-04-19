@@ -22,6 +22,7 @@ from hestia.context.compressor import InferenceHistoryCompressor
 from hestia.core.clock import utcnow
 from hestia.core.inference import InferenceClient
 from hestia.core.types import Message, ScheduledTask, Session, SessionState, SessionTemperature
+from hestia.email.adapter import EmailAdapter
 from hestia.errors import HestiaError
 from hestia.identity import IdentityCompiler
 from hestia.inference import SlotManager
@@ -50,6 +51,7 @@ from hestia.tools.builtin import (
     http_get,
     make_delegate_task_tool,
     make_delete_memory_tool,
+    make_email_search_and_read_tool,
     make_email_tools,
     make_list_dir_tool,
     make_list_memories_tool,
@@ -462,6 +464,12 @@ def make_app(cfg: HestiaConfig) -> CliAppContext:
     # Register email tools if configured
     for email_tool in make_email_tools(cfg.email):
         tool_registry.register(email_tool)
+
+    email_search_and_read = make_email_search_and_read_tool(
+        EmailAdapter(cfg.email)
+    )
+    if email_search_and_read is not None:
+        tool_registry.register(email_search_and_read)
 
     # Create typed context stores first
     failure_store = FailureStore(db)

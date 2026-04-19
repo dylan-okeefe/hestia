@@ -5,6 +5,16 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.7.10] — 2026-04-18
+
+### Changed
+- **EmailAdapter per-invocation IMAP session reuse (L33b).** Added `imap_session()` async context manager with `ContextVar`-based connection reuse. Every per-method IMAP call (`list_messages`, `read_message`, `search_messages`, `create_draft`, `move_message`, `flag_message`, `send_draft`) now routes through `imap_session()`; when nested inside an outer `async with adapter.imap_session():`, inner calls automatically reuse the same `IMAP4_SSL` connection. Standalone calls remain backward-compatible (each opens and closes its own session). SMTP send is unchanged.
+
+### Added
+- `email_search_and_read` composite tool — searches messages and reads the top *N* matches in a single IMAP round trip, demonstrating the session-reuse pattern.
+- `tests/unit/test_email_session_reuse.py` — asserts single-connection reuse, proper cleanup on exception, nested-session deduplication, and standalone per-method isolation.
+- `tests/integration/test_email_search_and_read.py` — end-to-end composite tool coverage with mocked IMAP.
+
 ## [0.7.9] — 2026-04-18
 
 ### Changed
