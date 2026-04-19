@@ -270,7 +270,9 @@ class CliAppContext:
                 cb.set_identity_prefix(self._compiled_identity)
             if self.config.compression.enabled:
                 cb.enable_compression(
-                    InferenceHistoryCompressor(self.inference, max_chars=self.config.compression.max_chars)
+                    InferenceHistoryCompressor(
+                        self.inference, max_chars=self.config.compression.max_chars
+                    )
                 )
             self._context_builder = cb
         return self._context_builder

@@ -86,10 +86,8 @@ class MemoryEpochCompiler:
 
         # 4. Truncate to max_tokens (rough approximation: 4 chars per token)
         max_chars = self.max_tokens * 4
-        truncated = False
         if len(formatted) > max_chars:
             formatted = formatted[:max_chars]
-            truncated = True
 
         # Estimate token count
         token_estimate = len(formatted) // 4

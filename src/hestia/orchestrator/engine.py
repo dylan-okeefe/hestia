@@ -225,10 +225,12 @@ class Orchestrator:
                     pending_count = await self._proposal_store.pending_count()
                     if pending_count > 0:
                         effective_system_prompt = (
-                            f"You have {pending_count} pending reflection proposal(s) from the last review. "
-                            "If the user greets you or asks 'what's new', summarize the top 3 and ask whether "
-                            "to accept/reject/defer. Do not apply any proposal without an explicit accept.\n\n"
-                            + system_prompt
+                            f"You have {pending_count} pending reflection "
+                            "proposal(s) from the last review. If the user "
+                            "greets you or asks 'what's new', summarize the "
+                            "top 3 and ask whether to accept/reject/defer. "
+                            "Do not apply any proposal without an explicit "
+                            f"accept.\n\n{system_prompt}"
                         )
 
                 # Resolve style prefix if enabled

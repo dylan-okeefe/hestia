@@ -98,11 +98,12 @@ async def run_platform(
     confirm_callback: ConfirmCallback,
     platform_name: str,
     user_label: str = "user",
-    scheduler_response_callback: Callable[[ScheduledTask, str], Coroutine[Any, Any, None]] | None = None,
+    scheduler_response_callback: (
+        Callable[[ScheduledTask, str], Coroutine[Any, Any, None]] | None
+    ) = None,
     user_context_var: ContextVar[str] | None = None,
 ) -> None:
     """Shared platform polling loop. Used by run_telegram and run_matrix."""
-    from hestia.app import CliAppContext
 
 
     # Ensure database is ready
@@ -125,7 +126,9 @@ async def run_platform(
         token = user_context_var.set(platform_user) if user_context_var is not None else None
         try:
             if platform_user not in user_sessions:
-                session = await app.session_store.get_or_create_session(platform_name, platform_user)
+                session = await app.session_store.get_or_create_session(
+                    platform_name, platform_user
+                )
                 user_sessions[platform_user] = session
             else:
                 session = user_sessions[platform_user]

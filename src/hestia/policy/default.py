@@ -112,10 +112,7 @@ class DefaultPolicyEngine(PolicyEngine):
             return True
 
         # High projected tool usage
-        if projected_tool_calls > 3:
-            return True
-
-        return False
+        return projected_tool_calls > 3
 
     def should_compress(self, session: Session, tokens_used: int, tokens_budget: int) -> bool:
         """Compress when we're over 85% of budget."""

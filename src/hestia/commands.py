@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import sys
 from datetime import UTC, datetime, timedelta
@@ -257,7 +258,8 @@ async def _cmd_schedule_add(
             fire_at = datetime.fromisoformat(fire_at_str)
         except ValueError:
             click.echo(
-                f"Error: Invalid datetime format '{fire_at_str}'. Use ISO format: 2026-04-15T15:00:00",
+                "Error: Invalid datetime format "
+                f"'{fire_at_str}'. Use ISO format: 2026-04-15T15:00:00",
                 err=True,
             )
             sys.exit(1)
@@ -457,10 +459,8 @@ def _cmd_schedule_daemon(ctx: click.Context, tick_interval: float | None) -> Non
         except KeyboardInterrupt:
             click.echo("\nReceived interrupt signal...")
             main_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 loop.run_until_complete(main_task)
-            except asyncio.CancelledError:
-                pass
         finally:
             loop.run_until_complete(app.inference.close())
             loop.close()
@@ -486,7 +486,9 @@ async def _cmd_skill_list(app: CliAppContext, state_filter: str | None, show_all
     if not records:
         click.echo("No skills found.")
         return
-    click.echo(f"{'Name':<20} {'State':<12} {'Runs':<6} {'Fails':<6} {'Description'}")
+    click.echo(
+        f"{'Name':<20} {'State':<12} {'Runs':<6} {'Fails':<6} {'Description'}"
+    )
     click.echo("-" * 80)
     for record in records:
         desc = record.description[:35] + "..." if len(record.description) > 35 else record.description
@@ -533,7 +535,11 @@ async def _cmd_skill_promote(app: CliAppContext, name: str) -> None:
     }
     new_state = transitions.get(record.state)
     if new_state is None:
-        click.echo(f"Skill '{name}' has no valid promotion path from '{record.state.value}'", err=True)
+        click.echo(
+            f"Skill '{name}' has no valid promotion path from "
+            f"'{record.state.value}'",
+            err=True,
+        )
         sys.exit(1)
     if new_state == record.state:
         click.echo(f"Skill '{name}' is already at state '{record.state.value}'")
@@ -559,7 +565,11 @@ async def _cmd_skill_demote(app: CliAppContext, name: str) -> None:
     }
     new_state = transitions.get(record.state)
     if new_state is None:
-        click.echo(f"Skill '{name}' has no valid demotion path from '{record.state.value}'", err=True)
+        click.echo(
+            f"Skill '{name}' has no valid demotion path from "
+            f"'{record.state.value}'",
+            err=True,
+        )
         sys.exit(1)
     if new_state == record.state:
         click.echo(f"Skill '{name}' is already at state '{record.state.value}'")
@@ -592,10 +602,7 @@ async def _cmd_audit_run(app: CliAppContext, output_json: bool, output: str | No
         trace_store=app.trace_store,
     )
     report = await auditor.run_audit()
-    if output_json:
-        result = report.to_json()
-    else:
-        result = report.summary()
+    result = report.to_json() if output_json else report.summary()
     if output:
         Path(output).write_text(result)
         click.echo(f"Audit report saved to: {output}")
@@ -638,7 +645,9 @@ async def _cmd_email_check(app: CliAppContext) -> None:
     except Exception as exc:
         click.echo(f"Email check failed: {type(exc).__name__}: {exc}", err=True)
         sys.exit(1)
-    click.echo(f"IMAP connection OK ({cfg.email.imap_host}:{cfg.email.imap_port})")
+    click.echo(
+        f"IMAP connection OK ({cfg.email.imap_host}:{cfg.email.imap_port})"
+    )
     click.echo(f"Default folder: {cfg.email.default_folder}")
     click.echo(f"Messages found: {len(messages)}")
 
@@ -932,7 +941,10 @@ async def _cmd_reflection_status(app: CliAppContext) -> None:
         if sched_status["last_errors"]:
             click.echo("Last errors:")
             for err in sched_status["last_errors"]:
-                click.echo(f"  {err['timestamp']}  {err['stage']:<10} {err['type']:<20} {err['message']}")
+                click.echo(
+                    f"  {err['timestamp']}  {err['stage']:<10} "
+                    f"{err['type']:<20} {err['message']}"
+                )
     else:
         click.echo("Scheduler: not configured (0 failures)")
 
@@ -990,7 +1002,9 @@ async def _cmd_reflection_accept(app: CliAppContext, proposal_id: str) -> None:
     if p is None:
         click.echo(f"Proposal not found: {proposal_id}", err=True)
         sys.exit(1)
-    await app.proposal_store.update_status(proposal_id, "accepted", review_note="Accepted by operator")
+    await app.proposal_store.update_status(
+        proposal_id, "accepted", review_note="Accepted by operator"
+    )
     click.echo(f"Accepted proposal {proposal_id}")
 
 async def _cmd_reflection_reject(app: CliAppContext, proposal_id: str, note: str | None) -> None:

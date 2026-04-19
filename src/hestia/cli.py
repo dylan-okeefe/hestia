@@ -89,10 +89,11 @@ def cli(
     ctx.ensure_object(dict)
 
     # Load config
-    if config_path:
-        cfg = HestiaConfig.from_file(Path(config_path))
-    else:
-        cfg = HestiaConfig.default()
+    cfg = (
+        HestiaConfig.from_file(Path(config_path))
+        if config_path
+        else HestiaConfig.default()
+    )
 
     # Apply CLI overrides (only when explicitly provided)
     if db_path is not None:
@@ -201,7 +202,9 @@ async def schedule_add(
     platform_user: str | None,
     prompt: str,
 ) -> None:
-    await _cmd_schedule_add(app, cron, fire_at_str, description, session_id, platform, platform_user, prompt)
+    await _cmd_schedule_add(
+        app, cron, fire_at_str, description, session_id, platform, platform_user, prompt
+    )
 
 @schedule.command(name="list")
 @run_async
