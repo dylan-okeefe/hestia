@@ -816,16 +816,17 @@ async def _cmd_schedule_list(app: CliAppContext) -> None:
             next_run = "-"
         click.echo(f"{task.id:<20} {desc:<25} {sched:<20} {enabled:<8} {next_run}")
 
+def _format_datetime(dt: datetime | None) -> str:
+    """Format a datetime for display in the CLI."""
+    if dt is None:
+        return "N/A"
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone().strftime("%Y-%m-%d %H:%M %Z")
+
+
 async def _cmd_schedule_show(app: CliAppContext, task_id: str) -> None:
     """Show details of a scheduled task."""
-
-    def _format_datetime(dt: datetime | None) -> str:
-        if dt is None:
-            return "N/A"
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=UTC)
-        return dt.astimezone().strftime("%Y-%m-%d %H:%M %Z")
-
     store = _require_scheduler_store(app)
     task = await store.get_task(task_id)
     if task is None:
