@@ -39,13 +39,34 @@ public-ready, security-hardened, multi-platform local assistant.
 ### Bug fixes & hardening
 - **L28** — `nh3` replaces unmaintained `bleach`; `read_artifact` registered in CLI; new `delete_memory` tool; deterministic `Message-ID` generation; IMAP search query injection hardened.
 - **L29** — Scheduler failure visibility (last-N errors surfaced via `hestia reflection status` / `hestia style show`); missing-file warnings for SOUL.md and calibration.json; env-var-first secrets hygiene; ADRs consolidated under a single `docs/adr/`.
+- **`hestia style disable`** no longer crashes at invocation; the command
+  is now a proper Click signature with accurate docstring (L35a).
+- **`hestia policy show`** now reflects the live tool registry, the active
+  `PolicyConfig.delegation_keywords`, the active retry policy, and the
+  trust preset name — instead of hand-written strings that drifted (L35b).
+- **`ContextBuilder._join_overhead`** is now computed lazily once and cached
+  across builds, completing the L32c tokenize-cache work (L35a).
 
 ### Skills & polish
 - **L33c** — Skills framework gated behind `HESTIA_EXPERIMENTAL_SKILLS=1` (raises `ExperimentalFeatureError` otherwise — visibility > convenience for a public release). ADR-0022. `_format_datetime` hoisted to module scope. `DefaultPolicyEngine.should_delegate` keyword list exposed via `PolicyConfig.delegation_keywords`. Matrix `_extract_in_reply_to` schema-validation contract locked with regression tests.
 - **L34** — Public-release polish: README model recommendations table (Llama-3.1-8B Q4_K_M default), "Running Hestia as a daemon" section, demo placeholder, env-var-first email setup guide.
 
+### New diagnostic commands
+
+- **`hestia doctor`** — read-only nine-check health snapshot covering Python
+  version, dependency sync, config load, SQLite integrity, llama.cpp
+  reachability, platform prerequisites, trust preset, and memory epoch.
+  Use as the first step in any "it stopped working" investigation. (L35c)
+
+### Upgrade docs
+
+- **`UPGRADE.md`** — hand-checked v0.2.2 → v0.8.0 upgrade checklist for
+  the early cloners. Documents required new config sections (`trust`,
+  `web_search`, `security`, `style`, `reflection`), the `bleach` → `nh3`
+  swap, and the recommended `hestia doctor` verification step. (L35d)
+
 ### Stats
-- **741 tests** passing across unit + integration (was 250-ish at v0.2.2).
+- **~778 tests** passing across unit + integration (was 250-ish at v0.2.2).
 - **0 mypy errors** in `src/hestia/`.
 - **44 ruff errors** in `src/` (the remaining baseline; was uncapped at v0.2.2).
 - **22 ADRs** capturing every architectural decision (ADR-0014 through ADR-0022).
