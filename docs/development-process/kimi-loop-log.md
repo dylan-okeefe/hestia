@@ -8,7 +8,38 @@
 
 ---
 
-## 2026-04-18 — Loop: L35 — Release v0.8.0 (Cursor-driven, no Kimi) → tagged + merged into main locally
+## 2026-04-18 — Planning: L35 split into L35a/b/c/d after pre-release-plan landed; L36-L38 queued; L39-L40 deferred until dogfooding
+
+**Trigger:** Dylan pushed `develop` (including the v0.8.0 commit) to origin two days ago. **76 unique cloners** observed in those 2 days with zero announcements — public traffic is real and on the **stale** v0.2.2 tag. Dylan added `docs/development-process/reviews/v0.8.0-pre-release-plan.md` (`6317707`) at 22:09 with a six-section L35 covering pre-release fixes (`style disable`, `policy show`, `_join_overhead` cache, new `hestia doctor`), `UPGRADE.md`, and CHANGELOG amendment. Asked Cursor to break it down so v0.8.0 ships **tonight** (Dylan staying up) and L36+ runs overnight after he sleeps.
+
+**Why split L35:** the same lesson L29-L31 taught and L32/L33 mini-loops validated — six sections in one Kimi loop will hit the per-iteration step ceiling (`--max-steps-per-turn=250`). `hestia doctor` alone is 9 checks × 2 tests + new module + 2 file integrations. The L35d "amend CHANGELOG" can't run until L35a-c land, so the docs amendment naturally separates.
+
+**Cursor actions:**
+
+1. Reset local `main` to `origin/main` (was 155 ahead from the prior local merge that Dylan never pushed). Deleted local `v0.8.0` tag (was on the un-pushed `c95814f`). The `chore(release): v0.8.0` commit (`d9b889d`) stays on develop and will be re-tagged at the post-L35d tip.
+2. Wrote four L35 mini-loop specs (`kimi-loops/L35a-*.md`, `L35b-*.md`, `L35c-*.md`, `L35d-*.md`).
+3. Wrote three overnight specs (`kimi-loops/L36-app-commands-split.md`, `L37-code-cleanup-sweep.md`, `L38-delegation-and-disable-persistence.md`).
+4. Renamed the original Cursor-only release spec to `_superseded-L35-release-v0.8.0.md` for history.
+5. Updated `kimi-phase-queue.md` table; documented L39 + L40 as deferred until post-dogfooding (per the pre-release plan's own dependency note).
+6. Pointed `KIMI_CURRENT.md` at L35a.
+
+**Tonight's chain:** L35a (style + overhead) → L35b (policy show) → L35c (doctor) → L35d (UPGRADE.md + CHANGELOG amend + L35 arc handoff) → Cursor re-tags `v0.8.0` and re-merges develop into main → Dylan pushes `develop main v0.8.0` and optionally cuts a GitHub release.
+
+**Overnight chain (Dylan asleep):** L36 (`app.py` → `commands.py` extraction) → L37 (cleanup sweep, ruff baseline crunch from 44 to ≤24) → L38 (delegation keyword consolidation + `*_disable` semantics audit). Each posts a `.kimi-done`; Cursor reviews, merges to develop, advances `KIMI_CURRENT.md`, and starts the next.
+
+**Deferred:** L39 (`hestia upgrade` command) explicitly waits for "at least one dogfooding-cycle worth of real upgrade pain observed" per the pre-release plan. L40 waits for `docs/dogfooding/2026-04-journal.md` to be populated. Skipping these overnight is the right call.
+
+**Risk register:**
+
+- L35c is the largest of the four pre-release loops (5 commits; new module; 22+ tests). If it hits the step ceiling like L30/L31 did, Cursor finishes it manually rather than re-launching.
+- L36 (`app.py` decomposition) is behavior-preserving but touches every `_cmd_*` import path in `cli.py`. If existing tests start failing on imports, that's the expected signal — the fix is in the move, not the tests.
+- The `_join_overhead` cache edge case (don't cache `0` from "too few messages to measure") is the kind of subtlety that Kimi can miss. Cursor reviews the diff carefully on L35a merge.
+
+---
+
+## 2026-04-18 — Loop: L35 (original, Cursor-only) — **SUPERSEDED** by L35a/b/c/d split
+
+> **Status:** This entry documents the first L35 attempt (single Cursor-driven release loop). It was **never pushed**. After Dylan added `docs/development-process/reviews/v0.8.0-pre-release-plan.md` (`6317707`) flagging four real bugs to fix before tagging, the local v0.8.0 tag was deleted and `main` was reset to `origin/main`. Release work split into L35a/b/c/d (see the planning entry above this one). Keeping the entry below for the curated CHANGELOG draft and the process notes — those are still accurate, just paused until L35d lands.
 
 **Why no Kimi:** L35 is a release loop. Per `.cursorrules`, Dylan owns `git push`. The L35 spec as originally written had Kimi running `git push origin main` and `git push origin v0.8.0`, which would either silently fail or hang on missing credentials in the headless Kimi process. Cursor executed the local prep directly.
 

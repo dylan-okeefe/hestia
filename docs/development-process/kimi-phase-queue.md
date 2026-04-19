@@ -41,9 +41,20 @@
 | 33b | `feature/l33b-email-session-reuse` | [`kimi-loops/L33b-email-session-reuse.md`](kimi-loops/L33b-email-session-reuse.md) |
 | 33c | `feature/l33c-skills-flag-and-polish` | [`kimi-loops/L33c-skills-flag-and-polish.md`](kimi-loops/L33c-skills-flag-and-polish.md) |
 | 34 | `feature/l34-public-release-polish` | [`kimi-loops/L34-public-release-polish.md`](kimi-loops/L34-public-release-polish.md) |
-| 35 | *(develop + main)* | [`kimi-loops/L35-release-v0.8.0.md`](kimi-loops/L35-release-v0.8.0.md) |
+| 35a | `feature/l35a-style-and-overhead-fixes` | [`kimi-loops/L35a-style-and-overhead-fixes.md`](kimi-loops/L35a-style-and-overhead-fixes.md) |
+| 35b | `feature/l35b-policy-show-wiring` | [`kimi-loops/L35b-policy-show-wiring.md`](kimi-loops/L35b-policy-show-wiring.md) |
+| 35c | `feature/l35c-hestia-doctor` | [`kimi-loops/L35c-hestia-doctor.md`](kimi-loops/L35c-hestia-doctor.md) |
+| 35d | `feature/l35d-upgrade-doc-and-release-prep` | [`kimi-loops/L35d-upgrade-doc-and-changelog.md`](kimi-loops/L35d-upgrade-doc-and-changelog.md) |
+| 35-rel | *(Cursor: re-tag v0.8.0 + merge to main; Dylan: push)* | [`reviews/v0.8.0-pre-release-plan.md`](reviews/v0.8.0-pre-release-plan.md) Stage B |
+| 36 | `feature/l36-app-commands-split` | [`kimi-loops/L36-app-commands-split.md`](kimi-loops/L36-app-commands-split.md) |
+| 37 | `feature/l37-code-cleanup-sweep` | [`kimi-loops/L37-code-cleanup-sweep.md`](kimi-loops/L37-code-cleanup-sweep.md) |
+| 38 | `feature/l38-delegation-and-disable-persistence` | [`kimi-loops/L38-delegation-and-disable-persistence.md`](kimi-loops/L38-delegation-and-disable-persistence.md) |
+| 39 (deferred) | `feature/l39-upgrade-command` | post-dogfooding (depends on L35c `hestia doctor` + real upgrade pain) |
+| 40 (deferred) | `feature/l40-dogfooding-fixes` | post-dogfooding (populated from `docs/dogfooding/2026-04-journal.md`) |
 
 **Note (post-L31, 2026-04-18):** The original L32 and L33 specs were each a 9-commit multi-section refactor. Kimi's per-iteration step ceiling (`--max-steps-per-turn`, default 100) was hit on L29, L30, **and** L31. Splitting L32 → L32a/b/c and L33 → L33a/b/c gives each loop ≤ 5 commits with a single theme, which fits comfortably under the ceiling (raised to 250 in the launcher as belt-and-braces). See `kimi-loop-log.md` for context.
+
+**Note (post-L34, 2026-04-18):** L35 as originally drafted in `kimi-loops/_superseded-L35-release-v0.8.0.md` was a single Cursor-driven release loop. After the public push surfaced 76+ unique cloners on the stale v0.2.2 in 2 days, the pre-release-plan review (`reviews/v0.8.0-pre-release-plan.md`) added a six-section L35 covering pre-release fixes (`style disable`, `policy show`, `_join_overhead` cache, new `hestia doctor`), `UPGRADE.md`, and CHANGELOG amendment. That L35 was again too big for one loop, so it is split into **L35a/b/c/d** following the L32/L33 pattern. The `chore(release): v0.8.0` commit (`d9b889d` on develop) is **not yet tagged**; L35a-d amend the unreleased v0.8.0, then Cursor re-tags at the L35d merge tip. **L39 is deferred** until at least one dogfooding cycle surfaces real upgrade pain; **L40** is populated from the dogfooding journal at week end.
 
 **Chain index (L10–L14):** [`prompts/KIMI_LOOPS_L10_L14.md`](prompts/KIMI_LOOPS_L10_L14.md) · **Credentials:** [`docs/testing/CREDENTIALS_AND_SECRETS.md`](../testing/CREDENTIALS_AND_SECRETS.md)
 
