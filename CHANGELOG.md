@@ -5,7 +5,7 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## [0.8.0] — 2026-04-18
+## [0.8.0] — 2026-04-19
 
 The first major release since `v0.2.2` (April 11). Rolls up the eight-month
 arc of work that turned Hestia from "scaffold + matrix adapter" into a
@@ -46,6 +46,21 @@ public-ready, security-hardened, multi-platform local assistant.
   trust preset name — instead of hand-written strings that drifted (L35b).
 - **`ContextBuilder._join_overhead`** is now computed lazily once and cached
   across builds, completing the L32c tokenize-cache work (L35a).
+- **TOCTOU-safe `get_or_create_session`** — the prior SELECT-then-INSERT
+  pair could create duplicate ACTIVE rows for the same
+  `(platform, platform_user)` under concurrent first-message arrival
+  (e.g. two Telegram updates polled in the same tick). Symptoms included
+  split message history and scheduler tasks attached to the "wrong"
+  session. Fixed by adding partial unique index `ux_sessions_active_user`
+  on `sessions(platform, platform_user) WHERE state = 'active'` and
+  rewriting the method as a dialect-aware
+  `INSERT … ON CONFLICT DO NOTHING` upsert. The matching contract is now
+  enforced for `create_session(archive_previous=None)` as well — both
+  production callers (`/reset` and the subagent factory) were already
+  safe. New `tests/unit/test_sessions_race.py` covers the 20-coroutine
+  storm. Pre-tag hotfix; ships *in* `v0.8.0`. Idempotent runtime
+  migration in `src/hestia/persistence/migrations/` upgrades existing
+  databases on next bootstrap.
 
 ### Skills & polish
 - **L33c** — Skills framework gated behind `HESTIA_EXPERIMENTAL_SKILLS=1` (raises `ExperimentalFeatureError` otherwise — visibility > convenience for a public release). ADR-0022. `_format_datetime` hoisted to module scope. `DefaultPolicyEngine.should_delegate` keyword list exposed via `PolicyConfig.delegation_keywords`. Matrix `_extract_in_reply_to` schema-validation contract locked with regression tests.
@@ -65,12 +80,85 @@ public-ready, security-hardened, multi-platform local assistant.
   `web_search`, `security`, `style`, `reflection`), the `bleach` → `nh3`
   swap, and the recommended `hestia doctor` verification step. (L35d)
 
+### Refactoring
+
+Three loops landed after the L35d snapshot but ahead of the public tag.
+None change behavior; all tighten internals so the v0.8.1+ feature work
+(voice adapter, Copilot cleanup backlog) starts from a smaller, more
+maintainable surface.
+
+- **L36** — `app.py` decomposition: every `_cmd_*` async/sync function
+  moved verbatim into a new `src/hestia/commands.py` module. `app.py`
+  shrank from **1,533 → 517 lines (-66%)** and now hosts only
+  infrastructure (`CliAppContext`, `make_app`, `run_async`,
+  `CliResponseHandler`, meta-command dispatch). `cli.py`'s
+  `from hestia.app import _cmd_*` block is now `from hestia.commands`.
+  Tests unchanged: 778 passed, 6 skipped.
+- **L37** — Code cleanup sweep: removed dead `hasattr()` probes on typed
+  dataclasses inside `_build_failure_bundle` (engine.py); deleted the
+  no-op `app = app if isinstance(app, CliAppContext) else app` in
+  `run_platform`; fixed `_cmd_schedule_add` over-indent; hoisted
+  `schedule_disable`, `schedule_remove`, and `init` from inline `cli.py`
+  bodies into proper `_cmd_*` delegations in `commands.py`. Ruff
+  baseline crunched **43 → 23** with 20 real fixes (no `# noqa`
+  introduced).
+- **L38** — Delegation keyword consolidation: split into two named
+  constants (`DEFAULT_DELEGATION_KEYWORDS` for explicit triggers like
+  `delegate`, `subagent`, `spawn task`; `DEFAULT_RESEARCH_KEYWORDS` for
+  `research`, `investigate`, `analyze deeply`, `comprehensive`), each
+  driven by its own `PolicyConfig` field with module-constant fallback.
+  `_cmd_policy_show` now displays both lists with accurate labels — the
+  L33c-introduced misnaming (research keywords surfaced under
+  "delegation" label) is fully resolved. **Config break footnote:**
+  anyone who customized `PolicyConfig.delegation_keywords` since L33c
+  was actually overriding research triggers; for research overrides
+  going forward, set `PolicyConfig.research_keywords` instead.
+
+### Known issues — deferred to v0.8.1+
+
+The following non-blocking findings from the public Copilot review have
+been triaged into a backlog (`docs/development-process/kimi-loops/L40-copilot-cleanup-backlog.md`)
+and will land on feature branches before the next release prep merges
+them to `develop`:
+
+- **Sequential tool dispatch.** When the model emits multiple tool calls
+  in one assistant turn, the orchestrator dispatches them sequentially
+  even when they have no inter-call dependency (e.g. `search_memory` +
+  `web_search`). Concurrent dispatch is a single
+  `asyncio.gather` away but needs a correctness pass on tool-result
+  ordering, confirmation flow, and trace rendering before shipping.
+- **`SlotManager.should_evict_slot` is a stub** that always returns
+  `False`. Slot eviction policy is currently "hold until process exit"
+  — fine for the personal-assistant target but reviewers will flag it.
+- **`should_delegate` `for_trust` identity comparison.** The trust check
+  uses `if for_trust is TrustLevel.HIGH` rather than `==`. Works today
+  because the enum is module-singleton, but future deserialization
+  (e.g. loading from a JSON config) would silently miss it.
+- **Bare `except:` in two `EmailAdapter` recovery paths.** Should narrow
+  to `(IMAPException, ConnectionError, OSError)`.
+- **`prompt_on_mobile` docstring drift** — the doc claims the call
+  blocks until confirmation, but the implementation is fire-and-forget
+  via the platform's confirm callback.
+- **Open `# TODO(L*)` markers.** Three low-impact ones remain in
+  `engine.py`, `slot_manager.py`, and `style/builder.py`. Backlog spec
+  enumerates each with the original loop reference.
+
+These will be addressed on `feature/copilot-cleanup-*` branches per the
+post-release merge discipline rule in `.cursorrules` — no merge to
+`develop` until a `v0.8.1` release-prep document names them.
+
 ### Stats
-- **~778 tests** passing across unit + integration (was 250-ish at v0.2.2).
+- **783 tests** passing across unit + integration (was 250-ish at v0.2.2).
 - **0 mypy errors** in `src/hestia/`.
-- **44 ruff errors** in `src/` (the remaining baseline; was uncapped at v0.2.2).
-- **22 ADRs** capturing every architectural decision (ADR-0014 through ADR-0022).
-- **15 Kimi loops** (L20 → L34), with the L29-L31 monolithic loops manually finished by Cursor and L32a-L33c executed cleanly under the new mini-loop chunking.
+- **228 ruff errors** in `src/` and `tests/` combined; **23 in `src/`
+  alone** (the L37 baseline). Was uncapped at v0.2.2.
+- **22 ADRs** capturing every architectural decision (ADR-0014 through
+  ADR-0022).
+- **18 Kimi loops** (L20 → L38), with the L29-L31 monolithic loops
+  manually finished by Cursor; L32a-L33c, L35a-d, and the L36-L38
+  overnight chain all executed cleanly under the mini-loop chunking
+  strategy. The TOCTOU hotfix landed in-process by Cursor (no Kimi
+  loop) on `feature/hotfix-session-race`.
 
 ## [0.7.12] — 2026-04-18
 
