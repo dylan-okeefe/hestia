@@ -8,6 +8,34 @@
 
 ---
 
+## 2026-04-19 — Loop: L35b — `_cmd_policy_show` derives from live registry/config (clean Kimi run) → merged to develop
+
+**Kimi:** Clean run, 3 commits, ~11 minutes wall time (`exit_code: 0`, `elapsed_ms: 662106`). Valid `.kimi-done` with `LOOP=L35b`, `COMMIT=275fc6d`, `TESTS=753 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`. Working tree clean before write. Mini-loop strategy still holding.
+
+**What shipped:**
+
+All five drift sites in `_cmd_policy_show` (in `src/hestia/app.py`) are now wired to live state:
+
+- `Active preset:` line surfaces `cfg.trust.preset` (new optional `str | None` field on `TrustConfig`, default `None`; falls back to `(custom — no preset name)`).
+- Confirmation-required tool list iterates `app.tool_registry.list_names()` and filters by `ToolMetadata.requires_confirmation`. Renders `(none)` when zero confirming tools.
+- Delegation keywords line reads `cfg.policy.delegation_keywords or DEFAULT_DELEGATION_KEYWORDS` (the L33c constant). Imported at the top of `app.py`.
+- Research keywords line preserved as a literal but flagged with `# TODO(L38): consolidate research keywords through PolicyConfig` — exactly what L35b spec asked for.
+- Retry "Max attempts" reads `policy_engine.retry_max_attempts`. New module-level constant `DEFAULT_RETRY_MAX_ATTEMPTS = 2` in `src/hestia/policy/default.py`; `DefaultPolicyEngine.__init__` now sets `self.retry_max_attempts = DEFAULT_RETRY_MAX_ATTEMPTS`. **Spec-compliant** — no new `PolicyConfig.retry_max_attempts` field as the spec ruled out for L35b.
+
+`tests/unit/test_policy_show_wiring.py` (new, 145 lines) — six tests: confirmation-tools-from-registry, zero-confirmation-tools, retry-from-engine, custom-keywords, default-keywords-fallback, trust-preset-surfaced. Uses a fixture-built `CliAppContext` rather than relying on `make_app`, which keeps the tests independent of bootstrap drift.
+
+**Review (Cursor):**
+
+- Diff is small (5 files, +195 / -5). All changes are inside `_cmd_policy_show` plus the two minimal config/policy additions the spec authorized.
+- Re-ran gate: **753 passed, 6 skipped** (+6 vs. L35a's 747). `mypy` → 0. `ruff` → 44 (unchanged).
+- The `TrustConfig.preset` field is additive only (defaulted None; existing `paranoid()` / `household()` / `developer()` factories don't set it yet — that's a future loop's job, perhaps L40 dogfooding rollup).
+
+**Merge:** `feature/l35b-policy-show-wiring` → `develop` via `--no-ff` merge commit `852d546`.
+
+**Queue advance:** `KIMI_CURRENT.md` → **L35c** (`hestia doctor` command — biggest L35 mini-loop).
+
+---
+
 ## 2026-04-19 — Loop: L35a — `style disable` Click signature + ContextBuilder `_join_overhead` lazy cache (clean Kimi run) → merged to develop
 
 **Kimi:** Clean run, 4 commits, ~15.5 minutes wall time (`exit_code: 0`, `elapsed_ms: 938896`). Valid `.kimi-done` with `LOOP=L35a`, `COMMIT=42d446e`, `TESTS=747 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`. Working tree clean before write. Mini-loop strategy continues to validate.
