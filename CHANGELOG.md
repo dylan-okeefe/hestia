@@ -5,25 +5,51 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### Towards 0.8.0
+## [0.8.0] — 2026-04-18
 
-The next tagged release will roll up everything from L20 through L34:
+The first major release since `v0.2.2` (April 11). Rolls up the eight-month
+arc of work that turned Hestia from "scaffold + matrix adapter" into a
+public-ready, security-hardened, multi-platform local assistant.
 
-- **L20** — Trust profiles (`TrustConfig`) and web-search integration (`web_search` tool via Tavily).
-- **L21** — Context resilience: session handoff summaries, history compression, loud `ContextTooLargeError` warnings, and `send_system_warning` platform channel.
-- **L22** — Mypy strictness ratchet: 44 → 0 errors, CI now fails on any new type error.
-- **L23** — Platform confirmation callbacks (Telegram inline keyboard, Matrix reply pattern) with shared `ConfirmationStore`.
-- **L24** — Prompt-injection detection (`InjectionScanner`) and egress auditing (`hestia audit egress`).
-- **L25** — Email adapter (IMAP read/search + SMTP draft/send with confirmation gate).
-- **L26** — Reflection loop (three-pass pipeline: pattern mining → proposal generation → queue write) with CLI lifecycle controls.
-- **L27** — Style profile (per-user interaction-style learning without modifying identity).
-- **L28** — Critical correctness bugs (`nh3` replacing `bleach`, `read_artifact` registration, `delete_memory`, Message-ID generation, IMAP injection hardening).
-- **L29** — Reliability surface (scheduler failure visibility, missing-file warnings, env-var secrets hygiene, ADR consolidation).
-- **L30** — CLI decomposition: 2,569-line `cli.py` monolith split into `app.py` + `platforms/runners.py` + slim `cli.py`.
-- **L31** — Orchestrator engine cleanup (deduplicated failure bundles, hoisted state, single `get_messages`, artifact accumulation, `ToolCallResult.error`).
-- **L32** — Context-builder rework: dead-code removal, ordered prefix-layer registry, per-message `/tokenize` cache.
-- **L33** — Perf-and-polish arc: injection-scanner threshold tuning + structured-content filters, IMAP session reuse + composite `email_search_and_read`, skills experimental flag.
-- **L34** — Public-release polish (README model recommendations, deployment docs, demo placeholder, email guide rewrite, CHANGELOG curation).
+### Trust & confirmations
+- **L20** — Trust profiles (`TrustConfig`) gating destructive tools, plus web-search integration (`web_search` tool via Tavily).
+- **L23** — Platform confirmation callbacks: Telegram inline keyboards, Matrix reply pattern, shared `ConfirmationStore`. Destructive tools now require explicit user approval per platform.
+
+### Context & resilience
+- **L21** — Session handoff summaries, history compression, loud `ContextTooLargeError` warnings, and `send_system_warning` platform channel.
+- **L32** — Context-builder rework: dead `TurnState`/`ToolResult` removed, ordered `_PrefixLayer` registry, per-message `/tokenize` cache (amortized O(1) tokenize calls per build for unchanged messages). ADR-0021.
+
+### Architecture & quality
+- **L22** — Mypy strictness ratchet: 44 → 0 errors. CI now fails on any new type error.
+- **L30** — CLI decomposition: 2,569-line `cli.py` monolith split into `app.py` (`CliAppContext`, command bodies) + `platforms/runners.py` (Telegram/Matrix runtime loops) + 588-line slim `cli.py`. ADR-0020. Ruff baseline collapsed from 255 → 44.
+- **L31** — Orchestrator engine cleanup: extracted `_build_failure_bundle` (killed duplicated except-block bodies), hoisted `delegated`/`tool_chain` state, single `get_messages` per turn, artifact accumulation from `ToolCallResult.artifact_handle` (not regex), extracted `_check_confirmation`, new `ToolCallResult.error` classmethod.
+
+### Security
+- **L24** — Prompt-injection scanner (`InjectionScanner`) with regex pattern + entropy heuristics; egress auditing (`hestia audit egress`).
+- **L33a** — `InjectionScanner` threshold raised 4.2 → 5.5 with structured-content (JSON / base64 / CSS) skip-filters that bypass the entropy gate without weakening regex pattern detection. Tunable via `SecurityConfig`.
+
+### Email
+- **L25** — Email adapter: IMAP read / search / draft + SMTP send, all gated by trust + confirmation flow.
+- **L33b** — Per-invocation IMAP session reuse via `EmailAdapter.imap_session()` async context manager (`ContextVar`-tracked, transparent nesting). New `email_search_and_read` composite tool — single round-trip search + per-id read.
+
+### Reflection & style
+- **L26** — Reflection loop (three-pass: pattern mining → proposal generation → queue write) with `hestia reflection` CLI lifecycle controls.
+- **L27** — Style profile (per-user interaction-style learning that never mutates identity).
+
+### Bug fixes & hardening
+- **L28** — `nh3` replaces unmaintained `bleach`; `read_artifact` registered in CLI; new `delete_memory` tool; deterministic `Message-ID` generation; IMAP search query injection hardened.
+- **L29** — Scheduler failure visibility (last-N errors surfaced via `hestia reflection status` / `hestia style show`); missing-file warnings for SOUL.md and calibration.json; env-var-first secrets hygiene; ADRs consolidated under a single `docs/adr/`.
+
+### Skills & polish
+- **L33c** — Skills framework gated behind `HESTIA_EXPERIMENTAL_SKILLS=1` (raises `ExperimentalFeatureError` otherwise — visibility > convenience for a public release). ADR-0022. `_format_datetime` hoisted to module scope. `DefaultPolicyEngine.should_delegate` keyword list exposed via `PolicyConfig.delegation_keywords`. Matrix `_extract_in_reply_to` schema-validation contract locked with regression tests.
+- **L34** — Public-release polish: README model recommendations table (Llama-3.1-8B Q4_K_M default), "Running Hestia as a daemon" section, demo placeholder, env-var-first email setup guide.
+
+### Stats
+- **741 tests** passing across unit + integration (was 250-ish at v0.2.2).
+- **0 mypy errors** in `src/hestia/`.
+- **44 ruff errors** in `src/` (the remaining baseline; was uncapped at v0.2.2).
+- **22 ADRs** capturing every architectural decision (ADR-0014 through ADR-0022).
+- **15 Kimi loops** (L20 → L34), with the L29-L31 monolithic loops manually finished by Cursor and L32a-L33c executed cleanly under the new mini-loop chunking.
 
 ## [0.7.12] — 2026-04-18
 
