@@ -26,6 +26,23 @@ steps, comfortable under the 250 mini-loop ceiling).
 
 ## Items
 
+## Review carry-forward
+
+- Gmail compatibility bug found during runtime smoke test (2026-04-19):
+  `EmailAdapter.create_draft()` hardcodes the IMAP Drafts mailbox name as
+  `"Drafts"` and `send_draft()` hardcodes `"Sent"`. Gmail uses
+  `"[Gmail]/Drafts"` and `"[Gmail]/Sent Mail"`, so APPEND currently fails
+  with `EmailAdapterError: Failed to append draft: NO` even when IMAP auth
+  succeeds.
+- Fold this into Item 5's EmailAdapter cleanup: introduce configurable IMAP
+  special-folder names (or provider-aware autodetection via LIST + flags),
+  update create_draft/send_draft/copy paths to use them, and add a regression
+  test that covers a Gmail-like folder map.
+- Also fix the teardown edge case exposed by the same failure path:
+  `imap_session()` attempts `conn.close()` while in AUTH state and raises
+  `IMAP4.error: command CLOSE illegal in state AUTH`. Close should be
+  guarded (close only in SELECTED state, otherwise logout directly).
+
 ### 1. Sequential tool dispatch in orchestrator (correctness/perf)
 
 **File:** `src/hestia/orchestrator/engine.py:676-690`

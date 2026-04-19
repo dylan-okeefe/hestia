@@ -2,28 +2,28 @@
 
 **Orchestrator:** Cursor updates this file after each review.
 
-**Last set by:** Cursor — 2026-04-19 (v0.8.0 sealed at `b1e81ae` on develop, tag pushed-pending; main fast-forwarded via `--no-ff`; awaiting Dylan's three pushes)
+**Last set by:** Cursor — 2026-04-19 (launching post-release feature-branch queue: L40 first)
 
 ---
 
 ## Current task
 
-**No active loop.** v0.8.0 is sealed and awaiting Dylan's push.
+**Active loop:** **L40** — `docs/development-process/kimi-loops/L40-copilot-cleanup-backlog.md`
+on feature branch(es) `feature/l40*` (Cursor may split per scope/step budget).
 
-**Next gate — Dylan's three pushes (run from repo root):**
+**Launch sequence now:**
 
-```bash
-cd ~/Hestia
-git push origin develop
-git push origin main
-git push origin v0.8.0
-```
+1. Create/switch to the L40 feature branch from `develop`.
+2. Run `./scripts/kimi-run-current.sh`.
+3. Wait for valid `.kimi-done` (`HESTIA_KIMI_DONE=1`, `LOOP=L40*`).
+4. Review diffs + run gates (`pytest`, `mypy src/hestia`, `ruff check src/`).
+5. Fix/tighten prompt and rerun L40 if red.
+6. When green: push `feature/l40*` to origin, write loop log entry, and
+   advance this file to L41.
 
-After push, optionally cut a GitHub release from the `v0.8.0` tag using
-the `## [0.8.0] — 2026-04-19` block in `CHANGELOG.md` as the release
-notes. The "Known issues — deferred to v0.8.1+" subsection sets honest
-expectations for the 76 cloners about what's NOT in this release. The
-`UPGRADE.md` link is the appropriate "if you cloned at v0.2.2" pointer.
+**Important:** per `.cursorrules` post-release merge discipline, **do not merge
+L40 to `develop` yet**. Push feature branch only; merge waits for a v0.8.1+
+release-prep doc naming the branch in scope.
 
 **State on disk:**
 
@@ -34,7 +34,7 @@ expectations for the 76 cloners about what's NOT in this release. The
 
 ---
 
-## Post-push policy state — important for the next agent
+## Post-release policy state — important for the next agent
 
 The `.cursorrules` rule added in this release (see "Post-release merge
 discipline" section) **forbids merging feature branches to `develop`**
