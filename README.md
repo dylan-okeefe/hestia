@@ -572,6 +572,17 @@ For the full security policy and responsible-disclosure process, see [`SECURITY.
 
 Hestia is built for consumer GPUs. Here's what to expect:
 
+### Recommended models
+
+| Model | Parameters | Quantization | VRAM | Strengths | Notes |
+|-------|-----------|--------------|------|-----------|-------|
+| Llama-3.1-8B-Instruct | 8B | Q4_K_M | ~6GB | Tool calling, general | Default recommendation |
+| Qwen 2.5 7B Instruct | 7B | Q4_K_M | ~5GB | Tool calling, structured output | Solid alternative |
+| Llama-3.2-3B-Instruct | 3B | Q5_K_M | ~3GB | Speed | Light identity-check workload |
+| Qwen 2.5 14B Instruct | 14B | Q4_K_M | ~10GB | Quality | Needs ≥12GB VRAM |
+
+Static K-quants (Q4_K_M, Q6_K_M) work well; avoid imatrix (I-) quants, which can corrupt tool-calling. The same project-wide guidance from `~/AGENTS.md` applies.
+
 | VRAM | Model | Slots | Context | Experience |
 |------|-------|-------|---------|-----------|
 | 8 GB | 3-4B Q4 | 2 | 8K | Works, but tool chaining is limited |
