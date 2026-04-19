@@ -8,6 +8,32 @@
 
 ---
 
+## 2026-04-19 — Loop: L35a — `style disable` Click signature + ContextBuilder `_join_overhead` lazy cache (clean Kimi run) → merged to develop
+
+**Kimi:** Clean run, 4 commits, ~15.5 minutes wall time (`exit_code: 0`, `elapsed_ms: 938896`). Valid `.kimi-done` with `LOOP=L35a`, `COMMIT=42d446e`, `TESTS=747 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`. Working tree clean before write. Mini-loop strategy continues to validate.
+
+**What shipped:**
+
+- `src/hestia/cli.py` — `style_disable` is now `@click.pass_obj` with the L35a docstring template (process-only + how to persist via config or `HESTIA_STYLE_ENABLED=0`). Output message rewritten to be honest about the in-memory-only semantic.
+- `src/hestia/context/builder.py` — `_join_overhead` is now `int | None`, computed lazily once per instance via the new `_compute_join_overhead()` helper, and read at the math sites via `_join_overhead = self._join_overhead or 0` (preserving the existing math-on-zero behavior for the "not enough messages to measure" case). The cache **does not store a `0` that came from too-few-messages**, so a later `build()` with more history will measure the real value — exactly the spec's edge-case requirement.
+- `tests/unit/test_cli_style_disable.py` (new, 43 lines) — three tests: invokes-without-error, mutates-in-memory-only, help-mentions-persistence.
+- `tests/unit/test_context_builder_join_overhead_cache.py` (new, 170 lines) — four tests including `test_join_overhead_recomputed_after_too_few_messages_initially` (locks the edge case) and `test_join_overhead_value_matches_inline_implementation` (locks the formula).
+- `tests/unit/test_context_builder_tokenize_cache.py` (existing, 11-line tweak) — Kimi adjusted the L32c test to the new internal API. Diff is mechanical, no semantics change.
+- `docs/handoffs/L35a-style-and-overhead-fixes-handoff.md` (new, 37 lines).
+
+**Audit findings:** Kimi ran the `*_disable` / `*_enable` Click-signature audit per the spec; `style_disable` was the only broken command. Other `*_disable`-style commands either don't exist or use `@run_async` already.
+
+**Review (Cursor):**
+
+- Diffs match spec to the line. The `_join_overhead` edge case is the kind of subtlety I worried about and Kimi handled it correctly — the `if overhead != 0 or len(history) >= 2 or len(...) >= 2` guard is exactly what the spec asked for.
+- Re-ran gate from the branch tip: **747 passed, 6 skipped** (+6 vs. L34 baseline of 741). `mypy src/hestia` → 0 errors. `ruff check src/` → 44 (unchanged). 11 warnings — all the pre-existing `aiosqlite Event loop is closed` noise documented at L28.
+
+**Merge:** `feature/l35a-style-and-overhead-fixes` → `develop` via `--no-ff` merge commit `2575152`.
+
+**Queue advance:** `KIMI_CURRENT.md` → **L35b** (`_cmd_policy_show` derive-from-registry refactor).
+
+---
+
 ## 2026-04-18 — Planning: L35 split into L35a/b/c/d after pre-release-plan landed; L36-L38 queued; L39-L40 deferred until dogfooding
 
 **Trigger:** Dylan pushed `develop` (including the v0.8.0 commit) to origin two days ago. **76 unique cloners** observed in those 2 days with zero announcements — public traffic is real and on the **stale** v0.2.2 tag. Dylan added `docs/development-process/reviews/v0.8.0-pre-release-plan.md` (`6317707`) at 22:09 with a six-section L35 covering pre-release fixes (`style disable`, `policy show`, `_join_overhead` cache, new `hestia doctor`), `UPGRADE.md`, and CHANGELOG amendment. Asked Cursor to break it down so v0.8.0 ships **tonight** (Dylan staying up) and L36+ runs overnight after he sleeps.
