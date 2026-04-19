@@ -332,3 +332,80 @@ class TestMatrixAdapter:
 
         with pytest.raises(PlatformError):
             asyncio.run(test_raises())
+
+
+class TestExtractInReplyTo:
+    """Regression tests for MatrixAdapter._extract_in_reply_to."""
+
+    def _make_event(self, source: dict) -> MagicMock:
+        event = MagicMock()
+        event.source = source
+        return event
+
+    def test_well_formed_reply(self):
+        """Fully nested m.relates_to.m.in_reply_to.event_id returns the id."""
+        event = self._make_event({
+            "content": {
+                "m.relates_to": {
+                    "m.in_reply_to": {
+                        "event_id": "$original_event",
+                    },
+                },
+            },
+        })
+        result = MatrixAdapter._extract_in_reply_to(event)
+        assert result == "$original_event"
+
+    def test_missing_relates_to(self):
+        """Missing m.relates_to returns None."""
+        event = self._make_event({
+            "content": {},
+        })
+        result = MatrixAdapter._extract_in_reply_to(event)
+        assert result is None
+
+    def test_relates_to_not_dict(self):
+        """m.relates_to as string returns None without exception."""
+        event = self._make_event({
+            "content": {
+                "m.relates_to": "not_a_dict",
+            },
+        })
+        result = MatrixAdapter._extract_in_reply_to(event)
+        assert result is None
+
+    def test_in_reply_to_not_dict(self):
+        """m.in_reply_to not a dict returns None."""
+        event = self._make_event({
+            "content": {
+                "m.relates_to": {
+                    "m.in_reply_to": "not_a_dict",
+                },
+            },
+        })
+        result = MatrixAdapter._extract_in_reply_to(event)
+        assert result is None
+
+    def test_event_id_not_string(self):
+        """event_id not a string returns None."""
+        event = self._make_event({
+            "content": {
+                "m.relates_to": {
+                    "m.in_reply_to": {
+                        "event_id": 12345,
+                    },
+                },
+            },
+        })
+        result = MatrixAdapter._extract_in_reply_to(event)
+        assert result is None
+
+    def test_event_source_raises_on_access(self):
+        """Defensive swallow when accessing event.source raises."""
+        event = MagicMock()
+        event.source = MagicMock()
+        event.source.__getitem__ = MagicMock(side_effect=RuntimeError("boom"))
+        # Mock the source property to raise on access
+        type(event).source = property(lambda self: (_ for _ in ()).throw(RuntimeError("boom")))
+        result = MatrixAdapter._extract_in_reply_to(event)
+        assert result is None
