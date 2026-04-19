@@ -84,6 +84,7 @@ def _make_policy(cfg: HestiaConfig) -> DefaultPolicyEngine:
         ctx_window=cfg.inference.context_length,
         default_reasoning_budget=cfg.inference.default_reasoning_budget,
         trust=cfg.trust,
+        config=cfg.policy,
     )
 
 
