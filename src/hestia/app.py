@@ -1183,6 +1183,15 @@ async def _cmd_style_show(app: CliAppContext, platform: str | None, user: str | 
             for err in sched_status["last_errors"]:
                 click.echo(f"  {err['timestamp']}  {err['type']:<20} {err['message']}")
 
+async def _cmd_doctor(app: CliAppContext, plain: bool) -> int:
+    """Run health checks. Returns exit code (0 if all green, 1 if any fail)."""
+    from hestia.doctor import run_checks, render_results  # noqa: I001
+
+    results = await run_checks(app)
+    click.echo(render_results(results, plain=plain))
+    return 0 if all(r.ok for r in results) else 1
+
+
 async def _cmd_policy_show(app: CliAppContext) -> None:
     """Show current effective policy configuration."""
     cfg = app.config

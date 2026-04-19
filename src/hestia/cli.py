@@ -16,6 +16,7 @@ from hestia.app import (
     _cmd_audit_egress,
     _cmd_audit_run,
     _cmd_chat,
+    _cmd_doctor,
     _cmd_email_check,
     _cmd_email_list_cmd,
     _cmd_email_read_cmd,
@@ -530,6 +531,19 @@ def policy() -> None:
 async def policy_show(app: CliAppContext) -> None:
     """Show current effective policy configuration."""
     await _cmd_policy_show(app)
+
+@cli.command()
+@click.option("--plain", is_flag=True, help="Use ASCII [ok]/[FAIL] markers instead of ✓/✗.")
+@run_async
+async def doctor(app: CliAppContext, plain: bool) -> None:
+    """Run a one-shot health check against the current Hestia install.
+
+    Exits non-zero if any check fails. Read-only; never mutates state.
+    Run this first when something seems wrong.
+    """
+    exit_code = await _cmd_doctor(app, plain=plain)
+    if exit_code != 0:
+        sys.exit(exit_code)
 
 # Reflection commands
 @cli.group(name="reflection")
