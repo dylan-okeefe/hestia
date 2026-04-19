@@ -228,7 +228,8 @@ class SecurityAuditor:
         session_types = ["interactive", "subagent", "scheduler"]
         from hestia.policy.default import DefaultPolicyEngine
 
-        # TODO: accept a config-aware DefaultPolicyEngine if HestiaConfig is available
+        # NOTE: When HestiaConfig is plumbed into the audit runner, pass it
+        # into DefaultPolicyEngine so that custom keywords are respected.
         policy = DefaultPolicyEngine()
         now = utcnow()
 

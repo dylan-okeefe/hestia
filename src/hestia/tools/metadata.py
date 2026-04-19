@@ -17,6 +17,7 @@ class ToolMetadata:
     parameters_schema: dict[str, Any]  # JSON Schema
     max_inline_chars: int = 4000  # results above this → artifact + preview
     requires_confirmation: bool = False
+    ordering: str = "concurrent"  # "concurrent" or "serial"
     tags: list[str] = field(default_factory=list)
     capabilities: list[str] = field(default_factory=list)  # security capabilities
     handler: ToolHandler | None = None
@@ -29,6 +30,7 @@ def tool(
     parameters_schema: dict[str, Any] | None = None,
     max_inline_chars: int = 4000,
     requires_confirmation: bool = False,
+    ordering: str = "concurrent",
     tags: list[str] | None = None,
     capabilities: list[str] | None = None,
 ) -> Callable[[ToolHandler], ToolHandler]:
@@ -60,6 +62,7 @@ def tool(
             parameters_schema=parameters_schema or {"type": "object", "properties": {}},
             max_inline_chars=max_inline_chars,
             requires_confirmation=requires_confirmation,
+            ordering=ordering,
             tags=tags or [],
             capabilities=capabilities or [],
             handler=func,

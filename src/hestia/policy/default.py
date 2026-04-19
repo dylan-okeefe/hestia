@@ -129,13 +129,6 @@ class DefaultPolicyEngine(PolicyEngine):
         """Compress when we're over 85% of budget."""
         return tokens_used > int(tokens_budget * 0.85)
 
-    def should_evict_slot(self, slot_id: int, pressure: float) -> bool:
-        """Never evict slots in Phase 1b.
-
-        Phase 2 will add slot management logic.
-        """
-        return False
-
     def retry_after_error(self, error: Exception, attempt: int) -> RetryDecision:
         """Retry transient inference errors once, then fail.
 

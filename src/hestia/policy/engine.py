@@ -52,11 +52,6 @@ class PolicyEngine(ABC):
         ...
 
     @abstractmethod
-    def should_evict_slot(self, slot_id: int, pressure: float) -> bool:
-        """Should we evict this slot to free up resources?"""
-        ...
-
-    @abstractmethod
     def retry_after_error(self, error: Exception, attempt: int) -> RetryDecision:
         """How should we handle this error?"""
         ...

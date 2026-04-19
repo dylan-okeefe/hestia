@@ -11,6 +11,7 @@ import email
 import email.utils
 import html
 import imaplib
+import logging
 import re
 import smtplib
 from collections.abc import AsyncGenerator
@@ -22,6 +23,8 @@ from typing import Any
 import nh3
 
 from hestia.config import EmailConfig
+
+logger = logging.getLogger(__name__)
 
 
 class EmailAdapterError(RuntimeError):
@@ -69,9 +72,16 @@ class EmailAdapter:
         finally:
             self._imap_session_var.set(None)
             try:
-                conn.close()
+                # close() is only valid in SELECTED state; in AUTH it raises
+                if getattr(conn, "state", None) == "SELECTED":
+                    conn.close()
+            except (imaplib.IMAP4.abort, imaplib.IMAP4.error, OSError) as e:
+                logger.debug("IMAP close suppressed: %s", e)
             finally:
-                conn.logout()
+                try:
+                    conn.logout()
+                except (imaplib.IMAP4.abort, imaplib.IMAP4.error, OSError) as e:
+                    logger.debug("IMAP logout suppressed: %s", e)
 
     # ------------------------------------------------------------------
     # IMAP helpers
@@ -136,16 +146,16 @@ class EmailAdapter:
                         payload = part.get_payload(decode=True)
                         if isinstance(payload, bytes):
                             body_parts.append(payload.decode("utf-8", errors="replace"))
-                    except Exception:
-                        pass
+                    except (OSError, LookupError, ValueError) as e:
+                        logger.debug("Payload decode suppressed: %s", e)
                 elif content_type == "text/html":
                     try:
                         payload = part.get_payload(decode=True)
                         if isinstance(payload, bytes):
                             html_text = payload.decode("utf-8", errors="replace")
                             body_parts.append(self._sanitize_html(html_text))
-                    except Exception:
-                        pass
+                    except (OSError, LookupError, ValueError) as e:
+                        logger.debug("Payload decode suppressed: %s", e)
         else:
             content_type = msg.get_content_type()
             try:
@@ -155,8 +165,8 @@ class EmailAdapter:
                     if content_type == "text/html":
                         text = self._sanitize_html(text)
                     body_parts.append(text)
-            except Exception:
-                pass
+            except (OSError, LookupError, ValueError) as e:
+                logger.debug("Payload decode suppressed: %s", e)
 
         body = "\n".join(body_parts).strip()
         if len(body) > max_chars:
@@ -357,7 +367,8 @@ class EmailAdapter:
         Returns the new IMAP UID (draft_id).
         """
 
-        async with self.imap_session(folder="Drafts") as conn:
+        drafts = self.config.drafts_folder
+        async with self.imap_session(folder=drafts) as conn:
             def _run() -> str:
                 msg = EmailMessage()
                 msg["Subject"] = subject
@@ -373,7 +384,7 @@ class EmailAdapter:
 
                 raw = msg.as_bytes()
                 ok, data = conn.append(
-                    "Drafts",
+                    drafts,
                     None,
                     None,
                     raw,
@@ -383,7 +394,7 @@ class EmailAdapter:
 
                 # Retrieve the UID of the appended message.  IMAP does not
                 # return it directly, so we search for the most recent message
-                # in Drafts with this Message-ID.
+                # in the drafts folder with this Message-ID.
                 mid = msg["Message-ID"]
                 ok, data = conn.uid("SEARCH", None, f'HEADER Message-ID "{mid}"')  # type: ignore[arg-type]
                 if ok == "OK" and data and data[0]:
@@ -393,7 +404,7 @@ class EmailAdapter:
                         return latest.decode() if isinstance(latest, bytes) else str(latest)
 
                 raise EmailAdapterError(
-                    f"Created draft but could not locate it in Drafts by Message-ID {mid!r}"
+                    f"Created draft but could not locate it in {drafts} by Message-ID {mid!r}"
                 )
 
             return await asyncio.to_thread(_run)
@@ -409,10 +420,12 @@ class EmailAdapter:
                 "Cannot send draft with placeholder ID 'draft-unknown'"
             )
 
-        async with self.imap_session(folder="Drafts") as imap:
+        drafts = self.config.drafts_folder
+        sent = self.config.sent_folder
+        async with self.imap_session(folder=drafts) as imap:
             def _run() -> str:
                 # 1. Fetch draft
-                msg = self._fetch_full(imap, draft_id, "Drafts")
+                msg = self._fetch_full(imap, draft_id, drafts)
 
                 # 2. Send via SMTP
                 smtp = self._smtp_connect()
@@ -422,8 +435,8 @@ class EmailAdapter:
                     smtp.quit()
 
                 # 3. Copy to Sent, mark draft deleted
-                imap.select("Drafts")
-                imap.uid("COPY", draft_id, "Sent")
+                imap.select(drafts)
+                imap.uid("COPY", draft_id, sent)
                 imap.uid("STORE", draft_id, "+FLAGS", "(\\Deleted)")
                 imap.expunge()
 
