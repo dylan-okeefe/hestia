@@ -316,6 +316,7 @@ class PolicyConfig:
     """Configuration for the policy engine."""
 
     delegation_keywords: tuple[str, ...] | None = None
+    research_keywords: tuple[str, ...] | None = None
 
 
 @dataclass
