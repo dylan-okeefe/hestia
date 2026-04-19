@@ -36,16 +36,6 @@ class Message:
     created_at: datetime = field(default_factory=_utc_now)
 
 
-@dataclass
-class ToolResult:
-    """Result of executing a tool."""
-
-    tool_call_id: str
-    name: str
-    content: str
-    artifact_id: str | None = None
-
-
 class SessionState(Enum):
     """Session lifecycle states."""
 
@@ -94,23 +84,6 @@ class ScheduledTask:
     last_error: str | None
 
 
-class TurnState(Enum):
-    """Turn processing states."""
-
-    RECEIVED = "received"
-    BUILDING_CONTEXT = "building_context"
-    AWAITING_MODEL = "awaiting_model"
-    EXECUTING_TOOLS = "executing_tools"
-    AWAITING_SUBAGENT = "awaiting_subagent"
-    AWAITING_USER = "awaiting_user"
-    RETRYING = "retrying"
-    DONE = "done"
-    FAILED = "failed"
-
-
-TERMINAL_STATES = {TurnState.DONE, TurnState.FAILED}
-
-
 @dataclass
 class ChatResponse:
     """Response from the inference server."""
@@ -129,7 +102,7 @@ class FunctionSchema(BaseModel):
 
     name: str
     description: str
-    parameters: dict  # JSON Schema
+    parameters: dict[str, Any]  # JSON Schema
 
 
 class ToolSchema(BaseModel):

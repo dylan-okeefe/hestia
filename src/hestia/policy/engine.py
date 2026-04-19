@@ -85,6 +85,16 @@ class PolicyEngine(ABC):
         ...
 
     @abstractmethod
+    def auto_approve(self, tool_name: str, session: Session) -> bool:
+        """Whether a tool with requires_confirmation=True may run without
+        a confirm_callback in the current session context.
+
+        Returns True iff the trust profile has marked this tool as
+        auto-approved for headless execution.
+        """
+        ...
+
+    @abstractmethod
     def reasoning_budget(self, session: Session, iteration: int) -> int:
         """How many reasoning tokens to budget for this inference call."""
         ...

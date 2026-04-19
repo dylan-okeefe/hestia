@@ -39,6 +39,7 @@ exec kimi \
   --work-dir "$ROOT" \
   --yolo \
   --max-ralph-iterations -1 \
+  --max-steps-per-turn 250 \
   "${default_ui[@]}" \
   --prompt "$PROMPT" \
   "$@"

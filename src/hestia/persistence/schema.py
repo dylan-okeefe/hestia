@@ -17,6 +17,24 @@ sessions = sa.Table(
     sa.Column("state", sa.String, nullable=False),  # active/idle/archived
     sa.Column("temperature", sa.String, nullable=False),  # hot/warm/cold
     sa.Index("idx_sessions_platform_user", "platform", "platform_user", "state"),
+    # Partial unique index: at most one ACTIVE session per (platform, platform_user).
+    # Backs the INSERT ... ON CONFLICT DO NOTHING upsert in
+    # SessionStore.get_or_create_session, which is the TOCTOU-safe path replacing
+    # the old SELECT-then-INSERT race window. SQLite and PostgreSQL both support
+    # partial unique indexes with identical syntax for the WHERE clause used here.
+    sa.Index(
+        "ux_sessions_active_user",
+        "platform",
+        "platform_user",
+        unique=True,
+        # Note: stored value is the lowercase ``SessionState.ACTIVE.value`` —
+        # the enum *name* is "ACTIVE" but ``.value`` is "active" and that is
+        # what gets persisted. The WHERE predicate must match the persisted
+        # value exactly for the partial index (and the matching ON CONFLICT
+        # WHERE in get_or_create_session) to apply.
+        sqlite_where=sa.text("state = 'active'"),
+        postgresql_where=sa.text("state = 'active'"),
+    ),
 )
 
 messages = sa.Table(
@@ -139,4 +157,17 @@ skills = sa.Table(
     sa.Column("failure_count", sa.Integer, nullable=False, default=0),
     sa.Index("idx_skills_state", "state"),
     sa.Index("idx_skills_name", "name"),
+)
+
+style_profiles = sa.Table(
+    "style_profiles",
+    metadata,
+    sa.Column("platform", sa.String, nullable=False),
+    sa.Column("platform_user", sa.String, nullable=False),
+    sa.Column("metric", sa.String, nullable=False),
+    sa.Column("value_json", sa.Text, nullable=False),
+    sa.Column("updated_at", sa.DateTime, nullable=False),
+    sa.PrimaryKeyConstraint("platform", "platform_user", "metric"),
+    sa.Index("idx_style_profiles_user", "platform", "platform_user"),
+    sa.Index("idx_style_profiles_updated", "updated_at"),
 )

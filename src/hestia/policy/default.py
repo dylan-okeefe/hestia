@@ -2,6 +2,7 @@
 
 from typing import TYPE_CHECKING
 
+from hestia.config import PolicyConfig, TrustConfig
 from hestia.core.types import Session
 from hestia.errors import InferenceServerError, InferenceTimeoutError
 from hestia.policy.engine import (
@@ -15,6 +16,23 @@ if TYPE_CHECKING:
     from hestia.tools.registry import ToolRegistry
 
 
+DEFAULT_DELEGATION_KEYWORDS: tuple[str, ...] = (
+    "delegate",
+    "subagent",
+    "spawn task",
+    "background task",
+)
+
+DEFAULT_RESEARCH_KEYWORDS: tuple[str, ...] = (
+    "research",
+    "investigate",
+    "analyze deeply",
+    "comprehensive",
+)
+
+DEFAULT_RETRY_MAX_ATTEMPTS: int = 2
+
+
 class DefaultPolicyEngine(PolicyEngine):
     """Default conservative policies.
 
@@ -23,7 +41,11 @@ class DefaultPolicyEngine(PolicyEngine):
     """
 
     def __init__(
-        self, ctx_window: int = 8192, default_reasoning_budget: int = 2048
+        self,
+        ctx_window: int = 8192,
+        default_reasoning_budget: int = 2048,
+        trust: TrustConfig | None = None,
+        config: PolicyConfig | None = None,
     ) -> None:
         """Initialize with context window size.
 
@@ -32,9 +54,16 @@ class DefaultPolicyEngine(PolicyEngine):
                 your llama-server's `--ctx-size / --parallel`. Default
                 (8K) matches `deploy/hestia-llama.service` out of the box.
             default_reasoning_budget: Default reasoning token budget.
+            trust: Trust profile for auto-approval and capability gating.
+                Defaults to paranoid (safest posture).
+            config: Policy configuration for tunable behavior.
         """
         self.ctx_window = ctx_window
         self._default_reasoning_budget = default_reasoning_budget
+        self._trust = trust if trust is not None else TrustConfig()
+        self._config = config if config is not None else PolicyConfig()
+
+        self.retry_max_attempts = DEFAULT_RETRY_MAX_ATTEMPTS
 
     def should_delegate(
         self,
@@ -50,6 +79,13 @@ class DefaultPolicyEngine(PolicyEngine):
         - Task appears complex (keywords like "research", "analyze", "investigate")
         - User explicitly requests delegation
 
+        .. note::
+            Keyword matching can produce surprising triggers. For example,
+            "I'd like to research my family history" will match the
+            "research" keyword and trigger delegation. Operators should
+            override ``delegation_keywords`` via :class:`PolicyConfig` for
+            production use.
+
         Args:
             session: Current session
             task_description: Description of the task
@@ -64,9 +100,13 @@ class DefaultPolicyEngine(PolicyEngine):
             return False
 
         # Explicit user request for delegation
-        delegation_keywords = ["delegate", "subagent", "spawn task", "background task"]
+        delegation = (
+            DEFAULT_DELEGATION_KEYWORDS
+            if self._config.delegation_keywords is None
+            else self._config.delegation_keywords
+        )
         task_lower = task_description.lower()
-        if any(kw in task_lower for kw in delegation_keywords):
+        if delegation and any(kw in task_lower for kw in delegation):
             return True
 
         # Long tool chain - offload to subagent to keep parent context clean
@@ -74,15 +114,16 @@ class DefaultPolicyEngine(PolicyEngine):
             return True
 
         # Complex research tasks that might involve many steps
-        research_keywords = ["research", "investigate", "analyze deeply", "comprehensive"]
-        if any(kw in task_lower for kw in research_keywords):
+        research = (
+            DEFAULT_RESEARCH_KEYWORDS
+            if self._config.research_keywords is None
+            else self._config.research_keywords
+        )
+        if research and any(kw in task_lower for kw in research):
             return True
 
         # High projected tool usage
-        if projected_tool_calls > 3:
-            return True
-
-        return False
+        return projected_tool_calls > 3
 
     def should_compress(self, session: Session, tokens_used: int, tokens_budget: int) -> bool:
         """Compress when we're over 85% of budget."""
@@ -137,6 +178,13 @@ class DefaultPolicyEngine(PolicyEngine):
         """
         return 8000
 
+    def auto_approve(self, tool_name: str, session: Session) -> bool:
+        """Return True if the trust profile auto-approves this tool."""
+        approved = self._trust.auto_approve_tools
+        if "*" in approved:
+            return True
+        return tool_name in approved
+
     def filter_tools(
         self,
         session: Session,
@@ -147,7 +195,8 @@ class DefaultPolicyEngine(PolicyEngine):
 
         Subagents are denied shell_exec and write_local to prevent
         uncontrolled modifications. Scheduler is denied shell_exec
-        for headless safety.
+        for headless safety. Both are denied email_send unless the
+        trust profile explicitly allows it.
 
         Args:
             session: Current session
@@ -157,11 +206,18 @@ class DefaultPolicyEngine(PolicyEngine):
         Returns:
             Filtered list of allowed tool names
         """
-        from hestia.tools.capabilities import SHELL_EXEC, WRITE_LOCAL
+        from hestia.tools.capabilities import EMAIL_SEND, SHELL_EXEC, WRITE_LOCAL
 
         if session.platform == "subagent":
-            # Subagents: block shell_exec and write_local
-            blocked = {SHELL_EXEC, WRITE_LOCAL}
+            blocked: set[str] = set()
+            if not self._trust.subagent_shell_exec:
+                blocked.add(SHELL_EXEC)
+            if not self._trust.subagent_write_local:
+                blocked.add(WRITE_LOCAL)
+            if not self._trust.subagent_email_send:
+                blocked.add(EMAIL_SEND)
+            if not blocked:
+                return tool_names
             return [
                 name
                 for name in tool_names
@@ -169,8 +225,13 @@ class DefaultPolicyEngine(PolicyEngine):
             ]
 
         if session.platform == "scheduler" or scheduler_tick_active.get():
-            # Scheduler: block shell_exec for headless safety
-            blocked = {SHELL_EXEC}
+            blocked = set()
+            if not self._trust.scheduler_shell_exec:
+                blocked.add(SHELL_EXEC)
+            if not self._trust.scheduler_email_send:
+                blocked.add(EMAIL_SEND)
+            if not blocked:
+                return tool_names
             return [
                 name
                 for name in tool_names

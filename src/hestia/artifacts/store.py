@@ -9,6 +9,7 @@ import tempfile
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any
 
 from hestia.errors import ArtifactExpiredError, ArtifactNotFoundError
 
@@ -75,7 +76,7 @@ class ArtifactStore:
                 for handle, content_b64 in data.get("content", {}).items():
                     self._inline[handle] = base64.b64decode(content_b64)
 
-    def _atomic_write_json(self, path: Path, data: dict) -> None:
+    def _atomic_write_json(self, path: Path, data: dict[str, Any]) -> None:
         """Write JSON to disk atomically: temp file in same dir + os.replace().
 
         Prevents corruption if the process crashes mid-write.

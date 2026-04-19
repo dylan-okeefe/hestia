@@ -6,11 +6,14 @@ import asyncio
 import uuid
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from hestia.core.clock import utcnow
 from hestia.core.types import Message
 from hestia.persistence.sessions import SessionStore
+
+if TYPE_CHECKING:
+    from hestia.orchestrator.types import Turn
 from hestia.tools.capabilities import ORCHESTRATION
 from hestia.tools.metadata import tool
 
@@ -158,14 +161,14 @@ def make_delegate_task_tool(
             async def _noop_respond(_: str) -> None:
                 return None
 
-            async def run_subagent():
+            async def run_subagent() -> Turn:
                 turn = await orchestrator.process_turn(
                     session=subagent_session,
                     user_message=user_message,
                     respond_callback=_noop_respond,
                     system_prompt="You are a focused subagent working on a specific task.",
                 )
-                return turn
+                return cast("Turn", turn)
 
             # Execute with timeout
             try:
@@ -216,4 +219,4 @@ def make_delegate_task_tool(
             # Archive the subagent session
             await session_store.archive_session(subagent_session.id)
 
-    return delegate_task
+    return cast("Callable[..., Coroutine[Any, Any, str]]", delegate_task)

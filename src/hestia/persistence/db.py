@@ -62,11 +62,21 @@ class Database:
         return self._engine
 
     async def create_tables(self) -> None:
-        """Create all tables from schema."""
+        """Create all tables from schema, then apply additive runtime migrations.
+
+        ``metadata.create_all`` covers fresh databases. Existing databases that
+        pre-date a schema change pick up additive migrations (new indexes,
+        columns) via ``apply_runtime_migrations``, which is idempotent.
+        """
         if self._engine is None:
             raise PersistenceError("Database not connected. Call connect() first.")
         async with self._engine.begin() as conn:
             await conn.run_sync(metadata.create_all)
+        # Local import keeps the migrations module a leaf and avoids any chance
+        # of an import cycle with schema.py via metadata reflection helpers.
+        from hestia.persistence.migrations import apply_runtime_migrations
+
+        await apply_runtime_migrations(self._engine)
 
     async def execute(self, query: Any) -> Any:
         """Execute a query and return result.

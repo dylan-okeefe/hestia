@@ -59,8 +59,19 @@ class Platform(ABC):
         """Send an error message to a user."""
         ...
 
+    async def send_system_warning(self, user: str, text: str) -> None:
+        """Send an out-of-band system warning to a user.
+
+        Default implementation prepends ⚠️ and routes through send_message.
+        Platforms may override for distinct formatting (e.g., red text,
+        separate notification channel).
+        """
+        await self.send_message(user, f"⚠️ {text}")
+
     async def set_typing(self, user: str, typing: bool = True) -> None:
         """Set typing indicator for a user/room. No-op by default."""
+        pass
 
     async def delete_message(self, user: str, msg_id: str) -> None:
         """Delete a previously sent message. No-op by default."""
+        pass

@@ -4,6 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
+
+
+class EmailConfigError(ValueError):
+    """Raised when email configuration is invalid."""
+
+    pass
 
 # Default location for operator-authored personality (compiled identity; see ADR-022).
 DEFAULT_SOUL_MD_PATH = Path("SOUL.md")
@@ -132,6 +139,227 @@ class MatrixConfig:
 
 
 @dataclass
+class TrustConfig:
+    """How much latitude to grant the agent in headless contexts.
+
+    Hestia's threat model for personal-use deployments is "operator is the
+    only user; trust the model to act on operator's behalf." This differs
+    from multi-tenant SaaS. TrustConfig lets operators pick the posture that
+    matches their deployment.
+
+    Defaults here match the `paranoid` preset: safest posture for a fresh
+    install or OSS download. Operators should explicitly opt into `household`
+    or `developer` via `TrustConfig.household()` / `TrustConfig.developer()`
+    in their `config.py`.
+    """
+
+    # Tools that auto-approve without a confirm_callback on headless platforms.
+    # When a tool with requires_confirmation=True is called and no confirm_callback
+    # is configured (Telegram, Matrix, scheduler), the tool runs anyway iff its
+    # name is in this list.
+    # Example for household use: ["terminal", "write_file"]
+    auto_approve_tools: list[str] = field(default_factory=list)
+
+    # Allow scheduler tick sessions to call SHELL_EXEC-capable tools.
+    # When False (default), the policy engine strips shell_exec tools from the
+    # model's available tool list during scheduler ticks.
+    scheduler_shell_exec: bool = False
+
+    # Allow subagent sessions to call SHELL_EXEC-capable tools.
+    subagent_shell_exec: bool = False
+
+    # Allow subagent sessions to call WRITE_LOCAL-capable tools.
+    subagent_write_local: bool = False
+
+    # Allow subagent sessions to trigger email_send.
+    subagent_email_send: bool = False
+
+    # Allow scheduler ticks to trigger email_send.
+    scheduler_email_send: bool = False
+
+    # Active trust preset name (paranoid, household, developer, etc.)
+    preset: str | None = None
+
+    @classmethod
+    def paranoid(cls) -> TrustConfig:
+        """Strictest posture. Current default. Auto-approves nothing; scheduler
+        and subagents cannot shell or write."""
+        return cls()
+
+    @classmethod
+    def household(cls) -> TrustConfig:
+        """Recommended posture for single-operator personal deployments.
+        Auto-approves terminal and write_file on headless platforms;
+        scheduler and subagents can shell and write."""
+        return cls(
+            auto_approve_tools=["terminal", "write_file"],
+            scheduler_shell_exec=True,
+            subagent_shell_exec=True,
+            subagent_write_local=True,
+        )
+
+    @classmethod
+    def developer(cls) -> TrustConfig:
+        """Most permissive posture. Auto-approves everything;
+        all capabilities available everywhere. Intended for development/testing
+        only — do not use in a deployment exposed to other users."""
+        return cls(
+            auto_approve_tools=["*"],  # wildcard — matches any tool name
+            scheduler_shell_exec=True,
+            subagent_shell_exec=True,
+            subagent_write_local=True,
+        )
+
+    @classmethod
+    def prompt_on_mobile(cls) -> TrustConfig:
+        """Mobile-confirmation posture.
+
+        Auto-approves nothing (confirmation prompt on every
+        ``requires_confirmation=True`` tool), but keeps the rest of the
+        ``household`` defaults: scheduler and subagents can shell and write.
+        Use this when you run Hestia on Telegram or Matrix and want an
+        explicit ✅/❌ prompt on your phone for ``terminal``, ``write_file``,
+        and ``email_send``.
+        """
+        return cls(
+            auto_approve_tools=[],
+            scheduler_shell_exec=True,
+            subagent_shell_exec=True,
+            subagent_write_local=True,
+        )
+
+
+@dataclass
+class HandoffConfig:
+    """Controls session-close summary generation.
+
+    Disabled by default. When enabled, the orchestrator generates a
+    2-3 sentence summary at session close and stores it as a memory
+    entry with tag ``handoff``.
+
+    Example::
+
+        config = HestiaConfig(
+            handoff=HandoffConfig(enabled=True, min_messages=4, max_chars=350),
+        )
+    """
+
+    enabled: bool = False
+    min_messages: int = 4  # skip very short sessions
+    max_chars: int = 350
+
+
+@dataclass
+class CompressionConfig:
+    """Controls in-turn history compression on overflow.
+
+    Disabled by default. When enabled, the context builder calls a
+    :class:`~hestia.context.compressor.HistoryCompressor` on dropped
+    messages and splices the summary back into the effective system
+    prompt for that turn.
+
+    Example::
+
+        config = HestiaConfig(
+            compression=CompressionConfig(enabled=True, max_chars=400),
+        )
+    """
+
+    enabled: bool = False
+    max_chars: int = 400
+
+
+@dataclass
+class EmailConfig:
+    """Configuration for email integration (IMAP read + SMTP draft/send)."""
+
+    imap_host: str = ""
+    imap_port: int = 993
+    smtp_host: str = ""
+    smtp_port: int = 587
+    username: str = ""
+    password: str = ""  # or app-password
+    password_env: str | None = None  # env-var name to read password from
+    default_folder: str = "INBOX"
+    max_fetch: int = 50
+    sanitize_html: bool = True
+    injection_scan: bool = True  # inherits from SecurityConfig
+
+    @property
+    def resolved_password(self) -> str:
+        """Return password, preferring password_env if set."""
+        if self.password_env:
+            import os
+
+            val = os.environ.get(self.password_env)
+            if val is None:
+                raise EmailConfigError(
+                    f"Email password_env '{self.password_env}' is set "
+                    "but the environment variable is not defined"
+                )
+            return val
+        return self.password
+
+
+@dataclass
+class SecurityConfig:
+    """Security-related toggles for Hestia."""
+
+    injection_scanner_enabled: bool = True
+    injection_entropy_threshold: float = 5.5
+    injection_skip_filters_for_structured: bool = True
+    egress_audit_enabled: bool = True
+
+
+@dataclass
+class PolicyConfig:
+    """Configuration for the policy engine."""
+
+    delegation_keywords: tuple[str, ...] | None = None
+    research_keywords: tuple[str, ...] | None = None
+
+
+@dataclass
+class StyleConfig:
+    """Configuration for the interaction-style profile system."""
+
+    enabled: bool = False
+    min_turns_to_activate: int = 20
+    lookback_days: int = 30
+    cron: str = "15 3 * * *"
+
+
+@dataclass
+class ReflectionConfig:
+    """Configuration for the reflection loop (self-improvement during idle hours)."""
+
+    enabled: bool = False
+    cron: str = "0 3 * * *"
+    idle_minutes: int = 15
+    lookback_turns: int = 100
+    proposals_per_run: int = 5
+    expire_days: int = 14
+    model_override: str | None = None  # if operator wants a smaller model
+
+
+@dataclass
+class WebSearchConfig:
+    """Configuration for the web_search tool.
+
+    Default `provider=""` disables the tool entirely — it won't register
+    in the tool registry if unconfigured. Operators opt in by setting
+    provider + api_key in their config.py.
+    """
+
+    provider: Literal["tavily", ""] = ""  # "tavily" or "" (disabled)
+    api_key: str = ""
+    max_results: int = 5
+    include_raw_content: bool = False  # Tavily: fetch + extract main content
+    search_depth: str = "basic"  # Tavily: "basic" | "advanced"
+    time_range: str | None = None  # Tavily: "day" | "week" | "month" | "year" | None
+
+
+@dataclass
 class HestiaConfig:
     """Top-level Hestia configuration.
 
@@ -146,6 +374,15 @@ class HestiaConfig:
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
     matrix: MatrixConfig = field(default_factory=MatrixConfig)
     identity: IdentityConfig = field(default_factory=IdentityConfig)
+    trust: TrustConfig = field(default_factory=TrustConfig)
+    web_search: WebSearchConfig = field(default_factory=WebSearchConfig)
+    handoff: HandoffConfig = field(default_factory=HandoffConfig)
+    compression: CompressionConfig = field(default_factory=CompressionConfig)
+    security: SecurityConfig = field(default_factory=SecurityConfig)
+    email: EmailConfig = field(default_factory=EmailConfig)
+    reflection: ReflectionConfig = field(default_factory=ReflectionConfig)
+    style: StyleConfig = field(default_factory=StyleConfig)
+    policy: PolicyConfig = field(default_factory=PolicyConfig)
     system_prompt: str = "You are a helpful assistant."
     max_iterations: int = 10
     verbose: bool = False
@@ -173,6 +410,25 @@ class HestiaConfig:
                 f"got {type(config).__name__}"
             )
         return config
+
+    @classmethod
+    def for_trust(cls, trust: TrustConfig) -> HestiaConfig:
+        """Create a config with handoff/compression implied by the trust preset.
+
+        - ``paranoid()`` → handoff=False, compression=False
+        - ``household()`` → handoff=True, compression=True
+        - ``developer()`` → handoff=True, compression=True
+
+        Example::
+
+            config = HestiaConfig.for_trust(TrustConfig.household())
+        """
+        enable = trust not in (TrustConfig.paranoid(), TrustConfig())
+        return cls(
+            trust=trust,
+            handoff=HandoffConfig(enabled=enable),
+            compression=CompressionConfig(enabled=enable),
+        )
 
     @classmethod
     def default(cls) -> HestiaConfig:

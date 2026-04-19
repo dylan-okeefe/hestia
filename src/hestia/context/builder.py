@@ -4,9 +4,17 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from hestia.core.inference import InferenceClient
+from hestia.context.compressor import HistoryCompressor
+from hestia.core.inference import InferenceClient, _message_to_dict
 from hestia.core.types import Message, Session, ToolSchema
+from hestia.errors import ContextTooLargeError
 from hestia.policy.engine import PolicyEngine
+
+
+@dataclass(frozen=True)
+class _PrefixLayer:
+    name: str
+    value: str | None
 
 
 @dataclass
@@ -53,6 +61,9 @@ class ContextBuilder:
         identity_prefix: str | None = None,
         memory_epoch_prefix: str | None = None,
         skill_index_prefix: str | None = None,
+        style_prefix: str | None = None,
+        compressor: HistoryCompressor | None = None,
+        compress_on_overflow: bool = False,
     ):
         """Initialize with inference client and policy.
 
@@ -64,6 +75,9 @@ class ContextBuilder:
             identity_prefix: Optional compiled identity view to prepend to system prompt
             memory_epoch_prefix: Optional compiled memory epoch to prepend to system prompt
             skill_index_prefix: Optional skill index to prepend to system prompt
+            style_prefix: Optional style profile addendum to prepend to system prompt
+            compressor: Optional history compressor for overflow recovery
+            compress_on_overflow: Whether to compress dropped history
         """
         self._inference = inference_client
         self._policy = policy
@@ -72,6 +86,11 @@ class ContextBuilder:
         self._identity_prefix = identity_prefix
         self._memory_epoch_prefix = memory_epoch_prefix
         self._skill_index_prefix = skill_index_prefix
+        self._style_prefix = style_prefix
+        self._compressor = compressor
+        self._compress_on_overflow = compress_on_overflow
+        self._tokenize_cache: dict[tuple[str, str], int] = {}
+        self._join_overhead: int | None = None
 
     def set_identity_prefix(self, identity_prefix: str | None) -> None:
         """Set the identity prefix to prepend to system prompts.
@@ -96,6 +115,24 @@ class ContextBuilder:
             skill_index_prefix: Skill index text, or None to clear
         """
         self._skill_index_prefix = skill_index_prefix
+
+    def set_style_prefix(self, style_prefix: str | None) -> None:
+        """Set the style profile prefix to prepend to system prompts.
+
+        Args:
+            style_prefix: Style profile text, or None to clear
+        """
+        self._style_prefix = style_prefix
+
+    def enable_compression(self, compressor: HistoryCompressor) -> None:
+        """Attach a history compressor and turn on overflow compression.
+
+        Called by the CLI wiring when ``CompressionConfig.enabled`` is true,
+        so builders constructed via :meth:`from_calibration_file` can still
+        opt in to compression without reconstructing.
+        """
+        self._compressor = compressor
+        self._compress_on_overflow = True
 
     @classmethod
     def from_calibration_file(
@@ -126,6 +163,55 @@ class ContextBuilder:
 
         return cls(inference_client, policy, body_factor, meta_tool_overhead)
 
+    def _prefix_layers(self) -> list[_PrefixLayer]:
+        """Return prefix layers in canonical assembly order."""
+        return [
+            _PrefixLayer("identity", self._identity_prefix),
+            _PrefixLayer("memory_epoch", self._memory_epoch_prefix),
+            _PrefixLayer("skill_index", self._skill_index_prefix),
+            _PrefixLayer("style", self._style_prefix),
+        ]
+
+    async def _compute_join_overhead(
+        self,
+        history: list[Message],
+        protected_top: list[Message],
+        protected_bottom: list[Message],
+    ) -> int:
+        """Compute the per-message JSON framing overhead in tokens.
+
+        Measures the incremental token cost of adding a second message to a
+        single-message request body. This is a function of the request JSON
+        shape, not message content, so it is constant across the lifetime
+        of an InferenceClient/model pair.
+
+        Callers swapping models on the same ContextBuilder instance will see
+        stale overhead — but the codebase never does that today.
+        """
+        _m1: Message | None = None
+        _m2: Message | None = None
+        if len(history) >= 2:
+            _m1, _m2 = history[0], history[1]
+        elif len(protected_top + protected_bottom) >= 2:
+            _combo = protected_top + protected_bottom
+            _m1, _m2 = _combo[0], _combo[1]
+        if _m1 is not None and _m2 is not None:
+            _single_body = json.dumps(
+                {"model": self._inference.model_name, "messages": [_message_to_dict(_m1)]}
+            )
+            _combined_body = json.dumps(
+                {
+                    "model": self._inference.model_name,
+                    "messages": [_message_to_dict(_m1), _message_to_dict(_m2)],
+                }
+            )
+            _single_count = len(await self._inference.tokenize(_single_body))
+            _combined_count = len(await self._inference.tokenize(_combined_body))
+            return (
+                _combined_count - _single_count - await self._count_tokens(_m2)
+            )
+        return 0
+
     async def build(
         self,
         session: Session,
@@ -133,9 +219,6 @@ class ContextBuilder:
         system_prompt: str,
         tools: list[ToolSchema],
         new_user_message: Message | None = None,
-        identity_prefix: str | None = None,
-        memory_epoch_prefix: str | None = None,
-        skill_index_prefix: str | None = None,
     ) -> BuildResult:
         """Build the message list for a new turn.
 
@@ -146,6 +229,11 @@ class ContextBuilder:
         4. Never split tool_call / tool_result pairs
         5. Return messages in chronological order
 
+        The per-message tokenize cache survives across ``build()`` calls on
+        the same builder instance. If the inference client URL or model
+        changes, construct a new ``ContextBuilder`` — the cache does not
+        invalidate reactively.
+
         Args:
             session: Current session
             history: Previous messages in the session
@@ -153,9 +241,6 @@ class ContextBuilder:
             tools: Available tools (for overhead calculation)
             new_user_message: The new user message for this turn, or None for
                             continuation turns (e.g., during tool chains)
-            identity_prefix: Optional compiled identity view to prepend to system prompt
-            memory_epoch_prefix: Optional compiled memory epoch to prepend to system prompt
-            skill_index_prefix: Optional skill index to prepend to system prompt
 
         Returns:
             BuildResult with messages and bookkeeping
@@ -165,29 +250,11 @@ class ContextBuilder:
 
         truncated_count = 0
 
-        # Build effective system prompt with optional prefixes
-        # Assembly order per roadmap §10.1:
-        # 1. Compiled identity view (from SOUL.md when configured)
-        # 2. Compiled memory epoch
-        # 3. Skill index
-        # 4. Base system prompt
-
-        effective_identity = identity_prefix if identity_prefix is not None else self._identity_prefix
-        effective_memory_epoch = memory_epoch_prefix if memory_epoch_prefix is not None else self._memory_epoch_prefix
-        effective_skill_index = skill_index_prefix if skill_index_prefix is not None else self._skill_index_prefix
-
-        effective_prompt = system_prompt
-        memory_epoch_included = False
-
-        if effective_skill_index:
-            effective_prompt = effective_skill_index + "\n\n" + effective_prompt
-
-        if effective_memory_epoch:
-            effective_prompt = effective_memory_epoch + "\n\n" + effective_prompt
-            memory_epoch_included = True
-
-        if effective_identity:
-            effective_prompt = effective_identity + "\n\n" + effective_prompt
+        # Build effective system prompt from registered prefix layers
+        parts = [layer.value for layer in self._prefix_layers() if layer.value]
+        parts.append(system_prompt)
+        effective_prompt = "\n\n".join(parts)
+        memory_epoch_included = self._memory_epoch_prefix is not None
 
         # Create system message
         system_msg = Message(role="system", content=effective_prompt)
@@ -214,22 +281,29 @@ class ContextBuilder:
         protected_count = self._apply_correction(protected_body, has_tools=len(tools) > 0)
 
         if protected_count > raw_budget:
-            # Even protected messages don't fit - this is bad
-            # Return just system (+ new_user if available) as best effort
-            best_effort = [system_msg]
-            if new_user_message is not None:
-                best_effort.append(new_user_message)
-            return BuildResult(
-                messages=best_effort,
-                tokens_used=await self._count_messages(best_effort, len(tools) > 0),
-                tokens_budget=raw_budget,
-                truncated_count=len(history),
-                kept_first_user=False,
-                memory_epoch_included=False,
+            raise ContextTooLargeError(
+                f"Protected context ({protected_count} tokens) exceeds per-slot budget "
+                f"({raw_budget}). System+identity+memory_epoch+skill_index+new_user is "
+                "too large to fit. Reduce identity, memory_epoch, or run /reset."
             )
+
+        # Lazy-cache join-overhead (function of JSON framing, not message content).
+        if self._join_overhead is None:
+            overhead = await self._compute_join_overhead(
+                history, protected_top, protected_bottom
+            )
+            if overhead != 0 or len(history) >= 2 or len(protected_top + protected_bottom) >= 2:
+                self._join_overhead = overhead
+            else:
+                # Not enough messages to measure; try again next build.
+                pass
+
+        _join_overhead = self._join_overhead or 0
 
         # Add remaining history messages (newest first) while they fit
         included_history: list[Message] = []
+        dropped_history: list[Message] = []
+        window_body = 0  # cached body tokens for included_history beyond protected
 
         # Walk history in reverse (newest first)
         history_candidates = list(reversed(history))
@@ -260,27 +334,36 @@ class ContextBuilder:
 
                 if found_pair:
                     # Try to add both messages
-                    test_messages = protected_top + included_history + pair_msgs + protected_bottom
-                    count = await self._count_messages(test_messages, len(tools) > 0)
+                    pair_window_body = (
+                        sum([await self._count_tokens(m) for m in pair_msgs])
+                        + len(pair_msgs) * _join_overhead
+                    )
+                    candidate_body = protected_body + window_body + pair_window_body
+                    count = self._apply_correction(candidate_body, len(tools) > 0)
                     if count <= raw_budget:
                         included_history.extend(pair_msgs)
+                        window_body += pair_window_body
                         i += len(pair_msgs)
                         continue
                     else:
                         # Can't fit pair, skip both
                         i += len(pair_msgs)
                         truncated_count += len(pair_msgs)
+                        dropped_history.extend(pair_msgs)
                         continue
 
             # Regular message - try to add it
-            test_messages = protected_top + included_history + [msg] + protected_bottom
-            count = await self._count_messages(test_messages, len(tools) > 0)
+            msg_window_body = await self._count_tokens(msg) + _join_overhead
+            candidate_body = protected_body + window_body + msg_window_body
+            count = self._apply_correction(candidate_body, len(tools) > 0)
 
             if count <= raw_budget:
                 included_history.append(msg)
+                window_body += msg_window_body
             else:
                 # Doesn't fit, skip it and all older messages
                 truncated_count += len(history_candidates) - i
+                dropped_history.extend(history_candidates[i:])
                 break
 
             i += 1
@@ -288,6 +371,44 @@ class ContextBuilder:
         # Assemble final message list in chronological order
         # system, first_user, [history in chronological order], new_user
         final_messages = list(protected_top)  # system + first_user
+
+        # Optionally compress dropped history and splice summary
+        if (
+            self._compressor is not None
+            and self._compress_on_overflow
+            and dropped_history
+        ):
+            summary = await self._compressor.summarize(list(reversed(dropped_history)))
+            if summary:
+                summary_msg = Message(
+                    role="system",
+                    content=f"[PRIOR CONTEXT SUMMARY]\n{summary}",
+                )
+                # Insert right after system_msg (index 0)
+                test_with_summary = list(final_messages)
+                test_with_summary.insert(1, summary_msg)
+                summary_count = await self._count_messages(
+                    test_with_summary, len(tools) > 0
+                )
+                if summary_count <= raw_budget:
+                    final_messages.insert(1, summary_msg)
+                else:
+                    # Retry once: drop oldest included message and try again
+                    if included_history:
+                        included_history.pop()
+                        test_with_summary = list(final_messages)
+                        # Rebuild without oldest
+                        test_with_summary = list(protected_top)
+                        test_with_summary.insert(1, summary_msg)
+                        test_with_summary.extend(reversed(included_history))
+                        test_with_summary.extend(protected_bottom)
+                        summary_count = await self._count_messages(
+                            test_with_summary, len(tools) > 0
+                        )
+                        if summary_count <= raw_budget:
+                            final_messages = test_with_summary
+                            truncated_count += 1
+                        # else: fall back to no compression
 
         # Add included history in chronological order (reverse back)
         final_messages.extend(reversed(included_history))
@@ -306,6 +427,32 @@ class ContextBuilder:
             kept_first_user=first_user_msg is not None,
             memory_epoch_included=memory_epoch_included,
         )
+
+    def _render_message(self, message: Message) -> str:
+        """Render a single message to the same JSON representation used by
+        :meth:`InferenceClient.count_request`.
+        """
+        return json.dumps(_message_to_dict(message))
+
+    async def _count_tokens(self, message: Message) -> int:
+        """Count tokens for a single message, with per-builder caching.
+
+        Cache key is ``(role, content)`` so identical messages survive
+        object re-creation between turns.
+
+        Args:
+            message: Message to count
+
+        Returns:
+            Token count for the rendered message dict
+        """
+        key = (message.role, message.content or "")
+        if key in self._tokenize_cache:
+            return self._tokenize_cache[key]
+        tokens = await self._inference.tokenize(self._render_message(message))
+        count = len(tokens)
+        self._tokenize_cache[key] = count
+        return count
 
     async def _count_body(self, messages: list[Message]) -> int:
         """Count tokens for message body only (no tools).

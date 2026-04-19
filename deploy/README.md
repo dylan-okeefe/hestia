@@ -37,6 +37,24 @@ The agent service runs `hestia telegram`, which starts both the Telegram bot
 and the scheduler daemon in a single process. The scheduler fires tasks through
 the same orchestrator, sharing the KV-cache slot pool.
 
+## Coexistence modes
+
+Hestia can share a llama-server with another local LLM service (e.g. Hermes),
+or run its own dedicated server.
+
+**Mode A — Dedicated (recommended):** Hestia runs its own llama-server.
+No sharing, no coupling, clear context budget. Use `hestia-llama.service`
+(port 8001 by default) or `hestia-llama.alt-port.service.example` (port 8002)
+if port 8001 is already occupied.
+
+**Mode B — Shared:** Hestia points at an existing llama-server (e.g. Hermes's).
+Saves VRAM at the cost of coupling and noisy-neighbor slot evictions.
+`slot_dir` must match the server's `--slot-save-path`. If the paths diverge,
+llama.cpp returns HTTP 400 "Invalid filename" on save/restore.
+
+See [`docs/guides/runtime-setup.md`](../docs/guides/runtime-setup.md) for the
+full operator walkthrough.
+
 ---
 
 ## Setup

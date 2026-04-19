@@ -1,5 +1,6 @@
 """Tool metadata and decorator."""
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -30,7 +31,7 @@ def tool(
     requires_confirmation: bool = False,
     tags: list[str] | None = None,
     capabilities: list[str] | None = None,
-) -> Any:
+) -> Callable[[ToolHandler], ToolHandler]:
     """Decorator to register a tool.
 
     Attaches ToolMetadata to the function so it can be discovered and registered

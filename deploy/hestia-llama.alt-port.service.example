@@ -1,0 +1,26 @@
+[Unit]
+Description=Hestia dedicated llama.cpp inference server (alt port)
+After=network.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=/opt/hestia
+ExecStart=/usr/local/bin/llama-server \
+    --model /opt/hestia/models/Qwen3.5-9B-UD-Q4_K_XL.gguf \
+    --host 127.0.0.1 \
+    --port 8002 \
+    --n-gpu-layers 99 \
+    --ctx-size 32768 \
+    --parallel 4 \
+    --flash-attn on \
+    --cache-type-k turbo3 \
+    --cache-type-v turbo3 \
+    --jinja \
+    --reasoning-format deepseek \
+    --slot-save-path /opt/hestia/slots
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,6 +1,6 @@
 [project]
 name = "hestia"
-version = "0.2.2"
+version = "0.8.0"
 description = "Local-first personal assistant framework for consumer GPU LLMs"
 readme = "README.md"
 authors = [
@@ -15,6 +15,7 @@ dependencies = [
     "croniter>=2.0",
     "httpx>=0.28.1",
     "matrix-nio>=0.25.0",
+    "nh3>=0.2.17",
     "pydantic>=2.12.5",
     "python-dateutil>=2.9.0.post0",
     "python-telegram-bot>=21.0",
@@ -36,7 +37,9 @@ dev = [
     "mypy>=1.20.0",
     "pytest>=9.0.3",
     "pytest-asyncio>=1.3.0",
+    "respx>=0.22.0",
     "ruff>=0.15.10",
+    "types-croniter>=6.2.2.20260408",
 ]
 
 [tool.ruff]
@@ -57,7 +60,6 @@ select = [
 ]
 
 [tool.mypy]
-# 44 pre-existing errors are baselined in docs/development-process/mypy-baseline.txt
 python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
@@ -66,6 +68,16 @@ disallow_incomplete_defs = true
 check_untyped_defs = true
 warn_redundant_casts = true
 warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = ["nio", "asyncpg"]
+ignore_missing_imports = true
+
+
+
+[[tool.mypy.overrides]]
+module = ["hestia.policy.*", "hestia.core.*"]
+strict = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

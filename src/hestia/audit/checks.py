@@ -253,8 +253,8 @@ class SecurityAuditor:
             for tool in tool_names:
                 if tool not in subagent_tools:
                     meta = self.tool_registry.describe(tool)
-                    caps = set(meta.capabilities)
-                    if SHELL_EXEC in caps or "write_local" in caps:
+                    cap_set = set(meta.capabilities)
+                    if SHELL_EXEC in cap_set or "write_local" in cap_set:
                         report.add_finding(
                             "info",
                             "capabilities",
@@ -306,6 +306,7 @@ class SecurityAuditor:
         try:
             from hestia.tools.builtin.path_utils import check_path_allowed
 
+            _ = check_path_allowed  # availability check only
             report.add_finding(
                 "info", "sandbox", "Path validation utility (check_path_allowed) is available"
             )
@@ -464,7 +465,6 @@ class SecurityAuditor:
         # Check for suspicious patterns
         save_memory_after_http = 0
         excessive_terminal_calls = 0
-        suspicious_writes = 0
 
         for trace in recent_traces:
             tools = trace.tools_called

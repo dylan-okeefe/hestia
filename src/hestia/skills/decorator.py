@@ -1,9 +1,21 @@
 """Decorator for defining skills."""
 
+import os
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
+from hestia.errors import ExperimentalFeatureError
 from hestia.skills.state import SkillState
+
+EXPERIMENTAL_MESSAGE = (
+    "Skills are an experimental preview. Set `HESTIA_EXPERIMENTAL_SKILLS=1` to opt in. "
+    "See README.md#skills."
+)
+
+
+def _experimental_enabled() -> bool:
+    return os.environ.get("HESTIA_EXPERIMENTAL_SKILLS") == "1"
 
 
 @dataclass(frozen=True)
@@ -57,6 +69,8 @@ def skill(
     """
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        if not _experimental_enabled():
+            raise ExperimentalFeatureError(EXPERIMENTAL_MESSAGE)
         # Create skill definition
         definition = SkillDefinition(
             name=name,
@@ -68,7 +82,7 @@ def skill(
             file_path=getattr(func, "__module__", None),
         )
         # Attach to function
-        setattr(func, "__hestia_skill__", definition)
+        func.__hestia_skill__ = definition  # type: ignore[attr-defined]
         return func
 
     return decorator
