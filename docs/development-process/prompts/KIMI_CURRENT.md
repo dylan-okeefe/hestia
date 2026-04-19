@@ -2,64 +2,50 @@
 
 **Orchestrator:** Cursor updates this file after each review.
 
-**Last set by:** Cursor — 2026-04-19 (L37 merged at `c44544f`; v0.8.0 still locally tagged at `c5f68ea`; final overnight loop is L38)
+**Last set by:** Cursor — 2026-04-19 (L38 merged at `5a8daec`; **L36-L38 overnight queue complete**; awaiting Dylan's morning push of `v0.8.0`)
 
 ---
 
 ## Current task
 
-**Active loop:** **L38** — final overnight loop. Two themes: (1) consolidate every keyword-driven delegation trigger through `PolicyConfig` (eliminate the second hard-coded research-keyword list Copilot #6 flagged), and (2) audit every `*_disable` / `*_enable` CLI command for honest in-memory-only docstrings + output messages (style_disable was the L35a template; apply the same fix to its siblings).
+**No active loop.** The L35a-d release-fix arc and the L36-L38 overnight queue are both complete.
 
-**Spec:** [`../kimi-loops/L38-delegation-and-disable-persistence.md`](../kimi-loops/L38-delegation-and-disable-persistence.md)
+**Next gate:** Dylan's morning push:
 
-**Branch:** `feature/l38-delegation-and-disable-persistence` from `develop` tip `c44544f` (post-L37 merge).
+```bash
+cd ~/Hestia
+git push origin develop
+git push origin main
+git push origin v0.8.0
+```
 
-**Kimi prompt:** Read this file, then execute the entire spec at the linked file. Implement each section in order, run required tests, and write `.kimi-done` exactly as specified.
+After push, optionally cut a GitHub release from the `v0.8.0` tag using the `## [0.8.0] — 2026-04-18` block in `CHANGELOG.md` as the release notes, plus the `UPGRADE.md` link for the 76 cloners on `v0.2.2`.
 
-**Hard step budget:** ≤ **5 commits**, ≤ **2 new test modules** (`tests/unit/test_policy_research_keywords.py`, `tests/cli/test_disable_enable_persistence_message.py`).
+**State on disk:**
 
-**Updated baselines from L37 merge:** **778 passed, 6 skipped**; mypy **0**; ruff src/ **23**. Spec target was "≥ 783 passed" — that's 778 + 5 new tests minimum from the new test modules.
+- Develop tip: `5a8daec` (L38 merge); 35 commits ahead of `origin/develop`.
+- Main tip: `7f2af27` (L35d-merge of develop); 180 commits ahead of `origin/main`.
+- Tag `v0.8.0` annotated at `c5f68ea` (L35d merge into develop).
+- Pre-release dev work since `v0.8.0`: `pyproject.toml = 0.8.1.dev2`. Will be folded into the eventual `0.8.1` CHANGELOG entry.
 
-**Critical recaps from spec:**
+---
 
-- **No YAML writes.** `*_disable` commands stay in-memory-only. Atomic YAML rewriting is risky and out of scope; the fix is docstring + output message clarity.
-- **All keyword lists configurable.** After this loop, zero literal keyword tuples remain inside `should_delegate`. Both `delegation_keywords` and `research_keywords` route through `PolicyConfig`.
-- **Audit then consolidate.** Commit 1's message **must include the keyword-list catalog** found by `git grep`.
-- **`pyproject.toml` bump:** `0.8.1.dev1` → `0.8.1.dev2`.
-- **`KIMI_CURRENT.md` and `kimi-loop-log.md` are out of scope.**
+## Suggested next loops (not queued; resume planning when Dylan returns)
 
-**Note on the L35b TODO marker:** `_cmd_policy_show` in `src/hestia/commands.py` (moved there in L36) has a `# TODO(L38): consolidate research keywords through PolicyConfig` comment. Remove this comment when wiring in `app.config.policy.research_keywords or DEFAULT_RESEARCH_KEYWORDS` (same pattern as the existing delegation-keywords line right above).
+The pre-release plan deferred L39 + L40 until after Dylan dogfoods `v0.8.0` for a few days. From the [original plan](../reviews/v0.8.0-pre-release-plan.md):
 
-**`*_disable` / `*_enable` command audit notes:**
+- **L39** — `hestia upgrade` command (auto-fix the config issues `hestia doctor` flags). Probably 4-5 mini-loops to do safely (read user yaml, write atomic backup, apply migrations, verify with doctor, rollback on failure).
+- **L40** — Dogfooding journal rollup. Capture lived-experience pain points across a week of real use, then triage into the next phase of feature/cleanup work.
 
-- Run `git grep -n -E '_(disable|enable)\b' src/hestia/commands.py` and `git grep -n -E 'name=\"(disable|enable)\"' src/hestia/cli.py` to enumerate.
-- `style_disable` was already fixed in L35a — use it as the template.
-- Likely candidates: `reflection_disable` / `reflection_enable`, `web_search_disable` (if it exists), `style_enable`, possibly `_disable_*` for any subsystem you've added.
+In addition, items observed during L35-L38 that may want loops:
 
-**FINAL CHECK BEFORE WRITING `.kimi-done`:** run `git status --porcelain`. **If anything is unstaged/uncommitted, commit it first.**
-
-**Push the branch and stop after writing `.kimi-done`. Do not merge to `develop`.**
+- **L41 candidate** — `_cmd_policy_show` is now correct but the existing TrustConfig factories (`paranoid()`, `household()`, `developer()`) don't set `cfg.trust.preset`, so anyone using them sees `(custom — no preset name)` in `policy show`. Wire each factory to set the preset name. ~30 lines + tests.
+- **L42 candidate** — `0.8.1` CHANGELOG entry covering L35a-d, L36, L37, L38 (mini-loops + the policy-keyword-rename config break footnote). Then tag `v0.8.1`.
 
 ---
 
 ## Reference
 
-- Queue: [`../kimi-phase-queue.md`](../kimi-phase-queue.md) (L36→L37→**L38**; L39+L40 deferred — this is the final overnight loop)
-- Pre-release plan: [`../reviews/v0.8.0-pre-release-plan.md`](../reviews/v0.8.0-pre-release-plan.md) Stage D L38 + Copilot finding #6
-- Prior loop: [`../kimi-loops/L37-code-cleanup-sweep.md`](../kimi-loops/L37-code-cleanup-sweep.md) (merged at `c44544f`; tests 778/0/6; ruff 23)
+- Queue: [`../kimi-phase-queue.md`](../kimi-phase-queue.md)
+- Pre-release plan: [`../reviews/v0.8.0-pre-release-plan.md`](../reviews/v0.8.0-pre-release-plan.md)
 - Loop log: [`../kimi-loop-log.md`](../kimi-loop-log.md)
-
----
-
-## `.kimi-done` contract (mandatory, see `.cursorrules`)
-
-```
-HESTIA_KIMI_DONE=1
-LOOP=L38
-BRANCH=feature/l38-delegation-and-disable-persistence
-COMMIT=<final commit sha>
-TESTS=<pytest summary>
-MYPY_FINAL_ERRORS=<count>
-```
-
-If blocked, `HESTIA_KIMI_DONE=0` + `BLOCKER=<reason>`.

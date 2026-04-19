@@ -8,6 +8,46 @@
 
 ---
 
+## 2026-04-19 — Loop: L38 — delegation keyword consolidation + `*_disable` persistence audit (clean Kimi run; final overnight loop) → merged to develop
+
+**Kimi:** Clean run, 3 commits (under the 5-budget — Kimi consolidated commit 1 and the disable-audit work into the policy refactor since the audit found nothing else needing change), ~17 minutes wall time (`exit_code: 0`, `elapsed_ms: 1038111`). Valid `.kimi-done` with `LOOP=L38`, `COMMIT=e896c84`, `TESTS=784 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`. **Final overnight loop landed cleanly. Three-loop overnight chain went 3-for-3 autonomous.**
+
+**What shipped:**
+
+- `src/hestia/policy/default.py` — split into two named constants (`DEFAULT_DELEGATION_KEYWORDS` and `DEFAULT_RESEARCH_KEYWORDS`), each driven by its own `PolicyConfig` field with module-constant fallback. **Zero inline keyword tuples remain inside `should_delegate`.**
+- `src/hestia/config.py` — new `PolicyConfig.research_keywords: tuple[str, ...] | None = None`.
+- `src/hestia/commands.py` `_cmd_policy_show` — surfaces both lists; the `# TODO(L38)` marker placed in L35b is gone.
+- `tests/unit/test_policy_research_keywords.py` (new, 4 tests) — default research keywords used; custom override; empty disables; delegation-and-research independent.
+- `tests/cli/test_disable_enable_persistence_message.py` (new) — locks the `style disable` process-local messaging Kimi found no other commands needed (audit honest).
+- `tests/unit/test_policy_delegation_keywords.py` updated to match the new corrective-rename semantics.
+- `pyproject.toml`: `0.8.1.dev1` → `0.8.1.dev2`; `uv.lock` synced.
+- `docs/handoffs/L38-delegation-and-disable-persistence-handoff.md` (new, 34 lines).
+
+**Subtle but correct semantic fix Kimi caught during the audit:**
+
+In L33c, `DEFAULT_DELEGATION_KEYWORDS` was inadvertently populated with the *research-trigger* list (`research, investigate, analyze deeply, comprehensive`) and exposed as `PolicyConfig.delegation_keywords`. `_cmd_policy_show` in L35b surfaced this constant under the "Keywords:" label that was supposed to be the explicit-delegation list. So policy show was lying.
+
+L38 fixes this by *renaming the contents* — the explicit triggers (`delegate, subagent, spawn task, background task`) move into `DEFAULT_DELEGATION_KEYWORDS`, the research triggers move into the new `DEFAULT_RESEARCH_KEYWORDS`. Now the displayed labels match the actual values.
+
+**Config break footnote:** Anyone who set `PolicyConfig.delegation_keywords` on develop since L33c (~3 days ago) was actually overriding research triggers. After L38 they override explicit triggers; for research overrides they need to set `PolicyConfig.research_keywords`. Will be called out in the eventual `0.8.1` CHANGELOG. Given Hestia is at `v0.8.0` for 76 cloners on the stale `v0.2.2` tag, real-world impact ≈ zero.
+
+**`*_disable` / `*_enable` audit findings (honest):**
+
+- `style_disable` — already fixed in L35a, kept as the template.
+- `schedule_disable` / `schedule_enable` / `skill_disable` — persist to DB. They're not in-memory-only, so no docstring rework needed.
+- No `reflection_disable`, `web_search_disable`, `style_enable` commands exist in the codebase.
+
+**Review (Cursor):**
+
+- 9 files, +261 / -34. All in scope.
+- Re-ran full gate: **784 passed, 6 skipped** (+6 — exactly the 4 research-keyword + 2 disable-message new tests). `mypy src/hestia` → **0 errors in 91 source files**. `ruff check src/` → **23** (unchanged from L37 — no new ruff debt).
+
+**Merge:** `feature/l38-delegation-and-disable-persistence` → `develop` via `--no-ff` merge commit `5a8daec`.
+
+**Queue advance:** L36-L38 overnight queue **complete**. Next session starts with Dylan's morning push (commands in chat). L39+L40 stay deferred until post-dogfooding.
+
+---
+
 ## 2026-04-19 — Loop: L37 — code cleanup sweep + ruff baseline 43 → 23 (clean Kimi run; one theme per commit) → merged to develop
 
 **Kimi:** Clean run, 4 commits exactly to budget, ~17 minutes wall time (`exit_code: 0`, `elapsed_ms: 1017597`). Valid `.kimi-done` with `LOOP=L37`, `COMMIT=976441a`, `TESTS=778 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`. **Second overnight loop landed cleanly.**

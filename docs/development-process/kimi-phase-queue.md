@@ -45,10 +45,10 @@
 | 35b | `feature/l35b-policy-show-wiring` | [`kimi-loops/L35b-policy-show-wiring.md`](kimi-loops/L35b-policy-show-wiring.md) |
 | 35c | `feature/l35c-hestia-doctor` | [`kimi-loops/L35c-hestia-doctor.md`](kimi-loops/L35c-hestia-doctor.md) |
 | 35d | `feature/l35d-upgrade-doc-and-release-prep` | [`kimi-loops/L35d-upgrade-doc-and-changelog.md`](kimi-loops/L35d-upgrade-doc-and-changelog.md) |
-| 35-rel | *(Cursor: re-tag v0.8.0 + merge to main; Dylan: push)* | [`reviews/v0.8.0-pre-release-plan.md`](reviews/v0.8.0-pre-release-plan.md) Stage B |
-| 36 | `feature/l36-app-commands-split` | [`kimi-loops/L36-app-commands-split.md`](kimi-loops/L36-app-commands-split.md) |
-| 37 | `feature/l37-code-cleanup-sweep` | [`kimi-loops/L37-code-cleanup-sweep.md`](kimi-loops/L37-code-cleanup-sweep.md) |
-| 38 | `feature/l38-delegation-and-disable-persistence` | [`kimi-loops/L38-delegation-and-disable-persistence.md`](kimi-loops/L38-delegation-and-disable-persistence.md) |
+| 35-rel | *(Cursor: re-tag v0.8.0 + merge to main; Dylan: push)* — **DONE locally on 2026-04-19**; tag `v0.8.0` at `c5f68ea`, main at `7f2af27`; awaiting Dylan's `git push` | [`reviews/v0.8.0-pre-release-plan.md`](reviews/v0.8.0-pre-release-plan.md) Stage B |
+| 36 | `feature/l36-app-commands-split` — **MERGED `ecdbe3d`** | [`kimi-loops/L36-app-commands-split.md`](kimi-loops/L36-app-commands-split.md) |
+| 37 | `feature/l37-code-cleanup-sweep` — **MERGED `c44544f`** | [`kimi-loops/L37-code-cleanup-sweep.md`](kimi-loops/L37-code-cleanup-sweep.md) |
+| 38 | `feature/l38-delegation-and-disable-persistence` — **MERGED `5a8daec`** | [`kimi-loops/L38-delegation-and-disable-persistence.md`](kimi-loops/L38-delegation-and-disable-persistence.md) |
 | 39 (deferred) | `feature/l39-upgrade-command` | post-dogfooding (depends on L35c `hestia doctor` + real upgrade pain) |
 | 40 (deferred) | `feature/l40-dogfooding-fixes` | post-dogfooding (populated from `docs/dogfooding/2026-04-journal.md`) |
 
