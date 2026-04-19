@@ -587,16 +587,13 @@ class Orchestrator:
 
         try:
             temp_value = None
-            if hasattr(session, "temperature") and session.temperature is not None:
-                if hasattr(session.temperature, "value"):
-                    temp_value = session.temperature.value
-                else:
-                    temp_value = str(session.temperature)
+            if session.temperature is not None:
+                temp_value = session.temperature.value
             slot_snapshot = json.dumps(
                 {
                     "slot_id": session.slot_id,
                     "temperature": temp_value,
-                    "slot_saved_path": getattr(session, "slot_saved_path", None),
+                    "slot_saved_path": session.slot_saved_path,
                 },
                 default=str,
             )

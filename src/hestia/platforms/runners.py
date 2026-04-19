@@ -104,7 +104,6 @@ async def run_platform(
     """Shared platform polling loop. Used by run_telegram and run_matrix."""
     from hestia.app import CliAppContext
 
-    app = app if isinstance(app, CliAppContext) else app  # type hint helper
 
     # Ensure database is ready
     await app.bootstrap_db()

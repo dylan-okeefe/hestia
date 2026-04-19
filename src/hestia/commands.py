@@ -228,66 +228,66 @@ async def _cmd_schedule_add(
         platform_user: str | None,
         prompt: str,
     ) -> None:
-        """Add a scheduled task."""
-        if cron is not None and fire_at_str is not None:
-            click.echo("Error: Cannot specify both --cron and --at", err=True)
-            sys.exit(1)
-        if cron is None and fire_at_str is None:
-            click.echo("Error: Must specify either --cron or --at", err=True)
-            sys.exit(1)
-        if session_id is not None and (platform is not None or platform_user is not None):
-            click.echo("Error: Cannot use --session-id with --platform or --platform-user", err=True)
-            sys.exit(1)
-        if (platform is not None) != (platform_user is not None):
-            click.echo("Error: --platform and --platform-user must be used together", err=True)
-            sys.exit(1)
+    """Add a scheduled task."""
+    if cron is not None and fire_at_str is not None:
+        click.echo("Error: Cannot specify both --cron and --at", err=True)
+        sys.exit(1)
+    if cron is None and fire_at_str is None:
+        click.echo("Error: Must specify either --cron or --at", err=True)
+        sys.exit(1)
+    if session_id is not None and (platform is not None or platform_user is not None):
+        click.echo("Error: Cannot use --session-id with --platform or --platform-user", err=True)
+        sys.exit(1)
+    if (platform is not None) != (platform_user is not None):
+        click.echo("Error: --platform and --platform-user must be used together", err=True)
+        sys.exit(1)
 
-        fire_at: datetime | None = None
-        if fire_at_str is not None:
-            try:
-                fire_at = datetime.fromisoformat(fire_at_str)
-            except ValueError:
-                click.echo(
-                    f"Error: Invalid datetime format '{fire_at_str}'. Use ISO format: 2026-04-15T15:00:00",
-                    err=True,
-                )
-                sys.exit(1)
-            if fire_at.tzinfo is None:
-                fire_at = fire_at.replace(tzinfo=UTC)
-            if fire_at < utcnow():
-                click.echo(f"Error: Cannot schedule task in the past: {fire_at}", err=True)
-                sys.exit(1)
-
-        store = _require_scheduler_store(app)
-
-        if session_id is not None:
-            session = await app.session_store.get_session(session_id)
-            if session is None:
-                click.echo(f"Error: Session not found: {session_id}", err=True)
-                sys.exit(1)
-        elif platform is not None and platform_user is not None:
-            session = await app.session_store.get_or_create_session(platform, platform_user)
-        else:
-            session = await app.session_store.get_or_create_session("cli", "default")
-
+    fire_at: datetime | None = None
+    if fire_at_str is not None:
         try:
-            task = await store.create_task(
-                session_id=session.id,
-                prompt=prompt,
-                description=description,
-                cron_expression=cron,
-                fire_at=fire_at,
+            fire_at = datetime.fromisoformat(fire_at_str)
+        except ValueError:
+            click.echo(
+                f"Error: Invalid datetime format '{fire_at_str}'. Use ISO format: 2026-04-15T15:00:00",
+                err=True,
             )
-            click.echo(f"Created task: {task.id}")
-            click.echo(f"  Session: {task.session_id}")
-            if task.cron_expression:
-                click.echo(f"  Schedule: cron '{task.cron_expression}'")
-            elif task.fire_at:
-                click.echo(f"  Schedule: at {task.fire_at}")
-            click.echo(f"  Next run: {task.next_run_at}")
-        except (HestiaError, ValueError) as e:
-            click.echo(f"Error creating task: {e}", err=True)
             sys.exit(1)
+        if fire_at.tzinfo is None:
+            fire_at = fire_at.replace(tzinfo=UTC)
+        if fire_at < utcnow():
+            click.echo(f"Error: Cannot schedule task in the past: {fire_at}", err=True)
+            sys.exit(1)
+
+    store = _require_scheduler_store(app)
+
+    if session_id is not None:
+        session = await app.session_store.get_session(session_id)
+        if session is None:
+            click.echo(f"Error: Session not found: {session_id}", err=True)
+            sys.exit(1)
+    elif platform is not None and platform_user is not None:
+        session = await app.session_store.get_or_create_session(platform, platform_user)
+    else:
+        session = await app.session_store.get_or_create_session("cli", "default")
+
+    try:
+        task = await store.create_task(
+            session_id=session.id,
+            prompt=prompt,
+            description=description,
+            cron_expression=cron,
+            fire_at=fire_at,
+        )
+        click.echo(f"Created task: {task.id}")
+        click.echo(f"  Session: {task.session_id}")
+        if task.cron_expression:
+            click.echo(f"  Schedule: cron '{task.cron_expression}'")
+        elif task.fire_at:
+            click.echo(f"  Schedule: at {task.fire_at}")
+        click.echo(f"  Next run: {task.next_run_at}")
+    except (HestiaError, ValueError) as e:
+        click.echo(f"Error creating task: {e}", err=True)
+        sys.exit(1)
 
 async def _cmd_schedule_list(app: CliAppContext) -> None:
     """List scheduled tasks."""
