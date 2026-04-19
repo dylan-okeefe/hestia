@@ -35,7 +35,7 @@ from hestia.persistence.scheduler import SchedulerStore
 from hestia.persistence.sessions import SessionStore
 from hestia.persistence.skill_store import SkillStore
 from hestia.persistence.trace_store import TraceStore
-from hestia.policy.default import DefaultPolicyEngine
+from hestia.policy.default import DEFAULT_DELEGATION_KEYWORDS, DefaultPolicyEngine
 from hestia.reflection.runner import ReflectionRunner
 from hestia.reflection.scheduler import ReflectionScheduler
 from hestia.reflection.store import ProposalStore
@@ -1225,6 +1225,7 @@ async def _cmd_policy_show(app: CliAppContext) -> None:
     click.echo("-" * 40)
     click.echo("TRUST PROFILE")
     click.echo("-" * 40)
+    click.echo(f"  Active preset: {cfg.trust.preset or '(custom — no preset name)'}")
     click.echo(f"  auto_approve_tools: {cfg.trust.auto_approve_tools or '(none)'}")
     click.echo(f"  scheduler_shell_exec: {cfg.trust.scheduler_shell_exec}")
     click.echo(f"  scheduler_email_send: {cfg.trust.scheduler_email_send}")
@@ -1321,7 +1322,13 @@ async def _cmd_policy_show(app: CliAppContext) -> None:
     click.echo("-" * 40)
     click.echo("  Delegation triggers:")
     click.echo("    - Tool chain > 5 calls")
-    click.echo("    - Keywords: delegate, subagent, spawn task, background task")
+    delegation_keywords = (
+        cfg.policy.delegation_keywords
+        if cfg.policy.delegation_keywords is not None
+        else DEFAULT_DELEGATION_KEYWORDS
+    )
+    click.echo(f"    - Keywords: {', '.join(delegation_keywords)}")
+    # TODO(L38): consolidate research keywords through PolicyConfig
     click.echo("    - Research keywords: research, investigate, analyze deeply, comprehensive")
     click.echo("    - Projected tool calls > 3")
     click.echo("  Subagent restrictions:")
@@ -1333,9 +1340,17 @@ async def _cmd_policy_show(app: CliAppContext) -> None:
     click.echo("-" * 40)
     click.echo("CONFIRMATION REQUIREMENTS")
     click.echo("-" * 40)
+    confirming = sorted(
+        name
+        for name in app.tool_registry.list_names()
+        if app.tool_registry.describe(name).requires_confirmation
+    )
     click.echo("  Tools requiring confirmation (interactive only):")
-    click.echo("    - write_file")
-    click.echo("    - terminal (for destructive operations)")
+    if confirming:
+        for name in confirming:
+            click.echo(f"    - {name}")
+    else:
+        click.echo("    - (none)")
     click.echo("  Platforms with confirmation:")
     click.echo("    - cli: Yes (interactive prompt)")
     click.echo("    - telegram: No (tools requiring confirmation will fail)")
@@ -1347,7 +1362,7 @@ async def _cmd_policy_show(app: CliAppContext) -> None:
     click.echo("-" * 40)
     click.echo("RETRY POLICY")
     click.echo("-" * 40)
-    click.echo("  Max attempts: 2")
+    click.echo(f"  Max attempts: {policy_engine.retry_max_attempts}")
     click.echo("  Transient errors (retry with backoff):")
     click.echo("    - InferenceTimeoutError")
     click.echo("    - InferenceServerError")

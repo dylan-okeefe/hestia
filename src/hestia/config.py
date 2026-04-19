@@ -177,6 +177,9 @@ class TrustConfig:
     # Allow scheduler ticks to trigger email_send.
     scheduler_email_send: bool = False
 
+    # Active trust preset name (paranoid, household, developer, etc.)
+    preset: str | None = None
+
     @classmethod
     def paranoid(cls) -> TrustConfig:
         """Strictest posture. Current default. Auto-approves nothing; scheduler

@@ -23,6 +23,8 @@ DEFAULT_DELEGATION_KEYWORDS: tuple[str, ...] = (
     "comprehensive",
 )
 
+DEFAULT_RETRY_MAX_ATTEMPTS: int = 2
+
 
 class DefaultPolicyEngine(PolicyEngine):
     """Default conservative policies.
@@ -53,6 +55,8 @@ class DefaultPolicyEngine(PolicyEngine):
         self._default_reasoning_budget = default_reasoning_budget
         self._trust = trust if trust is not None else TrustConfig()
         self._config = config if config is not None else PolicyConfig()
+
+        self.retry_max_attempts = DEFAULT_RETRY_MAX_ATTEMPTS
 
     def should_delegate(
         self,
