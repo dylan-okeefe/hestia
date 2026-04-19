@@ -8,6 +8,29 @@
 
 ---
 
+## 2026-04-19 — Loop: L40 Copilot cleanup backlog (Kimi)
+
+**Commands:** Inherited uncommitted changes on `feature/l40-copilot-cleanup` (started by prior Kimi agent). Ran gates, committed, pushed.
+
+**Outcome:** Commit **`d604313`** on `feature/l40-copilot-cleanup`. Six Copilot findings + three TODO markers resolved:
+1. Concurrent tool dispatch (`asyncio.gather`) with serial ordering for email tools.
+2. Removed `should_evict_slot` stub from `PolicyEngine` / `DefaultPolicyEngine`.
+3. `for_trust` regression test for value equality after object recreation.
+4. Documented `_count_tokens` cache key rationale in `context/builder.py`.
+5. Narrowed EmailAdapter bare `except:` clauses; added configurable `drafts_folder`/`sent_folder`; guarded IMAP `close()` to SELECTED state only.
+6. Fixed `prompt_on_mobile` docstring to match fire-and-forget implementation.
+7. Resolved all open `# TODO(L*)` markers.
+
+**Tests:** 796 passed, 6 skipped. **mypy:** 0 errors. **ruff:** 23 errors (unchanged baseline).
+
+**Git:** Pushed `feature/l40-copilot-cleanup` to origin. **Not merged to develop** (per post-release merge discipline).
+
+**Handoff:** `docs/handoffs/L40-copilot-cleanup-handoff.md`.
+
+**Next:** L41 voice shared infra (`KIMI_CURRENT.md` → `L41-voice-shared-infra.md`).
+
+---
+
 ## 2026-04-19 — v0.8.0 release seal: Cursor in-process work (no Kimi loop) — TOCTOU hotfix + .cursorrules + CHANGELOG amend + tag re-place + main fast-forward
 
 **Context:** Dylan returned to a develop branch already containing the L36-L38 overnight queue plus a local `v0.8.0` tag at the L35d merge (`c5f68ea`). The L36-L38 work had been merged to develop *after* the local tag was placed — a release-discipline mistake that needed correcting before the tag went public. Dylan wrote a comprehensive launch plan (`docs/development-process/prompts/v0.8.0-release-and-voice-launch.md`) covering five tracks: pre-tag hotfix, release seal, .cursorrules update, post-release Copilot backlog, and the voice adapter arc. This loop covers tracks 1-3; tracks 4-5 are queued as feature-branch specs (no merge to develop) per the new merge discipline rule.

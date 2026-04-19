@@ -2,27 +2,27 @@
 
 **Orchestrator:** Cursor updates this file after each review.
 
-**Last set by:** Cursor — 2026-04-19 (launching post-release feature-branch queue: L40 first)
+**Last set by:** Kimi — 2026-04-19 (L40 complete; advancing to L41 voice shared infra)
 
 ---
 
 ## Current task
 
-**Active loop:** **L40** — `docs/development-process/kimi-loops/L40-copilot-cleanup-backlog.md`
-on feature branch(es) `feature/l40*` (Cursor may split per scope/step budget).
+**Active loop:** **L41** — `docs/development-process/kimi-loops/L41-voice-shared-infra.md`
+on feature branch `feature/voice-shared-infra`.
 
 **Launch sequence now:**
 
-1. Create/switch to the L40 feature branch from `develop`.
+1. Create/switch to the L41 feature branch from `develop`.
 2. Run `./scripts/kimi-run-current.sh`.
-3. Wait for valid `.kimi-done` (`HESTIA_KIMI_DONE=1`, `LOOP=L40*`).
+3. Wait for valid `.kimi-done` (`HESTIA_KIMI_DONE=1`, `LOOP=L41`).
 4. Review diffs + run gates (`pytest`, `mypy src/hestia`, `ruff check src/`).
-5. Fix/tighten prompt and rerun L40 if red.
-6. When green: push `feature/l40*` to origin, write loop log entry, and
-   advance this file to L41.
+5. Fix/tighten prompt and rerun L41 if red.
+6. When green: push `feature/voice-shared-infra` to origin, write loop log entry, and
+   advance this file to L42.
 
 **Important:** per `.cursorrules` post-release merge discipline, **do not merge
-L40 to `develop` yet**. Push feature branch only; merge waits for a v0.8.1+
+L41 to `develop` yet**. Push feature branch only; merge waits for a v0.8.1+
 release-prep doc naming the branch in scope.
 
 **State on disk:**
@@ -30,7 +30,7 @@ release-prep doc naming the branch in scope.
 - Develop tip: `b1e81ae` ("chore(release): pyproject.toml 0.8.1.dev2 -> 0.8.0; uv.lock regen"). Includes the L36-L38 overnight merges, the voice-call-setup planning docs merge, the `.cursorrules` post-release merge discipline rule, and the `feature/hotfix-session-race` TOCTOU fix. ~40 commits ahead of `origin/develop` at the time of writing.
 - Main tip: `5155917` ("Merge develop into main for v0.8.0 release"). Was at `255dc2b` (`v0.2.2`) before the merge — a `--no-ff` was required because main carried a no-op release-merge commit that made FF impossible.
 - Tag `v0.8.0` annotated at `b1e81ae` (the version-bump commit on develop, intentionally chosen so future patch releases branch from a develop-history ancestor without picking up main-only merge commits).
-- Final gate from main: **789 passed, 6 skipped** across `tests/unit/ tests/integration/ tests/cli/ tests/docs/`. **mypy: 0 errors** (92 source files). **ruff src/: 23 errors** (unchanged baseline from L37).
+- L40 branch: `feature/l40-copilot-cleanup` at `d604313` — 796 passed, 6 skipped; mypy 0; ruff 23 (unchanged). **Not merged to develop.**
 
 ---
 
@@ -63,12 +63,9 @@ doc names the branch in its scope.**
 
 ### Track 4 — Copilot cleanup backlog
 
-- **L40** — `docs/development-process/kimi-loops/L40-copilot-cleanup-backlog.md`
-  — six items: sequential tool dispatch, `should_evict_slot` stub,
-  `for_trust` identity comparison, EmailAdapter bare excepts,
-  `prompt_on_mobile` docstring drift, three open `# TODO(L*)` markers.
-  Suggested branches: `feature/copilot-cleanup-orchestrator`,
-  `feature/copilot-cleanup-email`, `feature/copilot-cleanup-policy`.
+- ~~**L40** — `docs/development-process/kimi-loops/L40-copilot-cleanup-backlog.md`~~ **DONE**
+  — branch `feature/l40-copilot-cleanup` at `d604313`. All six items + TODOs
+  resolved. Not merged to develop.
 
 ### Track 5 — Voice adapter arc
 
