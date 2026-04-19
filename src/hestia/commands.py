@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import sys
 from datetime import UTC, datetime, timedelta
@@ -120,6 +121,15 @@ async def _cmd_ask(app: CliAppContext, message: str) -> None:
         respond_callback=response_handler,
     )
 
+async def _cmd_init(app: CliAppContext) -> None:
+    """Initialize database, artifacts, and slot directories."""
+    cfg = app.config
+    cfg.storage.artifacts_dir.mkdir(parents=True, exist_ok=True)
+    cfg.slots.slot_dir.mkdir(parents=True, exist_ok=True)
+    click.echo(f"Initialized database at {cfg.storage.database_url}")
+    click.echo(f"Initialized artifacts directory at {cfg.storage.artifacts_dir}")
+    click.echo(f"Initialized slot directory at {cfg.slots.slot_dir}")
+
 async def _cmd_health(app: CliAppContext) -> None:
     """Check inference server health."""
     try:
@@ -228,66 +238,67 @@ async def _cmd_schedule_add(
         platform_user: str | None,
         prompt: str,
     ) -> None:
-        """Add a scheduled task."""
-        if cron is not None and fire_at_str is not None:
-            click.echo("Error: Cannot specify both --cron and --at", err=True)
-            sys.exit(1)
-        if cron is None and fire_at_str is None:
-            click.echo("Error: Must specify either --cron or --at", err=True)
-            sys.exit(1)
-        if session_id is not None and (platform is not None or platform_user is not None):
-            click.echo("Error: Cannot use --session-id with --platform or --platform-user", err=True)
-            sys.exit(1)
-        if (platform is not None) != (platform_user is not None):
-            click.echo("Error: --platform and --platform-user must be used together", err=True)
-            sys.exit(1)
+    """Add a scheduled task."""
+    if cron is not None and fire_at_str is not None:
+        click.echo("Error: Cannot specify both --cron and --at", err=True)
+        sys.exit(1)
+    if cron is None and fire_at_str is None:
+        click.echo("Error: Must specify either --cron or --at", err=True)
+        sys.exit(1)
+    if session_id is not None and (platform is not None or platform_user is not None):
+        click.echo("Error: Cannot use --session-id with --platform or --platform-user", err=True)
+        sys.exit(1)
+    if (platform is not None) != (platform_user is not None):
+        click.echo("Error: --platform and --platform-user must be used together", err=True)
+        sys.exit(1)
 
-        fire_at: datetime | None = None
-        if fire_at_str is not None:
-            try:
-                fire_at = datetime.fromisoformat(fire_at_str)
-            except ValueError:
-                click.echo(
-                    f"Error: Invalid datetime format '{fire_at_str}'. Use ISO format: 2026-04-15T15:00:00",
-                    err=True,
-                )
-                sys.exit(1)
-            if fire_at.tzinfo is None:
-                fire_at = fire_at.replace(tzinfo=UTC)
-            if fire_at < utcnow():
-                click.echo(f"Error: Cannot schedule task in the past: {fire_at}", err=True)
-                sys.exit(1)
-
-        store = _require_scheduler_store(app)
-
-        if session_id is not None:
-            session = await app.session_store.get_session(session_id)
-            if session is None:
-                click.echo(f"Error: Session not found: {session_id}", err=True)
-                sys.exit(1)
-        elif platform is not None and platform_user is not None:
-            session = await app.session_store.get_or_create_session(platform, platform_user)
-        else:
-            session = await app.session_store.get_or_create_session("cli", "default")
-
+    fire_at: datetime | None = None
+    if fire_at_str is not None:
         try:
-            task = await store.create_task(
-                session_id=session.id,
-                prompt=prompt,
-                description=description,
-                cron_expression=cron,
-                fire_at=fire_at,
+            fire_at = datetime.fromisoformat(fire_at_str)
+        except ValueError:
+            click.echo(
+                "Error: Invalid datetime format "
+                f"'{fire_at_str}'. Use ISO format: 2026-04-15T15:00:00",
+                err=True,
             )
-            click.echo(f"Created task: {task.id}")
-            click.echo(f"  Session: {task.session_id}")
-            if task.cron_expression:
-                click.echo(f"  Schedule: cron '{task.cron_expression}'")
-            elif task.fire_at:
-                click.echo(f"  Schedule: at {task.fire_at}")
-            click.echo(f"  Next run: {task.next_run_at}")
-        except (HestiaError, ValueError) as e:
-            click.echo(f"Error creating task: {e}", err=True)
             sys.exit(1)
+        if fire_at.tzinfo is None:
+            fire_at = fire_at.replace(tzinfo=UTC)
+        if fire_at < utcnow():
+            click.echo(f"Error: Cannot schedule task in the past: {fire_at}", err=True)
+            sys.exit(1)
+
+    store = _require_scheduler_store(app)
+
+    if session_id is not None:
+        session = await app.session_store.get_session(session_id)
+        if session is None:
+            click.echo(f"Error: Session not found: {session_id}", err=True)
+            sys.exit(1)
+    elif platform is not None and platform_user is not None:
+        session = await app.session_store.get_or_create_session(platform, platform_user)
+    else:
+        session = await app.session_store.get_or_create_session("cli", "default")
+
+    try:
+        task = await store.create_task(
+            session_id=session.id,
+            prompt=prompt,
+            description=description,
+            cron_expression=cron,
+            fire_at=fire_at,
+        )
+        click.echo(f"Created task: {task.id}")
+        click.echo(f"  Session: {task.session_id}")
+        if task.cron_expression:
+            click.echo(f"  Schedule: cron '{task.cron_expression}'")
+        elif task.fire_at:
+            click.echo(f"  Schedule: at {task.fire_at}")
+        click.echo(f"  Next run: {task.next_run_at}")
+    except (HestiaError, ValueError) as e:
+        click.echo(f"Error creating task: {e}", err=True)
+        sys.exit(1)
 
 async def _cmd_schedule_list(app: CliAppContext) -> None:
     """List scheduled tasks."""
@@ -384,6 +395,24 @@ async def _cmd_schedule_run(app: CliAppContext, task_id: str) -> None:
         click.echo(f"Error running task: {e}", err=True)
         sys.exit(1)
 
+async def _cmd_schedule_disable(app: CliAppContext, task_id: str) -> None:
+    """Disable a scheduled task."""
+    store = _require_scheduler_store(app)
+    success = await store.disable_task(task_id)
+    if not success:
+        click.echo(f"Task not found: {task_id}", err=True)
+        sys.exit(1)
+    click.echo(f"Task {task_id} disabled")
+
+async def _cmd_schedule_remove(app: CliAppContext, task_id: str) -> None:
+    """Remove a scheduled task."""
+    store = _require_scheduler_store(app)
+    success = await store.delete_task(task_id)
+    if not success:
+        click.echo(f"Task not found: {task_id}", err=True)
+        sys.exit(1)
+    click.echo(f"Task {task_id} removed")
+
 def _cmd_schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None:
     """Run the scheduler daemon (blocks until Ctrl-C)."""
     app: CliAppContext = ctx.obj
@@ -430,10 +459,8 @@ def _cmd_schedule_daemon(ctx: click.Context, tick_interval: float | None) -> Non
         except KeyboardInterrupt:
             click.echo("\nReceived interrupt signal...")
             main_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 loop.run_until_complete(main_task)
-            except asyncio.CancelledError:
-                pass
         finally:
             loop.run_until_complete(app.inference.close())
             loop.close()
@@ -459,7 +486,9 @@ async def _cmd_skill_list(app: CliAppContext, state_filter: str | None, show_all
     if not records:
         click.echo("No skills found.")
         return
-    click.echo(f"{'Name':<20} {'State':<12} {'Runs':<6} {'Fails':<6} {'Description'}")
+    click.echo(
+        f"{'Name':<20} {'State':<12} {'Runs':<6} {'Fails':<6} {'Description'}"
+    )
     click.echo("-" * 80)
     for record in records:
         desc = record.description[:35] + "..." if len(record.description) > 35 else record.description
@@ -506,7 +535,11 @@ async def _cmd_skill_promote(app: CliAppContext, name: str) -> None:
     }
     new_state = transitions.get(record.state)
     if new_state is None:
-        click.echo(f"Skill '{name}' has no valid promotion path from '{record.state.value}'", err=True)
+        click.echo(
+            f"Skill '{name}' has no valid promotion path from "
+            f"'{record.state.value}'",
+            err=True,
+        )
         sys.exit(1)
     if new_state == record.state:
         click.echo(f"Skill '{name}' is already at state '{record.state.value}'")
@@ -532,7 +565,11 @@ async def _cmd_skill_demote(app: CliAppContext, name: str) -> None:
     }
     new_state = transitions.get(record.state)
     if new_state is None:
-        click.echo(f"Skill '{name}' has no valid demotion path from '{record.state.value}'", err=True)
+        click.echo(
+            f"Skill '{name}' has no valid demotion path from "
+            f"'{record.state.value}'",
+            err=True,
+        )
         sys.exit(1)
     if new_state == record.state:
         click.echo(f"Skill '{name}' is already at state '{record.state.value}'")
@@ -565,10 +602,7 @@ async def _cmd_audit_run(app: CliAppContext, output_json: bool, output: str | No
         trace_store=app.trace_store,
     )
     report = await auditor.run_audit()
-    if output_json:
-        result = report.to_json()
-    else:
-        result = report.summary()
+    result = report.to_json() if output_json else report.summary()
     if output:
         Path(output).write_text(result)
         click.echo(f"Audit report saved to: {output}")
@@ -611,7 +645,9 @@ async def _cmd_email_check(app: CliAppContext) -> None:
     except Exception as exc:
         click.echo(f"Email check failed: {type(exc).__name__}: {exc}", err=True)
         sys.exit(1)
-    click.echo(f"IMAP connection OK ({cfg.email.imap_host}:{cfg.email.imap_port})")
+    click.echo(
+        f"IMAP connection OK ({cfg.email.imap_host}:{cfg.email.imap_port})"
+    )
     click.echo(f"Default folder: {cfg.email.default_folder}")
     click.echo(f"Messages found: {len(messages)}")
 
@@ -905,7 +941,10 @@ async def _cmd_reflection_status(app: CliAppContext) -> None:
         if sched_status["last_errors"]:
             click.echo("Last errors:")
             for err in sched_status["last_errors"]:
-                click.echo(f"  {err['timestamp']}  {err['stage']:<10} {err['type']:<20} {err['message']}")
+                click.echo(
+                    f"  {err['timestamp']}  {err['stage']:<10} "
+                    f"{err['type']:<20} {err['message']}"
+                )
     else:
         click.echo("Scheduler: not configured (0 failures)")
 
@@ -963,7 +1002,9 @@ async def _cmd_reflection_accept(app: CliAppContext, proposal_id: str) -> None:
     if p is None:
         click.echo(f"Proposal not found: {proposal_id}", err=True)
         sys.exit(1)
-    await app.proposal_store.update_status(proposal_id, "accepted", review_note="Accepted by operator")
+    await app.proposal_store.update_status(
+        proposal_id, "accepted", review_note="Accepted by operator"
+    )
     click.echo(f"Accepted proposal {proposal_id}")
 
 async def _cmd_reflection_reject(app: CliAppContext, proposal_id: str, note: str | None) -> None:

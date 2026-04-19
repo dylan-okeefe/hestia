@@ -225,10 +225,12 @@ class Orchestrator:
                     pending_count = await self._proposal_store.pending_count()
                     if pending_count > 0:
                         effective_system_prompt = (
-                            f"You have {pending_count} pending reflection proposal(s) from the last review. "
-                            "If the user greets you or asks 'what's new', summarize the top 3 and ask whether "
-                            "to accept/reject/defer. Do not apply any proposal without an explicit accept.\n\n"
-                            + system_prompt
+                            f"You have {pending_count} pending reflection "
+                            "proposal(s) from the last review. If the user "
+                            "greets you or asks 'what's new', summarize the "
+                            "top 3 and ask whether to accept/reject/defer. "
+                            "Do not apply any proposal without an explicit "
+                            f"accept.\n\n{system_prompt}"
                         )
 
                 # Resolve style prefix if enabled
@@ -587,16 +589,13 @@ class Orchestrator:
 
         try:
             temp_value = None
-            if hasattr(session, "temperature") and session.temperature is not None:
-                if hasattr(session.temperature, "value"):
-                    temp_value = session.temperature.value
-                else:
-                    temp_value = str(session.temperature)
+            if session.temperature is not None:
+                temp_value = session.temperature.value
             slot_snapshot = json.dumps(
                 {
                     "slot_id": session.slot_id,
                     "temperature": temp_value,
-                    "slot_saved_path": getattr(session, "slot_saved_path", None),
+                    "slot_saved_path": session.slot_saved_path,
                 },
                 default=str,
             )
