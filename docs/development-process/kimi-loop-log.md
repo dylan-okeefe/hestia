@@ -8,6 +8,69 @@
 
 ---
 
+## 2026-04-18 — Loop: L35 — Release v0.8.0 (Cursor-driven, no Kimi) → tagged + merged into main locally
+
+**Why no Kimi:** L35 is a release loop. Per `.cursorrules`, Dylan owns `git push`. The L35 spec as originally written had Kimi running `git push origin main` and `git push origin v0.8.0`, which would either silently fail or hang on missing credentials in the headless Kimi process. Cursor executed the local prep directly.
+
+**What Cursor did:**
+
+1. Verified pre-release gate on `develop` tip (`d51d816`): **741 passed, 6 skipped, mypy 0, ruff 44**. Working tree clean.
+2. Bumped `pyproject.toml` `0.7.12` → `0.8.0`.
+3. Bumped `src/hestia/__init__.py` `__version__` `0.7.0` → `0.8.0` (had been **stale since pre-window** — caught by reading the file, not by tests).
+4. Promoted the L34 "Towards 0.8.0" CHANGELOG preface into a full curated `## [0.8.0] — 2026-04-18` section, grouped by theme (Trust & confirmations · Context & resilience · Architecture & quality · Security · Email · Reflection & style · Bug fixes & hardening · Skills & polish), with one line per loop in conventional-commit voice. Final stats block at the bottom.
+5. `uv lock` synced the lockfile.
+6. Wrote `docs/handoffs/L35-release-v0.8.0-handoff.md` covering the loop manifest, mini-loop chunking validation, Cursor's local steps, and Dylan's push commands.
+7. Single release commit on `develop`: `chore(release): v0.8.0` (`d9b889d`).
+8. Annotated tag `v0.8.0` on the release commit.
+9. `git checkout main` and `git merge --no-ff develop` with a release-merge message listing the 56-commit summary. Merge commit `604e805` on `main`.
+10. **Stopped.** Did not push anything.
+
+**Verification:**
+
+- Final pytest from `main` tip: **741 passed, 6 skipped**.
+- `git tag --list 'v0.8*'` → `v0.8.0`. Tag commit `d9b889d` is contained by both `main` and `develop`.
+- Branches state: `develop [ahead 61]`, `main [ahead 155]`. Nothing pushed yet.
+
+**Dylan's push commands** (also in the L35 handoff):
+
+```bash
+cd ~/Hestia
+git push origin develop
+git push origin main
+git push origin v0.8.0
+```
+
+After that, optionally cut a GitHub release from the tag using the `[0.8.0]` CHANGELOG section as the release notes.
+
+**Queue advance:** L35 was the last loop in the queue. There is no `KIMI_CURRENT.md` advance — the queue is drained. Next steps are Dylan's: push, optionally cut a GitHub release, then ideally **use Hestia hard for a week before queueing more loops**. The honest backlog comes from real annoyances, not retrospective audits.
+
+---
+
+## 2026-04-18 — Loop: L34 — public-release polish (README, deployment, email setup, CHANGELOG curation) (Kimi clean run) → merged to develop
+
+**Kimi:** Sixth clean mini-loop in a row (only counting L32a-L33c-L34, not L33b's missed-commit case). 7 commits, valid `.kimi-done`, ~12 minutes wall time. Docs-only loop, so no production-code risk.
+
+**What shipped:**
+
+- README "Recommended models" table: Llama-3.1-8B-Instruct Q4_K_M (default), Qwen 2.5 7B Q4_K_M, Llama-3.2-3B Q5_K_M, Qwen 2.5 14B Q4_K_M with VRAM and use-case notes. Static K-quants recommended; imatrix quants warned against for tool calling.
+- README "Running Hestia as a daemon" section: documents every file in `deploy/` (`hestia-agent.service`, `hestia-llama.service`, `hestia-llama.alt-port.service.example`, `install.sh`, `example_config.py`, `README.md`), shows the `systemctl --user daemon-reload && systemctl --user enable --now hestia.service` sequence, cross-links env-var configuration (`HESTIA_SOUL_PATH`, `HESTIA_CALIBRATION_PATH`, `HESTIA_EXPERIMENTAL_SKILLS`, `EMAIL_APP_PASSWORD`).
+- README "Demo" subsection with asciinema link placeholder, `docs/assets/hestia-chat.png` placeholder path (empty file created at that path), and a 3-line text transcript of a `hestia chat` interaction with one tool call. TODO marker for Dylan to record the asciicast.
+- `docs/guides/email-setup.md` rewritten env-var-first: `password_env: "EMAIL_APP_PASSWORD"` is the lead example; plaintext `password=` demoted to an "ephemeral testing only" callout; cross-references to L25 handoff and the L29 ADR consolidation.
+- CHANGELOG: new curated `## [0.7.12] — 2026-04-18` entry; new "Towards 0.8.0" preface block listing L20→L34 highlights for L35 to promote.
+- New `tests/docs/test_readme_links.py` (50 lines): walks all relative links in `README.md` and asserts each path resolves. Catches the next time someone moves an ADR or guide.
+- ADR-0021 and ADR-0022 left untouched (already at the right level of detail from L32c and L33c).
+
+**Review (Cursor):**
+
+- Full gate on the branch tip: **`741 passed, 6 skipped`** (unchanged from L33c — the new docs test module is part of the count once `pytest --collect` discovers `tests/docs/`). `uv run mypy src/hestia` → **0**. `uv run ruff check src/` → **44** (no regression).
+- `ls deploy/` matches what the README documents.
+
+**Merge:** `feature/l34-public-release-polish` → `develop` via `--no-ff` merge commit `d51d816`.
+
+**Queue advance:** `KIMI_CURRENT.md` → **L35** (release v0.8.0 to main; Cursor-driven, no Kimi launch).
+
+---
+
 ## 2026-04-18 — Loop: L33b — `EmailAdapter` per-invocation IMAP session reuse + composite tool (Kimi clean spec, Cursor caught one missed commit) → merged to develop
 
 **Kimi:** Fifth mini-loop. All 5 spec commits landed cleanly, valid `.kimi-done` written. Wall time ~19 minutes. **One snag:** Kimi made a 6th edit on disk *after* the release commit (hoisting the `draft-unknown` early-return out of the new `imap_session()` context) and never committed it. The edit was a real bug fix — without it, `test_send_draft_rejects_draft_unknown` failed because the placeholder check was sitting *inside* the new session helper (so it never fired before the IMAP connection was attempted). Cursor restored the edit, ran the gate green, committed it as `fix(email): hoist draft-unknown rejection out of imap_session` on the L33b branch, then merged.
