@@ -2,7 +2,12 @@
 
 ## Review carry-forward
 
-(Cursor populates after L33 review.)
+From L33c (merged at `8b5228c`, closing the L33 arc):
+
+- Test baseline: **741 passed, 6 skipped**.
+- Mypy 0. Ruff 44 — must not regress.
+- New env vars / config that need to be documented in the README updates: `HESTIA_EXPERIMENTAL_SKILLS=1` (L33c), `SecurityConfig.injection_entropy_threshold` and `SecurityConfig.injection_skip_filters_for_structured` (L33a), `EmailAdapter.imap_session()` and the new `email_search_and_read` tool (L33b).
+- L32 closed the context-builder rework (ADR-0021); L33 closed the perf-and-polish arc (ADR-0022). Both ADRs are reference-worthy from the README architecture section.
 
 From **external public-release evaluation (2026-04-18)**:
 
@@ -12,9 +17,13 @@ From **external public-release evaluation (2026-04-18)**:
 - Email setup guide should be rewritten around the env-var workflow shipped in L29.
 - CHANGELOG needs curating for the 0.7→0.8 jump (L35 release).
 
-**Branch:** `feature/l34-public-release-polish` from **`develop`** (post-L33 merge).
+**Branch:** `feature/l34-public-release-polish` from **`develop`** (post-L33c merge tip `8b5228c`).
 
-**Target version:** **0.7.8** (patch — docs only, but a meaningful one).
+**Target version:** **0.7.12** (patch — docs only, but a meaningful one).
+
+## Hard step budget
+
+≤ **7 commits** (one per section), ≤ **1 new test module** (the optional README-links walker). Docs-only — do **not** chase production-code cleanups even if you spot them. Do **not** generate any image/asciicast assets; the spec wants placeholders only.
 
 ---
 
@@ -75,7 +84,7 @@ Update `docs/guides/email-setup.md` to:
 
 ### §5 — CHANGELOG curation for 0.7 → 0.8
 
-Add a curated `## [0.7.8] — 2026-04-18` entry. **Also** add an unreleased "Towards 0.8.0" preface block explaining what the upcoming `v0.8.0` release rolls up (L20–L34 highlights). L35 will move that preface into the actual `## [0.8.0]` section.
+Add a curated `## [0.7.12] — 2026-04-18` entry for the docs work. **Also** add an unreleased "Towards 0.8.0" preface block explaining what the upcoming `v0.8.0` release rolls up (L20–L34 highlights, including the L32 context-builder rework, the L33 perf-and-polish arc, the cli-decomposition in L30, the orchestrator engine cleanup in L31, and the security/email/style/reflection foundations from L20–L27). L35 will move that preface into the actual `## [0.8.0]` section.
 
 ### §6 — Tests / lint pass
 
@@ -84,7 +93,7 @@ Add a curated `## [0.7.8] — 2026-04-18` entry. **Also** add an unreleased "Tow
 
 ### §7 — Version bump + handoff
 
-- `pyproject.toml` → `0.7.8`.
+- `pyproject.toml` → `0.7.12`.
 - `uv lock`.
 - `docs/handoffs/L34-public-release-polish-handoff.md`.
 
@@ -94,8 +103,8 @@ Add a curated `## [0.7.8] — 2026-04-18` entry. **Also** add an unreleased "Tow
 - `docs(readme): running Hestia as a systemd daemon`
 - `docs(readme): demo placeholder + transcript`
 - `docs(email): env-var-first setup guide`
-- `docs(changelog): curate 0.7.8 + 0.8.0 preface`
-- `chore(release): bump to 0.7.8`
+- `docs(changelog): curate 0.7.12 + 0.8.0 preface`
+- `chore(release): bump to 0.7.12`
 - `docs(handoff): L34 public-release polish report`
 
 ---
