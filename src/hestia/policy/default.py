@@ -17,6 +17,13 @@ if TYPE_CHECKING:
 
 
 DEFAULT_DELEGATION_KEYWORDS: tuple[str, ...] = (
+    "delegate",
+    "subagent",
+    "spawn task",
+    "background task",
+)
+
+DEFAULT_RESEARCH_KEYWORDS: tuple[str, ...] = (
     "research",
     "investigate",
     "analyze deeply",
@@ -93,9 +100,13 @@ class DefaultPolicyEngine(PolicyEngine):
             return False
 
         # Explicit user request for delegation
-        delegation_keywords = ["delegate", "subagent", "spawn task", "background task"]
+        delegation = (
+            DEFAULT_DELEGATION_KEYWORDS
+            if self._config.delegation_keywords is None
+            else self._config.delegation_keywords
+        )
         task_lower = task_description.lower()
-        if any(kw in task_lower for kw in delegation_keywords):
+        if delegation and any(kw in task_lower for kw in delegation):
             return True
 
         # Long tool chain - offload to subagent to keep parent context clean
@@ -103,12 +114,12 @@ class DefaultPolicyEngine(PolicyEngine):
             return True
 
         # Complex research tasks that might involve many steps
-        keywords = (
-            DEFAULT_DELEGATION_KEYWORDS
-            if self._config.delegation_keywords is None
-            else self._config.delegation_keywords
+        research = (
+            DEFAULT_RESEARCH_KEYWORDS
+            if self._config.research_keywords is None
+            else self._config.research_keywords
         )
-        if keywords and any(kw in task_lower for kw in keywords):
+        if research and any(kw in task_lower for kw in research):
             return True
 
         # High projected tool usage

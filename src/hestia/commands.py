@@ -23,7 +23,10 @@ from hestia.app import (
 from hestia.core.clock import utcnow
 from hestia.core.types import Message, ScheduledTask, Session, SessionState, SessionTemperature
 from hestia.errors import HestiaError
-from hestia.policy.default import DEFAULT_DELEGATION_KEYWORDS
+from hestia.policy.default import (
+    DEFAULT_DELEGATION_KEYWORDS,
+    DEFAULT_RESEARCH_KEYWORDS,
+)
 from hestia.scheduler import Scheduler
 from hestia.skills.state import SkillState
 from hestia.tools.capabilities import (
@@ -874,9 +877,13 @@ async def _cmd_policy_show(app: CliAppContext) -> None:
         if cfg.policy.delegation_keywords is not None
         else DEFAULT_DELEGATION_KEYWORDS
     )
-    click.echo(f"    - Keywords: {', '.join(delegation_keywords)}")
-    # TODO(L38): consolidate research keywords through PolicyConfig
-    click.echo("    - Research keywords: research, investigate, analyze deeply, comprehensive")
+    click.echo(f"    - Explicit delegation keywords: {', '.join(delegation_keywords)}")
+    research_keywords = (
+        DEFAULT_RESEARCH_KEYWORDS
+        if cfg.policy.research_keywords is None
+        else cfg.policy.research_keywords
+    )
+    click.echo(f"    - Research keywords: {', '.join(research_keywords)}")
     click.echo("    - Projected tool calls > 3")
     click.echo("  Subagent restrictions:")
     click.echo("    - Cannot delegate further (no recursion)")
