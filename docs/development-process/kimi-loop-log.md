@@ -8,6 +8,32 @@
 
 ---
 
+## 2026-04-18 — Loop: L33b — `EmailAdapter` per-invocation IMAP session reuse + composite tool (Kimi clean spec, Cursor caught one missed commit) → merged to develop
+
+**Kimi:** Fifth mini-loop. All 5 spec commits landed cleanly, valid `.kimi-done` written. Wall time ~19 minutes. **One snag:** Kimi made a 6th edit on disk *after* the release commit (hoisting the `draft-unknown` early-return out of the new `imap_session()` context) and never committed it. The edit was a real bug fix — without it, `test_send_draft_rejects_draft_unknown` failed because the placeholder check was sitting *inside* the new session helper (so it never fired before the IMAP connection was attempted). Cursor restored the edit, ran the gate green, committed it as `fix(email): hoist draft-unknown rejection out of imap_session` on the L33b branch, then merged.
+
+**What shipped:**
+
+- New `EmailAdapter.imap_session(folder=...)` async context manager. Tracks the active connection on a `contextvars.ContextVar[IMAP4_SSL | None]`. On entry: if a parent session is active in the same context, reuse it (no new connect). Otherwise: connect, login, `SELECT folder`. On exit: only the outermost frame logs out and clears the ContextVar.
+- All per-method connection blocks (`list_messages`, `read_message`, `search_messages`, `create_draft`, `move_message`, `flag_message`) routed through `imap_session()`. Standalone behavior preserved (each call still opens + closes its own connection if no outer session is active).
+- New composite tool `make_email_search_and_read_tool` in `src/hestia/tools/builtin/email_tools.py`. Takes `query` + `limit`; opens one IMAP session, runs the search, reads the top `limit` messages, returns a list of dicts (uid, from, subject, snippet of body, full body in artifact handle for large messages). One handshake per invocation.
+- New `tests/unit/test_email_session_reuse.py` (103 lines): nested `imap_session()` reuses outer connection (single connect); session closes on exception via the context manager exit; standalone calls without an outer session each open+close their own connection.
+- New `tests/integration/test_email_search_and_read.py` (164 lines): end-to-end exercise of the composite tool against the existing email mock fixture.
+- `src/hestia/app.py` gained the registration call for the new composite tool.
+- Cursor fix commit `0abb34f`: `send_draft("draft-unknown")` rejected at the top of the method, before the IMAP session opens. Restores the fast-path validation contract.
+
+**Review (Cursor):**
+
+- Initial post-spec gate failed: 1 failed (`test_send_draft_rejects_draft_unknown`). After applying the fix Kimi staged but didn't commit: **`726 passed, 6 skipped`** (+7 from L33a's 719 — the new email tests). `uv run mypy src/hestia` → **0**. `uv run ruff check src/` → **44** (no regression).
+
+**Merge:** `feature/l33b-email-session-reuse` → `develop` via `--no-ff` merge commit `f7dcd91`.
+
+**Drift call-out:** This is the first loop in the new mini-loop chunking strategy where Kimi technically slipped — they made an edit on disk after the spec was complete and forgot to commit it (likely the per-turn step ceiling or just a bookkeeping miss). The miss was harmless because Cursor's post-merge gate caught it. **Going forward**, post-spec gates remain mandatory even on "clean" Kimi loops — Kimi may stage a final fix without committing it.
+
+**Queue advance:** `KIMI_CURRENT.md` → **L33c** (skills experimental flag + `_format_datetime` + `delegation_keywords` + matrix parser test — closes the L33 arc).
+
+---
+
 ## 2026-04-18 — Loop: L33a — `InjectionScanner` threshold tuning + structured-content filters (Kimi clean run) → merged to develop
 
 **Kimi:** Fourth clean mini-loop in a row. 4 commits, valid `.kimi-done`, ~26 minutes wall time (longer than L32 loops because the new tests exercise large synthetic blobs and the inner pytest run is the dominant cost).

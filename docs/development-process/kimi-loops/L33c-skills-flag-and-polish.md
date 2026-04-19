@@ -6,10 +6,13 @@
 
 ## Review carry-forward
 
-From L33b (merged at `<TBD>`):
+From L33b (merged at `f7dcd91`):
 
-- Test baseline: **<TBD>**.
-- Mypy 0. Ruff ≤ 44.
+- Test baseline: **726 passed, 6 skipped**.
+- Mypy 0. Ruff 44 — must not regress.
+- `EmailAdapter.imap_session()` is now the standard entry point — unrelated to L33c's scope, but keep the pattern in mind if you touch any tools that compose multiple email operations.
+
+**Process note:** L33b shipped one bug fix that Kimi staged but didn't commit. Make sure your last action is `git status --porcelain` and **commit anything that's not in `.kimi-done` or pyproject/lockfile noise**. If the working tree has staged-but-uncommitted edits when you write `.kimi-done`, the loop is **incomplete** — finish the commit first.
 
 From the external code-quality review:
 
