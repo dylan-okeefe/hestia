@@ -2,32 +2,31 @@
 
 **Orchestrator:** Cursor updates this file after each review.
 
-**Last set by:** Cursor — 2026-04-19 (L35d merged at `c5f68ea`; v0.8.0 tagged at same commit; merged to main locally; awaiting Dylan push; overnight queue starts at L36)
+**Last set by:** Cursor — 2026-04-19 (L36 merged at `ecdbe3d`; v0.8.0 still locally tagged at `c5f68ea`; overnight queue continues at L37)
 
 ---
 
 ## Current task
 
-**Active loop:** **L36** — `app.py` decomposition: extract `commands.py`. Behavior-preserving refactor. ~40 `_cmd_*` functions move from `src/hestia/app.py` (~1,533 lines) to a new `src/hestia/commands.py`. Infrastructure stays in `app.py`. `cli.py` imports update to reference the new module. Removes the self-referential `from hestia.app import CliResponseHandler` inside `_cmd_chat` and `_cmd_ask`.
+**Active loop:** **L37** — Code cleanup sweep: kill dead `hasattr` checks, no-op identity expressions, the over-indented `_cmd_schedule_add` body, hoist three inlined CLI commands into `commands.py`, and crunch the ruff baseline from 43 → ≤ 23. Behavior-preserving across all four commits.
 
-**Spec:** [`../kimi-loops/L36-app-commands-split.md`](../kimi-loops/L36-app-commands-split.md)
+**Spec:** [`../kimi-loops/L37-code-cleanup-sweep.md`](../kimi-loops/L37-code-cleanup-sweep.md)
 
-**Branch:** `feature/l36-app-commands-split` from `develop` tip `c5f68ea` (post-L35d merge / v0.8.0 tag).
+**Branch:** `feature/l37-code-cleanup-sweep` from `develop` tip `ecdbe3d` (post-L36 merge).
 
 **Kimi prompt:** Read this file, then execute the entire spec at the linked file. Implement each section in order, run required tests, and write `.kimi-done` exactly as specified.
 
-**Hard step budget:** ≤ **5 commits**, **0 new test modules** (refactor is behavior-preserving). Files in scope: `src/hestia/app.py`, `src/hestia/commands.py` (new), `src/hestia/cli.py`, `pyproject.toml` (version bump only), `uv.lock`, `docs/handoffs/L36-app-commands-split-handoff.md` (new).
+**Hard step budget:** ≤ **4 commits**, **0 new test modules**. One theme per commit (per-commit revertability is the whole point of this loop).
 
-**Critical rules:**
+**Updated baselines from L36 merge:** **778 passed, 6 skipped**; mypy **0**; ruff **43** (not 44 — L36 already collapsed one). Spec target was "≤ 24"; with the new starting point, please drive ruff to **≤ 23** to honor the original "fix at least 20" rule. If 20 fixes lands you at 24, that's also acceptable — better a clean partial than an incomplete loop.
 
-- **Behavior-preserving.** No new functionality. No bug fixes (file separately for L37 if you spot any).
-- **No test modifications** except import-path updates on tests that cite `hestia.app._cmd_X` directly. Run `git grep -n 'hestia.app import _cmd_' tests/` first to find them.
-- **`pyproject.toml` bump:** `0.8.0` → `0.8.1.dev0`.
-- **`KIMI_CURRENT.md` and `kimi-loop-log.md` are out of scope** — Cursor updates those after merge. Do not touch.
+**Critical recaps:**
 
-**Stays in `app.py`:** `CliAppContext`, `make_app`, `run_async`, `CliResponseHandler`, `_compile_and_set_memory_epoch`, `_handle_meta_command`, `_require_scheduler_store`, plus any other helper that is purely infrastructural (called by multiple `_cmd_*` or by the bootstrap path).
-
-**Moves to `commands.py`:** every `async def _cmd_*` and `def _cmd_*`.
+- **One theme per commit.** Mixing themes makes the bisect harder if a regression slips in.
+- **No `# noqa` without rationale.** If you add one, surface it in the handoff with one sentence of justification.
+- **Stop early on the ruff crunch** if you hit ~150 iterations with checks remaining. Better a partial L37 than a stalled `.kimi-done`.
+- **`pyproject.toml` bump:** `0.8.1.dev0` → `0.8.1.dev1`.
+- **`KIMI_CURRENT.md` and `kimi-loop-log.md` are out of scope.**
 
 **FINAL CHECK BEFORE WRITING `.kimi-done`:** run `git status --porcelain`. **If anything is unstaged/uncommitted, commit it first.**
 
@@ -37,9 +36,9 @@
 
 ## Reference
 
-- Queue: [`../kimi-phase-queue.md`](../kimi-phase-queue.md) (**L36**→L37→L38; L39+L40 deferred)
-- Pre-release plan: [`../reviews/v0.8.0-pre-release-plan.md`](../reviews/v0.8.0-pre-release-plan.md) Stage D L36
-- Prior loop: [`../kimi-loops/L35d-upgrade-doc-and-changelog.md`](../kimi-loops/L35d-upgrade-doc-and-changelog.md) (merged at `c5f68ea`; tests 778/0/6; **closes L35 arc; v0.8.0 tagged**)
+- Queue: [`../kimi-phase-queue.md`](../kimi-phase-queue.md) (L36→**L37**→L38; L39+L40 deferred)
+- Pre-release plan: [`../reviews/v0.8.0-pre-release-plan.md`](../reviews/v0.8.0-pre-release-plan.md) Stage D L37 + Copilot findings 5/7/8/10
+- Prior loop: [`../kimi-loops/L36-app-commands-split.md`](../kimi-loops/L36-app-commands-split.md) (merged at `ecdbe3d`; tests 778/0/6; ruff 43)
 - Loop log: [`../kimi-loop-log.md`](../kimi-loop-log.md)
 
 ---
@@ -48,8 +47,8 @@
 
 ```
 HESTIA_KIMI_DONE=1
-LOOP=L36
-BRANCH=feature/l36-app-commands-split
+LOOP=L37
+BRANCH=feature/l37-code-cleanup-sweep
 COMMIT=<final commit sha>
 TESTS=<pytest summary>
 MYPY_FINAL_ERRORS=<count>

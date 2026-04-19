@@ -8,6 +8,30 @@
 
 ---
 
+## 2026-04-19 — Loop: L36 — `app.py` decomposition: extract `commands.py` (clean Kimi run; behavior-preserving refactor) → merged to develop
+
+**Kimi:** Clean run, 3 commits, ~14 minutes wall time (`exit_code: 0`, `elapsed_ms: 858221`). Valid `.kimi-done` with `LOOP=L36`, `COMMIT=0c98048`, `TESTS=778 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`. **First overnight loop landed cleanly.**
+
+**What shipped:**
+
+- `src/hestia/commands.py` (new, 1,060 lines) — every `_cmd_*` async/sync function moved verbatim from `app.py`. Imports updated to absolute (no `.app` self-references).
+- `src/hestia/app.py` — collapsed from **1,533 → 517 lines** (-1,016, -66%). Now hosts only infrastructure: `CliAppContext`, `make_app`, `run_async`, `CliResponseHandler`, `_compile_and_set_memory_epoch`, `_handle_meta_command`, `_require_scheduler_store`. The self-referential `from hestia.app import CliResponseHandler` inside `_cmd_chat`/`_cmd_ask` is gone (commands.py imports it once at module scope).
+- `src/hestia/cli.py` — the `from hestia.app import (_cmd_*…)` block is now `from hestia.commands import (_cmd_*…)`.
+- `pyproject.toml`: `0.8.0` → `0.8.1.dev0` (signals post-release dev work; not a release tag). `uv.lock` synced in the same commit chain.
+- `docs/handoffs/L36-app-commands-split-handoff.md` (new, 34 lines).
+
+**Review (Cursor):**
+
+- Diff is mechanical. Net add of just 56 lines (mostly module docstring + import lines in commands.py). No new tests because the refactor is import-path-only.
+- No test files needed import-path updates — none of the unit/integration tests import `_cmd_*` from `hestia.app` directly (they all go through CliRunner against `cli.py`).
+- Re-ran full gate: **778 passed, 6 skipped** (unchanged from L35d). `mypy src/hestia` → **0 errors in 91 source files** (was 89; commands.py + doctor.py both module-level new). `ruff` → **43** (down 1; possibly an unused import collapsed during the move).
+
+**Merge:** `feature/l36-app-commands-split` → `develop` via `--no-ff` merge commit `ecdbe3d`.
+
+**Queue advance:** `KIMI_CURRENT.md` → **L37** (code cleanup sweep + ruff baseline crunch).
+
+---
+
 ## 2026-04-19 — Loop: L35d + Stage B — `UPGRADE.md` + `[0.8.0]` CHANGELOG amendment + L35-arc handoff (clean Kimi run); v0.8.0 re-tagged + merged to main locally
 
 **Kimi (L35d):** Clean run, 3 docs commits, ~7.5 minutes wall time (`exit_code: 0`, `elapsed_ms: 443483`). Valid `.kimi-done` with `LOOP=L35d`, `COMMIT=8fffad8`, `TESTS=778 passed, 6 skipped` (unchanged from L35c — docs-only loop), `MYPY_FINAL_ERRORS=0`. **Sixth clean L35 mini-loop in a row** (L35a, b, c, d all autonomous; the original monolithic L35 split was the right call).
