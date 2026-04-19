@@ -88,7 +88,10 @@ hestia --config config.py telegram
 
 **Artifacts** — When tool outputs are too large for the conversation (files, HTTP responses, command output), they're automatically saved to disk and replaced with a preview + handle. The model can read the full artifact when it needs to. This keeps conversations focused without losing data.
 
-### Skills (experimental)
+### Skills (experimental preview)
+
+> **Preview feature:** Skills are an experimental preview. Set `HESTIA_EXPERIMENTAL_SKILLS=1` to opt in. See README.md#skills.
+> Skills are not invoked during a normal turn yet — the framework lets you define and manage skills, but the orchestrator does not call them automatically.
 
 Hestia includes a skills framework for defining multi-step workflows as decorated Python functions. Skills declare their required tools and capabilities, and can be indexed for inclusion in the system prompt.
 
