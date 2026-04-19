@@ -52,6 +52,58 @@ When Dylan wants a **queued multi-loop run** (`docs/development-process/kimi-pha
 
 **If your Cursor context runs out** mid-queue: stop after a clean **git** state (commit or stash), finish step 5–6 for the last completed loop, and tell Dylan to send **“Continue Kimi orchestration”**; resume from `docs/development-process/kimi-loop-log.md` + `docs/development-process/prompts/KIMI_CURRENT.md`.
 
+### Post-release merge discipline (added 2026-04-19)
+
+After a release tag is placed on `develop` (and especially after that tag has
+been pushed to `origin`), Cursor **MUST NOT** merge any further feature branches
+into `develop` until a new release-prep document exists — a file under
+`docs/development-process/prompts/` or `docs/development-process/reviews/` that
+**names the upcoming version and lists the loops going into it**.
+
+During the "post-release, pre-next-release" window:
+
+- Feature branches are fine. Kimi may run loops on them.
+- Merging those branches into `develop` is **forbidden** until the next
+  release-prep doc exists and names them.
+- Loop completion means: feature branch pushed to `origin`, handoff written,
+  `KIMI_CURRENT.md` advanced. It does **NOT** mean merged to `develop`.
+
+When a new release is being prepared, Cursor writes the release-prep doc
+first, gets Dylan's sign-off on scope, then merges the named feature branches
+into `develop` as part of the release sequence.
+
+**Allowed exceptions** (do not need a release-prep doc):
+
+- Pre-tag hotfixes that are themselves part of the in-flight release
+  (Cursor lands these on a `feature/hotfix-*` branch, merges to `develop`,
+  then re-tags — this is the *current* release sequence, not "post-release").
+- Pure planning/spec docs under `docs/development-process/` — kimi-loop spec
+  files, ADRs, KIMI_CURRENT/queue/log updates, release-prep docs themselves.
+  These are release-meta, not feature work.
+- `.cursorrules` and `AGENTS.md` policy updates (this rule).
+
+**Example — correct behavior:**
+
+1. `v0.8.0` tagged at `develop` tip.
+2. Kimi runs L36 on `feature/l36-app-commands-split`. Branch pushed.
+3. Kimi runs L37 on `feature/l37-cleanup-sweep`. Branch pushed.
+4. Cursor does **NOT** merge L36 or L37 to `develop`.
+5. Dylan opens next release prep. Cursor drafts `v0.8.1` scope doc naming
+   L36 and L37 as the two feature branches to include.
+6. On Dylan's sign-off, Cursor merges L36, L37 to `develop`, re-tags `v0.8.1`.
+
+**Example — incorrect behavior (the mistake from 2026-04-19):**
+
+1. `v0.8.0` tagged at `develop` tip locally (not yet pushed).
+2. Kimi runs L36. Cursor merges to `develop` immediately.
+3. Kimi runs L37. Cursor merges to `develop`.
+4. `develop` is now 3+ merges past the `v0.8.0` tag with no `v0.8.1`
+   declared. The mistake was salvageable only because the tag was not yet
+   public — Cursor was able to delete the local tag, ship the L36-L38 work
+   inside the actual `v0.8.0` (CHANGELOG amended), and proceed. After the
+   tag is **pushed**, the same mistake would force a `v0.8.1` patch release
+   to ship the post-tag merges.
+
 ### `.kimi-done` — mandatory wait (no human “Kimi finished” ping)
 
 Dylan should **not** have to message you between loops. **You** wait for Kimi’s artifact.
