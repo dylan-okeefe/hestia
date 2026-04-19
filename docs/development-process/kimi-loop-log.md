@@ -7,6 +7,36 @@
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
 
+## 2026-04-19 — Loop: L42 Voice Phase A — Telegram voice messages (Kimi) — feature-branch landed, not merged to develop
+
+**Kimi:** L42 completed on `feature/voice-phase-a-messages`; `.kimi-done` present with `LOOP=L42`, `COMMIT=ac4c196`, `TESTS=810 passed, 12 skipped`, `MYPY_FINAL_ERRORS=0`, `RUFF_SRC=23`.
+
+**What shipped on the feature branch:**
+
+- `src/hestia/platforms/telegram_adapter.py` — `_handle_voice_message` downloads Telegram voice notes, converts OGG→PCM via ffmpeg, transcribes with Whisper, feeds transcript to the orchestrator, synthesizes the response with Piper, encodes back to OGG/Opus, and replies with `reply_voice`. Includes 1 MB truncation fallback (`_truncate_ogg_to_size`) and `set_voice_deps()` injection point wired in `runners.py`.
+- `src/hestia/platforms/runners.py` — injects orchestrator + session store into `TelegramAdapter` when `voice_messages=True`.
+- `src/hestia/config.py` — `TelegramConfig.voice_messages: bool = False` (Phase A feature flag).
+- `docs/guides/voice-setup.md` — §6 documenting the feature flag, system `ffmpeg` requirement, and cross-reference to Phase B.
+- `docs/experiments/telegram-voice-smoke-test.md` — deleted (subsumed by Phase A).
+- `tests/integration/test_telegram_voice_message.py` — 4 tests: happy path, truncation >1 MB, disabled flag, STT failure.
+- `tests/unit/test_telegram_adapter_voice_routing.py` — 2 tests: handler registered when flag true, absent when false.
+
+**Review/gates reported by Kimi:**
+
+- `pytest` full suite → **810 passed, 12 skipped** (1 pre-existing smoke-test flake unrelated to voice changes)
+- `mypy src/hestia` → **0 errors** (95 source files)
+- `ruff check src/` → **23 errors** (baseline unchanged)
+
+**Git status for this loop:**
+
+- Feature branch pushed: `origin/feature/voice-phase-a-messages`
+- Branch commits: `de5f8db` (config flag), `583b6c5` (voice handler), `1f1a9a7` (tests), `de31bb2` (docs + cleanup), `ac4c196` (handoff)
+- Merge status: **NOT merged to `develop`** (correct per post-release merge discipline)
+
+**Orchestration note:** L43 (Phase B — live voice calls) forks from `feature/voice-shared-infra`, not from `develop`.
+
+---
+
 ## 2026-04-19 — Loop: L41 Voice shared infrastructure (Kimi) — feature-branch landed, not merged to develop
 
 **Kimi:** L41 completed on `feature/voice-shared-infra`; `.kimi-done` present with `LOOP=L41`, `COMMIT=bb06e00`, `TESTS=798 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`, `RUFF_SRC=23`.
