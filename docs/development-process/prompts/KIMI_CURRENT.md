@@ -8,8 +8,37 @@
 
 ## Current task
 
-**Active loop:** **L43** — `docs/development-process/kimi-loops/L43-voice-phase-b-calls.md`
-on `feature/voice-phase-b-calls` (forks from `feature/voice-shared-infra`).
+**Status:** **IDLE** — L43 blocked on missing Dylan-side prereqs.
+
+**Blocked on:**
+
+1. **Dedicated phone number** for the Hestia userbot (prepaid SIM recommended).
+2. **Telegram API application** registered at my.telegram.org/apps using that
+   number. Note `api_id` and `api_hash`.
+3. **`py-tgcalls` build verified** on the Ubuntu box (`pip install pytgcalls` in
+   the Hestia venv; may need `libssl-dev libavcodec-dev libavformat-dev`).
+4. **Piper voice file** downloaded to `~/.cache/hestia/voice/` (e.g.
+   `en_US-amy-medium.onnx` + `.onnx.json`).
+5. Dylan's **Telegram `user_id`** (for `allowed_caller_user_ids`).
+
+**Verification on disk (2026-04-19):**
+
+- `pyrogram` — **not installed** in `.venv`
+- `py-tgcalls` — **not installed** in `.venv`
+- Piper voice files — **not present** in `~/.cache/hestia/voice/`
+- Telegram API credentials — **not found** in `.matrix.secrets.py` or config
+
+**What to do when prereqs are ready:**
+
+1. Install/build pyrogram + py-tgcalls in `.venv`.
+2. Place Piper voice files.
+3. Provide `api_id`, `api_hash`, and `allowed_caller_user_ids` to Kimi.
+4. Reset KIMI_CURRENT from IDLE back to L43 active.
+5. Create `feature/voice-phase-b-calls` from `feature/voice-shared-infra` and run loop.
+
+---
+
+## Completed loops (reference)
 
 **L42 completion snapshot:**
 
@@ -23,22 +52,12 @@ on `feature/voice-phase-b-calls` (forks from `feature/voice-shared-infra`).
 
 - Branch: `feature/voice-shared-infra` (pushed to `origin/feature/voice-shared-infra`)
 - Implementation commits: `3e83e25` (pipeline), `191a0b4` (VAD + config), `5ef6c41` (pyproject + doctor + guide), `bb06e00` (tests)
-- Orchestration docs commit on branch: *(pending — handoff + KIMI_CURRENT + loop log)*
+- Orchestration docs commit on branch: `779e369` (handoff + KIMI_CURRENT + loop log)
 - `.kimi-done`: `LOOP=L41`, `MYPY_FINAL_ERRORS=0`, `RUFF_SRC=23`, `TESTS=798 passed, 6 skipped`
 - Merge status: **NOT merged to `develop`** (correct per post-release merge discipline)
 
-**Launch sequence now (L43):**
-
-1. Create `feature/voice-phase-b-calls` from `feature/voice-shared-infra`.
-2. Run `./scripts/kimi-run-current.sh`.
-3. Wait for valid `.kimi-done` (`HESTIA_KIMI_DONE=1`, `LOOP=L43`).
-4. Review diffs + run gates (`pytest`, `mypy src/hestia`, `ruff check src/`).
-5. Fix/tighten prompt and rerun L43 if red.
-6. When green: push `feature/voice-phase-b-calls` to origin, write loop log entry, and
-   advance this file to L44.
-
 **Important:** per `.cursorrules` post-release merge discipline, **do not merge
-L41, L42, or L43 to `develop` yet**. Push feature branches only; merge waits for a v0.8.1+
+L41 or L42 to `develop` yet**. Push feature branches only; merge waits for a v0.8.1+
 release-prep doc naming the branches in scope.
 
 **State on disk:**
