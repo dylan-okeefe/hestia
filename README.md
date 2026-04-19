@@ -618,20 +618,58 @@ The flags that matter: `-np 4` sets 4 KV-cache slots (match `SlotConfig.pool_siz
 
 ---
 
-## Deployment
+## Running Hestia as a daemon
 
-See [`deploy/README.md`](deploy/README.md) for the full guide. Quick version:
+The `deploy/` directory contains systemd service templates for persistent operation:
+
+| File | Purpose |
+|------|---------|
+| `hestia-llama.service` | llama.cpp inference server with KV-cache slots (port 8001) |
+| `hestia-agent.service` | Hestia agent (Telegram bot + scheduler daemon) |
+| `hestia-llama.alt-port.service.example` | Alternate llama.cpp server on port 8002 (rename to `.service` to use) |
+| `install.sh` | Copies services to `/etc/systemd/system/` and reloads daemon |
+| `example_config.py` | Configuration template — copy and customize |
+
+Quick start (system-wide):
 
 ```bash
-cp deploy/example_config.py /opt/hestia/config.py
-# Edit config.py
-
 sudo deploy/install.sh $USER
-sudo systemctl start hestia-llama@$USER
-sudo systemctl start hestia-agent@$USER
+sudo systemctl enable --now hestia-llama@$USER
+sudo systemctl enable --now hestia-agent@$USER
 ```
 
-`hestia-llama.service` runs the llama.cpp server. `hestia-agent.service` runs Hestia itself (Telegram/Matrix bot + scheduler).
+`hestia-agent` depends on `hestia-llama` — systemd starts them in the right order and restarts on failure.
+
+For a per-user systemd setup:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now hestia-llama@$USER
+systemctl --user enable --now hestia-agent@$USER
+```
+
+Configure secrets via environment variables so they never live in source control:
+
+```bash
+export HESTIA_SOUL_PATH=/opt/hestia/SOUL.md
+export HESTIA_CALIBRATION_PATH=/opt/hestia/docs/calibration.json
+export HESTIA_EXPERIMENTAL_SKILLS=1
+export EMAIL_APP_PASSWORD="your-app-password"
+```
+
+Reference them in `config.py`:
+
+```python
+from hestia.config import HestiaConfig, EmailConfig
+
+config = HestiaConfig(
+    email=EmailConfig(
+        password_env="EMAIL_APP_PASSWORD",
+    ),
+)
+```
+
+See [`deploy/README.md`](deploy/README.md) for the full operator walkthrough.
 
 ---
 
