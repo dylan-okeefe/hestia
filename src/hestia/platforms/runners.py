@@ -113,6 +113,15 @@ async def run_platform(
     app.confirm_callback = confirm_callback
     orchestrator = app.make_orchestrator()
 
+    # Inject voice deps into Telegram adapter when voice messages are enabled
+    if isinstance(adapter, TelegramAdapter) and config.telegram.voice_messages:
+        adapter.set_voice_deps(
+            orchestrator=orchestrator,
+            session_store=app.session_store,
+            system_prompt=config.system_prompt,
+            voice_config=config.voice,
+        )
+
     # Recover stale turns from previous crash
     recovered = await orchestrator.recover_stale_turns()
     if recovered:
