@@ -2,7 +2,7 @@
 
 from typing import TYPE_CHECKING
 
-from hestia.config import TrustConfig
+from hestia.config import PolicyConfig, TrustConfig
 from hestia.core.types import Session
 from hestia.errors import InferenceServerError, InferenceTimeoutError
 from hestia.policy.engine import (
@@ -14,6 +14,14 @@ from hestia.runtime_context import scheduler_tick_active
 
 if TYPE_CHECKING:
     from hestia.tools.registry import ToolRegistry
+
+
+DEFAULT_DELEGATION_KEYWORDS: tuple[str, ...] = (
+    "research",
+    "investigate",
+    "analyze deeply",
+    "comprehensive",
+)
 
 
 class DefaultPolicyEngine(PolicyEngine):
@@ -28,6 +36,7 @@ class DefaultPolicyEngine(PolicyEngine):
         ctx_window: int = 8192,
         default_reasoning_budget: int = 2048,
         trust: TrustConfig | None = None,
+        config: PolicyConfig | None = None,
     ) -> None:
         """Initialize with context window size.
 
@@ -38,10 +47,12 @@ class DefaultPolicyEngine(PolicyEngine):
             default_reasoning_budget: Default reasoning token budget.
             trust: Trust profile for auto-approval and capability gating.
                 Defaults to paranoid (safest posture).
+            config: Policy configuration for tunable behavior.
         """
         self.ctx_window = ctx_window
         self._default_reasoning_budget = default_reasoning_budget
         self._trust = trust if trust is not None else TrustConfig()
+        self._config = config if config is not None else PolicyConfig()
 
     def should_delegate(
         self,
@@ -56,6 +67,13 @@ class DefaultPolicyEngine(PolicyEngine):
         - Tool chain is getting long (>5 calls so far)
         - Task appears complex (keywords like "research", "analyze", "investigate")
         - User explicitly requests delegation
+
+        .. note::
+            Keyword matching can produce surprising triggers. For example,
+            "I'd like to research my family history" will match the
+            "research" keyword and trigger delegation. Operators should
+            override ``delegation_keywords`` via :class:`PolicyConfig` for
+            production use.
 
         Args:
             session: Current session
@@ -81,8 +99,12 @@ class DefaultPolicyEngine(PolicyEngine):
             return True
 
         # Complex research tasks that might involve many steps
-        research_keywords = ["research", "investigate", "analyze deeply", "comprehensive"]
-        if any(kw in task_lower for kw in research_keywords):
+        keywords = (
+            DEFAULT_DELEGATION_KEYWORDS
+            if self._config.delegation_keywords is None
+            else self._config.delegation_keywords
+        )
+        if keywords and any(kw in task_lower for kw in keywords):
             return True
 
         # High projected tool usage

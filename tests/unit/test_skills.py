@@ -10,6 +10,12 @@ from hestia.skills.state import SkillState
 from hestia.skills.types import SkillContext, SkillResult
 
 
+@pytest.fixture(autouse=True)
+def enable_experimental_skills(monkeypatch):
+    """Enable experimental skills for all tests in this module."""
+    monkeypatch.setenv("HESTIA_EXPERIMENTAL_SKILLS", "1")
+
+
 class TestSkillState:
     """Test skill lifecycle states."""
 

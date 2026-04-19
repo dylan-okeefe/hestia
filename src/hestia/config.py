@@ -309,6 +309,13 @@ class SecurityConfig:
 
 
 @dataclass
+class PolicyConfig:
+    """Configuration for the policy engine."""
+
+    delegation_keywords: tuple[str, ...] | None = None
+
+
+@dataclass
 class StyleConfig:
     """Configuration for the interaction-style profile system."""
 
@@ -371,6 +378,7 @@ class HestiaConfig:
     email: EmailConfig = field(default_factory=EmailConfig)
     reflection: ReflectionConfig = field(default_factory=ReflectionConfig)
     style: StyleConfig = field(default_factory=StyleConfig)
+    policy: PolicyConfig = field(default_factory=PolicyConfig)
     system_prompt: str = "You are a helpful assistant."
     max_iterations: int = 10
     verbose: bool = False

@@ -353,6 +353,21 @@ def skill() -> None:
     """Manage skills."""
     pass
 
+
+_EXPERIMENTAL_SKILLS_MESSAGE = (
+    "Skills are an experimental preview. Set HESTIA_EXPERIMENTAL_SKILLS=1 to opt in. "
+    "See README.md#skills."
+)
+
+
+def _check_experimental_skills() -> None:
+    import os
+
+    if os.environ.get("HESTIA_EXPERIMENTAL_SKILLS") != "1":
+        click.echo(_EXPERIMENTAL_SKILLS_MESSAGE, err=True)
+        sys.exit(1)
+
+
 @skill.command(name="list")
 @click.option(
     "--state",
@@ -364,6 +379,7 @@ def skill() -> None:
 @run_async
 async def skill_list(app: CliAppContext, state_filter: str | None, show_all: bool) -> None:
     """List skills with their states."""
+    _check_experimental_skills()
     await _cmd_skill_list(app, state_filter, show_all)
 
 @skill.command(name="show")
@@ -371,6 +387,7 @@ async def skill_list(app: CliAppContext, state_filter: str | None, show_all: boo
 @run_async
 async def skill_show(app: CliAppContext, name: str) -> None:
     """Show skill details."""
+    _check_experimental_skills()
     await _cmd_skill_show(app, name)
 
 @skill.command(name="promote")
@@ -378,6 +395,7 @@ async def skill_show(app: CliAppContext, name: str) -> None:
 @run_async
 async def skill_promote(app: CliAppContext, name: str) -> None:
     """Advance skill state (draft -> tested -> trusted)."""
+    _check_experimental_skills()
     await _cmd_skill_promote(app, name)
 
 @skill.command(name="demote")
@@ -385,6 +403,7 @@ async def skill_promote(app: CliAppContext, name: str) -> None:
 @run_async
 async def skill_demote(app: CliAppContext, name: str) -> None:
     """Move skill back one state."""
+    _check_experimental_skills()
     await _cmd_skill_demote(app, name)
 
 @skill.command(name="disable")
@@ -392,12 +411,14 @@ async def skill_demote(app: CliAppContext, name: str) -> None:
 @run_async
 async def skill_disable(app: CliAppContext, name: str) -> None:
     """Disable a skill without removing it."""
+    _check_experimental_skills()
     await _cmd_skill_disable(app, name)
 
 @skill.command(name="test")
 @click.argument("name")
 def skill_test(name: str) -> None:
     """Run skill in sandbox mode (not yet implemented)."""
+    _check_experimental_skills()
     click.echo(f"Skill testing not yet implemented for: {name}")
     click.echo("Note: Run the skill manually and observe results.")
 

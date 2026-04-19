@@ -69,6 +69,12 @@ class EmptyResponseError(HestiaError):
     pass
 
 
+class ExperimentalFeatureError(HestiaError):
+    """Raised when an experimental feature is used without opt-in."""
+
+    pass
+
+
 class FailureClass(StrEnum):
     """Classification of failure types for analytics and policy."""
 
