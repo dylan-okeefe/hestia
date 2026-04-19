@@ -91,6 +91,7 @@ class TelegramConfig:
     connect_timeout_seconds: float = 10.0
     read_timeout_seconds: float = 30.0
     long_poll_timeout_seconds: float = 30.0
+    voice_messages: bool = False  # Phase A feature flag
 
 
 @dataclass
