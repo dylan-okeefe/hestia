@@ -8,6 +8,32 @@
 
 ---
 
+## 2026-04-19 — Loop: L35c — `hestia doctor` command (clean Kimi run on the largest L35 mini-loop) → merged to develop
+
+**Kimi:** Clean run, 5 commits exactly to budget, ~22 minutes wall time (`exit_code: 0`, `elapsed_ms: 1316135`). Valid `.kimi-done` with `LOOP=L35c`, `COMMIT=a3526b3`, `TESTS=777 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`. Working tree clean before write. **Mini-loop strategy continues to win** — this was the loop most likely to hit the step ceiling (9 checks × 2 tests + new module + 2 integration points, exactly the shape that broke L29-L31), and Kimi delivered it autonomously in one run.
+
+**What shipped:**
+
+- `src/hestia/doctor.py` (new, 346 lines) — flat function-list module per spec. Public API is `CheckResult` dataclass, `run_checks(app) → list[CheckResult]`, `render_results(results, plain=False) → str`. Nine private async check functions, each catching its own exceptions and returning a `CheckResult`. `run_checks` itself wraps each call in a defensive `try/except` so an uncaught bug surfaces as a failed check rather than aborting the suite.
+- `src/hestia/app.py` (+9 lines) — `_cmd_doctor(app, plain) → int` that calls `run_checks`, prints `render_results`, returns the appropriate exit code. Local import of `hestia.doctor` to avoid circular-import hazards.
+- `src/hestia/cli.py` (+14 lines) — `hestia doctor [--plain]` registered as `@cli.command()` + `@click.option` + `@run_async`; calls `_cmd_doctor` and `sys.exit`s on failure.
+- `tests/unit/test_doctor_checks.py` (new, 375 lines) — 18 unit tests covering green and red paths for every check (Python version too old, `uv pip check` drift, `uv` not on PATH, SQLite corruption, llama.cpp timeout/connection-error, missing Telegram token, missing email password env, unknown trust preset, unparseable memory epoch).
+- `tests/cli/test_doctor_command.py` (new, 163 lines) + `tests/cli/__init__.py` — 4 e2e tests via `CliRunner`: clean-env exit-0, any-fail exit-1, `--plain` ASCII markers, default Unicode markers.
+- `docs/handoffs/L35c-hestia-doctor-handoff.md` (new, 52 lines).
+
+**Smoke test (Cursor, post-merge):** `uv run hestia doctor --plain` against the dev environment exits with code 1, surfacing `[FAIL] sqlite_dbs_readable` because the dev shell's CWD lacks the configured DB path. Eight other checks `[ok]`. Exactly the kind of "real misconfiguration → real failure surface" the command is designed for.
+
+**Review (Cursor):**
+
+- Diff is large (7 files, +959 / 0) but every line is in scope. No off-spec touches anywhere else in the tree.
+- Re-ran full gate (`tests/unit tests/integration tests/cli tests/docs`): **778 passed, 6 skipped** (one extra vs. Kimi's report — likely a docs-test pickup). `mypy` → 0. `ruff` → 44 (unchanged). 
+
+**Merge:** `feature/l35c-hestia-doctor` → `develop` via `--no-ff` merge commit `71ea99f`.
+
+**Queue advance:** `KIMI_CURRENT.md` → **L35d** (`UPGRADE.md` + `[0.8.0]` CHANGELOG amendment + L35-arc handoff).
+
+---
+
 ## 2026-04-19 — Loop: L35b — `_cmd_policy_show` derives from live registry/config (clean Kimi run) → merged to develop
 
 **Kimi:** Clean run, 3 commits, ~11 minutes wall time (`exit_code: 0`, `elapsed_ms: 662106`). Valid `.kimi-done` with `LOOP=L35b`, `COMMIT=275fc6d`, `TESTS=753 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`. Working tree clean before write. Mini-loop strategy still holding.

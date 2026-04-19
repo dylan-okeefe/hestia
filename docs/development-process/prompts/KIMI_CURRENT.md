@@ -2,31 +2,30 @@
 
 **Orchestrator:** Cursor updates this file after each review.
 
-**Last set by:** Cursor — 2026-04-19 (L35b merged at `852d546`; v0.8.0 still untagged; L35c next — biggest L35 mini-loop)
+**Last set by:** Cursor — 2026-04-19 (L35c merged at `71ea99f`; v0.8.0 still untagged; L35d is the final L35 mini-loop)
 
 ---
 
 ## Current task
 
-**Active loop:** **L35c** — `hestia doctor` command. New `src/hestia/doctor.py` module with nine read-only health checks, `_cmd_doctor` in `app.py`, command registration in `cli.py`, and two new test modules. **No `pyproject.toml` bump.** This is the largest of the four L35 mini-loops; stay disciplined and do not extend scope to auto-fix logic, `hestia upgrade`, or schema migrations (those are L39, deferred).
+**Active loop:** **L35d** — `UPGRADE.md` (root) + `[0.8.0]` CHANGELOG amendment + L35-arc handoff. **Docs-only loop.** No production code changes. **No `pyproject.toml` bump** (v0.8.0 is the target tag; do not create a `[0.8.1]` section).
 
-**Spec:** [`../kimi-loops/L35c-hestia-doctor.md`](../kimi-loops/L35c-hestia-doctor.md)
+**Spec:** [`../kimi-loops/L35d-upgrade-doc-and-changelog.md`](../kimi-loops/L35d-upgrade-doc-and-changelog.md)
 
-**Branch:** `feature/l35c-hestia-doctor` from `develop` tip `852d546` (post-L35b merge).
+**Branch:** `feature/l35d-upgrade-doc-and-release-prep` from `develop` tip `71ea99f` (post-L35c merge).
 
 **Kimi prompt:** Read this file, then execute the entire spec at the linked file. Implement each section in order, run required tests, and write `.kimi-done` exactly as specified.
 
-**Hard step budget:** ≤ **5 commits**, ≤ **2 new test modules** (`tests/unit/test_doctor_checks.py`, `tests/cli/test_doctor_command.py`). Files in scope: `src/hestia/doctor.py` (new), `src/hestia/app.py` (single function added), `src/hestia/cli.py` (one new command + one import), the two new test modules, and `docs/handoffs/L35c-hestia-doctor-handoff.md`.
+**Hard step budget:** ≤ **3 commits**, **0 new test modules**. Files in scope: `UPGRADE.md` (new at repo root), `CHANGELOG.md` (amend `[0.8.0]` only), `docs/handoffs/L35-pre-release-fixes-arc-handoff.md` (new).
 
-**Step-ceiling discipline reminder:** L29-L31 hit the per-iteration ceiling on loops of this shape. Nine checks × 2 tests is exactly the kind of accumulation that exhausts the step budget. If you find yourself at iteration ~150 with checks still missing, **stop**, commit what you have, write `.kimi-done` as `HESTIA_KIMI_DONE=0` with `BLOCKER=step-ceiling`, and let Cursor finish the rest. Do **not** push a partially-tested module pretending it's done.
+**Per-loop reminders:**
 
-**Critical rules from the spec:**
+- The `[0.8.0]` block already exists in CHANGELOG (added by `chore(release): v0.8.0` at `d9b889d`). **Amend that block; do not create `[0.8.1]`.** Add three new bullets under "Bug fixes & hardening" (style disable, policy show, join_overhead cache), a new "New diagnostic commands" subsection (hestia doctor), and a new "Upgrade docs" subsection (UPGRADE.md). Update the test-count line at the bottom of the block to `~778 passed`.
+- `UPGRADE.md` section ordering is verbatim per spec — every section header listed must appear in the same order.
+- Reference `hestia doctor` (now real, post-L35c) in `UPGRADE.md` step 6.
+- `docs/handoffs/L35-pre-release-fixes-arc-handoff.md` covers all four mini-loops (L35a + L35b + L35c + L35d) as one document. ≤ 120 lines. Include the loop manifest table (branch, merge commit, lines changed, tests added).
 
-- **Read-only.** No check writes anywhere. `_check_dependencies_in_sync` reads via `uv pip check`; do not run `uv sync` from doctor.
-- **Each check returns `CheckResult`.** Never raises. If a check has an uncaught bug, that's a test gap to close.
-- **No new dependencies.** Use `httpx` (already in deps), `sqlite3` (stdlib), `subprocess` (stdlib).
-- **Disabled platforms are not failures.** Only check what's enabled in `app.config`.
-- **No auto-fix logic.** That's L39 (deferred).
+**Do NOT:** create `tests/docs/test_upgrade_md.py` (the L34 README-link test already walks `UPGRADE.md` if at repo root); add `hestia upgrade` references that imply the command exists (L39 deferred); touch any file outside the three named above; bump `pyproject.toml`.
 
 **FINAL CHECK BEFORE WRITING `.kimi-done`:** run `git status --porcelain`. **If anything is unstaged/uncommitted, commit it first.**
 
@@ -36,9 +35,9 @@
 
 ## Reference
 
-- Queue: [`../kimi-phase-queue.md`](../kimi-phase-queue.md) (L35a→b→**c**→d→Cursor-tag→L36→L37→L38; L39+L40 deferred)
-- Pre-release plan: [`../reviews/v0.8.0-pre-release-plan.md`](../reviews/v0.8.0-pre-release-plan.md) §4
-- Prior loop: [`../kimi-loops/L35b-policy-show-wiring.md`](../kimi-loops/L35b-policy-show-wiring.md) (merged at `852d546`; tests 753/0/6)
+- Queue: [`../kimi-phase-queue.md`](../kimi-phase-queue.md) (L35a→b→c→**d**→Cursor-tag→L36→L37→L38; L39+L40 deferred)
+- Pre-release plan: [`../reviews/v0.8.0-pre-release-plan.md`](../reviews/v0.8.0-pre-release-plan.md) §5 + §6
+- Prior loop: [`../kimi-loops/L35c-hestia-doctor.md`](../kimi-loops/L35c-hestia-doctor.md) (merged at `71ea99f`; tests 778/0/6)
 - Loop log: [`../kimi-loop-log.md`](../kimi-loop-log.md)
 
 ---
@@ -47,8 +46,8 @@
 
 ```
 HESTIA_KIMI_DONE=1
-LOOP=L35c
-BRANCH=feature/l35c-hestia-doctor
+LOOP=L35d
+BRANCH=feature/l35d-upgrade-doc-and-release-prep
 COMMIT=<final commit sha>
 TESTS=<pytest summary>
 MYPY_FINAL_ERRORS=<count>
