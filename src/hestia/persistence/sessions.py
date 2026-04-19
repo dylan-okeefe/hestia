@@ -40,68 +40,135 @@ class SessionStore:
         self._db = db
 
     async def get_or_create_session(self, platform: str, platform_user: str) -> Session:
-        """Get existing active session or create a new one."""
-        # Try to find existing active session
-        query = (
-            sa.select(sessions)
-            .where(
-                sa.and_(
-                    sessions.c.platform == platform,
-                    sessions.c.platform_user == platform_user,
-                    sessions.c.state == SessionState.ACTIVE.value,
-                )
-            )
-            .order_by(sessions.c.last_active_at.desc())
-            .limit(1)
-        )
+        """Get the user's active session, or create one atomically.
 
-        async with self._db.engine.connect() as conn:
-            result = await conn.execute(query)
-            row = result.fetchone()
+        TOCTOU-safe: the prior implementation issued a SELECT-then-INSERT pair
+        with no isolation between them, so two concurrent callers for the same
+        ``(platform, platform_user)`` could both observe "no active session"
+        and both create one — yielding duplicate ACTIVE rows that downstream
+        code (orchestrator, slot manager, scheduler) treats as a single
+        coherent conversation. Symptoms include split message history,
+        scheduler tasks attached to a session that never receives messages,
+        and slot churn.
 
-            if row:
-                # Update last_active_at
-                update = (
-                    sa.update(sessions)
-                    .where(sessions.c.id == row.id)
-                    .values(last_active_at=utcnow())
-                )
-                await conn.execute(update)
-                await conn.commit()
-                return self._row_to_session(row)
+        The fix is twofold:
 
-        # Create new session
-        session_id = _generate_session_id(platform, platform_user)
-        now = utcnow()
+        1. A partial unique index ``ux_sessions_active_user`` on
+           ``(platform, platform_user) WHERE state = 'ACTIVE'`` (defined in
+           ``schema.py`` and applied via the runtime migration) makes
+           duplicate ACTIVE rows a constraint violation at the database layer.
+        2. This method now issues a single ``INSERT ... ON CONFLICT DO NOTHING``
+           and, on conflict, falls through to a SELECT of the existing winner
+           and bumps its ``last_active_at``. Net behavior is identical for
+           callers; concurrent callers converge on the same ``Session.id``.
+
+        Dialect handling: SQLite and PostgreSQL both have
+        ``INSERT ... ON CONFLICT`` but it lives in dialect-specific modules.
+        We dispatch on ``conn.dialect.name`` rather than maintaining two code
+        paths at the call sites.
+        """
         new_session = Session(
-            id=session_id,
+            id=_generate_session_id(platform, platform_user),
             platform=platform,
             platform_user=platform_user,
-            started_at=now,
-            last_active_at=now,
+            started_at=utcnow(),
+            last_active_at=utcnow(),
             slot_id=None,
             slot_saved_path=None,
             state=SessionState.ACTIVE,
             temperature=SessionTemperature.COLD,
         )
-
-        insert = sa.insert(sessions).values(
-            id=new_session.id,
-            platform=new_session.platform,
-            platform_user=new_session.platform_user,
-            started_at=new_session.started_at,
-            last_active_at=new_session.last_active_at,
-            slot_id=new_session.slot_id,
-            slot_saved_path=new_session.slot_saved_path,
-            state=new_session.state.value,
-            temperature=new_session.temperature.value,
-        )
+        values = {
+            "id": new_session.id,
+            "platform": new_session.platform,
+            "platform_user": new_session.platform_user,
+            "started_at": new_session.started_at,
+            "last_active_at": new_session.last_active_at,
+            "slot_id": new_session.slot_id,
+            "slot_saved_path": new_session.slot_saved_path,
+            "state": new_session.state.value,
+            "temperature": new_session.temperature.value,
+        }
 
         async with self._db.engine.connect() as conn:
-            await conn.execute(insert)
-            await conn.commit()
+            insert_stmt = self._build_active_session_upsert(conn.dialect.name, values)
+            insert_result = await conn.execute(insert_stmt)
+            inserted_row = insert_result.fetchone()
 
-        return new_session
+            if inserted_row is not None:
+                # We won the race (or there was no race): the row we just
+                # inserted IS the active session. Commit and return it.
+                await conn.commit()
+                return new_session
+
+            # ON CONFLICT DO NOTHING swallowed the insert — another concurrent
+            # caller already created the active session for this user. Read it,
+            # bump last_active_at to match the prior code path's behavior on a
+            # cache hit, and return.
+            select_stmt = (
+                sa.select(sessions)
+                .where(
+                    sa.and_(
+                        sessions.c.platform == platform,
+                        sessions.c.platform_user == platform_user,
+                        sessions.c.state == SessionState.ACTIVE.value,
+                    )
+                )
+                .order_by(sessions.c.last_active_at.desc())
+                .limit(1)
+            )
+            select_result = await conn.execute(select_stmt)
+            row = select_result.fetchone()
+            if row is None:
+                # Should be impossible: the unique index just rejected our
+                # insert, so an ACTIVE row must exist. If it doesn't, the
+                # constraint and SELECT are inconsistent — surface that.
+                raise PersistenceError(
+                    "get_or_create_session: INSERT hit ON CONFLICT but no "
+                    f"ACTIVE session found for {platform}/{platform_user}. "
+                    "Index ux_sessions_active_user may be missing or stale."
+                )
+            await conn.execute(
+                sa.update(sessions)
+                .where(sessions.c.id == row.id)
+                .values(last_active_at=utcnow())
+            )
+            await conn.commit()
+            return self._row_to_session(row)
+
+    @staticmethod
+    def _build_active_session_upsert(dialect_name: str, values: dict[str, Any]) -> Any:
+        """Build an INSERT ... ON CONFLICT DO NOTHING for the active-session index.
+
+        Returns a statement that inserts ``values`` into ``sessions`` and, on
+        conflict with ``ux_sessions_active_user``, does nothing. The statement
+        also has a RETURNING clause for ``id`` so the caller can distinguish
+        "we won" (one row returned) from "we lost the race" (zero rows).
+        """
+        if dialect_name == "sqlite":
+            from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+            sqlite_stmt = sqlite_insert(sessions).values(**values)
+            sqlite_stmt = sqlite_stmt.on_conflict_do_nothing(
+                index_elements=["platform", "platform_user"],
+                # Must match the partial index's WHERE exactly; persisted
+                # value is lowercase ``SessionState.ACTIVE.value``.
+                index_where=sa.text("state = 'active'"),
+            )
+            return sqlite_stmt.returning(sessions.c.id)
+        if dialect_name == "postgresql":
+            from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+            pg_stmt = pg_insert(sessions).values(**values)
+            pg_stmt = pg_stmt.on_conflict_do_nothing(
+                index_elements=["platform", "platform_user"],
+                index_where=sa.text("state = 'active'"),
+            )
+            return pg_stmt.returning(sessions.c.id)
+        raise PersistenceError(
+            f"get_or_create_session: dialect {dialect_name!r} not supported. "
+            "Hestia ships dialect-aware upserts only for sqlite and postgresql."
+        )
 
     async def archive_session(self, session_id: str) -> None:
         """Mark a session as ARCHIVED. Used when /reset creates a successor."""
