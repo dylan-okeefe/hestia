@@ -2,27 +2,35 @@
 
 **Orchestrator:** Cursor updates this file after each review.
 
-**Last set by:** Cursor — 2026-04-19 (launching post-release feature-branch queue: L40 first)
+**Last set by:** Cursor — 2026-04-19 (L40 complete on feature branch; launching L41)
 
 ---
 
 ## Current task
 
-**Active loop:** **L40** — `docs/development-process/kimi-loops/L40-copilot-cleanup-backlog.md`
-on feature branch(es) `feature/l40*` (Cursor may split per scope/step budget).
+**Active loop:** **L41** — `docs/development-process/kimi-loops/L41-voice-shared-infra.md`
+on `feature/voice-shared-infra`.
 
-**Launch sequence now:**
+**L40 completion snapshot:**
 
-1. Create/switch to the L40 feature branch from `develop`.
+- Branch: `feature/l40-copilot-cleanup` (pushed to `origin/feature/l40-copilot-cleanup`)
+- Main implementation commit: `d604313` (`feat(l40): copilot cleanup backlog ...`)
+- Orchestration docs commit on branch: `b0c4668`
+- `.kimi-done`: `LOOP=L40`, `MYPY_FINAL_ERRORS=0`, `RUFF_SRC=23`, `TESTS=796 passed, 6 skipped`
+- Merge status: **NOT merged to `develop`** (correct per post-release merge discipline)
+
+**Launch sequence now (L41):**
+
+1. Create/switch to `feature/voice-shared-infra` from `develop`.
 2. Run `./scripts/kimi-run-current.sh`.
-3. Wait for valid `.kimi-done` (`HESTIA_KIMI_DONE=1`, `LOOP=L40*`).
+3. Wait for valid `.kimi-done` (`HESTIA_KIMI_DONE=1`, `LOOP=L41`).
 4. Review diffs + run gates (`pytest`, `mypy src/hestia`, `ruff check src/`).
-5. Fix/tighten prompt and rerun L40 if red.
-6. When green: push `feature/l40*` to origin, write loop log entry, and
-   advance this file to L41.
+5. Fix/tighten prompt and rerun L41 if red.
+6. When green: push `feature/voice-shared-infra` to origin, write loop log entry, and
+   advance this file to L42.
 
 **Important:** per `.cursorrules` post-release merge discipline, **do not merge
-L40 to `develop` yet**. Push feature branch only; merge waits for a v0.8.1+
+L41 to `develop` yet**. Push feature branch only; merge waits for a v0.8.1+
 release-prep doc naming the branch in scope.
 
 **State on disk:**
@@ -63,12 +71,8 @@ doc names the branch in its scope.**
 
 ### Track 4 — Copilot cleanup backlog
 
-- **L40** — `docs/development-process/kimi-loops/L40-copilot-cleanup-backlog.md`
-  — six items: sequential tool dispatch, `should_evict_slot` stub,
-  `for_trust` identity comparison, EmailAdapter bare excepts,
-  `prompt_on_mobile` docstring drift, three open `# TODO(L*)` markers.
-  Suggested branches: `feature/copilot-cleanup-orchestrator`,
-  `feature/copilot-cleanup-email`, `feature/copilot-cleanup-policy`.
+- **L40** — complete on `origin/feature/l40-copilot-cleanup` (`d604313` + `b0c4668`);
+  waiting for v0.8.1+ release-prep before merge to `develop`.
 
 ### Track 5 — Voice adapter arc
 

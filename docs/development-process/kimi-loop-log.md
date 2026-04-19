@@ -8,6 +8,39 @@
 
 ---
 
+## 2026-04-19 — Loop: L40 Copilot cleanup backlog (Kimi) — feature-branch landed, not merged to develop
+
+**Kimi:** L40 completed on `feature/l40-copilot-cleanup`; `.kimi-done` present with `LOOP=L40`, `COMMIT=d604313`, `TESTS=796 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`, `RUFF_SRC=23`.
+
+**What shipped on the feature branch:**
+
+- Concurrent tool dispatch in orchestrator (`asyncio.gather`) with ordering safeguards for serial-sensitive tools.
+- Removal of the `should_evict_slot` policy stub from the policy interface and default implementation.
+- `for_trust` value-equality regression coverage.
+- `_count_tokens` cache-key rationale documented in `context/builder.py`.
+- Email adapter hardening from review carry-forward:
+  - configurable `drafts_folder` / `sent_folder` support for Gmail-compatible special folders.
+  - narrowed IMAP exception handling (no bare `except:`).
+  - guard against illegal `CLOSE` in AUTH state during teardown.
+- `prompt_on_mobile` docstring alignment with implementation behavior.
+- stale `# TODO(L*)` markers resolved in touched areas.
+
+**Review/gates reported by Kimi:**
+
+- `pytest tests/unit/ tests/integration/ tests/cli/ tests/docs/` → **796 passed, 6 skipped**
+- `mypy src/hestia` → **0 errors**
+- `ruff check src/` → **23 errors** (baseline unchanged)
+
+**Git status for this loop:**
+
+- Feature branch pushed: `origin/feature/l40-copilot-cleanup`
+- Branch commits: `d604313` (implementation), `b0c4668` (handoff + orchestration updates on branch)
+- Merge status: **NOT merged to `develop`** (correct per post-release merge discipline)
+
+**Orchestration note:** A stale rewrite of `KIMI_CURRENT.md` occurred after `.kimi-done`; Cursor stopped Kimi, restored the authoritative pointer on `develop`, and continued queue execution from L41.
+
+---
+
 ## 2026-04-19 — v0.8.0 release seal: Cursor in-process work (no Kimi loop) — TOCTOU hotfix + .cursorrules + CHANGELOG amend + tag re-place + main fast-forward
 
 **Context:** Dylan returned to a develop branch already containing the L36-L38 overnight queue plus a local `v0.8.0` tag at the L35d merge (`c5f68ea`). The L36-L38 work had been merged to develop *after* the local tag was placed — a release-discipline mistake that needed correcting before the tag went public. Dylan wrote a comprehensive launch plan (`docs/development-process/prompts/v0.8.0-release-and-voice-launch.md`) covering five tracks: pre-tag hotfix, release seal, .cursorrules update, post-release Copilot backlog, and the voice adapter arc. This loop covers tracks 1-3; tracks 4-5 are queued as feature-branch specs (no merge to develop) per the new merge discipline rule.
