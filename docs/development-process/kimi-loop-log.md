@@ -8,6 +8,54 @@
 
 ---
 
+## 2026-04-19 — Loop: L35d + Stage B — `UPGRADE.md` + `[0.8.0]` CHANGELOG amendment + L35-arc handoff (clean Kimi run); v0.8.0 re-tagged + merged to main locally
+
+**Kimi (L35d):** Clean run, 3 docs commits, ~7.5 minutes wall time (`exit_code: 0`, `elapsed_ms: 443483`). Valid `.kimi-done` with `LOOP=L35d`, `COMMIT=8fffad8`, `TESTS=778 passed, 6 skipped` (unchanged from L35c — docs-only loop), `MYPY_FINAL_ERRORS=0`. **Sixth clean L35 mini-loop in a row** (L35a, b, c, d all autonomous; the original monolithic L35 split was the right call).
+
+**What L35d shipped:**
+
+- `UPGRADE.md` (new at repo root, 145 lines) — verbatim section ordering per spec. Cleanly references the now-real `hestia doctor` (L35c) in step 6. Defaults shown for `trust:` (`paranoid`), `web_search:` (disabled), `security:` (entropy threshold 5.5), `style:` (enabled), `reflection:` (off), with a one-paragraph callout on `skills:` being inert without `HESTIA_EXPERIMENTAL_SKILLS=1`.
+- `CHANGELOG.md` `[0.8.0]` block amended with three new bullets under "Bug fixes & hardening" (style disable, policy show, join_overhead cache), a new "New diagnostic commands" subsection (hestia doctor), a new "Upgrade docs" subsection (UPGRADE.md), and stats line updated to `~778 tests passing`.
+- `docs/handoffs/L35-pre-release-fixes-arc-handoff.md` (new, 79 lines) covering all four mini-loops as one document.
+
+**Review (Cursor):** Diffs match spec. CHANGELOG amendment is in-place (no `[0.8.1]` section invented). Re-ran gate from develop tip: **778 passed, 6 skipped** (unchanged); mypy 0; ruff 44; uv.lock in sync.
+
+**Merge:** `feature/l35d-upgrade-doc-and-release-prep` → `develop` via `--no-ff` merge commit `c5f68ea`. **Closes the L35 pre-release-fixes arc.**
+
+---
+
+## 2026-04-19 — Stage B (Cursor): re-tag v0.8.0 at the L35d merge tip; merge develop into main locally
+
+**Why Cursor-only:** per `.cursorrules`, Dylan owns `git push`. The first L35 attempt tagged `v0.8.0` at `d9b889d` and merged to main locally; both were thrown away after the pre-release-plan added L35a-d work. This is the second-and-final tag.
+
+**What Cursor did:**
+
+1. `git tag -a v0.8.0 develop` at the L35d merge tip (`c5f68ea`). Annotated tag with the v0.8.0 release message (highlights of the L20-L35 arc, 778 tests, 0 mypy, 22 ADRs, references to CHANGELOG and UPGRADE.md).
+2. `git checkout main && git merge --no-ff develop` with a release-merge message listing the L35a-d highlights. Merge commit `7f2af27` on `main`.
+3. **Final gate from main tip:** `pytest tests/unit tests/integration tests/cli` → **777 passed, 6 skipped** (the missing 1 vs. develop is the docs test module that requires `tests/docs/` to be in the run; the L35d docs-only changes don't add tests). `mypy src/hestia` → **0**. `uv.lock` is synced.
+4. Did **not** push anything. Push commands prepared for Dylan in the morning summary.
+
+**Local repo state:**
+
+- `main` ahead of `origin/main` by **180 commits** (full L20→L35d arc + the merge commit).
+- `develop` ahead of `origin/develop` by **23 commits** (the L35a/b/c/d feature merges + orchestration commits).
+- Annotated tag `v0.8.0` at `c5f68ea`, contained by both `main` and `develop`.
+
+**Dylan's push commands (in the morning):**
+
+```bash
+cd ~/Hestia
+git push origin develop
+git push origin main
+git push origin v0.8.0
+```
+
+After that, optionally cut a GitHub release from the `v0.8.0` tag using the `## [0.8.0] — 2026-04-18` block in CHANGELOG as the release notes.
+
+**Queue advance:** v0.8.0 release work complete. `KIMI_CURRENT.md` → **L36** (overnight queue starts).
+
+---
+
 ## 2026-04-19 — Loop: L35c — `hestia doctor` command (clean Kimi run on the largest L35 mini-loop) → merged to develop
 
 **Kimi:** Clean run, 5 commits exactly to budget, ~22 minutes wall time (`exit_code: 0`, `elapsed_ms: 1316135`). Valid `.kimi-done` with `LOOP=L35c`, `COMMIT=a3526b3`, `TESTS=777 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`. Working tree clean before write. **Mini-loop strategy continues to win** — this was the loop most likely to hit the step ceiling (9 checks × 2 tests + new module + 2 integration points, exactly the shape that broke L29-L31), and Kimi delivered it autonomously in one run.

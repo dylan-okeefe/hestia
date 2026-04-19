@@ -2,30 +2,32 @@
 
 **Orchestrator:** Cursor updates this file after each review.
 
-**Last set by:** Cursor — 2026-04-19 (L35c merged at `71ea99f`; v0.8.0 still untagged; L35d is the final L35 mini-loop)
+**Last set by:** Cursor — 2026-04-19 (L35d merged at `c5f68ea`; v0.8.0 tagged at same commit; merged to main locally; awaiting Dylan push; overnight queue starts at L36)
 
 ---
 
 ## Current task
 
-**Active loop:** **L35d** — `UPGRADE.md` (root) + `[0.8.0]` CHANGELOG amendment + L35-arc handoff. **Docs-only loop.** No production code changes. **No `pyproject.toml` bump** (v0.8.0 is the target tag; do not create a `[0.8.1]` section).
+**Active loop:** **L36** — `app.py` decomposition: extract `commands.py`. Behavior-preserving refactor. ~40 `_cmd_*` functions move from `src/hestia/app.py` (~1,533 lines) to a new `src/hestia/commands.py`. Infrastructure stays in `app.py`. `cli.py` imports update to reference the new module. Removes the self-referential `from hestia.app import CliResponseHandler` inside `_cmd_chat` and `_cmd_ask`.
 
-**Spec:** [`../kimi-loops/L35d-upgrade-doc-and-changelog.md`](../kimi-loops/L35d-upgrade-doc-and-changelog.md)
+**Spec:** [`../kimi-loops/L36-app-commands-split.md`](../kimi-loops/L36-app-commands-split.md)
 
-**Branch:** `feature/l35d-upgrade-doc-and-release-prep` from `develop` tip `71ea99f` (post-L35c merge).
+**Branch:** `feature/l36-app-commands-split` from `develop` tip `c5f68ea` (post-L35d merge / v0.8.0 tag).
 
 **Kimi prompt:** Read this file, then execute the entire spec at the linked file. Implement each section in order, run required tests, and write `.kimi-done` exactly as specified.
 
-**Hard step budget:** ≤ **3 commits**, **0 new test modules**. Files in scope: `UPGRADE.md` (new at repo root), `CHANGELOG.md` (amend `[0.8.0]` only), `docs/handoffs/L35-pre-release-fixes-arc-handoff.md` (new).
+**Hard step budget:** ≤ **5 commits**, **0 new test modules** (refactor is behavior-preserving). Files in scope: `src/hestia/app.py`, `src/hestia/commands.py` (new), `src/hestia/cli.py`, `pyproject.toml` (version bump only), `uv.lock`, `docs/handoffs/L36-app-commands-split-handoff.md` (new).
 
-**Per-loop reminders:**
+**Critical rules:**
 
-- The `[0.8.0]` block already exists in CHANGELOG (added by `chore(release): v0.8.0` at `d9b889d`). **Amend that block; do not create `[0.8.1]`.** Add three new bullets under "Bug fixes & hardening" (style disable, policy show, join_overhead cache), a new "New diagnostic commands" subsection (hestia doctor), and a new "Upgrade docs" subsection (UPGRADE.md). Update the test-count line at the bottom of the block to `~778 passed`.
-- `UPGRADE.md` section ordering is verbatim per spec — every section header listed must appear in the same order.
-- Reference `hestia doctor` (now real, post-L35c) in `UPGRADE.md` step 6.
-- `docs/handoffs/L35-pre-release-fixes-arc-handoff.md` covers all four mini-loops (L35a + L35b + L35c + L35d) as one document. ≤ 120 lines. Include the loop manifest table (branch, merge commit, lines changed, tests added).
+- **Behavior-preserving.** No new functionality. No bug fixes (file separately for L37 if you spot any).
+- **No test modifications** except import-path updates on tests that cite `hestia.app._cmd_X` directly. Run `git grep -n 'hestia.app import _cmd_' tests/` first to find them.
+- **`pyproject.toml` bump:** `0.8.0` → `0.8.1.dev0`.
+- **`KIMI_CURRENT.md` and `kimi-loop-log.md` are out of scope** — Cursor updates those after merge. Do not touch.
 
-**Do NOT:** create `tests/docs/test_upgrade_md.py` (the L34 README-link test already walks `UPGRADE.md` if at repo root); add `hestia upgrade` references that imply the command exists (L39 deferred); touch any file outside the three named above; bump `pyproject.toml`.
+**Stays in `app.py`:** `CliAppContext`, `make_app`, `run_async`, `CliResponseHandler`, `_compile_and_set_memory_epoch`, `_handle_meta_command`, `_require_scheduler_store`, plus any other helper that is purely infrastructural (called by multiple `_cmd_*` or by the bootstrap path).
+
+**Moves to `commands.py`:** every `async def _cmd_*` and `def _cmd_*`.
 
 **FINAL CHECK BEFORE WRITING `.kimi-done`:** run `git status --porcelain`. **If anything is unstaged/uncommitted, commit it first.**
 
@@ -35,9 +37,9 @@
 
 ## Reference
 
-- Queue: [`../kimi-phase-queue.md`](../kimi-phase-queue.md) (L35a→b→c→**d**→Cursor-tag→L36→L37→L38; L39+L40 deferred)
-- Pre-release plan: [`../reviews/v0.8.0-pre-release-plan.md`](../reviews/v0.8.0-pre-release-plan.md) §5 + §6
-- Prior loop: [`../kimi-loops/L35c-hestia-doctor.md`](../kimi-loops/L35c-hestia-doctor.md) (merged at `71ea99f`; tests 778/0/6)
+- Queue: [`../kimi-phase-queue.md`](../kimi-phase-queue.md) (**L36**→L37→L38; L39+L40 deferred)
+- Pre-release plan: [`../reviews/v0.8.0-pre-release-plan.md`](../reviews/v0.8.0-pre-release-plan.md) Stage D L36
+- Prior loop: [`../kimi-loops/L35d-upgrade-doc-and-changelog.md`](../kimi-loops/L35d-upgrade-doc-and-changelog.md) (merged at `c5f68ea`; tests 778/0/6; **closes L35 arc; v0.8.0 tagged**)
 - Loop log: [`../kimi-loop-log.md`](../kimi-loop-log.md)
 
 ---
@@ -46,8 +48,8 @@
 
 ```
 HESTIA_KIMI_DONE=1
-LOOP=L35d
-BRANCH=feature/l35d-upgrade-doc-and-release-prep
+LOOP=L36
+BRANCH=feature/l36-app-commands-split
 COMMIT=<final commit sha>
 TESTS=<pytest summary>
 MYPY_FINAL_ERRORS=<count>
