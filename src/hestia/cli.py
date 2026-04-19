@@ -507,10 +507,18 @@ async def style_reset(app: CliAppContext, platform: str | None, user: str | None
     click.echo(f"Deleted {count} metric(s) for {platform}/{platform_user}.")
 
 @style.command(name="disable")
+@click.pass_obj
 def style_disable(app: CliAppContext) -> None:
-    """Disable style profile injection globally."""
+    """Disable style profile injection for this process only.
+
+    To disable persistently, set ``style.enabled = false`` in your config
+    file, or export ``HESTIA_STYLE_ENABLED=0`` before starting Hestia.
+    """
     app.config.style.enabled = False
-    click.echo("Style profile disabled. Re-enable by setting style.enabled = True in config.")
+    click.echo(
+        "Style profile disabled for this process. "
+        "Set style.enabled=false in config to make this permanent."
+    )
 
 @cli.group()
 def policy() -> None:

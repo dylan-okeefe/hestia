@@ -90,7 +90,7 @@ class ContextBuilder:
         self._compressor = compressor
         self._compress_on_overflow = compress_on_overflow
         self._tokenize_cache: dict[tuple[str, str], int] = {}
-        self._join_overhead = 0
+        self._join_overhead: int | None = None
 
     def set_identity_prefix(self, identity_prefix: str | None) -> None:
         """Set the identity prefix to prepend to system prompts.
@@ -172,6 +172,46 @@ class ContextBuilder:
             _PrefixLayer("style", self._style_prefix),
         ]
 
+    async def _compute_join_overhead(
+        self,
+        history: list[Message],
+        protected_top: list[Message],
+        protected_bottom: list[Message],
+    ) -> int:
+        """Compute the per-message JSON framing overhead in tokens.
+
+        Measures the incremental token cost of adding a second message to a
+        single-message request body. This is a function of the request JSON
+        shape, not message content, so it is constant across the lifetime
+        of an InferenceClient/model pair.
+
+        Callers swapping models on the same ContextBuilder instance will see
+        stale overhead — but the codebase never does that today.
+        """
+        _m1: Message | None = None
+        _m2: Message | None = None
+        if len(history) >= 2:
+            _m1, _m2 = history[0], history[1]
+        elif len(protected_top + protected_bottom) >= 2:
+            _combo = protected_top + protected_bottom
+            _m1, _m2 = _combo[0], _combo[1]
+        if _m1 is not None and _m2 is not None:
+            _single_body = json.dumps(
+                {"model": self._inference.model_name, "messages": [_message_to_dict(_m1)]}
+            )
+            _combined_body = json.dumps(
+                {
+                    "model": self._inference.model_name,
+                    "messages": [_message_to_dict(_m1), _message_to_dict(_m2)],
+                }
+            )
+            _single_count = len(await self._inference.tokenize(_single_body))
+            _combined_count = len(await self._inference.tokenize(_combined_body))
+            return (
+                _combined_count - _single_count - await self._count_tokens(_m2)
+            )
+        return 0
+
     async def build(
         self,
         session: Session,
@@ -247,35 +287,18 @@ class ContextBuilder:
                 "too large to fit. Reduce identity, memory_epoch, or run /reset."
             )
 
-        # Compute constant join-overhead once per build.
-        # We measure the incremental token cost of adding a second message
-        # to a single-message request body; this comma/array overhead is
-        # roughly constant for each additional message beyond the protected
-        # set.  Total trim-window tokens ≈
-        #   sum(_count_tokens(m) for m in window) + len(window) * join_overhead
-        self._join_overhead = 0
-        _m1: Message | None = None
-        _m2: Message | None = None
-        if len(history) >= 2:
-            _m1, _m2 = history[0], history[1]
-        elif len(protected_top + protected_bottom) >= 2:
-            _combo = protected_top + protected_bottom
-            _m1, _m2 = _combo[0], _combo[1]
-        if _m1 is not None and _m2 is not None:
-            _single_body = json.dumps(
-                {"model": self._inference.model_name, "messages": [_message_to_dict(_m1)]}
+        # Lazy-cache join-overhead (function of JSON framing, not message content).
+        if self._join_overhead is None:
+            overhead = await self._compute_join_overhead(
+                history, protected_top, protected_bottom
             )
-            _combined_body = json.dumps(
-                {
-                    "model": self._inference.model_name,
-                    "messages": [_message_to_dict(_m1), _message_to_dict(_m2)],
-                }
-            )
-            _single_count = len(await self._inference.tokenize(_single_body))
-            _combined_count = len(await self._inference.tokenize(_combined_body))
-            self._join_overhead = (
-                _combined_count - _single_count - await self._count_tokens(_m2)
-            )
+            if overhead != 0 or len(history) >= 2 or len(protected_top + protected_bottom) >= 2:
+                self._join_overhead = overhead
+            else:
+                # Not enough messages to measure; try again next build.
+                pass
+
+        _join_overhead = self._join_overhead or 0
 
         # Add remaining history messages (newest first) while they fit
         included_history: list[Message] = []
@@ -313,7 +336,7 @@ class ContextBuilder:
                     # Try to add both messages
                     pair_window_body = (
                         sum([await self._count_tokens(m) for m in pair_msgs])
-                        + len(pair_msgs) * self._join_overhead
+                        + len(pair_msgs) * _join_overhead
                     )
                     candidate_body = protected_body + window_body + pair_window_body
                     count = self._apply_correction(candidate_body, len(tools) > 0)
@@ -330,7 +353,7 @@ class ContextBuilder:
                         continue
 
             # Regular message - try to add it
-            msg_window_body = await self._count_tokens(msg) + self._join_overhead
+            msg_window_body = await self._count_tokens(msg) + _join_overhead
             candidate_body = protected_body + window_body + msg_window_body
             count = self._apply_correction(candidate_body, len(tools) > 0)
 

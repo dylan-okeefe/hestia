@@ -76,9 +76,9 @@ async def test_tokenize_cache_hits_on_repeated_build(inference, policy, session)
     await builder.build(session, history, "System", [], new_user_message=new_msg)
     calls_after_second = inference.tokenize_calls
 
-    # Only the 2 join-overhead measurement calls are new; all per-message
-    # counts came from the cache.
-    assert calls_after_second == calls_after_first + 2
+    # Join-overhead is cached after first build, and all per-message counts
+    # are cached, so the second build issues zero new tokenize calls.
+    assert calls_after_second == calls_after_first
 
 
 @pytest.mark.asyncio
@@ -95,8 +95,9 @@ async def test_tokenize_cache_invalidation_on_new_message(inference, policy, ses
     await builder.build(session, history, "System", [], new_user_message=new_msg)
     calls_after_second = inference.tokenize_calls
 
-    # One new _count_tokens cache miss + 2 join-overhead calls.
-    assert calls_after_second == calls_after_first + 3
+    # One new _count_tokens cache miss for the appended message;
+    # join-overhead remains cached from the first build.
+    assert calls_after_second == calls_after_first + 1
 
 
 @pytest.mark.asyncio
