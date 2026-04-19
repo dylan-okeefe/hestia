@@ -7,6 +7,25 @@
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
 
+## 2026-04-19 — Loop: L43 blocked — idle pending Dylan-side prereqs
+
+**Status:** L43 cannot start. Kimi verified the five prereqs listed in
+`docs/development-process/kimi-loops/L43-voice-phase-b-calls.md`; none are
+present on disk.
+
+**Missing:**
+1. Dedicated phone number for the userbot.
+2. Telegram API `api_id` + `api_hash`.
+3. `pyrogram` and `py-tgcalls` installed in `.venv`.
+4. Piper voice files in `~/.cache/hestia/voice/`.
+5. Dylan's Telegram `user_id`.
+
+**Action taken:** `KIMI_CURRENT.md` moved to IDLE state documenting the block.
+When Dylan provides the above, Cursor should reset KIMI_CURRENT to L43 active
+and relaunch.
+
+---
+
 ## 2026-04-19 — Loop: L42 Voice Phase A — Telegram voice messages (Kimi) — feature-branch landed, not merged to develop
 
 **Kimi:** L42 completed on `feature/voice-phase-a-messages`; `.kimi-done` present with `LOOP=L42`, `COMMIT=ac4c196`, `TESTS=810 passed, 12 skipped`, `MYPY_FINAL_ERRORS=0`, `RUFF_SRC=23`.
