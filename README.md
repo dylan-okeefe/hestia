@@ -10,6 +10,26 @@ Your conversations never leave your machine. No cloud APIs, no telemetry, no sub
 
 ---
 
+## Demo
+
+<!-- TODO(dylan): record asciicast and replace PLACEHOLDER -->
+[![asciicast](https://asciinema.org/a/PLACEHOLDER.svg)](https://asciinema.org/a/PLACEHOLDER)
+
+<!-- TODO(dylan): capture screenshot and save to docs/assets/hestia-chat.png -->
+![Chat screenshot](docs/assets/hestia-chat.png)
+
+Text transcript:
+
+```
+$ hestia chat
+You: What's the weather like today?
+Hestia: I'll check that for you.
+[tool call: current_time → 2026-04-18T14:32:00-04:00]
+Hestia: It's 72°F and sunny in your area. Perfect day to open a window.
+```
+
+---
+
 ## Who this is for
 
 Hestia is built for people who run their own infrastructure. If you already have a GPU sitting idle, or you're running things like Home Assistant, Synapse, or Jellyfin, Hestia fits into that world. It's for people who want an AI assistant that lives on their hardware, respects their privacy, and can be extended with Python.
@@ -552,6 +572,17 @@ For the full security policy and responsible-disclosure process, see [`SECURITY.
 
 Hestia is built for consumer GPUs. Here's what to expect:
 
+### Recommended models
+
+| Model | Parameters | Quantization | VRAM | Strengths | Notes |
+|-------|-----------|--------------|------|-----------|-------|
+| Llama-3.1-8B-Instruct | 8B | Q4_K_M | ~6GB | Tool calling, general | Default recommendation |
+| Qwen 2.5 7B Instruct | 7B | Q4_K_M | ~5GB | Tool calling, structured output | Solid alternative |
+| Llama-3.2-3B-Instruct | 3B | Q5_K_M | ~3GB | Speed | Light identity-check workload |
+| Qwen 2.5 14B Instruct | 14B | Q4_K_M | ~10GB | Quality | Needs ≥12GB VRAM |
+
+Static K-quants (Q4_K_M, Q6_K_M) work well; avoid imatrix (I-) quants, which can corrupt tool-calling. The same project-wide guidance from `~/AGENTS.md` applies.
+
 | VRAM | Model | Slots | Context | Experience |
 |------|-------|-------|---------|-----------|
 | 8 GB | 3-4B Q4 | 2 | 8K | Works, but tool chaining is limited |
@@ -587,20 +618,58 @@ The flags that matter: `-np 4` sets 4 KV-cache slots (match `SlotConfig.pool_siz
 
 ---
 
-## Deployment
+## Running Hestia as a daemon
 
-See [`deploy/README.md`](deploy/README.md) for the full guide. Quick version:
+The `deploy/` directory contains systemd service templates for persistent operation:
+
+| File | Purpose |
+|------|---------|
+| `hestia-llama.service` | llama.cpp inference server with KV-cache slots (port 8001) |
+| `hestia-agent.service` | Hestia agent (Telegram bot + scheduler daemon) |
+| `hestia-llama.alt-port.service.example` | Alternate llama.cpp server on port 8002 (rename to `.service` to use) |
+| `install.sh` | Copies services to `/etc/systemd/system/` and reloads daemon |
+| `example_config.py` | Configuration template — copy and customize |
+
+Quick start (system-wide):
 
 ```bash
-cp deploy/example_config.py /opt/hestia/config.py
-# Edit config.py
-
 sudo deploy/install.sh $USER
-sudo systemctl start hestia-llama@$USER
-sudo systemctl start hestia-agent@$USER
+sudo systemctl enable --now hestia-llama@$USER
+sudo systemctl enable --now hestia-agent@$USER
 ```
 
-`hestia-llama.service` runs the llama.cpp server. `hestia-agent.service` runs Hestia itself (Telegram/Matrix bot + scheduler).
+`hestia-agent` depends on `hestia-llama` — systemd starts them in the right order and restarts on failure.
+
+For a per-user systemd setup:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now hestia-llama@$USER
+systemctl --user enable --now hestia-agent@$USER
+```
+
+Configure secrets via environment variables so they never live in source control:
+
+```bash
+export HESTIA_SOUL_PATH=/opt/hestia/SOUL.md
+export HESTIA_CALIBRATION_PATH=/opt/hestia/docs/calibration.json
+export HESTIA_EXPERIMENTAL_SKILLS=1
+export EMAIL_APP_PASSWORD="your-app-password"
+```
+
+Reference them in `config.py`:
+
+```python
+from hestia.config import HestiaConfig, EmailConfig
+
+config = HestiaConfig(
+    email=EmailConfig(
+        password_env="EMAIL_APP_PASSWORD",
+    ),
+)
+```
+
+See [`deploy/README.md`](deploy/README.md) for the full operator walkthrough.
 
 ---
 
