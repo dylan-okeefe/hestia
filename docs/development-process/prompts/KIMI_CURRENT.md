@@ -2,43 +2,43 @@
 
 **Orchestrator:** Cursor updates this file after each review.
 
-**Last set by:** Cursor — 2026-04-19 (L40 complete on feature branch; launching L41)
+**Last set by:** Kimi — 2026-04-19 (L41 complete on feature branch; launching L42)
 
 ---
 
 ## Current task
 
-**Active loop:** **L41** — `docs/development-process/kimi-loops/L41-voice-shared-infra.md`
-on `feature/voice-shared-infra`.
+**Active loop:** **L42** — `docs/development-process/kimi-loops/L42-voice-phase-a-messages.md`
+on `feature/voice-phase-a-messages` (forks from `feature/voice-shared-infra`).
 
-**L40 completion snapshot:**
+**L41 completion snapshot:**
 
-- Branch: `feature/l40-copilot-cleanup` (pushed to `origin/feature/l40-copilot-cleanup`)
-- Main implementation commit: `d604313` (`feat(l40): copilot cleanup backlog ...`)
-- Orchestration docs commit on branch: `b0c4668`
-- `.kimi-done`: `LOOP=L40`, `MYPY_FINAL_ERRORS=0`, `RUFF_SRC=23`, `TESTS=796 passed, 6 skipped`
+- Branch: `feature/voice-shared-infra` (pushed to `origin/feature/voice-shared-infra`)
+- Implementation commits: `3e83e25` (pipeline), `191a0b4` (VAD + config), `5ef6c41` (pyproject + doctor + guide), `bb06e00` (tests)
+- Orchestration docs commit on branch: *(pending — handoff + KIMI_CURRENT + loop log)*
+- `.kimi-done`: `LOOP=L41`, `MYPY_FINAL_ERRORS=0`, `RUFF_SRC=23`, `TESTS=798 passed, 6 skipped`
 - Merge status: **NOT merged to `develop`** (correct per post-release merge discipline)
 
-**Launch sequence now (L41):**
+**Launch sequence now (L42):**
 
-1. Create/switch to `feature/voice-shared-infra` from `develop`.
+1. Create `feature/voice-phase-a-messages` from `feature/voice-shared-infra`.
 2. Run `./scripts/kimi-run-current.sh`.
-3. Wait for valid `.kimi-done` (`HESTIA_KIMI_DONE=1`, `LOOP=L41`).
+3. Wait for valid `.kimi-done` (`HESTIA_KIMI_DONE=1`, `LOOP=L42`).
 4. Review diffs + run gates (`pytest`, `mypy src/hestia`, `ruff check src/`).
-5. Fix/tighten prompt and rerun L41 if red.
-6. When green: push `feature/voice-shared-infra` to origin, write loop log entry, and
-   advance this file to L42.
+5. Fix/tighten prompt and rerun L42 if red.
+6. When green: push `feature/voice-phase-a-messages` to origin, write loop log entry, and
+   advance this file to L43.
 
 **Important:** per `.cursorrules` post-release merge discipline, **do not merge
-L41 to `develop` yet**. Push feature branch only; merge waits for a v0.8.1+
-release-prep doc naming the branch in scope.
+L41 or L42 to `develop` yet**. Push feature branches only; merge waits for a v0.8.1+
+release-prep doc naming the branches in scope.
 
 **State on disk:**
 
-- Develop tip: `b1e81ae` ("chore(release): pyproject.toml 0.8.1.dev2 -> 0.8.0; uv.lock regen"). Includes the L36-L38 overnight merges, the voice-call-setup planning docs merge, the `.cursorrules` post-release merge discipline rule, and the `feature/hotfix-session-race` TOCTOU fix. ~40 commits ahead of `origin/develop` at the time of writing.
-- Main tip: `5155917` ("Merge develop into main for v0.8.0 release"). Was at `255dc2b` (`v0.2.2`) before the merge — a `--no-ff` was required because main carried a no-op release-merge commit that made FF impossible.
-- Tag `v0.8.0` annotated at `b1e81ae` (the version-bump commit on develop, intentionally chosen so future patch releases branch from a develop-history ancestor without picking up main-only merge commits).
-- Final gate from main: **789 passed, 6 skipped** across `tests/unit/ tests/integration/ tests/cli/ tests/docs/`. **mypy: 0 errors** (92 source files). **ruff src/: 23 errors** (unchanged baseline from L37).
+- Develop tip: `b1e81ae` (v0.8.0 tag). Unchanged since L41 branched.
+- `feature/voice-shared-infra` tip: `bb06e00` + orchestration commit(s).
+- Main tip: `5155917` (v0.8.0 release merge).
+- Tag `v0.8.0` at `b1e81ae`.
 
 ---
 
@@ -78,13 +78,12 @@ doc names the branch in its scope.**
 
 Three loops, two phases, build on shared infrastructure:
 
-- **L41** — `docs/development-process/kimi-loops/L41-voice-shared-infra.md`
-  on `feature/voice-shared-infra` — STT/TTS pipeline, VAD wrapper,
-  VoiceConfig, `hestia[voice]` extra, voice-setup.md, unit tests with
-  mocked models.
+- **L41** — complete on `origin/feature/voice-shared-infra` (`3e83e25` … `bb06e00`);
+  waiting for v0.8.1+ release-prep before merge to `develop`.
 - **L42** — `docs/development-process/kimi-loops/L42-voice-phase-a-messages.md`
   on `feature/voice-phase-a-messages` (forks from `feature/voice-shared-infra`)
   — Telegram bot voice-message handler, integration test with mocked Telegram.
+  **ACTIVE NOW.**
 - **L43** — `docs/development-process/kimi-loops/L43-voice-phase-b-calls.md`
   on `feature/voice-phase-b-calls` (forks from `feature/voice-shared-infra`)
   — Pyrogram userbot, py-tgcalls integration, half-duplex first then
