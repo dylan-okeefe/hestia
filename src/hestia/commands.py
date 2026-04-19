@@ -120,6 +120,15 @@ async def _cmd_ask(app: CliAppContext, message: str) -> None:
         respond_callback=response_handler,
     )
 
+async def _cmd_init(app: CliAppContext) -> None:
+    """Initialize database, artifacts, and slot directories."""
+    cfg = app.config
+    cfg.storage.artifacts_dir.mkdir(parents=True, exist_ok=True)
+    cfg.slots.slot_dir.mkdir(parents=True, exist_ok=True)
+    click.echo(f"Initialized database at {cfg.storage.database_url}")
+    click.echo(f"Initialized artifacts directory at {cfg.storage.artifacts_dir}")
+    click.echo(f"Initialized slot directory at {cfg.slots.slot_dir}")
+
 async def _cmd_health(app: CliAppContext) -> None:
     """Check inference server health."""
     try:
@@ -383,6 +392,24 @@ async def _cmd_schedule_run(app: CliAppContext, task_id: str) -> None:
     except (HestiaError, httpx.HTTPError, OSError) as e:
         click.echo(f"Error running task: {e}", err=True)
         sys.exit(1)
+
+async def _cmd_schedule_disable(app: CliAppContext, task_id: str) -> None:
+    """Disable a scheduled task."""
+    store = _require_scheduler_store(app)
+    success = await store.disable_task(task_id)
+    if not success:
+        click.echo(f"Task not found: {task_id}", err=True)
+        sys.exit(1)
+    click.echo(f"Task {task_id} disabled")
+
+async def _cmd_schedule_remove(app: CliAppContext, task_id: str) -> None:
+    """Remove a scheduled task."""
+    store = _require_scheduler_store(app)
+    success = await store.delete_task(task_id)
+    if not success:
+        click.echo(f"Task not found: {task_id}", err=True)
+        sys.exit(1)
+    click.echo(f"Task {task_id} removed")
 
 def _cmd_schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None:
     """Run the scheduler daemon (blocks until Ctrl-C)."""

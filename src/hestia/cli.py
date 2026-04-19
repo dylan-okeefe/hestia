@@ -12,7 +12,6 @@ import click
 
 from hestia.app import (
     CliAppContext,
-    _require_scheduler_store,
     make_app,
     run_async,
 )
@@ -28,6 +27,7 @@ from hestia.commands import (
     _cmd_failures_list,
     _cmd_failures_summary,
     _cmd_health,
+    _cmd_init,
     _cmd_policy_show,
     _cmd_reflection_accept,
     _cmd_reflection_defer,
@@ -39,8 +39,10 @@ from hestia.commands import (
     _cmd_reflection_status,
     _cmd_schedule_add,
     _cmd_schedule_daemon,
+    _cmd_schedule_disable,
     _cmd_schedule_enable,
     _cmd_schedule_list,
+    _cmd_schedule_remove,
     _cmd_schedule_run,
     _cmd_schedule_show,
     _cmd_skill_demote,
@@ -118,12 +120,7 @@ def cli(
 @run_async
 async def init(app: CliAppContext) -> None:
     """Initialize database, artifacts, and slot directories."""
-    cfg = app.config
-    cfg.storage.artifacts_dir.mkdir(parents=True, exist_ok=True)
-    cfg.slots.slot_dir.mkdir(parents=True, exist_ok=True)
-    click.echo(f"Initialized database at {cfg.storage.database_url}")
-    click.echo(f"Initialized artifacts directory at {cfg.storage.artifacts_dir}")
-    click.echo(f"Initialized slot directory at {cfg.slots.slot_dir}")
+    await _cmd_init(app)
 
 @cli.command()
 @run_async
@@ -224,24 +221,14 @@ async def schedule_show(app: CliAppContext, task_id: str) -> None:
 @run_async
 async def schedule_disable(app: CliAppContext, task_id: str) -> None:
     """Disable a scheduled task."""
-    store = _require_scheduler_store(app)
-    success = await store.disable_task(task_id)
-    if not success:
-        click.echo(f"Task not found: {task_id}", err=True)
-        sys.exit(1)
-    click.echo(f"Task {task_id} disabled")
+    await _cmd_schedule_disable(app, task_id)
 
 @schedule.command(name="remove")
 @click.argument("task_id")
 @run_async
 async def schedule_remove(app: CliAppContext, task_id: str) -> None:
     """Remove a scheduled task."""
-    store = _require_scheduler_store(app)
-    success = await store.delete_task(task_id)
-    if not success:
-        click.echo(f"Task not found: {task_id}", err=True)
-        sys.exit(1)
-    click.echo(f"Task {task_id} removed")
+    await _cmd_schedule_remove(app, task_id)
 
 @schedule.command(name="enable")
 @click.argument("task_id")
