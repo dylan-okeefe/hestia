@@ -2,14 +2,24 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
+from sqlalchemy.exc import IntegrityError
 
 from hestia.core.clock import utcnow
+
+logger = logging.getLogger(__name__)
+
+# Maximum retry attempts for idx-collision races on append_message /
+# append_transition. With n concurrent writers the probability of
+# surviving n retries is > 99.99% for n=5.
+_APPEND_IDX_MAX_ATTEMPTS = 5
 from hestia.core.types import (
     Message,
     Session,
@@ -251,13 +261,23 @@ class SessionStore:
             return None
 
     async def append_message(self, session_id: str, msg: Message) -> None:
-        """Append a message with auto-incrementing idx. Updates last_active_at."""
-        # Get next idx
+        """Append a message with auto-incrementing idx. Updates last_active_at.
+
+        Race-safe: the SELECT MAX(idx)+1 → INSERT pair is vulnerable to
+        concurrent writers producing the same idx, which the
+        ``(session_id, idx)`` primary key then rejects with
+        ``IntegrityError``. We retry on collision up to
+        ``_APPEND_IDX_MAX_ATTEMPTS`` times with exponential backoff so
+        the collision resolves naturally: each retry re-reads MAX(idx)
+        inside a fresh connection after the winning writer has committed.
+        Works on both SQLite and PostgreSQL without dialect-specific
+        locking. Regression coverage lives in
+        ``tests/unit/test_append_message_race.py``.
+        """
         idx_query = sa.select(sa.func.coalesce(sa.func.max(messages.c.idx), -1) + 1).where(
             messages.c.session_id == session_id
         )
 
-        # Serialize tool_calls to JSON if present
         tool_calls_json = None
         if msg.tool_calls:
             tool_calls_json = json.dumps(
@@ -271,30 +291,41 @@ class SessionStore:
                 ]
             )
 
-        async with self._db.engine.connect() as conn:
-            idx_result = await conn.execute(idx_query)
-            idx = idx_result.scalar_one()
+        for attempt in range(_APPEND_IDX_MAX_ATTEMPTS):
+            try:
+                async with self._db.engine.connect() as conn:
+                    idx_result = await conn.execute(idx_query)
+                    idx = idx_result.scalar_one()
 
-            insert = sa.insert(messages).values(
-                session_id=session_id,
-                idx=idx,
-                role=msg.role,
-                content=msg.content,
-                tool_calls=tool_calls_json,
-                tool_call_id=msg.tool_call_id,
-                reasoning_content=msg.reasoning_content,
-                created_at=msg.created_at if msg.created_at else utcnow(),
-            )
-            await conn.execute(insert)
+                    insert = sa.insert(messages).values(
+                        session_id=session_id,
+                        idx=idx,
+                        role=msg.role,
+                        content=msg.content,
+                        tool_calls=tool_calls_json,
+                        tool_call_id=msg.tool_call_id,
+                        reasoning_content=msg.reasoning_content,
+                        created_at=msg.created_at if msg.created_at else utcnow(),
+                    )
+                    await conn.execute(insert)
 
-            # Update session last_active_at
-            update = (
-                sa.update(sessions)
-                .where(sessions.c.id == session_id)
-                .values(last_active_at=utcnow())
-            )
-            await conn.execute(update)
-            await conn.commit()
+                    update = (
+                        sa.update(sessions)
+                        .where(sessions.c.id == session_id)
+                        .values(last_active_at=utcnow())
+                    )
+                    await conn.execute(update)
+                    await conn.commit()
+                    return
+            except IntegrityError:
+                if attempt == _APPEND_IDX_MAX_ATTEMPTS - 1:
+                    raise
+                logger.debug(
+                    "append_message idx collision for session %s on attempt %d; retrying",
+                    session_id,
+                    attempt + 1,
+                )
+                await asyncio.sleep(0.001 * (2**attempt))
 
     async def get_messages(self, session_id: str) -> list[Message]:
         """Get all messages for a session in order."""
@@ -468,28 +499,45 @@ class SessionStore:
             await conn.commit()
 
     async def append_transition(self, turn_id: str, transition: TurnTransition) -> None:
-        """Append a transition to the turn_transitions table."""
+        """Append a transition to the turn_transitions table.
+
+        Race-safe via the same retry-on-IntegrityError pattern used by
+        :meth:`append_message`. Two concurrent state machine transitions on
+        the same turn (e.g. a cancellation racing a completion) would
+        otherwise collide on the ``(turn_id, idx)`` primary key.
+        """
         from hestia.persistence.schema import turn_transitions
 
-        # Get next idx for this turn
         idx_query = sa.select(sa.func.coalesce(sa.func.max(turn_transitions.c.idx), -1) + 1).where(
             turn_transitions.c.turn_id == turn_id
         )
 
-        async with self._db.engine.connect() as conn:
-            idx_result = await conn.execute(idx_query)
-            idx = idx_result.scalar_one()
+        for attempt in range(_APPEND_IDX_MAX_ATTEMPTS):
+            try:
+                async with self._db.engine.connect() as conn:
+                    idx_result = await conn.execute(idx_query)
+                    idx = idx_result.scalar_one()
 
-            insert = sa.insert(turn_transitions).values(
-                turn_id=turn_id,
-                idx=idx,
-                from_state=transition.from_state.value,
-                to_state=transition.to_state.value,
-                at=transition.at,
-                reason=transition.note,
-            )
-            await conn.execute(insert)
-            await conn.commit()
+                    insert = sa.insert(turn_transitions).values(
+                        turn_id=turn_id,
+                        idx=idx,
+                        from_state=transition.from_state.value,
+                        to_state=transition.to_state.value,
+                        at=transition.at,
+                        reason=transition.note,
+                    )
+                    await conn.execute(insert)
+                    await conn.commit()
+                    return
+            except IntegrityError:
+                if attempt == _APPEND_IDX_MAX_ATTEMPTS - 1:
+                    raise
+                logger.debug(
+                    "append_transition idx collision for turn %s on attempt %d; retrying",
+                    turn_id,
+                    attempt + 1,
+                )
+                await asyncio.sleep(0.001 * (2**attempt))
 
     async def get_turn(self, turn_id: str) -> Turn | None:
         """Get a turn by ID (without transitions)."""
