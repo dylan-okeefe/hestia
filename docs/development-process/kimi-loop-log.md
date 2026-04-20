@@ -7,6 +7,129 @@
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
 
+## 2026-04-20 — Release: v0.9.0 tagged (Copilot audit response + L40/L41/L42/L45a/b/c close-out)
+
+**Outcome:** `v0.9.0` annotated tag placed on `develop` tip; `main`
+fast-forwarded to `develop`; release notes and v0.9.1 backlog in place.
+This entry covers the release-level orchestration and closes out all
+six pre-tag feature branches plus the pre-tag hotfix bundle.
+
+**Scope authorization:** `docs/development-process/prompts/v0.9.0-release-prep.md`
+(retroactive, naming all seven in-scope branches) plus
+`docs/development-process/prompts/v0.9.0-release-and-audit-response.md`
+(six-track orchestration prompt from Dylan).
+
+**Seven feature branches folded into v0.9.0 (merge order):**
+
+1. `feature/l40-copilot-cleanup` — Copilot cleanup backlog from the v0.8.0
+   review. Concurrent tool dispatch (`Orchestrator._execute_tool_calls`
+   partitions by `metadata.ordering`), `should_evict_slot` stub removal,
+   Gmail folder configurability (`EmailConfig.drafts_folder` /
+   `sent_folder`), email adapter reconnect fix, `TODO(L31)` / `TODO(L?)`
+   sweep, `prompt_on_mobile` docstring alignment.
+2. `feature/voice-shared-infra` — L41 voice pipeline (`hestia.voice`
+   package with `VoicePipeline`, lazy faster-whisper STT, Piper TTS with
+   sentence-level streaming), `SileroVAD` stub, `VoiceConfig`,
+   `hestia[voice]` extra, `hestia doctor` voice check, setup guide.
+3. `feature/voice-phase-a-messages` — L42 Telegram voice-message handler
+   behind `TelegramConfig.voice_messages` (default off). OGG/Opus
+   transcode via `ffmpeg`, 1 MB voice-note truncation fallback, text
+   follow-up so content is never silently dropped.
+4. `feature/l45a-trust-identity-plumbing` — runtime identity `ContextVar`s,
+   `HestiaConfig.trust_overrides` per platform user,
+   `DefaultPolicyEngine._trust_for(session)`, scheduler identity
+   inheritance.
+5. `feature/l45b-memory-user-scope-migration` — one-way FTS5 recreate-
+   and-copy migration adding `platform` / `platform_user` columns to
+   the `memory` table, user-scoped `MemoryStore` API (fail-closed),
+   per-session epoch compilation, `LIKE`-based fallback when FTS5
+   unavailable.
+6. `feature/l45c-multi-user-docs-and-hardening` — shared
+   `src/hestia/platforms/allowlist.py` with `match_allowlist()` plus
+   Telegram/Matrix validators, adapter refactor, new
+   `docs/guides/multi-user-setup.md`, README "Multi-user security"
+   subsection.
+7. `feature/hotfix-v0.9.0-copilot-critical` — pre-tag hotfix bundle,
+   13 items from the 2026-04-20 Copilot audit. Detailed below.
+
+**Pre-tag hotfix bundle (Track 3 of the audit-response prompt):**
+
+- **Criticals (6/6 shipped):** C-1 `utcnow()` in `trace_store.record_egress`;
+  C-2 race-safe `SessionStore.append_message` / `append_transition` with
+  retry-on-`IntegrityError` plus the 20-concurrent-appender regression
+  test at `tests/unit/test_append_message_race.py`; C-3 async-safe
+  artifact I/O via `asyncio.to_thread` in `tools/registry.py` and
+  `tools/builtin/read_artifact.py`, plus the new
+  `ArtifactStore.open()` async factory; C-4 typed `MaxIterationsError` /
+  `PolicyFailureError` in `orchestrator/engine.py`; C-5 `doctor.py`
+  refactored to `asyncio.create_subprocess_exec` +
+  `httpx.AsyncClient`; C-6 `email/adapter.py` migrated to
+  `smtplib.SMTP_SSL` on port 465 and `STARTTLS` response-code
+  validation otherwise.
+- **Highs (5/10 shipped):** H-1 empty-`choices` guard in `core/inference`;
+  H-2 `tool_call` arguments `dict` type check; H-3 `encoding="utf-8"`
+  sweep across `tools/builtin/write_file.py` and the CLI audit-report
+  writer; H-4 Tavily key moved to `Authorization: Bearer`; H-9
+  `ToolExecutionError` + widened `ToolRegistry.call` exception contract
+  + `ToolCallResult.error_type`.
+- **Architecture (1/5 shipped):** A-3 `PolicyEngine` ABC declares
+  `ctx_window: int` with a contract test at
+  `tests/unit/test_policy_engine_ctx_window.py`.
+- **Test gap (1/10 shipped):** T-1 paired with C-2 above.
+
+**Gates on `develop` at tag time:**
+
+- `uv run pytest tests/unit/ tests/integration/ -q` →
+  **869 passed, 6 skipped** (0 failures; 5 warnings from pre-existing
+  aiosqlite "event loop closed" cleanup).
+- `uv run mypy src/` → **0 errors across 96 source files**.
+- `uv run ruff check` on all files touched by the hotfix branch →
+  **6 pre-existing baseline issues** (all in `commands.py`,
+  `tools/builtin/web_search.py`, or `tests/unit/test_email_gmail_folders.py`;
+  verified against develop prior to merge). No new ruff warnings
+  introduced by the hotfix bundle.
+
+**Git status:**
+
+- `develop` has the seven merges plus the backlog doc and release notes.
+- Annotated tag placed: `git tag -a v0.9.0 -m "v0.9.0 — multi-user safety, voice phase A, Copilot audit response"`.
+- `main` fast-forwarded to `develop` locally.
+- **Not pushed.** Per project convention, Cursor does not push.
+  Dylan runs:
+  ```
+  git push origin develop
+  git push origin main
+  git push origin v0.9.0
+  ```
+- The six feature branches remain on `origin` (useful for history /
+  `git blame`); they can be pruned by Dylan at leisure.
+
+**Docs produced for this release:**
+
+- [`docs/development-process/prompts/v0.9.0-release-prep.md`](prompts/v0.9.0-release-prep.md) — retroactive scope doc, names all seven branches by exact `feature/*` name.
+- [`docs/development-process/reviews/archive/v0.8.x-multi-user-safety-release-prep.md`](reviews/archive/v0.8.x-multi-user-safety-release-prep.md) — previous (narrower) prep doc, archived.
+- [`docs/development-process/prompts/v0.9.1-copilot-backlog.md`](prompts/v0.9.1-copilot-backlog.md) — ~39 deferred Copilot findings queued for v0.9.1 (5 high, 13 medium, 8 low, 9 test-gap, 4 architecture). Tracking doc only, not a merge authorization.
+- [`docs/releases/v0.9.0.md`](../releases/v0.9.0.md) — human-facing release notes.
+- `CHANGELOG.md` `[0.9.0]` entry now includes a `### Pre-release hotfixes (2026-04-20 Copilot audit response)` subsection.
+- `.cursorrules` post-release merge discipline tightened — every branch must be named by exact `feature/*` name in a release-prep doc before merging to `develop`. Correct example updated and a new "subtle incorrect behavior (the mistake from 2026-04-20)" example added.
+
+**Post-release state:**
+
+- `docs/development-process/prompts/KIMI_CURRENT.md` → "IDLE — v0.9.0
+  released. Awaiting v0.9.1 prep or voice Phase B credentials."
+- Voice Phase B (Discord) remains unmerged and unscoped — waiting on
+  Dylan's four prereqs (Discord bot token, `guild_id`, speaker
+  user_ids, Piper voice choice).
+- First likely v0.9.1 loop: H-5 (reject `model.name == "dummy"` at
+  config-load unless `HESTIA_ALLOW_DUMMY_MODEL=1`). Small warm-up.
+
+**Hygiene note for future releases:** the `v0.8.0` tag is lightweight
+(`git tag -v v0.8.0` reports "cannot verify a non-tag object of type
+commit"). `v0.9.0` is annotated, and future tags should continue to be
+annotated. Don't re-tag `v0.8.0` — it's already pushed.
+
+---
+
 ## 2026-04-19 — Loop: L43 blocked — idle pending Dylan-side prereqs
 
 **Status:** L43 cannot start. Kimi verified the five prereqs listed in
