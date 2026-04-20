@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, cast
 from hestia.core.clock import utcnow
 from hestia.core.types import Message
 from hestia.persistence.sessions import SessionStore
+from hestia.policy import PLATFORM_SUBAGENT
 
 if TYPE_CHECKING:
     from hestia.orchestrator.types import Turn
@@ -131,7 +132,7 @@ def make_delegate_task_tool(
 
         # Create a new session for the subagent
         subagent_session = await session_store.create_session(
-            platform="subagent",
+            platform=PLATFORM_SUBAGENT,
             platform_user=f"subagent_{uuid.uuid4().hex[:8]}",
         )
 

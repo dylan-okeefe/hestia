@@ -23,6 +23,11 @@ from hestia.app import (
 from hestia.core.clock import utcnow
 from hestia.core.types import Message, ScheduledTask, Session, SessionState, SessionTemperature
 from hestia.errors import HestiaError
+from hestia.policy import (
+    CONTEXT_PRESSURE_THRESHOLD,
+    PLATFORM_SCHEDULER,
+    PLATFORM_SUBAGENT,
+)
 from hestia.policy.default import (
     DEFAULT_DELEGATION_KEYWORDS,
     DEFAULT_RESEARCH_KEYWORDS,
@@ -768,7 +773,9 @@ async def _cmd_policy_show(app: CliAppContext) -> None:
         temperature=SessionTemperature.HOT,
     )
     click.echo(f"  Turn token budget: {policy_engine.turn_token_budget(synthetic_session)} tokens")
-    click.echo("  Compression threshold: 85% of budget")
+    click.echo(
+        f"  Compression threshold: {int(CONTEXT_PRESSURE_THRESHOLD * 100)}% of budget"
+    )
     click.echo("")
 
     # Trust profile
@@ -817,7 +824,7 @@ async def _cmd_policy_show(app: CliAppContext) -> None:
                 try:
                     meta = app.tool_registry.describe(tool)
                     caps = set(meta.capabilities)
-                    if platform == "subagent":
+                    if platform == PLATFORM_SUBAGENT:
                         if SHELL_EXEC in caps:
                             reason = "shell_exec"
                         elif WRITE_LOCAL in caps:
@@ -826,7 +833,7 @@ async def _cmd_policy_show(app: CliAppContext) -> None:
                             reason = "email_send"
                         else:
                             reason = "other"
-                    elif platform == "scheduler":
+                    elif platform == PLATFORM_SCHEDULER:
                         if SHELL_EXEC in caps:
                             reason = "shell_exec"
                         elif EMAIL_SEND in caps:

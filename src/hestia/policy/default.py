@@ -5,6 +5,12 @@ from typing import TYPE_CHECKING
 from hestia.config import PolicyConfig, TrustConfig
 from hestia.core.types import Session
 from hestia.errors import InferenceServerError, InferenceTimeoutError
+from hestia.policy import (
+    CONTEXT_PRESSURE_THRESHOLD,
+    PLATFORM_SCHEDULER,
+    PLATFORM_SUBAGENT,
+    TURN_RESPONSE_RESERVE_TOKENS,
+)
 from hestia.policy.engine import (
     PolicyEngine,
     RetryAction,
@@ -100,7 +106,7 @@ class DefaultPolicyEngine(PolicyEngine):
             True if delegation is recommended
         """
         # Never recurse: subagent runs use platform "subagent"
-        if session.platform == "subagent":
+        if session.platform == PLATFORM_SUBAGENT:
             return False
 
         # Explicit user request for delegation
@@ -130,8 +136,8 @@ class DefaultPolicyEngine(PolicyEngine):
         return projected_tool_calls > 3
 
     def should_compress(self, session: Session, tokens_used: int, tokens_budget: int) -> bool:
-        """Compress when we're over 85% of budget."""
-        return tokens_used > int(tokens_budget * 0.85)
+        """Compress when we're over the shared context-pressure threshold."""
+        return tokens_used > int(tokens_budget * CONTEXT_PRESSURE_THRESHOLD)
 
     def retry_after_error(self, error: Exception, attempt: int) -> RetryDecision:
         """Retry transient inference errors once, then fail.
@@ -164,9 +170,12 @@ class DefaultPolicyEngine(PolicyEngine):
     def turn_token_budget(self, session: Session) -> int:
         """Reserve space for system + history + response.
 
-        Reserve 2048 tokens for model response, use 85% of remaining for input.
+        Reserve :data:`TURN_RESPONSE_RESERVE_TOKENS` for the model's
+        response and keep :data:`CONTEXT_PRESSURE_THRESHOLD` of the
+        remaining window for input. Both values are shared constants
+        (M-6) so ``hestia doctor`` can report them without drifting.
         """
-        return int(self.ctx_window * 0.85) - 2048
+        return int(self.ctx_window * CONTEXT_PRESSURE_THRESHOLD) - TURN_RESPONSE_RESERVE_TOKENS
 
     def tool_result_max_chars(self, tool_name: str) -> int:
         """Default 8000 chars for tool results.
@@ -229,7 +238,7 @@ class DefaultPolicyEngine(PolicyEngine):
 
         trust = self._trust_for(session)
 
-        if session.platform == "subagent":
+        if session.platform == PLATFORM_SUBAGENT:
             blocked: set[str] = set()
             if not trust.subagent_shell_exec:
                 blocked.add(SHELL_EXEC)
@@ -245,7 +254,7 @@ class DefaultPolicyEngine(PolicyEngine):
                 if not (set(registry.describe(name).capabilities) & blocked)
             ]
 
-        if session.platform == "scheduler" or scheduler_tick_active.get():
+        if session.platform == PLATFORM_SCHEDULER or scheduler_tick_active.get():
             blocked = set()
             if not trust.scheduler_shell_exec:
                 blocked.add(SHELL_EXEC)
@@ -265,6 +274,6 @@ class DefaultPolicyEngine(PolicyEngine):
     def reasoning_budget(self, session: Session, iteration: int) -> int:
         """Use the configured default. Subagents get a smaller budget."""
         base = self._default_reasoning_budget
-        if session is not None and session.platform == "subagent":
+        if session is not None and session.platform == PLATFORM_SUBAGENT:
             return min(base, 1024)  # subagents don't need deep reasoning
         return base
