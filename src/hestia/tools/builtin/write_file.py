@@ -37,7 +37,7 @@ def make_write_file_tool(allowed_roots: list[str]) -> Any:
 
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content)
+        target.write_text(content, encoding="utf-8")
         return f"Wrote {len(content)} bytes to {path}"
 
     return write_file

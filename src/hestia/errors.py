@@ -106,6 +106,23 @@ class PolicyFailureError(HestiaError):
     pass
 
 
+class ToolExecutionError(HestiaError):
+    """A tool handler raised an unexpected exception during dispatch.
+
+    Wraps the underlying exception so the orchestrator can classify the
+    failure by ``inner_type`` without string-matching the message.
+    ``ToolRegistry.call`` catches broad ``Exception`` (but not
+    ``BaseException`` — asyncio ``CancelledError`` and keyboard interrupts
+    still propagate) and raises this in the tool-result JSON.
+    """
+
+    def __init__(self, tool_name: str, inner: BaseException) -> None:
+        self.tool_name = tool_name
+        self.inner = inner
+        self.inner_type = type(inner).__name__
+        super().__init__(f"{tool_name}: {self.inner_type}: {inner}")
+
+
 class FailureClass(StrEnum):
     """Classification of failure types for analytics and policy."""
 

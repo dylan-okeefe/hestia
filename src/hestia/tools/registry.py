@@ -7,7 +7,7 @@ from typing import Any
 
 from hestia.artifacts.store import ArtifactStore
 from hestia.core.types import FunctionSchema, ToolSchema
-from hestia.errors import HestiaError
+from hestia.errors import HestiaError, ToolExecutionError
 from hestia.tools.metadata import ToolMetadata, tool
 from hestia.tools.types import ToolCallResult
 
@@ -105,17 +105,25 @@ class ToolRegistry:
         if meta.handler is None:
             raise ToolError(f"Tool {name!r} has no handler")
 
+        # Copilot H-9: the prior handler catch was restricted to
+        # (TypeError, ValueError, OSError), so RuntimeError, httpx.HTTPError,
+        # application-level exceptions from third-party tools, etc. escaped
+        # the registry and aborted the whole turn. We now catch broad
+        # Exception (but NOT BaseException — CancelledError and
+        # KeyboardInterrupt must still propagate) and wrap in
+        # ToolExecutionError so the orchestrator can dispatch on type
+        # via ToolCallResult.error_type instead of string-matching.
         try:
             raw = await meta.handler(**arguments)
-        except (TypeError, ValueError, OSError) as e:
-            return ToolCallResult(
-                status="error",
-                content=f"{type(e).__name__}: {e}",
-                artifact_handle=None,
-                truncated=False,
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # noqa: BLE001 — documented exception contract
+            wrapped = ToolExecutionError(name, e)
+            return ToolCallResult.error(
+                content=f"{wrapped.inner_type}: {e}",
+                error_type=wrapped.inner_type,
             )
 
-        # Normalize to string
         content_str = json.dumps(raw, indent=2) if isinstance(raw, (dict, list)) else str(raw)
 
         return await self._postprocess(content_str, meta)
