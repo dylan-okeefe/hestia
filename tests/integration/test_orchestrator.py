@@ -1,5 +1,6 @@
 """Integration tests for the Orchestrator."""
 
+import uuid
 from datetime import datetime
 
 import pytest
@@ -466,3 +467,157 @@ async def test_two_tool_chain_time_and_file_count(
     assert any("JST" in c or "2026" in c for c in tool_contents) or any(
         c.isdigit() for c in tool_contents
     )
+
+
+@pytest.mark.asyncio
+async def test_policy_failure_error_on_unexpected_finish_reason(
+    store,
+    fake_policy,
+    context_builder,
+    tool_registry,
+    respond_callback,
+):
+    """T-2: unexpected finish_reason + policy FAIL surfaces as a failed turn.
+
+    When the inference server returns a finish_reason the engine doesn't
+    recognise (neither "stop"/"length" nor "tool_calls"), the engine
+    consults ``policy.retry_after_error``. The default fake policy returns
+    ``RetryAction.FAIL``, which must raise ``PolicyFailureError`` inside
+    the turn loop. The outer except lane catches it and records the turn
+    as FAILED with the PolicyFailureError reason in ``turn.error``.
+    """
+    from hestia.core.types import ChatResponse, Session, SessionState, SessionTemperature
+
+    # Inference returns an unknown finish_reason every time.
+    weird_response = ChatResponse(
+        content="",
+        reasoning_content=None,
+        tool_calls=[],
+        finish_reason="unexpected_reason_from_a_broken_proxy",
+        prompt_tokens=10,
+        completion_tokens=5,
+        total_tokens=15,
+    )
+    inference = FakeInferenceClient([weird_response])
+
+    session = Session(
+        id="test_session_policy_fail",
+        platform="test",
+        platform_user="user",
+        started_at=datetime.now(),
+        last_active_at=datetime.now(),
+        slot_id=None,
+        slot_saved_path=None,
+        state=SessionState.ACTIVE,
+        temperature=SessionTemperature.COLD,
+    )
+
+    orchestrator = Orchestrator(
+        inference=inference,
+        session_store=store,
+        context_builder=context_builder,
+        tool_registry=tool_registry,
+        policy=fake_policy,
+        max_iterations=10,
+    )
+
+    turn = await orchestrator.process_turn(
+        session=session,
+        user_message=Message(role="user", content="hi"),
+        respond_callback=respond_callback,
+    )
+
+    assert turn.state == TurnState.FAILED, (
+        "PolicyFailureError must classify the turn as FAILED (T-2)."
+    )
+    # The PolicyFailureError message is whatever RetryDecision(action=FAIL)
+    # surfaces. FakePolicyEngine constructs it with no explicit reason,
+    # which stringifies as the empty string — but the turn.error field
+    # must still be populated (i.e. not None) so the failure_store path
+    # has something to record.
+    assert turn.error is not None
+
+
+@pytest.mark.asyncio
+async def test_max_iterations_error_carries_iteration_count(
+    store,
+    fake_policy,
+    context_builder,
+    artifact_store,
+    respond_callback,
+):
+    """T-3: MaxIterationsError records the iteration count on the turn.
+
+    When inference keeps emitting ``tool_calls`` responses past
+    ``max_iterations``, the engine raises ``MaxIterationsError`` with the
+    count it actually reached. The outer except lane records the turn as
+    FAILED; ``turn.iterations`` must equal ``max_iterations`` on the way
+    out so observability dashboards can distinguish "policy cap hit" from
+    other failure classes.
+    """
+    from hestia.core.types import ChatResponse, Session, SessionState, SessionTemperature, ToolCall
+
+    # Registry with the built-in tool the infinite loop calls.
+    registry = ToolRegistry(artifact_store)
+    registry.register(current_time)
+
+    def _tool_call_response() -> ChatResponse:
+        return ChatResponse(
+            content="",
+            reasoning_content=None,
+            tool_calls=[
+                ToolCall(
+                    id=f"call_{uuid.uuid4().hex[:6]}",
+                    name="call_tool",
+                    arguments={
+                        "name": "current_time",
+                        "arguments": {"timezone": "UTC"},
+                    },
+                )
+            ],
+            finish_reason="tool_calls",
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+        )
+
+    # Infinite tool-call loop: the cap fires, not a natural stop.
+    inference = FakeInferenceClient([_tool_call_response() for _ in range(10)])
+
+    session = Session(
+        id="test_session_max_iter",
+        platform="test",
+        platform_user="user",
+        started_at=datetime.now(),
+        last_active_at=datetime.now(),
+        slot_id=None,
+        slot_saved_path=None,
+        state=SessionState.ACTIVE,
+        temperature=SessionTemperature.COLD,
+    )
+
+    max_iter = 2
+    orchestrator = Orchestrator(
+        inference=inference,
+        session_store=store,
+        context_builder=context_builder,
+        tool_registry=registry,
+        policy=fake_policy,
+        max_iterations=max_iter,
+    )
+
+    turn = await orchestrator.process_turn(
+        session=session,
+        user_message=Message(role="user", content="please loop"),
+        respond_callback=respond_callback,
+    )
+
+    assert turn.state == TurnState.FAILED, (
+        "Hitting max_iterations must land the turn in FAILED (T-3)."
+    )
+    assert turn.iterations == max_iter, (
+        f"MaxIterationsError must carry the iteration count — "
+        f"expected {max_iter}, got {turn.iterations}."
+    )
+    assert turn.error is not None
+    assert f"Max iterations ({max_iter}) exceeded" in (turn.error or "")

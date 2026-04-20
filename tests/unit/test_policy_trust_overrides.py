@@ -98,6 +98,35 @@ class TestTrustForResolution:
         assert resolved is default
         assert "missing identity" in caplog.text
 
+    def test_missing_identity_does_not_consult_overrides(self, sample_session, caplog):
+        """T-7: the override dict is not even consulted when identity is missing.
+
+        Belt-and-suspenders regression: a caller might construct the key
+        ``":"`` (empty platform + empty user) and accidentally add an entry
+        for it in ``trust_overrides``. The fallback path must short-circuit
+        to the default profile *before* hitting ``trust_overrides.get``
+        — otherwise a misconfigured override could apply to every
+        identity-less session, widening capabilities silently.
+        """
+        from dataclasses import replace
+
+        default = TrustConfig.paranoid()
+        # Developer profile keyed at ":" — would match an empty-identity
+        # session if the fallback path ever consulted the dict.
+        developer = TrustConfig.developer()
+        policy = DefaultPolicyEngine(
+            trust=default,
+            trust_overrides={":": developer},
+        )
+        bad_session = replace(sample_session, platform="", platform_user="")
+        with caplog.at_level("WARNING"):
+            resolved = policy._trust_for(bad_session)
+        assert resolved is default, (
+            "Identity-less session must fall back to the default profile, "
+            "not an override keyed at ':'. T-7 / L45a behaviour."
+        )
+        assert "missing identity" in caplog.text
+
 
 class TestAutoApproveOverrides:
     """Tests for auto_approve with per-user trust overrides."""
