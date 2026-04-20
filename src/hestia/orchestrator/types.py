@@ -47,3 +47,5 @@ class Turn:
     error: str | None = None  # populated on FAILED
     reasoning_budget: int = 2048  # reasoning tokens budgeted for this turn
     transitions: list[TurnTransition] = field(default_factory=list)
+    #: Artifact handles produced during this turn (tools, subagent, etc.).
+    artifact_handles: list[str] = field(default_factory=list)

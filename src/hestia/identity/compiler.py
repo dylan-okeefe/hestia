@@ -149,40 +149,6 @@ class IdentityCompiler:
 
         return "\n".join(lines)
 
-    def _check_cache(self, source_hash: str) -> CompileResult | None:
-        """Check if a cached result exists and matches the source hash.
-
-        Args:
-            source_hash: Hash of the current source file
-
-        Returns:
-            Cached CompileResult if valid and hash matches, None otherwise
-        """
-        cache_path = self._config.compiled_cache_path
-        if not cache_path.exists():
-            return None
-
-        try:
-            cache_content = cache_path.read_text(encoding="utf-8")
-            lines = cache_content.split("\n", 2)
-            if len(lines) < 3:
-                return None
-
-            cached_hash = lines[0].strip()
-            truncated_str = lines[1].strip()
-            text = lines[2]
-
-            if cached_hash != source_hash:
-                return None
-
-            return CompileResult(
-                text=text,
-                source_hash=cached_hash,
-                truncated=truncated_str == "truncated=True",
-            )
-        except OSError:
-            return None
-
     def _check_cache_any(self) -> CompileResult | None:
         """Check if any cached result exists (for recompile_on_change=False).
 

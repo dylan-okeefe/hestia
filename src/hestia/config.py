@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -11,6 +12,23 @@ class EmailConfigError(ValueError):
     """Raised when email configuration is invalid."""
 
     pass
+
+
+def validate_inference_model_name(model_name: str) -> None:
+    """Reject the reserved ``dummy`` model name unless explicitly allowed (H-5).
+
+    The literal ``dummy`` is used only in tests behind ``HESTIA_ALLOW_DUMMY_MODEL=1``.
+    """
+    stripped = model_name.strip()
+    if stripped.lower() != "dummy":
+        return
+    if os.environ.get("HESTIA_ALLOW_DUMMY_MODEL") == "1":
+        return
+    raise ValueError(
+        'inference.model_name "dummy" is reserved for automated tests only. '
+        "Configure a real llama.cpp model filename, or set environment variable "
+        "HESTIA_ALLOW_DUMMY_MODEL=1 if you intentionally use a dummy model."
+    )
 
 # Default location for operator-authored personality (compiled identity; see ADR-022).
 DEFAULT_SOUL_MD_PATH = Path("SOUL.md")
@@ -419,6 +437,10 @@ class HestiaConfig:
         """Load config from a Python file.
 
         The file must define a `config` variable of type HestiaConfig.
+
+        .. note::
+            The loaded module is executed with ``exec_module`` — treat config
+            files as trusted operator-authored code. See ``SECURITY.md``.
         """
         import importlib.util
 
@@ -436,6 +458,7 @@ class HestiaConfig:
                 f"Config file must define a `config` variable of type HestiaConfig, "
                 f"got {type(config).__name__}"
             )
+        validate_inference_model_name(config.inference.model_name)
         return config
 
     @classmethod

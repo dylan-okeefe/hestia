@@ -46,6 +46,7 @@ class FakeOrchestrator:
         session: Session,
         user_message: Message,
         respond_callback: Any,
+        **kwargs: Any,
     ) -> Turn:
         self.calls.append(
             {
@@ -381,11 +382,13 @@ class TestLoop:
                 super().__init__()
                 self.call_count = 0
 
-            async def process_turn(self, session, user_message, respond_callback):
+            async def process_turn(self, session, user_message, respond_callback, **kwargs):
                 self.call_count += 1
                 if self.call_count == 1:
                     raise RuntimeError("First call fails")
-                return await super().process_turn(session, user_message, respond_callback)
+                return await super().process_turn(
+                    session, user_message, respond_callback, **kwargs
+                )
 
         orchestrator = FailingThenWorkingOrchestrator()
         scheduler = await make_scheduler(
@@ -501,9 +504,11 @@ class TestTick:
         execution_order = []
 
         class OrderTrackingOrchestrator(FakeOrchestrator):
-            async def process_turn(self, session, user_message, respond_callback):
+            async def process_turn(self, session, user_message, respond_callback, **kwargs):
                 execution_order.append(user_message.content)
-                return await super().process_turn(session, user_message, respond_callback)
+                return await super().process_turn(
+                    session, user_message, respond_callback, **kwargs
+                )
 
         orchestrator = OrderTrackingOrchestrator()
         scheduler = await make_scheduler(scheduler_store, session_store, response_log, orchestrator)

@@ -13,7 +13,7 @@ from typing import Any
 import click
 
 from hestia.artifacts.store import ArtifactStore
-from hestia.config import HestiaConfig
+from hestia.config import HestiaConfig, validate_inference_model_name
 from hestia.context.builder import ContextBuilder
 from hestia.context.compressor import InferenceHistoryCompressor
 from hestia.core.inference import InferenceClient
@@ -24,6 +24,7 @@ from hestia.inference import SlotManager
 from hestia.memory import MemoryEpochCompiler, MemoryStore
 from hestia.memory.handoff import SessionHandoffSummarizer
 from hestia.orchestrator import Orchestrator
+from hestia.orchestrator.engine import ConfirmCallback
 from hestia.persistence.db import Database
 from hestia.persistence.failure_store import FailureStore
 from hestia.persistence.scheduler import SchedulerStore
@@ -221,7 +222,7 @@ class CliAppContext:
         epoch_compiler: MemoryEpochCompiler | None = None,
         skill_index_builder: SkillIndexBuilder | None = None,
         verbose: bool = False,
-        confirm_callback: Any = None,
+        confirm_callback: ConfirmCallback | None = None,
         calibration_path: Path | None = None,
         compiled_identity: str | None = None,
     ) -> None:
@@ -253,11 +254,21 @@ class CliAppContext:
         self._handoff_summarizer: SessionHandoffSummarizer | None = None
         self._bootstrapped = False
 
+    def set_confirm_callback(self, callback: ConfirmCallback | None) -> None:
+        """Set the tool-confirmation callback used when constructing orchestrators."""
+        self.confirm_callback = callback
+
     @property
     def inference(self) -> InferenceClient:
         """Lazy inference client — created on first access."""
         if self._inference is None:
-            model_name = self.config.inference.model_name or "dummy"
+            model_name = self.config.inference.model_name.strip()
+            if not model_name:
+                raise ValueError(
+                    "inference.model_name is required — set it to your llama.cpp model filename "
+                    "(e.g. 'my-model-Q4_K_M.gguf'), or for tests only set HESTIA_ALLOW_DUMMY_MODEL=1 "
+                    "and use model_name='dummy'."
+                )
             self._inference = InferenceClient(self.config.inference.base_url, model_name)
         return self._inference
 
@@ -313,7 +324,7 @@ class CliAppContext:
                 runner=runner,
                 session_store=self.session_store,
             )
-            runner._on_failure = sched._record_failure
+            runner.set_failure_handler(sched._record_failure)
             self._reflection_scheduler = sched
         return self._reflection_scheduler
 
@@ -388,6 +399,11 @@ class CliAppContext:
 
 def make_app(cfg: HestiaConfig) -> CliAppContext:
     """Build subsystems from config and return typed app context."""
+    if not cfg.inference.model_name.strip():
+        if os.environ.get("HESTIA_ALLOW_DUMMY_MODEL") == "1":
+            cfg.inference.model_name = "dummy"
+    validate_inference_model_name(cfg.inference.model_name)
+
     db = Database(cfg.storage.database_url)
     artifact_store = ArtifactStore(cfg.storage.artifacts_dir)
     session_store = SessionStore(db)

@@ -1,5 +1,6 @@
 """ContextBuilder assembles the message list for a turn under a token budget."""
 
+import asyncio
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -333,9 +334,16 @@ class ContextBuilder:
                         break
 
                 if found_pair:
-                    # Try to add both messages
+                    # Count both messages concurrently (M-3). ``_count_tokens``
+                    # caches by (role, content) so the common case is a pure
+                    # dict hit; the gather still helps on the first-see path
+                    # where both pair members miss the cache and would
+                    # otherwise issue two sequential ``/tokenize`` calls.
+                    pair_token_counts = await asyncio.gather(
+                        *(self._count_tokens(m) for m in pair_msgs)
+                    )
                     pair_window_body = (
-                        sum([await self._count_tokens(m) for m in pair_msgs])
+                        sum(pair_token_counts)
                         + len(pair_msgs) * _join_overhead
                     )
                     candidate_body = protected_body + window_body + pair_window_body

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import sqlite3
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -11,6 +13,8 @@ import sqlalchemy as sa
 
 from hestia.core.clock import utcnow
 from hestia.persistence.db import Database
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -58,8 +62,19 @@ class MemoryStore:
                 )
                 await conn.execute(sa.text("DROP TABLE _fts5_probe"))
                 self._fts5_available = True
-            except Exception:
+            except sqlite3.OperationalError:
                 self._fts5_available = False
+            except Exception as e:
+                mod = type(e).__module__
+                if mod == "aiosqlite" and type(e).__name__ == "OperationalError":
+                    self._fts5_available = False
+                else:
+                    logger.error(
+                        "Unexpected error during FTS5 capability probe; assuming no FTS5: %s",
+                        e,
+                        exc_info=True,
+                    )
+                    self._fts5_available = False
 
             # Check if an old-schema table exists (no platform/platform_user)
             old_schema_exists = False

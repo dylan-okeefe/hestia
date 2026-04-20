@@ -32,12 +32,14 @@ class Scheduler:
         orchestrator: Orchestrator,
         response_callback: SchedulerResponseCallback,
         tick_interval_seconds: float = 5.0,
+        system_prompt: str | None = None,
     ):
         self._scheduler_store = scheduler_store
         self._session_store = session_store
         self._orchestrator = orchestrator
         self._response_callback = response_callback
         self._tick_interval = tick_interval_seconds
+        self._system_prompt = system_prompt or "You are a helpful assistant."
         self._stop_event = asyncio.Event()
         self._loop_task: asyncio.Task[Any] | None = None
 
@@ -113,6 +115,7 @@ class Scheduler:
                 session=session,
                 user_message=user_message,
                 respond_callback=deliver,
+                system_prompt=self._system_prompt,
             )
             turn_error = turn.error
         except Exception as e:  # noqa: BLE001
