@@ -47,7 +47,7 @@ class MemoryEpochCompiler:
         """Compile a memory epoch for the given session.
 
         Strategy:
-        1. Fetch recent memories (last 30 days)
+        1. Fetch recent memories scoped to the session user (last 30 days)
         2. Fetch tag-matched memories if session has tags
         3. Deduplicate
         4. Format as compact text block
@@ -57,14 +57,18 @@ class MemoryEpochCompiler:
             session: The session to compile memories for
 
         Returns:
-            A MemoryEpoch with compiled memory context
+            A MemoryEpoch with compiled memory context scoped to the user
         """
         memories: list[Memory] = []
         seen_ids: set[str] = set()
 
-        # 1. Fetch recent memories (last 30 days)
+        # 1. Fetch recent memories scoped to the session user (last 30 days)
         cutoff = utcnow() - timedelta(days=30)
-        recent_memories = await self._fetch_recent_memories(limit=50)
+        recent_memories = await self._fetch_recent_memories(
+            limit=50,
+            platform=session.platform,
+            platform_user=session.platform_user,
+        )
         for mem in recent_memories:
             if mem.created_at >= cutoff and mem.id not in seen_ids:
                 memories.append(mem)
@@ -75,7 +79,11 @@ class MemoryEpochCompiler:
         # or use the session context to find relevant memories
         if len(memories) < 10:
             # Supplement with more recent memories if we have few
-            more_memories = await self._fetch_recent_memories(limit=100)
+            more_memories = await self._fetch_recent_memories(
+                limit=100,
+                platform=session.platform,
+                platform_user=session.platform_user,
+            )
             for mem in more_memories:
                 if mem.id not in seen_ids:
                     memories.append(mem)
@@ -99,16 +107,25 @@ class MemoryEpochCompiler:
             token_estimate=token_estimate,
         )
 
-    async def _fetch_recent_memories(self, limit: int) -> list[Memory]:
+    async def _fetch_recent_memories(
+        self,
+        limit: int,
+        platform: str | None = None,
+        platform_user: str | None = None,
+    ) -> list[Memory]:
         """Fetch the most recent memories from the store.
 
         Args:
             limit: Maximum number of memories to fetch
+            platform: Optional platform scope
+            platform_user: Optional user scope
 
         Returns:
             List of memories, newest first
         """
-        return await self.store.list_memories(tag=None, limit=limit)
+        return await self.store.list_memories(
+            tag=None, limit=limit, platform=platform, platform_user=platform_user
+        )
 
     def _format_memories(self, memories: list[Memory]) -> str:
         """Format memories as a compact text block.

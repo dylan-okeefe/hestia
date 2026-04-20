@@ -173,6 +173,35 @@ and relaunch.
 
 ---
 
+## 2026-04-19 — Loop: L45b — memory user-scope migration (Kimi) — feature-branch pushed, not merged to develop
+
+**Kimi:** Clean run on `feature/l45b-memory-user-scope-migration`; `.kimi-done` present with `LOOP=L45b`, `COMMIT=6ea59ed`, `TESTS=820 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`, `RUFF_SRC=23`.
+
+**What shipped:**
+
+- `Memory` dataclass extended with `platform`/`platform_user` fields.
+- `MemoryStore` FTS5 migration: detects old schema, backs up data, recreates virtual table with new columns, restores with `NULL` backfill.
+- `MemoryStore` LIKE fallback for SQLite builds without FTS5; exact-tag matching via multiple `LIKE` patterns.
+- User-scoped queries in `MemoryStore`: `save`, `search`, `list_memories`, `delete`, `count` all filter by `platform:platform_user` (explicit params or runtime ContextVars).
+- Memory tools (`save_memory`, `search_memory`, `list_memories`, `delete_memory`) respect user scope via `current_platform`/`current_platform_user` ContextVars.
+- `MemoryEpochCompiler.compile(session)` scopes memory fetch to the session user.
+- 15 new tests in `test_memory_user_scope.py`: scoping, cross-user blocking, ContextVar fallback, LIKE fallback, FTS5 migration.
+- Updated `test_memory_epochs.py` and `test_memory_matrix_mock.py` to pre-seed memories with matching user identity.
+
+**Gates:**
+
+- `pytest tests/unit/ tests/integration/ tests/cli/ tests/docs/ -q` → **820 passed, 6 skipped**
+- `mypy src/hestia` → **0 errors in 92 source files**
+- `ruff check src/` → **23 errors** (baseline unchanged)
+
+**Git:**
+
+- Feature branch pushed: `origin/feature/l45b-memory-user-scope-migration`
+- Commit: `6ea59ed`
+- Merge status: **NOT merged to `develop`** (correct per post-release merge discipline)
+
+---
+
 ## 2026-04-19 — Loop: L45a — trust + identity plumbing (Kimi) — feature-branch pushed, not merged to develop
 
 **Kimi:** Clean run on `feature/l45a-trust-identity-plumbing`; `.kimi-done` present with `LOOP=L45a`, `COMMIT=9cd7e8b`, `TESTS=805 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`, `RUFF_SRC=23`.
