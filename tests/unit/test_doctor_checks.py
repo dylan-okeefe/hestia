@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
-from unittest.mock import MagicMock
 
 import httpx
 import pytest
 
 from hestia.app import CliAppContext
 from hestia.doctor import (
-    CheckResult,
     _check_config_file_loads,
     _check_config_schema,
     _check_dependencies_in_sync,
@@ -21,7 +18,6 @@ from hestia.doctor import (
     _check_python_version,
     _check_sqlite_dbs_readable,
     _check_trust_preset_resolves,
-    run_checks,
 )
 
 
@@ -186,9 +182,9 @@ class TestSQLiteDBsReadable:
         db_path.write_bytes(b"NOT A SQLITE DB")
         cfg.storage.database_url = f"sqlite+aiosqlite:///{db_path}"
 
-        from hestia.persistence.db import Database
         from hestia.artifacts.store import ArtifactStore
         from hestia.memory import MemoryStore
+        from hestia.persistence.db import Database
         from hestia.persistence.failure_store import FailureStore
         from hestia.persistence.scheduler import SchedulerStore
         from hestia.persistence.sessions import SessionStore

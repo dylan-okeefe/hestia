@@ -7,6 +7,7 @@ No check mutates state.  Failures are returned, never raised.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import sqlite3
 import sys
@@ -131,13 +132,10 @@ async def _check_dependencies_in_sync(app: CliAppContext) -> CheckResult:
 
     try:
         stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=10)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         proc.kill()
-        # Drain pipes so we don't leak the subprocess in zombie state.
-        try:
+        with contextlib.suppress(Exception):
             await proc.communicate()
-        except Exception:  # noqa: BLE001 — best-effort cleanup
-            pass
         return CheckResult(
             "dependencies_in_sync",
             False,

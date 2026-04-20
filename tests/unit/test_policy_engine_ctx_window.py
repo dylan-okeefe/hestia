@@ -75,4 +75,4 @@ def test_minimal_subclass_can_expose_ctx_window() -> None:
     assert policy.ctx_window == 4096
     # And the value is reachable via the dynamic attribute access path used
     # by commands.py (`policy.ctx_window`), not just via subclass lookup.
-    assert getattr(policy, "ctx_window") == 4096
+    assert policy.ctx_window == 4096

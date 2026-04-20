@@ -13,13 +13,6 @@ import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
 
 from hestia.core.clock import utcnow
-
-logger = logging.getLogger(__name__)
-
-# Maximum retry attempts for idx-collision races on append_message /
-# append_transition. With n concurrent writers the probability of
-# surviving n retries is > 99.99% for n=5.
-_APPEND_IDX_MAX_ATTEMPTS = 5
 from hestia.core.types import (
     Message,
     Session,
@@ -33,6 +26,13 @@ from hestia.persistence.schema import messages, sessions
 
 if TYPE_CHECKING:
     from hestia.orchestrator.types import Turn, TurnTransition
+
+logger = logging.getLogger(__name__)
+
+# Maximum retry attempts for idx-collision races on append_message /
+# append_transition. With n concurrent writers the probability of
+# surviving n retries is > 99.99% for n=5.
+_APPEND_IDX_MAX_ATTEMPTS = 5
 
 
 def _generate_session_id(platform: str, platform_user: str) -> str:
