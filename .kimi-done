@@ -1,7 +1,0 @@
-HESTIA_KIMI_DONE=1
-LOOP=L45a
-BRANCH=feature/l45a-trust-identity-plumbing
-COMMIT=80d3724
-TESTS=805 passed, 6 skipped
-MYPY_FINAL_ERRORS=0
-RUFF_SRC=23
