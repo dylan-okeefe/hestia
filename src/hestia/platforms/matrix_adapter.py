@@ -17,6 +17,10 @@ from nio import (
 
 from hestia.config import MatrixConfig
 from hestia.errors import PlatformError
+from hestia.platforms.allowlist import (
+    match_allowlist,
+    validate_matrix_room_id,
+)
 from hestia.platforms.base import IncomingMessageCallback, Platform
 from hestia.platforms.confirmation import ConfirmationStore, render_args_for_human_review
 
@@ -50,6 +54,18 @@ class MatrixAdapter(Platform):
         self._confirmation_timeout_seconds = 60.0
         # Maps original confirmation event_id -> request_id so we can correlate replies
         self._pending_confirmations: dict[str, str] = {}
+
+        # Validate allowed_rooms entries (warn, don't hard-fail, for backward compat)
+        for entry in self._config.allowed_rooms:
+            if "*" in entry or "?" in entry or "[" in entry:
+                continue  # Wildcard patterns skip strict validation
+            if validate_matrix_room_id(entry):
+                continue
+            logger.warning(
+                "Matrix allowed_rooms entry %r does not look like a valid "
+                "room ID or alias",
+                entry,
+            )
 
     @property
     def name(self) -> str:
@@ -219,10 +235,15 @@ class MatrixAdapter(Platform):
             self._pending_confirmations.pop(event_id, None)
 
     def _is_allowed(self, room_id: str) -> bool:
-        """Check if a room is in the allowed list."""
-        if not self._config.allowed_rooms:
-            return False  # Empty whitelist = deny all (secure default)
-        return room_id in self._config.allowed_rooms
+        """Check if a room is in the allowed list.
+
+        Empty whitelist = deny all (secure default).
+        Supports wildcards: ``*`` matches any sequence, ``?`` matches one character.
+        """
+        allowed = self._config.allowed_rooms
+        if not allowed:
+            return False
+        return match_allowlist(allowed, room_id, case_sensitive=True)
 
     async def _sync_loop(self) -> None:
         """Background sync loop."""

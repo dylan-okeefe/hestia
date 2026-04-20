@@ -314,7 +314,7 @@ subagents cannot shell or write files. This is safe for a fresh install, but
 it's often more restrictive than you want for a single-operator personal
 deployment.
 
-Three presets live in `TrustConfig`:
+Four presets live in `TrustConfig`:
 
 - **`TrustConfig.paranoid()`** (default) — current behavior. Every `terminal`
   or `write_file` call on Telegram/Matrix/scheduler is blocked unless you wire
@@ -323,6 +323,11 @@ Three presets live in `TrustConfig`:
 - **`TrustConfig.household()`** (recommended for personal use) —
   auto-approves `terminal` and `write_file` on headless platforms, lets the
   scheduler run shell commands, lets subagents shell and write.
+
+- **`TrustConfig.prompt_on_mobile()`** — like `household()` for scheduler and
+  subagents, but keeps confirmation prompts for `terminal`, `write_file`, and
+  `email_send` on mobile platforms. Use this when you want a ✅/❌ prompt on
+  your phone for dangerous tools.
 
 - **`TrustConfig.developer()`** — auto-approves everything. Dev/test only.
 
@@ -337,6 +342,14 @@ config = HestiaConfig(
 ```
 
 See `hestia config` for the active profile.
+
+### Multi-user security
+
+Hestia supports multiple users with per-user memory scoping and trust overrides.
+Memories saved by one user are invisible to others. Platform allow-lists
+(Telegram `allowed_users`, Matrix `allowed_rooms`) support wildcards (`*`, `?`).
+Use `trust_overrides` keyed by `platform:platform_user` to grant different
+autonomy levels to different people. See the [multi-user setup guide](docs/guides/multi-user-setup.md) for details.
 
 ---
 

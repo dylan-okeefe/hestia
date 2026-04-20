@@ -1,7 +1,0 @@
-HESTIA_KIMI_DONE=1
-LOOP=L45b
-BRANCH=feature/l45b-memory-user-scope-migration
-COMMIT=6ea59ed
-TESTS=820 passed, 6 skipped
-MYPY_FINAL_ERRORS=0
-RUFF_SRC=23

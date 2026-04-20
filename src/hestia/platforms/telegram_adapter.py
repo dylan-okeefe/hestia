@@ -17,6 +17,11 @@ from telegram.ext import Application, CallbackQueryHandler, CommandHandler, Mess
 
 from hestia.config import TelegramConfig
 from hestia.core.types import Message as HestiaMessage
+from hestia.platforms.allowlist import (
+    match_allowlist,
+    validate_telegram_user_id,
+    validate_telegram_username,
+)
 from hestia.platforms.base import IncomingMessageCallback, Platform
 from hestia.platforms.confirmation import ConfirmationStore, render_args_for_human_review
 from hestia.voice.pipeline import get_voice_pipeline
@@ -57,6 +62,20 @@ class TelegramAdapter(Platform):
         self._session_store: SessionStore | None = None
         self._system_prompt: str = ""
         self._voice_config: VoiceConfig | None = None
+
+        # Validate allowed_users entries (warn, don't hard-fail, for backward compat)
+        for entry in self._config.allowed_users:
+            if "*" in entry or "?" in entry or "[" in entry:
+                continue  # Wildcard patterns skip strict validation
+            if validate_telegram_user_id(entry):
+                continue
+            if validate_telegram_username(entry):
+                continue
+            logger.warning(
+                "Telegram allowed_users entry %r does not look like a valid "
+                "user ID or username",
+                entry,
+            )
 
     @property
     def name(self) -> str:
@@ -218,12 +237,18 @@ class TelegramAdapter(Platform):
         """Check if a user is in the allowed list.
 
         Empty list = deny all (require explicit opt-in).
+        Supports wildcards: ``*`` matches any sequence, ``?`` matches one character.
+        Username matching is case-insensitive; numeric ID matching is case-sensitive.
         """
-        if not self._config.allowed_users:
+        allowed = self._config.allowed_users
+        if not allowed:
             return False
 
-        allowed = self._config.allowed_users
-        return str(user_id) in allowed or (username is not None and username in allowed)
+        return (
+            match_allowlist(allowed, str(user_id), case_sensitive=True)
+            or (username is not None
+                and match_allowlist(allowed, username, case_sensitive=False))
+        )
 
     async def _handle_start(self, update: Update, context: Any) -> None:
         """Handle /start command."""
