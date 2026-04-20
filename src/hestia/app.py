@@ -24,6 +24,7 @@ from hestia.inference import SlotManager
 from hestia.memory import MemoryEpochCompiler, MemoryStore
 from hestia.memory.handoff import SessionHandoffSummarizer
 from hestia.orchestrator import Orchestrator
+from hestia.orchestrator.engine import ConfirmCallback
 from hestia.persistence.db import Database
 from hestia.persistence.failure_store import FailureStore
 from hestia.persistence.scheduler import SchedulerStore
@@ -221,7 +222,7 @@ class CliAppContext:
         epoch_compiler: MemoryEpochCompiler | None = None,
         skill_index_builder: SkillIndexBuilder | None = None,
         verbose: bool = False,
-        confirm_callback: Any = None,
+        confirm_callback: ConfirmCallback | None = None,
         calibration_path: Path | None = None,
         compiled_identity: str | None = None,
     ) -> None:
