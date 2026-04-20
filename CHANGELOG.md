@@ -5,6 +5,97 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-04-19
+
+First release after `v0.8.0`. Ships the multi-user safety train on top of a
+voice-message MVP and an internal-quality cleanup. Two new feature areas
+(voice messages, multi-user support) plus a one-way memory schema migration
+justify the minor bump.
+
+### Multi-user support (L45 train)
+- **L45a** — Runtime identity plumbing. New `current_platform` and
+  `current_platform_user` `ContextVar`s are set by the orchestrator on every
+  turn (success and failure paths) so downstream code can scope behavior to
+  the calling user. New `HestiaConfig.trust_overrides: dict[str, TrustConfig]`
+  keyed by `"platform:platform_user"` lets operators grant different trust
+  profiles per identity. `DefaultPolicyEngine._trust_for(session)` resolves
+  the effective profile per call (`auto_approve`, `filter_tools`), falling
+  back to the default with a warning when identity is missing. Scheduler
+  tasks inherit the creator's identity via the session, so policy decisions
+  on background ticks use the right profile instead of a global default.
+- **L45b** — Per-user memory scoping. Adds a one-way FTS5 recreate-and-copy
+  migration that introduces `platform` and `platform_user` columns on the
+  `memory` table and backfills them from `sessions`; rows that cannot be
+  backfilled land under `__legacy__`. `MemoryStore.save/search/list_memories/
+  delete/count` take optional `platform`/`platform_user` and otherwise fall
+  back to the runtime ContextVars — queries without identity filter to that
+  identity (fail-closed). `save_memory` reads identity from ContextVars
+  explicitly; `search_memory`/`list_memories` ride the store fallback.
+  `MemoryEpochCompiler` now compiles per session identity, so epochs never
+  leak another user's facts. FTS5-unavailable builds get a regular table +
+  `LIKE`-based search with exact-tag matching.
+- **L45c** — Allow-list hardening and multi-user docs. New
+  `src/hestia/platforms/allowlist.py` with a shared `fnmatch`-based
+  `match_allowlist()` plus platform validators for Telegram user IDs,
+  Telegram usernames, and Matrix room IDs/aliases. `TelegramAdapter` and
+  `MatrixAdapter` use the shared matcher (numeric IDs case-sensitive,
+  usernames/rooms per platform convention) and warn on startup for
+  allow-list entries that look invalid but are not wildcard patterns.
+  New `docs/guides/multi-user-setup.md` covers the security model, allow-list
+  configuration, per-user trust overrides, and troubleshooting; README gains
+  a "Multi-user security" subsection and mentions
+  `TrustConfig.prompt_on_mobile()` alongside the other presets.
+
+### Voice messages (Phase A)
+- **L41** — Shared voice infrastructure. New `hestia.voice` package with a
+  transport-agnostic `VoicePipeline` (lazy faster-whisper STT + Piper TTS,
+  sentence-level streaming synthesis, singleton accessor, import-safe when
+  the `voice` extra isn't installed). New `VoiceConfig` dataclass, new
+  `hestia[voice]` extra (`faster-whisper`, `piper-tts`), `hestia doctor`
+  check for the voice prerequisites, and a setup guide with VRAM budget
+  guidance for the RTX 3060 target.
+- **L42** — Telegram voice-message handler behind
+  `TelegramConfig.voice_messages` (default off). Incoming voice notes are
+  downloaded, transcoded OGG/Opus → PCM via `ffmpeg`, transcribed, fed to
+  `Orchestrator.process_turn()` as a normal text turn, and the reply is
+  synthesized → OGG/Opus → `reply_voice()`. If the reply exceeds Telegram's
+  ~1 MB voice-note limit, Hestia iteratively truncates the audio and sends
+  the full text as a follow-up so no content is silently dropped.
+  Destructive-tool confirmation still uses the existing inline-keyboard
+  flow; verbal confirmations are deferred to Phase B (L43).
+
+### Internal quality (L40 — Copilot cleanup)
+- Tool dispatch is now concurrent by default: `Orchestrator._execute_tool_calls`
+  partitions tool calls into concurrent and serial buckets, runs the
+  concurrent ones under `asyncio.gather`, and preserves emission order when
+  reassembling results. New `metadata.ordering` field ("concurrent"/"serial",
+  default "concurrent"); all email tools are marked `serial` because IMAP
+  session reuse + confirmation make sequential the safer default.
+- Removed the `should_evict_slot` stub from `PolicyEngine` /
+  `DefaultPolicyEngine` (and all `FakePolicyEngine` shims), along with
+  stale `TODO(L31)` and `TODO(L?)` markers across the orchestrator engine,
+  slot manager, style builder, audit checks, and doctor.
+- `EmailConfig.drafts_folder` / `sent_folder` are now configurable (default
+  "Drafts"/"Sent") so Gmail deployments can point at `[Gmail]/Drafts` etc.
+  `EmailAdapter` narrowed three bare `except:` blocks and guards
+  `conn.close()` to the `SELECTED` state, fixing sporadic
+  `IMAP4.error: command CLOSE illegal in state AUTH` on reconnect.
+- `HestiaConfig.prompt_on_mobile` docstring now matches the fire-and-forget
+  callback implementation. Regression test added for `for_trust` value
+  equality so trust-preset dispatch survives object recreation.
+
+### Migration notes
+- The FTS5 `memory` migration is one-way and automatic on first boot of
+  `v0.9.0`. Rows that can't be joined back to a session's identity are
+  attributed to `__legacy__`; operators can reassign via the admin helper
+  described in `docs/guides/multi-user-setup.md`.
+- `hestia[voice]` is opt-in. Deployments that don't install the extra see
+  no new runtime dependencies; `hestia doctor` will flag missing voice
+  prerequisites only when `VoiceConfig` or `TelegramConfig.voice_messages`
+  is actually enabled.
+- Allow-list wildcard support is additive: existing exact-match
+  `allowed_users` / `allowed_rooms` entries continue to work unchanged.
+
 ## [0.8.0] — 2026-04-19
 
 The first major release since `v0.2.2` (April 11). Rolls up the eight-month
