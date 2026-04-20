@@ -4,7 +4,13 @@ from pathlib import Path
 
 import pytest
 
-from hestia.config import DEFAULT_SOUL_MD_PATH, HestiaConfig, IdentityConfig, MatrixConfig
+from hestia.config import (
+    DEFAULT_SOUL_MD_PATH,
+    HestiaConfig,
+    IdentityConfig,
+    InferenceConfig,
+    MatrixConfig,
+)
 
 
 class TestDefaultConfig:
@@ -147,3 +153,31 @@ class TestMatrixConfigFromEnv:
         env = {"HESTIA_MATRIX_ALLOWED_ROOMS": " , , "}
         cfg = MatrixConfig.from_env(environ=env)
         assert cfg.allowed_rooms == []
+
+
+class TestInferenceConfigDummyRejection:
+    """H-5: reject the literal placeholder 'dummy' at config-load."""
+
+    def test_dummy_model_name_rejected_by_default(self, monkeypatch):
+        """Explicit model_name='dummy' raises ValueError at construct-time."""
+        monkeypatch.delenv("HESTIA_ALLOW_DUMMY_MODEL", raising=False)
+        with pytest.raises(ValueError, match="model_name == 'dummy' is rejected"):
+            InferenceConfig(model_name="dummy")
+
+    def test_dummy_model_name_allowed_with_env_override(self, monkeypatch):
+        """HESTIA_ALLOW_DUMMY_MODEL=1 lets CI/test paths keep the placeholder."""
+        monkeypatch.setenv("HESTIA_ALLOW_DUMMY_MODEL", "1")
+        cfg = InferenceConfig(model_name="dummy")
+        assert cfg.model_name == "dummy"
+
+    def test_empty_model_name_still_allowed(self, monkeypatch):
+        """Empty model_name is not 'dummy' — CLI/setup paths rely on this."""
+        monkeypatch.delenv("HESTIA_ALLOW_DUMMY_MODEL", raising=False)
+        cfg = InferenceConfig()
+        assert cfg.model_name == ""
+
+    def test_real_model_name_unaffected(self, monkeypatch):
+        """Any model name other than the literal 'dummy' passes through."""
+        monkeypatch.delenv("HESTIA_ALLOW_DUMMY_MODEL", raising=False)
+        cfg = InferenceConfig(model_name="qwen2.5-7b-instruct-q4_k_m.gguf")
+        assert cfg.model_name == "qwen2.5-7b-instruct-q4_k_m.gguf"

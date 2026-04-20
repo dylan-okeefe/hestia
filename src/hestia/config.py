@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -40,6 +41,23 @@ class InferenceConfig:
     context_length: int = 8192
     default_reasoning_budget: int = 2048
     max_tokens: int = 1024
+
+    def __post_init__(self) -> None:
+        # Reject the literal placeholder "dummy" at config-load: historically
+        # this slipped through and surfaced later as mystifying 404 / "model
+        # not found" errors from llama-server. Empty model_name is still
+        # allowed here (CLI/setup paths like `hestia doctor` lazily
+        # fall back to a placeholder string when they don't need real
+        # inference); the real-inference guard lives in
+        # InferenceClient.__init__.
+        if self.model_name == "dummy" and os.environ.get("HESTIA_ALLOW_DUMMY_MODEL") != "1":
+            raise ValueError(
+                "inference.model_name == 'dummy' is rejected at config-load — "
+                "set it to your real llama.cpp model filename (e.g. "
+                "'qwen2.5-7b-instruct-q4_k_m.gguf'), or export "
+                "HESTIA_ALLOW_DUMMY_MODEL=1 for CI / test paths that rely on "
+                "the placeholder."
+            )
 
 
 @dataclass
