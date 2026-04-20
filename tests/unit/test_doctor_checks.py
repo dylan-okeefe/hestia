@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -100,10 +99,16 @@ class TestDependenciesInSync:
         """Simulate uv pip check returning exit 0."""
         app = make_app()
 
-        def fake_run(*args, **kwargs):
-            return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+        class _FakeProc:
+            returncode = 0
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
+            async def communicate(self):
+                return (b"", b"")
+
+        async def fake_exec(*args, **kwargs):
+            return _FakeProc()
+
+        monkeypatch.setattr("hestia.doctor.asyncio.create_subprocess_exec", fake_exec)
         result = await _check_dependencies_in_sync(app)
         assert result.ok is True
 
@@ -111,29 +116,32 @@ class TestDependenciesInSync:
         """Simulate uv pip check returning non-zero with output."""
         app = make_app()
 
-        def fake_run(*args, **kwargs):
-            return subprocess.CompletedProcess(
-                args=args,
-                returncode=1,
-                stdout="package-a has incompatible dependency\nline2\nline3\nline4\nline5\nline6",
-                stderr="",
-            )
+        class _FakeProc:
+            returncode = 1
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
+            async def communicate(self):
+                return (
+                    b"package-a has incompatible dependency\nline2\nline3\nline4\nline5\nline6",
+                    b"",
+                )
+
+        async def fake_exec(*args, **kwargs):
+            return _FakeProc()
+
+        monkeypatch.setattr("hestia.doctor.asyncio.create_subprocess_exec", fake_exec)
         result = await _check_dependencies_in_sync(app)
         assert result.ok is False
         assert "package-a" in result.detail
-        # only first 5 lines
         assert result.detail.count("\n") == 4
 
     async def test_uv_not_on_path(self, monkeypatch, make_app):
         """Simulate uv not being found on PATH."""
         app = make_app()
 
-        def fake_run(*args, **kwargs):
+        async def fake_exec(*args, **kwargs):
             raise FileNotFoundError("uv")
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr("hestia.doctor.asyncio.create_subprocess_exec", fake_exec)
         result = await _check_dependencies_in_sync(app)
         assert result.ok is False
         assert "uv not found on PATH" in result.detail
@@ -228,43 +236,73 @@ class TestLlamaCppReachable:
         assert "no inference base_url configured" in result.detail
 
     async def test_llamacpp_reachable_ok(self, monkeypatch, make_app):
-        """Mock httpx.get to return 200."""
+        """Mock AsyncClient.get to return 200."""
         app = make_app()
         app.config.inference.base_url = "http://localhost:8001"
 
-        class FakeResponse:
+        class _FakeResponse:
             status_code = 200
 
-        def fake_get(url, timeout):
-            return FakeResponse()
+        class _FakeClient:
+            def __init__(self, *args, **kwargs):
+                pass
 
-        monkeypatch.setattr(httpx, "get", fake_get)
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc):
+                return False
+
+            async def get(self, url):
+                return _FakeResponse()
+
+        monkeypatch.setattr(httpx, "AsyncClient", _FakeClient)
         result = await _check_llamacpp_reachable(app)
         assert result.ok is True
         assert "200" in result.detail
 
     async def test_llamacpp_reachable_timeout(self, monkeypatch, make_app):
-        """Mock httpx.get to raise TimeoutException."""
+        """Mock AsyncClient.get to raise TimeoutException."""
         app = make_app()
         app.config.inference.base_url = "http://localhost:8001"
 
-        def fake_get(url, timeout):
-            raise httpx.TimeoutException("timed out")
+        class _FakeClient:
+            def __init__(self, *args, **kwargs):
+                pass
 
-        monkeypatch.setattr(httpx, "get", fake_get)
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc):
+                return False
+
+            async def get(self, url):
+                raise httpx.TimeoutException("timed out")
+
+        monkeypatch.setattr(httpx, "AsyncClient", _FakeClient)
         result = await _check_llamacpp_reachable(app)
         assert result.ok is False
         assert "did not respond within 2s" in result.detail
 
     async def test_llamacpp_reachable_connection_error(self, monkeypatch, make_app):
-        """Mock httpx.get to raise ConnectError."""
+        """Mock AsyncClient.get to raise ConnectError."""
         app = make_app()
         app.config.inference.base_url = "http://localhost:8001"
 
-        def fake_get(url, timeout):
-            raise httpx.ConnectError("connection refused")
+        class _FakeClient:
+            def __init__(self, *args, **kwargs):
+                pass
 
-        monkeypatch.setattr(httpx, "get", fake_get)
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc):
+                return False
+
+            async def get(self, url):
+                raise httpx.ConnectError("connection refused")
+
+        monkeypatch.setattr(httpx, "AsyncClient", _FakeClient)
         result = await _check_llamacpp_reachable(app)
         assert result.ok is False
         assert "cannot connect to llama.cpp" in result.detail
