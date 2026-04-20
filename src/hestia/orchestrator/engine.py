@@ -15,8 +15,10 @@ from hestia.errors import (
     ContextTooLargeError,
     EmptyResponseError,
     IllegalTransitionError,
+    MaxIterationsError,
     PersistenceError,
     PlatformError,
+    PolicyFailureError,
     classify_error,
 )
 from hestia.inference.slot_manager import SlotManager
@@ -395,13 +397,13 @@ class Orchestrator:
                             turn.iterations,
                         )
                         if decision.action == RetryAction.FAIL:
-                            raise Exception(decision.reason)
+                            raise PolicyFailureError(decision.reason)
                         await self._transition(turn, TurnState.RETRYING)
                         turn.iterations += 1
 
                 else:
                     # Max iterations reached
-                    raise Exception(f"Max iterations ({self._max_iterations}) exceeded")
+                    raise MaxIterationsError(self._max_iterations, turn.iterations)
 
             except ContextTooLargeError as exc:
                 await self._set_typing(platform, platform_user, False)

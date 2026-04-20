@@ -134,6 +134,9 @@ class TestEmailRoundtrip:
         fake = FakeIMAP()
         mock_imap_cls = _build_mock_imap(fake)
         mock_smtp = MagicMock()
+        # C-6: _smtp_connect asserts starttls() returned 220; configure the
+        # mock SMTP so the new response-code check passes.
+        mock_smtp.return_value.starttls.return_value = (220, b"Ready")
 
         with (
             patch("hestia.email.adapter.imaplib.IMAP4_SSL", mock_imap_cls),

@@ -6,9 +6,10 @@ No check mutates state.  Failures are returned, never raised.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import os
 import sqlite3
-import subprocess
 import sys
 from dataclasses import dataclass
 from urllib.parse import urlparse
@@ -102,14 +103,19 @@ async def _check_python_version(app: CliAppContext) -> CheckResult:
 
 
 async def _check_dependencies_in_sync(app: CliAppContext) -> CheckResult:
-    """Run ``uv pip check`` to verify lockfile sync."""
+    """Run ``uv pip check`` to verify lockfile sync.
+
+    Uses ``asyncio.create_subprocess_exec`` so concurrent ``doctor``
+    checks don't stall the event loop for the full 10s ``uv pip check``
+    runtime (Copilot C-5).
+    """
     try:
-        proc = subprocess.run(
-            ["uv", "pip", "check"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
+        proc = await asyncio.create_subprocess_exec(
+            "uv",
+            "pip",
+            "check",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
     except FileNotFoundError:
         return CheckResult(
@@ -117,24 +123,32 @@ async def _check_dependencies_in_sync(app: CliAppContext) -> CheckResult:
             False,
             "uv not found on PATH; cannot verify dependency sync",
         )
-    except subprocess.TimeoutExpired:
+    except Exception as exc:
+        return CheckResult(
+            "dependencies_in_sync",
+            False,
+            f"failed to launch uv pip check: {exc}",
+        )
+
+    try:
+        stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=10)
+    except TimeoutError:
+        proc.kill()
+        with contextlib.suppress(Exception):
+            await proc.communicate()
         return CheckResult(
             "dependencies_in_sync",
             False,
             "uv pip check timed out after 10s",
         )
-    except Exception as exc:
-        return CheckResult(
-            "dependencies_in_sync",
-            False,
-            f"failed to run uv pip check: {exc}",
-        )
 
-    if proc.returncode == 0 and not proc.stdout.strip():
+    stdout = stdout_b.decode("utf-8", errors="replace")
+    stderr = stderr_b.decode("utf-8", errors="replace")
+
+    if proc.returncode == 0 and not stdout.strip():
         return CheckResult("dependencies_in_sync", True, "")
 
-    # On failure return first 5 lines of stdout (or stderr if stdout empty)
-    output = proc.stdout.strip() or proc.stderr.strip()
+    output = stdout.strip() or stderr.strip()
     lines = output.splitlines()[:5]
     return CheckResult(
         "dependencies_in_sync",
@@ -204,7 +218,12 @@ async def _check_sqlite_dbs_readable(app: CliAppContext) -> CheckResult:
 
 
 async def _check_llamacpp_reachable(app: CliAppContext) -> CheckResult:
-    """Hit the llama.cpp /health endpoint when configured."""
+    """Hit the llama.cpp /health endpoint when configured.
+
+    Uses ``httpx.AsyncClient`` so the 2 s health-check timeout does not
+    block the event loop for other concurrent doctor checks (Copilot
+    C-5). Retains the same error classification as the sync version.
+    """
     base_url = app.config.inference.base_url
     if not base_url:
         return CheckResult(
@@ -214,7 +233,8 @@ async def _check_llamacpp_reachable(app: CliAppContext) -> CheckResult:
         )
     health_url = f"{base_url.rstrip('/')}/health"
     try:
-        response = httpx.get(health_url, timeout=2.0)
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            response = await client.get(health_url)
         if response.status_code == 200:
             return CheckResult("llamacpp_reachable", True, f"{health_url}: 200")
         return CheckResult(

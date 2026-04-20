@@ -14,6 +14,8 @@ from urllib.parse import urlparse
 
 import sqlalchemy as sa
 
+from hestia.core.clock import utcnow
+
 if TYPE_CHECKING:
     from hestia.persistence.db import Database
 
@@ -243,7 +245,7 @@ class TraceStore:
                     "domain": domain,
                     "status": status,
                     "size": size,
-                    "created_at": datetime.now().isoformat(),
+                    "created_at": utcnow().isoformat(),
                 },
             )
             await conn.commit()

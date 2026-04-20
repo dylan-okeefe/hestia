@@ -96,6 +96,54 @@ justify the minor bump.
 - Allow-list wildcard support is additive: existing exact-match
   `allowed_users` / `allowed_rooms` entries continue to work unchanged.
 
+### Pre-release hotfixes (2026-04-20 Copilot audit response)
+
+Ships with the v0.9.0 tag. A larger backlog of ~39 additional audit
+findings is tracked in
+`docs/development-process/prompts/v0.9.1-copilot-backlog.md` for v0.9.1.
+
+- fix(persistence): use `utcnow()` in `trace_store.record_egress` so
+  egress `created_at` is tz-aware UTC and joins correctly against the
+  rest of the schema (C-1).
+- fix(persistence): close the TOCTOU race on `SessionStore.append_message`
+  and `append_transition` by retrying on `IntegrityError`. Regression
+  test in `tests/unit/test_append_message_race.py` spawns 20 concurrent
+  appenders and asserts 20 distinct `idx` values (C-2 / T-1).
+- fix(artifacts): `tools/registry.py` and `tools/builtin/read_artifact.py`
+  now offload `ArtifactStore.store` / `fetch_content` via
+  `asyncio.to_thread` so large-artifact I/O doesn't block the event
+  loop. New `ArtifactStore.open()` async factory for async-first
+  construction (C-3).
+- fix(orchestrator): `engine.process_turn` raises typed
+  `MaxIterationsError` / `PolicyFailureError` instead of bare
+  `Exception`. Classifier keeps `FailureClass.MAX_ITERATIONS` and gains
+  the type-map entry; string-match fallback preserved for legacy
+  callers (C-4).
+- fix(doctor): `_check_dependencies_in_sync` uses
+  `asyncio.create_subprocess_exec`; `_check_llamacpp_reachable` uses
+  `httpx.AsyncClient`. Doctor no longer stalls the event loop for up to
+  12 s while other async work is in flight (C-5).
+- fix(email): `_smtp_connect` uses `smtplib.SMTP_SSL` on port 465
+  (implicit TLS) and now asserts the `STARTTLS` response code is 220
+  before sending credentials on other ports — a refused upgrade used to
+  silently leave the session cleartext (C-6).
+- fix(inference): guard empty-choices responses from llama-server (H-1)
+  and raise a typed error when a model emits tool-call arguments that
+  are not a JSON object (H-2).
+- fix(tools): `write_file.py` and the CLI audit-report writer now pass
+  `encoding="utf-8"` explicitly (H-3). `web_search` sends the Tavily
+  API key as an `Authorization: Bearer` header instead of embedding it
+  in the request body (H-4).
+- fix(tools): `ToolRegistry.call` widens the handler exception contract
+  to broad `Exception` (not `BaseException` — `CancelledError` still
+  propagates) and wraps in a new `ToolExecutionError`. `ToolCallResult`
+  gains an optional `error_type` so the orchestrator can classify tool
+  failures without string-matching (H-9).
+- fix(policy): `PolicyEngine` ABC declares `ctx_window: int` so
+  subclasses that don't inherit `DefaultPolicyEngine` no longer
+  `AttributeError` from `commands.py`. Contract test in
+  `tests/unit/test_policy_engine_ctx_window.py` (A-3).
+
 ## [0.8.0] — 2026-04-19
 
 The first major release since `v0.2.2` (April 11). Rolls up the eight-month
