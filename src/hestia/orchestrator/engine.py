@@ -1,5 +1,6 @@
 """Orchestrator engine for managing turn execution."""
 
+import asyncio
 import json
 import logging
 import uuid
@@ -14,8 +15,10 @@ from hestia.errors import (
     ContextTooLargeError,
     EmptyResponseError,
     IllegalTransitionError,
+    MaxIterationsError,
     PersistenceError,
     PlatformError,
+    PolicyFailureError,
     classify_error,
 )
 from hestia.inference.slot_manager import SlotManager
@@ -27,6 +30,7 @@ from hestia.persistence.sessions import SessionStore
 from hestia.platforms.base import Platform
 from hestia.policy.engine import PolicyEngine, RetryAction
 from hestia.reflection.store import ProposalStore
+from hestia.runtime_context import current_platform, current_platform_user
 from hestia.security import InjectionScanner
 from hestia.style.context import format_style_prefix_from_data
 from hestia.tools.builtin import current_session_id, current_trace_store
@@ -179,6 +183,8 @@ class Orchestrator:
         """
         # Set session context for tools that need to know the current session
         session_token = current_session_id.set(session.id)
+        platform_token = current_platform.set(session.platform)
+        platform_user_token = current_platform_user.set(session.platform_user)
         trace_token: Any = None
         if self._trace_store is not None:
             trace_token = current_trace_store.set(self._trace_store)
@@ -391,13 +397,13 @@ class Orchestrator:
                             turn.iterations,
                         )
                         if decision.action == RetryAction.FAIL:
-                            raise Exception(decision.reason)
+                            raise PolicyFailureError(decision.reason)
                         await self._transition(turn, TurnState.RETRYING)
                         turn.iterations += 1
 
                 else:
                     # Max iterations reached
-                    raise Exception(f"Max iterations ({self._max_iterations}) exceeded")
+                    raise MaxIterationsError(self._max_iterations, turn.iterations)
 
             except ContextTooLargeError as exc:
                 await self._set_typing(platform, platform_user, False)
@@ -547,6 +553,8 @@ class Orchestrator:
         finally:
             # Clear session context when turn processing completes
             current_session_id.reset(session_token)
+            current_platform.reset(platform_token)
+            current_platform_user.reset(platform_user_token)
             if trace_token is not None:
                 current_trace_store.reset(trace_token)
 
@@ -669,12 +677,54 @@ class Orchestrator:
     async def _execute_tool_calls(
         self, session: Session, tool_calls: list[ToolCall], allowed_tools: list[str] | None = None
     ) -> tuple[list[Message], list[str]]:
-        """Execute tool calls and return result messages and artifact handles."""
+        """Execute tool calls and return result messages and artifact handles.
+
+        Tools marked ``ordering="serial"`` or requiring confirmation run
+        sequentially; everything else is dispatched concurrently via
+        :func:`asyncio.gather` to avoid stacking latencies.
+        """
         result_messages: list[Message] = []
         artifact_handles: list[str] = []
 
-        for tc in tool_calls:
+        # Partition by dispatch mode. Tools requiring confirmation or marked
+        # ordering="serial" run sequentially; everything else gathers concurrently.
+        serial_indices: list[int] = []
+        concurrent_indices: list[int] = []
+        for i, tc in enumerate(tool_calls):
+            try:
+                meta = self._tools.describe(tc.name)
+                is_serial = meta.requires_confirmation or meta.ordering == "serial"
+            except ToolNotFoundError:
+                is_serial = False
+            if is_serial:
+                serial_indices.append(i)
+            else:
+                concurrent_indices.append(i)
+
+        # Run concurrent tools in parallel
+        concurrent_results: dict[int, ToolCallResult] = {}
+        if concurrent_indices:
+
+            async def _run_one(idx: int) -> tuple[int, ToolCallResult]:
+                tc = tool_calls[idx]
+                result = await self._dispatch_tool_call(session, tc, allowed_tools)
+                return idx, result
+
+            for idx, result in await asyncio.gather(
+                *[_run_one(i) for i in concurrent_indices]
+            ):
+                concurrent_results[idx] = result
+
+        # Run serial tools sequentially
+        serial_results: dict[int, ToolCallResult] = {}
+        for idx in serial_indices:
+            tc = tool_calls[idx]
             result = await self._dispatch_tool_call(session, tc, allowed_tools)
+            serial_results[idx] = result
+
+        # Reassemble in original emission order for trace consistency
+        for i, tc in enumerate(tool_calls):
+            result = concurrent_results[i] if i in concurrent_results else serial_results[i]
             result = self._scan_tool_result(result)
             if result.artifact_handle:
                 artifact_handles.append(result.artifact_handle)

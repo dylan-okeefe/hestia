@@ -92,10 +92,10 @@ class TestMemoryEpochCompiler:
         store = MemoryStore(db)
         await store.create_table()
 
-        # Add some memories
-        await store.save(content="Memory 1 content", tags=["tag1"], session_id="session-1")
-        await store.save(content="Memory 2 content", tags=["tag2"], session_id="session-1")
-        await store.save(content="Memory 3 content", tags=[], session_id="session-2")
+        # Add some memories scoped to the session user
+        await store.save(content="Memory 1 content", tags=["tag1"], session_id="session-1", platform="cli", platform_user="test")
+        await store.save(content="Memory 2 content", tags=["tag2"], session_id="session-1", platform="cli", platform_user="test")
+        await store.save(content="Memory 3 content", tags=[], session_id="session-2", platform="cli", platform_user="test")
 
         compiler = MemoryEpochCompiler(store, max_tokens=500)
 
@@ -198,8 +198,8 @@ class TestMemoryEpochCompiler:
         store = MemoryStore(db)
         await store.create_table()
 
-        await store.save(content="Tagged memory", tags=["important", "work"])
-        await store.save(content="Untagged memory", tags=[])
+        await store.save(content="Tagged memory", tags=["important", "work"], platform="cli", platform_user="test")
+        await store.save(content="Untagged memory", tags=[], platform="cli", platform_user="test")
 
         compiler = MemoryEpochCompiler(store, max_tokens=500)
 
@@ -238,7 +238,7 @@ class TestMemoryEpochCompiler:
 
         # We can't easily insert old memories since store.save uses current time
         # But we can test that recent memories are included
-        await store.save(content="Recent important memory", tags=["recent"])
+        await store.save(content="Recent important memory", tags=["recent"], platform="cli", platform_user="test")
 
         compiler = MemoryEpochCompiler(store, max_tokens=500)
 

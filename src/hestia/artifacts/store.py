@@ -1,5 +1,24 @@
-"""ArtifactStore with inline + file-backed storage and TTL."""
+"""ArtifactStore with inline + file-backed storage and TTL.
 
+Async callers MUST NOT call ``store`` / ``fetch*`` / ``gc`` directly from
+inside an event loop — the underlying filesystem I/O is synchronous and
+would stall every concurrent task on the loop. Two accommodations exist:
+
+1. ``await ArtifactStore.open(root, default_ttl=...)`` — async factory
+   that runs the construction-time mkdir + inline-index load in
+   ``asyncio.to_thread`` and returns a ready-to-use store.
+2. From async contexts, wrap calls in ``asyncio.to_thread`` at the call
+   site (see :mod:`hestia.tools.registry` and
+   :mod:`hestia.tools.builtin.read_artifact`).
+
+Direct ``ArtifactStore(root)`` construction remains supported for CLI
+startup (``make_app``, which runs before the event loop) and for
+synchronous unit tests. Inside an async context, prefer ``open()``.
+"""
+
+from __future__ import annotations
+
+import asyncio
 import base64
 import contextlib
 import json
@@ -51,7 +70,13 @@ class ArtifactStore:
         root: Path | None = None,
         default_ttl: int = DEFAULT_TTL_SECONDS,
     ) -> None:
-        """Initialize the artifact store.
+        """Initialize the artifact store (sync).
+
+        Runs ``root.mkdir(parents=True, exist_ok=True)`` and loads the
+        inline index from ``root/inline.json`` synchronously. Acceptable
+        from sync contexts (CLI startup in ``make_app``, unit tests).
+        **Not safe to call from inside a running event loop** — use
+        :meth:`open` instead.
 
         Args:
             root: Directory for file-backed artifacts. Defaults to .hestia/artifacts/
@@ -61,11 +86,22 @@ class ArtifactStore:
         self._default_ttl = default_ttl
         self._inline: dict[str, bytes] = {}  # handle -> content for small artifacts
 
-        # Ensure root exists
         self._root.mkdir(parents=True, exist_ok=True)
-
-        # Load inline index if it exists
         self._load_inline_index()
+
+    @classmethod
+    async def open(
+        cls,
+        root: Path | None = None,
+        default_ttl: int = DEFAULT_TTL_SECONDS,
+    ) -> ArtifactStore:
+        """Async factory that performs construction-time I/O off the event loop.
+
+        Prefer this over direct ``__init__`` when constructing an
+        :class:`ArtifactStore` from inside async code — the sync
+        ``__init__`` does mkdir + JSON load, which stalls the loop.
+        """
+        return await asyncio.to_thread(cls, root, default_ttl)
 
     def _load_inline_index(self) -> None:
         """Load inline artifact index from disk."""

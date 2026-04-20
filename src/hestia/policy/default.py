@@ -46,6 +46,7 @@ class DefaultPolicyEngine(PolicyEngine):
         default_reasoning_budget: int = 2048,
         trust: TrustConfig | None = None,
         config: PolicyConfig | None = None,
+        trust_overrides: dict[str, TrustConfig] | None = None,
     ) -> None:
         """Initialize with context window size.
 
@@ -57,11 +58,14 @@ class DefaultPolicyEngine(PolicyEngine):
             trust: Trust profile for auto-approval and capability gating.
                 Defaults to paranoid (safest posture).
             config: Policy configuration for tunable behavior.
+            trust_overrides: Per-user trust overrides keyed by
+                ``platform:platform_user``.
         """
         self.ctx_window = ctx_window
         self._default_reasoning_budget = default_reasoning_budget
         self._trust = trust if trust is not None else TrustConfig()
         self._config = config if config is not None else PolicyConfig()
+        self._trust_overrides = trust_overrides if trust_overrides is not None else {}
 
         self.retry_max_attempts = DEFAULT_RETRY_MAX_ATTEMPTS
 
@@ -129,13 +133,6 @@ class DefaultPolicyEngine(PolicyEngine):
         """Compress when we're over 85% of budget."""
         return tokens_used > int(tokens_budget * 0.85)
 
-    def should_evict_slot(self, slot_id: int, pressure: float) -> bool:
-        """Never evict slots in Phase 1b.
-
-        Phase 2 will add slot management logic.
-        """
-        return False
-
     def retry_after_error(self, error: Exception, attempt: int) -> RetryDecision:
         """Retry transient inference errors once, then fail.
 
@@ -178,9 +175,31 @@ class DefaultPolicyEngine(PolicyEngine):
         """
         return 8000
 
+    def _trust_for(self, session: Session) -> TrustConfig:
+        """Resolve trust config for a session, applying per-user overrides.
+
+        Falls back to the default trust profile when no override exists
+        or when session identity is missing.
+        """
+        key = f"{session.platform}:{session.platform_user}"
+        if not session.platform or not session.platform_user:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                "Session %s has missing identity (platform=%r platform_user=%r); "
+                "falling back to default trust",
+                session.id,
+                session.platform,
+                session.platform_user,
+            )
+            return self._trust
+        return self._trust_overrides.get(key, self._trust)
+
     def auto_approve(self, tool_name: str, session: Session) -> bool:
         """Return True if the trust profile auto-approves this tool."""
-        approved = self._trust.auto_approve_tools
+        trust = self._trust_for(session)
+        approved = trust.auto_approve_tools
         if "*" in approved:
             return True
         return tool_name in approved
@@ -208,13 +227,15 @@ class DefaultPolicyEngine(PolicyEngine):
         """
         from hestia.tools.capabilities import EMAIL_SEND, SHELL_EXEC, WRITE_LOCAL
 
+        trust = self._trust_for(session)
+
         if session.platform == "subagent":
             blocked: set[str] = set()
-            if not self._trust.subagent_shell_exec:
+            if not trust.subagent_shell_exec:
                 blocked.add(SHELL_EXEC)
-            if not self._trust.subagent_write_local:
+            if not trust.subagent_write_local:
                 blocked.add(WRITE_LOCAL)
-            if not self._trust.subagent_email_send:
+            if not trust.subagent_email_send:
                 blocked.add(EMAIL_SEND)
             if not blocked:
                 return tool_names
@@ -226,9 +247,9 @@ class DefaultPolicyEngine(PolicyEngine):
 
         if session.platform == "scheduler" or scheduler_tick_active.get():
             blocked = set()
-            if not self._trust.scheduler_shell_exec:
+            if not trust.scheduler_shell_exec:
                 blocked.add(SHELL_EXEC)
-            if not self._trust.scheduler_email_send:
+            if not trust.scheduler_email_send:
                 blocked.add(EMAIL_SEND)
             if not blocked:
                 return tool_names

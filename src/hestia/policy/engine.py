@@ -33,7 +33,20 @@ class PolicyEngine(ABC):
 
     All "when/whether" decisions in the framework go through here.
     The orchestrator executes; the policy engine decides.
+
+    Subclasses MUST set ``self.ctx_window`` (int, per-slot token budget
+    matching the llama-server ``-c`` argument) in their ``__init__``.
+    ``commands.py`` and other callsites read ``policy.ctx_window``
+    directly, so a subclass that does not provide it would raise
+    ``AttributeError`` at runtime (Copilot A-3).
     """
+
+    #: Per-slot context window in tokens. Concrete subclasses must
+    #: assign this in ``__init__`` — see
+    #: :class:`hestia.policy.default.DefaultPolicyEngine` for the
+    #: reference implementation. Declared here so static type checkers
+    #: know the attribute exists on every ``PolicyEngine``.
+    ctx_window: int
 
     @abstractmethod
     def should_delegate(
@@ -49,11 +62,6 @@ class PolicyEngine(ABC):
     @abstractmethod
     def should_compress(self, session: Session, tokens_used: int, tokens_budget: int) -> bool:
         """Should we compress context before sending to model?"""
-        ...
-
-    @abstractmethod
-    def should_evict_slot(self, slot_id: int, pressure: float) -> bool:
-        """Should we evict this slot to free up resources?"""
         ...
 
     @abstractmethod

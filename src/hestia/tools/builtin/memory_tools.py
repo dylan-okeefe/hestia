@@ -5,6 +5,7 @@ from collections.abc import Callable, Coroutine
 from typing import TYPE_CHECKING, Any, cast
 
 from hestia.memory.store import MemoryStore
+from hestia.runtime_context import current_platform, current_platform_user
 from hestia.tools.capabilities import MEMORY_READ, MEMORY_WRITE
 from hestia.tools.metadata import tool
 
@@ -47,6 +48,7 @@ def make_search_memory_tool(
         Returns:
             Formatted list of matching memories with IDs, tags, and dates.
         """
+        # Scope to current user identity (set by orchestrator in process_turn)
         results = await memory_store.search(query, limit=limit)
         if not results:
             return "No memories found matching your query."
@@ -83,9 +85,14 @@ def make_save_memory_tool(
             Confirmation with the memory ID.
         """
         tag_list = tags.split() if tags else []
-        # Associate with current session if running inside orchestrator
+        # Associate with current session and user identity (set by orchestrator)
         session_id = current_session_id.get()
-        mem = await memory_store.save(content=content, tags=tag_list, session_id=session_id)
+        platform = current_platform.get()
+        platform_user = current_platform_user.get()
+        mem = await memory_store.save(
+            content=content, tags=tag_list, session_id=session_id,
+            platform=platform, platform_user=platform_user,
+        )
         preview = content[:80] + ("..." if len(content) > 80 else "")
         return f"Saved memory {mem.id}: {preview}"
 
@@ -114,6 +121,7 @@ def make_list_memories_tool(
             Formatted list of memories.
         """
         tag_filter = tag if tag else None
+        # Scope to current user identity (set by orchestrator in process_turn)
         results = await memory_store.list_memories(tag=tag_filter, limit=limit)
         if not results:
             suffix = f" (filtered by tag: {tag})" if tag else ""

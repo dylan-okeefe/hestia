@@ -607,7 +607,7 @@ async def _cmd_audit_run(app: CliAppContext, output_json: bool, output: str | No
     report = await auditor.run_audit()
     result = report.to_json() if output_json else report.summary()
     if output:
-        Path(output).write_text(result)
+        Path(output).write_text(result, encoding="utf-8")
         click.echo(f"Audit report saved to: {output}")
     else:
         click.echo(result)

@@ -75,6 +75,54 @@ class ExperimentalFeatureError(HestiaError):
     pass
 
 
+class MissingExtraError(HestiaError):
+    """Raised when an optional dependency extra is not installed."""
+
+    pass
+
+
+class MaxIterationsError(HestiaError):
+    """Orchestrator turn exceeded the configured max iteration count.
+
+    Raised by the engine state machine when a turn loops past
+    ``HestiaConfig.max_iterations`` without reaching DONE or FAILED via
+    any other path. Carries the iteration count for telemetry.
+    """
+
+    def __init__(self, max_iterations: int, iterations: int | None = None) -> None:
+        self.max_iterations = max_iterations
+        self.iterations = iterations if iterations is not None else max_iterations
+        super().__init__(f"Max iterations ({max_iterations}) exceeded")
+
+
+class PolicyFailureError(HestiaError):
+    """Retry policy returned FAIL — orchestrator may not retry.
+
+    Raised by the engine when :meth:`PolicyEngine.retry_after_error`
+    returns ``RetryAction.FAIL``. Separates "policy said stop" from
+    "the underlying error", which remains available as ``__cause__``.
+    """
+
+    pass
+
+
+class ToolExecutionError(HestiaError):
+    """A tool handler raised an unexpected exception during dispatch.
+
+    Wraps the underlying exception so the orchestrator can classify the
+    failure by ``inner_type`` without string-matching the message.
+    ``ToolRegistry.call`` catches broad ``Exception`` (but not
+    ``BaseException`` — asyncio ``CancelledError`` and keyboard interrupts
+    still propagate) and raises this in the tool-result JSON.
+    """
+
+    def __init__(self, tool_name: str, inner: BaseException) -> None:
+        self.tool_name = tool_name
+        self.inner = inner
+        self.inner_type = type(inner).__name__
+        super().__init__(f"{tool_name}: {self.inner_type}: {inner}")
+
+
 class FailureClass(StrEnum):
     """Classification of failure types for analytics and policy."""
 
@@ -105,12 +153,17 @@ def classify_error(exc: Exception) -> tuple[FailureClass, str]:
         InferenceServerError: (FailureClass.INFERENCE_ERROR, "high"),
         PersistenceError: (FailureClass.PERSISTENCE_ERROR, "high"),
         IllegalTransitionError: (FailureClass.ILLEGAL_TRANSITION, "high"),
+        MaxIterationsError: (FailureClass.MAX_ITERATIONS, "medium"),
     }
 
     for exc_type, (fc, sev) in mapping.items():
         if isinstance(exc, exc_type):
             return fc, sev
 
+    # Fallback string-match for policy failures and legacy call sites that
+    # still raise bare Exception("Max iterations ... exceeded"). Any new code
+    # should raise MaxIterationsError / PolicyFailureError directly so the
+    # classifier can dispatch on type.
     error_msg = str(exc).lower()
     if "max iterations" in error_msg:
         return FailureClass.MAX_ITERATIONS, "medium"

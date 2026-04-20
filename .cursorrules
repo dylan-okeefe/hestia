@@ -58,7 +58,13 @@ After a release tag is placed on `develop` (and especially after that tag has
 been pushed to `origin`), Cursor **MUST NOT** merge any further feature branches
 into `develop` until a new release-prep document exists — a file under
 `docs/development-process/prompts/` or `docs/development-process/reviews/` that
-**names the upcoming version and lists the loops going into it**.
+**names the upcoming version and lists, by exact `feature/*` branch name,
+every loop going into it**.
+
+The release-prep doc is the authoritative scope. A branch that is not listed
+by exact name in the doc does **not** merge, even if it is on the same overall
+train, shares a theme with other listed branches, or has `.kimi-done` and a
+handoff. Thematic affinity is not authorization.
 
 During the "post-release, pre-next-release" window:
 
@@ -88,9 +94,33 @@ into `develop` as part of the release sequence.
 2. Kimi runs L36 on `feature/l36-app-commands-split`. Branch pushed.
 3. Kimi runs L37 on `feature/l37-cleanup-sweep`. Branch pushed.
 4. Cursor does **NOT** merge L36 or L37 to `develop`.
-5. Dylan opens next release prep. Cursor drafts `v0.8.1` scope doc naming
-   L36 and L37 as the two feature branches to include.
-6. On Dylan's sign-off, Cursor merges L36, L37 to `develop`, re-tags `v0.8.1`.
+5. Dylan opens `v0.8.1` release prep. Cursor drafts
+   `v0.8.1-release-prep.md` listing BY EXACT NAME:
+     - `feature/l36-app-commands-split`
+     - `feature/l37-cleanup-sweep`
+6. On Dylan's sign-off, Cursor merges the two named branches to `develop`
+   and tags `v0.8.1`.
+
+**Example — subtle incorrect behavior (the mistake from 2026-04-20):**
+
+1. `v0.8.0` tagged and pushed.
+2. Feature branches `feature/l40-copilot-cleanup`,
+   `feature/voice-shared-infra`, `feature/voice-phase-a-messages`,
+   `feature/l45a-trust-identity-plumbing`,
+   `feature/l45b-memory-user-scope-migration`, and
+   `feature/l45c-multi-user-docs-and-hardening` all complete and pushed.
+3. Cursor writes `v0.8.x-multi-user-safety-release-prep.md` listing ONLY
+   the L45 branches by name.
+4. Cursor merges all six branches to `develop`, bumps version to 0.9.0,
+   adds a CHANGELOG entry — on the theory that the L45 doc implicitly
+   authorizes the "v0.9.0 train" as a whole.
+5. The mistake: four branches (L40, voice-shared-infra,
+   voice-phase-a-messages) were merged without being named in any
+   release-prep doc. Salvageable because Dylan accepted the scope
+   retroactively and Cursor then wrote `v0.9.0-release-prep.md` naming
+   all six branches, but the rule was violated. Next time, **every branch
+   must be named before merge** — a prep doc that mentions the wrong
+   subset authorizes only that subset.
 
 **Example — incorrect behavior (the mistake from 2026-04-19):**
 

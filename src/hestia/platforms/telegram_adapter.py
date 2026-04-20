@@ -3,19 +3,38 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import io
 import logging
+import os
+import tempfile
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import TelegramError
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
 from hestia.config import TelegramConfig
+from hestia.core.types import Message as HestiaMessage
+from hestia.platforms.allowlist import (
+    match_allowlist,
+    validate_telegram_user_id,
+    validate_telegram_username,
+)
 from hestia.platforms.base import IncomingMessageCallback, Platform
 from hestia.platforms.confirmation import ConfirmationStore, render_args_for_human_review
+from hestia.voice.pipeline import get_voice_pipeline
+
+if TYPE_CHECKING:
+    from hestia.config import VoiceConfig
+    from hestia.orchestrator.engine import Orchestrator
+    from hestia.persistence.sessions import SessionStore
 
 logger = logging.getLogger(__name__)
+
+# Piper outputs PCM16 mono at 22050 Hz for the default en_US-amy-medium voice.
+_TTS_SAMPLE_RATE = 22050
 
 
 class TelegramAdapter(Platform):
@@ -38,9 +57,45 @@ class TelegramAdapter(Platform):
         self._confirmation_store = ConfirmationStore()
         self._confirmation_timeout_seconds = 60.0
 
+        # Voice deps are injected by run_platform when voice is enabled.
+        self._orchestrator: Orchestrator | None = None
+        self._session_store: SessionStore | None = None
+        self._system_prompt: str = ""
+        self._voice_config: VoiceConfig | None = None
+
+        # Validate allowed_users entries (warn, don't hard-fail, for backward compat)
+        for entry in self._config.allowed_users:
+            if "*" in entry or "?" in entry or "[" in entry:
+                continue  # Wildcard patterns skip strict validation
+            if validate_telegram_user_id(entry):
+                continue
+            if validate_telegram_username(entry):
+                continue
+            logger.warning(
+                "Telegram allowed_users entry %r does not look like a valid "
+                "user ID or username",
+                entry,
+            )
+
     @property
     def name(self) -> str:
         return "telegram"
+
+    def set_voice_deps(
+        self,
+        orchestrator: Orchestrator,
+        session_store: SessionStore,
+        system_prompt: str,
+        voice_config: VoiceConfig,
+    ) -> None:
+        """Inject orchestrator and session store for voice message handling.
+
+        Called by run_platform after the orchestrator is built.
+        """
+        self._orchestrator = orchestrator
+        self._session_store = session_store
+        self._system_prompt = system_prompt
+        self._voice_config = voice_config
 
     async def start(self, on_message: IncomingMessageCallback) -> None:
         """Start polling for Telegram messages."""
@@ -51,6 +106,8 @@ class TelegramAdapter(Platform):
         # Register handlers
         self._app.add_handler(CommandHandler("start", self._handle_start))
         self._app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message))
+        if self._config.voice_messages:
+            self._app.add_handler(MessageHandler(filters.VOICE, self._handle_voice_message))
         self._app.add_handler(CallbackQueryHandler(self._handle_callback_query))
 
         # Start polling
@@ -180,12 +237,18 @@ class TelegramAdapter(Platform):
         """Check if a user is in the allowed list.
 
         Empty list = deny all (require explicit opt-in).
+        Supports wildcards: ``*`` matches any sequence, ``?`` matches one character.
+        Username matching is case-insensitive; numeric ID matching is case-sensitive.
         """
-        if not self._config.allowed_users:
+        allowed = self._config.allowed_users
+        if not allowed:
             return False
 
-        allowed = self._config.allowed_users
-        return str(user_id) in allowed or (username is not None and username in allowed)
+        return (
+            match_allowlist(allowed, str(user_id), case_sensitive=True)
+            or (username is not None
+                and match_allowlist(allowed, username, case_sensitive=False))
+        )
 
     async def _handle_start(self, update: Update, context: Any) -> None:
         """Handle /start command."""
@@ -220,6 +283,126 @@ class TelegramAdapter(Platform):
                 str(user_id),
                 update.effective_message.text,
             )
+
+    async def _handle_voice_message(self, update: Update, context: Any) -> None:
+        """Handle incoming voice messages: STT → orchestrator → TTS → voice reply."""
+        if not self._config.voice_messages:
+            logger.debug("Voice message ignored (telegram.voice_messages=False)")
+            return
+
+        if update.effective_user is None or update.effective_message is None:
+            return
+        if update.effective_message.voice is None:
+            return
+
+        user_id = update.effective_user.id
+        username = update.effective_user.username or str(user_id)
+        message = update.effective_message
+
+        if not self._is_allowed(user_id, username):
+            await message.reply_text("Not authorized.")
+            return
+
+        if self._session_store is None or self._orchestrator is None or self._voice_config is None:
+            logger.warning("Voice deps not injected; cannot process voice message")
+            await message.reply_text("Voice processing is not configured.")
+            return
+
+        assert message.voice is not None
+
+        # 1. Download the .ogg file
+        try:
+            voice_file = await message.voice.get_file()
+            with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as ogg:
+                await voice_file.download_to_drive(ogg.name)
+                ogg_path = ogg.name
+        except Exception as e:
+            logger.warning("Failed to download voice message: %s", e)
+            await message.reply_text("Sorry, I couldn't download that voice message.")
+            return
+
+        # 2. Convert .ogg/opus to PCM 16kHz mono via ffmpeg
+        try:
+            pcm_bytes = await self._ogg_to_pcm(ogg_path, sample_rate=16000)
+        except Exception as e:
+            logger.warning("Failed to convert voice message to PCM: %s", e)
+            await message.reply_text("Sorry, I couldn't process that audio format.")
+            return
+        finally:
+            with contextlib.suppress(OSError):
+                os.unlink(ogg_path)
+
+        # 3. Transcribe
+        try:
+            pipeline = await get_voice_pipeline(self._voice_config)
+            transcript = await pipeline.transcribe(pcm_bytes, sample_rate=16000)
+        except Exception as e:
+            logger.warning("STT failed for voice message: %s", e)
+            await message.reply_text("Sorry, I couldn't understand that audio.")
+            return
+
+        if not transcript.strip():
+            await message.reply_text("Sorry, I didn't catch anything in that message.")
+            return
+
+        # 4. Feed to orchestrator as a normal text turn
+        session = await self._session_store.get_or_create_session("telegram", str(user_id))
+        user_message = HestiaMessage(role="user", content=transcript)
+
+        async def respond_voice(response_text: str) -> None:
+            """Synthesize the response and send it as a voice message."""
+            # 5. Synthesize → assemble .ogg/opus
+            audio_chunks: list[bytes] = []
+            try:
+                async for chunk in pipeline.synthesize(response_text):
+                    audio_chunks.append(chunk)
+            except Exception as synth_err:
+                logger.warning("TTS failed for voice reply: %s", synth_err)
+                await message.reply_text(
+                    f"(Voice synthesis failed; sending text instead)\n\n{response_text}"
+                )
+                return
+
+            try:
+                full_audio_ogg = await self._pcm_chunks_to_ogg_opus(audio_chunks)
+            except Exception as enc_err:
+                logger.warning("OGG encoding failed for voice reply: %s", enc_err)
+                await message.reply_text(
+                    f"(Voice encoding failed; sending text instead)\n\n{response_text}"
+                )
+                return
+
+            # 6. Telegram voice note limit handling (1 MB)
+            if len(full_audio_ogg) > 1_000_000:
+                total_pcm = b"".join(audio_chunks)
+                duration_seconds = len(total_pcm) / (_TTS_SAMPLE_RATE * 2)
+                try:
+                    truncated_ogg = await self._truncate_ogg_to_size(
+                        full_audio_ogg, 1_000_000, duration_seconds
+                    )
+                except Exception as trunc_err:
+                    logger.warning("OGG truncation failed: %s", trunc_err)
+                    truncated_ogg = full_audio_ogg
+                await message.reply_voice(voice=io.BytesIO(truncated_ogg))
+                await message.reply_text(
+                    "(Voice reply truncated to fit Telegram's 1MB limit. "
+                    "Full text:)\n\n" + response_text
+                )
+            else:
+                await message.reply_voice(voice=io.BytesIO(full_audio_ogg))
+
+        try:
+            await self._orchestrator.process_turn(
+                session=session,
+                user_message=user_message,
+                respond_callback=respond_voice,
+                system_prompt=self._system_prompt,
+                platform=self,
+                platform_user=str(user_id),
+            )
+        except Exception as e:
+            logger.exception("Turn failed for voice message from %s", user_id)
+            await message.reply_text(f"Turn failed: {e}")
 
     async def _handle_callback_query(self, update: Update, context: Any) -> None:
         """Handle inline-keyboard button presses for confirmations."""
@@ -262,3 +445,102 @@ class TelegramAdapter(Platform):
                     logger.debug("Failed to update confirmation message: %s", e)
         else:
             await update.callback_query.answer("This confirmation has expired.")
+
+    # ------------------------------------------------------------------
+    # FFmpeg helpers
+    # ------------------------------------------------------------------
+
+    async def _ogg_to_pcm(self, ogg_path: str, sample_rate: int = 16000) -> bytes:
+        """Convert an OGG/Opus file to raw PCM16 mono bytes."""
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            ogg_path,
+            "-ar",
+            str(sample_rate),
+            "-ac",
+            "1",
+            "-f",
+            "s16le",
+            "-",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            raise RuntimeError(f"ffmpeg ogg→pcm failed: {stderr.decode().strip()}")
+        return stdout
+
+    async def _pcm_chunks_to_ogg_opus(self, chunks: list[bytes]) -> bytes:
+        """Merge PCM16 chunks and encode to OGG/Opus via ffmpeg."""
+        pcm = b"".join(chunks)
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "s16le",
+            "-ar",
+            str(_TTS_SAMPLE_RATE),
+            "-ac",
+            "1",
+            "-i",
+            "-",
+            "-c:a",
+            "libopus",
+            "-b:a",
+            "24k",
+            "-f",
+            "ogg",
+            "-",
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate(input=pcm)
+        if proc.returncode != 0:
+            raise RuntimeError(f"ffmpeg pcm→ogg failed: {stderr.decode().strip()}")
+        return stdout
+
+    async def _truncate_ogg_to_size(
+        self, ogg_bytes: bytes, max_size: int, original_duration_seconds: float
+    ) -> bytes:
+        """Iteratively shorten an OGG/Opus file until it fits within ``max_size`` bytes."""
+        best_result = ogg_bytes
+        for factor in (0.85, 0.7, 0.55, 0.4, 0.25):
+            target_duration = original_duration_seconds * factor
+            proc = await asyncio.create_subprocess_exec(
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                "-",
+                "-t",
+                str(target_duration),
+                "-c:a",
+                "libopus",
+                "-b:a",
+                "24k",
+                "-f",
+                "ogg",
+                "-",
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate(input=ogg_bytes)
+            if proc.returncode == 0:
+                best_result = stdout
+                if len(stdout) <= max_size:
+                    return stdout
+        logger.warning(
+            "Could not truncate voice reply to %d bytes; returning best attempt (%d bytes)",
+            max_size,
+            len(best_result),
+        )
+        return best_result

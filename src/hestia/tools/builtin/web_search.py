@@ -32,8 +32,12 @@ async def _tavily_search(
     time_range: str | None,
     timeout_seconds: int,
 ) -> list[dict[str, Any]]:
+    # Copilot H-4: send the API key as ``Authorization: Bearer ...``
+    # instead of embedding it in the request body. The body ends up in
+    # proxy/HTTP-debug logs (including httpx's own DEBUG logs) and any
+    # outbound SIEM that captures request payloads; the Authorization
+    # header is conventionally redacted. Tavily accepts both forms.
     payload: dict[str, Any] = {
-        "api_key": api_key,
         "query": query,
         "max_results": max_results,
         "search_depth": search_depth,
@@ -42,12 +46,16 @@ async def _tavily_search(
     if time_range is not None:
         payload["time_range"] = time_range
 
+    headers = {"Authorization": f"Bearer {api_key}"}
+
     async with httpx.AsyncClient(
         transport=SSRFSafeTransport(),
         follow_redirects=True,
         timeout=timeout_seconds,
     ) as client:
-        response = await client.post("https://api.tavily.com/search", json=payload)
+        response = await client.post(
+            "https://api.tavily.com/search", json=payload, headers=headers
+        )
         try:
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:

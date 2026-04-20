@@ -52,9 +52,6 @@ class FakePolicyEngine:
     def should_compress(self, session, tokens_used, tokens_budget):
         return False
 
-    def should_evict_slot(self, slot_id, pressure):
-        return False
-
     def retry_after_error(self, error, attempt):
         from hestia.policy.engine import RetryAction, RetryDecision
         return RetryDecision(action=RetryAction.FAIL)

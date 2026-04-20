@@ -13,6 +13,8 @@ from hestia.tools.types import ToolCallResult
 def mock_session():
     session = MagicMock(spec=Session)
     session.id = "test-session"
+    session.platform = "test"
+    session.platform_user = "user"
     session.state = SessionState.ACTIVE
     session.slot_id = None
     session.slot_saved_path = None

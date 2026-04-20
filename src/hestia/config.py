@@ -91,6 +91,7 @@ class TelegramConfig:
     connect_timeout_seconds: float = 10.0
     read_timeout_seconds: float = 30.0
     long_poll_timeout_seconds: float = 30.0
+    voice_messages: bool = False  # Phase A feature flag
 
 
 @dataclass
@@ -214,9 +215,16 @@ class TrustConfig:
     def prompt_on_mobile(cls) -> TrustConfig:
         """Mobile-confirmation posture.
 
-        Auto-approves nothing (confirmation prompt on every
-        ``requires_confirmation=True`` tool), but keeps the rest of the
-        ``household`` defaults: scheduler and subagents can shell and write.
+        Auto-approves nothing. Every ``requires_confirmation=True`` tool
+        routes through the platform's confirm callback before executing.
+        Whether the call blocks the conversation thread depends on the
+        platform (Telegram inline keyboards block; Matrix reply-pattern
+        does not).
+
+        Keeps the rest of the ``household`` defaults: both ``handoff`` and
+        ``compression`` are enabled, and scheduler / subagents can shell
+        and write.
+
         Use this when you run Hestia on Telegram or Matrix and want an
         explicit ✅/❌ prompt on your phone for ``terminal``, ``write_file``,
         and ``email_send``.
@@ -281,6 +289,8 @@ class EmailConfig:
     password: str = ""  # or app-password
     password_env: str | None = None  # env-var name to read password from
     default_folder: str = "INBOX"
+    drafts_folder: str = "Drafts"
+    sent_folder: str = "Sent"
     max_fetch: int = 50
     sanitize_html: bool = True
     injection_scan: bool = True  # inherits from SecurityConfig
@@ -343,6 +353,21 @@ class ReflectionConfig:
 
 
 @dataclass
+class VoiceConfig:
+    """Configuration for the voice pipeline (STT/TTS)."""
+
+    stt_model: str = "faster-whisper/large-v3-turbo"
+    stt_device: str = "cuda"
+    stt_compute_type: str = "int8"
+    tts_engine: str = "piper"
+    tts_voice: str = "en_US-amy-medium"
+    tts_speed: float = 1.0
+    model_cache_dir: Path = field(
+        default_factory=lambda: Path.home() / ".cache" / "hestia" / "voice"
+    )
+
+
+@dataclass
 class WebSearchConfig:
     """Configuration for the web_search tool.
 
@@ -383,6 +408,8 @@ class HestiaConfig:
     reflection: ReflectionConfig = field(default_factory=ReflectionConfig)
     style: StyleConfig = field(default_factory=StyleConfig)
     policy: PolicyConfig = field(default_factory=PolicyConfig)
+    voice: VoiceConfig = field(default_factory=VoiceConfig)
+    trust_overrides: dict[str, TrustConfig] = field(default_factory=dict)
     system_prompt: str = "You are a helpful assistant."
     max_iterations: int = 10
     verbose: bool = False

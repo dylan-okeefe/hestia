@@ -6,6 +6,495 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+
+## 2026-04-20 — Release: v0.9.0 tagged (Copilot audit response + L40/L41/L42/L45a/b/c close-out)
+
+**Outcome:** `v0.9.0` annotated tag placed on `develop` tip; `main`
+fast-forwarded to `develop`; release notes and v0.9.1 backlog in place.
+This entry covers the release-level orchestration and closes out all
+six pre-tag feature branches plus the pre-tag hotfix bundle.
+
+**Scope authorization:** `docs/development-process/prompts/v0.9.0-release-prep.md`
+(retroactive, naming all seven in-scope branches) plus
+`docs/development-process/prompts/v0.9.0-release-and-audit-response.md`
+(six-track orchestration prompt from Dylan).
+
+**Seven feature branches folded into v0.9.0 (merge order):**
+
+1. `feature/l40-copilot-cleanup` — Copilot cleanup backlog from the v0.8.0
+   review. Concurrent tool dispatch (`Orchestrator._execute_tool_calls`
+   partitions by `metadata.ordering`), `should_evict_slot` stub removal,
+   Gmail folder configurability (`EmailConfig.drafts_folder` /
+   `sent_folder`), email adapter reconnect fix, `TODO(L31)` / `TODO(L?)`
+   sweep, `prompt_on_mobile` docstring alignment.
+2. `feature/voice-shared-infra` — L41 voice pipeline (`hestia.voice`
+   package with `VoicePipeline`, lazy faster-whisper STT, Piper TTS with
+   sentence-level streaming), `SileroVAD` stub, `VoiceConfig`,
+   `hestia[voice]` extra, `hestia doctor` voice check, setup guide.
+3. `feature/voice-phase-a-messages` — L42 Telegram voice-message handler
+   behind `TelegramConfig.voice_messages` (default off). OGG/Opus
+   transcode via `ffmpeg`, 1 MB voice-note truncation fallback, text
+   follow-up so content is never silently dropped.
+4. `feature/l45a-trust-identity-plumbing` — runtime identity `ContextVar`s,
+   `HestiaConfig.trust_overrides` per platform user,
+   `DefaultPolicyEngine._trust_for(session)`, scheduler identity
+   inheritance.
+5. `feature/l45b-memory-user-scope-migration` — one-way FTS5 recreate-
+   and-copy migration adding `platform` / `platform_user` columns to
+   the `memory` table, user-scoped `MemoryStore` API (fail-closed),
+   per-session epoch compilation, `LIKE`-based fallback when FTS5
+   unavailable.
+6. `feature/l45c-multi-user-docs-and-hardening` — shared
+   `src/hestia/platforms/allowlist.py` with `match_allowlist()` plus
+   Telegram/Matrix validators, adapter refactor, new
+   `docs/guides/multi-user-setup.md`, README "Multi-user security"
+   subsection.
+7. `feature/hotfix-v0.9.0-copilot-critical` — pre-tag hotfix bundle,
+   13 items from the 2026-04-20 Copilot audit. Detailed below.
+
+**Pre-tag hotfix bundle (Track 3 of the audit-response prompt):**
+
+- **Criticals (6/6 shipped):** C-1 `utcnow()` in `trace_store.record_egress`;
+  C-2 race-safe `SessionStore.append_message` / `append_transition` with
+  retry-on-`IntegrityError` plus the 20-concurrent-appender regression
+  test at `tests/unit/test_append_message_race.py`; C-3 async-safe
+  artifact I/O via `asyncio.to_thread` in `tools/registry.py` and
+  `tools/builtin/read_artifact.py`, plus the new
+  `ArtifactStore.open()` async factory; C-4 typed `MaxIterationsError` /
+  `PolicyFailureError` in `orchestrator/engine.py`; C-5 `doctor.py`
+  refactored to `asyncio.create_subprocess_exec` +
+  `httpx.AsyncClient`; C-6 `email/adapter.py` migrated to
+  `smtplib.SMTP_SSL` on port 465 and `STARTTLS` response-code
+  validation otherwise.
+- **Highs (5/10 shipped):** H-1 empty-`choices` guard in `core/inference`;
+  H-2 `tool_call` arguments `dict` type check; H-3 `encoding="utf-8"`
+  sweep across `tools/builtin/write_file.py` and the CLI audit-report
+  writer; H-4 Tavily key moved to `Authorization: Bearer`; H-9
+  `ToolExecutionError` + widened `ToolRegistry.call` exception contract
+  + `ToolCallResult.error_type`.
+- **Architecture (1/5 shipped):** A-3 `PolicyEngine` ABC declares
+  `ctx_window: int` with a contract test at
+  `tests/unit/test_policy_engine_ctx_window.py`.
+- **Test gap (1/10 shipped):** T-1 paired with C-2 above.
+
+**Gates on `develop` at tag time:**
+
+- `uv run pytest tests/unit/ tests/integration/ -q` →
+  **869 passed, 6 skipped** (0 failures; 5 warnings from pre-existing
+  aiosqlite "event loop closed" cleanup).
+- `uv run mypy src/` → **0 errors across 96 source files**.
+- `uv run ruff check` on all files touched by the hotfix branch →
+  **6 pre-existing baseline issues** (all in `commands.py`,
+  `tools/builtin/web_search.py`, or `tests/unit/test_email_gmail_folders.py`;
+  verified against develop prior to merge). No new ruff warnings
+  introduced by the hotfix bundle.
+
+**Git status:**
+
+- `develop` has the seven merges plus the backlog doc and release notes.
+- Annotated tag placed: `git tag -a v0.9.0 -m "v0.9.0 — multi-user safety, voice phase A, Copilot audit response"`.
+- `main` fast-forwarded to `develop` locally.
+- **Not pushed.** Per project convention, Cursor does not push.
+  Dylan runs:
+  ```
+  git push origin develop
+  git push origin main
+  git push origin v0.9.0
+  ```
+- The six feature branches remain on `origin` (useful for history /
+  `git blame`); they can be pruned by Dylan at leisure.
+
+**Docs produced for this release:**
+
+- [`docs/development-process/prompts/v0.9.0-release-prep.md`](prompts/v0.9.0-release-prep.md) — retroactive scope doc, names all seven branches by exact `feature/*` name.
+- [`docs/development-process/reviews/archive/v0.8.x-multi-user-safety-release-prep.md`](reviews/archive/v0.8.x-multi-user-safety-release-prep.md) — previous (narrower) prep doc, archived.
+- [`docs/development-process/prompts/v0.9.1-copilot-backlog.md`](prompts/v0.9.1-copilot-backlog.md) — ~39 deferred Copilot findings queued for v0.9.1 (5 high, 13 medium, 8 low, 9 test-gap, 4 architecture). Tracking doc only, not a merge authorization.
+- [`docs/releases/v0.9.0.md`](../releases/v0.9.0.md) — human-facing release notes.
+- `CHANGELOG.md` `[0.9.0]` entry now includes a `### Pre-release hotfixes (2026-04-20 Copilot audit response)` subsection.
+- `.cursorrules` post-release merge discipline tightened — every branch must be named by exact `feature/*` name in a release-prep doc before merging to `develop`. Correct example updated and a new "subtle incorrect behavior (the mistake from 2026-04-20)" example added.
+
+**Post-release state:**
+
+- `docs/development-process/prompts/KIMI_CURRENT.md` → "IDLE — v0.9.0
+  released. Awaiting v0.9.1 prep or voice Phase B credentials."
+- Voice Phase B (Discord) remains unmerged and unscoped — waiting on
+  Dylan's four prereqs (Discord bot token, `guild_id`, speaker
+  user_ids, Piper voice choice).
+- First likely v0.9.1 loop: H-5 (reject `model.name == "dummy"` at
+  config-load unless `HESTIA_ALLOW_DUMMY_MODEL=1`). Small warm-up.
+
+**Hygiene note for future releases:** the `v0.8.0` tag is lightweight
+(`git tag -v v0.8.0` reports "cannot verify a non-tag object of type
+commit"). `v0.9.0` is annotated, and future tags should continue to be
+annotated. Don't re-tag `v0.8.0` — it's already pushed.
+
+---
+
+## 2026-04-19 — Loop: L43 blocked — idle pending Dylan-side prereqs
+
+**Status:** L43 cannot start. Kimi verified the five prereqs listed in
+`docs/development-process/kimi-loops/L43-voice-phase-b-calls.md`; none are
+present on disk.
+
+**Missing:**
+1. Dedicated phone number for the userbot.
+2. Telegram API `api_id` + `api_hash`.
+3. `pyrogram` and `py-tgcalls` installed in `.venv`.
+4. Piper voice files in `~/.cache/hestia/voice/`.
+5. Dylan's Telegram `user_id`.
+
+**Action taken:** `KIMI_CURRENT.md` moved to IDLE state documenting the block.
+When Dylan provides the above, Cursor should reset KIMI_CURRENT to L43 active
+and relaunch.
+
+---
+
+## 2026-04-19 — Loop: L42 Voice Phase A — Telegram voice messages (Kimi) — feature-branch landed, not merged to develop
+
+**Kimi:** L42 completed on `feature/voice-phase-a-messages`; `.kimi-done` present with `LOOP=L42`, `COMMIT=ac4c196`, `TESTS=810 passed, 12 skipped`, `MYPY_FINAL_ERRORS=0`, `RUFF_SRC=23`.
+
+**What shipped on the feature branch:**
+
+- `src/hestia/platforms/telegram_adapter.py` — `_handle_voice_message` downloads Telegram voice notes, converts OGG→PCM via ffmpeg, transcribes with Whisper, feeds transcript to the orchestrator, synthesizes the response with Piper, encodes back to OGG/Opus, and replies with `reply_voice`. Includes 1 MB truncation fallback (`_truncate_ogg_to_size`) and `set_voice_deps()` injection point wired in `runners.py`.
+- `src/hestia/platforms/runners.py` — injects orchestrator + session store into `TelegramAdapter` when `voice_messages=True`.
+- `src/hestia/config.py` — `TelegramConfig.voice_messages: bool = False` (Phase A feature flag).
+- `docs/guides/voice-setup.md` — §6 documenting the feature flag, system `ffmpeg` requirement, and cross-reference to Phase B.
+- `docs/experiments/telegram-voice-smoke-test.md` — deleted (subsumed by Phase A).
+- `tests/integration/test_telegram_voice_message.py` — 4 tests: happy path, truncation >1 MB, disabled flag, STT failure.
+- `tests/unit/test_telegram_adapter_voice_routing.py` — 2 tests: handler registered when flag true, absent when false.
+
+**Review/gates reported by Kimi:**
+
+- `pytest` full suite → **810 passed, 12 skipped** (1 pre-existing smoke-test flake unrelated to voice changes)
+- `mypy src/hestia` → **0 errors** (95 source files)
+- `ruff check src/` → **23 errors** (baseline unchanged)
+
+**Git status for this loop:**
+
+- Feature branch pushed: `origin/feature/voice-phase-a-messages`
+- Branch commits: `de5f8db` (config flag), `583b6c5` (voice handler), `1f1a9a7` (tests), `de31bb2` (docs + cleanup), `ac4c196` (handoff)
+- Merge status: **NOT merged to `develop`** (correct per post-release merge discipline)
+
+**Orchestration note:** L43 (Phase B — live voice calls) forks from `feature/voice-shared-infra`, not from `develop`.
+
+---
+
+## 2026-04-19 — Loop: L41 Voice shared infrastructure (Kimi) — feature-branch landed, not merged to develop
+
+**Kimi:** L41 completed on `feature/voice-shared-infra`; `.kimi-done` present with `LOOP=L41`, `COMMIT=bb06e00`, `TESTS=798 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`, `RUFF_SRC=23`.
+
+**What shipped on the feature branch:**
+
+- `src/hestia/voice/pipeline.py` — `VoicePipeline` dataclass with lazy STT/TTS init under `asyncio.Lock`, sentence-level TTS streaming, process-wide singleton accessor (`get_voice_pipeline`), gated imports for `faster_whisper` and `piper` so the module is importable without `hestia[voice]` installed.
+- `src/hestia/voice/vad.py` — `SileroVAD` stub that yields the full stream as one segment (real VAD in L43).
+- `src/hestia/config.py` — `VoiceConfig` dataclass (`stt_model`, `stt_device`, `stt_compute_type`, `tts_engine`, `tts_voice`, `tts_speed`, `model_cache_dir`) wired into `HestiaConfig.voice`.
+- `pyproject.toml` — `voice` extra (`faster-whisper>=1.0.0`, `piper-tts>=1.2.0`); version bumped `0.8.0` → `0.8.1.dev0`; `uv.lock` regenerated.
+- `src/hestia/doctor.py` — `_check_voice_prerequisites` using `importlib.util.find_spec`; reports "voice extra not installed" cleanly when `faster_whisper` is absent.
+- `docs/guides/voice-setup.md` — install extra, model auto-download, Piper voice files, VRAM budget example, doctor check.
+- `tests/unit/test_voice_pipeline.py` — 9 tests covering lazy load, sentence chunks, singleton identity, first-call config requirement, import-without-extra safety, and sentence splitter.
+
+**Review/gates reported by Kimi:**
+
+- `pytest tests/unit/ tests/integration/ tests/cli/ tests/docs/` → **798 passed, 6 skipped**
+- `mypy src/hestia` → **0 errors** (95 source files)
+- `ruff check src/` → **23 errors** (baseline unchanged)
+- `hestia doctor` runs cleanly with and without `[voice]` installed
+
+**Git status for this loop:**
+
+- Feature branch pushed: `origin/feature/voice-shared-infra`
+- Branch commits: `3e83e25` (pipeline), `191a0b4` (VAD + config), `5ef6c41` (pyproject + doctor + guide), `bb06e00` (tests), plus orchestration commit(s)
+- Merge status: **NOT merged to `develop`** (correct per post-release merge discipline)
+
+**Orchestration note:** L42 (Phase A — Telegram voice messages) forks from `feature/voice-shared-infra`, not from `develop`.
+
+---
+
+## 2026-04-19 — Loop: L45c — multi-user docs and hardening (Kimi) — feature-branch pushed, not merged to develop
+
+**Kimi:** Clean run on `feature/l45c-multi-user-docs-and-hardening`; `.kimi-done` present with `LOOP=L45c`, `COMMIT=de231f2`, `TESTS=818 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`, `RUFF_SRC=23`.
+
+**What shipped:**
+
+- New `src/hestia/platforms/allowlist.py` with `match_allowlist()` using `fnmatch` for shell-style wildcards (`*`, `?`, `[seq]`).
+- Platform-specific validators: `validate_telegram_user_id()`, `validate_telegram_username()`, `validate_matrix_room_id()`.
+- `TelegramAdapter._is_allowed()`: case-insensitive username matching + wildcard support; warns on invalid entries at startup.
+- `MatrixAdapter._is_allowed()`: case-sensitive room matching + wildcard support; warns on invalid entries at startup.
+- `docs/guides/multi-user-setup.md`: comprehensive guide for household/multi-user deployments covering allow-lists, trust overrides, presets, and troubleshooting.
+- README.md updated with `prompt_on_mobile()` preset and multi-user security section.
+- 29 new tests in `test_allowlist.py`: wildcard matching, validation, adapter integration.
+
+**Gates:**
+
+- `pytest tests/unit/ tests/integration/ tests/cli/ tests/docs/ -q` → **818 passed, 6 skipped**
+- `mypy src/hestia` → **0 errors in 93 source files**
+- `ruff check src/` → **23 errors** (baseline unchanged)
+
+**Git:**
+
+- Feature branch pushed: `origin/feature/l45c-multi-user-docs-and-hardening`
+- Commit: `de231f2`
+- Merge status: **NOT merged to `develop`** (correct per post-release merge discipline)
+
+---
+
+## 2026-04-19 — Loop: L45b — memory user-scope migration (Kimi) — feature-branch pushed, not merged to develop
+
+**Kimi:** Clean run on `feature/l45b-memory-user-scope-migration`; `.kimi-done` present with `LOOP=L45b`, `COMMIT=6ea59ed`, `TESTS=820 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`, `RUFF_SRC=23`.
+
+**What shipped:**
+
+- `Memory` dataclass extended with `platform`/`platform_user` fields.
+- `MemoryStore` FTS5 migration: detects old schema, backs up data, recreates virtual table with new columns, restores with `NULL` backfill.
+- `MemoryStore` LIKE fallback for SQLite builds without FTS5; exact-tag matching via multiple `LIKE` patterns.
+- User-scoped queries in `MemoryStore`: `save`, `search`, `list_memories`, `delete`, `count` all filter by `platform:platform_user` (explicit params or runtime ContextVars).
+- Memory tools (`save_memory`, `search_memory`, `list_memories`, `delete_memory`) respect user scope via `current_platform`/`current_platform_user` ContextVars.
+- `MemoryEpochCompiler.compile(session)` scopes memory fetch to the session user.
+- 15 new tests in `test_memory_user_scope.py`: scoping, cross-user blocking, ContextVar fallback, LIKE fallback, FTS5 migration.
+- Updated `test_memory_epochs.py` and `test_memory_matrix_mock.py` to pre-seed memories with matching user identity.
+
+**Gates:**
+
+- `pytest tests/unit/ tests/integration/ tests/cli/ tests/docs/ -q` → **820 passed, 6 skipped**
+- `mypy src/hestia` → **0 errors in 92 source files**
+- `ruff check src/` → **23 errors** (baseline unchanged)
+
+**Git:**
+
+- Feature branch pushed: `origin/feature/l45b-memory-user-scope-migration`
+- Commit: `6ea59ed`
+- Merge status: **NOT merged to `develop`** (correct per post-release merge discipline)
+
+---
+
+## 2026-04-19 — Loop: L45a — trust + identity plumbing (Kimi) — feature-branch pushed, not merged to develop
+
+**Kimi:** Clean run on `feature/l45a-trust-identity-plumbing`; `.kimi-done` present with `LOOP=L45a`, `COMMIT=9cd7e8b`, `TESTS=805 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`, `RUFF_SRC=23`.
+
+**What shipped:**
+
+- Runtime identity ContextVars (`current_platform`, `current_platform_user`) in `runtime_context.py`, set/reset in `orchestrator/engine.py` alongside `current_session_id`.
+- Per-user trust overrides on `HestiaConfig` (`trust_overrides: dict[str, TrustConfig]`) keyed by `platform:platform_user`.
+- `DefaultPolicyEngine._trust_for(session)` resolves overrides for `auto_approve()` and `filter_tools()`; falls back to default trust with warning when session identity is missing.
+- Scheduler identity inheritance: scheduler ticks preserve creator identity via the session passed to `process_turn`, so policy checks resolve against the creator's trust profile.
+- 3 new test modules (19 tests total): `test_policy_trust_overrides.py`, `test_runtime_context_identity.py`, `test_scheduler_identity_inheritance.py`.
+- Fixed `test_injection_orchestrator.py` mock session to include `platform`/`platform_user` attributes required by the new ContextVar setup.
+
+**Gates:**
+
+- `pytest tests/unit/ tests/integration/ tests/cli/ tests/docs/ -q` → **805 passed, 6 skipped**
+- `mypy src/hestia` → **0 errors in 92 source files**
+- `ruff check src/` → **23 errors** (baseline unchanged)
+
+**Git:**
+
+- Feature branch pushed: `origin/feature/l45a-trust-identity-plumbing`
+- Commits: `281ae90` (implementation), `80d3724` (import sort fix), `9cd7e8b` (`.kimi-done`)
+- Merge status: **NOT merged to `develop`** (correct per post-release merge discipline; awaits v0.8.x release-prep sequencing)
+
+**Orchestration note:** During the loop, the local repo experienced repeated branch-switching and working-tree cleanup by an external process (reflog shows checkouts to `feature/voice-shared-infra` and `feature/voice-phase-a-messages`). Kimi recovered by bundling all changes into a single shell script, committing immediately, and continuing. All changes were preserved.
+
+---
+
+## 2026-04-19 — Loop: L45b — memory user-scope migration (Kimi) — feature-branch pushed, not merged to develop
+
+**Kimi:** Clean run on `feature/l45b-memory-user-scope-migration`; `.kimi-done` present with `LOOP=L45b`, `COMMIT=6ea59ed`, `TESTS=820 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`, `RUFF_SRC=23`.
+
+**What shipped:**
+
+- `Memory` dataclass extended with `platform`/`platform_user` fields.
+- `MemoryStore` FTS5 migration: detects old schema, backs up data, recreates virtual table with new columns, restores with `NULL` backfill.
+- `MemoryStore` LIKE fallback for SQLite builds without FTS5; exact-tag matching via multiple `LIKE` patterns.
+- User-scoped queries in `MemoryStore`: `save`, `search`, `list_memories`, `delete`, `count` all filter by `platform:platform_user` (explicit params or runtime ContextVars).
+- Memory tools (`save_memory`, `search_memory`, `list_memories`, `delete_memory`) respect user scope via `current_platform`/`current_platform_user` ContextVars.
+- `MemoryEpochCompiler.compile(session)` scopes memory fetch to the session user.
+- 15 new tests in `test_memory_user_scope.py`: scoping, cross-user blocking, ContextVar fallback, LIKE fallback, FTS5 migration.
+- Updated `test_memory_epochs.py` and `test_memory_matrix_mock.py` to pre-seed memories with matching user identity.
+
+**Gates:**
+
+- `pytest tests/unit/ tests/integration/ tests/cli/ tests/docs/ -q` → **820 passed, 6 skipped**
+- `mypy src/hestia` → **0 errors in 92 source files**
+- `ruff check src/` → **23 errors** (baseline unchanged)
+
+**Git:**
+
+- Feature branch pushed: `origin/feature/l45b-memory-user-scope-migration`
+- Commit: `6ea59ed`
+- Merge status: **NOT merged to `develop`** (correct per post-release merge discipline)
+
+---
+
+## 2026-04-19 — Loop: L45c — multi-user docs and hardening (Kimi) — feature-branch pushed, not merged to develop
+
+**Kimi:** Clean run on `feature/l45c-multi-user-docs-and-hardening`; `.kimi-done` present with `LOOP=L45c`, `COMMIT=de231f2`, `TESTS=818 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`, `RUFF_SRC=23`.
+
+**What shipped:**
+
+- New `src/hestia/platforms/allowlist.py` with `match_allowlist()` using `fnmatch` for shell-style wildcards (`*`, `?`, `[seq]`).
+- Platform-specific validators: `validate_telegram_user_id()`, `validate_telegram_username()`, `validate_matrix_room_id()`.
+- `TelegramAdapter._is_allowed()`: case-insensitive username matching + wildcard support; warns on invalid entries at startup.
+- `MatrixAdapter._is_allowed()`: case-sensitive room matching + wildcard support; warns on invalid entries at startup.
+- `docs/guides/multi-user-setup.md`: comprehensive guide for household/multi-user deployments covering allow-lists, trust overrides, presets, and troubleshooting.
+- README.md updated with `prompt_on_mobile()` preset and multi-user security section.
+- 29 new tests in `test_allowlist.py`: wildcard matching, validation, adapter integration.
+
+**Gates:**
+
+- `pytest tests/unit/ tests/integration/ tests/cli/ tests/docs/ -q` → **818 passed, 6 skipped**
+- `mypy src/hestia` → **0 errors in 93 source files**
+- `ruff check src/` → **23 errors** (baseline unchanged)
+
+**Git:**
+
+- Feature branch pushed: `origin/feature/l45c-multi-user-docs-and-hardening`
+- Commit: `de231f2`
+- Merge status: **NOT merged to `develop`** (correct per post-release merge discipline)
+
+---
+
+## 2026-04-19 — Loop: L45b — memory user-scope migration (Kimi) — feature-branch pushed, not merged to develop
+
+**Kimi:** Clean run on `feature/l45b-memory-user-scope-migration`; `.kimi-done` present with `LOOP=L45b`, `COMMIT=6ea59ed`, `TESTS=820 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`, `RUFF_SRC=23`.
+
+**What shipped:**
+
+- `Memory` dataclass extended with `platform`/`platform_user` fields.
+- `MemoryStore` FTS5 migration: detects old schema, backs up data, recreates virtual table with new columns, restores with `NULL` backfill.
+- `MemoryStore` LIKE fallback for SQLite builds without FTS5; exact-tag matching via multiple `LIKE` patterns.
+- User-scoped queries in `MemoryStore`: `save`, `search`, `list_memories`, `delete`, `count` all filter by `platform:platform_user` (explicit params or runtime ContextVars).
+- Memory tools (`save_memory`, `search_memory`, `list_memories`, `delete_memory`) respect user scope via `current_platform`/`current_platform_user` ContextVars.
+- `MemoryEpochCompiler.compile(session)` scopes memory fetch to the session user.
+- 15 new tests in `test_memory_user_scope.py`: scoping, cross-user blocking, ContextVar fallback, LIKE fallback, FTS5 migration.
+- Updated `test_memory_epochs.py` and `test_memory_matrix_mock.py` to pre-seed memories with matching user identity.
+
+**Gates:**
+
+- `pytest tests/unit/ tests/integration/ tests/cli/ tests/docs/ -q` → **820 passed, 6 skipped**
+- `mypy src/hestia` → **0 errors in 92 source files**
+- `ruff check src/` → **23 errors** (baseline unchanged)
+
+**Git:**
+
+- Feature branch pushed: `origin/feature/l45b-memory-user-scope-migration`
+- Commit: `6ea59ed`
+- Merge status: **NOT merged to `develop`** (correct per post-release merge discipline)
+
+---
+
+## 2026-04-19 — Loop: L45a — trust + identity plumbing (Kimi) — feature-branch pushed, not merged to develop
+
+**Kimi:** Clean run on `feature/l45a-trust-identity-plumbing`; `.kimi-done` present with `LOOP=L45a`, `COMMIT=9cd7e8b`, `TESTS=805 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`, `RUFF_SRC=23`.
+
+**What shipped:**
+
+- Runtime identity ContextVars (`current_platform`, `current_platform_user`) in `runtime_context.py`, set/reset in `orchestrator/engine.py` alongside `current_session_id`.
+- Per-user trust overrides on `HestiaConfig` (`trust_overrides: dict[str, TrustConfig]`) keyed by `platform:platform_user`.
+- `DefaultPolicyEngine._trust_for(session)` resolves overrides for `auto_approve()` and `filter_tools()`; falls back to default trust with warning when session identity is missing.
+- Scheduler identity inheritance: scheduler ticks preserve creator identity via the session passed to `process_turn`, so policy checks resolve against the creator's trust profile.
+- 3 new test modules (19 tests total): `test_policy_trust_overrides.py`, `test_runtime_context_identity.py`, `test_scheduler_identity_inheritance.py`.
+- Fixed `test_injection_orchestrator.py` mock session to include `platform`/`platform_user` attributes required by the new ContextVar setup.
+
+**Gates:**
+
+- `pytest tests/unit/ tests/integration/ tests/cli/ tests/docs/ -q` → **805 passed, 6 skipped**
+- `mypy src/hestia` → **0 errors in 92 source files**
+- `ruff check src/` → **23 errors** (baseline unchanged)
+
+**Git:**
+
+- Feature branch pushed: `origin/feature/l45a-trust-identity-plumbing`
+- Commits: `281ae90` (implementation), `80d3724` (import sort fix), `9cd7e8b` (`.kimi-done`)
+- Merge status: **NOT merged to `develop`** (correct per post-release merge discipline; awaits v0.8.x release-prep sequencing)
+
+**Orchestration note:** During the loop, the local repo experienced repeated branch-switching and working-tree cleanup by an external process (reflog shows checkouts to `feature/voice-shared-infra` and `feature/voice-phase-a-messages`). Kimi recovered by bundling all changes into a single shell script, committing immediately, and continuing. All changes were preserved.
+
+---
+
+## 2026-04-19 — Loop: L40 Copilot cleanup backlog (Kimi) — feature-branch landed, not merged to develop
+
+**Kimi:** L40 completed on `feature/l40-copilot-cleanup`; `.kimi-done` present with `LOOP=L40`, `COMMIT=d604313`, `TESTS=796 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`, `RUFF_SRC=23`.
+
+**What shipped on the feature branch:**
+
+- Concurrent tool dispatch in orchestrator (`asyncio.gather`) with ordering safeguards for serial-sensitive tools.
+- Removal of the `should_evict_slot` policy stub from the policy interface and default implementation.
+- `for_trust` value-equality regression coverage.
+- `_count_tokens` cache-key rationale documented in `context/builder.py`.
+- Email adapter hardening from review carry-forward:
+  - configurable `drafts_folder` / `sent_folder` support for Gmail-compatible special folders.
+  - narrowed IMAP exception handling (no bare `except:`).
+  - guard against illegal `CLOSE` in AUTH state during teardown.
+- `prompt_on_mobile` docstring alignment with implementation behavior.
+- stale `# TODO(L*)` markers resolved in touched areas.
+
+**Review/gates reported by Kimi:**
+
+- `pytest tests/unit/ tests/integration/ tests/cli/ tests/docs/` → **796 passed, 6 skipped**
+- `mypy src/hestia` → **0 errors**
+- `ruff check src/` → **23 errors** (baseline unchanged)
+
+**Git status for this loop:**
+
+- Feature branch pushed: `origin/feature/l40-copilot-cleanup`
+- Branch commits: `d604313` (implementation), `b0c4668` (handoff + orchestration updates on branch)
+- Merge status: **NOT merged to `develop`** (correct per post-release merge discipline)
+
+**Orchestration note:** A stale rewrite of `KIMI_CURRENT.md` occurred after `.kimi-done`; Cursor stopped Kimi, restored the authoritative pointer on `develop`, and continued queue execution from L41.
+
+---
+
+## 2026-04-19 — v0.8.0 release seal: Cursor in-process work (no Kimi loop) — TOCTOU hotfix + .cursorrules + CHANGELOG amend + tag re-place + main fast-forward
+
+**Context:** Dylan returned to a develop branch already containing the L36-L38 overnight queue plus a local `v0.8.0` tag at the L35d merge (`c5f68ea`). The L36-L38 work had been merged to develop *after* the local tag was placed — a release-discipline mistake that needed correcting before the tag went public. Dylan wrote a comprehensive launch plan (`docs/development-process/prompts/v0.8.0-release-and-voice-launch.md`) covering five tracks: pre-tag hotfix, release seal, .cursorrules update, post-release Copilot backlog, and the voice adapter arc. This loop covers tracks 1-3; tracks 4-5 are queued as feature-branch specs (no merge to develop) per the new merge discipline rule.
+
+**No Kimi run** — the hotfix was small enough that Cursor did it in-process. Five Cursor commits across three branches.
+
+### Recon findings
+
+- Local `v0.8.0` tag existed at `c5f68ea` (L35d merge) but was NOT pushed to `origin`. Salvageable.
+- `origin/develop` was at `a8d3793` (L38 merge) — Dylan had already pushed develop without the tag and without merging to main.
+- Local `main` was at a bogus `7f2af27` ("Merge develop into main for v0.8.0 release") that the previous Cursor session had created prematurely. `origin/main` was still at `255dc2b` (`v0.2.2`).
+- A new `feature/voice-call-setup` branch existed (Dylan-created, two docs commits) containing the launch plan + an updated pre-release-plan + a `docs/experiments/telegram-voice-smoke-test.md` doc that ships in v0.8.0 then gets deleted after Phase A subsumes it.
+
+### Sequence executed
+
+1. **Reset:** Deleted local `v0.8.0` tag; force-set local `main` back to `origin/main` (`255dc2b`).
+2. **Merge planning docs:** `feature/voice-call-setup` → `develop` (`6a37882`). Pure docs, no code.
+3. **.cursorrules update (Track 3):** Added "Post-release merge discipline" section (~52 lines) codifying that no feature branch merges to `develop` after a release tag is placed until a new release-prep doc names the next version's scope. Includes pre-tag hotfix exception, planning-doc exception, and a worked example using exactly the L36-L38 mistake as the cautionary tale. Commit `8e0ad2f` on develop.
+4. **TOCTOU hotfix (Track 1):** Branched `feature/hotfix-session-race`. Two commits:
+   - `8cf3265 fix(persistence): partial unique index ux_sessions_active_user + runtime migration` — schema.py adds `sa.Index(..., unique=True, sqlite_where=sa.text("state = 'active'"), postgresql_where=...)`; new `src/hestia/persistence/migrations/__init__.py` with a single idempotent `m001_sessions_active_unique` migration (`CREATE UNIQUE INDEX IF NOT EXISTS ... WHERE state = 'active'`); db.py `create_tables()` calls `apply_runtime_migrations(engine)` after `metadata.create_all` so existing on-disk DBs gain the index transparently.
+   - `0fb2839 fix(persistence): TOCTOU-safe get_or_create_session via INSERT ON CONFLICT` — replaced the SELECT-then-INSERT race window with a single dialect-aware `INSERT ... ON CONFLICT DO NOTHING RETURNING id`. On conflict, falls through to a SELECT of the existing winner and bumps `last_active_at`. Dispatch on `conn.dialect.name` covers sqlite + postgresql; other dialects raise `PersistenceError` rather than silently re-introducing the race.
+   - **New tests** (`tests/unit/test_sessions_race.py`, 4 tests): 20-coroutine storm for one user converges on a single session id with one ACTIVE row; same storm for two distinct users yields one session each (not crossed); archive + concurrent recreate yields one new ACTIVE row; guard test that the partial unique index exists after `create_tables`.
+   - **Updated tests** (`tests/unit/test_session_store_turns.py`, `TestCreateSession`): the two pre-existing tests asserting "create_session can produce duplicate ACTIVE rows for the same user without archive_previous" were documenting the same bug. Updated to use `archive_previous` (the only safe pattern); added a third test asserting `IntegrityError` is raised when a caller violates the new contract.
+   - **Bug found in test development:** Initial implementation used `WHERE state = 'ACTIVE'` (uppercase) in both the partial index and the `on_conflict_do_nothing.index_where`, but `SessionState.ACTIVE.value` is `"active"` (lowercase). The race tests caught this immediately — they showed 20 ACTIVE rows persisting. Fixed all three sites to use lowercase.
+5. **Hotfix merge:** `feature/hotfix-session-race` → develop via `--no-ff` merge `176b5fa`.
+6. **CHANGELOG amend (Track 2.a):** `c2e3193 docs(changelog): amend [0.8.0]` — date bumped to 2026-04-19, new TOCTOU bullet under Bug fixes & hardening, new "### Refactoring" section covering L36/L37/L38, new "### Known issues — deferred to v0.8.1+" section enumerating the six Copilot findings with a pointer to the L40 backlog spec, stats refreshed (783 → 789 tests, 18 Kimi loops, ruff baseline noted accurately).
+7. **Version bump (Track 2.b):** `b1e81ae chore(release)` — pyproject.toml `0.8.1.dev2` → `0.8.0`; `uv.lock` regenerated (single dep update: hestia itself).
+8. **Tag (Track 2.c):** Annotated tag `v0.8.0` placed at `b1e81ae`. Tag message lists the eight-month arc highlights and points at CHANGELOG for detail.
+9. **Main fast-forward:** Plain FF was impossible because main carried a no-op release-merge commit (`255dc2b` had identical tree to merge-base `c46dc7a` — Dylan's earlier release-merge style). Did `git merge --no-ff develop -m "Merge develop into main for v0.8.0 release"` instead. Result: `5155917` on main.
+10. **Final gate from main:** `pytest tests/unit/ tests/integration/ tests/cli/ tests/docs/ -q` → **789 passed, 6 skipped** in 135s. `mypy src/hestia` → **0 errors in 92 source files** (the +1 vs L38's 91 is the new `migrations/__init__.py` module). `ruff check src/` → **23 errors** (unchanged from L37 baseline; no ruff debt added).
+
+### What's still queued (Tracks 4 + 5)
+
+These are intentionally NOT merged to develop. Per the new `.cursorrules` rule, they wait until a v0.8.1 release-prep doc names them in scope.
+
+- **Track 4 (L40)** — Copilot cleanup backlog spec. Six items: sequential tool dispatch, `should_evict_slot` stub, `for_trust` identity comparison, EmailAdapter bare excepts, `prompt_on_mobile` docstring drift, three open `# TODO(L*)` markers. Spec lives at `docs/development-process/kimi-loops/L40-copilot-cleanup-backlog.md`.
+- **Track 5 (L41-L43)** — Voice adapter arc. Three specs:
+  - **L41** shared infrastructure (pipeline, VAD, VoiceConfig, `hestia[voice]` extra, voice-setup.md docs).
+  - **L42** Phase A: Telegram bot voice messages (forks from L41 branch).
+  - **L43** Phase B: Telegram voice calls via pyrogram + py-tgcalls userbot, ADR-0024 for the two-account model (forks from L41 branch).
+
+### Post-loop state
+
+- Develop tip: `b1e81ae`. Main tip: `5155917`. Tag `v0.8.0` at `b1e81ae`.
+- KIMI_CURRENT advanced to "no active loop, awaiting Dylan's three pushes". Lists L40-L43 as queued feature-branch work that does NOT merge to develop until v0.8.1 release-prep names them.
+- Push commands for Dylan: `git push origin develop && git push origin main && git push origin v0.8.0`.
+
+### Verdict
+
+Five Cursor commits, one Kimi-shaped task (the TOCTOU hotfix) handled in-process because it was small enough that Kimi-loop overhead would dwarf the work. The orchestration mistake from the prior session (premature L36-L38 merge to develop after a local tag) was salvageable because the tag wasn't pushed; it would have forced a v0.8.1 patch release if it had been. The new `.cursorrules` rule prevents the same shape of mistake from happening once a tag is public — and the worked example in the rule documents the *exact* mistake that motivated it, so future Cursors can pattern-match.
+
 ---
 
 ## 2026-04-19 — Loop: L38 — delegation keyword consolidation + `*_disable` persistence audit (clean Kimi run; final overnight loop) → merged to develop
