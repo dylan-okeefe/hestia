@@ -6,6 +6,36 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+
+## 2026-04-19 — Loop: L41 Voice shared infrastructure (Kimi) — feature-branch landed, not merged to develop
+
+**Kimi:** L41 completed on `feature/voice-shared-infra`; `.kimi-done` present with `LOOP=L41`, `COMMIT=bb06e00`, `TESTS=798 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`, `RUFF_SRC=23`.
+
+**What shipped on the feature branch:**
+
+- `src/hestia/voice/pipeline.py` — `VoicePipeline` dataclass with lazy STT/TTS init under `asyncio.Lock`, sentence-level TTS streaming, process-wide singleton accessor (`get_voice_pipeline`), gated imports for `faster_whisper` and `piper` so the module is importable without `hestia[voice]` installed.
+- `src/hestia/voice/vad.py` — `SileroVAD` stub that yields the full stream as one segment (real VAD in L43).
+- `src/hestia/config.py` — `VoiceConfig` dataclass (`stt_model`, `stt_device`, `stt_compute_type`, `tts_engine`, `tts_voice`, `tts_speed`, `model_cache_dir`) wired into `HestiaConfig.voice`.
+- `pyproject.toml` — `voice` extra (`faster-whisper>=1.0.0`, `piper-tts>=1.2.0`); version bumped `0.8.0` → `0.8.1.dev0`; `uv.lock` regenerated.
+- `src/hestia/doctor.py` — `_check_voice_prerequisites` using `importlib.util.find_spec`; reports "voice extra not installed" cleanly when `faster_whisper` is absent.
+- `docs/guides/voice-setup.md` — install extra, model auto-download, Piper voice files, VRAM budget example, doctor check.
+- `tests/unit/test_voice_pipeline.py` — 9 tests covering lazy load, sentence chunks, singleton identity, first-call config requirement, import-without-extra safety, and sentence splitter.
+
+**Review/gates reported by Kimi:**
+
+- `pytest tests/unit/ tests/integration/ tests/cli/ tests/docs/` → **798 passed, 6 skipped**
+- `mypy src/hestia` → **0 errors** (95 source files)
+- `ruff check src/` → **23 errors** (baseline unchanged)
+- `hestia doctor` runs cleanly with and without `[voice]` installed
+
+**Git status for this loop:**
+
+- Feature branch pushed: `origin/feature/voice-shared-infra`
+- Branch commits: `3e83e25` (pipeline), `191a0b4` (VAD + config), `5ef6c41` (pyproject + doctor + guide), `bb06e00` (tests), plus orchestration commit(s)
+- Merge status: **NOT merged to `develop`** (correct per post-release merge discipline)
+
+**Orchestration note:** L42 (Phase A — Telegram voice messages) forks from `feature/voice-shared-infra`, not from `develop`.
+
 ---
 
 ## 2026-04-19 — Loop: L45c — multi-user docs and hardening (Kimi) — feature-branch pushed, not merged to develop

@@ -75,6 +75,12 @@ class ExperimentalFeatureError(HestiaError):
     pass
 
 
+class MissingExtraError(HestiaError):
+    """Raised when an optional dependency extra is not installed."""
+
+    pass
+
+
 class FailureClass(StrEnum):
     """Classification of failure types for analytics and policy."""
 

@@ -352,6 +352,21 @@ class ReflectionConfig:
 
 
 @dataclass
+class VoiceConfig:
+    """Configuration for the voice pipeline (STT/TTS)."""
+
+    stt_model: str = "faster-whisper/large-v3-turbo"
+    stt_device: str = "cuda"
+    stt_compute_type: str = "int8"
+    tts_engine: str = "piper"
+    tts_voice: str = "en_US-amy-medium"
+    tts_speed: float = 1.0
+    model_cache_dir: Path = field(
+        default_factory=lambda: Path.home() / ".cache" / "hestia" / "voice"
+    )
+
+
+@dataclass
 class WebSearchConfig:
     """Configuration for the web_search tool.
 
@@ -392,6 +407,7 @@ class HestiaConfig:
     reflection: ReflectionConfig = field(default_factory=ReflectionConfig)
     style: StyleConfig = field(default_factory=StyleConfig)
     policy: PolicyConfig = field(default_factory=PolicyConfig)
+    voice: VoiceConfig = field(default_factory=VoiceConfig)
     system_prompt: str = "You are a helpful assistant."
     max_iterations: int = 10
     verbose: bool = False
