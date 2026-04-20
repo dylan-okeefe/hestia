@@ -216,7 +216,13 @@ class Orchestrator:
                 all_tool_names = self._tools.list_names()
                 allowed_tools = self._policy.filter_tools(session, all_tool_names, self._tools)
 
-                # Load prior history (does not include the current user message)
+                # Load prior history (does not include the current user message).
+                # This is the *only* get_messages call per turn — subsequent
+                # tool-call iterations keep ``history`` updated in memory
+                # rather than re-reading the store (M-2, 2026-04-20). The
+                # orchestrator is the sole writer for this session during a
+                # turn, so the in-memory view cannot drift relative to the
+                # store mid-turn.
                 history = await self._store.get_messages(session.id)
 
                 # Persist the new user message (now it's in the store for future turns)
@@ -258,7 +264,9 @@ class Orchestrator:
                         )
                         style_prefix = format_style_prefix_from_data(metrics)
 
-                # Build context
+                # Build context for the first model call: history is prior
+                # turns only; ``new_user_message=user_message`` lets the
+                # builder pin it in the protected_bottom region.
                 tools = self._tools.meta_tool_schemas()
                 self._builder.set_style_prefix(style_prefix)
                 build_result = await self._builder.build(
@@ -268,6 +276,16 @@ class Orchestrator:
                     tools=tools,
                     new_user_message=user_message,
                 )
+
+                # From this point forward, history is maintained locally:
+                # every message the orchestrator persists is also mirrored
+                # here so subsequent iterations can skip get_messages (M-2).
+                # Order matters: we only mirror *after* the builder has
+                # successfully folded new_user_message into its output —
+                # if build() raised ContextTooLargeError we don't want
+                # user_message to appear twice when the handoff path
+                # re-reads from the store.
+                history.append(user_message)
 
                 # Acquire slot for this turn (if SlotManager is configured)
                 slot_id_to_use: int | None
@@ -300,7 +318,7 @@ class Orchestrator:
                     total_prompt_tokens += getattr(chat_response, "prompt_tokens", 0) or 0
                     total_completion_tokens += getattr(chat_response, "completion_tokens", 0) or 0
 
-                    # Append assistant message to history
+                    # Append assistant message to store + mirror locally
                     assistant_msg = Message(
                         role="assistant",
                         content=chat_response.content,
@@ -309,6 +327,7 @@ class Orchestrator:
                         created_at=utcnow(),
                     )
                     await self._store.append_message(session.id, assistant_msg)
+                    history.append(assistant_msg)
 
                     if chat_response.finish_reason == "tool_calls":
                         await self._transition(turn, TurnState.EXECUTING_TOOLS)
@@ -343,15 +362,18 @@ class Orchestrator:
                             )
                             artifact_handles.extend(handles)
 
-                        # Add tool results to history
+                        # Persist tool results + mirror locally (M-2)
                         for result_msg in tool_results:
                             await self._store.append_message(session.id, result_msg)
+                            history.append(result_msg)
 
                         # Transition back to building context for next model call
                         await self._transition(turn, TurnState.BUILDING_CONTEXT)
 
-                        # Rebuild context with new history
-                        history = await self._store.get_messages(session.id)
+                        # Rebuild context from in-memory history. Skipping the
+                        # get_messages() re-fetch here is the payoff of M-2:
+                        # an N-iteration turn now hits the store exactly once
+                        # for message history (the initial load above).
                         self._builder.set_style_prefix(style_prefix)
                         build_result = await self._builder.build(
                             session=session,
