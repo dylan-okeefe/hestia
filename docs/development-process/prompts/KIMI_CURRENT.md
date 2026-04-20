@@ -2,31 +2,30 @@
 
 **Orchestrator:** Cursor updates this file after each review.
 
-**Last set by:** Kimi — 2026-04-19 (L45a complete on feature branch; advancing to L45b)
+**Last set by:** Kimi — 2026-04-19 (L45b complete on feature branch; advancing to L45c)
 
 ---
 
 ## Current task
 
-**Active loop:** **L45b** — `docs/development-process/kimi-loops/L45b-memory-user-scope-migration.md`
-on `feature/l45b-memory-user-scope-migration`.
+**Active loop:** **L45c** — `docs/development-process/kimi-loops/L45c-multi-user-docs-and-hardening.md`
+on `feature/l45c-multi-user-docs-and-hardening`.
 
-**L45a completion snapshot:**
+**L45b completion snapshot:**
 
-- Branch: `feature/l45a-trust-identity-plumbing` (pushed to `origin/feature/l45a-trust-identity-plumbing`)
-- Implementation commit: `281ae90` (runtime identity ContextVars + per-user trust overrides + scheduler identity inheritance)
-- Import sort fix: `80d3724`
-- `.kimi-done`: `LOOP=L45a`, `MYPY_FINAL_ERRORS=0`, `RUFF_SRC=23`, `TESTS=805 passed, 6 skipped`
+- Branch: `feature/l45b-memory-user-scope-migration` (pushed to `origin/feature/l45b-memory-user-scope-migration`)
+- Implementation commit: `6ea59ed` (FTS5 migration + user-scoped memory queries/tools/epochs + LIKE fallback)
+- `.kimi-done`: `LOOP=L45b`, `MYPY_FINAL_ERRORS=0`, `RUFF_SRC=23`, `TESTS=820 passed, 6 skipped`
 - Merge status: **NOT merged to `develop`** (correct per post-release merge discipline)
 
-**Launch sequence now (L45b):**
+**Launch sequence now (L45c):**
 
-1. Create/switch to `feature/l45b-memory-user-scope-migration` from `develop`.
+1. Create/switch to `feature/l45c-multi-user-docs-and-hardening` from `develop`.
 2. Run `./scripts/kimi-run-current.sh`.
-3. Wait for valid `.kimi-done` (`HESTIA_KIMI_DONE=1`, `LOOP=L45b`).
+3. Wait for valid `.kimi-done` (`HESTIA_KIMI_DONE=1`, `LOOP=L45c`).
 4. Review diffs + run gates (`pytest`, `mypy src/hestia`, `ruff check src/`).
-5. Fix/tighten prompt and rerun L45b if red.
-6. When green: push branch to origin, write loop-log entry, advance this file to L45c.
+5. Fix/tighten prompt and rerun L45c if red.
+6. When green: push branch to origin, write loop-log entry, advance this file to next queued loop.
 
 ---
 
@@ -41,9 +40,9 @@ Feature branches remain unmerged until explicit merge sequencing.
 
 ---
 
-## Queued after L45b
+## Queued after L45c
 
-- **L45c** — `docs/development-process/kimi-loops/L45c-multi-user-docs-and-hardening.md`
+- (Next loop to be planned after L45c review)
 
 ---
 
