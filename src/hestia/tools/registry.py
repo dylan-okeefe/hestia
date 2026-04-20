@@ -1,5 +1,6 @@
 """Tool registry with meta-tool dispatch."""
 
+import asyncio
 import json
 from types import ModuleType
 from typing import Any
@@ -117,15 +118,21 @@ class ToolRegistry:
         # Normalize to string
         content_str = json.dumps(raw, indent=2) if isinstance(raw, (dict, list)) else str(raw)
 
-        return self._postprocess(content_str, meta)
+        return await self._postprocess(content_str, meta)
 
-    def _postprocess(self, content: str, meta: ToolMetadata) -> ToolCallResult:
-        """Post-process tool result: truncate and/or promote to artifact."""
+    async def _postprocess(self, content: str, meta: ToolMetadata) -> ToolCallResult:
+        """Post-process tool result: truncate and/or promote to artifact.
+
+        ``ArtifactStore.store`` is synchronous (writes bytes + JSON metadata
+        to disk); we offload it via ``asyncio.to_thread`` so the event
+        loop stays responsive during large-artifact writes (Copilot C-3).
+        """
         size = len(content)
 
         if size > meta.max_inline_chars:
             # Large result: store full content as artifact, return a preview
-            handle = self._artifact_store.store(
+            handle = await asyncio.to_thread(
+                self._artifact_store.store,
                 content.encode("utf-8"),
                 content_type="text/plain",
                 source_tool=meta.name,
