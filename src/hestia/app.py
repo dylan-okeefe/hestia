@@ -70,6 +70,7 @@ def _make_policy(cfg: HestiaConfig) -> DefaultPolicyEngine:
         default_reasoning_budget=cfg.inference.default_reasoning_budget,
         trust=cfg.trust,
         config=cfg.policy,
+        trust_overrides=cfg.trust_overrides,
     )
 
 

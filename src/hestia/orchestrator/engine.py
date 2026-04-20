@@ -29,6 +29,7 @@ from hestia.policy.engine import PolicyEngine, RetryAction
 from hestia.reflection.store import ProposalStore
 from hestia.security import InjectionScanner
 from hestia.style.context import format_style_prefix_from_data
+from hestia.runtime_context import current_platform, current_platform_user
 from hestia.tools.builtin import current_session_id, current_trace_store
 from hestia.tools.metadata import ToolMetadata
 from hestia.tools.registry import ToolNotFoundError, ToolRegistry
@@ -179,6 +180,8 @@ class Orchestrator:
         """
         # Set session context for tools that need to know the current session
         session_token = current_session_id.set(session.id)
+        platform_token = current_platform.set(session.platform)
+        platform_user_token = current_platform_user.set(session.platform_user)
         trace_token: Any = None
         if self._trace_store is not None:
             trace_token = current_trace_store.set(self._trace_store)
@@ -547,6 +550,8 @@ class Orchestrator:
         finally:
             # Clear session context when turn processing completes
             current_session_id.reset(session_token)
+            current_platform.reset(platform_token)
+            current_platform_user.reset(platform_user_token)
             if trace_token is not None:
                 current_trace_store.reset(trace_token)
 

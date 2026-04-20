@@ -383,6 +383,7 @@ class HestiaConfig:
     reflection: ReflectionConfig = field(default_factory=ReflectionConfig)
     style: StyleConfig = field(default_factory=StyleConfig)
     policy: PolicyConfig = field(default_factory=PolicyConfig)
+    trust_overrides: dict[str, TrustConfig] = field(default_factory=dict)
     system_prompt: str = "You are a helpful assistant."
     max_iterations: int = 10
     verbose: bool = False
