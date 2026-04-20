@@ -63,3 +63,56 @@ The `voice_prerequisites` check reports:
   resolved.
 - **red** — partial install (e.g. `faster-whisper` present but `piper-tts`
   missing).
+
+## 6. Enabling voice messages on Telegram (Phase A)
+
+Hestia can receive and reply with voice messages via the existing Telegram bot.
+This is a lightweight stepping-stone toward live voice calls (Phase B).
+
+### Requirements
+
+- The `[voice]` extra must be installed (see §1).
+- **System `ffmpeg`** must be available on `$PATH`.  Hestia uses it to convert
+  between Telegram's OGG/Opus format and the PCM used by the STT/TTS models.
+  Install with your package manager:
+  ```bash
+  # Debian/Ubuntu
+  sudo apt install ffmpeg
+  # macOS
+  brew install ffmpeg
+  ```
+
+### Configuration
+
+Set the feature flag in your config file:
+
+```python
+from hestia.config import HestiaConfig, TelegramConfig
+
+config = HestiaConfig(
+    telegram=TelegramConfig(
+        bot_token="...",
+        allowed_users=["..."],
+        voice_messages=True,  # <-- enable Phase A
+    ),
+)
+```
+
+No extra credentials are needed — voice messages reuse the existing
+`telegram.bot_token`.
+
+### Behaviour
+
+- When a user sends a voice note to `@HestiaBot`, the bot downloads the audio,
+  transcribes it with Whisper, feeds the transcript to the orchestrator as a
+  normal text turn, synthesizes the response with Piper, and replies with a
+  voice note of its own.
+- Replies that would exceed Telegram's 1 MB voice-note limit are truncated;
+  the full text is sent as a follow-up text message.
+- Destructive tools still require the usual inline-keyboard confirmation
+  (verbal confirmations are a Phase B feature).
+
+### What's next
+
+Phase B adds **live voice calls** via Pyrogram + py-tgcalls.  See
+`docs/development-process/kimi-loops/L43-voice-phase-b-calls.md` for the spec.
