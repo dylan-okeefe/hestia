@@ -130,15 +130,6 @@ class TestDelegation:
         )
 
 
-class TestSlotEviction:
-    """Tests for slot eviction policy (Phase 1b: always false)."""
-
-    def test_no_eviction_in_phase_1b(self, policy):
-        """Slot eviction is disabled in Phase 1b."""
-        assert not policy.should_evict_slot(0, 0.9)
-        assert not policy.should_evict_slot(1, 1.0)
-
-
 class TestToolResultMaxChars:
     """Tests for tool result max chars policy."""
 

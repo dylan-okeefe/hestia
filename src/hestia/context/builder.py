@@ -440,6 +440,14 @@ class ContextBuilder:
         Cache key is ``(role, content)`` so identical messages survive
         object re-creation between turns.
 
+        ``reasoning_content`` is intentionally omitted: it is stripped
+        before the prompt is sent to llama.cpp, so it does not contribute
+        to the actual token count.
+
+        ``tool_call_id`` is also omitted: the ``tool`` role prefix that
+        includes it has a constant length per role, so all tool-result
+        messages with the same ``content`` can safely share one cache entry.
+
         Args:
             message: Message to count
 

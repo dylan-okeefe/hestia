@@ -152,7 +152,7 @@ async def _check_config_file_loads(app: CliAppContext) -> CheckResult:
 
 async def _check_config_schema(app: CliAppContext) -> CheckResult:
     """Validate config schema_version when present."""
-    # TODO(L39): add schema_version to HestiaConfig and compare against current
+    # Deferred to L39: add schema_version to HestiaConfig and compare against current.
     version = getattr(app.config, "schema_version", None)
     if version is None:
         return CheckResult(

@@ -214,9 +214,16 @@ class TrustConfig:
     def prompt_on_mobile(cls) -> TrustConfig:
         """Mobile-confirmation posture.
 
-        Auto-approves nothing (confirmation prompt on every
-        ``requires_confirmation=True`` tool), but keeps the rest of the
-        ``household`` defaults: scheduler and subagents can shell and write.
+        Auto-approves nothing. Every ``requires_confirmation=True`` tool
+        routes through the platform's confirm callback before executing.
+        Whether the call blocks the conversation thread depends on the
+        platform (Telegram inline keyboards block; Matrix reply-pattern
+        does not).
+
+        Keeps the rest of the ``household`` defaults: both ``handoff`` and
+        ``compression`` are enabled, and scheduler / subagents can shell
+        and write.
+
         Use this when you run Hestia on Telegram or Matrix and want an
         explicit ✅/❌ prompt on your phone for ``terminal``, ``write_file``,
         and ``email_send``.
@@ -281,6 +288,8 @@ class EmailConfig:
     password: str = ""  # or app-password
     password_env: str | None = None  # env-var name to read password from
     default_folder: str = "INBOX"
+    drafts_folder: str = "Drafts"
+    sent_folder: str = "Sent"
     max_fetch: int = 50
     sanitize_html: bool = True
     injection_scan: bool = True  # inherits from SecurityConfig

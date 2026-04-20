@@ -49,6 +49,7 @@ def make_email_tools(config: EmailConfig) -> list[Any]:
         },
         max_inline_chars=6000,
         requires_confirmation=False,
+        ordering="serial",
         tags=["email", "builtin"],
         capabilities=[NETWORK_EGRESS],
     )
@@ -94,6 +95,7 @@ def make_email_tools(config: EmailConfig) -> list[Any]:
         },
         max_inline_chars=8000,
         requires_confirmation=False,
+        ordering="serial",
         tags=["email", "builtin"],
         capabilities=[NETWORK_EGRESS],
     )
@@ -145,6 +147,7 @@ def make_email_tools(config: EmailConfig) -> list[Any]:
         },
         max_inline_chars=4000,
         requires_confirmation=False,
+        ordering="serial",
         tags=["email", "builtin"],
         capabilities=[NETWORK_EGRESS],
     )
@@ -188,6 +191,7 @@ def make_email_tools(config: EmailConfig) -> list[Any]:
         },
         max_inline_chars=2000,
         requires_confirmation=False,
+        ordering="serial",
         tags=["email", "builtin"],
         capabilities=[NETWORK_EGRESS],
     )
@@ -227,6 +231,7 @@ def make_email_tools(config: EmailConfig) -> list[Any]:
         },
         max_inline_chars=2000,
         requires_confirmation=True,
+        ordering="serial",
         tags=["email", "builtin"],
         capabilities=[EMAIL_SEND, NETWORK_EGRESS],
     )
@@ -259,6 +264,7 @@ def make_email_tools(config: EmailConfig) -> list[Any]:
         },
         max_inline_chars=2000,
         requires_confirmation=False,
+        ordering="serial",
         tags=["email", "builtin"],
         capabilities=[NETWORK_EGRESS],
     )
@@ -292,6 +298,7 @@ def make_email_tools(config: EmailConfig) -> list[Any]:
         },
         max_inline_chars=2000,
         requires_confirmation=False,
+        ordering="serial",
         tags=["email", "builtin"],
         capabilities=[NETWORK_EGRESS],
     )
@@ -349,6 +356,7 @@ def make_email_search_and_read_tool(adapter: EmailAdapter) -> Any:
         },
         max_inline_chars=8000,
         requires_confirmation=False,
+        ordering="serial",
         tags=["email", "builtin"],
         capabilities=[NETWORK_EGRESS],
     )

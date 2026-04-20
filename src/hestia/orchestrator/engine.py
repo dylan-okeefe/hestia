@@ -1,5 +1,6 @@
 """Orchestrator engine for managing turn execution."""
 
+import asyncio
 import json
 import logging
 import uuid
@@ -669,12 +670,54 @@ class Orchestrator:
     async def _execute_tool_calls(
         self, session: Session, tool_calls: list[ToolCall], allowed_tools: list[str] | None = None
     ) -> tuple[list[Message], list[str]]:
-        """Execute tool calls and return result messages and artifact handles."""
+        """Execute tool calls and return result messages and artifact handles.
+
+        Tools marked ``ordering="serial"`` or requiring confirmation run
+        sequentially; everything else is dispatched concurrently via
+        :func:`asyncio.gather` to avoid stacking latencies.
+        """
         result_messages: list[Message] = []
         artifact_handles: list[str] = []
 
-        for tc in tool_calls:
+        # Partition by dispatch mode. Tools requiring confirmation or marked
+        # ordering="serial" run sequentially; everything else gathers concurrently.
+        serial_indices: list[int] = []
+        concurrent_indices: list[int] = []
+        for i, tc in enumerate(tool_calls):
+            try:
+                meta = self._tools.describe(tc.name)
+                is_serial = meta.requires_confirmation or meta.ordering == "serial"
+            except ToolNotFoundError:
+                is_serial = False
+            if is_serial:
+                serial_indices.append(i)
+            else:
+                concurrent_indices.append(i)
+
+        # Run concurrent tools in parallel
+        concurrent_results: dict[int, ToolCallResult] = {}
+        if concurrent_indices:
+
+            async def _run_one(idx: int) -> tuple[int, ToolCallResult]:
+                tc = tool_calls[idx]
+                result = await self._dispatch_tool_call(session, tc, allowed_tools)
+                return idx, result
+
+            for idx, result in await asyncio.gather(
+                *[_run_one(i) for i in concurrent_indices]
+            ):
+                concurrent_results[idx] = result
+
+        # Run serial tools sequentially
+        serial_results: dict[int, ToolCallResult] = {}
+        for idx in serial_indices:
+            tc = tool_calls[idx]
             result = await self._dispatch_tool_call(session, tc, allowed_tools)
+            serial_results[idx] = result
+
+        # Reassemble in original emission order for trace consistency
+        for i, tc in enumerate(tool_calls):
+            result = concurrent_results[i] if i in concurrent_results else serial_results[i]
             result = self._scan_tool_result(result)
             if result.artifact_handle:
                 artifact_handles.append(result.artifact_handle)
