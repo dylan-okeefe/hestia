@@ -48,72 +48,26 @@ class TraceRecord:
 class TraceStore:
     """Store for execution traces.
 
-    Uses raw DDL for table creation (consistent with FailureStore pattern).
+    The ``traces`` and ``egress_events`` tables are declared in
+    :mod:`hestia.persistence.schema` and created by
+    :meth:`Database.create_tables`. :meth:`create_table` here is kept as a
+    no-op shim for backward compatibility with callers that predate the H-10
+    DDL consolidation (2026-04-20). New code should rely on
+    ``Database.create_tables`` exclusively.
     """
 
     def __init__(self, db: Database) -> None:
         self._db = db
 
     async def create_table(self) -> None:
-        """Create the traces and egress_events tables if they don't exist."""
-        ddl = """
-        CREATE TABLE IF NOT EXISTS traces (
-            id TEXT PRIMARY KEY,
-            session_id TEXT NOT NULL,
-            turn_id TEXT NOT NULL,
-            started_at TEXT NOT NULL,
-            ended_at TEXT,
-            user_input_summary TEXT NOT NULL,
-            tools_called TEXT NOT NULL,
-            tool_call_count INTEGER NOT NULL,
-            delegated INTEGER NOT NULL DEFAULT 0,
-            outcome TEXT NOT NULL,
-            artifact_handles TEXT NOT NULL,
-            prompt_tokens INTEGER,
-            completion_tokens INTEGER,
-            reasoning_tokens INTEGER,
-            total_duration_ms INTEGER
-        )
-        """
-        idx_session = (
-            "CREATE INDEX IF NOT EXISTS idx_traces_session ON traces(session_id, started_at)"
-        )
-        idx_turn = "CREATE INDEX IF NOT EXISTS idx_traces_turn ON traces(turn_id)"
-        idx_outcome = "CREATE INDEX IF NOT EXISTS idx_traces_outcome ON traces(outcome)"
-        idx_created = "CREATE INDEX IF NOT EXISTS idx_traces_created ON traces(started_at)"
+        """Deprecated no-op kept for call-site compatibility.
 
-        egress_ddl = """
-        CREATE TABLE IF NOT EXISTS egress_events (
-            id TEXT PRIMARY KEY,
-            session_id TEXT NOT NULL,
-            url TEXT NOT NULL,
-            domain TEXT NOT NULL,
-            status INTEGER,
-            size INTEGER,
-            created_at TEXT NOT NULL
-        )
+        Schema creation now lives in
+        :meth:`hestia.persistence.db.Database.create_tables` via the shared
+        SQLAlchemy metadata. The duplicated raw DDL that lived here was the
+        source of drift flagged by the Copilot audit (H-10, 2026-04-20).
         """
-        idx_egress_session = (
-            "CREATE INDEX IF NOT EXISTS idx_egress_session ON egress_events(session_id, created_at)"
-        )
-        idx_egress_domain = (
-            "CREATE INDEX IF NOT EXISTS idx_egress_domain ON egress_events(domain, created_at)"
-        )
-        idx_egress_created = (
-            "CREATE INDEX IF NOT EXISTS idx_egress_created ON egress_events(created_at)"
-        )
-
-        async with self._db.engine.connect() as conn:
-            await conn.execute(sa.text(ddl))
-            await conn.execute(sa.text(idx_session))
-            await conn.execute(sa.text(idx_turn))
-            await conn.execute(sa.text(idx_outcome))
-            await conn.execute(sa.text(idx_created))
-            await conn.execute(sa.text(egress_ddl))
-            await conn.execute(sa.text(idx_egress_session))
-            await conn.execute(sa.text(idx_egress_domain))
-            await conn.execute(sa.text(idx_egress_created))
-            await conn.commit()
+        return None
 
     async def record(self, trace: TraceRecord) -> None:
         """Persist a trace record."""
