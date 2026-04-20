@@ -2,31 +2,21 @@
 
 **Orchestrator:** Cursor updates this file after each review.
 
-**Last set by:** Kimi — 2026-04-19 (L45a complete on feature branch; advancing to L45b)
+**Last set by:** Kimi — 2026-04-19 (L45c complete on feature branch; queue drained)
 
 ---
 
 ## Current task
 
-**Active loop:** **L45b** — `docs/development-process/kimi-loops/L45b-memory-user-scope-migration.md`
-on `feature/l45b-memory-user-scope-migration`.
+**Active loop:** **IDLE** — L45a, L45b, and L45c feature branches are complete and pushed.
+Awaiting Cursor review and v0.8.x release-prep merge sequencing.
 
-**L45a completion snapshot:**
+**L45c completion snapshot:**
 
-- Branch: `feature/l45a-trust-identity-plumbing` (pushed to `origin/feature/l45a-trust-identity-plumbing`)
-- Implementation commit: `281ae90` (runtime identity ContextVars + per-user trust overrides + scheduler identity inheritance)
-- Import sort fix: `80d3724`
-- `.kimi-done`: `LOOP=L45a`, `MYPY_FINAL_ERRORS=0`, `RUFF_SRC=23`, `TESTS=805 passed, 6 skipped`
+- Branch: `feature/l45c-multi-user-docs-and-hardening` (pushed to `origin/feature/l45c-multi-user-docs-and-hardening`)
+- Implementation commit: `de231f2` (allow-list wildcard matching + multi-user docs + adapter validation)
+- `.kimi-done`: `LOOP=L45c`, `MYPY_FINAL_ERRORS=0`, `RUFF_SRC=23`, `TESTS=818 passed, 6 skipped`
 - Merge status: **NOT merged to `develop`** (correct per post-release merge discipline)
-
-**Launch sequence now (L45b):**
-
-1. Create/switch to `feature/l45b-memory-user-scope-migration` from `develop`.
-2. Run `./scripts/kimi-run-current.sh`.
-3. Wait for valid `.kimi-done` (`HESTIA_KIMI_DONE=1`, `LOOP=L45b`).
-4. Review diffs + run gates (`pytest`, `mypy src/hestia`, `ruff check src/`).
-5. Fix/tighten prompt and rerun L45b if red.
-6. When green: push branch to origin, write loop-log entry, advance this file to L45c.
 
 ---
 
@@ -41,9 +31,11 @@ Feature branches remain unmerged until explicit merge sequencing.
 
 ---
 
-## Queued after L45b
+## Completed in this train
 
-- **L45c** — `docs/development-process/kimi-loops/L45c-multi-user-docs-and-hardening.md`
+- **L45a** — `feature/l45a-trust-identity-plumbing` — Runtime identity ContextVars + per-user trust overrides
+- **L45b** — `feature/l45b-memory-user-scope-migration` — Memory user scoping + FTS5 migration + LIKE fallback
+- **L45c** — `feature/l45c-multi-user-docs-and-hardening` — Allow-list hardening + multi-user docs
 
 ---
 

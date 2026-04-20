@@ -8,6 +8,63 @@
 
 ---
 
+## 2026-04-19 — Loop: L45c — multi-user docs and hardening (Kimi) — feature-branch pushed, not merged to develop
+
+**Kimi:** Clean run on `feature/l45c-multi-user-docs-and-hardening`; `.kimi-done` present with `LOOP=L45c`, `COMMIT=de231f2`, `TESTS=818 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`, `RUFF_SRC=23`.
+
+**What shipped:**
+
+- New `src/hestia/platforms/allowlist.py` with `match_allowlist()` using `fnmatch` for shell-style wildcards (`*`, `?`, `[seq]`).
+- Platform-specific validators: `validate_telegram_user_id()`, `validate_telegram_username()`, `validate_matrix_room_id()`.
+- `TelegramAdapter._is_allowed()`: case-insensitive username matching + wildcard support; warns on invalid entries at startup.
+- `MatrixAdapter._is_allowed()`: case-sensitive room matching + wildcard support; warns on invalid entries at startup.
+- `docs/guides/multi-user-setup.md`: comprehensive guide for household/multi-user deployments covering allow-lists, trust overrides, presets, and troubleshooting.
+- README.md updated with `prompt_on_mobile()` preset and multi-user security section.
+- 29 new tests in `test_allowlist.py`: wildcard matching, validation, adapter integration.
+
+**Gates:**
+
+- `pytest tests/unit/ tests/integration/ tests/cli/ tests/docs/ -q` → **818 passed, 6 skipped**
+- `mypy src/hestia` → **0 errors in 93 source files**
+- `ruff check src/` → **23 errors** (baseline unchanged)
+
+**Git:**
+
+- Feature branch pushed: `origin/feature/l45c-multi-user-docs-and-hardening`
+- Commit: `de231f2`
+- Merge status: **NOT merged to `develop`** (correct per post-release merge discipline)
+
+---
+
+## 2026-04-19 — Loop: L45b — memory user-scope migration (Kimi) — feature-branch pushed, not merged to develop
+
+**Kimi:** Clean run on `feature/l45b-memory-user-scope-migration`; `.kimi-done` present with `LOOP=L45b`, `COMMIT=6ea59ed`, `TESTS=820 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`, `RUFF_SRC=23`.
+
+**What shipped:**
+
+- `Memory` dataclass extended with `platform`/`platform_user` fields.
+- `MemoryStore` FTS5 migration: detects old schema, backs up data, recreates virtual table with new columns, restores with `NULL` backfill.
+- `MemoryStore` LIKE fallback for SQLite builds without FTS5; exact-tag matching via multiple `LIKE` patterns.
+- User-scoped queries in `MemoryStore`: `save`, `search`, `list_memories`, `delete`, `count` all filter by `platform:platform_user` (explicit params or runtime ContextVars).
+- Memory tools (`save_memory`, `search_memory`, `list_memories`, `delete_memory`) respect user scope via `current_platform`/`current_platform_user` ContextVars.
+- `MemoryEpochCompiler.compile(session)` scopes memory fetch to the session user.
+- 15 new tests in `test_memory_user_scope.py`: scoping, cross-user blocking, ContextVar fallback, LIKE fallback, FTS5 migration.
+- Updated `test_memory_epochs.py` and `test_memory_matrix_mock.py` to pre-seed memories with matching user identity.
+
+**Gates:**
+
+- `pytest tests/unit/ tests/integration/ tests/cli/ tests/docs/ -q` → **820 passed, 6 skipped**
+- `mypy src/hestia` → **0 errors in 92 source files**
+- `ruff check src/` → **23 errors** (baseline unchanged)
+
+**Git:**
+
+- Feature branch pushed: `origin/feature/l45b-memory-user-scope-migration`
+- Commit: `6ea59ed`
+- Merge status: **NOT merged to `develop`** (correct per post-release merge discipline)
+
+---
+
 ## 2026-04-19 — Loop: L45a — trust + identity plumbing (Kimi) — feature-branch pushed, not merged to develop
 
 **Kimi:** Clean run on `feature/l45a-trust-identity-plumbing`; `.kimi-done` present with `LOOP=L45a`, `COMMIT=9cd7e8b`, `TESTS=805 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`, `RUFF_SRC=23`.
