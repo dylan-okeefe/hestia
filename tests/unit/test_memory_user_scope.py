@@ -268,6 +268,50 @@ class TestMemoryLikeFallback:
         assert len(results) == 1
         assert "Documentation" in results[0].content
 
+    @pytest.mark.asyncio
+    async def test_like_fallback_matches_fts5_result_set_for_trivial_query(
+        self, like_store, tmp_path
+    ):
+        """T-8: the FTS5 and LIKE paths return the same IDs for a trivial search.
+
+        Seeded identically on both stores, a single-token query must produce
+        the same set of memory IDs regardless of which path is taken.
+        """
+        db2 = Database("sqlite+aiosqlite:///:memory:")
+        await db2.connect()
+        await db2.create_tables()
+        fts_store = MemoryStore(db2)
+        await fts_store.create_table()
+        try:
+            seed = [
+                ("Python programming tutorial", ["python", "docs"]),
+                ("Python snake in a terrarium", ["zoo"]),
+                ("Rust memory model notes", ["rust"]),
+                ("Bash scripting primer", ["bash"]),
+            ]
+            for content, tags in seed:
+                await like_store.save(
+                    content=content, tags=tags, platform="cli", platform_user="t"
+                )
+                await fts_store.save(
+                    content=content, tags=tags, platform="cli", platform_user="t"
+                )
+
+            like_hits = await like_store.search(
+                "Python", platform="cli", platform_user="t"
+            )
+            fts_hits = await fts_store.search(
+                "Python", platform="cli", platform_user="t"
+            )
+
+            like_contents = sorted(m.content for m in like_hits)
+            fts_contents = sorted(m.content for m in fts_hits)
+
+            assert like_contents == fts_contents
+            assert len(like_contents) == 2
+        finally:
+            await db2.close()
+
 
 class TestMemoryFTS5Migration:
     @pytest.mark.asyncio
