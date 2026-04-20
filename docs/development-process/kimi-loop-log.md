@@ -173,6 +173,35 @@ and relaunch.
 
 ---
 
+## 2026-04-19 — Loop: L45a — trust + identity plumbing (Kimi) — feature-branch pushed, not merged to develop
+
+**Kimi:** Clean run on `feature/l45a-trust-identity-plumbing`; `.kimi-done` present with `LOOP=L45a`, `COMMIT=9cd7e8b`, `TESTS=805 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`, `RUFF_SRC=23`.
+
+**What shipped:**
+
+- Runtime identity ContextVars (`current_platform`, `current_platform_user`) in `runtime_context.py`, set/reset in `orchestrator/engine.py` alongside `current_session_id`.
+- Per-user trust overrides on `HestiaConfig` (`trust_overrides: dict[str, TrustConfig]`) keyed by `platform:platform_user`.
+- `DefaultPolicyEngine._trust_for(session)` resolves overrides for `auto_approve()` and `filter_tools()`; falls back to default trust with warning when session identity is missing.
+- Scheduler identity inheritance: scheduler ticks preserve creator identity via the session passed to `process_turn`, so policy checks resolve against the creator's trust profile.
+- 3 new test modules (19 tests total): `test_policy_trust_overrides.py`, `test_runtime_context_identity.py`, `test_scheduler_identity_inheritance.py`.
+- Fixed `test_injection_orchestrator.py` mock session to include `platform`/`platform_user` attributes required by the new ContextVar setup.
+
+**Gates:**
+
+- `pytest tests/unit/ tests/integration/ tests/cli/ tests/docs/ -q` → **805 passed, 6 skipped**
+- `mypy src/hestia` → **0 errors in 92 source files**
+- `ruff check src/` → **23 errors** (baseline unchanged)
+
+**Git:**
+
+- Feature branch pushed: `origin/feature/l45a-trust-identity-plumbing`
+- Commits: `281ae90` (implementation), `80d3724` (import sort fix), `9cd7e8b` (`.kimi-done`)
+- Merge status: **NOT merged to `develop`** (correct per post-release merge discipline; awaits v0.8.x release-prep sequencing)
+
+**Orchestration note:** During the loop, the local repo experienced repeated branch-switching and working-tree cleanup by an external process (reflog shows checkouts to `feature/voice-shared-infra` and `feature/voice-phase-a-messages`). Kimi recovered by bundling all changes into a single shell script, committing immediately, and continuing. All changes were preserved.
+
+---
+
 ## 2026-04-19 — Loop: L40 Copilot cleanup backlog (Kimi) — feature-branch landed, not merged to develop
 
 **Kimi:** L40 completed on `feature/l40-copilot-cleanup`; `.kimi-done` present with `LOOP=L40`, `COMMIT=d604313`, `TESTS=796 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`, `RUFF_SRC=23`.

@@ -409,6 +409,7 @@ class HestiaConfig:
     style: StyleConfig = field(default_factory=StyleConfig)
     policy: PolicyConfig = field(default_factory=PolicyConfig)
     voice: VoiceConfig = field(default_factory=VoiceConfig)
+    trust_overrides: dict[str, TrustConfig] = field(default_factory=dict)
     system_prompt: str = "You are a helpful assistant."
     max_iterations: int = 10
     verbose: bool = False
