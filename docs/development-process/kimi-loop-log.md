@@ -6,84 +6,34 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
-
-## 2026-04-19 — Loop: L43 blocked — idle pending Dylan-side prereqs
-
-**Status:** L43 cannot start. Kimi verified the five prereqs listed in
-`docs/development-process/kimi-loops/L43-voice-phase-b-calls.md`; none are
-present on disk.
-
-**Missing:**
-1. Dedicated phone number for the userbot.
-2. Telegram API `api_id` + `api_hash`.
-3. `pyrogram` and `py-tgcalls` installed in `.venv`.
-4. Piper voice files in `~/.cache/hestia/voice/`.
-5. Dylan's Telegram `user_id`.
-
-**Action taken:** `KIMI_CURRENT.md` moved to IDLE state documenting the block.
-When Dylan provides the above, Cursor should reset KIMI_CURRENT to L43 active
-and relaunch.
-
 ---
 
-## 2026-04-19 — Loop: L42 Voice Phase A — Telegram voice messages (Kimi) — feature-branch landed, not merged to develop
+## 2026-04-19 — Loop: L45a — trust + identity plumbing (Kimi) — feature-branch pushed, not merged to develop
 
-**Kimi:** L42 completed on `feature/voice-phase-a-messages`; `.kimi-done` present with `LOOP=L42`, `COMMIT=ac4c196`, `TESTS=810 passed, 12 skipped`, `MYPY_FINAL_ERRORS=0`, `RUFF_SRC=23`.
+**Kimi:** Clean run on `feature/l45a-trust-identity-plumbing`; `.kimi-done` present with `LOOP=L45a`, `COMMIT=9cd7e8b`, `TESTS=805 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`, `RUFF_SRC=23`.
 
-**What shipped on the feature branch:**
+**What shipped:**
 
-- `src/hestia/platforms/telegram_adapter.py` — `_handle_voice_message` downloads Telegram voice notes, converts OGG→PCM via ffmpeg, transcribes with Whisper, feeds transcript to the orchestrator, synthesizes the response with Piper, encodes back to OGG/Opus, and replies with `reply_voice`. Includes 1 MB truncation fallback (`_truncate_ogg_to_size`) and `set_voice_deps()` injection point wired in `runners.py`.
-- `src/hestia/platforms/runners.py` — injects orchestrator + session store into `TelegramAdapter` when `voice_messages=True`.
-- `src/hestia/config.py` — `TelegramConfig.voice_messages: bool = False` (Phase A feature flag).
-- `docs/guides/voice-setup.md` — §6 documenting the feature flag, system `ffmpeg` requirement, and cross-reference to Phase B.
-- `docs/experiments/telegram-voice-smoke-test.md` — deleted (subsumed by Phase A).
-- `tests/integration/test_telegram_voice_message.py` — 4 tests: happy path, truncation >1 MB, disabled flag, STT failure.
-- `tests/unit/test_telegram_adapter_voice_routing.py` — 2 tests: handler registered when flag true, absent when false.
+- Runtime identity ContextVars (`current_platform`, `current_platform_user`) in `runtime_context.py`, set/reset in `orchestrator/engine.py` alongside `current_session_id`.
+- Per-user trust overrides on `HestiaConfig` (`trust_overrides: dict[str, TrustConfig]`) keyed by `platform:platform_user`.
+- `DefaultPolicyEngine._trust_for(session)` resolves overrides for `auto_approve()` and `filter_tools()`; falls back to default trust with warning when session identity is missing.
+- Scheduler identity inheritance: scheduler ticks preserve creator identity via the session passed to `process_turn`, so policy checks resolve against the creator's trust profile.
+- 3 new test modules (19 tests total): `test_policy_trust_overrides.py`, `test_runtime_context_identity.py`, `test_scheduler_identity_inheritance.py`.
+- Fixed `test_injection_orchestrator.py` mock session to include `platform`/`platform_user` attributes required by the new ContextVar setup.
 
-**Review/gates reported by Kimi:**
+**Gates:**
 
-- `pytest` full suite → **810 passed, 12 skipped** (1 pre-existing smoke-test flake unrelated to voice changes)
-- `mypy src/hestia` → **0 errors** (95 source files)
+- `pytest tests/unit/ tests/integration/ tests/cli/ tests/docs/ -q` → **805 passed, 6 skipped**
+- `mypy src/hestia` → **0 errors in 92 source files**
 - `ruff check src/` → **23 errors** (baseline unchanged)
 
-**Git status for this loop:**
+**Git:**
 
-- Feature branch pushed: `origin/feature/voice-phase-a-messages`
-- Branch commits: `de5f8db` (config flag), `583b6c5` (voice handler), `1f1a9a7` (tests), `de31bb2` (docs + cleanup), `ac4c196` (handoff)
-- Merge status: **NOT merged to `develop`** (correct per post-release merge discipline)
+- Feature branch pushed: `origin/feature/l45a-trust-identity-plumbing`
+- Commits: `281ae90` (implementation), `80d3724` (import sort fix), `9cd7e8b` (`.kimi-done`)
+- Merge status: **NOT merged to `develop`** (correct per post-release merge discipline; awaits v0.8.x release-prep sequencing)
 
-**Orchestration note:** L43 (Phase B — live voice calls) forks from `feature/voice-shared-infra`, not from `develop`.
-
----
-
-## 2026-04-19 — Loop: L41 Voice shared infrastructure (Kimi) — feature-branch landed, not merged to develop
-
-**Kimi:** L41 completed on `feature/voice-shared-infra`; `.kimi-done` present with `LOOP=L41`, `COMMIT=bb06e00`, `TESTS=798 passed, 6 skipped`, `MYPY_FINAL_ERRORS=0`, `RUFF_SRC=23`.
-
-**What shipped on the feature branch:**
-
-- `src/hestia/voice/pipeline.py` — `VoicePipeline` dataclass with lazy STT/TTS init under `asyncio.Lock`, sentence-level TTS streaming, process-wide singleton accessor (`get_voice_pipeline`), gated imports for `faster_whisper` and `piper` so the module is importable without `hestia[voice]` installed.
-- `src/hestia/voice/vad.py` — `SileroVAD` stub that yields the full stream as one segment (real VAD in L43).
-- `src/hestia/config.py` — `VoiceConfig` dataclass (`stt_model`, `stt_device`, `stt_compute_type`, `tts_engine`, `tts_voice`, `tts_speed`, `model_cache_dir`) wired into `HestiaConfig.voice`.
-- `pyproject.toml` — `voice` extra (`faster-whisper>=1.0.0`, `piper-tts>=1.2.0`); version bumped `0.8.0` → `0.8.1.dev0`; `uv.lock` regenerated.
-- `src/hestia/doctor.py` — `_check_voice_prerequisites` using `importlib.util.find_spec`; reports "voice extra not installed" cleanly when `faster_whisper` is absent.
-- `docs/guides/voice-setup.md` — install extra, model auto-download, Piper voice files, VRAM budget example, doctor check.
-- `tests/unit/test_voice_pipeline.py` — 9 tests covering lazy load, sentence chunks, singleton identity, first-call config requirement, import-without-extra safety, and sentence splitter.
-
-**Review/gates reported by Kimi:**
-
-- `pytest tests/unit/ tests/integration/ tests/cli/ tests/docs/` → **798 passed, 6 skipped**
-- `mypy src/hestia` → **0 errors** (95 source files)
-- `ruff check src/` → **23 errors** (baseline unchanged)
-- `hestia doctor` runs cleanly with and without `[voice]` installed
-
-**Git status for this loop:**
-
-- Feature branch pushed: `origin/feature/voice-shared-infra`
-- Branch commits: `3e83e25` (pipeline), `191a0b4` (VAD + config), `5ef6c41` (pyproject + doctor + guide), `bb06e00` (tests), plus orchestration commit(s)
-- Merge status: **NOT merged to `develop`** (correct per post-release merge discipline)
-
-**Orchestration note:** L42 (Phase A — Telegram voice messages) forks from `feature/voice-shared-infra`, not from `develop`.
+**Orchestration note:** During the loop, the local repo experienced repeated branch-switching and working-tree cleanup by an external process (reflog shows checkouts to `feature/voice-shared-infra` and `feature/voice-phase-a-messages`). Kimi recovered by bundling all changes into a single shell script, committing immediately, and continuing. All changes were preserved.
 
 ---
 
