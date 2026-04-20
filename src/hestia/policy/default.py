@@ -1,5 +1,6 @@
 """Default policy engine with conservative decisions."""
 
+import logging
 from typing import TYPE_CHECKING
 
 from hestia.config import PolicyConfig, TrustConfig
@@ -14,6 +15,8 @@ from hestia.runtime_context import scheduler_tick_active
 
 if TYPE_CHECKING:
     from hestia.tools.registry import ToolRegistry
+
+logger = logging.getLogger(__name__)
 
 
 DEFAULT_DELEGATION_KEYWORDS: tuple[str, ...] = (
@@ -183,9 +186,6 @@ class DefaultPolicyEngine(PolicyEngine):
         """
         key = f"{session.platform}:{session.platform_user}"
         if not session.platform or not session.platform_user:
-            import logging
-
-            logger = logging.getLogger(__name__)
             logger.warning(
                 "Session %s has missing identity (platform=%r platform_user=%r); "
                 "falling back to default trust",
