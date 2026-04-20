@@ -100,13 +100,41 @@ class EmailAdapter:
         return conn
 
     def _smtp_connect(self) -> smtplib.SMTP:
+        """Open an authenticated SMTP connection.
+
+        Connection type is chosen by ``smtp_port`` (Copilot C-6):
+
+        * Port 465 → ``smtplib.SMTP_SSL`` (implicit TLS). This is the
+          preferred path: TLS is negotiated at connect time, so every
+          byte on the wire is encrypted and there is no cleartext
+          command window where a downgrade attacker could strip TLS.
+        * Any other port (default 587) → plaintext connect + explicit
+          ``STARTTLS`` upgrade. We now assert the response code is in
+          the 2xx/220 family before continuing; previously the return
+          from ``starttls()`` was discarded, so a server refusing the
+          upgrade would silently leave the session cleartext while we
+          proceeded to send credentials and payload.
+        """
         if not self.config.smtp_host:
             raise EmailAdapterError("smtp_host is not configured")
-        smtp = smtplib.SMTP(self.config.smtp_host, self.config.smtp_port)
-        smtp.starttls()
+
         pwd = self.config.resolved_password
         if not self.config.username or not pwd:
             raise EmailAdapterError("username and password are required for SMTP")
+
+        smtp: smtplib.SMTP
+        if self.config.smtp_port == 465:
+            smtp = smtplib.SMTP_SSL(self.config.smtp_host, self.config.smtp_port)
+        else:
+            smtp = smtplib.SMTP(self.config.smtp_host, self.config.smtp_port)
+            code, _ = smtp.starttls()
+            if code != 220:
+                smtp.close()
+                raise EmailAdapterError(
+                    f"STARTTLS refused by {self.config.smtp_host}:"
+                    f"{self.config.smtp_port} (code {code}); "
+                    "will not send credentials over cleartext"
+                )
         smtp.login(self.config.username, pwd)
         return smtp
 
