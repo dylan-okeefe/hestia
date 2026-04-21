@@ -446,12 +446,12 @@ def make_app(cfg: HestiaConfig) -> CliAppContext:
     tool_registry = ToolRegistry(artifact_store)
     tool_registry.register(current_time)
     tool_registry.register(http_get)
-    tool_registry.register(make_list_dir_tool(cfg.storage.allowed_roots))
+    tool_registry.register(make_list_dir_tool(cfg.storage))
     tool_registry.register(terminal)
 
     # Register file tools with path sandboxing
-    tool_registry.register(make_read_file_tool(cfg.storage.allowed_roots))
-    tool_registry.register(make_write_file_tool(cfg.storage.allowed_roots))
+    tool_registry.register(make_read_file_tool(cfg.storage))
+    tool_registry.register(make_write_file_tool(cfg.storage))
 
     # Register memory tools (bound to the memory store instance)
     tool_registry.register(make_search_memory_tool(memory_store))

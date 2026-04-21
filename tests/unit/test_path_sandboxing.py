@@ -2,6 +2,7 @@
 
 import pytest
 
+from hestia.config import StorageConfig
 from hestia.tools.builtin.list_dir import make_list_dir_tool
 
 
@@ -11,7 +12,7 @@ async def test_list_dir_rejects_outside_root(tmp_path):
     allowed_root = tmp_path / "allowed"
     allowed_root.mkdir()
     
-    tool_fn = make_list_dir_tool([str(allowed_root)])
+    tool_fn = make_list_dir_tool(StorageConfig(allowed_roots=[str(allowed_root)]))
     result = await tool_fn("/etc")
     assert "Access denied" in result
 
@@ -26,7 +27,7 @@ async def test_list_dir_allows_inside_root(tmp_path):
     (allowed_root / "file1.txt").write_text("hello")
     (allowed_root / "subdir").mkdir()
     
-    tool_fn = make_list_dir_tool([str(allowed_root)])
+    tool_fn = make_list_dir_tool(StorageConfig(allowed_roots=[str(allowed_root)]))
     result = await tool_fn(str(allowed_root))
     
     assert "Access denied" not in result
@@ -46,7 +47,7 @@ async def test_list_dir_rejects_relative_escape(tmp_path):
     nested = allowed_root / "nested"
     nested.mkdir()
     
-    tool_fn = make_list_dir_tool([str(nested)])
+    tool_fn = make_list_dir_tool(StorageConfig(allowed_roots=[str(nested)]))
     # Try to escape using ../
     result = await tool_fn("../")
     assert "Access denied" in result
@@ -58,7 +59,7 @@ async def test_list_dir_handles_nonexistent_directory(tmp_path):
     allowed_root = tmp_path / "allowed"
     allowed_root.mkdir()
     
-    tool_fn = make_list_dir_tool([str(allowed_root)])
+    tool_fn = make_list_dir_tool(StorageConfig(allowed_roots=[str(allowed_root)]))
     result = await tool_fn(str(allowed_root / "nonexistent"))
     
     assert "is not a directory" in result
@@ -73,7 +74,7 @@ async def test_list_dir_empty_directory(tmp_path):
     empty_dir = allowed_root / "empty"
     empty_dir.mkdir()
     
-    tool_fn = make_list_dir_tool([str(allowed_root)])
+    tool_fn = make_list_dir_tool(StorageConfig(allowed_roots=[str(allowed_root)]))
     result = await tool_fn(str(empty_dir))
     
     assert "(empty)" in result

@@ -2,16 +2,15 @@
 
 **Orchestrator:** Cursor updates this file after each review.
 
-**Last set by:** Cursor — 2026-04-20 (v0.9.0 released; awaiting v0.9.1 prep
-or voice Phase B Discord credentials).
+**Last set by:** Kimi — 2026-04-20 (L48 complete on feature branch)
 
 ---
 
 ## Current task
 
-**Status:** **IDLE — v0.9.0 released.** Awaiting either a v0.9.1 release-prep
-doc (to start Copilot backlog work) or Dylan's Discord credentials (to start
-voice Phase B). No active Kimi loop.
+**Status:** **L48 complete — awaiting Cursor review.**
+Branch `feature/l48-config-consistency` is green (919 passed, 6 skipped, 1 pre-existing failure).
+Do not merge to `develop` until release-prep merge sequence authorizes it.
 
 ---
 

@@ -3,13 +3,15 @@
 from pathlib import Path
 from typing import Any
 
+from hestia.config import StorageConfig
 from hestia.tools.builtin.path_utils import check_path_allowed
 from hestia.tools.capabilities import READ_LOCAL
 from hestia.tools.metadata import tool
 
 
-def make_list_dir_tool(allowed_roots: list[str]) -> Any:
+def make_list_dir_tool(config: StorageConfig, **kw: Any) -> Any:
     """Create a list_dir tool with path sandboxing."""
+    allowed_roots = config.allowed_roots
 
     @tool(
         name="list_dir",

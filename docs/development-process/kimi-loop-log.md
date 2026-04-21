@@ -7,6 +7,29 @@
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
 
+## 2026-04-20 — L48: Config consistency and `from_env` mixin (feature branch)
+
+**Outcome:** `feature/l48-config-consistency` branch green. All config classes now share
+`_ConfigFromEnv` mixin; tool factory signatures normalized; validation hardened.
+Do not merge to `develop` until release-prep sequence.
+
+**Scope authorization:** `docs/development-process/kimi-loops/L48-config-consistency.md`
+
+**Key changes:**
+- `_ConfigFromEnv` mixin with `from_env_dict(prefix, environ)` using dataclass introspection.
+- Type coercion for `str`, `int`, `float`, `bool`, `Path`, `list[str]`, `tuple[int, ...]`, `tuple[str, ...]`.
+- JSON parsing for list/tuple fields; malformed JSON → clear `ValueError`.
+- Canonical `HESTIA_*` prefixes; legacy `DISCORD_*` aliases with `DeprecationWarning`.
+- Applied mixin to all 19 config classes; removed duplicated `MatrixConfig` / `DiscordVoiceConfig` env logic.
+- Tool factories `make_read_file_tool`, `make_write_file_tool`, `make_list_dir_tool` now take `config: StorageConfig, **kw`.
+- Validation: negative `max_tokens` rejected; unparseable cron rejected.
+- `tests/unit/test_config.py` rewritten with mixin happy-path, error, legacy, and validation coverage.
+
+**Test results:** 919 passed, 6 skipped, 1 failed (pre-existing voice pipeline test).
+**Lint:** 0 new mypy/ruff errors in changed files.
+
+---
+
 ## 2026-04-20 — Release: v0.9.0 tagged (Copilot audit response + L40/L41/L42/L45a/b/c close-out)
 
 **Outcome:** `v0.9.0` annotated tag placed on `develop` tip; `main`

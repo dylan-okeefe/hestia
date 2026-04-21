@@ -9,7 +9,11 @@ from hestia.config import (
     DiscordVoiceConfig,
     HestiaConfig,
     IdentityConfig,
+    InferenceConfig,
     MatrixConfig,
+    ReflectionConfig,
+    StyleConfig,
+    _ConfigFromEnv,
     validate_discord_voice_for_run,
     validate_inference_model_name,
 )
@@ -158,7 +162,7 @@ class TestMatrixConfigFromEnv:
             "HESTIA_MATRIX_USER_ID": "@bot:example.com",
             "HESTIA_MATRIX_DEVICE_ID": "device-42",
             "HESTIA_MATRIX_ACCESS_TOKEN": "secret-token",
-            "HESTIA_MATRIX_ALLOWED_ROOMS": "!room1:example.com, #room2:example.com",
+            "HESTIA_MATRIX_ALLOWED_ROOMS": '["!room1:example.com", "#room2:example.com"]',
         }
         cfg = MatrixConfig.from_env(environ=env)
         assert cfg.homeserver == "https://custom.example.com"
@@ -168,8 +172,8 @@ class TestMatrixConfigFromEnv:
         assert cfg.allowed_rooms == ["!room1:example.com", "#room2:example.com"]
 
     def test_from_env_ignores_empty_allowed_rooms(self):
-        """Empty or whitespace-only entries in allowed rooms are ignored."""
-        env = {"HESTIA_MATRIX_ALLOWED_ROOMS": " , , "}
+        """Empty JSON list yields empty allowed rooms."""
+        env = {"HESTIA_MATRIX_ALLOWED_ROOMS": "[]"}
         cfg = MatrixConfig.from_env(environ=env)
         assert cfg.allowed_rooms == []
 
@@ -192,7 +196,7 @@ class TestDiscordVoiceConfigFromEnv:
             "HESTIA_DISCORD_GUILD_ID": "111",
             "HESTIA_DISCORD_VOICE_CHANNEL_ID": "222",
             "HESTIA_DISCORD_TEXT_CHANNEL_ID": "333",
-            "HESTIA_DISCORD_ALLOWED_USER_IDS": "444, 555",
+            "HESTIA_DISCORD_ALLOWED_USER_IDS": "[444, 555]",
             "HESTIA_DISCORD_VOICE_ENABLED": "1",
         }
         cfg = DiscordVoiceConfig.from_env(environ=env)
@@ -209,9 +213,10 @@ class TestDiscordVoiceConfigFromEnv:
             "DISCORD_GUILD": "9",
             "DISCORD_VOICE_CHANNEL": "8",
             "DISCORD_TEXT_CHANNEL": "7",
-            "ALLOWED_DISCORD_USERS": "1,2",
+            "ALLOWED_DISCORD_USERS": "[1, 2]",
         }
-        cfg = DiscordVoiceConfig.from_env(environ=env)
+        with pytest.warns(DeprecationWarning):
+            cfg = DiscordVoiceConfig.from_env(environ=env)
         assert cfg.enabled is False
         assert cfg.guild_id == 9
         assert cfg.voice_channel_id == 8
@@ -237,16 +242,108 @@ class TestDiscordVoiceConfigFromEnv:
         cfg = DiscordVoiceConfig.from_env(environ=env)
         assert cfg.enabled is False
 
-    def test_from_env_invalid_numeric_ids_become_zero_or_none(self):
+    def test_from_env_invalid_numeric_ids_raise(self):
+        """Invalid numeric env values now raise ValueError with a clear message."""
+        env = {"HESTIA_DISCORD_GUILD_ID": "not-a-number"}
+        with pytest.raises(ValueError, match="HESTIA_DISCORD_GUILD_ID"):
+            DiscordVoiceConfig.from_env(environ=env)
+
+    def test_from_env_empty_text_channel_becomes_none(self):
         env = {
-            "HESTIA_DISCORD_GUILD_ID": "not-a-number",
             "HESTIA_DISCORD_VOICE_CHANNEL_ID": "",
-            "HESTIA_DISCORD_TEXT_CHANNEL_ID": "oops",
+            "HESTIA_DISCORD_TEXT_CHANNEL_ID": "",
         }
         cfg = DiscordVoiceConfig.from_env(environ=env)
-        assert cfg.guild_id == 0
-        assert cfg.voice_channel_id == 0
-        assert cfg.text_channel_id is None
+        assert cfg.voice_channel_id == 0  # default
+        assert cfg.text_channel_id is None  # int | None, empty → None
+
+
+class TestConfigFromEnvMixin:
+    """Tests for the shared _ConfigFromEnv mixin."""
+
+    def test_happy_path_str(self):
+        cfg = MatrixConfig.from_env(environ={"HESTIA_MATRIX_HOMESERVER": "https://x.org"})
+        assert cfg.homeserver == "https://x.org"
+
+    def test_happy_path_int(self):
+        cfg = MatrixConfig.from_env(environ={"HESTIA_MATRIX_SYNC_TIMEOUT_MS": "42"})
+        assert cfg.sync_timeout_ms == 42
+
+    def test_happy_path_float(self):
+        cfg = MatrixConfig.from_env(environ={"HESTIA_MATRIX_RATE_LIMIT_EDITS_SECONDS": "2.5"})
+        assert cfg.rate_limit_edits_seconds == 2.5
+
+    def test_happy_path_bool(self):
+        for val in ("1", "true", "yes", "on"):
+            cfg = DiscordVoiceConfig.from_env(environ={"HESTIA_DISCORD_VOICE_ENABLED": val})
+            assert cfg.enabled is True, val
+        for val in ("0", "false", "no", "off"):
+            cfg = DiscordVoiceConfig.from_env(environ={"HESTIA_DISCORD_VOICE_ENABLED": val})
+            assert cfg.enabled is False, val
+
+    def test_happy_path_path(self):
+        cfg = IdentityConfig.from_env(environ={"HESTIA_IDENTITY_SOUL_PATH": "/tmp/SOUL.md"})
+        assert cfg.soul_path == Path("/tmp/SOUL.md")
+
+    def test_happy_path_list_str(self):
+        cfg = MatrixConfig.from_env(
+            environ={"HESTIA_MATRIX_ALLOWED_ROOMS": '["a", "b"]'},
+        )
+        assert cfg.allowed_rooms == ["a", "b"]
+
+    def test_malformed_json_raises(self):
+        env = {"HESTIA_MATRIX_ALLOWED_ROOMS": "not-json"}
+        with pytest.raises(ValueError, match="HESTIA_MATRIX_ALLOWED_ROOMS"):
+            MatrixConfig.from_env(environ=env)
+
+    def test_unknown_fields_ignored(self):
+        """Env vars that do not map to known fields are silently ignored."""
+        cfg = MatrixConfig.from_env(environ={"HESTIA_MATRIX_UNKNOWN_FIELD": "42"})
+        assert cfg.homeserver == "https://matrix.org"  # default unchanged
+
+    def test_legacy_alias_emits_warning(self):
+        env = {"DISCORD_GUILD": "123"}
+        with pytest.warns(DeprecationWarning, match="DISCORD_GUILD"):
+            cfg = DiscordVoiceConfig.from_env(environ=env)
+        assert cfg.guild_id == 123
+
+
+class TestConfigValidation:
+    """Tests for config validation hardening."""
+
+    def test_negative_identity_max_tokens_rejected(self):
+        with pytest.raises(ValueError, match="non-negative"):
+            IdentityConfig(max_tokens=-1)
+
+    def test_negative_inference_max_tokens_rejected(self):
+        with pytest.raises(ValueError, match="non-negative"):
+            InferenceConfig(max_tokens=-1)
+
+    def test_unparseable_style_cron_rejected(self):
+        with pytest.raises(ValueError, match="cron"):
+            StyleConfig(cron="not-a-cron")
+
+    def test_unparseable_reflection_cron_rejected(self):
+        with pytest.raises(ValueError, match="cron"):
+            ReflectionConfig(cron="invalid")
+
+    def test_from_file_rejects_negative_max_tokens(self, tmp_path):
+        config_file = tmp_path / "bad.py"
+        config_file.write_text("""
+from hestia.config import HestiaConfig, InferenceConfig
+config = HestiaConfig(inference=InferenceConfig(max_tokens=-5))
+""")
+        with pytest.raises(ValueError, match="non-negative"):
+            HestiaConfig.from_file(config_file)
+
+    def test_from_file_rejects_bad_cron(self, tmp_path):
+        config_file = tmp_path / "bad.py"
+        config_file.write_text("""
+from hestia.config import HestiaConfig, StyleConfig
+config = HestiaConfig(style=StyleConfig(cron="bad"))
+""")
+        with pytest.raises(ValueError, match="cron"):
+            HestiaConfig.from_file(config_file)
 
 
 class TestValidateDiscordVoiceForRun:

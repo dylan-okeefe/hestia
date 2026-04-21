@@ -6,6 +6,7 @@ from hestia.core.types import Session, SessionState, SessionTemperature
 from hestia.errors import InferenceServerError, InferenceTimeoutError
 from hestia.policy.default import DefaultPolicyEngine
 from hestia.policy.engine import RetryAction
+from hestia.config import StorageConfig
 
 
 @pytest.fixture
@@ -152,7 +153,7 @@ class TestFilterTools:
         reg = ToolRegistry(ArtifactStore(tmp_path / "art"))
         reg.register(current_time)
         reg.register(terminal)
-        reg.register(make_write_file_tool([str(tmp_path)]))
+        reg.register(make_write_file_tool(StorageConfig(allowed_roots=[str(tmp_path)])))
         names = reg.list_names()
         sub = replace(sample_session, platform="subagent")
         filtered = policy.filter_tools(sub, names, reg)
@@ -238,7 +239,7 @@ class TestFilterToolsTrust:
         reg = ToolRegistry(ArtifactStore(tmp_path / "art"))
         reg.register(current_time)
         reg.register(terminal)
-        reg.register(make_write_file_tool([str(tmp_path)]))
+        reg.register(make_write_file_tool(StorageConfig(allowed_roots=[str(tmp_path)])))
         names = reg.list_names()
         sub = replace(sample_session, platform="subagent")
         filtered = policy.filter_tools(sub, names, reg)
@@ -259,7 +260,7 @@ class TestFilterToolsTrust:
         reg = ToolRegistry(ArtifactStore(tmp_path / "art"))
         reg.register(current_time)
         reg.register(terminal)
-        reg.register(make_write_file_tool([str(tmp_path)]))
+        reg.register(make_write_file_tool(StorageConfig(allowed_roots=[str(tmp_path)])))
         names = reg.list_names()
         sub = replace(sample_session, platform="subagent")
         filtered = policy.filter_tools(sub, names, reg)
@@ -281,7 +282,7 @@ class TestFilterToolsTrust:
         reg = ToolRegistry(ArtifactStore(tmp_path / "art"))
         reg.register(current_time)
         reg.register(terminal)
-        reg.register(make_write_file_tool([str(tmp_path)]))
+        reg.register(make_write_file_tool(StorageConfig(allowed_roots=[str(tmp_path)])))
         names = reg.list_names()
         sub = replace(sample_session, platform="subagent")
         filtered = policy.filter_tools(sub, names, reg)

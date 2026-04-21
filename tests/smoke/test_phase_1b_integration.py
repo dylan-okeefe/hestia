@@ -18,6 +18,7 @@ from hestia.tools.builtin import current_time, terminal
 from hestia.tools.builtin.read_artifact import make_read_artifact_tool
 from hestia.tools.builtin.read_file import make_read_file_tool
 from hestia.tools.registry import ToolRegistry
+from hestia.config import StorageConfig
 
 SYSTEM_PROMPT = """You are a helpful personal assistant. You have access to tools for:
 - current_time: Get the current time
@@ -47,7 +48,7 @@ async def test_proto_orchestrator_uses_terminal_tool(tmp_path):
 
     # Register built-in tools
     registry.register(current_time)
-    registry.register(make_read_file_tool(["/tmp"]))
+    registry.register(make_read_file_tool(StorageConfig(allowed_roots=["/tmp"])))
     registry.register(terminal)
     registry.register(make_read_artifact_tool(store))
 
