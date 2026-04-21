@@ -79,12 +79,10 @@ def _ratecv(
 try:
     import discord
     from discord import sinks
-    from discord.ext import commands
     from discord.opus import Encoder as OpusEncoder
 except ImportError:  # pragma: no cover - exercised when extra missing
     discord = None  # type: ignore[assignment]
     sinks = None  # type: ignore[assignment]
-    commands = None  # type: ignore[assignment]
     OpusEncoder = None  # type: ignore[assignment,misc]
 
 # View, Send, Read history, Connect, Speak, Use voice activity (Discord docs bitfield).
@@ -481,7 +479,7 @@ def _transcription_sink_class(
 
 async def run_discord_voice(app: CliAppContext, config: HestiaConfig) -> None:
     """Connect to Discord voice and run the full conversation loop (sub-scopes A–C)."""
-    if discord is None or commands is None or sinks is None:
+    if discord is None or sinks is None:
         click.echo(
             "Error: py-cord is not installed. Install with: uv pip install 'hestia[voice]'",
             err=True,
@@ -505,11 +503,15 @@ async def run_discord_voice(app: CliAppContext, config: HestiaConfig) -> None:
 
     await app.bootstrap_db()
 
+    # Load libopus so py-cord can encode/decode voice audio
+    discord.opus._load_default()
+
     intents = discord.Intents.none()
     intents.guilds = True
     intents.voice_states = True
+    intents.members = True
 
-    bot = commands.Bot(command_prefix="!", intents=intents)
+    bot = discord.Client(intents=intents)
     sessions: dict[int, SpeakerSession] = {}
     voice_client: Any = None
 
@@ -535,7 +537,7 @@ async def run_discord_voice(app: CliAppContext, config: HestiaConfig) -> None:
             await bot.close()
             return
         try:
-            voice_client = await ch.connect()
+            voice_client = await ch.connect(self_deaf=False)
         except Exception:
             logger.exception("Failed to connect to voice channel %s", dv.voice_channel_id)
             await bot.close()
