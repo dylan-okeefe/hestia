@@ -6,7 +6,7 @@
 
 - `future-systems-design.md` — full subsystem spec (skills, failure analyst, security auditor, adversarial eval, phased F1–F6)
 - `hestia-future-systems-synthesis.md` — knowledge separation, five-store model, memory epochs, consolidation-first compression
-- [hestia-design-revised-april-2026.md](../hestia-design-revised-april-2026.md) (original phase map; some items superseded)
+- [hestia-design-revised-april-2026.md](../design/hestia-design-revised-april-2026.md) (original phase map; some items superseded)
 - [HANDOFF_STATE.md](../HANDOFF_STATE.md) (live design debt list)
 
 ---

@@ -45,7 +45,7 @@ hestia matrix   # analogous to hestia telegram
 
 ### 2.2 Dependencies
 
-- **`matrix-nio`** (async, asyncio-first) — aligns with [hestia-design-revised-april-2026.md](../hestia-design-revised-april-2026.md) Phase 4 note.
+- **`matrix-nio`** (async, asyncio-first) — aligns with [hestia-design-revised-april-2026.md](hestia-design-revised-april-2026.md) Phase 4 note.
 - Optional dev dependency: **`matrix-commander`** or **`matrix-nio`**-based test helper scripts (external to package, invoked from pytest or Makefile).
 
 ### 2.3 Configuration
