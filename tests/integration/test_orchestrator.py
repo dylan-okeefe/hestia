@@ -466,3 +466,124 @@ async def test_two_tool_chain_time_and_file_count(
     assert any("JST" in c or "2026" in c for c in tool_contents) or any(
         c.isdigit() for c in tool_contents
     )
+
+
+@pytest.mark.asyncio
+async def test_turn_fetches_message_history_at_most_once(
+    store, artifact_store, fake_policy
+):
+    """M-2: an N-iteration turn hits SessionStore.get_messages exactly once.
+
+    Before M-2 the orchestrator re-fetched history from the store after every
+    tool-call iteration. For a two-tool turn that was 3 reads (initial + 2
+    rebuilds). This test counts calls on a wrapper around SessionStore and
+    asserts the rebuild-time reads are gone.
+    """
+    from hestia.core.types import ChatResponse, Session, SessionState, SessionTemperature, ToolCall
+
+    class _CountingStore:
+        """Transparent SessionStore wrapper that counts get_messages calls."""
+
+        def __init__(self, inner):
+            self._inner = inner
+            self.get_messages_calls = 0
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+        async def get_messages(self, session_id):
+            self.get_messages_calls += 1
+            return await self._inner.get_messages(session_id)
+
+    counting_store = _CountingStore(store)
+
+    registry = ToolRegistry(artifact_store)
+    registry.register(current_time)
+    registry.register(terminal)
+
+    responses = [
+        ChatResponse(
+            content="",
+            reasoning_content=None,
+            tool_calls=[
+                ToolCall(
+                    id="tc1",
+                    name="call_tool",
+                    arguments={"name": "current_time", "arguments": {"timezone": "UTC"}},
+                )
+            ],
+            finish_reason="tool_calls",
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+        ),
+        ChatResponse(
+            content="",
+            reasoning_content=None,
+            tool_calls=[
+                ToolCall(
+                    id="tc2",
+                    name="call_tool",
+                    arguments={
+                        "name": "terminal",
+                        "arguments": {"command": "echo ok"},
+                    },
+                )
+            ],
+            finish_reason="tool_calls",
+            prompt_tokens=15,
+            completion_tokens=5,
+            total_tokens=20,
+        ),
+        ChatResponse(
+            content="Done.",
+            reasoning_content=None,
+            tool_calls=[],
+            finish_reason="stop",
+            prompt_tokens=20,
+            completion_tokens=5,
+            total_tokens=25,
+        ),
+    ]
+    inference = FakeInferenceClient(responses)
+    builder = ContextBuilder(inference, fake_policy, body_factor=1.0)
+
+    session = Session(
+        id="sess_m2",
+        platform="test",
+        platform_user="user",
+        started_at=datetime.now(),
+        last_active_at=datetime.now(),
+        slot_id=None,
+        slot_saved_path=None,
+        state=SessionState.ACTIVE,
+        temperature=SessionTemperature.COLD,
+    )
+
+    async def auto_approve(_tool, _args):
+        return True
+
+    orchestrator = Orchestrator(
+        inference=inference,
+        session_store=counting_store,  # type: ignore[arg-type]
+        context_builder=builder,
+        tool_registry=registry,
+        policy=fake_policy,
+        confirm_callback=auto_approve,
+        max_iterations=10,
+    )
+
+    async def _noop(_text):
+        return None
+
+    turn = await orchestrator.process_turn(
+        session=session, user_message=Message(role="user", content="two tools please"),
+        respond_callback=_noop,
+    )
+
+    assert turn.state == TurnState.DONE
+    assert turn.iterations == 2  # two tool-call iterations
+    assert counting_store.get_messages_calls == 1, (
+        f"Expected exactly one get_messages call per turn (M-2 invariant), "
+        f"got {counting_store.get_messages_calls}"
+    )
