@@ -537,7 +537,7 @@ async def run_discord_voice(app: CliAppContext, config: HestiaConfig) -> None:
             await bot.close()
             return
         try:
-            voice_client = await ch.connect(self_deaf=False)
+            voice_client = await ch.connect()
         except Exception:
             logger.exception("Failed to connect to voice channel %s", dv.voice_channel_id)
             await bot.close()
