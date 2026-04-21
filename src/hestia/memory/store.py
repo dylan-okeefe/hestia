@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
 import sqlalchemy as sa
+from sqlalchemy.exc import DatabaseError, OperationalError
 
 from hestia.core.clock import utcnow
 from hestia.persistence.db import Database
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -51,14 +55,30 @@ class MemoryStore:
             # Clean up any leftover probe table from a prior failed run
             await conn.execute(sa.text("DROP TABLE IF EXISTS _fts5_probe"))
 
-            # Detect FTS5 support
+            # Detect FTS5 support. SQLite raises OperationalError for
+            # "no such module: fts5" and DatabaseError for other engine-level
+            # probe failures. Anything outside that window is genuinely
+            # unexpected and worth surfacing at ERROR — M-1 narrowed this
+            # from a bare `except Exception` that had been hiding real bugs.
             try:
                 await conn.execute(
                     sa.text("CREATE VIRTUAL TABLE _fts5_probe USING fts5(x)")
                 )
                 await conn.execute(sa.text("DROP TABLE _fts5_probe"))
                 self._fts5_available = True
+            except (OperationalError, DatabaseError) as exc:
+                logger.info(
+                    "FTS5 unavailable (%s: %s); falling back to LIKE queries",
+                    type(exc).__name__,
+                    exc,
+                )
+                self._fts5_available = False
             except Exception:
+                logger.exception(
+                    "Unexpected error while probing SQLite FTS5 support — "
+                    "treating as unavailable so startup can proceed, but this "
+                    "should be investigated"
+                )
                 self._fts5_available = False
 
             # Check if an old-schema table exists (no platform/platform_user)
@@ -301,6 +321,14 @@ class MemoryStore:
             if platform_user is None:
                 platform_user = ctx_platform_user
 
+        # Invariant (M-13 / 2026-04-20): every entry appended to
+        # ``where_clauses`` below is a *literal* string fragment chosen by
+        # this function's own control flow — never derived from caller
+        # input. All user-supplied values (`tag`, `platform`,
+        # `platform_user`) flow through ``params`` and are bound by
+        # SQLAlchemy via the ``:name`` placeholders. That is what makes
+        # the f-string assembly below safe despite Copilot H-13's
+        # concern.
         params: dict[str, Any] = {"limit": limit}
         where_clauses: list[str] = []
 
@@ -328,9 +356,9 @@ class MemoryStore:
             where_str = "WHERE " + " AND ".join(where_clauses)
 
         sql = sa.text(
-            f"SELECT id, content, tags, session_id, created_at, platform, platform_user "
+            "SELECT id, content, tags, session_id, created_at, platform, platform_user "
             f"FROM memory {where_str} "
-            f"ORDER BY created_at DESC LIMIT :limit"
+            "ORDER BY created_at DESC LIMIT :limit"
         )
 
         async with self._db.engine.connect() as conn:

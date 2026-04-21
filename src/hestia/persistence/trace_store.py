@@ -48,72 +48,18 @@ class TraceRecord:
 class TraceStore:
     """Store for execution traces.
 
-    Uses raw DDL for table creation (consistent with FailureStore pattern).
+    ``traces`` and ``egress_events`` are defined in
+    :mod:`hestia.persistence.schema` and created by
+    :meth:`hestia.persistence.db.Database.create_tables` (H-10). This class
+    no longer runs duplicate inline DDL; :meth:`create_table` is a no-op kept
+    for backward compatibility with :meth:`CliAppContext.bootstrap_db`.
     """
 
     def __init__(self, db: Database) -> None:
         self._db = db
 
     async def create_table(self) -> None:
-        """Create the traces and egress_events tables if they don't exist."""
-        ddl = """
-        CREATE TABLE IF NOT EXISTS traces (
-            id TEXT PRIMARY KEY,
-            session_id TEXT NOT NULL,
-            turn_id TEXT NOT NULL,
-            started_at TEXT NOT NULL,
-            ended_at TEXT,
-            user_input_summary TEXT NOT NULL,
-            tools_called TEXT NOT NULL,
-            tool_call_count INTEGER NOT NULL,
-            delegated INTEGER NOT NULL DEFAULT 0,
-            outcome TEXT NOT NULL,
-            artifact_handles TEXT NOT NULL,
-            prompt_tokens INTEGER,
-            completion_tokens INTEGER,
-            reasoning_tokens INTEGER,
-            total_duration_ms INTEGER
-        )
-        """
-        idx_session = (
-            "CREATE INDEX IF NOT EXISTS idx_traces_session ON traces(session_id, started_at)"
-        )
-        idx_turn = "CREATE INDEX IF NOT EXISTS idx_traces_turn ON traces(turn_id)"
-        idx_outcome = "CREATE INDEX IF NOT EXISTS idx_traces_outcome ON traces(outcome)"
-        idx_created = "CREATE INDEX IF NOT EXISTS idx_traces_created ON traces(started_at)"
-
-        egress_ddl = """
-        CREATE TABLE IF NOT EXISTS egress_events (
-            id TEXT PRIMARY KEY,
-            session_id TEXT NOT NULL,
-            url TEXT NOT NULL,
-            domain TEXT NOT NULL,
-            status INTEGER,
-            size INTEGER,
-            created_at TEXT NOT NULL
-        )
-        """
-        idx_egress_session = (
-            "CREATE INDEX IF NOT EXISTS idx_egress_session ON egress_events(session_id, created_at)"
-        )
-        idx_egress_domain = (
-            "CREATE INDEX IF NOT EXISTS idx_egress_domain ON egress_events(domain, created_at)"
-        )
-        idx_egress_created = (
-            "CREATE INDEX IF NOT EXISTS idx_egress_created ON egress_events(created_at)"
-        )
-
-        async with self._db.engine.connect() as conn:
-            await conn.execute(sa.text(ddl))
-            await conn.execute(sa.text(idx_session))
-            await conn.execute(sa.text(idx_turn))
-            await conn.execute(sa.text(idx_outcome))
-            await conn.execute(sa.text(idx_created))
-            await conn.execute(sa.text(egress_ddl))
-            await conn.execute(sa.text(idx_egress_session))
-            await conn.execute(sa.text(idx_egress_domain))
-            await conn.execute(sa.text(idx_egress_created))
-            await conn.commit()
+        """No-op: tables are created via ``Database.create_tables()`` from schema."""
 
     async def record(self, trace: TraceRecord) -> None:
         """Persist a trace record."""

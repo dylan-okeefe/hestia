@@ -14,8 +14,9 @@ from hestia.context.builder import ContextBuilder
 from hestia.core.inference import InferenceClient
 from hestia.core.types import Message, Session, SessionState, SessionTemperature
 from hestia.policy.default import DefaultPolicyEngine
-from hestia.tools.builtin import current_time, read_file, terminal
+from hestia.tools.builtin import current_time, terminal
 from hestia.tools.builtin.read_artifact import make_read_artifact_tool
+from hestia.tools.builtin.read_file import make_read_file_tool
 from hestia.tools.registry import ToolRegistry
 
 SYSTEM_PROMPT = """You are a helpful personal assistant. You have access to tools for:
@@ -46,7 +47,7 @@ async def test_proto_orchestrator_uses_terminal_tool(tmp_path):
 
     # Register built-in tools
     registry.register(current_time)
-    registry.register(read_file)
+    registry.register(make_read_file_tool(["/tmp"]))
     registry.register(terminal)
     registry.register(make_read_artifact_tool(store))
 

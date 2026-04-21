@@ -1,15 +1,19 @@
 """Default policy engine with conservative decisions."""
 
+import logging
 from typing import TYPE_CHECKING
 
 from hestia.config import PolicyConfig, TrustConfig
 from hestia.core.types import Session
 from hestia.errors import InferenceServerError, InferenceTimeoutError
+from hestia.policy.constants import CONTEXT_PRESSURE_THRESHOLD, PLATFORM_SUBAGENT
 from hestia.policy.engine import (
     PolicyEngine,
     RetryAction,
     RetryDecision,
 )
+
+logger = logging.getLogger(__name__)
 from hestia.runtime_context import scheduler_tick_active
 
 if TYPE_CHECKING:
@@ -99,8 +103,8 @@ class DefaultPolicyEngine(PolicyEngine):
         Returns:
             True if delegation is recommended
         """
-        # Never recurse: subagent runs use platform "subagent"
-        if session.platform == "subagent":
+        # Never recurse: subagent runs use reserved platform name.
+        if session.platform == PLATFORM_SUBAGENT:
             return False
 
         # Explicit user request for delegation
@@ -130,8 +134,8 @@ class DefaultPolicyEngine(PolicyEngine):
         return projected_tool_calls > 3
 
     def should_compress(self, session: Session, tokens_used: int, tokens_budget: int) -> bool:
-        """Compress when we're over 85% of budget."""
-        return tokens_used > int(tokens_budget * 0.85)
+        """Compress when we're over the context-pressure fraction of budget."""
+        return tokens_used > int(tokens_budget * CONTEXT_PRESSURE_THRESHOLD)
 
     def retry_after_error(self, error: Exception, attempt: int) -> RetryDecision:
         """Retry transient inference errors once, then fail.
@@ -166,7 +170,7 @@ class DefaultPolicyEngine(PolicyEngine):
 
         Reserve 2048 tokens for model response, use 85% of remaining for input.
         """
-        return int(self.ctx_window * 0.85) - 2048
+        return int(self.ctx_window * CONTEXT_PRESSURE_THRESHOLD) - 2048
 
     def tool_result_max_chars(self, tool_name: str) -> int:
         """Default 8000 chars for tool results.
@@ -183,9 +187,6 @@ class DefaultPolicyEngine(PolicyEngine):
         """
         key = f"{session.platform}:{session.platform_user}"
         if not session.platform or not session.platform_user:
-            import logging
-
-            logger = logging.getLogger(__name__)
             logger.warning(
                 "Session %s has missing identity (platform=%r platform_user=%r); "
                 "falling back to default trust",
@@ -229,7 +230,7 @@ class DefaultPolicyEngine(PolicyEngine):
 
         trust = self._trust_for(session)
 
-        if session.platform == "subagent":
+        if session.platform == PLATFORM_SUBAGENT:
             blocked: set[str] = set()
             if not trust.subagent_shell_exec:
                 blocked.add(SHELL_EXEC)
@@ -265,6 +266,6 @@ class DefaultPolicyEngine(PolicyEngine):
     def reasoning_budget(self, session: Session, iteration: int) -> int:
         """Use the configured default. Subagents get a smaller budget."""
         base = self._default_reasoning_budget
-        if session is not None and session.platform == "subagent":
+        if session is not None and session.platform == PLATFORM_SUBAGENT:
             return min(base, 1024)  # subagents don't need deep reasoning
         return base

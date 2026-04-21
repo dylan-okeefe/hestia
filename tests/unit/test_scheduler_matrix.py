@@ -40,6 +40,7 @@ class FakeOrchestrator:
         session: Session,
         user_message: Message,
         respond_callback: Any,
+        **kwargs: Any,
     ) -> Turn:
         self.calls.append(
             {
@@ -260,10 +261,12 @@ class TestSchedulerPolicy:
         recorded_flag = None
 
         class ObservingOrchestrator(FakeOrchestrator):
-            async def process_turn(self, session, user_message, respond_callback):
+            async def process_turn(self, session, user_message, respond_callback, **kwargs):
                 nonlocal recorded_flag
                 recorded_flag = scheduler_tick_active.get()
-                return await super().process_turn(session, user_message, respond_callback)
+                return await super().process_turn(
+                    session, user_message, respond_callback, **kwargs
+                )
 
         fire_at = datetime.now(UTC) - timedelta(minutes=5)
         task = await scheduler_store.create_task(

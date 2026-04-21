@@ -12,6 +12,7 @@ import os
 import sqlite3
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
@@ -44,6 +45,7 @@ async def run_checks(app: CliAppContext) -> list[CheckResult]:
         _check_dependencies_in_sync,
         _check_config_file_loads,
         _check_config_schema,
+        _check_allowed_roots_cwd,
         _check_sqlite_dbs_readable,
         _check_llamacpp_reachable,
         _check_platform_prereqs,
@@ -177,6 +179,25 @@ async def _check_config_schema(app: CliAppContext) -> CheckResult:
         )
     # When schema_version is introduced, compare here.
     return CheckResult("config_schema", True, f"schema_version={version}")
+
+
+async def _check_allowed_roots_cwd(app: CliAppContext) -> CheckResult:
+    """Warn when ``allowed_roots`` is ``[\".]`` under a broad CWD (Copilot M-10)."""
+    roots = app.config.storage.allowed_roots
+    if "." not in roots:
+        return CheckResult("allowed_roots_cwd", True, "")
+    cwd = Path.cwd().resolve()
+    home = Path.home().resolve()
+    root = Path("/").resolve()
+    if cwd in (home, root):
+        return CheckResult(
+            "allowed_roots_cwd",
+            True,
+            f"Note: allowed_roots contains '.' while process CWD is {cwd}. "
+            "With relative roots this often maps to a very large directory under "
+            "systemd --user. Prefer explicit project paths in storage.allowed_roots.",
+        )
+    return CheckResult("allowed_roots_cwd", True, "")
 
 
 async def _check_sqlite_dbs_readable(app: CliAppContext) -> CheckResult:
