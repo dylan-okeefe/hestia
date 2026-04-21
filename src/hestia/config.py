@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import ClassVar, Literal
+from typing import Any, ClassVar, Literal
 
 
 class EmailConfigError(ValueError):
@@ -475,7 +475,7 @@ class HestiaConfig:
         validate_inference_model_name(config.inference.model_name)
         return config
 
-    _PRESET_ENABLE_CACHE: ClassVar[dict[tuple, bool]] = {}
+    _PRESET_ENABLE_CACHE: ClassVar[dict[tuple[Any, ...], bool]] = {}
 
     @classmethod
     def for_trust(cls, trust: TrustConfig) -> HestiaConfig:
