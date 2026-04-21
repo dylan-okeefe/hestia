@@ -45,6 +45,14 @@ class ReflectionScheduler:
         )
         self.failure_count += 1
 
+    def wire_failure_handler(self, runner: ReflectionRunner) -> None:
+        """Attach this scheduler's failure recorder to the given runner.
+
+        Keeps ``_record_failure`` private while allowing ``CliAppContext``
+        to connect the runner without reaching into our internals.
+        """
+        runner.set_failure_handler(self._record_failure)
+
     def status(self) -> dict[str, Any]:
         return {
             "ok": self.failure_count == 0,

@@ -33,6 +33,7 @@ class ToolRegistry:
 
     def __init__(self, artifact_store: ArtifactStore):
         """Initialize with an artifact store for large results."""
+        # Insertion-ordered (Python 3.7+); tests rely on registration order for list_names().
         self._tools: dict[str, ToolMetadata] = {}
         self._artifact_store = artifact_store
 

@@ -6,6 +6,7 @@ import json
 import logging
 import uuid
 from datetime import timedelta
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from hestia.core.clock import utcnow
@@ -46,6 +47,12 @@ class ReflectionRunner:
         self._trace_store = trace_store
         self._proposal_store = proposal_store
         self._on_failure = on_failure
+
+    def set_failure_handler(
+        self, handler: Callable[[str, Exception], None] | None
+    ) -> None:
+        """Attach the scheduler's failure recorder (replaces ad-hoc ``_on_failure`` writes)."""
+        self._on_failure = handler
 
     def _record_failure(self, stage: str, exc: Exception) -> None:
         if self._on_failure is not None:

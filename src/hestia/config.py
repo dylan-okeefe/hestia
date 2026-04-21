@@ -2,15 +2,33 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import Any, ClassVar, Literal
 
 
 class EmailConfigError(ValueError):
     """Raised when email configuration is invalid."""
 
     pass
+
+
+def validate_inference_model_name(model_name: str) -> None:
+    """Reject the reserved ``dummy`` model name unless explicitly allowed (H-5).
+
+    The literal ``dummy`` is used only in tests behind ``HESTIA_ALLOW_DUMMY_MODEL=1``.
+    """
+    stripped = model_name.strip()
+    if stripped.lower() != "dummy":
+        return
+    if os.environ.get("HESTIA_ALLOW_DUMMY_MODEL") == "1":
+        return
+    raise ValueError(
+        'inference.model_name "dummy" is reserved for automated tests only. '
+        "Configure a real llama.cpp model filename, or set environment variable "
+        "HESTIA_ALLOW_DUMMY_MODEL=1 if you intentionally use a dummy model."
+    )
 
 # Default location for operator-authored personality (compiled identity; see ADR-022).
 DEFAULT_SOUL_MD_PATH = Path("SOUL.md")
@@ -181,35 +199,46 @@ class TrustConfig:
     # Active trust preset name (paranoid, household, developer, etc.)
     preset: str | None = None
 
+    _PRESET_CACHE: ClassVar[dict[str, TrustConfig]] = {}
+
     @classmethod
     def paranoid(cls) -> TrustConfig:
         """Strictest posture. Current default. Auto-approves nothing; scheduler
         and subagents cannot shell or write."""
-        return cls()
+        preset = "paranoid"
+        if preset not in cls._PRESET_CACHE:
+            cls._PRESET_CACHE[preset] = cls()
+        return cls._PRESET_CACHE[preset]
 
     @classmethod
     def household(cls) -> TrustConfig:
         """Recommended posture for single-operator personal deployments.
         Auto-approves terminal and write_file on headless platforms;
         scheduler and subagents can shell and write."""
-        return cls(
-            auto_approve_tools=["terminal", "write_file"],
-            scheduler_shell_exec=True,
-            subagent_shell_exec=True,
-            subagent_write_local=True,
-        )
+        preset = "household"
+        if preset not in cls._PRESET_CACHE:
+            cls._PRESET_CACHE[preset] = cls(
+                auto_approve_tools=["terminal", "write_file"],
+                scheduler_shell_exec=True,
+                subagent_shell_exec=True,
+                subagent_write_local=True,
+            )
+        return cls._PRESET_CACHE[preset]
 
     @classmethod
     def developer(cls) -> TrustConfig:
         """Most permissive posture. Auto-approves everything;
         all capabilities available everywhere. Intended for development/testing
         only — do not use in a deployment exposed to other users."""
-        return cls(
-            auto_approve_tools=["*"],  # wildcard — matches any tool name
-            scheduler_shell_exec=True,
-            subagent_shell_exec=True,
-            subagent_write_local=True,
-        )
+        preset = "developer"
+        if preset not in cls._PRESET_CACHE:
+            cls._PRESET_CACHE[preset] = cls(
+                auto_approve_tools=["*"],  # wildcard — matches any tool name
+                scheduler_shell_exec=True,
+                subagent_shell_exec=True,
+                subagent_write_local=True,
+            )
+        return cls._PRESET_CACHE[preset]
 
     @classmethod
     def prompt_on_mobile(cls) -> TrustConfig:
@@ -229,12 +258,15 @@ class TrustConfig:
         explicit ✅/❌ prompt on your phone for ``terminal``, ``write_file``,
         and ``email_send``.
         """
-        return cls(
-            auto_approve_tools=[],
-            scheduler_shell_exec=True,
-            subagent_shell_exec=True,
-            subagent_write_local=True,
-        )
+        preset = "prompt_on_mobile"
+        if preset not in cls._PRESET_CACHE:
+            cls._PRESET_CACHE[preset] = cls(
+                auto_approve_tools=[],
+                scheduler_shell_exec=True,
+                subagent_shell_exec=True,
+                subagent_write_local=True,
+            )
+        return cls._PRESET_CACHE[preset]
 
 
 @dataclass
@@ -419,6 +451,10 @@ class HestiaConfig:
         """Load config from a Python file.
 
         The file must define a `config` variable of type HestiaConfig.
+
+        .. note::
+            The loaded module is executed with ``exec_module`` — treat config
+            files as trusted operator-authored code. See ``SECURITY.md``.
         """
         import importlib.util
 
@@ -436,7 +472,10 @@ class HestiaConfig:
                 f"Config file must define a `config` variable of type HestiaConfig, "
                 f"got {type(config).__name__}"
             )
+        validate_inference_model_name(config.inference.model_name)
         return config
+
+    _PRESET_ENABLE_CACHE: ClassVar[dict[tuple[Any, ...], bool]] = {}
 
     @classmethod
     def for_trust(cls, trust: TrustConfig) -> HestiaConfig:
@@ -450,7 +489,21 @@ class HestiaConfig:
 
             config = HestiaConfig.for_trust(TrustConfig.household())
         """
-        enable = trust not in (TrustConfig.paranoid(), TrustConfig())
+        key = (
+            tuple(trust.auto_approve_tools),
+            trust.scheduler_shell_exec,
+            trust.subagent_shell_exec,
+            trust.subagent_write_local,
+            trust.subagent_email_send,
+            trust.scheduler_email_send,
+            trust.preset,
+        )
+        if key not in cls._PRESET_ENABLE_CACHE:
+            cls._PRESET_ENABLE_CACHE[key] = trust not in (
+                TrustConfig.paranoid(),
+                TrustConfig(),
+            )
+        enable = cls._PRESET_ENABLE_CACHE[key]
         return cls(
             trust=trust,
             handoff=HandoffConfig(enabled=enable),

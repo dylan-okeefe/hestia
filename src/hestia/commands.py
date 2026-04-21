@@ -23,6 +23,7 @@ from hestia.app import (
 from hestia.core.clock import utcnow
 from hestia.core.types import Message, ScheduledTask, Session, SessionState, SessionTemperature
 from hestia.errors import HestiaError
+from hestia.policy.constants import CONTEXT_PRESSURE_THRESHOLD
 from hestia.policy.default import (
     DEFAULT_DELEGATION_KEYWORDS,
     DEFAULT_RESEARCH_KEYWORDS,
@@ -48,7 +49,7 @@ async def _cmd_chat(app: CliAppContext) -> None:
             "inference.model_name is required — set it to your llama.cpp model filename "
             "(e.g. 'my-model-Q4_K_M.gguf')"
         )
-    app.confirm_callback = CliConfirmHandler()
+    app.set_confirm_callback(CliConfirmHandler())
     orchestrator = app.make_orchestrator()
 
     # Recover stale turns from previous crash
@@ -104,7 +105,7 @@ async def _cmd_ask(app: CliAppContext, message: str) -> None:
             "inference.model_name is required — set it to your llama.cpp model filename "
             "(e.g. 'my-model-Q4_K_M.gguf')"
         )
-    app.confirm_callback = CliConfirmHandler()
+    app.set_confirm_callback(CliConfirmHandler())
     orchestrator = app.make_orchestrator()
 
     recovered = await orchestrator.recover_stale_turns()
@@ -390,6 +391,7 @@ async def _cmd_schedule_run(app: CliAppContext, task_id: str) -> None:
         session_store=app.session_store,
         orchestrator=orchestrator,
         response_callback=response_callback,
+        system_prompt=app.config.system_prompt,
     )
     try:
         await scheduler.run_now(task_id)
@@ -420,7 +422,7 @@ def _cmd_schedule_daemon(ctx: click.Context, tick_interval: float | None) -> Non
     """Run the scheduler daemon (blocks until Ctrl-C)."""
     app: CliAppContext = ctx.obj
     # Headless daemon — no confirmation callback
-    app.confirm_callback = None
+    app.set_confirm_callback(None)
     cfg = app.config
     tick = tick_interval if tick_interval is not None else cfg.scheduler.tick_interval_seconds
 
@@ -437,6 +439,7 @@ def _cmd_schedule_daemon(ctx: click.Context, tick_interval: float | None) -> Non
             orchestrator=orchestrator,
             response_callback=response_callback,
             tick_interval_seconds=tick,
+            system_prompt=app.config.system_prompt,
         )
         await scheduler.start()
         click.echo(f"Scheduler daemon started (tick={tick}s). Press Ctrl-C to stop.")
@@ -768,7 +771,8 @@ async def _cmd_policy_show(app: CliAppContext) -> None:
         temperature=SessionTemperature.HOT,
     )
     click.echo(f"  Turn token budget: {policy_engine.turn_token_budget(synthetic_session)} tokens")
-    click.echo("  Compression threshold: 85% of budget")
+    _pct = int(CONTEXT_PRESSURE_THRESHOLD * 100)
+    click.echo(f"  Compression threshold: {_pct}% of budget")
     click.echo("")
 
     # Trust profile

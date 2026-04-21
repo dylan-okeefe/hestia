@@ -222,6 +222,10 @@ class Orchestrator:
                 # Persist the new user message (now it's in the store for future turns)
                 await self._store.append_message(session.id, user_message)
 
+                # In-memory history for continuation builds (M-2): avoid refetching
+                # the full message list from the store on every tool iteration.
+                running_history: list[Message] = history + [user_message]
+
                 # Session-start hook: inject pending proposals note on first turn
                 effective_system_prompt = system_prompt
                 if (
@@ -350,12 +354,12 @@ class Orchestrator:
                         # Transition back to building context for next model call
                         await self._transition(turn, TurnState.BUILDING_CONTEXT)
 
-                        # Rebuild context with new history
-                        history = await self._store.get_messages(session.id)
+                        running_history.append(assistant_msg)
+                        running_history.extend(tool_results)
                         self._builder.set_style_prefix(style_prefix)
                         build_result = await self._builder.build(
                             session=session,
-                            history=history,
+                            history=running_history,
                             system_prompt=system_prompt,
                             tools=tools,
                             new_user_message=None,  # Continuing turn, no new user message
@@ -548,6 +552,7 @@ class Orchestrator:
                         # Outermost boundary — intentionally broad to avoid masking original error
                         logger.error("Failed to record trace: %s", trace_err)
 
+                turn.artifact_handles = list(artifact_handles)
             return turn
 
         finally:
