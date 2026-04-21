@@ -11,6 +11,7 @@ from hestia.config import (
     IdentityConfig,
     MatrixConfig,
     validate_discord_voice_for_run,
+    validate_inference_model_name,
 )
 
 
@@ -68,6 +69,21 @@ class TestDefaultConfig:
         assert cfg.telegram.rate_limit_edits_seconds == 1.5
         assert cfg.telegram.http_version == "1.1"
         assert cfg.telegram.allowed_users == []
+
+
+class TestInferenceModelValidation:
+    """H-5: reserved ``dummy`` model name."""
+
+    def test_dummy_requires_allow_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("HESTIA_ALLOW_DUMMY_MODEL", raising=False)
+        with pytest.raises(ValueError, match="dummy"):
+            validate_inference_model_name("dummy")
+        monkeypatch.setenv("HESTIA_ALLOW_DUMMY_MODEL", "1")
+        validate_inference_model_name("dummy")
+
+    def test_real_model_names_always_ok(self) -> None:
+        validate_inference_model_name("my-model-Q4_K_M.gguf")
+        validate_inference_model_name("")
 
 
 class TestFromFile:

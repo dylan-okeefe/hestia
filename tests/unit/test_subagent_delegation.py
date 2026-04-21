@@ -11,6 +11,7 @@ from hestia.orchestrator import Orchestrator, TurnState
 from hestia.orchestrator.types import Turn
 from hestia.persistence.db import Database
 from hestia.persistence.sessions import SessionStore
+from hestia.policy.constants import PLATFORM_SUBAGENT
 from hestia.policy.default import DefaultPolicyEngine
 from hestia.tools.builtin.current_time import current_time
 from hestia.tools.builtin.delegate_task import make_delegate_task_tool
@@ -28,7 +29,7 @@ class AlwaysDelegatePolicy(DefaultPolicyEngine):
         tool_chain_length: int = 0,
         projected_tool_calls: int = 0,
     ) -> bool:
-        return session.platform != "subagent"
+        return session.platform != PLATFORM_SUBAGENT
 
 
 @pytest.fixture
@@ -59,6 +60,7 @@ async def test_delegate_task_invokes_factory_orchestrator(store, tmp_path):
         final_response="Subagent finished",
         error=None,
         transitions=[],
+        artifact_handles=["artifact-handle-from-subagent"],
     )
 
     mock_orch = MagicMock()
@@ -72,6 +74,7 @@ async def test_delegate_task_invokes_factory_orchestrator(store, tmp_path):
 
     assert "complete" in text.lower()
     assert "Subagent finished" in text
+    assert "artifact-handle-from-subagent" in text
     assert mock_orch.process_turn.await_count == 1
     sub_sess = mock_orch.process_turn.await_args.kwargs["session"]
     archived = await store.get_session(sub_sess.id)

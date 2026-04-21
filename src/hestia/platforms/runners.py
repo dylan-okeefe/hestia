@@ -110,7 +110,7 @@ async def run_platform(
     await app.bootstrap_db()
 
     # Build orchestrator with platform-specific confirm callback
-    app.confirm_callback = confirm_callback
+    app.set_confirm_callback(confirm_callback)
     orchestrator = app.make_orchestrator()
 
     # Inject voice deps into Telegram adapter when voice messages are enabled
@@ -175,6 +175,7 @@ async def run_platform(
             orchestrator=orchestrator,
             response_callback=scheduler_response_callback,
             tick_interval_seconds=config.scheduler.tick_interval_seconds,
+            system_prompt=config.system_prompt,
         )
         await scheduler.start()
 

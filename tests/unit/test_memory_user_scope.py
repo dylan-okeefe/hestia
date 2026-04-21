@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import pytest
+import sqlalchemy as sa
 
-from hestia.memory.store import Memory, MemoryStore
+from hestia.memory.store import MemoryStore
 from hestia.persistence.db import Database
 from hestia.runtime_context import current_platform, current_platform_user
 from hestia.tools.builtin.memory_tools import (
@@ -248,8 +249,12 @@ class TestMemoryLikeFallback:
     @pytest.mark.asyncio
     async def test_like_fallback_list_by_tag(self, like_store):
         """Tag filtering works via LIKE when FTS5 is unavailable."""
-        await like_store.save(content="Work task", tags=["work"], platform="cli", platform_user="test")
-        await like_store.save(content="Personal task", tags=["personal"], platform="cli", platform_user="test")
+        await like_store.save(
+            content="Work task", tags=["work"], platform="cli", platform_user="test"
+        )
+        await like_store.save(
+            content="Personal task", tags=["personal"], platform="cli", platform_user="test"
+        )
 
         results = await like_store.list_memories(tag="work", platform="cli", platform_user="test")
         assert len(results) == 1
@@ -258,8 +263,12 @@ class TestMemoryLikeFallback:
     @pytest.mark.asyncio
     async def test_like_fallback_no_false_tag_match(self, like_store):
         """LIKE fallback does not match partial tag tokens."""
-        await like_store.save(content="Documentation", tags=["docs"], platform="cli", platform_user="test")
-        await like_store.save(content="Doctor appointment", tags=["doctor"], platform="cli", platform_user="test")
+        await like_store.save(
+            content="Documentation", tags=["docs"], platform="cli", platform_user="test"
+        )
+        await like_store.save(
+            content="Doctor appointment", tags=["doctor"], platform="cli", platform_user="test"
+        )
 
         results = await like_store.list_memories(tag="doc", platform="cli", platform_user="test")
         assert len(results) == 0
@@ -267,6 +276,50 @@ class TestMemoryLikeFallback:
         results = await like_store.list_memories(tag="docs", platform="cli", platform_user="test")
         assert len(results) == 1
         assert "Documentation" in results[0].content
+
+    @pytest.mark.asyncio
+    async def test_like_fallback_matches_fts5_result_set_for_trivial_query(
+        self, like_store, tmp_path
+    ):
+        """T-8: the FTS5 and LIKE paths return the same IDs for a trivial search.
+
+        Seeded identically on both stores, a single-token query must produce
+        the same set of memory IDs regardless of which path is taken.
+        """
+        db2 = Database("sqlite+aiosqlite:///:memory:")
+        await db2.connect()
+        await db2.create_tables()
+        fts_store = MemoryStore(db2)
+        await fts_store.create_table()
+        try:
+            seed = [
+                ("Python programming tutorial", ["python", "docs"]),
+                ("Python snake in a terrarium", ["zoo"]),
+                ("Rust memory model notes", ["rust"]),
+                ("Bash scripting primer", ["bash"]),
+            ]
+            for content, tags in seed:
+                await like_store.save(
+                    content=content, tags=tags, platform="cli", platform_user="t"
+                )
+                await fts_store.save(
+                    content=content, tags=tags, platform="cli", platform_user="t"
+                )
+
+            like_hits = await like_store.search(
+                "Python", platform="cli", platform_user="t"
+            )
+            fts_hits = await fts_store.search(
+                "Python", platform="cli", platform_user="t"
+            )
+
+            like_contents = sorted(m.content for m in like_hits)
+            fts_contents = sorted(m.content for m in fts_hits)
+
+            assert like_contents == fts_contents
+            assert len(like_contents) == 2
+        finally:
+            await db2.close()
 
 
 class TestMemoryFTS5Migration:
@@ -307,5 +360,3 @@ class TestMemoryFTS5Migration:
 
         await db.close()
 
-
-import sqlalchemy as sa

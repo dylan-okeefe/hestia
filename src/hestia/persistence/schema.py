@@ -141,6 +141,22 @@ traces = sa.Table(
     sa.Index("idx_traces_created", "started_at"),
 )
 
+egress_events = sa.Table(
+    "egress_events",
+    metadata,
+    sa.Column("id", sa.String, primary_key=True),
+    sa.Column("session_id", sa.String, nullable=False),
+    sa.Column("url", sa.Text, nullable=False),
+    sa.Column("domain", sa.String, nullable=False),
+    sa.Column("status", sa.Integer, nullable=True),
+    sa.Column("size", sa.Integer, nullable=True),
+    # ISO-8601 UTC strings from ``utcnow().isoformat()`` (matches TraceStore).
+    sa.Column("created_at", sa.String, nullable=False),
+    sa.Index("idx_egress_session", "session_id", "created_at"),
+    sa.Index("idx_egress_domain", "domain", "created_at"),
+    sa.Index("idx_egress_created", "created_at"),
+)
+
 skills = sa.Table(
     "skills",
     metadata,

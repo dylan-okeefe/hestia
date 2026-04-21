@@ -26,6 +26,7 @@ when Cursor says the queue (or a milestone) is green.
 2. `docs/DECISIONS.md` — All Architecture Decision Records
 3. `docs/development-process/prompts/KIMI_CURRENT.md` — Current loop pointer (when active)
 4. `docs/development-process/kimi-phase-queue.md` — Top-level loop ordering
+5. `docs/development-process/v0.9.1-progress.md` — Live tracker of completed vs remaining work for the active release train
 
 ## Your role
 
@@ -133,6 +134,22 @@ into `develop` as part of the release sequence.
    inside the actual `v0.8.0` (CHANGELOG amended), and proceed. After the
    tag is **pushed**, the same mistake would force a `v0.8.1` patch release
    to ship the post-tag merges.
+
+### Pre-release integration branches (release/vX.Y.Z)
+
+To avoid feature-branch sprawl, completed loops for an upcoming release are merged into a **`release/vX.Y.Z` branch** before that branch merges to `develop`.
+
+**Flow:**
+1. Feature branches complete and get reviewed independently.
+2. They merge into `release/vX.Y.Z` in dependency order.
+3. When the release is ready, the release-prep doc names the release branch.
+4. `release/vX.Y.Z` merges to `develop` as a single unit.
+5. Tag, main fast-forward, push.
+
+**Why:** This collapses N feature branches into one merge to `develop`, keeps the develop history clean, and gives a single integration point for final QA.
+
+**Current release branch:** `release/v0.9.1`
+**Progress tracker:** `docs/development-process/v0.9.1-progress.md`
 
 ### `.kimi-done` — mandatory wait (no human “Kimi finished” ping)
 

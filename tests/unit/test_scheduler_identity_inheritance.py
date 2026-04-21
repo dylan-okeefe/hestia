@@ -1,6 +1,7 @@
 """Tests for scheduler preserving creator identity through runtime context."""
 
 from datetime import datetime, timezone
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -50,6 +51,7 @@ class IdentityCapturingOrchestrator:
         session: Session,
         user_message: Message,
         respond_callback: AsyncMock,
+        **kwargs: Any,
     ) -> Turn:
         # Simulate what the real Orchestrator does: set ContextVars from session
         platform_token = current_platform.set(session.platform)

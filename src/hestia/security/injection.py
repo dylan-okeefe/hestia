@@ -42,19 +42,34 @@ class InjectionScanner:
         self.entropy_threshold = entropy_threshold
         self.skip_filters_for_structured = skip_filters_for_structured
 
-        # Curated pattern list — ordered from most specific to least specific.
-        self._patterns: list[tuple[re.Pattern[str], str]] = [
+        # Curated pattern list — ordered from most specific to least
+        # specific. Each entry is ``(compiled_regex, reason, min_length)``:
+        # ``min_length`` lets low-signal patterns (role-prefix in
+        # particular) opt out of short-string false positives. M-4
+        # flagged ``system:`` inside YAML / JSON strings and one-line
+        # quoted config blocks as triggering the scanner purely because
+        # of the word "system" appearing at the start of a line.
+        self._patterns: list[tuple[re.Pattern[str], str, int]] = [
             (
                 re.compile(r"ignore\s+(all\s+)?(previous|prior)\s+instructions", re.IGNORECASE),
                 "ignore-instructions",
+                0,
             ),
             (
                 re.compile(r"you\s+are\s+now\s+(a|an|the)\b", re.IGNORECASE),
                 "role-override",
+                0,
             ),
             (
-                re.compile(r"^(system|assistant)\s*:", re.IGNORECASE | re.MULTILINE),
+                # Require the role label to be either at absolute
+                # start-of-string or immediately after a newline, and
+                # gate on a minimum content length (40 chars). Short
+                # strings that merely mention "system:" in config /
+                # YAML / plain prose don't carry enough signal to
+                # justify a scanner hit.
+                re.compile(r"(?:\A|(?<=\n))(system|assistant)\s*:", re.IGNORECASE),
                 "role-prefix",
+                40,
             ),
             (
                 re.compile(
@@ -62,6 +77,7 @@ class InjectionScanner:
                     re.IGNORECASE,
                 ),
                 "chat-template-token",
+                0,
             ),
         ]
 
@@ -71,7 +87,10 @@ class InjectionScanner:
             return InjectionScanResult(triggered=False, reasons=[])
 
         reasons: list[str] = []
-        for pattern, reason in self._patterns:
+        content_len = len(content)
+        for pattern, reason, min_length in self._patterns:
+            if content_len < min_length:
+                continue
             if pattern.search(content):
                 reasons.append(reason)
 

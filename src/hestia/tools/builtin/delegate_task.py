@@ -14,6 +14,7 @@ from hestia.persistence.sessions import SessionStore
 
 if TYPE_CHECKING:
     from hestia.orchestrator.types import Turn
+from hestia.policy.constants import PLATFORM_SUBAGENT
 from hestia.tools.capabilities import ORCHESTRATION
 from hestia.tools.metadata import tool
 
@@ -131,7 +132,7 @@ def make_delegate_task_tool(
 
         # Create a new session for the subagent
         subagent_session = await session_store.create_session(
-            platform="subagent",
+            platform=PLATFORM_SUBAGENT,
             platform_user=f"subagent_{uuid.uuid4().hex[:8]}",
         )
 
@@ -151,10 +152,12 @@ def make_delegate_task_tool(
             # Create user message for the subagent
             user_message = Message(role="user", content=prompt, created_at=utcnow())
 
-            # Get orchestrator via factory
+            # Get orchestrator via factory. Each delegation gets a fresh
+            # orchestrator (and typically its own SlotManager) for isolation;
+            # VRAM is not shared with the parent turn (Copilot M-11).
             orchestrator = orchestrator_factory()
 
-            # Track results
+            # Track results (populated from the delegated turn's artifact handles)
             artifact_refs: list[str] = []
 
             # Run the subagent with timeout (respond_callback must be async — engine awaits it)
@@ -175,6 +178,7 @@ def make_delegate_task_tool(
                 turn = await asyncio.wait_for(run_subagent(), timeout=timeout)
 
                 duration = (utcnow() - start_time).total_seconds()
+                artifact_refs = list(turn.artifact_handles)
 
                 # Determine status from turn (use string comparison to avoid circular import)
                 state_value = getattr(turn.state, "value", str(turn.state))
