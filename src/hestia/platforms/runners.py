@@ -220,6 +220,13 @@ async def run_telegram(app: Any, config: HestiaConfig) -> None:
     )
 
 
+async def run_discord_voice(app: Any, config: HestiaConfig) -> None:
+    """Run Hestia Discord voice listener (Phase B sub-scope A)."""
+    from hestia.platforms.discord_voice_runner import run_discord_voice as _run
+
+    await _run(app, config)
+
+
 async def run_matrix(app: Any, config: HestiaConfig) -> None:
     """Run Hestia as a Matrix bot (blocks until Ctrl-C)."""
     if not config.inference.model_name:
