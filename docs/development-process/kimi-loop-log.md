@@ -8,6 +8,7 @@
 
 
 
+
 ## 2026-04-21 — L52: ContextBuilder decomposition
 
 **Outcome:** `ContextBuilder.build` thinned from ~215 lines to 78 lines.
@@ -157,6 +158,30 @@ circular imports (`cli.py` imports `_cmd_*` from `hestia.commands`; tests import
 `cli` from `hestia.cli`).
 
 **Handoff:** [`docs/handoffs/L50-commands-split-handoff.md`](../../handoffs/L50-commands-split-handoff.md)
+
+
+## 2026-04-21 — L52 ContextBuilder decomposition
+
+**Outcome:** `ContextBuilder.build` thinned from ~215 lines to 78 lines.
+`HistoryWindowSelector` and `CompressedSummaryStrategy` extracted as dedicated
+classes with full unit-test coverage. All existing context-builder tests pass.
+
+**Scope authorization:** `docs/development-process/kimi-loops/L52-context-builder-decomposition.md`
+
+**Files changed:**
+- `src/hestia/context/history_window_selector.py` — new; truncation/selection logic
+- `src/hestia/context/compressed_summary_strategy.py` — new; compression retry logic
+- `src/hestia/context/builder.py` — refactored `build()` to 78 lines
+- `tests/unit/test_history_window_selector.py` — new tests
+- `tests/unit/test_compressed_summary_strategy.py` — new tests
+
+**Final gate:**
+- Tests: 43 passed (5 existing context-builder test files + 2 new)
+- Mypy: 0 errors in `src/hestia/context/`
+- Ruff: 0 errors in `src/hestia/context/`
+- Branch: `feature/l52-context-builder-decomposition`
+
+**Notes:** Feature branch; do NOT merge to `develop` until v0.9.1 release-prep.
 
 
 ---
