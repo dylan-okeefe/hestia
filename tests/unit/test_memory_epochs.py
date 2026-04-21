@@ -1,6 +1,7 @@
 """Tests for memory epoch compilation."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -13,7 +14,7 @@ class TestMemoryEpoch:
 
     def test_memory_epoch_creation(self):
         """Test creating a MemoryEpoch."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         epoch = MemoryEpoch(
             compiled_text="Test memories",
             created_at=now,
@@ -64,8 +65,8 @@ class TestMemoryEpochCompiler:
             id="test-session",
             platform="cli",
             platform_user="test",
-            started_at=datetime.now(timezone.utc),
-            last_active_at=datetime.now(timezone.utc),
+            started_at=datetime.now(UTC),
+            last_active_at=datetime.now(UTC),
             slot_id=None,
             slot_saved_path=None,
             state=SessionState.ACTIVE,
@@ -103,8 +104,8 @@ class TestMemoryEpochCompiler:
             id="session-1",
             platform="cli",
             platform_user="test",
-            started_at=datetime.now(timezone.utc),
-            last_active_at=datetime.now(timezone.utc),
+            started_at=datetime.now(UTC),
+            last_active_at=datetime.now(UTC),
             slot_id=None,
             slot_saved_path=None,
             state=SessionState.ACTIVE,
@@ -147,8 +148,8 @@ class TestMemoryEpochCompiler:
             id="test-session",
             platform="cli",
             platform_user="test",
-            started_at=datetime.now(timezone.utc),
-            last_active_at=datetime.now(timezone.utc),
+            started_at=datetime.now(UTC),
+            last_active_at=datetime.now(UTC),
             slot_id=None,
             slot_saved_path=None,
             state=SessionState.ACTIVE,
@@ -208,8 +209,8 @@ class TestMemoryEpochCompiler:
             id="test-session",
             platform="cli",
             platform_user="test",
-            started_at=datetime.now(timezone.utc),
-            last_active_at=datetime.now(timezone.utc),
+            started_at=datetime.now(UTC),
+            last_active_at=datetime.now(UTC),
             slot_id=None,
             slot_saved_path=None,
             state=SessionState.ACTIVE,
@@ -246,8 +247,8 @@ class TestMemoryEpochCompiler:
             id="test-session",
             platform="cli",
             platform_user="test",
-            started_at=datetime.now(timezone.utc),
-            last_active_at=datetime.now(timezone.utc),
+            started_at=datetime.now(UTC),
+            last_active_at=datetime.now(UTC),
             slot_id=None,
             slot_saved_path=None,
             state=SessionState.ACTIVE,
@@ -259,3 +260,106 @@ class TestMemoryEpochCompiler:
         assert "Recent important memory" in epoch.compiled_text
 
         await db.close()
+
+
+
+class TestMemoryEpochCompilerMockStore:
+    """Tests for MemoryEpochCompiler using a mock MemoryStore."""
+
+    @pytest.fixture
+    def session(self):
+        return Session(
+            id="test-session",
+            platform="cli",
+            platform_user="test",
+            started_at=datetime.now(UTC),
+            last_active_at=datetime.now(UTC),
+            slot_id=None,
+            slot_saved_path=None,
+            state=SessionState.ACTIVE,
+            temperature=SessionTemperature.COLD,
+        )
+
+    @pytest.mark.asyncio
+    async def test_compile_deduplicates_memories(self, session):
+        """If the store returns the same memory twice, it should appear once."""
+        from hestia.core.clock import utcnow
+        from hestia.memory.store import Memory
+
+        shared_mem = Memory(
+            id="mem-dup",
+            content="Duplicate memory",
+            tags="",
+            created_at=utcnow(),
+            session_id="s1",
+            platform="cli",
+            platform_user="test",
+        )
+
+        mock_store = MagicMock(spec=MemoryStore)
+        mock_store.list_memories = AsyncMock(return_value=[shared_mem, shared_mem])
+
+        compiler = MemoryEpochCompiler(mock_store, max_tokens=500)
+        epoch = await compiler.compile(session)
+
+        assert epoch.memory_count == 1
+        assert "Duplicate memory" in epoch.compiled_text
+        # list_memories called twice (limit=50 then limit=100 fallback)
+        assert mock_store.list_memories.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_compile_truncates_to_max_tokens_mock(self, session):
+        """Token truncation works with a mock store returning long content."""
+        from hestia.core.clock import utcnow
+        from hestia.memory.store import Memory
+
+        long_content = "word " * 500  # ~2500 chars
+        mem = Memory(
+            id="mem-long",
+            content=long_content,
+            tags="",
+            created_at=utcnow(),
+            session_id="s1",
+            platform="cli",
+            platform_user="test",
+        )
+
+        mock_store = MagicMock(spec=MemoryStore)
+        mock_store.list_memories = AsyncMock(return_value=[mem])
+
+        compiler = MemoryEpochCompiler(mock_store, max_tokens=10)
+        epoch = await compiler.compile(session)
+
+        # 10 tokens * 4 chars/token = 40 chars max
+        assert len(epoch.compiled_text) <= 40 + len("Relevant memories:")
+        assert epoch.token_estimate <= 10 + 5  # small margin for header
+
+    @pytest.mark.asyncio
+    async def test_compile_with_tag_filter_via_fetch(self, session):
+        """_fetch_recent_memories passes tag parameter to the store."""
+        from hestia.core.clock import utcnow
+        from hestia.memory.store import Memory
+
+        mem = Memory(
+            id="mem-tagged",
+            content="Tagged memory",
+            tags="important",
+            created_at=utcnow(),
+            session_id="s1",
+            platform="cli",
+            platform_user="test",
+        )
+
+        mock_store = MagicMock(spec=MemoryStore)
+        mock_store.list_memories = AsyncMock(return_value=[mem])
+
+        compiler = MemoryEpochCompiler(mock_store, max_tokens=500)
+        # _fetch_recent_memories is used internally; test it directly
+        result = await compiler._fetch_recent_memories(
+            limit=10, platform="cli", platform_user="test"
+        )
+
+        assert len(result) == 1
+        mock_store.list_memories.assert_awaited_once_with(
+            tag=None, limit=10, platform="cli", platform_user="test"
+        )

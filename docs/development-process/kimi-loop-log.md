@@ -7,6 +7,33 @@
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
 
+## 2026-04-20 — L51: Missing test coverage bundle
+
+**Outcome:** Four new test files and four modified test files; all green.
+
+**Scope authorization:** `docs/development-process/kimi-loops/L51-missing-test-coverage.md`
+
+**New test files:**
+- `tests/unit/test_platform_runners.py` — platform routing, lifecycle, signal handling (16 tests)
+- `tests/unit/test_memory_epochs.py` — mock-store dedup, truncation, tag-filter (3 new tests appended)
+- `tests/unit/test_voice_vad.py` — SileroVAD stub behavior (3 tests)
+- `tests/unit/test_reflection_prompts.py` — prompt template integrity (4 tests)
+
+**Modified test files:**
+- `tests/unit/test_orchestrator_errors.py` — added `build.assert_called_once()` and `chat.assert_called_once()` to happy-path delivery-failure test
+- `tests/e2e/conftest.py` — `_responses` reset in fixture cleanup; removed unused imports
+
+**Quality gate:**
+- Tests: 47 passed, 6 skipped, 0 failed
+- Mypy: 14 pre-existing errors (baseline unchanged)
+- Ruff: no new issues in changed files
+
+**Deferred:** `commands.py` tests → L50; `context/builder.py` decomposition → L52.
+
+**Branch:** `feature/l51-missing-test-coverage` — do NOT merge to develop until release-prep.
+
+---
+
 ## 2026-04-20 — Release: v0.9.0 tagged (Copilot audit response + L40/L41/L42/L45a/b/c close-out)
 
 **Outcome:** `v0.9.0` annotated tag placed on `develop` tip; `main`

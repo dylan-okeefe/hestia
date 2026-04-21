@@ -8,9 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-import sys
 import time
-from typing import Any
 
 import pytest
 
@@ -56,7 +54,7 @@ class HestiaMatrixTestClient:
     async def login(self, username: str, password: str) -> None:
         """Login to the Matrix homeserver."""
         # Extract localpart from username (@user:server -> user)
-        localpart = username.split(":")[0].lstrip("@")
+        _localpart = username.split(":")[0].lstrip("@")
 
         self._client = AsyncClient(self.homeserver_url, username)
         response = await self._client.login(password)
@@ -215,12 +213,15 @@ class HestiaMatrixTestClient:
 @pytest.fixture
 async def matrix_test_client() -> HestiaMatrixTestClient:
     """Fixture providing a logged-in Matrix test client."""
-    pytest.skip("Matrix e2e tests require Docker - run manually with docker-compose")
-    # This code is unreachable but shows the intended implementation:
-    # client = HestiaMatrixTestClient(SYNAPSE_URL)
-    # await client.login(TEST_USER, TEST_PASSWORD)
-    # yield client
-    # await client.close()
+    client = HestiaMatrixTestClient(SYNAPSE_URL)
+    if not is_synapse_available():
+        pytest.skip("Matrix e2e tests require Docker - run manually with docker-compose")
+    await client.login(TEST_USER, TEST_PASSWORD)
+    try:
+        yield client
+    finally:
+        client._responses.clear()
+        await client.close()
 
 
 @pytest.fixture(scope="session")
