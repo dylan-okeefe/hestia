@@ -7,15 +7,96 @@
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
 
-## 2026-04-20 — Loop: L47 — ADR normalization (Kimi)
+## 2026-04-21 — L52: ContextBuilder decomposition
+
+**Outcome:** `ContextBuilder.build` thinned from ~215 lines to 78 lines.
+
+**Scope authorization:** `docs/development-process/kimi-loops/L52-context-builder-decomposition.md`
+
+**Extracted:**
+- `HistoryWindowSelector` — `src/hestia/context/history_window_selector.py` (99 lines)
+- `CompressedSummaryStrategy` — `src/hestia/context/compressed_summary_strategy.py` (80 lines)
+
+**Quality gate:**
+- Tests: 43 passed (context builder + new modules)
+- Mypy: 0 errors in `src/hestia/context/`
+- Ruff: 0 errors in `src/hestia/context/`
+
+**Branch:** `feature/l52-context-builder-decomposition` — do NOT merge to develop until release-prep.
+
+## 2026-04-21 — L50: Commands.py split
+
+**Outcome:** `src/hestia/commands.py` (1112 lines) split into `src/hestia/commands/` package (9 modules).
+
+**Scope authorization:** `docs/development-process/kimi-loops/L50-commands-split.md`
+
+**Quality gate:**
+- Tests: 830 passed, 1 failed (pre-existing voice pipeline test)
+- Import smoke: `from hestia.commands import cli` OK
+- Mypy/ruff: baseline unchanged
+
+**Branch:** `feature/l50-commands-split` — do NOT merge to develop until release-prep.
+
+## 2026-04-21 — L49: Orchestrator extract-methods
+
+**Outcome:** `process_turn` reduced from ~390 lines to 98 lines.
+
+**Scope authorization:** `docs/development-process/kimi-loops/L49-orchestrator-extract-methods.md`
+
+**Extracted:** `_prepare_turn_context`, `_run_inference_loop`, `_handle_context_too_large`, `_handle_unexpected_error`, `_record_failure_if_enabled`, `_finalize_turn`, `_safe_transition`.
+
+**Quality gate:**
+- Tests: 19 passed (orchestrator tests)
+- Mypy: 0 errors in `src/hestia/orchestrator/engine.py`
+- Ruff: 0 errors in `src/hestia/orchestrator/engine.py`
+
+**Branch:** `feature/l49-orchestrator-extract-methods` — do NOT merge to develop until release-prep.
+
+## 2026-04-21 — L48: Config consistency and from_env mixin
+
+**Outcome:** `_ConfigFromEnv` mixin applied to all config classes; tool factory signatures normalized.
+
+**Scope authorization:** `docs/development-process/kimi-loops/L48-config-consistency.md`
+
+**Quality gate:**
+- Tests: 36 passed (config tests)
+- Mypy: 7 pre-existing errors (baseline unchanged)
+- Ruff: 25 errors (baseline unchanged)
+
+**Branch:** `feature/l48-config-consistency` — do NOT merge to develop until release-prep.
+
+## 2026-04-21 — L51: Missing test coverage bundle
+
+**Outcome:** Four new test files and four modified test files; all green.
+
+**Scope authorization:** `docs/development-process/kimi-loops/L51-missing-test-coverage.md`
+
+**New test files:**
+- `tests/unit/test_platform_runners.py` — platform routing, lifecycle, signal handling (16 tests)
+- `tests/unit/test_memory_epochs.py` — mock-store dedup, truncation, tag-filter (3 new tests appended)
+- `tests/unit/test_voice_vad.py` — SileroVAD stub behavior (3 tests)
+- `tests/unit/test_reflection_prompts.py` — prompt template integrity (4 tests)
+
+**Modified test files:**
+- `tests/unit/test_orchestrator_errors.py` — added `build.assert_called_once()` and `chat.assert_called_once()` to happy-path delivery-failure test
+- `tests/e2e/conftest.py` — `_responses` reset in fixture cleanup; removed unused imports
+
+**Quality gate:**
+- Tests: 47 passed, 6 skipped, 0 failed
+- Mypy: 14 pre-existing errors (baseline unchanged)
+- Ruff: no new issues in changed files
+
+**Deferred:** `commands.py` tests → L50; `context/builder.py` decomposition → L52.
+
+**Branch:** `feature/l51-missing-test-coverage` — do NOT merge to develop until release-prep.
+
+## 2026-04-21 — Loop: L47 — ADR normalization (Kimi)
 
 **Commands:** `git checkout -b chore/l47-adr-normalization` from `develop`. `.kimi-done`: `LOOP=L47`, `PYTEST=1 passed` (docs link test), `RUFF=25` (baseline unchanged).
 
 **Outcome:** 33 ADR files in `docs/adr/` (all 4-digit zero-padded, no collisions). Legacy inline `docs/DECISIONS.md` replaced with index. Orphaned `ADR-023` moved from `docs/architecture/adr/`. `docs/hestia-design-revised-april-2026.md` moved to `docs/design/`. Identity ADR renumbered `022→0025` to resolve collision with skills-preview ADR-0022. Scheduler/Matrix/etc. ADRs from `DECISIONS.md` renumbered `014→0027`, `015→0028`, `017→0029`, `018→0030`, `019→0031`, `020→0032`, `021→0033` to avoid collisions with existing separate-file ADRs.
 
-**Git:** Do NOT merge to develop until Cursor review.
-
-**Next:** Cursor review + merge. Queue unchanged (see `KIMI_CURRENT.md`).
+**Git:** Merged to develop via v0.10.0 release sequence.
 
 ---
 

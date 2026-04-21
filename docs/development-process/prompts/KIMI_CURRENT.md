@@ -14,6 +14,11 @@ on `chore/l47-adr-normalization`. Awaiting either a v0.9.1 release-prep doc
 (to start Copilot backlog work) or Dylan's Discord credentials (to start
 voice Phase B).
 
+**Recently completed (feature branch only, not merged to develop):**
+- **L51** — Missing test coverage bundle (`feature/l51-missing-test-coverage`):
+  platform runners, memory epochs, voice VAD, reflection prompts,
+  orchestrator assertion additions, e2e conftest cleanup.
+
 ---
 
 ## v0.9.0 release snapshot
