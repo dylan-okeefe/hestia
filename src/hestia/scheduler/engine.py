@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime
@@ -70,13 +71,11 @@ class Scheduler:
                     )  # Outermost boundary — intentionally broad
 
                 # Sleep until next tick or stop signal, whichever comes first
-                try:
+                with contextlib.suppress(TimeoutError):
                     await asyncio.wait_for(
                         self._stop_event.wait(),
                         timeout=self._tick_interval,
                     )
-                except TimeoutError:
-                    pass
         finally:
             logger.info("Scheduler loop exited")
 

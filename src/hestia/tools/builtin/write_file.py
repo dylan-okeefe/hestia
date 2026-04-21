@@ -9,14 +9,7 @@ from hestia.tools.metadata import tool
 
 
 def make_write_file_tool(allowed_roots: list[str]) -> Any:
-    """Create a write_file tool with path sandboxing.
-
-    Args:
-        allowed_roots: List of allowed root directories
-
-    Returns:
-        The write_file tool function
-    """
+    """Create a write_file tool with path sandboxing."""
 
     @tool(
         name="write_file",

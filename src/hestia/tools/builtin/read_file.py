@@ -9,14 +9,7 @@ from hestia.tools.metadata import tool
 
 
 def make_read_file_tool(allowed_roots: list[str]) -> Any:
-    """Create a read_file tool with path sandboxing.
-
-    Args:
-        allowed_roots: List of allowed root directories
-
-    Returns:
-        The read_file tool function
-    """
+    """Create a read_file tool with path sandboxing."""
 
     @tool(
         name="read_file",

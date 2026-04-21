@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import ClassVar, Literal
 
 
 class EmailConfigError(ValueError):
@@ -199,35 +199,46 @@ class TrustConfig:
     # Active trust preset name (paranoid, household, developer, etc.)
     preset: str | None = None
 
+    _PRESET_CACHE: ClassVar[dict[str, TrustConfig]] = {}
+
     @classmethod
     def paranoid(cls) -> TrustConfig:
         """Strictest posture. Current default. Auto-approves nothing; scheduler
         and subagents cannot shell or write."""
-        return cls()
+        preset = "paranoid"
+        if preset not in cls._PRESET_CACHE:
+            cls._PRESET_CACHE[preset] = cls()
+        return cls._PRESET_CACHE[preset]
 
     @classmethod
     def household(cls) -> TrustConfig:
         """Recommended posture for single-operator personal deployments.
         Auto-approves terminal and write_file on headless platforms;
         scheduler and subagents can shell and write."""
-        return cls(
-            auto_approve_tools=["terminal", "write_file"],
-            scheduler_shell_exec=True,
-            subagent_shell_exec=True,
-            subagent_write_local=True,
-        )
+        preset = "household"
+        if preset not in cls._PRESET_CACHE:
+            cls._PRESET_CACHE[preset] = cls(
+                auto_approve_tools=["terminal", "write_file"],
+                scheduler_shell_exec=True,
+                subagent_shell_exec=True,
+                subagent_write_local=True,
+            )
+        return cls._PRESET_CACHE[preset]
 
     @classmethod
     def developer(cls) -> TrustConfig:
         """Most permissive posture. Auto-approves everything;
         all capabilities available everywhere. Intended for development/testing
         only — do not use in a deployment exposed to other users."""
-        return cls(
-            auto_approve_tools=["*"],  # wildcard — matches any tool name
-            scheduler_shell_exec=True,
-            subagent_shell_exec=True,
-            subagent_write_local=True,
-        )
+        preset = "developer"
+        if preset not in cls._PRESET_CACHE:
+            cls._PRESET_CACHE[preset] = cls(
+                auto_approve_tools=["*"],  # wildcard — matches any tool name
+                scheduler_shell_exec=True,
+                subagent_shell_exec=True,
+                subagent_write_local=True,
+            )
+        return cls._PRESET_CACHE[preset]
 
     @classmethod
     def prompt_on_mobile(cls) -> TrustConfig:
@@ -247,12 +258,15 @@ class TrustConfig:
         explicit ✅/❌ prompt on your phone for ``terminal``, ``write_file``,
         and ``email_send``.
         """
-        return cls(
-            auto_approve_tools=[],
-            scheduler_shell_exec=True,
-            subagent_shell_exec=True,
-            subagent_write_local=True,
-        )
+        preset = "prompt_on_mobile"
+        if preset not in cls._PRESET_CACHE:
+            cls._PRESET_CACHE[preset] = cls(
+                auto_approve_tools=[],
+                scheduler_shell_exec=True,
+                subagent_shell_exec=True,
+                subagent_write_local=True,
+            )
+        return cls._PRESET_CACHE[preset]
 
 
 @dataclass
@@ -461,6 +475,8 @@ class HestiaConfig:
         validate_inference_model_name(config.inference.model_name)
         return config
 
+    _PRESET_ENABLE_CACHE: ClassVar[dict[tuple, bool]] = {}
+
     @classmethod
     def for_trust(cls, trust: TrustConfig) -> HestiaConfig:
         """Create a config with handoff/compression implied by the trust preset.
@@ -473,7 +489,21 @@ class HestiaConfig:
 
             config = HestiaConfig.for_trust(TrustConfig.household())
         """
-        enable = trust not in (TrustConfig.paranoid(), TrustConfig())
+        key = (
+            tuple(trust.auto_approve_tools),
+            trust.scheduler_shell_exec,
+            trust.subagent_shell_exec,
+            trust.subagent_write_local,
+            trust.subagent_email_send,
+            trust.scheduler_email_send,
+            trust.preset,
+        )
+        if key not in cls._PRESET_ENABLE_CACHE:
+            cls._PRESET_ENABLE_CACHE[key] = trust not in (
+                TrustConfig.paranoid(),
+                TrustConfig(),
+            )
+        enable = cls._PRESET_ENABLE_CACHE[key]
         return cls(
             trust=trust,
             handoff=HandoffConfig(enabled=enable),

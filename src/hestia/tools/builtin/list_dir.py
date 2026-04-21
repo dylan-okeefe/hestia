@@ -9,14 +9,7 @@ from hestia.tools.metadata import tool
 
 
 def make_list_dir_tool(allowed_roots: list[str]) -> Any:
-    """Create a list_dir tool with path sandboxing.
-
-    Args:
-        allowed_roots: List of allowed root directories
-
-    Returns:
-        The list_dir tool function
-    """
+    """Create a list_dir tool with path sandboxing."""
 
     @tool(
         name="list_dir",
