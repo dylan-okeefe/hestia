@@ -324,7 +324,7 @@ class CliAppContext:
                 runner=runner,
                 session_store=self.session_store,
             )
-            runner.set_failure_handler(sched._record_failure)
+            sched.wire_failure_handler(runner)
             self._reflection_scheduler = sched
         return self._reflection_scheduler
 
