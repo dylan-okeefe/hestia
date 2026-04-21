@@ -9,9 +9,10 @@ or voice Phase B Discord credentials).
 
 ## Current task
 
-**Status:** **IDLE — v0.9.0 released.** Awaiting either a v0.9.1 release-prep
-doc (to start Copilot backlog work) or Dylan's Discord credentials (to start
-voice Phase B). No active Kimi loop.
+**Status:** **IDLE — v0.9.0 released.** L47 (ADR normalization, chore) complete
+on `chore/l47-adr-normalization`. Awaiting either a v0.9.1 release-prep doc
+(to start Copilot backlog work) or Dylan's Discord credentials (to start
+voice Phase B).
 
 ---
 

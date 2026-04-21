@@ -7,6 +7,18 @@
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
 
+## 2026-04-20 — Loop: L47 — ADR normalization (Kimi)
+
+**Commands:** `git checkout -b chore/l47-adr-normalization` from `develop`. `.kimi-done`: `LOOP=L47`, `PYTEST=1 passed` (docs link test), `RUFF=25` (baseline unchanged).
+
+**Outcome:** 33 ADR files in `docs/adr/` (all 4-digit zero-padded, no collisions). Legacy inline `docs/DECISIONS.md` replaced with index. Orphaned `ADR-023` moved from `docs/architecture/adr/`. `docs/hestia-design-revised-april-2026.md` moved to `docs/design/`. Identity ADR renumbered `022→0025` to resolve collision with skills-preview ADR-0022. Scheduler/Matrix/etc. ADRs from `DECISIONS.md` renumbered `014→0027`, `015→0028`, `017→0029`, `018→0030`, `019→0031`, `020→0032`, `021→0033` to avoid collisions with existing separate-file ADRs.
+
+**Git:** Do NOT merge to develop until Cursor review.
+
+**Next:** Cursor review + merge. Queue unchanged (see `KIMI_CURRENT.md`).
+
+---
+
 ## 2026-04-20 — Release: v0.9.0 tagged (Copilot audit response + L40/L41/L42/L45a/b/c close-out)
 
 **Outcome:** `v0.9.0` annotated tag placed on `develop` tip; `main`

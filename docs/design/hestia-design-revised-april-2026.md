@@ -366,7 +366,7 @@ Branch for Matrix work: `feature/phase-7-matrix`. Design: [`docs/design/matrix-i
 
 ### Post-Phase 7
 
-See [`docs/roadmap/future-systems-deferred-roadmap.md`](roadmap/future-systems-deferred-roadmap.md)
+See [`docs/roadmap/future-systems-deferred-roadmap.md`](../roadmap/future-systems-deferred-roadmap.md)
 for the full deferred roadmap, organized into tiers:
 
 - **Tier A** — Product gaps: Telegram confirmation UI, artifact tools,

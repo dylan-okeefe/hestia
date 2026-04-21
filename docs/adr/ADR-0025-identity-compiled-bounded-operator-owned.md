@@ -1,4 +1,4 @@
-# ADR-022: Identity as a Compiled, Bounded, Operator-Owned Document
+# ADR-0025: Identity as a Compiled, Bounded, Operator-Owned Document
 
 ## Status
 
