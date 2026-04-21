@@ -5,6 +5,7 @@ import pytest
 from hestia.config import TrustConfig
 from hestia.core.types import Session, SessionState, SessionTemperature
 from hestia.policy.default import DefaultPolicyEngine
+from hestia.config import StorageConfig
 
 
 @pytest.fixture
@@ -209,7 +210,7 @@ class TestFilterToolsOverrides:
         reg = ToolRegistry(ArtifactStore(tmp_path / "art"))
         reg.register(current_time)
         reg.register(terminal)
-        reg.register(make_write_file_tool([str(tmp_path)]))
+        reg.register(make_write_file_tool(StorageConfig(allowed_roots=[str(tmp_path)])))
         names = reg.list_names()
 
         filtered = policy.filter_tools(sub, names, reg)

@@ -27,6 +27,7 @@ from hestia.platforms.matrix_adapter import MatrixAdapter
 from hestia.persistence.db import Database
 from hestia.persistence.sessions import SessionStore
 from hestia.tools.registry import ToolRegistry
+from hestia.config import StorageConfig
 
 
 def _make_session(session_id: str = "test_session") -> Session:
@@ -110,7 +111,7 @@ async def _make_orchestrator(approve: bool):
 
     sandbox = "/tmp/sandbox_matrix_confirm"
     os.makedirs(sandbox, exist_ok=True)
-    registry.register(make_write_file_tool([sandbox]))
+    registry.register(make_write_file_tool(StorageConfig(allowed_roots=[sandbox])))
 
     adapter = MatrixAdapter(
         MatrixConfig(

@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from hestia.tools.builtin.http_get import _is_url_safe, http_get
+from hestia.config import StorageConfig
 from hestia.tools.builtin.list_dir import make_list_dir_tool
 from hestia.tools.builtin.write_file import make_write_file_tool
 
@@ -15,7 +16,7 @@ class TestWriteFile:
     @pytest.mark.asyncio
     async def test_write_file_creates_file(self, tmp_path):
         """Can write content to a file."""
-        write_file = make_write_file_tool([str(tmp_path)])
+        write_file = make_write_file_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
         target = tmp_path / "test.txt"
         result = await write_file(str(target), "Hello, world!")
 
@@ -26,7 +27,7 @@ class TestWriteFile:
     @pytest.mark.asyncio
     async def test_write_file_creates_parent_dirs(self, tmp_path):
         """Creates parent directories if they don't exist."""
-        write_file = make_write_file_tool([str(tmp_path)])
+        write_file = make_write_file_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
         target = tmp_path / "nested" / "deep" / "file.txt"
         result = await write_file(str(target), "Nested content")
 
@@ -40,7 +41,7 @@ class TestListDir:
     @pytest.mark.asyncio
     async def test_list_dir_shows_files(self, tmp_path):
         """Lists files in a directory."""
-        list_dir = make_list_dir_tool([str(tmp_path)])
+        list_dir = make_list_dir_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
         (tmp_path / "file1.txt").write_text("content1")
         (tmp_path / "file2.txt").write_text("content2")
         (tmp_path / "subdir").mkdir()
@@ -55,7 +56,7 @@ class TestListDir:
     @pytest.mark.asyncio
     async def test_list_dir_caps_at_max_entries(self, tmp_path):
         """Caps output at max_entries."""
-        list_dir = make_list_dir_tool([str(tmp_path)])
+        list_dir = make_list_dir_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
         # Create 10 files
         for i in range(10):
             (tmp_path / f"file{i}.txt").write_text("x")
@@ -67,7 +68,7 @@ class TestListDir:
     @pytest.mark.asyncio
     async def test_list_dir_nonexistent_returns_error(self, tmp_path):
         """Returns error for non-existent directory."""
-        list_dir = make_list_dir_tool([str(tmp_path)])
+        list_dir = make_list_dir_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
         result = await list_dir(str(tmp_path / "does_not_exist"))
 
         assert "Error:" in result
@@ -76,7 +77,7 @@ class TestListDir:
     @pytest.mark.asyncio
     async def test_list_dir_empty(self, tmp_path):
         """Shows empty for empty directory."""
-        list_dir = make_list_dir_tool([str(tmp_path)])
+        list_dir = make_list_dir_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
         result = await list_dir(str(tmp_path))
 
         assert "(empty)" in result
@@ -84,7 +85,7 @@ class TestListDir:
     @pytest.mark.asyncio
     async def test_list_dir_overflow_count_is_correct(self, tmp_path):
         """Overflow message shows correct remaining count."""
-        list_dir = make_list_dir_tool([str(tmp_path)])
+        list_dir = make_list_dir_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
         for i in range(10):
             (tmp_path / f"file{i:02d}.txt").write_text("x")
 

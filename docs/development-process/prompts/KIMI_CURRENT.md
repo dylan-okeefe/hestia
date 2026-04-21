@@ -2,22 +2,24 @@
 
 **Orchestrator:** Cursor updates this file after each review.
 
-**Last set by:** Cursor — 2026-04-20 (v0.9.0 released; awaiting v0.9.1 prep
-or voice Phase B Discord credentials).
+**Last set by:** Kimi — 2026-04-20 (L48 complete on feature branch)
 
 ---
 
 ## Current task
 
-**Status:** **IDLE — v0.9.0 released.** L47 (ADR normalization, chore) complete
-on `chore/l47-adr-normalization`. Awaiting either a v0.9.1 release-prep doc
-(to start Copilot backlog work) or Dylan's Discord credentials (to start
-voice Phase B).
+**Status:** **IDLE — L47-L52 merged to develop.** All audit-driven loops
+(ADR normalization, config consistency, orchestrator extract-methods,
+commands split, test coverage, ContextBuilder decomposition) are now on
+`develop`. Ready to resume Discord voice iteration work.
 
-**Recently completed (feature branch only, not merged to develop):**
-- **L51** — Missing test coverage bundle (`feature/l51-missing-test-coverage`):
-  platform runners, memory epochs, voice VAD, reflection prompts,
-  orchestrator assertion additions, e2e conftest cleanup.
+**Recently completed (merged to develop):**
+- **L47** — ADR normalization
+- **L48** — Config consistency and `_ConfigFromEnv` mixin
+- **L49** — Orchestrator extract-methods
+- **L50** — Commands.py split
+- **L51** — Missing test coverage bundle
+- **L52** — ContextBuilder decomposition
 
 ---
 

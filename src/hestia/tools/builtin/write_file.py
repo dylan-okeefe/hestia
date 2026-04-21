@@ -3,13 +3,15 @@
 from pathlib import Path
 from typing import Any
 
+from hestia.config import StorageConfig
 from hestia.tools.builtin.path_utils import check_path_allowed
 from hestia.tools.capabilities import WRITE_LOCAL
 from hestia.tools.metadata import tool
 
 
-def make_write_file_tool(allowed_roots: list[str]) -> Any:
+def make_write_file_tool(config: StorageConfig, **kw: Any) -> Any:
     """Create a write_file tool with path sandboxing."""
+    allowed_roots = config.allowed_roots
 
     @tool(
         name="write_file",
