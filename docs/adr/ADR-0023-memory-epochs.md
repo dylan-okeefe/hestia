@@ -1,4 +1,4 @@
-# ADR-023: Memory Epochs — Compiled Prompt-Facing Views
+# ADR-0023: Memory Epochs — Compiled Prompt-Facing Views
 
 ## Status
 
@@ -112,5 +112,5 @@ Route memories through a sophisticated relevance engine. Deferred — see roadma
 ## Related
 
 - Roadmap §10.1: Memory epochs specification
-- ADR-022: Identity as compiled view (similar pattern)
+- ADR-0025: Identity as compiled view (similar pattern)
 - Future: Knowledge Router (Phase 12+)
