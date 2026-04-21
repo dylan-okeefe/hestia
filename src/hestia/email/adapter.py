@@ -272,14 +272,56 @@ class EmailAdapter:
                 if ok != "OK" or not data or data[0] is None:
                     return []
                 uids = data[0].split()
-                uids = uids[-limit:]  # most recent first
+                if not uids:
+                    return []
+
+                # M-7 (2026-04-20): IMAP SEARCH does **not** guarantee
+                # UIDs come back in arrival / INTERNALDATE order. The old
+                # ``uids[-limit:]`` + ``reversed(uids)`` trick was relying
+                # on that, which silently broke on servers that return
+                # them in another order (e.g. after expunges).
+                # Fix: fetch INTERNALDATE for every matched UID, sort
+                # newest-first on the client, then take ``limit``.
+                sortable: list[tuple[datetime, str]] = []
+                for uid in uids:
+                    uid_str = uid.decode() if isinstance(uid, bytes) else str(uid)
+                    ok2, idate_data = conn.uid(
+                        "FETCH", uid_str, "(INTERNALDATE)"
+                    )
+                    if ok2 != "OK" or not idate_data:
+                        # Fall back to sorting by UID (numeric) so at least
+                        # arrival-on-this-server is approximated when
+                        # INTERNALDATE isn't available.
+                        try:
+                            fallback_dt = datetime.fromtimestamp(int(uid_str), tz=UTC)
+                        except (TypeError, ValueError):
+                            fallback_dt = datetime.min.replace(tzinfo=UTC)
+                        sortable.append((fallback_dt, uid_str))
+                        continue
+                    idate_raw = idate_data[0]
+                    if isinstance(idate_raw, tuple):
+                        idate_raw = idate_raw[1] if len(idate_raw) > 1 else idate_raw[0]
+                    if isinstance(idate_raw, bytes):
+                        idate_raw = idate_raw.decode("ascii", errors="replace")
+                    parsed_dt = imaplib.Internaldate2tuple(
+                        idate_raw.encode() if isinstance(idate_raw, str) else idate_raw
+                    )
+                    if parsed_dt is None:
+                        sortable.append(
+                            (datetime.min.replace(tzinfo=UTC), uid_str)
+                        )
+                    else:
+                        sortable.append(
+                            (datetime(*parsed_dt[:6], tzinfo=UTC), uid_str)
+                        )
+
+                sortable.sort(key=lambda t: t[0], reverse=True)
+                top_uids = [uid for _, uid in sortable[:limit]]
 
                 results: list[dict[str, Any]] = []
-                for uid in reversed(uids):  # newest first
-                    uid_str = uid.decode() if isinstance(uid, bytes) else str(uid)
+                for uid_str in top_uids:
                     try:
                         headers = self._fetch_headers(conn, uid_str, folder)
-                        # Build a short snippet from subject
                         snippet = headers["subject"][:120]
                         results.append(
                             {
