@@ -90,7 +90,7 @@ class MemoryStore:
                 except Exception:
                     old_schema_exists = True
             except Exception:
-                pass  # Table does not exist at all (fresh database)
+                logger.debug("memory table does not exist (fresh database)", exc_info=True)
 
             if old_schema_exists and self._fts5_available:
                 await conn.execute(sa.text("DROP TABLE IF EXISTS _memory_backup"))

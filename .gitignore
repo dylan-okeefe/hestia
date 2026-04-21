@@ -18,6 +18,10 @@ build/
 
 # Runtime worktree local state (see ~/Hestia-runtime/config.runtime.py)
 /runtime-data/
+/runtime-data.bak*
+
+# Code review artifacts (local only)
+/.code-review-graph/
 
 # Hestia local state
 .hestia/

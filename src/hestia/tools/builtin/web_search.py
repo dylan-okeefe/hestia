@@ -7,6 +7,7 @@ selection happens inside the factory based on config.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import httpx
@@ -176,4 +177,4 @@ async def _record_egress(url: str, status: int | None, size: int) -> None:
                 size=size,
             )
         except Exception:
-            pass
+            logger.debug("Failed to record egress event", exc_info=True)
