@@ -5,6 +5,49 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.9.1] — 2026-04-20
+
+Patch release. Consolidates the Copilot audit backlog from v0.9.0
+(39 items triaged into high/medium/low/test-gap/architecture) plus
+email-cleanup, memory-cleanup, and policy-and-inference fixes.
+No new features; all changes are bug fixes, hardening, and internal
+quality.
+
+### Security & hardening
+- `HestiaConfig` now rejects `model_name == "dummy"` at load time.
+- Injection-scanner regex is anchored and requires minimum length.
+- `SECURITY.md` notes that `config.py` executes arbitrary Python
+  (standard for Python projects but worth stating).
+- `TrustConfig` presets (`paranoid`, `household`, `developer`,
+  `prompt_on_mobile`) are now cached to avoid object-identity bugs in
+  `for_trust()` equality checks. `HestiaConfig.for_trust()` also caches
+  its inverse lookup.
+- `hestia doctor` warns when `allowed_roots` contains `"."`.
+
+### Reliability
+- `ReflectionScheduler.wire_failure_handler(runner)` is now a public
+  method; `app.py` no longer reaches into the scheduler's private
+  `_record_failure` attribute.
+- Scheduler tick loop uses `contextlib.suppress(TimeoutError)` instead
+  of a bare `except TimeoutError: pass`.
+- `DefaultPolicyEngine` uses a module-level logger instead of
+  `print()` for policy-failure diagnostics.
+- Subagent `artifact_handles` are propagated through `delegate_task`
+  so artifacts created by a subagent are visible to the parent session.
+- Email adapter guards `conn.close()` to the `SELECTED` state and
+  narrows bare `except:` blocks.
+
+### Internal quality
+- Consolidated duplicate `traces` DDL inline strings into
+  `schema.py`.
+- `EmailConfig.drafts_folder` / `sent_folder` are configurable.
+- Scheduler respects `config.system_prompt` instead of a hard-coded
+  fallback.
+- Memory store param-binding is consistent across all methods.
+- Tool docstring boilerplate deduplicated in `list_dir`, `read_file`,
+  `write_file`.
+- Pre-existing smoke test import fixed for `read_file` factory pattern.
+
 ## [0.9.0] — 2026-04-19
 
 First release after `v0.8.0`. Ships the multi-user safety train on top of a
