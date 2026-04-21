@@ -78,6 +78,8 @@ See `references/review-checklist.md` for the detailed version with examples.
 
 After a release tag is placed on `develop` (and especially after push), **no feature branch merges to develop** until a release-prep document exists that names every `feature/*` branch by exact name.
 
+**Pre-release integration branches:** Completed loops merge to `release/vX.Y.Z` first. That branch later merges to `develop` as a single unit. See the live tracker at `docs/development-process/v0.9.1-progress.md`.
+
 Allowed exceptions (no prep doc needed):
 - Pre-tag hotfixes that are part of the in-flight release
 - Pure planning/spec docs under `docs/development-process/`
