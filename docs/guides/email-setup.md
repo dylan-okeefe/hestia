@@ -136,6 +136,5 @@ original email adapter design and IMAP/SMTP draft flow are documented in the
 **L25 handoff**:
 [`docs/handoffs/L25-email-adapter-read-and-draft-handoff.md`](../handoffs/L25-email-adapter-read-and-draft-handoff.md).
 
-For the broader secrets-hygiene ADR, see
-[`docs/adr/ADR-0016-configuration-and-secrets.md`](../adr/ADR-0016-configuration-and-secrets.md)
-(consolidated from `docs/development-process/decisions/` in L29).
+For the broader secrets-hygiene discussion, see the
+[`L29 handoff`](../handoffs/L29-reliability-secrets-handoff.md).

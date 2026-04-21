@@ -128,7 +128,7 @@ async def daily_briefing(context):
     ...
 ```
 
-This system is functional but not yet integrated into the orchestrator's tool-calling flow. A `run_skill` meta-tool and built-in skill library are planned for a future release. See [ADR-024](docs/adr/ADR-024-skills-user-defined-python-functions.md) for the design rationale.
+This system is functional but not yet integrated into the orchestrator's tool-calling flow. A `run_skill` meta-tool and built-in skill library are planned for a future release. See [ADR-0024](docs/adr/ADR-0024-skills-user-defined-python-functions.md) for the design rationale.
 
 ### Reflection loop (opt-in)
 

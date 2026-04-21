@@ -30,7 +30,7 @@ def validate_inference_model_name(model_name: str) -> None:
         "HESTIA_ALLOW_DUMMY_MODEL=1 if you intentionally use a dummy model."
     )
 
-# Default location for operator-authored personality (compiled identity; see ADR-022).
+# Default location for operator-authored personality (compiled identity; see ADR-0025).
 DEFAULT_SOUL_MD_PATH = Path("SOUL.md")
 
 
