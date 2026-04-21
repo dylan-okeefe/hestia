@@ -21,6 +21,11 @@ commands split, test coverage, ContextBuilder decomposition) are now on
 - **L51** — Missing test coverage bundle
 - **L52** — ContextBuilder decomposition
 
+**Completed (not yet merged):**
+- `feature/l50-commands-split` — `commands.py` → `commands/` package refactor.
+  Handoff: [`docs/handoffs/L50-commands-split-handoff.md`](../../handoffs/L50-commands-split-handoff.md).
+  **Do NOT merge to develop** until release-prep merge sequence.
+
 ---
 
 ## v0.9.0 release snapshot
