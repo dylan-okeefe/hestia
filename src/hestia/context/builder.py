@@ -1,11 +1,12 @@
 """ContextBuilder assembles the message list for a turn under a token budget."""
 
-import asyncio
 import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from hestia.context.compressed_summary_strategy import CompressedSummaryStrategy
 from hestia.context.compressor import HistoryCompressor
+from hestia.context.history_window_selector import HistoryWindowSelector
 from hestia.core.inference import InferenceClient, _message_to_dict
 from hestia.core.types import Message, Session, ToolSchema
 from hestia.errors import ContextTooLargeError
@@ -221,218 +222,73 @@ class ContextBuilder:
         tools: list[ToolSchema],
         new_user_message: Message | None = None,
     ) -> BuildResult:
-        """Build the message list for a new turn.
-
-        Strategy:
-        1. Start with system prompt (+ first user if in history)
-        2. Add new user message (if provided)
-        3. Add messages from history (newest first) until budget exhausted
-        4. Never split tool_call / tool_result pairs
-        5. Return messages in chronological order
-
-        The per-message tokenize cache survives across ``build()`` calls on
-        the same builder instance. If the inference client URL or model
-        changes, construct a new ``ContextBuilder`` — the cache does not
-        invalidate reactively.
-
-        Args:
-            session: Current session
-            history: Previous messages in the session
-            system_prompt: System prompt to include
-            tools: Available tools (for overhead calculation)
-            new_user_message: The new user message for this turn, or None for
-                            continuation turns (e.g., during tool chains)
-
-        Returns:
-            BuildResult with messages and bookkeeping
-        """
-        # Get budget from policy
+        """Assemble messages for a turn under token budget."""
         raw_budget = self._policy.turn_token_budget(session)
-
         truncated_count = 0
 
-        # Build effective system prompt from registered prefix layers
         parts = [layer.value for layer in self._prefix_layers() if layer.value]
         parts.append(system_prompt)
         effective_prompt = "\n\n".join(parts)
         memory_epoch_included = self._memory_epoch_prefix is not None
-
-        # Create system message
         system_msg = Message(role="system", content=effective_prompt)
 
-        # Find first user message (must be protected for Qwen template)
         first_user_msg: Message | None = None
         for msg in history:
             if msg.role == "user":
                 first_user_msg = msg
                 break
 
-        # Build protected_top: system + first_user (always at start)
         protected_top: list[Message] = [system_msg]
         if first_user_msg:
             protected_top.append(first_user_msg)
+        protected_bottom: list[Message] = [new_user_message] if new_user_message else []
 
-        # Build protected_bottom: new_user_message (always at end, if provided)
-        protected_bottom: list[Message] = []
-        if new_user_message is not None:
-            protected_bottom.append(new_user_message)
-
-        # Count tokens for protected messages (body only, no tools)
         protected_body = await self._count_body(protected_top + protected_bottom)
         protected_count = self._apply_correction(protected_body, has_tools=len(tools) > 0)
 
         if protected_count > raw_budget:
             raise ContextTooLargeError(
                 f"Protected context ({protected_count} tokens) exceeds per-slot budget "
-                f"({raw_budget}). System+identity+memory_epoch+skill_index+new_user is "
-                "too large to fit. Reduce identity, memory_epoch, or run /reset."
+                f"({raw_budget}). Reduce identity, memory_epoch, or run /reset."
             )
 
-        # Lazy-cache join-overhead (function of JSON framing, not message content).
         if self._join_overhead is None:
-            overhead = await self._compute_join_overhead(
-                history, protected_top, protected_bottom
-            )
+            overhead = await self._compute_join_overhead(history, protected_top, protected_bottom)
             if overhead != 0 or len(history) >= 2 or len(protected_top + protected_bottom) >= 2:
                 self._join_overhead = overhead
-            else:
-                # Not enough messages to measure; try again next build.
-                pass
-
         _join_overhead = self._join_overhead or 0
 
-        # Add remaining history messages (newest first) while they fit
-        included_history: list[Message] = []
-        dropped_history: list[Message] = []
-        window_body = 0  # cached body tokens for included_history beyond protected
+        available_budget = raw_budget - protected_count
 
-        # Walk history in reverse (newest first)
-        history_candidates = list(reversed(history))
-        i = 0
-        while i < len(history_candidates):
-            msg = history_candidates[i]
+        async def _history_token_count(msg: Message) -> int:
+            return await self._count_tokens(msg) + _join_overhead
 
-            # Skip first_user (already in protected_top)
-            if msg is first_user_msg:
-                i += 1
-                continue
+        selector = HistoryWindowSelector()
+        included, dropped, truncated_count = await selector.select(
+            history=history, budget=available_budget, token_counter=_history_token_count,
+            skip_message=first_user_msg,
+        )
 
-            # Check if this is a tool result - if so, need to include paired tool_call
-            if msg.role == "tool":
-                # Find the assistant message with matching tool_call
-                pair_msgs = [msg]
-                found_pair = False
-                for j in range(i + 1, len(history_candidates)):
-                    candidate = history_candidates[j]
-                    if candidate.role == "assistant" and candidate.tool_calls:
-                        for tc in candidate.tool_calls:
-                            if tc.id == msg.tool_call_id:
-                                pair_msgs.append(candidate)
-                                found_pair = True
-                                break
-                    if found_pair:
-                        break
-
-                if found_pair:
-                    # Count both messages concurrently (M-3). ``_count_tokens``
-                    # caches by (role, content) so the common case is a pure
-                    # dict hit; the gather still helps on the first-see path
-                    # where both pair members miss the cache and would
-                    # otherwise issue two sequential ``/tokenize`` calls.
-                    pair_token_counts = await asyncio.gather(
-                        *(self._count_tokens(m) for m in pair_msgs)
-                    )
-                    pair_window_body = (
-                        sum(pair_token_counts)
-                        + len(pair_msgs) * _join_overhead
-                    )
-                    candidate_body = protected_body + window_body + pair_window_body
-                    count = self._apply_correction(candidate_body, len(tools) > 0)
-                    if count <= raw_budget:
-                        included_history.extend(pair_msgs)
-                        window_body += pair_window_body
-                        i += len(pair_msgs)
-                        continue
-                    else:
-                        # Can't fit pair, skip both
-                        i += len(pair_msgs)
-                        truncated_count += len(pair_msgs)
-                        dropped_history.extend(pair_msgs)
-                        continue
-
-            # Regular message - try to add it
-            msg_window_body = await self._count_tokens(msg) + _join_overhead
-            candidate_body = protected_body + window_body + msg_window_body
-            count = self._apply_correction(candidate_body, len(tools) > 0)
-
-            if count <= raw_budget:
-                included_history.append(msg)
-                window_body += msg_window_body
-            else:
-                # Doesn't fit, skip it and all older messages
-                truncated_count += len(history_candidates) - i
-                dropped_history.extend(history_candidates[i:])
-                break
-
-            i += 1
-
-        # Assemble final message list in chronological order
-        # system, first_user, [history in chronological order], new_user
-        final_messages = list(protected_top)  # system + first_user
-
-        # Optionally compress dropped history and splice summary
-        if (
-            self._compressor is not None
-            and self._compress_on_overflow
-            and dropped_history
-        ):
-            summary = await self._compressor.summarize(list(reversed(dropped_history)))
-            if summary:
-                summary_msg = Message(
-                    role="system",
-                    content=f"[PRIOR CONTEXT SUMMARY]\n{summary}",
-                )
-                # Insert right after system_msg (index 0)
-                test_with_summary = list(final_messages)
-                test_with_summary.insert(1, summary_msg)
-                summary_count = await self._count_messages(
-                    test_with_summary, len(tools) > 0
-                )
-                if summary_count <= raw_budget:
-                    final_messages.insert(1, summary_msg)
-                else:
-                    # Retry once: drop oldest included message and try again
-                    if included_history:
-                        included_history.pop()
-                        test_with_summary = list(final_messages)
-                        # Rebuild without oldest
-                        test_with_summary = list(protected_top)
-                        test_with_summary.insert(1, summary_msg)
-                        test_with_summary.extend(reversed(included_history))
-                        test_with_summary.extend(protected_bottom)
-                        summary_count = await self._count_messages(
-                            test_with_summary, len(tools) > 0
-                        )
-                        if summary_count <= raw_budget:
-                            final_messages = test_with_summary
-                            truncated_count += 1
-                        # else: fall back to no compression
-
-        # Add included history in chronological order (reverse back)
-        final_messages.extend(reversed(included_history))
-
-        # Add protected_bottom at the end (new_user if provided)
+        final_messages = list(protected_top)
+        final_messages.extend(included)
         final_messages.extend(protected_bottom)
 
-        # Count final tokens
-        final_count = await self._count_messages(final_messages, len(tools) > 0)
+        if self._compressor is not None and self._compress_on_overflow and dropped:
+            strategy = CompressedSummaryStrategy(self._compressor)
+            result = await strategy.try_splice(
+                dropped_history=dropped, protected_top=protected_top,
+                protected_bottom=protected_bottom, included_history=included,
+                budget=raw_budget,
+                count_messages=lambda msgs: self._count_messages(msgs, len(tools) > 0),
+            )
+            if result is not None:
+                final_messages, included, extra_truncated = result
+                truncated_count += extra_truncated
 
+        final_count = await self._count_messages(final_messages, len(tools) > 0)
         return BuildResult(
-            messages=final_messages,
-            tokens_used=final_count,
-            tokens_budget=raw_budget,
-            truncated_count=truncated_count,
-            kept_first_user=first_user_msg is not None,
+            messages=final_messages, tokens_used=final_count, tokens_budget=raw_budget,
+            truncated_count=truncated_count, kept_first_user=first_user_msg is not None,
             memory_epoch_included=memory_epoch_included,
         )
 
