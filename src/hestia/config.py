@@ -279,7 +279,6 @@ class InferenceConfig(_ConfigFromEnv):
             raise ValueError(
                 f"InferenceConfig.max_tokens must be non-negative, got {self.max_tokens}"
             )
-            )
 
 
 @dataclass
