@@ -11,7 +11,6 @@ Requires ``hestia[voice]`` (py-cord + faster-whisper + piper).
 from __future__ import annotations
 
 import asyncio
-import audioop
 import logging
 import queue
 import sys
@@ -20,6 +19,8 @@ import time
 from typing import TYPE_CHECKING, Any
 
 import click
+
+import numpy as np
 
 from hestia.config import validate_discord_voice_for_run
 from hestia.core.types import Message
@@ -32,6 +33,48 @@ if TYPE_CHECKING:
     from hestia.config import HestiaConfig
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# audioop replacements (Python 3.13 removed the audioop module)
+# ---------------------------------------------------------------------------
+
+
+def _tomono(stereo_bytes: bytes, width: int, lfactor: float, rfactor: float) -> bytes:
+    """Convert interleaved stereo PCM to mono by averaging channels."""
+    dtype = np.int16 if width == 2 else np.int8
+    arr = np.frombuffer(stereo_bytes, dtype=dtype)
+    left = arr[0::2] * lfactor
+    right = arr[1::2] * rfactor
+    mono = (left + right).astype(dtype)
+    return mono.tobytes()
+
+
+def _tostereo(mono_bytes: bytes, width: int, lfactor: float, rfactor: float) -> bytes:
+    """Duplicate mono PCM into interleaved stereo."""
+    dtype = np.int16 if width == 2 else np.int8
+    arr = np.frombuffer(mono_bytes, dtype=dtype)
+    stereo = np.empty(arr.size * 2, dtype=dtype)
+    stereo[0::2] = (arr * lfactor).astype(dtype)
+    stereo[1::2] = (arr * rfactor).astype(dtype)
+    return stereo.tobytes()
+
+
+def _ratecv(
+    data: bytes, width: int, nchannels: int, inrate: int, outrate: int, state: Any
+) -> tuple[bytes, Any]:
+    """Resample PCM audio using linear interpolation."""
+    dtype = np.int16 if width == 2 else np.int8
+    arr = np.frombuffer(data, dtype=dtype).reshape(-1, nchannels)
+    old_len = arr.shape[0]
+    new_len = int(old_len * outrate / inrate)
+    if new_len == 0:
+        return b"", None
+    old_x = np.linspace(0, old_len - 1, old_len)
+    new_x = np.linspace(0, old_len - 1, new_len)
+    resampled = np.empty((new_len, nchannels), dtype=dtype)
+    for ch in range(nchannels):
+        resampled[:, ch] = np.interp(new_x, old_x, arr[:, ch].astype(np.float32)).astype(dtype)
+    return resampled.tobytes(), None
 
 try:
     import discord
@@ -105,8 +148,8 @@ class _QueueAudioSource(discord.AudioSource):
 def _resample_for_discord(pcm_mono: bytes, src_rate: int) -> bytes:
     """Convert mono PCM16 at *src_rate* to stereo PCM16 at 48 kHz."""
     if src_rate != 48000:
-        pcm_mono, _ = audioop.ratecv(pcm_mono, 2, 1, src_rate, 48000, None)
-    stereo = audioop.tostereo(pcm_mono, 2, 0.5, 0.5)
+        pcm_mono, _ = _ratecv(pcm_mono, 2, 1, src_rate, 48000, None)
+    stereo = _tostereo(pcm_mono, 2, 0.5, 0.5)
     return stereo
 
 
@@ -369,8 +412,8 @@ def _transcription_sink_class(
         def _flush(self, uid: int, pcm_stereo: bytes) -> None:
             if not pcm_stereo:
                 return
-            mono = audioop.tomono(pcm_stereo, 2, 0.5, 0.5)
-            mono_16k, _ = audioop.ratecv(mono, 2, 1, 48000, 16000, None)
+            mono = _tomono(pcm_stereo, 2, 0.5, 0.5)
+            mono_16k, _ = _ratecv(mono, 2, 1, 48000, 16000, None)
             if len(mono_16k) < self._MIN_MONO16_BYTES:
                 return
 
