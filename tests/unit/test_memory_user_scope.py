@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import pytest
+import sqlalchemy as sa
 
-from hestia.memory.store import Memory, MemoryStore
+from hestia.memory.store import MemoryStore
 from hestia.persistence.db import Database
 from hestia.runtime_context import current_platform, current_platform_user
 from hestia.tools.builtin.memory_tools import (
@@ -248,8 +249,12 @@ class TestMemoryLikeFallback:
     @pytest.mark.asyncio
     async def test_like_fallback_list_by_tag(self, like_store):
         """Tag filtering works via LIKE when FTS5 is unavailable."""
-        await like_store.save(content="Work task", tags=["work"], platform="cli", platform_user="test")
-        await like_store.save(content="Personal task", tags=["personal"], platform="cli", platform_user="test")
+        await like_store.save(
+            content="Work task", tags=["work"], platform="cli", platform_user="test"
+        )
+        await like_store.save(
+            content="Personal task", tags=["personal"], platform="cli", platform_user="test"
+        )
 
         results = await like_store.list_memories(tag="work", platform="cli", platform_user="test")
         assert len(results) == 1
@@ -258,8 +263,12 @@ class TestMemoryLikeFallback:
     @pytest.mark.asyncio
     async def test_like_fallback_no_false_tag_match(self, like_store):
         """LIKE fallback does not match partial tag tokens."""
-        await like_store.save(content="Documentation", tags=["docs"], platform="cli", platform_user="test")
-        await like_store.save(content="Doctor appointment", tags=["doctor"], platform="cli", platform_user="test")
+        await like_store.save(
+            content="Documentation", tags=["docs"], platform="cli", platform_user="test"
+        )
+        await like_store.save(
+            content="Doctor appointment", tags=["doctor"], platform="cli", platform_user="test"
+        )
 
         results = await like_store.list_memories(tag="doc", platform="cli", platform_user="test")
         assert len(results) == 0
@@ -351,5 +360,3 @@ class TestMemoryFTS5Migration:
 
         await db.close()
 
-
-import sqlalchemy as sa

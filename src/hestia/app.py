@@ -265,9 +265,9 @@ class CliAppContext:
             model_name = self.config.inference.model_name.strip()
             if not model_name:
                 raise ValueError(
-                    "inference.model_name is required — set it to your llama.cpp model filename "
-                    "(e.g. 'my-model-Q4_K_M.gguf'), or for tests only set HESTIA_ALLOW_DUMMY_MODEL=1 "
-                    "and use model_name='dummy'."
+                    "inference.model_name is required — set it to your llama.cpp model "
+                    "filename (e.g. 'my-model-Q4_K_M.gguf'), or for tests only set "
+                    "HESTIA_ALLOW_DUMMY_MODEL=1 and use model_name='dummy'."
                 )
             self._inference = InferenceClient(self.config.inference.base_url, model_name)
         return self._inference
@@ -399,9 +399,8 @@ class CliAppContext:
 
 def make_app(cfg: HestiaConfig) -> CliAppContext:
     """Build subsystems from config and return typed app context."""
-    if not cfg.inference.model_name.strip():
-        if os.environ.get("HESTIA_ALLOW_DUMMY_MODEL") == "1":
-            cfg.inference.model_name = "dummy"
+    if not cfg.inference.model_name.strip() and os.environ.get("HESTIA_ALLOW_DUMMY_MODEL") == "1":
+        cfg.inference.model_name = "dummy"
     validate_inference_model_name(cfg.inference.model_name)
 
     db = Database(cfg.storage.database_url)
