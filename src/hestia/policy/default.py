@@ -19,6 +19,8 @@ from hestia.runtime_context import scheduler_tick_active
 if TYPE_CHECKING:
     from hestia.tools.registry import ToolRegistry
 
+logger = logging.getLogger(__name__)
+
 
 DEFAULT_DELEGATION_KEYWORDS: tuple[str, ...] = (
     "delegate",

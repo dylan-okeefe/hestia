@@ -340,12 +340,14 @@ class Orchestrator:
                                 user_message, chat_response.tool_calls
                             )
                             artifact_handles.extend(handles)
+                            turn.artifact_handles.extend(handles)
                             await self._transition(turn, TurnState.EXECUTING_TOOLS)
                         else:
                             tool_results, handles = await self._execute_tool_calls(
                                 session, chat_response.tool_calls, allowed_tools
                             )
                             artifact_handles.extend(handles)
+                            turn.artifact_handles.extend(handles)
 
                         # Add tool results to history
                         for result_msg in tool_results:

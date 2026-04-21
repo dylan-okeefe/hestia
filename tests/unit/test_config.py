@@ -9,6 +9,7 @@ from hestia.config import (
     DiscordVoiceConfig,
     HestiaConfig,
     IdentityConfig,
+    InferenceConfig,
     MatrixConfig,
     validate_discord_voice_for_run,
     validate_inference_model_name,
@@ -269,3 +270,31 @@ class TestValidateDiscordVoiceForRun:
         validate_discord_voice_for_run(
             DiscordVoiceConfig(enabled=True, bot_token="x", guild_id=1, voice_channel_id=2)
         )
+
+
+class TestInferenceConfigDummyRejection:
+    """H-5: reject the literal placeholder 'dummy' at config-load."""
+
+    def test_dummy_model_name_rejected_by_default(self, monkeypatch):
+        """Explicit model_name='dummy' raises ValueError at construct-time."""
+        monkeypatch.delenv("HESTIA_ALLOW_DUMMY_MODEL", raising=False)
+        with pytest.raises(ValueError, match="model_name == 'dummy' is rejected"):
+            InferenceConfig(model_name="dummy")
+
+    def test_dummy_model_name_allowed_with_env_override(self, monkeypatch):
+        """HESTIA_ALLOW_DUMMY_MODEL=1 lets CI/test paths keep the placeholder."""
+        monkeypatch.setenv("HESTIA_ALLOW_DUMMY_MODEL", "1")
+        cfg = InferenceConfig(model_name="dummy")
+        assert cfg.model_name == "dummy"
+
+    def test_empty_model_name_still_allowed(self, monkeypatch):
+        """Empty model_name is not 'dummy' — CLI/setup paths rely on this."""
+        monkeypatch.delenv("HESTIA_ALLOW_DUMMY_MODEL", raising=False)
+        cfg = InferenceConfig()
+        assert cfg.model_name == ""
+
+    def test_real_model_name_unaffected(self, monkeypatch):
+        """Any model name other than the literal 'dummy' passes through."""
+        monkeypatch.delenv("HESTIA_ALLOW_DUMMY_MODEL", raising=False)
+        cfg = InferenceConfig(model_name="qwen2.5-7b-instruct-q4_k_m.gguf")
+        assert cfg.model_name == "qwen2.5-7b-instruct-q4_k_m.gguf"

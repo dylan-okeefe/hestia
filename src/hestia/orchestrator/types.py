@@ -47,5 +47,7 @@ class Turn:
     error: str | None = None  # populated on FAILED
     reasoning_budget: int = 2048  # reasoning tokens budgeted for this turn
     transitions: list[TurnTransition] = field(default_factory=list)
-    #: Artifact handles produced during this turn (tools, subagent, etc.).
+    # Artifact handles produced by tool calls during this turn. Populated by
+    # the orchestrator engine; consumed by the delegate_task tool so a
+    # subagent can surface the artifacts it produced back to its caller.
     artifact_handles: list[str] = field(default_factory=list)

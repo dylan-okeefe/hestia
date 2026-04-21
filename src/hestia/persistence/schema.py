@@ -141,6 +141,10 @@ traces = sa.Table(
     sa.Index("idx_traces_created", "started_at"),
 )
 
+# Egress events — outbound HTTP requests the agent makes (web_search, http_get
+# tools). Co-owned with `traces` by TraceStore because both feed the egress /
+# usage audit view, but the DDL canonically lives here so `metadata.create_all`
+# is the single authoritative creator (consolidated in H-10, 2026-04-20).
 egress_events = sa.Table(
     "egress_events",
     metadata,
