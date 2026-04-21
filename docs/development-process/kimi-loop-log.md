@@ -7,6 +7,45 @@
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
 
+## 2026-04-20 — L50: commands.py split into package (feature branch)
+
+**Outcome:** `src/hestia/commands.py` (1,112 lines) decomposed into
+`src/hestia/commands/` package by domain. All existing CLI tests pass;
+import smoke test green; `cli.py` requires no changes.
+
+**Branch:** `feature/l50-commands-split` (from `develop`)
+**Status:** Complete on feature branch; **do NOT merge to develop** until
+release-prep merge sequence.
+
+**Package breakdown:**
+
+| Module | Lines | Domain |
+|--------|-------|--------|
+| `__init__.py` | 103 | Re-exports + lazy `cli` via `__getattr__` |
+| `_shared.py` | 27 | Helpers used by multiple modules |
+| `chat.py` | 105 | Chat / ask commands |
+| `scheduler.py` | 263 | Scheduled task CRUD + daemon |
+| `policy.py` | 224 | Policy show command |
+| `tools.py` | 142 | Skill list/show/promote/demote/disable |
+| `style.py` | 33 | Style profile show |
+| `voice.py` | 6 | Reserved for future voice handlers |
+| `admin.py` | 253 | Init, health, status, failures, audit, email, doctor |
+| `reflection.py` | 175 | Reflection status/list/show/accept/reject/defer/run/history |
+
+**Gates:**
+- `pytest tests/cli/ tests/unit/ -q` → **830 passed**, 1 failed (pre-existing `test_voice_pipeline.py` unrelated to this change).
+- `mypy src/hestia/commands/` → **0 errors**.
+- `ruff check src/hestia/commands/` → **All checks passed**.
+- Baseline issues in untouched files unchanged (14 mypy errors, 28 ruff errors).
+
+**Key design decision:** `cli` is re-exported lazily via `__getattr__` to avoid
+circular imports (`cli.py` imports `_cmd_*` from `hestia.commands`; tests import
+`cli` from `hestia.cli`).
+
+**Handoff:** [`docs/handoffs/L50-commands-split-handoff.md`](../../handoffs/L50-commands-split-handoff.md)
+
+---
+
 ## 2026-04-20 — Release: v0.9.0 tagged (Copilot audit response + L40/L41/L42/L45a/b/c close-out)
 
 **Outcome:** `v0.9.0` annotated tag placed on `develop` tip; `main`

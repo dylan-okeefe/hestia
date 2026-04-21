@@ -13,6 +13,11 @@ or voice Phase B Discord credentials).
 doc (to start Copilot backlog work) or Dylan's Discord credentials (to start
 voice Phase B). No active Kimi loop.
 
+**Completed (not yet merged):**
+- `feature/l50-commands-split` — `commands.py` → `commands/` package refactor.
+  Handoff: [`docs/handoffs/L50-commands-split-handoff.md`](../../handoffs/L50-commands-split-handoff.md).
+  **Do NOT merge to develop** until release-prep merge sequence.
+
 ---
 
 ## v0.9.0 release snapshot
