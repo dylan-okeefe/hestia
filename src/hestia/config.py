@@ -157,6 +157,160 @@ class MatrixConfig:
         )
 
 
+def _env_first_nonempty(env: dict[str, str], *keys: str) -> str:
+    for key in keys:
+        raw = env.get(key)
+        if raw is None:
+            continue
+        stripped = raw.strip()
+        if stripped:
+            return stripped
+    return ""
+
+
+def _parse_discord_snowflake_env(env: dict[str, str], *keys: str) -> int:
+    """Parse first non-empty env value as a Discord snowflake (unsigned int)."""
+    text = _env_first_nonempty(env, *keys)
+    if not text:
+        return 0
+    try:
+        return int(text)
+    except ValueError:
+        return 0
+
+
+def _parse_discord_user_id_list(env: dict[str, str], *keys: str) -> tuple[int, ...]:
+    text = _env_first_nonempty(env, *keys)
+    if not text:
+        return ()
+    out: list[int] = []
+    for part in text.split(","):
+        piece = part.strip()
+        if not piece:
+            continue
+        try:
+            out.append(int(piece))
+        except ValueError:
+            continue
+    return tuple(out)
+
+
+def _env_truthy(env: dict[str, str], key: str) -> bool:
+    raw = env.get(key, "").strip().lower()
+    return raw in ("1", "true", "yes", "on")
+
+
+def _env_falsy(env: dict[str, str], key: str) -> bool:
+    raw = env.get(key, "").strip().lower()
+    return raw in ("0", "false", "no", "off")
+
+
+@dataclass
+class DiscordVoiceConfig:
+    """Discord voice adapter (Phase B).
+
+    ``bot_token`` should come from ``HESTIA_DISCORD_TOKEN`` (never commit it).
+    Guild and channel ids normally live in operator ``config.py``; ``from_env``
+    is a convenience for ``EnvironmentFile=``-style deployments.
+    """
+
+    enabled: bool = False
+    bot_token: str = ""
+    guild_id: int = 0
+    voice_channel_id: int = 0
+    text_channel_id: int | None = None
+    allowed_speaker_ids: tuple[int, ...] = ()
+    barge_in: bool = True
+    smart_turn_threshold: float = 0.75
+    fast_silence_ms: int = 350
+    patient_silence_ms: int = 4000
+    safety_timeout_ms: int = 6000
+    filler_words: tuple[str, ...] = ("uh", "um", "uhh", "hmm", "wait")
+    end_of_turn_keywords: tuple[str, ...] = ()
+    pre_response_cue: bool = False
+
+    @classmethod
+    def from_env(cls, environ: dict[str, str] | None = None) -> DiscordVoiceConfig:
+        """Load Discord voice settings from the process environment.
+
+        **Canonical keys (recommended):**
+
+        - ``HESTIA_DISCORD_TOKEN`` — bot token.
+        - ``HESTIA_DISCORD_GUILD_ID`` — server (guild) id.
+        - ``HESTIA_DISCORD_VOICE_CHANNEL_ID`` — voice channel id.
+        - ``HESTIA_DISCORD_TEXT_CHANNEL_ID`` — optional text channel id.
+        - ``HESTIA_DISCORD_ALLOWED_USER_IDS`` — comma-separated Discord user
+          ids; empty means any guild member may speak (dev / small servers).
+        - ``HESTIA_DISCORD_VOICE_ENABLED`` — ``1`` / ``true`` / ``yes`` to set
+          ``enabled=True``. Absent or empty leaves ``enabled=False`` unless you
+          set it explicitly in ``config.py``.
+
+        **Legacy aliases** (used only when the canonical key is unset):
+
+        - ``DISCORD_GUILD`` → ``guild_id``
+        - ``DISCORD_VOICE_CHANNEL`` → ``voice_channel_id``
+        - ``DISCORD_TEXT_CHANNEL`` → ``text_channel_id``
+        - ``ALLOWED_DISCORD_USERS`` → ``allowed_speaker_ids``
+        """
+        env = environ if environ is not None else os.environ
+        token = _env_first_nonempty(env, "HESTIA_DISCORD_TOKEN")
+
+        guild_id = _parse_discord_snowflake_env(
+            env, "HESTIA_DISCORD_GUILD_ID", "DISCORD_GUILD"
+        )
+        voice_channel_id = _parse_discord_snowflake_env(
+            env, "HESTIA_DISCORD_VOICE_CHANNEL_ID", "DISCORD_VOICE_CHANNEL"
+        )
+
+        text_raw = _env_first_nonempty(
+            env, "HESTIA_DISCORD_TEXT_CHANNEL_ID", "DISCORD_TEXT_CHANNEL"
+        )
+        text_channel_id: int | None
+        if text_raw:
+            try:
+                text_channel_id = int(text_raw)
+            except ValueError:
+                text_channel_id = None
+        else:
+            text_channel_id = None
+
+        allowed_speaker_ids = _parse_discord_user_id_list(
+            env, "HESTIA_DISCORD_ALLOWED_USER_IDS", "ALLOWED_DISCORD_USERS"
+        )
+
+        enabled = False
+        if _env_falsy(env, "HESTIA_DISCORD_VOICE_ENABLED"):
+            enabled = False
+        elif _env_truthy(env, "HESTIA_DISCORD_VOICE_ENABLED"):
+            enabled = True
+
+        return cls(
+            enabled=enabled,
+            bot_token=token,
+            guild_id=guild_id,
+            voice_channel_id=voice_channel_id,
+            text_channel_id=text_channel_id,
+            allowed_speaker_ids=allowed_speaker_ids,
+        )
+
+
+def validate_discord_voice_for_run(cfg: DiscordVoiceConfig) -> None:
+    """Raise ``ValueError`` if Discord voice is enabled but misconfigured."""
+    if not cfg.enabled:
+        return
+    if not (cfg.bot_token or "").strip():
+        raise ValueError(
+            "discord_voice.enabled is True but bot_token is empty "
+            "(set HESTIA_DISCORD_TOKEN)."
+        )
+    if cfg.guild_id == 0 or cfg.voice_channel_id == 0:
+        raise ValueError(
+            "discord_voice.enabled is True but guild_id or voice_channel_id "
+            "is missing (set HESTIA_DISCORD_GUILD_ID and "
+            "HESTIA_DISCORD_VOICE_CHANNEL_ID)."
+        )
+
+
 @dataclass
 class TrustConfig:
     """How much latitude to grant the agent in headless contexts.
@@ -430,6 +584,7 @@ class HestiaConfig:
     storage: StorageConfig = field(default_factory=StorageConfig)
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
     matrix: MatrixConfig = field(default_factory=MatrixConfig)
+    discord_voice: DiscordVoiceConfig = field(default_factory=DiscordVoiceConfig)
     identity: IdentityConfig = field(default_factory=IdentityConfig)
     trust: TrustConfig = field(default_factory=TrustConfig)
     web_search: WebSearchConfig = field(default_factory=WebSearchConfig)

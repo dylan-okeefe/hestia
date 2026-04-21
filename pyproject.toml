@@ -27,6 +27,7 @@ postgres = ["asyncpg>=0.31.0"]
 voice = [
     "faster-whisper>=1.0.0",
     "piper-tts>=1.2.0",
+    "py-cord[voice]>=2.6.0",
 ]
 
 [project.scripts]
@@ -74,7 +75,16 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
-module = ["nio", "asyncpg", "faster_whisper", "piper"]
+module = [
+    "nio",
+    "asyncpg",
+    "faster_whisper",
+    "piper",
+    "discord",
+    "discord.ext",
+    "discord.ext.commands",
+    "discord.sinks",
+]
 ignore_missing_imports = true
 
 

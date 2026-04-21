@@ -285,6 +285,8 @@ async def _check_llamacpp_reachable(app: CliAppContext) -> CheckResult:
 
 async def _check_platform_prereqs(app: CliAppContext) -> CheckResult:
     """Validate that enabled platforms have required credentials."""
+    from hestia.config import validate_discord_voice_for_run
+
     cfg = app.config
     failures: list[str] = []
     enabled: list[str] = []
@@ -321,6 +323,13 @@ async def _check_platform_prereqs(app: CliAppContext) -> CheckResult:
         if not has_password and not has_password_env:
             failures.append("email: password not set and password_env not resolved")
 
+    if cfg.discord_voice.enabled:
+        enabled.append("discord_voice")
+        try:
+            validate_discord_voice_for_run(cfg.discord_voice)
+        except ValueError as exc:
+            failures.append(f"discord_voice: {exc}")
+
     if failures:
         return CheckResult("platform_prereqs", False, "\n".join(failures))
     if not enabled:
@@ -354,10 +363,25 @@ async def _check_voice_prerequisites(app: CliAppContext) -> CheckResult:
             "faster-whisper present but piper-tts missing; voice extra incomplete",
         )
 
+    if importlib.util.find_spec("discord") is None and app.config.discord_voice.enabled:
+        return CheckResult(
+            "voice_prerequisites",
+            False,
+            "discord_voice.enabled but py-cord is not installed (pip install 'hestia[voice]')",
+        )
+
+    if importlib.util.find_spec("discord") is None:
+        return CheckResult(
+            "voice_prerequisites",
+            True,
+            "voice STT/TTS deps present; py-cord not installed "
+            "(ok unless Discord voice is enabled)",
+        )
+
     return CheckResult(
         "voice_prerequisites",
         True,
-        "voice extra installed (faster-whisper + piper-tts)",
+        "voice extra installed (faster-whisper + piper-tts + py-cord)",
     )
 
 

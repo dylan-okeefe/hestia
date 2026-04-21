@@ -331,6 +331,18 @@ class TestPlatformPrereqs:
         assert result.ok is False
         assert "password_env not resolved" in result.detail
 
+    async def test_platform_prereqs_discord_voice_missing_token(self, make_app):
+        """Discord voice enabled but token missing."""
+        from hestia.config import DiscordVoiceConfig, HestiaConfig
+
+        cfg = HestiaConfig.default()
+        cfg.discord_voice = DiscordVoiceConfig(enabled=True, guild_id=1, voice_channel_id=2)
+        app = make_app(cfg)
+        result = await _check_platform_prereqs(app)
+        assert result.ok is False
+        assert "discord_voice:" in result.detail
+        assert "bot_token" in result.detail
+
 
 class TestTrustPresetResolves:
     """Tests for _check_trust_preset_resolves."""
