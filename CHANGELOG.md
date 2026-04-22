@@ -5,6 +5,32 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-04-22
+
+Minor release. Completes Telegram voice-message hardening, officially
+abandons Discord live-voice Phase B, and reorganizes all architecture
+decisions into individual ADR files.
+
+### Voice
+- Telegram voice messages now guard against sub-word audio (<0.25 s)
+  before Whisper STT to prevent hallucinations on accidental tap-and-release.
+- Discord always-listening voice channel (Phase B) is removed from dev
+  and marked **Abandoned** in ADR-026. The STT/TTS pipeline it spawned
+  is reused for Telegram voice messages.
+
+### Reliability
+- `memory.save()` now warns when called outside an identity context,
+  preventing orphan unscoped rows.
+
+### Documentation
+- `docs/DECISIONS.md` monolith (550 lines) split into 26 individual
+  ADR files with consistent 3-digit numbering (`docs/adr/ADR-001` through
+  `ADR-026`).
+- All cross-references updated across README, CHANGELOG, guides, releases,
+  and handoffs.
+- New `hestia-voice` skill documents the voice pipeline, DAVE encryption,
+  and turn-detection architecture.
+
 ## [0.9.1] — 2026-04-20
 
 Patch release. Consolidates the Copilot audit backlog from v0.9.0

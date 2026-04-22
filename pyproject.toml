@@ -1,6 +1,6 @@
 [project]
 name = "hestia"
-version = "0.9.1"
+version = "0.10.0"
 description = "Local-first personal assistant framework for consumer GPU LLMs"
 readme = "README.md"
 authors = [
