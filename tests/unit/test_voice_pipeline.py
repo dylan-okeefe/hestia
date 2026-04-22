@@ -83,10 +83,14 @@ class TestSynthesize:
     async def test_synthesize_yields_sentence_chunks(
         self, voice_config: VoiceConfig
     ) -> None:
+        class FakeChunk:
+            def __init__(self, data: bytes) -> None:
+                self.audio_int16_bytes = data
+
         fake_voice = MagicMock()
         fake_voice.synthesize.side_effect = [
-            [b"audio1"],
-            [b"audio2"],
+            [FakeChunk(b"audio1")],
+            [FakeChunk(b"audio2")],
         ]
 
         with patch(

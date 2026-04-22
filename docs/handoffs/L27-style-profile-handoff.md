@@ -13,7 +13,7 @@
 | §6b — Unit tests (context) | `tests/unit/test_style_profile_context.py` | 8280198 |
 | §6c — Integration tests (lifecycle) | `tests/integration/test_style_lifecycle.py` | 8280198 |
 | §7a — README update | `README.md` | 8280198 |
-| §7b — ADR | `docs/adr/ADR-0019-style-profile-vs-identity.md` | 8280198 |
+| §7b — ADR | `docs/adr/ADR-019-style-profile-vs-identity.md` | 8280198 |
 | §8 — Scheduler integration | `src/hestia/style/scheduler.py`, `src/hestia/cli.py` | 8280198 |
 | §9 — Orchestrator wiring | `src/hestia/orchestrator/engine.py` | 8280198 |
 | §10 — Version bump | `pyproject.toml`, `CHANGELOG.md`, `uv.lock` | 8280198 |
@@ -55,6 +55,6 @@ No new lint debt introduced in changed files.
 - [x] `pyproject.toml` bumped to 0.7.1.
 - [x] `CHANGELOG.md` updated.
 - [x] `README.md` updated with "Style profile" subsection under "Reflection loop".
-- [x] ADR-0019 written.
+- [x] ADR-019 written.
 - [x] Handoff report written.
 - [x] Feature branch `feature/l27-style-profile` pushed.

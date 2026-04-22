@@ -262,6 +262,8 @@ async def test_post_done_respond_callback_error_no_illegal_transition() -> None:
 
         # Turn should remain DONE (no IllegalTransitionError raised)
         assert turn.state == TurnState.DONE
+        mock_context_builder.build.assert_called_once()
+        mock_inference.chat.assert_called_once()
         # respond_callback called twice: first for content (failed),
         # second for fallback error notification (succeeded)
         assert respond_callback.call_count == 2

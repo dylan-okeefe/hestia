@@ -18,6 +18,11 @@ build/
 
 # Runtime worktree local state (see ~/Hestia-runtime/config.runtime.py)
 /runtime-data/
+/runtime-data.bak*
+
+# Code review artifacts (local only)
+/.code-review-graph/
+/runtime-data.bak-*
 
 # Hestia local state
 .hestia/
@@ -47,3 +52,4 @@ CLAUDE.md
 # Alembic
 migrations/__pycache__/
 migrations/versions/__pycache__/
+*.pid

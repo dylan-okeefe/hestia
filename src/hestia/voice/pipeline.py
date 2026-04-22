@@ -61,9 +61,9 @@ class VoicePipeline:
 
     def _synthesize_sentence(self, sentence: str) -> bytes:
         audio_bytes = b""
-        # PiperVoice.synthesize returns a generator of PCM16 bytes
+        # PiperVoice.synthesize returns a generator of AudioChunk objects
         for chunk in self._tts_voice.synthesize(sentence):  # type: ignore[attr-defined]
-            audio_bytes += chunk
+            audio_bytes += chunk.audio_int16_bytes
         return audio_bytes
 
     async def _ensure_stt_loaded(self) -> None:

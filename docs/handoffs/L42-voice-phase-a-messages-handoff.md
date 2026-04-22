@@ -1,3 +1,5 @@
+> **Historical note:** This handoff describes work from the v0.8.x–v0.9.0 era. Phase B (live voice calls) was later abandoned; Telegram voice messages are the supported hands-free path. The adapter code described here is production and unchanged.
+
 # L42 Handoff — Voice Phase A: Telegram Voice Messages
 
 **Branch:** `feature/voice-phase-a-messages`  

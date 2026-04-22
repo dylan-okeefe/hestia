@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import dataclasses
+import json
 import os
+import types
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar, Literal, Self, Union, get_args, get_origin, get_type_hints
 
 
 class EmailConfigError(ValueError):
@@ -30,13 +34,205 @@ def validate_inference_model_name(model_name: str) -> None:
         "HESTIA_ALLOW_DUMMY_MODEL=1 if you intentionally use a dummy model."
     )
 
-# Default location for operator-authored personality (compiled identity; see ADR-022).
+# Default location for operator-authored personality (compiled identity; see ADR-0025).
 DEFAULT_SOUL_MD_PATH = Path("SOUL.md")
 
 
+def _is_optional(field_type: Any) -> bool:
+    """Return True if *field_type* is ``X | None``."""
+    origin = get_origin(field_type)
+    if origin is not Union and origin is not types.UnionType:
+        return False
+    return type(None) in get_args(field_type)
+
+
+def _coerce_env_value(raw: str, field_type: Any, field_name: str) -> Any:
+    """Convert a raw env string to the Python type indicated by *field_type*.
+
+    Raises ``ValueError`` with a clear message on parse failure.
+    """
+    origin = get_origin(field_type)
+    args = get_args(field_type)
+
+    # Optional[X]  (including X | None)
+    if _is_optional(field_type):
+        non_none = [a for a in args if a is not type(None)]
+        if len(non_none) == 1:
+            inner = non_none[0]
+            if raw.strip() == "":
+                return None
+            return _coerce_env_value(raw, inner, field_name)
+        # Complex union – fall back to string
+        return raw
+
+    # Literal[...]
+    if origin is Literal:
+        return raw
+
+    # list[str]
+    if origin is list:
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"invalid JSON for {field_name}: {exc}") from exc
+        if not isinstance(parsed, list):
+            raise ValueError(
+                f"expected JSON list for {field_name}, got {type(parsed).__name__}"
+            )
+        if args and args[0] is str and not all(isinstance(x, str) for x in parsed):
+            raise ValueError(f"expected JSON list of strings for {field_name}")
+        return parsed
+
+    # tuple[int, ...] or tuple[str, ...]
+    if origin is tuple:
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            # Fall back to comma-separated for non-JSON input (legacy env values)
+            parsed = [x.strip() for x in raw.split(",") if x.strip()]
+        if isinstance(parsed, int):
+            # Bare integer like "123" for tuple[int, ...] — wrap it
+            parsed = [parsed]
+        if not isinstance(parsed, list):
+            raise ValueError(
+                f"expected JSON list for {field_name}, got {type(parsed).__name__}"
+            )
+        if args and args[-1] is Ellipsis and len(args) == 2:
+            inner_type = args[0]
+            try:
+                return tuple(inner_type(x) for x in parsed)
+            except (ValueError, TypeError) as exc:
+                raise ValueError(
+                    f"expected JSON list of {inner_type.__name__} for {field_name}: {exc}"
+                ) from exc
+        # Fixed-length tuple – coerce each element if we can, else return tuple
+        return tuple(parsed)
+
+    # Basic scalar types
+    if field_type is str:
+        return raw
+    if field_type is int:
+        try:
+            return int(raw)
+        except ValueError as exc:
+            raise ValueError(f"expected integer for {field_name}, got {raw!r}") from exc
+    if field_type is float:
+        try:
+            return float(raw)
+        except ValueError as exc:
+            raise ValueError(f"expected float for {field_name}, got {raw!r}") from exc
+    if field_type is bool:
+        lowered = raw.strip().lower()
+        if lowered in ("1", "true", "yes", "on"):
+            return True
+        if lowered in ("0", "false", "no", "off"):
+            return False
+        raise ValueError(f"expected boolean for {field_name}, got {raw!r}")
+    if field_type is Path:
+        return Path(raw)
+
+    # Unsupported – caller should skip
+    raise TypeError(f"unsupported env type {field_type!r} for {field_name}")
+
+
+class _ConfigFromEnv:
+    """Mixin that adds ``from_env`` to dataclass-based config objects."""
+
+    _ENV_PREFIX: ClassVar[str] = ""
+    _ENV_KEY_OVERRIDES: ClassVar[dict[str, str]] = {}
+    _LEGACY_ALIASES: ClassVar[dict[str, list[str]]] = {}
+
+    @classmethod
+    def from_env(cls, environ: dict[str, str] | None = None) -> Self:
+        """Instantiate from environment variables.
+
+        The canonical prefix is ``HESTIA_{_ENV_PREFIX}_*``.  When
+        ``_ENV_PREFIX`` is empty it is derived from the class name
+        (e.g. ``InferenceConfig`` → ``INFERENCE``).
+        """
+        env = environ if environ is not None else os.environ
+        prefix = cls._ENV_PREFIX or cls.__name__.removesuffix("Config").upper()
+        return cls(**cls.from_env_dict(prefix, env))
+
+    @classmethod
+    def from_env_dict(
+        cls, prefix: str, environ: dict[str, str] | os._Environ[str]
+    ) -> dict[str, Any]:
+        """Build a kwargs dict for the dataclass constructor.
+
+        Handles ``str``, ``int``, ``float``, ``bool``, ``Path``,
+        ``list[str]``, ``tuple[int, ...]``, ``tuple[str, ...]`` and
+        optional variants.
+        """
+        hints = get_type_hints(cls)
+        result: dict[str, Any] = {}
+
+        assert dataclasses.is_dataclass(cls)
+        for f in dataclasses.fields(cls):
+            if not f.init:
+                continue
+
+            field_type = hints.get(f.name, f.type)
+            env_key = cls._ENV_KEY_OVERRIDES.get(
+                f.name, f"HESTIA_{prefix}_{f.name.upper()}"
+            )
+
+            raw = environ.get(env_key)
+            if raw is None:
+                for legacy_key in cls._LEGACY_ALIASES.get(env_key, []):
+                    raw = environ.get(legacy_key)
+                    if raw is not None:
+                        warnings.warn(
+                            f"Legacy env key {legacy_key!r} is deprecated, "
+                            f"use {env_key!r}",
+                            DeprecationWarning,
+                            stacklevel=4,
+                        )
+                        break
+
+            if raw is None:
+                continue  # use dataclass default
+
+            # Empty string for non-str/non-Literal types means "use default"
+            if raw.strip() == "":
+                effective_type = field_type
+                if _is_optional(field_type):
+                    non_none = [a for a in get_args(field_type) if a is not type(None)]
+                    if len(non_none) == 1:
+                        effective_type = non_none[0]
+                if effective_type is str or (
+                    get_origin(effective_type) is Literal and "" in get_args(effective_type)
+                ):
+                    pass  # allow empty string
+                else:
+                    continue
+
+            # Skip complex nested types (sub-configs, dicts, etc.)
+            if dataclasses.is_dataclass(field_type) and isinstance(field_type, type):
+                continue
+            if get_origin(field_type) in (dict,):
+                continue
+
+            try:
+                value = _coerce_env_value(raw, field_type, f.name)
+            except ValueError as exc:
+                raise ValueError(f"{env_key}: {exc}") from exc
+
+            result[f.name] = value
+
+        return result
+
+
+# ---------------------------------------------------------------------------
+# Config classes
+# ---------------------------------------------------------------------------
+
+
 @dataclass
-class IdentityConfig:
+class IdentityConfig(_ConfigFromEnv):
     """Configuration for Hestia's personality/identity."""
+
+    _ENV_PREFIX = "IDENTITY"
 
     soul_path: Path | None = field(
         default_factory=lambda: DEFAULT_SOUL_MD_PATH,
@@ -47,10 +243,18 @@ class IdentityConfig:
     max_tokens: int = 300  # Hard cap on compiled view size
     recompile_on_change: bool = True  # Recompile if soul.md changes
 
+    def __post_init__(self) -> None:
+        if self.max_tokens < 0:
+            raise ValueError(
+                f"IdentityConfig.max_tokens must be non-negative, got {self.max_tokens}"
+            )
+
 
 @dataclass
-class InferenceConfig:
+class InferenceConfig(_ConfigFromEnv):
     """Configuration for the llama.cpp inference server."""
+
+    _ENV_PREFIX = "INFERENCE"
 
     base_url: str = "http://localhost:8001"
     model_name: str = ""
@@ -59,10 +263,33 @@ class InferenceConfig:
     default_reasoning_budget: int = 2048
     max_tokens: int = 1024
 
+    def __post_init__(self) -> None:
+        # Reject the literal placeholder "dummy" at config-load: historically
+        # this slipped through and surfaced later as mystifying 404 / "model
+        # not found" errors from llama-server. Empty model_name is still
+        # allowed here (CLI/setup paths like `hestia doctor` lazily
+        # fall back to a placeholder string when they don't need real
+        # inference); the real-inference guard lives in
+        # InferenceClient.__init__.
+        if self.model_name == "dummy" and os.environ.get("HESTIA_ALLOW_DUMMY_MODEL") != "1":
+            raise ValueError(
+                "inference.model_name == 'dummy' is rejected at config-load — "
+                "set it to your real llama.cpp model filename (e.g. "
+                "'qwen2.5-7b-instruct-q4_k_m.gguf'), or export "
+                "HESTIA_ALLOW_DUMMY_MODEL=1 for CI / test paths that rely on "
+                "the placeholder."
+            )
+        if self.max_tokens < 0:
+            raise ValueError(
+                f"InferenceConfig.max_tokens must be non-negative, got {self.max_tokens}"
+            )
+
 
 @dataclass
-class SlotConfig:
+class SlotConfig(_ConfigFromEnv):
     """Configuration for the SlotManager."""
+
+    _ENV_PREFIX = "SLOT"
 
     slot_dir: Path = field(default_factory=lambda: Path("slots"))
     """Directory where llama-server persists slot snapshots. **Must match
@@ -76,15 +303,19 @@ class SlotConfig:
 
 
 @dataclass
-class SchedulerConfig:
+class SchedulerConfig(_ConfigFromEnv):
     """Configuration for the Scheduler."""
+
+    _ENV_PREFIX = "SCHEDULER"
 
     tick_interval_seconds: float = 5.0
 
 
 @dataclass
-class StorageConfig:
+class StorageConfig(_ConfigFromEnv):
     """Configuration for persistence and artifact storage."""
+
+    _ENV_PREFIX = "STORAGE"
 
     database_url: str = "sqlite+aiosqlite:///hestia.db"
     artifacts_dir: Path = field(default_factory=lambda: Path("artifacts"))
@@ -92,8 +323,10 @@ class StorageConfig:
 
 
 @dataclass
-class TelegramConfig:
+class TelegramConfig(_ConfigFromEnv):
     """Configuration for the Telegram adapter."""
+
+    _ENV_PREFIX = "TELEGRAM"
 
     bot_token: str = ""
     allowed_users: list[str] = field(
@@ -113,12 +346,14 @@ class TelegramConfig:
 
 
 @dataclass
-class MatrixConfig:
+class MatrixConfig(_ConfigFromEnv):
     """Configuration for the Matrix adapter.
 
     Security: allowed_rooms is a whitelist. Empty list denies all inbound.
     Session mapping: one Matrix room -> one Hestia session (room ID as platform_user).
     """
+
+    _ENV_PREFIX = "MATRIX"
 
     homeserver: str = "https://matrix.org"
     user_id: str = ""  # Bot MXID e.g., @hestia-bot:matrix.org
@@ -128,37 +363,9 @@ class MatrixConfig:
     rate_limit_edits_seconds: float = 1.5
     sync_timeout_ms: int = 30000  # Long-poll timeout for /sync
 
-    @classmethod
-    def from_env(cls, environ: dict[str, str] | None = None) -> MatrixConfig:
-        """Load Matrix configuration from environment variables.
-
-        Reads:
-            HESTIA_MATRIX_HOMESERVER
-            HESTIA_MATRIX_USER_ID
-            HESTIA_MATRIX_DEVICE_ID
-            HESTIA_MATRIX_ACCESS_TOKEN
-            HESTIA_MATRIX_ALLOWED_ROOMS (comma-separated room IDs or aliases)
-        """
-        import os
-
-        env = environ if environ is not None else os.environ
-        allowed_rooms_raw = env.get("HESTIA_MATRIX_ALLOWED_ROOMS", "")
-        allowed_rooms = (
-            [r.strip() for r in allowed_rooms_raw.split(",") if r.strip()]
-            if allowed_rooms_raw
-            else []
-        )
-        return cls(
-            homeserver=env.get("HESTIA_MATRIX_HOMESERVER", "https://matrix.org"),
-            user_id=env.get("HESTIA_MATRIX_USER_ID", ""),
-            device_id=env.get("HESTIA_MATRIX_DEVICE_ID", "hestia-bot"),
-            access_token=env.get("HESTIA_MATRIX_ACCESS_TOKEN", ""),
-            allowed_rooms=allowed_rooms,
-        )
-
 
 @dataclass
-class TrustConfig:
+class TrustConfig(_ConfigFromEnv):
     """How much latitude to grant the agent in headless contexts.
 
     Hestia's threat model for personal-use deployments is "operator is the
@@ -171,6 +378,8 @@ class TrustConfig:
     or `developer` via `TrustConfig.household()` / `TrustConfig.developer()`
     in their `config.py`.
     """
+
+    _ENV_PREFIX = "TRUST"
 
     # Tools that auto-approve without a confirm_callback on headless platforms.
     # When a tool with requires_confirmation=True is called and no confirm_callback
@@ -270,19 +479,15 @@ class TrustConfig:
 
 
 @dataclass
-class HandoffConfig:
+class HandoffConfig(_ConfigFromEnv):
     """Controls session-close summary generation.
 
     Disabled by default. When enabled, the orchestrator generates a
     2-3 sentence summary at session close and stores it as a memory
     entry with tag ``handoff``.
-
-    Example::
-
-        config = HestiaConfig(
-            handoff=HandoffConfig(enabled=True, min_messages=4, max_chars=350),
-        )
     """
+
+    _ENV_PREFIX = "HANDOFF"
 
     enabled: bool = False
     min_messages: int = 4  # skip very short sessions
@@ -290,28 +495,26 @@ class HandoffConfig:
 
 
 @dataclass
-class CompressionConfig:
+class CompressionConfig(_ConfigFromEnv):
     """Controls in-turn history compression on overflow.
 
     Disabled by default. When enabled, the context builder calls a
     :class:`~hestia.context.compressor.HistoryCompressor` on dropped
     messages and splices the summary back into the effective system
     prompt for that turn.
-
-    Example::
-
-        config = HestiaConfig(
-            compression=CompressionConfig(enabled=True, max_chars=400),
-        )
     """
+
+    _ENV_PREFIX = "COMPRESSION"
 
     enabled: bool = False
     max_chars: int = 400
 
 
 @dataclass
-class EmailConfig:
+class EmailConfig(_ConfigFromEnv):
     """Configuration for email integration (IMAP read + SMTP draft/send)."""
+
+    _ENV_PREFIX = "EMAIL"
 
     imap_host: str = ""
     imap_port: int = 993
@@ -344,8 +547,10 @@ class EmailConfig:
 
 
 @dataclass
-class SecurityConfig:
+class SecurityConfig(_ConfigFromEnv):
     """Security-related toggles for Hestia."""
+
+    _ENV_PREFIX = "SECURITY"
 
     injection_scanner_enabled: bool = True
     injection_entropy_threshold: float = 5.5
@@ -354,26 +559,42 @@ class SecurityConfig:
 
 
 @dataclass
-class PolicyConfig:
+class PolicyConfig(_ConfigFromEnv):
     """Configuration for the policy engine."""
+
+    _ENV_PREFIX = "POLICY"
 
     delegation_keywords: tuple[str, ...] | None = None
     research_keywords: tuple[str, ...] | None = None
 
 
 @dataclass
-class StyleConfig:
+class StyleConfig(_ConfigFromEnv):
     """Configuration for the interaction-style profile system."""
+
+    _ENV_PREFIX = "STYLE"
 
     enabled: bool = False
     min_turns_to_activate: int = 20
     lookback_days: int = 30
     cron: str = "15 3 * * *"
 
+    def __post_init__(self) -> None:
+        from croniter import croniter
+
+        try:
+            croniter(self.cron)
+        except Exception as exc:
+            raise ValueError(
+                f"StyleConfig.cron is not a valid cron expression: {self.cron}"
+            ) from exc
+
 
 @dataclass
-class ReflectionConfig:
+class ReflectionConfig(_ConfigFromEnv):
     """Configuration for the reflection loop (self-improvement during idle hours)."""
+
+    _ENV_PREFIX = "REFLECTION"
 
     enabled: bool = False
     cron: str = "0 3 * * *"
@@ -383,10 +604,22 @@ class ReflectionConfig:
     expire_days: int = 14
     model_override: str | None = None  # if operator wants a smaller model
 
+    def __post_init__(self) -> None:
+        from croniter import croniter
+
+        try:
+            croniter(self.cron)
+        except Exception as exc:
+            raise ValueError(
+                f"ReflectionConfig.cron is not a valid cron expression: {self.cron}"
+            ) from exc
+
 
 @dataclass
-class VoiceConfig:
+class VoiceConfig(_ConfigFromEnv):
     """Configuration for the voice pipeline (STT/TTS)."""
+
+    _ENV_PREFIX = "VOICE"
 
     stt_model: str = "faster-whisper/large-v3-turbo"
     stt_device: str = "cuda"
@@ -400,13 +633,15 @@ class VoiceConfig:
 
 
 @dataclass
-class WebSearchConfig:
+class WebSearchConfig(_ConfigFromEnv):
     """Configuration for the web_search tool.
 
     Default `provider=""` disables the tool entirely — it won't register
     in the tool registry if unconfigured. Operators opt in by setting
     provider + api_key in their config.py.
     """
+
+    _ENV_PREFIX = "WEB_SEARCH"
 
     provider: Literal["tavily", ""] = ""  # "tavily" or "" (disabled)
     api_key: str = ""
@@ -417,12 +652,14 @@ class WebSearchConfig:
 
 
 @dataclass
-class HestiaConfig:
+class HestiaConfig(_ConfigFromEnv):
     """Top-level Hestia configuration.
 
     CLI options override values set here. Config files are loaded
     with HestiaConfig.from_file() and merged with CLI overrides.
     """
+
+    _ENV_PREFIX = "HESTIA"
 
     inference: InferenceConfig = field(default_factory=InferenceConfig)
     slots: SlotConfig = field(default_factory=SlotConfig)
@@ -473,6 +710,32 @@ class HestiaConfig:
                 f"got {type(config).__name__}"
             )
         validate_inference_model_name(config.inference.model_name)
+        # Guard against post-instantiation mutation
+        if config.inference.max_tokens < 0:
+            raise ValueError(
+                f"InferenceConfig.max_tokens must be non-negative, "
+                f"got {config.inference.max_tokens}"
+            )
+        if config.identity.max_tokens < 0:
+            raise ValueError(
+                f"IdentityConfig.max_tokens must be non-negative, "
+                f"got {config.identity.max_tokens}"
+            )
+        from croniter import croniter
+
+        try:
+            croniter(config.style.cron)
+        except Exception as exc:
+            raise ValueError(
+                f"StyleConfig.cron is not a valid cron expression: {config.style.cron}"
+            ) from exc
+        try:
+            croniter(config.reflection.cron)
+        except Exception as exc:
+            raise ValueError(
+                f"ReflectionConfig.cron is not a valid cron expression: "
+                f"{config.reflection.cron}"
+            ) from exc
         return config
 
     _PRESET_ENABLE_CACHE: ClassVar[dict[tuple[Any, ...], bool]] = {}

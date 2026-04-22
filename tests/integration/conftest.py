@@ -10,6 +10,7 @@ from hestia.memory.store import MemoryStore
 from hestia.persistence.db import Database
 from hestia.persistence.sessions import SessionStore
 from hestia.tools.registry import ToolRegistry
+from hestia.config import StorageConfig
 
 
 @pytest.fixture
@@ -104,9 +105,9 @@ def tool_registry(artifact_store, memory_store, file_sandbox):
     registry.register(current_time)
     registry.register(http_get)
     registry.register(terminal)
-    registry.register(make_read_file_tool([file_sandbox]))
-    registry.register(make_list_dir_tool([file_sandbox]))
-    registry.register(make_write_file_tool([file_sandbox]))
+    registry.register(make_read_file_tool(StorageConfig(allowed_roots=[file_sandbox])))
+    registry.register(make_list_dir_tool(StorageConfig(allowed_roots=[file_sandbox])))
+    registry.register(make_write_file_tool(StorageConfig(allowed_roots=[file_sandbox])))
     registry.register(make_read_artifact_tool(artifact_store))
     registry.register(make_save_memory_tool(memory_store))
     registry.register(make_list_memories_tool(memory_store))

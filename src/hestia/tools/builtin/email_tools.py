@@ -5,12 +5,15 @@ Tools are only registered when EmailConfig is populated (imap_host set).
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from hestia.config import EmailConfig
 from hestia.email.adapter import EmailAdapter
 from hestia.tools.capabilities import EMAIL_SEND, NETWORK_EGRESS
 from hestia.tools.metadata import tool
+
+logger = logging.getLogger(__name__)
 
 
 def make_email_tools(config: EmailConfig) -> list[Any]:
@@ -370,6 +373,7 @@ def make_email_search_and_read_tool(adapter: EmailAdapter) -> Any:
                 try:
                     msg = await adapter.read_message(uid)
                 except Exception:
+                    logger.warning("Failed to read email uid=%s; skipping", uid, exc_info=True)
                     continue
                 body = msg.get("body", "")
                 snippet = body[:200] if len(body) > 200 else body

@@ -48,18 +48,26 @@ class TraceRecord:
 class TraceStore:
     """Store for execution traces.
 
-    ``traces`` and ``egress_events`` are defined in
+    The ``traces`` and ``egress_events`` tables are declared in
     :mod:`hestia.persistence.schema` and created by
-    :meth:`hestia.persistence.db.Database.create_tables` (H-10). This class
-    no longer runs duplicate inline DDL; :meth:`create_table` is a no-op kept
-    for backward compatibility with :meth:`CliAppContext.bootstrap_db`.
+    :meth:`Database.create_tables`. :meth:`create_table` here is kept as a
+    no-op shim for backward compatibility with callers that predate the H-10
+    DDL consolidation (2026-04-20). New code should rely on
+    ``Database.create_tables`` exclusively.
     """
 
     def __init__(self, db: Database) -> None:
         self._db = db
 
     async def create_table(self) -> None:
-        """No-op: tables are created via ``Database.create_tables()`` from schema."""
+        """Deprecated no-op kept for call-site compatibility.
+
+        Schema creation now lives in
+        :meth:`hestia.persistence.db.Database.create_tables` via the shared
+        SQLAlchemy metadata. The duplicated raw DDL that lived here was the
+        source of drift flagged by the Copilot audit (H-10, 2026-04-20).
+        """
+        return None
 
     async def record(self, trace: TraceRecord) -> None:
         """Persist a trace record."""

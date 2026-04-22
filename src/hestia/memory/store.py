@@ -90,7 +90,7 @@ class MemoryStore:
                 except Exception:
                     old_schema_exists = True
             except Exception:
-                pass  # Table does not exist at all (fresh database)
+                logger.debug("memory table does not exist (fresh database)", exc_info=True)
 
             if old_schema_exists and self._fts5_available:
                 await conn.execute(sa.text("DROP TABLE IF EXISTS _memory_backup"))
@@ -192,6 +192,13 @@ class MemoryStore:
                 platform = ctx_platform
             if platform_user is None:
                 platform_user = ctx_platform_user
+        if platform is None or platform_user is None:
+            logger.warning(
+                "memory.save called outside an identity context; "
+                "saving as unscoped (platform=%r, platform_user=%r)",
+                platform,
+                platform_user,
+            )
 
         memory_id = f"mem_{uuid.uuid4().hex[:16]}"
         tag_str = " ".join(tags) if tags else ""

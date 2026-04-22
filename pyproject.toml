@@ -1,6 +1,6 @@
 [project]
 name = "hestia"
-version = "0.9.1"
+version = "0.10.0"
 description = "Local-first personal assistant framework for consumer GPU LLMs"
 readme = "README.md"
 authors = [
@@ -27,6 +27,7 @@ postgres = ["asyncpg>=0.31.0"]
 voice = [
     "faster-whisper>=1.0.0",
     "piper-tts>=1.2.0",
+    "py-cord[voice]>=2.6.0",
 ]
 
 [project.scripts]
@@ -74,7 +75,13 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
-module = ["nio", "asyncpg", "faster_whisper", "piper"]
+module = [
+    "nio",
+    "asyncpg",
+    "faster_whisper",
+    "piper",
+
+]
 ignore_missing_imports = true
 
 

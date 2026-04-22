@@ -7,6 +7,7 @@ from hestia.tools.builtin.current_time import current_time
 from hestia.tools.builtin.read_artifact import make_read_artifact_tool
 from hestia.tools.builtin.read_file import make_read_file_tool
 from hestia.tools.builtin.terminal import terminal
+from hestia.config import StorageConfig
 
 
 class TestCurrentTime:
@@ -42,21 +43,21 @@ class TestReadFile:
     @pytest.mark.asyncio
     async def test_missing_file(self, tmp_path):
         """Missing file returns error message."""
-        read_file = make_read_file_tool([str(tmp_path)])
+        read_file = make_read_file_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
         result = await read_file("/nonexistent/path/to/file.txt")
         assert "Access denied" in result or "File not found" in result
 
     @pytest.mark.asyncio
     async def test_directory_not_file(self, tmp_path):
         """Directory returns error message."""
-        read_file = make_read_file_tool(["/tmp"])
+        read_file = make_read_file_tool(StorageConfig(allowed_roots=["/tmp"]))
         result = await read_file("/tmp")
         assert "Not a file" in result
 
     @pytest.mark.asyncio
     async def test_reads_text_file(self, tmp_path):
         """Reads text file contents."""
-        read_file = make_read_file_tool([str(tmp_path)])
+        read_file = make_read_file_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
         test_file = tmp_path / "test.txt"
         test_file.write_text("Hello, World!")
 
@@ -66,7 +67,7 @@ class TestReadFile:
     @pytest.mark.asyncio
     async def test_reads_utf8_content(self, tmp_path):
         """Reads UTF-8 content correctly."""
-        read_file = make_read_file_tool([str(tmp_path)])
+        read_file = make_read_file_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
         test_file = tmp_path / "unicode.txt"
         test_file.write_text("Hello 世界 🌍", encoding="utf-8")
 
@@ -77,7 +78,7 @@ class TestReadFile:
     @pytest.mark.asyncio
     async def test_respects_max_bytes(self, tmp_path):
         """Respects max_bytes parameter."""
-        read_file = make_read_file_tool([str(tmp_path)])
+        read_file = make_read_file_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
         test_file = tmp_path / "large.txt"
         test_file.write_text("x" * 10000)
 
@@ -87,7 +88,7 @@ class TestReadFile:
     @pytest.mark.asyncio
     async def test_binary_file_message(self, tmp_path):
         """Binary files return message, not decoded content."""
-        read_file = make_read_file_tool([str(tmp_path)])
+        read_file = make_read_file_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
         test_file = tmp_path / "binary.bin"
         test_file.write_bytes(bytes(range(256)))  # Non-UTF8 bytes
 

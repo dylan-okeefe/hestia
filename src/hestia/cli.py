@@ -283,6 +283,13 @@ def run_matrix(ctx: click.Context) -> None:
     except KeyboardInterrupt:
         click.echo("\nShutting down.")
 
+
+@cli.group()
+def setup() -> None:
+    """Operator bootstrap helpers."""
+    pass
+
+
 # Memory command group
 @cli.group()
 def memory() -> None:

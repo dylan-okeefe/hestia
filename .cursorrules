@@ -205,6 +205,39 @@ src/hestia/
   policy/             # Policy engine
 ```
 
+## Voice development (Telegram)
+
+The voice stack lives in `src/hestia/platforms/telegram_adapter.py` (voice
+message receive / reply) and `src/hestia/voice/` (shared STT/TTS pipeline).
+Telegram voice messages are the supported hands-free path. Discord live voice
+and Phase B live calls were abandoned — see review docs for rationale.
+
+### Audio pipeline
+- **Receive:** Telegram OGG/Opus → `ffmpeg` → PCM16 mono 16 kHz → faster-whisper
+- **Send:** LLM reply text → Piper TTS → PCM16 mono ~22 kHz → `ffmpeg` →
+  OGG/Opus at 24 kbps → `sendVoice`
+- **Truncation:** If the synthesized reply exceeds Telegram's 1 MB voice-note
+  limit, iteratively shorten with `ffmpeg -t` and post the full text as a
+  follow-up message.
+
+### Known pitfalls
+1. **Short audio hallucinations:** Whisper `medium` hallucinates heavily on
+   <0.25 s audio ("Thanks for watching!", "Subtitles by…"). The adapter guards
+   against this with `_MIN_MONO16_BYTES = 8_000` (~0.25 s) and replies with a
+   polite text prompt asking the user to speak longer.
+2. **ffmpeg subprocess death:** `_ogg_to_pcm` and `_pcm_chunks_to_ogg_opus`
+   raise `RuntimeError` on non-zero exit; the outer `try/except` in
+   `_handle_voice_message` converts this to a user-facing text message.
+3. **TTS truncation:** The fixed-factor heuristic (0.85, 0.7, 0.55, 0.4, 0.25)
+   can still overshoot. In practice an oversized reply means the LLM wrote an
+   essay — fix the prompt or `max_tokens`, not the encoder.
+
+### Stack versions
+- Python 3.13 (audioop removed; `ffmpeg` handles format conversion)
+- faster-whisper 1.2.1
+- piper-tts 1.4.2 (`PiperVoice.synthesize()` returns `AudioChunk` objects)
+- ffmpeg 7.x
+
 ## Conventions
 
 - Conventional commits (feat, fix, refactor, test, docs)

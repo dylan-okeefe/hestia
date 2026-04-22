@@ -4,7 +4,7 @@
 `max-ralph-iterations` before committing).
 **Branch:** `feature/l30-cli-decomposition`
 **Spec:** [`../development-process/kimi-loops/L30-cli-decomposition.md`](../development-process/kimi-loops/L30-cli-decomposition.md)
-**ADR:** [`../adr/ADR-0020-cli-decomposition.md`](../adr/ADR-0020-cli-decomposition.md)
+**ADR:** [`../adr/ADR-020-cli-decomposition.md`](../adr/ADR-020-cli-decomposition.md)
 
 ## What shipped
 

@@ -1,4 +1,4 @@
-# ADR-024: Skills as User-Defined Python Functions
+# ADR-0024: Skills as User-Defined Python Functions
 
 ## Status
 

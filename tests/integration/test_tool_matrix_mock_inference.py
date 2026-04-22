@@ -23,6 +23,7 @@ from hestia.core.types import (
 )
 from hestia.orchestrator import Orchestrator, TurnState
 from hestia.tools.builtin.delegate_task import make_delegate_task_tool
+from hestia.config import StorageConfig
 
 
 def _make_session(session_id: str = "test_session") -> Session:
@@ -532,8 +533,8 @@ async def test_delegate_task_minimal(
     parent_registry.register(current_time)
     parent_registry.register(http_get)
     parent_registry.register(terminal)
-    parent_registry.register(make_read_file_tool([file_sandbox]))
-    parent_registry.register(make_list_dir_tool([file_sandbox]))
+    parent_registry.register(make_read_file_tool(StorageConfig(allowed_roots=[file_sandbox])))
+    parent_registry.register(make_list_dir_tool(StorageConfig(allowed_roots=[file_sandbox])))
     parent_registry.register(delegate_tool)
 
     responses = [

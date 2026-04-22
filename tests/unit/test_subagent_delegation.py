@@ -83,6 +83,41 @@ async def test_delegate_task_invokes_factory_orchestrator(store, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_delegate_task_surfaces_artifact_refs_from_turn(store, tmp_path):
+    """H-7: subagent-produced artifact handles flow to SubagentResult.artifact_refs."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    sub_turn = Turn(
+        id="sub-turn",
+        session_id="placeholder",
+        state=TurnState.DONE,
+        user_message=None,
+        started_at=datetime.now(),
+        completed_at=datetime.now(),
+        iterations=2,
+        tool_calls_made=2,
+        final_response="Generated two reports",
+        error=None,
+        transitions=[],
+        artifact_handles=["artifact-abc123", "artifact-def456"],
+    )
+
+    mock_orch = MagicMock()
+    mock_orch.process_turn = AsyncMock(return_value=sub_turn)
+
+    def factory():
+        return mock_orch
+
+    tool = make_delegate_task_tool(store, factory)
+    text = await tool("Produce two reports", context="", timeout_seconds=30.0)
+
+    assert "artifact-abc123" in text
+    assert "artifact-def456" in text
+    # And the to_text "Artifacts: ..." line renders both handles comma-joined.
+    assert "Artifacts: artifact-abc123, artifact-def456" in text
+
+
+@pytest.mark.asyncio
 async def test_orchestrator_policy_delegation_replaces_tool_batch(store, tmp_path):
     """When policy delegates, delegate_task runs and tool results map to each tool_call id."""
     artifact_store = ArtifactStore(tmp_path / "art")

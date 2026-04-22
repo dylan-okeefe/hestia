@@ -67,7 +67,7 @@ The `voice_prerequisites` check reports:
 ## 6. Enabling voice messages on Telegram (Phase A)
 
 Hestia can receive and reply with voice messages via the existing Telegram bot.
-This is a lightweight stepping-stone toward live voice calls (Phase B).
+This is the supported hands-free voice path.
 
 ### Requirements
 
@@ -110,9 +110,13 @@ No extra credentials are needed — voice messages reuse the existing
 - Replies that would exceed Telegram's 1 MB voice-note limit are truncated;
   the full text is sent as a follow-up text message.
 - Destructive tools still require the usual inline-keyboard confirmation
-  (verbal confirmations are a Phase B feature).
+  (verbal confirmations are not supported).
 
 ### What's next
 
-Phase B adds **live voice calls** via Pyrogram + py-tgcalls.  See
-`docs/development-process/kimi-loops/L43-voice-phase-b-calls.md` for the spec.
+Live voice calls (Phase B) were explored via Discord voice channels and
+abandoned due to E2EE complexity and poor latency. Voice messages on
+Telegram cover the hands-free use case. See
+`docs/adr/ADR-026-discord-voice-architecture.md` for the historical
+rationale and `docs/development-process/reviews/telegram-voice-enablement-2026-04-22.md`
+for the current enablement checklist.

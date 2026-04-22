@@ -1,0 +1,6 @@
+HESTIA_KIMI_DONE=1
+LOOP=L47
+BRANCH=chore/l47-adr-normalization
+COMMIT=TBD
+TESTS=1 passed
+RUFF_SRC=25

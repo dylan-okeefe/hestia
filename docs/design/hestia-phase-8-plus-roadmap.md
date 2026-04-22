@@ -86,7 +86,7 @@ The compiled identity view becomes the first thing in the system message. It sta
 - Compiled identity appears at start of system message in context builder output
 - Large soul.md is truncated, not rejected
 
-**ADR:** ADR-022 — Identity as a compiled, bounded, operator-owned document. Not self-evolving, not blurred with policy, not dynamic.
+**ADR:** ADR-0025 — Identity as a compiled, bounded, operator-owned document. Not self-evolving, not blurred with policy, not dynamic.
 
 ---
 
@@ -392,7 +392,7 @@ The system message assembly order becomes:
 - Modify: `src/hestia/cli.py` (compile epoch on session start)
 - New: `tests/unit/test_memory_epochs.py`
 
-**ADR:** ADR-023 — Memory epochs: compiled prompt-facing views refresh at controlled boundaries, not on every write. Rationale: prefix cache stability, token budget predictability, clear read/write boundaries.
+**ADR:** ADR-0023 — Memory epochs: compiled prompt-facing views refresh at controlled boundaries, not on every write. Rationale: prefix cache stability, token budget predictability, clear read/write boundaries.
 
 ---
 
@@ -519,7 +519,7 @@ hestia skill disable NAME           # disable without removing
 hestia skill test NAME              # run skill in sandbox mode
 ```
 
-**ADR:** ADR-024 — Skills as user-defined Python functions. Automatic discovery deferred until trace store has enough data. Skills are procedural memory with explicit trust lifecycle.
+**ADR:** ADR-0024 — Skills as user-defined Python functions. Automatic discovery deferred until trace store has enough data. Skills are procedural memory with explicit trust lifecycle.
 
 ---
 

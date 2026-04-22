@@ -25,7 +25,7 @@ This handoff covers the three mini-loops that refactored `ContextBuilder`:
 | L32b | `tests/unit/test_context_builder_prefix_registry.py` | 4 tests |
 | L32c | `src/hestia/context/builder.py` | `_tokenize_cache`, `_count_tokens`, `_join_overhead` |
 | L32c | `tests/unit/test_context_builder_tokenize_cache.py` | 4 tests |
-| L32c | `docs/adr/ADR-0021-context-builder-prefix-registry-and-tokenize-cache.md` | ADR |
+| L32c | `docs/adr/ADR-021-context-builder-prefix-registry-and-tokenize-cache.md` | ADR |
 
 ## Final gate
 

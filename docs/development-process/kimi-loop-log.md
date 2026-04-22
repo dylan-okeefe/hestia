@@ -7,6 +7,185 @@
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
 
+
+
+## 2026-04-21 — L52: ContextBuilder decomposition
+
+**Outcome:** `ContextBuilder.build` thinned from ~215 lines to 78 lines.
+
+**Scope authorization:** `docs/development-process/kimi-loops/L52-context-builder-decomposition.md`
+
+**Extracted:**
+- `HistoryWindowSelector` — `src/hestia/context/history_window_selector.py` (99 lines)
+- `CompressedSummaryStrategy` — `src/hestia/context/compressed_summary_strategy.py` (80 lines)
+
+**Quality gate:**
+- Tests: 43 passed (context builder + new modules)
+- Mypy: 0 errors in `src/hestia/context/`
+- Ruff: 0 errors in `src/hestia/context/`
+
+**Branch:** `feature/l52-context-builder-decomposition` — do NOT merge to develop until release-prep.
+
+## 2026-04-21 — L50: Commands.py split
+
+**Outcome:** `src/hestia/commands.py` (1112 lines) split into `src/hestia/commands/` package (9 modules).
+
+**Scope authorization:** `docs/development-process/kimi-loops/L50-commands-split.md`
+
+**Quality gate:**
+- Tests: 830 passed, 1 failed (pre-existing voice pipeline test)
+- Import smoke: `from hestia.commands import cli` OK
+- Mypy/ruff: baseline unchanged
+
+**Branch:** `feature/l50-commands-split` — do NOT merge to develop until release-prep.
+
+## 2026-04-21 — L49: Orchestrator extract-methods
+
+**Outcome:** `process_turn` reduced from ~390 lines to 98 lines.
+
+**Scope authorization:** `docs/development-process/kimi-loops/L49-orchestrator-extract-methods.md`
+
+**Extracted:** `_prepare_turn_context`, `_run_inference_loop`, `_handle_context_too_large`, `_handle_unexpected_error`, `_record_failure_if_enabled`, `_finalize_turn`, `_safe_transition`.
+
+**Quality gate:**
+- Tests: 19 passed (orchestrator tests)
+- Mypy: 0 errors in `src/hestia/orchestrator/engine.py`
+- Ruff: 0 errors in `src/hestia/orchestrator/engine.py`
+
+**Branch:** `feature/l49-orchestrator-extract-methods` — do NOT merge to develop until release-prep.
+
+## 2026-04-21 — L48: Config consistency and from_env mixin
+
+**Outcome:** `_ConfigFromEnv` mixin applied to all config classes; tool factory signatures normalized.
+
+**Scope authorization:** `docs/development-process/kimi-loops/L48-config-consistency.md`
+
+**Quality gate:**
+- Tests: 36 passed (config tests)
+- Mypy: 7 pre-existing errors (baseline unchanged)
+- Ruff: 25 errors (baseline unchanged)
+
+**Branch:** `feature/l48-config-consistency` — do NOT merge to develop until release-prep.
+
+## 2026-04-21 — L51: Missing test coverage bundle
+
+**Outcome:** Four new test files and four modified test files; all green.
+
+**Scope authorization:** `docs/development-process/kimi-loops/L51-missing-test-coverage.md`
+
+**New test files:**
+- `tests/unit/test_platform_runners.py` — platform routing, lifecycle, signal handling (16 tests)
+- `tests/unit/test_memory_epochs.py` — mock-store dedup, truncation, tag-filter (3 new tests appended)
+- `tests/unit/test_voice_vad.py` — SileroVAD stub behavior (3 tests)
+- `tests/unit/test_reflection_prompts.py` — prompt template integrity (4 tests)
+
+**Modified test files:**
+- `tests/unit/test_orchestrator_errors.py` — added `build.assert_called_once()` and `chat.assert_called_once()` to happy-path delivery-failure test
+- `tests/e2e/conftest.py` — `_responses` reset in fixture cleanup; removed unused imports
+
+**Quality gate:**
+- Tests: 47 passed, 6 skipped, 0 failed
+- Mypy: 14 pre-existing errors (baseline unchanged)
+- Ruff: no new issues in changed files
+
+**Deferred:** `commands.py` tests → L50; `context/builder.py` decomposition → L52.
+
+**Branch:** `feature/l51-missing-test-coverage` — do NOT merge to develop until release-prep.
+
+## 2026-04-21 — Loop: L47 — ADR normalization (Kimi)
+
+**Commands:** `git checkout -b chore/l47-adr-normalization` from `develop`. `.kimi-done`: `LOOP=L47`, `PYTEST=1 passed` (docs link test), `RUFF=25` (baseline unchanged).
+
+**Outcome:** 33 ADR files in `docs/adr/` (all 4-digit zero-padded, no collisions). Legacy inline `docs/DECISIONS.md` replaced with index. Orphaned `ADR-023` moved from `docs/architecture/adr/`. `docs/hestia-design-revised-april-2026.md` moved to `docs/design/`. Identity ADR renumbered `022→0025` to resolve collision with skills-preview ADR-0022. Scheduler/Matrix/etc. ADRs from `DECISIONS.md` renumbered `014→0027`, `015→0028`, `017→0029`, `018→0030`, `019→0031`, `020→0032`, `021→0033` to avoid collisions with existing separate-file ADRs.
+
+**Git:** Merged to develop via v0.10.0 release sequence.
+
+## 2026-04-20 — L48: Config consistency and `from_env` mixin (feature branch)
+
+**Outcome:** `feature/l48-config-consistency` branch green. All config classes now share
+`_ConfigFromEnv` mixin; tool factory signatures normalized; validation hardened.
+Do not merge to `develop` until release-prep sequence.
+
+**Scope authorization:** `docs/development-process/kimi-loops/L48-config-consistency.md`
+
+**Key changes:**
+- `_ConfigFromEnv` mixin with `from_env_dict(prefix, environ)` using dataclass introspection.
+- Type coercion for `str`, `int`, `float`, `bool`, `Path`, `list[str]`, `tuple[int, ...]`, `tuple[str, ...]`.
+- JSON parsing for list/tuple fields; malformed JSON → clear `ValueError`.
+- Canonical `HESTIA_*` prefixes; legacy `DISCORD_*` aliases with `DeprecationWarning`.
+- Applied mixin to all 19 config classes; removed duplicated `MatrixConfig` / `DiscordVoiceConfig` env logic.
+- Tool factories `make_read_file_tool`, `make_write_file_tool`, `make_list_dir_tool` now take `config: StorageConfig, **kw`.
+- Validation: negative `max_tokens` rejected; unparseable cron rejected.
+- `tests/unit/test_config.py` rewritten with mixin happy-path, error, legacy, and validation coverage.
+
+**Test results:** 919 passed, 6 skipped, 1 failed (pre-existing voice pipeline test).
+**Lint:** 0 new mypy/ruff errors in changed files.
+
+
+## 2026-04-20 — L50: commands.py split into package (feature branch)
+
+**Outcome:** `src/hestia/commands.py` (1,112 lines) decomposed into
+`src/hestia/commands/` package by domain. All existing CLI tests pass;
+import smoke test green; `cli.py` requires no changes.
+
+**Branch:** `feature/l50-commands-split` (from `develop`)
+**Status:** Complete on feature branch; **do NOT merge to develop** until
+release-prep merge sequence.
+
+**Package breakdown:**
+
+| Module | Lines | Domain |
+|--------|-------|--------|
+| `__init__.py` | 103 | Re-exports + lazy `cli` via `__getattr__` |
+| `_shared.py` | 27 | Helpers used by multiple modules |
+| `chat.py` | 105 | Chat / ask commands |
+| `scheduler.py` | 263 | Scheduled task CRUD + daemon |
+| `policy.py` | 224 | Policy show command |
+| `tools.py` | 142 | Skill list/show/promote/demote/disable |
+| `style.py` | 33 | Style profile show |
+| `voice.py` | 6 | Reserved for future voice handlers |
+| `admin.py` | 253 | Init, health, status, failures, audit, email, doctor |
+| `reflection.py` | 175 | Reflection status/list/show/accept/reject/defer/run/history |
+
+**Gates:**
+- `pytest tests/cli/ tests/unit/ -q` → **830 passed**, 1 failed (pre-existing `test_voice_pipeline.py` unrelated to this change).
+- `mypy src/hestia/commands/` → **0 errors**.
+- `ruff check src/hestia/commands/` → **All checks passed**.
+- Baseline issues in untouched files unchanged (14 mypy errors, 28 ruff errors).
+
+**Key design decision:** `cli` is re-exported lazily via `__getattr__` to avoid
+circular imports (`cli.py` imports `_cmd_*` from `hestia.commands`; tests import
+`cli` from `hestia.cli`).
+
+**Handoff:** [`docs/handoffs/L50-commands-split-handoff.md`](../../handoffs/L50-commands-split-handoff.md)
+
+
+## 2026-04-21 — L52 ContextBuilder decomposition
+
+**Outcome:** `ContextBuilder.build` thinned from ~215 lines to 78 lines.
+`HistoryWindowSelector` and `CompressedSummaryStrategy` extracted as dedicated
+classes with full unit-test coverage. All existing context-builder tests pass.
+
+**Scope authorization:** `docs/development-process/kimi-loops/L52-context-builder-decomposition.md`
+
+**Files changed:**
+- `src/hestia/context/history_window_selector.py` — new; truncation/selection logic
+- `src/hestia/context/compressed_summary_strategy.py` — new; compression retry logic
+- `src/hestia/context/builder.py` — refactored `build()` to 78 lines
+- `tests/unit/test_history_window_selector.py` — new tests
+- `tests/unit/test_compressed_summary_strategy.py` — new tests
+
+**Final gate:**
+- Tests: 43 passed (5 existing context-builder test files + 2 new)
+- Mypy: 0 errors in `src/hestia/context/`
+- Ruff: 0 errors in `src/hestia/context/`
+- Branch: `feature/l52-context-builder-decomposition`
+
+**Notes:** Feature branch; do NOT merge to `develop` until v0.9.1 release-prep.
+
+
+---
+
 ## 2026-04-20 — Release: v0.9.0 tagged (Copilot audit response + L40/L41/L42/L45a/b/c close-out)
 
 **Outcome:** `v0.9.0` annotated tag placed on `develop` tip; `main`

@@ -5,6 +5,32 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-04-22
+
+Minor release. Completes Telegram voice-message hardening, officially
+abandons Discord live-voice Phase B, and reorganizes all architecture
+decisions into individual ADR files.
+
+### Voice
+- Telegram voice messages now guard against sub-word audio (<0.25 s)
+  before Whisper STT to prevent hallucinations on accidental tap-and-release.
+- Discord always-listening voice channel (Phase B) is removed from dev
+  and marked **Abandoned** in ADR-026. The STT/TTS pipeline it spawned
+  is reused for Telegram voice messages.
+
+### Reliability
+- `memory.save()` now warns when called outside an identity context,
+  preventing orphan unscoped rows.
+
+### Documentation
+- `docs/DECISIONS.md` monolith (550 lines) split into 26 individual
+  ADR files with consistent 3-digit numbering (`docs/adr/ADR-001` through
+  `ADR-026`).
+- All cross-references updated across README, CHANGELOG, guides, releases,
+  and handoffs.
+- New `hestia-voice` skill documents the voice pipeline, DAVE encryption,
+  and turn-detection architecture.
+
 ## [0.9.1] — 2026-04-20
 
 Patch release. Consolidates the Copilot audit backlog from v0.9.0
@@ -199,11 +225,11 @@ public-ready, security-hardened, multi-platform local assistant.
 
 ### Context & resilience
 - **L21** — Session handoff summaries, history compression, loud `ContextTooLargeError` warnings, and `send_system_warning` platform channel.
-- **L32** — Context-builder rework: dead `TurnState`/`ToolResult` removed, ordered `_PrefixLayer` registry, per-message `/tokenize` cache (amortized O(1) tokenize calls per build for unchanged messages). ADR-0021.
+- **L32** — Context-builder rework: dead `TurnState`/`ToolResult` removed, ordered `_PrefixLayer` registry, per-message `/tokenize` cache (amortized O(1) tokenize calls per build for unchanged messages). ADR-021.
 
 ### Architecture & quality
 - **L22** — Mypy strictness ratchet: 44 → 0 errors. CI now fails on any new type error.
-- **L30** — CLI decomposition: 2,569-line `cli.py` monolith split into `app.py` (`CliAppContext`, command bodies) + `platforms/runners.py` (Telegram/Matrix runtime loops) + 588-line slim `cli.py`. ADR-0020. Ruff baseline collapsed from 255 → 44.
+- **L30** — CLI decomposition: 2,569-line `cli.py` monolith split into `app.py` (`CliAppContext`, command bodies) + `platforms/runners.py` (Telegram/Matrix runtime loops) + 588-line slim `cli.py`. ADR-020. Ruff baseline collapsed from 255 → 44.
 - **L31** — Orchestrator engine cleanup: extracted `_build_failure_bundle` (killed duplicated except-block bodies), hoisted `delegated`/`tool_chain` state, single `get_messages` per turn, artifact accumulation from `ToolCallResult.artifact_handle` (not regex), extracted `_check_confirmation`, new `ToolCallResult.error` classmethod.
 
 ### Security
@@ -245,7 +271,7 @@ public-ready, security-hardened, multi-platform local assistant.
   databases on next bootstrap.
 
 ### Skills & polish
-- **L33c** — Skills framework gated behind `HESTIA_EXPERIMENTAL_SKILLS=1` (raises `ExperimentalFeatureError` otherwise — visibility > convenience for a public release). ADR-0022. `_format_datetime` hoisted to module scope. `DefaultPolicyEngine.should_delegate` keyword list exposed via `PolicyConfig.delegation_keywords`. Matrix `_extract_in_reply_to` schema-validation contract locked with regression tests.
+- **L33c** — Skills framework gated behind `HESTIA_EXPERIMENTAL_SKILLS=1` (raises `ExperimentalFeatureError` otherwise — visibility > convenience for a public release). ADR-025. `_format_datetime` hoisted to module scope. `DefaultPolicyEngine.should_delegate` keyword list exposed via `PolicyConfig.delegation_keywords`. Matrix `_extract_in_reply_to` schema-validation contract locked with regression tests.
 - **L34** — Public-release polish: README model recommendations table (Llama-3.1-8B Q4_K_M default), "Running Hestia as a daemon" section, demo placeholder, env-var-first email setup guide.
 
 ### New diagnostic commands
@@ -303,12 +329,10 @@ been triaged into a backlog (`docs/development-process/kimi-loops/L40-copilot-cl
 and will land on feature branches before the next release prep merges
 them to `develop`:
 
-- **Sequential tool dispatch.** When the model emits multiple tool calls
-  in one assistant turn, the orchestrator dispatches them sequentially
-  even when they have no inter-call dependency (e.g. `search_memory` +
-  `web_search`). Concurrent dispatch is a single
-  `asyncio.gather` away but needs a correctness pass on tool-result
-  ordering, confirmation flow, and trace rendering before shipping.
+- **Sequential tool dispatch.** ~~Deferred.~~ **Shipped in v0.9.0**
+  (`L40-copilot-cleanup`). Tool dispatch is now concurrent by default:
+  independent tool calls run under `asyncio.gather` while preserving
+  emission order. Serial ordering is opt-in via `metadata.ordering`.
 - **`SlotManager.should_evict_slot` is a stub** that always returns
   `False`. Slot eviction policy is currently "hold until process exit"
   — fine for the personal-assistant target but reviewers will flag it.
@@ -334,8 +358,8 @@ post-release merge discipline rule in `.cursorrules` — no merge to
 - **0 mypy errors** in `src/hestia/`.
 - **228 ruff errors** in `src/` and `tests/` combined; **23 in `src/`
   alone** (the L37 baseline). Was uncapped at v0.2.2.
-- **22 ADRs** capturing every architectural decision (ADR-0014 through
-  ADR-0022).
+- **25+ ADRs** capturing every architectural decision (ADR-001 through
+  ADR-026).
 - **18 Kimi loops** (L20 → L38), with the L29-L31 monolithic loops
   manually finished by Cursor; L32a-L33c, L35a-d, and the L36-L38
   overnight chain all executed cleanly under the mini-loop chunking
@@ -363,7 +387,7 @@ post-release merge discipline rule in `.cursorrules` — no merge to
 ### Added
 - `ExperimentalFeatureError` exception type in `src/hestia/errors.py`.
 - `PolicyConfig` dataclass with `delegation_keywords` field.
-- ADR-0022 documenting the skills preview feature-flag decision.
+- ADR-025 documenting the skills preview feature-flag decision.
 - `tests/unit/test_skills_feature_flag.py` — regression coverage for the flag gate.
 - `tests/unit/test_policy_delegation_keywords.py` — regression coverage for custom and empty keyword configs.
 - `tests/unit/test_matrix_adapter.py` — regression coverage for `_extract_in_reply_to` schema validation contract.
@@ -403,7 +427,7 @@ post-release merge discipline rule in `.cursorrules` — no merge to
   across repeated builds, one-call invalidation on new messages, parity
   with the old joined-string baseline (±1 message at the boundary), and
   that `(role, content)` is the cache key (not `created_at`).
-- ADR-0021 documenting both the L32b prefix-layer registry and the L32c
+- ADR-021 documenting both the L32b prefix-layer registry and the L32c
   tokenize cache.
 
 ## [0.7.7] — 2026-04-18
@@ -470,7 +494,7 @@ post-release merge discipline rule in `.cursorrules` — no merge to
 ## [0.7.4] — 2026-04-18
 
 ### Changed
-- **`cli.py` decomposition (ADR-0020).** Split the 2,569-line monolith into:
+- **`cli.py` decomposition (ADR-020).** Split the 2,569-line monolith into:
   - `src/hestia/app.py` (≈1,520 lines) — `CliAppContext`, `make_app(config)`,
     lazy subsystem properties, idempotent `bootstrap_db()`, single
     `make_orchestrator()` constructor, and all `_cmd_*` async command
@@ -487,7 +511,7 @@ post-release merge discipline rule in `.cursorrules` — no merge to
 ### Added
 - `run_async` decorator (in `hestia.app`) that converts an `async def cmd(app, ...)`
   function into a Click-compatible sync handler running on a fresh event loop.
-- ADR-0020: cli.py decomposition rationale and module ownership boundaries.
+- ADR-020: cli.py decomposition rationale and module ownership boundaries.
 
 ### Fixed
 - `Orchestrator(...)` is now constructed in exactly one place
@@ -555,7 +579,7 @@ post-release merge discipline rule in `.cursorrules` — no merge to
   - `ContextBuilder` gains a `style_prefix` slot injected as the last prefix layer.
   - Orchestrator wires style prefix per-session when enabled and threshold is met.
   - CLI surface: `hestia style show`, `hestia style reset`, `hestia style disable`.
-  - ADR-0019 documenting the separation between operator-authored identity and
+  - ADR-019 documenting the separation between operator-authored identity and
     observed style profile.
   - Privacy note: style metrics live only in the local SQLite DB and never leave
     the machine.
@@ -574,7 +598,7 @@ post-release merge discipline rule in `.cursorrules` — no merge to
 - Session-start hook: when pending proposals exist, the orchestrator injects a
   one-time system note on the first turn of a new session.
 - CLI surface: `hestia reflection status/list/show/accept/reject/defer/run/history`.
-- ADR-0018 documenting the three-pass design and why proposals are never auto-applied.
+- ADR-018 documenting the three-pass design and why proposals are never auto-applied.
 - `docs/guides/reflection-tuning.md` with operator guidance on interpreting proposals,
   tuning cron / lookback, and handling false positives.
 - Unit tests: `tests/unit/test_reflection_runner.py`, `tests/unit/test_proposal_lifecycle.py`.
@@ -619,7 +643,7 @@ post-release merge discipline rule in `.cursorrules` — no merge to
   to a new `egress_events` table via `TraceStore.record_egress()`.
 - `hestia audit egress --since=7d` CLI subcommand prints domain-level aggregation
   with anomaly heuristics (low-volume and first-time domains).
-- ADR-0017 documenting the injection-detection and egress-audit design.
+- ADR-017 documenting the injection-detection and egress-audit design.
 - `SECURITY.md` with supported versions, reporting process, and configuration guide.
 
 ### Fixed

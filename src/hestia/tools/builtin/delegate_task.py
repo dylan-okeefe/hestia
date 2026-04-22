@@ -157,9 +157,6 @@ def make_delegate_task_tool(
             # VRAM is not shared with the parent turn (Copilot M-11).
             orchestrator = orchestrator_factory()
 
-            # Track results (populated from the delegated turn's artifact handles)
-            artifact_refs: list[str] = []
-
             # Run the subagent with timeout (respond_callback must be async — engine awaits it)
             async def _noop_respond(_: str) -> None:
                 return None
@@ -173,12 +170,18 @@ def make_delegate_task_tool(
                 )
                 return cast("Turn", turn)
 
-            # Execute with timeout
             try:
                 turn = await asyncio.wait_for(run_subagent(), timeout=timeout)
 
                 duration = (utcnow() - start_time).total_seconds()
                 artifact_refs = list(turn.artifact_handles)
+
+                # Pull artifact handles the subagent's tool calls produced
+                # during this turn. The engine populates
+                # ``turn.artifact_handles`` as each successful tool call
+                # returns an artifact handle; delegate_task surfaces them
+                # to the caller so the parent can attach / reference them.
+                artifact_refs: list[str] = list(turn.artifact_handles)
 
                 # Determine status from turn (use string comparison to avoid circular import)
                 state_value = getattr(turn.state, "value", str(turn.state))
@@ -207,11 +210,15 @@ def make_delegate_task_tool(
 
             except TimeoutError:
                 duration = (utcnow() - start_time).total_seconds()
+                # On timeout we don't have a completed Turn to inspect, so
+                # artifact_refs stays empty. Any artifacts the subagent did
+                # produce remain reachable from the subagent session's
+                # trace record even after archive.
                 result = SubagentResult(
                     status="timeout",
                     summary=f"Subagent timed out after {timeout}s",
                     completeness=0.0,
-                    artifact_refs=artifact_refs,
+                    artifact_refs=[],
                     error=f"Timeout after {timeout}s",
                     duration_seconds=duration,
                     tool_calls_made=0,  # We don't know

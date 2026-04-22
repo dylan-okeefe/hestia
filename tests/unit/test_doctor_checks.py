@@ -331,7 +331,6 @@ class TestPlatformPrereqs:
         assert result.ok is False
         assert "password_env not resolved" in result.detail
 
-
 class TestTrustPresetResolves:
     """Tests for _check_trust_preset_resolves."""
 
