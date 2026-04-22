@@ -57,6 +57,9 @@ class TelegramAdapter(Platform):
         self._confirmation_store = ConfirmationStore()
         self._confirmation_timeout_seconds = 60.0
 
+        # Background tasks that keep the typing indicator alive (refreshed every 4s).
+        self._typing_tasks: dict[str, asyncio.Task[None]] = {}
+
         # Voice deps are injected by run_platform when voice is enabled.
         self._orchestrator: Orchestrator | None = None
         self._session_store: SessionStore | None = None
@@ -124,6 +127,9 @@ class TelegramAdapter(Platform):
 
     async def stop(self) -> None:
         """Stop the Telegram adapter."""
+        for task in self._typing_tasks.values():
+            task.cancel()
+        self._typing_tasks.clear()
         if self._app is not None:
             if self._app.updater is not None:
                 await self._app.updater.stop()
@@ -184,16 +190,36 @@ class TelegramAdapter(Platform):
         )
 
     async def set_typing(self, user: str, typing: bool = True) -> None:
-        """Set typing indicator on Telegram (best-effort)."""
+        """Set typing indicator on Telegram (best-effort).
+
+        Telegram's typing indicator expires after ~5 seconds, so we start a
+        background task that refreshes it every 4 seconds while ``typing=True``.
+        """
         if self._app is None:
             return
-        try:
-            await self._app.bot.send_chat_action(
-                chat_id=int(user),
-                action="typing" if typing else "cancel",
-            )
-        except TelegramError:
-            pass
+
+        # Cancel any existing refresh task for this user.
+        existing = self._typing_tasks.pop(user, None)
+        if existing is not None:
+            existing.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await existing
+
+        if not typing:
+            return
+
+        async def _refresh() -> None:
+            while True:
+                try:
+                    await self._app.bot.send_chat_action(  # type: ignore[union-attr]
+                        chat_id=int(user),
+                        action="typing",
+                    )
+                except TelegramError:
+                    break
+                await asyncio.sleep(4.0)
+
+        self._typing_tasks[user] = asyncio.create_task(_refresh())
 
     async def request_confirmation(
         self, user: str, tool_name: str, arguments: dict[str, Any]
