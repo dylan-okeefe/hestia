@@ -141,7 +141,6 @@ class TelegramAdapter(Platform):
         msg = await self._app.bot.send_message(
             chat_id=chat_id,
             text=text,
-            parse_mode="Markdown",
         )
         return str(msg.message_id)
 
@@ -164,7 +163,6 @@ class TelegramAdapter(Platform):
                 chat_id=chat_id,
                 message_id=int(msg_id),
                 text=text,
-                parse_mode="Markdown",
             )
             self._last_edit_times[msg_id] = time.monotonic()
         except TelegramError as e:
