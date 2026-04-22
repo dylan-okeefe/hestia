@@ -32,6 +32,13 @@ references the old one rather than editing history.
 | [ADR-024](adr/ADR-024-skills-user-defined-python-functions.md) | Skills as User-Defined Python Functions | Accepted |
 | [ADR-025](adr/ADR-025-skills-preview-feature-flag.md) | Skills Preview Feature Flag | Accepted |
 | [ADR-026](adr/ADR-026-discord-voice-architecture.md) | Discord Always-Listening Voice Channel | Abandoned |
+| [ADR-027](adr/ADR-027-scheduler-runs-scheduled-tasks-via-the-existing-orchestrator.md) | Scheduler runs scheduled tasks via the existing Orchestrator | Accepted |
+| [ADR-028](adr/ADR-028-hestiaconfig-is-a-typed-python-dataclass-loaded-from-a-python-file.md) | HestiaConfig is a typed Python dataclass loaded from a Python file | Accepted |
+| [ADR-029](adr/ADR-029-long-term-memory-uses-sqlite-fts5-not-vector-search.md) | Long-term memory uses SQLite FTS5, not vector search | Accepted |
+| [ADR-030](adr/ADR-030-subagent-delegation-uses-same-process-different-slot-architecture.md) | Subagent delegation uses same-process, different-slot architecture | Accepted |
+| [ADR-031](adr/ADR-031-capability-labels-and-session-aware-tool-filtering.md) | Capability labels and session-aware tool filtering | Accepted |
+| [ADR-032](adr/ADR-032-typed-failure-bundles.md) | Typed failure bundles | Accepted |
+| [ADR-033](adr/ADR-033-matrix-adapter-with-room-based-session-mapping-and-allowlist.md) | Matrix adapter with room-based session mapping and allowlist | Accepted |
 
 ---
 
