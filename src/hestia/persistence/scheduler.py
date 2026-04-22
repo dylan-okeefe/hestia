@@ -87,6 +87,7 @@ class SchedulerStore:
         cron_expression: str | None = None,
         fire_at: datetime | None = None,
         enabled: bool = True,
+        notify: bool = False,
     ) -> ScheduledTask:
         """Create a new scheduled task.
 
@@ -125,6 +126,7 @@ class SchedulerStore:
             cron_expression=cron_expression,
             fire_at=fire_at,
             enabled=enabled,
+            notify=notify,
             created_at=created_at,
             last_run_at=None,
             next_run_at=next_run_at,
@@ -147,6 +149,7 @@ class SchedulerStore:
             last_run_at=None,
             next_run_at=next_run_at,
             last_error=None,
+            notify=notify,
         )
 
     async def list_due_tasks(
@@ -359,6 +362,7 @@ class SchedulerStore:
             cron_expression=row.cron_expression,
             fire_at=_ensure_utc(row.fire_at),
             enabled=bool(row.enabled) if row.enabled is not None else False,
+            notify=bool(getattr(row, "notify", None)),
             created_at=_ensure_utc(row.created_at) or utcnow(),
             last_run_at=_ensure_utc(row.last_run_at),
             next_run_at=_ensure_utc(row.next_run_at),

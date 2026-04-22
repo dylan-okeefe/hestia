@@ -93,6 +93,7 @@ scheduled_tasks = sa.Table(
     sa.Column("last_run_at", sa.DateTime, nullable=True),
     sa.Column("next_run_at", sa.DateTime, nullable=True),
     sa.Column("last_error", sa.Text, nullable=True),
+    sa.Column("notify", sa.Boolean, nullable=False, default=False),
     sa.Index("idx_scheduled_tasks_session", "session_id"),
     sa.Index("idx_scheduled_tasks_due", "next_run_at", "enabled"),
 )

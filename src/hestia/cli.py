@@ -190,6 +190,7 @@ def schedule() -> None:
 @click.option("--session-id", help="Bind task to an existing session ID")
 @click.option("--platform", help="Platform for session binding (e.g., matrix)")
 @click.option("--platform-user", help="Platform user for session binding (e.g., room ID)")
+@click.option("--notify", is_flag=True, help="Push task output to the session's platform")
 @click.argument("prompt")
 @run_async
 async def schedule_add(
@@ -200,10 +201,11 @@ async def schedule_add(
     session_id: str | None,
     platform: str | None,
     platform_user: str | None,
+    notify: bool,
     prompt: str,
 ) -> None:
     await _cmd_schedule_add(
-        app, cron, fire_at_str, description, session_id, platform, platform_user, prompt
+        app, cron, fire_at_str, description, session_id, platform, platform_user, notify, prompt
     )
 
 @schedule.command(name="list")

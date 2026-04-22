@@ -29,6 +29,7 @@ async def _cmd_schedule_add(
     session_id: str | None,
     platform: str | None,
     platform_user: str | None,
+    notify: bool,
     prompt: str,
 ) -> None:
     """Add a scheduled task."""
@@ -83,6 +84,7 @@ async def _cmd_schedule_add(
             description=description,
             cron_expression=cron,
             fire_at=fire_at,
+            notify=notify,
         )
         click.echo(f"Created task: {task.id}")
         click.echo(f"  Session: {task.session_id}")
@@ -91,6 +93,8 @@ async def _cmd_schedule_add(
         elif task.fire_at:
             click.echo(f"  Schedule: at {task.fire_at}")
         click.echo(f"  Next run: {task.next_run_at}")
+        if task.notify:
+            click.echo("  Notify: yes")
     except (HestiaError, ValueError) as e:
         click.echo(f"Error creating task: {e}", err=True)
         sys.exit(1)
@@ -144,6 +148,7 @@ async def _cmd_schedule_show(app: CliAppContext, task_id: str) -> None:
     elif task.fire_at:
         click.echo(f"Schedule:    at {_format_datetime(task.fire_at)}")
     click.echo(f"Enabled:     {'yes' if task.enabled else 'no'}")
+    click.echo(f"Notify:      {'yes' if task.notify else 'no'}")
     click.echo(f"Next run:    {_format_datetime(task.next_run_at)}")
     click.echo(f"Last run:    {_format_datetime(task.last_run_at)}")
     if task.last_error:
@@ -172,12 +177,16 @@ async def _cmd_schedule_run(app: CliAppContext, task_id: str) -> None:
     async def response_callback(task: ScheduledTask, text: str) -> None:
         click.echo(f"[{task.id}] {text}")
 
+    from hestia.platforms.notifier import PlatformNotifier
+
+    notifier = PlatformNotifier(app.config) if task.notify else None
     scheduler = Scheduler(
         scheduler_store=store,
         session_store=app.session_store,
         orchestrator=orchestrator,
         response_callback=response_callback,
         system_prompt=app.config.system_prompt,
+        notifier=notifier,
     )
     try:
         await scheduler.run_now(task_id)
@@ -222,6 +231,9 @@ def _cmd_schedule_daemon(ctx: click.Context, tick_interval: float | None) -> Non
         await app.bootstrap_db()
         store = _require_scheduler_store(app)
         orchestrator = app.make_orchestrator()
+        from hestia.platforms.notifier import PlatformNotifier
+
+        notifier = PlatformNotifier(app.config)
         scheduler = Scheduler(
             scheduler_store=store,
             session_store=app.session_store,
@@ -229,6 +241,7 @@ def _cmd_schedule_daemon(ctx: click.Context, tick_interval: float | None) -> Non
             response_callback=response_callback,
             tick_interval_seconds=tick,
             system_prompt=app.config.system_prompt,
+            notifier=notifier,
         )
         await scheduler.start()
         click.echo(f"Scheduler daemon started (tick={tick}s). Press Ctrl-C to stop.")
