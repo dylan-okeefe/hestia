@@ -87,8 +87,12 @@ def _coerce_env_value(raw: str, field_type: Any, field_name: str) -> Any:
     if origin is tuple:
         try:
             parsed = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"invalid JSON for {field_name}: {exc}") from exc
+        except json.JSONDecodeError:
+            # Fall back to comma-separated for non-JSON input (legacy env values)
+            parsed = [x.strip() for x in raw.split(",") if x.strip()]
+        if isinstance(parsed, int):
+            # Bare integer like "123" for tuple[int, ...] — wrap it
+            parsed = [parsed]
         if not isinstance(parsed, list):
             raise ValueError(
                 f"expected JSON list for {field_name}, got {type(parsed).__name__}"
