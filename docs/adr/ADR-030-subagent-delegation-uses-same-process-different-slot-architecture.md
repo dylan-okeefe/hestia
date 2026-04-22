@@ -1,4 +1,4 @@
-# ADR-0030: Subagent delegation uses same-process, different-slot architecture
+# ADR-030: Subagent delegation uses same-process, different-slot architecture
 
 - **Status:** Accepted
 - **Date:** 2026-04-10

@@ -1,4 +1,4 @@
-# ADR-0031: Capability labels and session-aware tool filtering
+# ADR-031: Capability labels and session-aware tool filtering
 
 - **Status:** Accepted
 - **Date:** 2026-04-10

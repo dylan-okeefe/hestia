@@ -1,4 +1,4 @@
-# ADR-0032: Typed failure bundles
+# ADR-032: Typed failure bundles
 
 - **Status:** Accepted
 - **Date:** 2026-04-10

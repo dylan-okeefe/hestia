@@ -1,4 +1,4 @@
-# ADR-0033: Matrix adapter with room-based session mapping and allowlist
+# ADR-033: Matrix adapter with room-based session mapping and allowlist
 
 - **Status:** Accepted
 - **Date:** 2026-04-12

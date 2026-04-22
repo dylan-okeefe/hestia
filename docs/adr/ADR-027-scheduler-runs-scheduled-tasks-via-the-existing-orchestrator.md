@@ -1,4 +1,4 @@
-# ADR-0027: Scheduler runs scheduled tasks via the existing Orchestrator
+# ADR-027: Scheduler runs scheduled tasks via the existing Orchestrator
 
 - **Status:** Accepted
 - **Date:** 2026-04-09

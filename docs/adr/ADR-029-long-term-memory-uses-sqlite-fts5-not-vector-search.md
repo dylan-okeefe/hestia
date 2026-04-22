@@ -1,4 +1,4 @@
-# ADR-0029: Long-term memory uses SQLite FTS5, not vector search
+# ADR-029: Long-term memory uses SQLite FTS5, not vector search
 
 - **Status:** Accepted
 - **Date:** 2026-04-10

@@ -1,4 +1,4 @@
-# ADR-0028: HestiaConfig is a typed Python dataclass loaded from a Python file
+# ADR-028: HestiaConfig is a typed Python dataclass loaded from a Python file
 
 - **Status:** Accepted
 - **Date:** 2026-04-10
