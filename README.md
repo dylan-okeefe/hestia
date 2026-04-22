@@ -8,7 +8,7 @@ No cloud APIs. No telemetry. No subscriptions. Your conversations never leave th
 
 This project came out of my experience wrestling with using/modifying [**Hermes**](https://github.com/nousresearch/hermes-agent) with the constraints of running the LLM it used on my local hardware. That being said, I'm really impressed with the project, and you should absolutely check it out, especially if you're looking for an agentic harness that you can drop a frontier API into.
 
-**Status:** v0.9.1 (April 2026). Core is stable; Telegram, Matrix, CLI, email, scheduler, memory, and voice messages all work. Actively developed.
+**Status:** v0.10.0 (April 2026). Core is stable; Telegram, Matrix, CLI, email, scheduler, memory, and voice messages all work. Actively developed.
 
 ---
 
