@@ -1,6 +1,7 @@
-# ADR-0026: Discord Always-Listening Voice Channel
+# ADR-026: Discord Always-Listening Voice Channel
 
-**Status:** Accepted  
+**Status:** Abandoned  
+**Superseded by:** Telegram voice messages (Phase A) — the hands-free use case is covered by async voice notes without the complexity of live duplex voice channels.  
 **Date:** 2026-04-20  
 **Deciders:** Dylan O'Keefe, Cursor (build orchestrator)  
 
@@ -114,5 +115,4 @@ Reconsider if:
 
 - `docs/development-process/prompts/v0.8.0-release-and-voice-launch.md` — Phase B launch plan
 - `docs/guides/voice-setup.md` — Voice installation and VRAM budget guidance
-- `src/hestia/platforms/discord_voice_runner.py` — Implementation
-- `src/hestia/voice/turn_detector.py` — Turn-detection interface
+- `src/hestia/voice/turn_detector.py` — Turn-detection interface (still used by Telegram voice messages)

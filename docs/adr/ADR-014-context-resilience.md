@@ -1,4 +1,4 @@
-# ADR-0014: Context resilience — compression, handoff summaries, and overflow signals
+# ADR-014: Context resilience — compression, handoff summaries, and overflow signals
 
 ## Status
 

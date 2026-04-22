@@ -44,7 +44,7 @@
 - Disclosure line points to GitHub Security Advisories.
 
 ### §7 — ADR consolidation
-- Moved ADR-0014, 0015, 0017, 0018 from `docs/development-process/decisions/` → `docs/adr/`.
+- Moved ADR-014, 0015, 0017, 0018 from `docs/development-process/decisions/` → `docs/adr/`.
 - Updated references in `README.md`, handoff docs, and `KIMI_CURRENT.md`.
 - Added `docs/development-process/decisions/README.md` redirect note.
 

@@ -141,11 +141,11 @@ config = HestiaConfig(
 )
 ```
 
-See [reflection-tuning.md](docs/guides/reflection-tuning.md) and [ADR-0018](docs/adr/ADR-0018-reflection-loop-architecture.md).
+See [reflection-tuning.md](docs/guides/reflection-tuning.md) and [ADR-018](docs/adr/ADR-018-reflection-loop-architecture.md).
 
 ### Style profile (opt-in)
 
-Hestia can learn *how* you prefer to communicate without touching your identity document. It tracks median response length, vocabulary formality, top topics, and activity windows — all locally in SQLite. When activated, a short `[STYLE]` addendum is injected into the system prompt. Controlled via `hestia style {show,reset,disable}`. See [ADR-0019](docs/adr/ADR-0019-style-profile-vs-identity.md).
+Hestia can learn *how* you prefer to communicate without touching your identity document. It tracks median response length, vocabulary formality, top topics, and activity windows — all locally in SQLite. When activated, a short `[STYLE]` addendum is injected into the system prompt. Controlled via `hestia style {show,reset,disable}`. See [ADR-019](docs/adr/ADR-019-style-profile-vs-identity.md).
 
 ### Skills (experimental preview)
 

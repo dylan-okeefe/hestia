@@ -1,4 +1,4 @@
-# ADR-0015: llama-server coexistence modes
+# ADR-015: llama-server coexistence modes
 
 ## Status
 

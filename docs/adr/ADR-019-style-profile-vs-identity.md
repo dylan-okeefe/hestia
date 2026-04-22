@@ -1,4 +1,4 @@
-# ADR-0019: Style profile vs. identity separation
+# ADR-019: Style profile vs. identity separation
 
 ## Status
 

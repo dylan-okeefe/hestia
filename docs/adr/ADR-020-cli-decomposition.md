@@ -1,4 +1,4 @@
-# ADR-0020: CLI decomposition into `app.py` + `platforms/runners.py`
+# ADR-020: CLI decomposition into `app.py` + `platforms/runners.py`
 
 ## Status
 

@@ -32,7 +32,7 @@ This handoff covers the three mini-loops that refined security tuning, email per
 | L33c | `src/hestia/config.py` | Added `PolicyConfig` dataclass with `delegation_keywords` |
 | L33c | `src/hestia/app.py` | Hoisted `_format_datetime` to module scope; wired `PolicyConfig` through `_make_policy` |
 | L33c | `README.md` | Renamed skills heading to "Skills (experimental preview)" with env-var callout |
-| L33c | `docs/adr/ADR-0022-skills-preview-feature-flag.md` | ADR documenting the gate and rejection of silent no-op |
+| L33c | `docs/adr/ADR-025-skills-preview-feature-flag.md` | ADR documenting the gate and rejection of silent no-op |
 | L33c | `tests/unit/test_skills_feature_flag.py` | Flag gate regression coverage |
 | L33c | `tests/unit/test_policy_delegation_keywords.py` | Custom and empty keyword config coverage |
 | L33c | `tests/unit/test_matrix_adapter.py` | `_extract_in_reply_to` schema validation contract tests |

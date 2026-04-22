@@ -15,7 +15,7 @@
 | §6d — Integration tests (session hook) | `tests/integration/test_session_start_proposals.py` | (to be filled after final commit) |
 | §7a — CLI surface | `src/hestia/cli.py` | (to be filled after final commit) |
 | §7b — README update | `README.md` | (to be filled after final commit) |
-| §7c — ADR | `docs/adr/ADR-0018-reflection-loop-architecture.md` | (to be filled after final commit) |
+| §7c — ADR | `docs/adr/ADR-018-reflection-loop-architecture.md` | (to be filled after final commit) |
 | §7d — Tuning guide | `docs/guides/reflection-tuning.md` | (to be filled after final commit) |
 | §8 — Version bump | `pyproject.toml`, `src/hestia/__init__.py`, `CHANGELOG.md` | (to be filled after final commit) |
 
@@ -57,7 +57,7 @@ No new lint debt introduced in changed files.
 - [x] `src/hestia/__init__.py` bumped to 0.7.0.
 - [x] `CHANGELOG.md` updated.
 - [x] `README.md` updated with reflection loop section.
-- [x] ADR-0018 written.
+- [x] ADR-018 written.
 - [x] `docs/guides/reflection-tuning.md` written and linked from README.
 - [x] Handoff report written.
 - [x] Feature branch `feature/l26-reflection-loop` pushed.

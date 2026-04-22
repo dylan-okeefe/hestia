@@ -284,32 +284,10 @@ def run_matrix(ctx: click.Context) -> None:
         click.echo("\nShutting down.")
 
 
-@cli.command(name="discord-voice")
-@click.pass_context
-def run_discord_voice_cmd(ctx: click.Context) -> None:
-    """Join a Discord voice channel and log STT transcripts (Phase B)."""
-    app: CliAppContext = ctx.obj
-    from hestia.platforms.runners import run_discord_voice as _run_discord_voice
-
-    try:
-        asyncio.run(_run_discord_voice(app, app.config))
-    except KeyboardInterrupt:
-        click.echo("\nShutting down.")
-
-
 @cli.group()
 def setup() -> None:
     """Operator bootstrap helpers."""
     pass
-
-
-@setup.command("discord-voice")
-@click.argument("application_id", required=False)
-def setup_discord_voice(application_id: str | None) -> None:
-    """Print Discord bot invite URL and required environment variables."""
-    from hestia.platforms.discord_voice_runner import print_discord_voice_setup_instructions
-
-    print_discord_voice_setup_instructions(application_id)
 
 
 # Memory command group

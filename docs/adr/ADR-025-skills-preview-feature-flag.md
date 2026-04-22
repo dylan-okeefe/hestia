@@ -1,4 +1,4 @@
-# ADR-0022: Skills Preview Feature Flag
+# ADR-025: Skills Preview Feature Flag
 
 ## Status
 

@@ -9,8 +9,8 @@
 | §3 — ContextTooLargeError | `src/hestia/context/builder.py`, `src/hestia/orchestrator/engine.py`, tests | `a3a0e45` |
 | §4 — Config | `src/hestia/config.py`, tests | `1305a19` |
 | §5 — Platform warnings | `src/hestia/platforms/base.py`, adapter implementations, tests | `fc2a4e7` |
-| §6 — Hermes untangle | `deploy/hestia-llama.alt-port.service.example`, `deploy/README.md`, `docs/guides/runtime-setup.md`, ADR-0015 | `fca8dec` |
-| §7 — Docs | `README.md`, `docs/runtime-feature-testing.md`, `scripts/force_long_session.py`, ADR-0014 | `bcdb48d` |
+| §6 — Hermes untangle | `deploy/hestia-llama.alt-port.service.example`, `deploy/README.md`, `docs/guides/runtime-setup.md`, ADR-015 | `fca8dec` |
+| §7 — Docs | `README.md`, `docs/runtime-feature-testing.md`, `scripts/force_long_session.py`, ADR-014 | `bcdb48d` |
 | §8 — Version bump | `pyproject.toml`, `uv.lock`, `CHANGELOG.md` | `d7039b5` |
 
 ## Test counts
@@ -44,6 +44,6 @@ No test regressions. New test files:
 - [x] New unit tests cover §1, §2, §3, §4, §5.
 - [x] §6 docs shipped: `deploy/hestia-llama.alt-port.service.example`,
       updated `deploy/README.md`, new `docs/guides/runtime-setup.md`,
-      ADR-0015.
+      ADR-015.
 - [x] `CHANGELOG.md`, `pyproject.toml`, `uv.lock` all bumped to 0.4.0.
 - [x] Handoff report written.

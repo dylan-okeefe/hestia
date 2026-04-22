@@ -1,4 +1,4 @@
-# ADR-0021: ContextBuilder Prefix Registry and Tokenize Cache
+# ADR-021: ContextBuilder Prefix Registry and Tokenize Cache
 
 ## Status
 

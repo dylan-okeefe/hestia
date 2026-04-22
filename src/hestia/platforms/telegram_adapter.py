@@ -332,6 +332,12 @@ class TelegramAdapter(Platform):
             with contextlib.suppress(OSError):
                 os.unlink(ogg_path)
 
+        # Guard against sub-word Whisper hallucinations on accidental tap-and-release
+        _min_mono16_bytes = 8_000  # ~0.25 s at 16 kHz mono 16-bit
+        if len(pcm_bytes) < _min_mono16_bytes:
+            await message.reply_text("I didn't catch that — could you speak a little longer?")
+            return
+
         # 3. Transcribe
         try:
             pipeline = await get_voice_pipeline(self._voice_config)
