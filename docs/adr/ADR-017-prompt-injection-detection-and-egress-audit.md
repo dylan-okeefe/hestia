@@ -1,4 +1,4 @@
-# ADR-0017: Prompt-injection detection and network egress auditing
+# ADR-017: Prompt-injection detection and network egress auditing
 
 ## Status
 

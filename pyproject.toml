@@ -80,10 +80,7 @@ module = [
     "asyncpg",
     "faster_whisper",
     "piper",
-    "discord",
-    "discord.ext",
-    "discord.ext.commands",
-    "discord.sinks",
+
 ]
 ignore_missing_imports = true
 

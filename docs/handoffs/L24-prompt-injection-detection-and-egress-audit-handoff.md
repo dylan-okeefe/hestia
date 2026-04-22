@@ -16,7 +16,7 @@
 | §5b — Unit tests (orchestrator wiring) | `tests/unit/test_injection_orchestrator.py` | (to be committed) |
 | §5c — Integration tests (egress audit) | `tests/integration/test_egress_audit.py` | (to be committed) |
 | §6 — README + SECURITY.md | `README.md`, `SECURITY.md` | (to be committed) |
-| §7 — ADR-0017 | `docs/adr/ADR-0017-prompt-injection-detection-and-egress-audit.md` | (to be committed) |
+| §7 — ADR-017 | `docs/adr/ADR-017-prompt-injection-detection-and-egress-audit.md` | (to be committed) |
 | §8 — Version bump | `pyproject.toml`, `CHANGELOG.md` | (to be committed) |
 | §9 — Pre-existing mypy fixes | `src/hestia/platforms/matrix_adapter.py`, `src/hestia/platforms/telegram_adapter.py` | (to be committed) |
 

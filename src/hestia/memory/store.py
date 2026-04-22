@@ -192,6 +192,13 @@ class MemoryStore:
                 platform = ctx_platform
             if platform_user is None:
                 platform_user = ctx_platform_user
+        if platform is None or platform_user is None:
+            logger.warning(
+                "memory.save called outside an identity context; "
+                "saving as unscoped (platform=%r, platform_user=%r)",
+                platform,
+                platform_user,
+            )
 
         memory_id = f"mem_{uuid.uuid4().hex[:16]}"
         tag_str = " ".join(tags) if tags else ""

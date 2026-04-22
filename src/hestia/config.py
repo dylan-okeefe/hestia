@@ -365,61 +365,6 @@ class MatrixConfig(_ConfigFromEnv):
 
 
 @dataclass
-class DiscordVoiceConfig(_ConfigFromEnv):
-    """Discord voice adapter (Phase B).
-
-    ``bot_token`` should come from ``HESTIA_DISCORD_TOKEN`` (never commit it).
-    Guild and channel ids normally live in operator ``config.py``; ``from_env``
-    is a convenience for ``EnvironmentFile=``-style deployments.
-    """
-
-    _ENV_PREFIX = "DISCORD"
-    _ENV_KEY_OVERRIDES = {
-        "bot_token": "HESTIA_DISCORD_TOKEN",
-        "enabled": "HESTIA_DISCORD_VOICE_ENABLED",
-        "allowed_speaker_ids": "HESTIA_DISCORD_ALLOWED_USER_IDS",
-    }
-    _LEGACY_ALIASES = {
-        "HESTIA_DISCORD_GUILD_ID": ["DISCORD_GUILD"],
-        "HESTIA_DISCORD_VOICE_CHANNEL_ID": ["DISCORD_VOICE_CHANNEL"],
-        "HESTIA_DISCORD_TEXT_CHANNEL_ID": ["DISCORD_TEXT_CHANNEL"],
-        "HESTIA_DISCORD_ALLOWED_USER_IDS": ["ALLOWED_DISCORD_USERS"],
-    }
-
-    enabled: bool = False
-    bot_token: str = ""
-    guild_id: int = 0
-    voice_channel_id: int = 0
-    text_channel_id: int | None = None
-    allowed_speaker_ids: tuple[int, ...] = ()
-    barge_in: bool = True
-    smart_turn_threshold: float = 0.75
-    fast_silence_ms: int = 350
-    patient_silence_ms: int = 4000
-    safety_timeout_ms: int = 6000
-    filler_words: tuple[str, ...] = ("uh", "um", "uhh", "hmm", "wait")
-    end_of_turn_keywords: tuple[str, ...] = ()
-    pre_response_cue: bool = False
-
-
-def validate_discord_voice_for_run(cfg: DiscordVoiceConfig) -> None:
-    """Raise ``ValueError`` if Discord voice is enabled but misconfigured."""
-    if not cfg.enabled:
-        return
-    if not (cfg.bot_token or "").strip():
-        raise ValueError(
-            "discord_voice.enabled is True but bot_token is empty "
-            "(set HESTIA_DISCORD_TOKEN)."
-        )
-    if cfg.guild_id == 0 or cfg.voice_channel_id == 0:
-        raise ValueError(
-            "discord_voice.enabled is True but guild_id or voice_channel_id "
-            "is missing (set HESTIA_DISCORD_GUILD_ID and "
-            "HESTIA_DISCORD_VOICE_CHANNEL_ID)."
-        )
-
-
-@dataclass
 class TrustConfig(_ConfigFromEnv):
     """How much latitude to grant the agent in headless contexts.
 
@@ -722,7 +667,6 @@ class HestiaConfig(_ConfigFromEnv):
     storage: StorageConfig = field(default_factory=StorageConfig)
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
     matrix: MatrixConfig = field(default_factory=MatrixConfig)
-    discord_voice: DiscordVoiceConfig = field(default_factory=DiscordVoiceConfig)
     identity: IdentityConfig = field(default_factory=IdentityConfig)
     trust: TrustConfig = field(default_factory=TrustConfig)
     web_search: WebSearchConfig = field(default_factory=WebSearchConfig)

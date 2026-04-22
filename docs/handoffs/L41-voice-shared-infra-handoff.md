@@ -1,3 +1,5 @@
+> **Historical note:** This handoff describes work from the v0.8.x era. Phase B (live voice calls) was later abandoned in favor of Telegram voice messages. The shared infrastructure (`VoicePipeline`, `VoiceConfig`, `hestia[voice]` extra) remains in use.
+
 # L41 — Voice shared infrastructure handoff
 
 ## Scope

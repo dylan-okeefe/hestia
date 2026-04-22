@@ -16,10 +16,11 @@ Hestia was built incrementally using a three-tool loop:
 - **Dylan (human)** — direction, secrets, final pass before public push and
   release tagging.
 
-Each numbered loop (L01–L18) corresponds to one focused work session: a single
+Each numbered loop (L01–L52+) corresponds to one focused work session: a single
 spec file, a single feature branch, a single merge to `develop` after green
-review. After ~16 such loops the project reached `v0.2.0` (first public
-release); the patch loop `L18` produced `v0.2.1`.
+review. After ~16 loops the project reached `v0.2.0` (first public release);
+subsequent loops shipped v0.8.0, v0.9.0, v0.9.1, and the voice + multi-user
+feature arcs.
 
 ## What's here
 

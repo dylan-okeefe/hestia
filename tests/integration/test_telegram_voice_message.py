@@ -116,7 +116,7 @@ async def test_voice_message_full_pipeline(
         if "s16le" in args and "libopus" in args:
             # pcm→ogg or truncation
             return _mock_ffmpeg_process(stdout=b"FAKE_OGG_DATA")
-        return _mock_ffmpeg_process(stdout=b"FAKE_PCM_DATA")
+        return _mock_ffmpeg_process(stdout=b"\x00" * 10_000)
 
     with patch(
         "hestia.platforms.telegram_adapter.Application.builder",
@@ -198,7 +198,7 @@ async def test_voice_message_truncation_when_over_1mb(
         if "-t" in args:
             # truncation attempt
             return _mock_ffmpeg_process(stdout=small_ogg)
-        return _mock_ffmpeg_process(stdout=b"FAKE_PCM_DATA")
+        return _mock_ffmpeg_process(stdout=b"\x00" * 10_000)
 
     with patch(
         "hestia.platforms.telegram_adapter.Application.builder",
@@ -293,7 +293,7 @@ async def test_voice_message_stt_failure(
         ):
             with patch(
                 "hestia.platforms.telegram_adapter.asyncio.create_subprocess_exec",
-                return_value=_mock_ffmpeg_process(stdout=b"FAKE_PCM_DATA"),
+                return_value=_mock_ffmpeg_process(stdout=b"\x00" * 10_000),
             ):
                 await adapter.start(lambda p, u, t: None)
                 await adapter._handle_voice_message(mock_update, None)

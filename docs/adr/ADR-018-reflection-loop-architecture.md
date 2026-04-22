@@ -1,4 +1,4 @@
-# ADR-0018: Reflection loop architecture
+# ADR-018: Reflection loop architecture
 
 ## Status
 

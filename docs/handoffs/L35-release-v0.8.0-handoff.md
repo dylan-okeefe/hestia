@@ -37,14 +37,14 @@ Full feature catalog in `CHANGELOG.md` under `## [0.8.0] — 2026-04-18`.
 | L27 | (pre-window) | Style profile |
 | L28 | `dcc54c5` | Critical bug fixes (nh3, read_artifact, IMAP injection, Message-ID) |
 | L29 | `bbed167` | Reliability + secrets + ADR consolidation |
-| L30 | `30a224f` | CLI decomposition (cli.py 2569 → 588 lines + app.py + runners.py); ADR-0020 |
+| L30 | `30a224f` | CLI decomposition (cli.py 2569 → 588 lines + app.py + runners.py); ADR-020 |
 | L31 | `2f20850` | Orchestrator engine cleanup (failure bundles, confirmation, artifact accumulation) |
 | L32a | `7ea4a53` | Delete dead `TurnState`/`ToolResult` |
 | L32b | `e74ed46` | `ContextBuilder` prefix-layer registry |
-| L32c | `6b6fb36` | `ContextBuilder` tokenize cache; ADR-0021 |
+| L32c | `6b6fb36` | `ContextBuilder` tokenize cache; ADR-021 |
 | L33a | `d28cdad` | `InjectionScanner` threshold tuning + structured-content filters |
 | L33b | `f7dcd91` | `EmailAdapter` IMAP session reuse + `email_search_and_read` |
-| L33c | `8b5228c` | Skills experimental flag; ADR-0022; L33-arc handoff |
+| L33c | `8b5228c` | Skills experimental flag; ADR-025; L33-arc handoff |
 | L34 | `d51d816` | README polish + deployment docs + email-guide rewrite + CHANGELOG curation |
 | L35 | (this handoff) | Release v0.8.0 to main |
 

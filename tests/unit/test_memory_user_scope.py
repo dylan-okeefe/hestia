@@ -127,6 +127,18 @@ class TestMemoryUserScope:
             current_platform.reset(token_p)
             current_platform_user.reset(token_u)
 
+    @pytest.mark.asyncio
+    async def test_save_outside_identity_context_warns(self, memory_store, caplog):
+        """M1: saving without identity context logs a warning and writes an unscoped row."""
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            mem = await memory_store.save(content="Orphan note")
+
+        assert mem.platform is None
+        assert mem.platform_user is None
+        assert "memory.save called outside an identity context" in caplog.text
+
 
 class TestMemoryToolsUserScope:
     @pytest.fixture
