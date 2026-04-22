@@ -75,11 +75,11 @@ async def test_tool_chain_unbound_error():
                     respond_callback=respond_callback,
                 )
 
-                # Verify that respond_callback was called with the error
+                # Verify that respond_callback was called with a sanitized error
                 respond_callback.assert_called_once()
                 call_args = respond_callback.call_args[0][0]
                 assert "Error:" in call_args
-                assert "build failed" in call_args
+                assert "Something went wrong" in call_args
 
                 # Verify failure store was called with tool_chain="[]"
                 mock_failure_store.record.assert_called_once()

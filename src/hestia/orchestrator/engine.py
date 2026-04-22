@@ -14,6 +14,7 @@ from hestia.core.types import Message, Session, ToolCall, ToolSchema
 from hestia.errors import (
     ContextTooLargeError,
     EmptyResponseError,
+    HestiaError,
     IllegalTransitionError,
     MaxIterationsError,
     PersistenceError,
@@ -45,6 +46,19 @@ if TYPE_CHECKING:
     from hestia.style.store import StyleProfileStore
 
 logger = logging.getLogger(__name__)
+
+
+def _sanitize_user_error(error: Exception) -> str:
+    """Return a user-facing message for an unexpected error.
+
+    HestiaError subclasses are intentionally raised with user-friendly
+    messages, so they pass through. Everything else is sanitized to a
+    generic message to avoid leaking internal details (SQL errors,
+    file paths, stack traces) to end users.
+    """
+    if isinstance(error, HestiaError):
+        return str(error)
+    return "Something went wrong. The operator has been notified."
 
 
 # Callback types
@@ -398,8 +412,9 @@ class Orchestrator:
                 turn.state.value,
                 error,
             )
+            sanitized = _sanitize_user_error(error)
             try:
-                await respond_callback(f"Error delivering response: {error}")
+                await respond_callback(f"Error delivering response: {sanitized}")
             except Exception as notify_err:
                 logger.warning(
                     "Failed to send post-terminal error notification: %s",
@@ -408,7 +423,8 @@ class Orchestrator:
         else:
             await self._safe_transition(turn, TurnState.FAILED)
             turn.error = str(error)
-            await respond_callback(f"Error: {error}")
+            sanitized = _sanitize_user_error(error)
+            await respond_callback(f"Error: {sanitized}")
         return await self._record_failure_if_enabled(
             session, turn, error, user_message, "exception",
             allowed_tools, tool_chain, trace_record_id,

@@ -272,7 +272,7 @@ If the protected block alone exceeds the budget, Hestia raises a visible warning
 
 ## Configuration
 
-Config is a Python file defining a `config` variable of type `HestiaConfig`. Python rather than YAML because IDE autocompletion, type checking, and runtime secrets composition all matter more than human-readability-at-a-glance.
+Config is a Python file defining a `config` variable of type `HestiaConfig`. Python rather than YAML because IDE autocompletion, type checking, and runtime secrets composition all matter more than human-readability-at-a-glance. **Treat config files as executable code — never load one from an untrusted source.**
 
 ```python
 from pathlib import Path

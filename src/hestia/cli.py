@@ -284,12 +284,6 @@ def run_matrix(ctx: click.Context) -> None:
         click.echo("\nShutting down.")
 
 
-@cli.group()
-def setup() -> None:
-    """Operator bootstrap helpers."""
-    pass
-
-
 # Memory command group
 @cli.group()
 def memory() -> None:
@@ -414,24 +408,15 @@ async def skill_disable(app: CliAppContext, name: str) -> None:
     _check_experimental_skills()
     await _cmd_skill_disable(app, name)
 
-@skill.command(name="test")
-@click.argument("name")
-def skill_test(name: str) -> None:
-    """Run skill in sandbox mode (not yet implemented)."""
-    _check_experimental_skills()
-    click.echo(f"Skill testing not yet implemented for: {name}")
-    click.echo("Note: Run the skill manually and observe results.")
-
 class AuditGroup(click.Group):
     """Custom group that defaults to 'run' when no subcommand is given."""
 
     def invoke(self, ctx: click.Context) -> Any:
-        if ctx.protected_args:
-            return super().invoke(ctx)
-        ctx.invoked_subcommand = "run"
-        return self.commands["run"].invoke(ctx)
+        if ctx.invoked_subcommand is None:
+            ctx.invoked_subcommand = "run"
+        return super().invoke(ctx)
 
-@cli.group(name="audit", cls=AuditGroup)
+@cli.group(name="audit", cls=AuditGroup, invoke_without_command=True)
 def audit_group() -> None:
     """Security audit commands."""
     pass
