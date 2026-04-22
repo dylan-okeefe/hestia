@@ -218,7 +218,12 @@ class InferenceClient:
                 # as a JSON scalar (string, number, null) instead of an
                 # object. ``**arguments`` would then raise TypeError
                 # downstream without naming the tool. Validate here.
-                arguments = json.loads(fn["arguments"])
+                try:
+                    arguments = json.loads(fn["arguments"])
+                except json.JSONDecodeError as exc:
+                    raise InferenceServerError(
+                        f"tool_call arguments for {fn['name']!r} are malformed JSON: {exc}"
+                    ) from exc
                 if not isinstance(arguments, dict):
                     raise InferenceServerError(
                         f"tool_call arguments for {fn['name']!r} are not a dict: "

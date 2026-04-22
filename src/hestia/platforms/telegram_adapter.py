@@ -185,6 +185,18 @@ class TelegramAdapter(Platform):
             text=f"⚠️ {text}",
         )
 
+    async def set_typing(self, user: str, typing: bool = True) -> None:
+        """Set typing indicator on Telegram (best-effort)."""
+        if self._app is None:
+            return
+        try:
+            await self._app.bot.send_chat_action(
+                chat_id=int(user),
+                action="typing" if typing else "cancel",
+            )
+        except TelegramError:
+            pass
+
     async def request_confirmation(
         self, user: str, tool_name: str, arguments: dict[str, Any]
     ) -> bool:
