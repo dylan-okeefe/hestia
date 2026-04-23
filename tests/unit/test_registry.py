@@ -247,6 +247,16 @@ class TestMetaTools:
         assert "add" not in output
 
     @pytest.mark.asyncio
+    async def test_meta_list_tools_with_detail(self, registry):
+        """meta_list_tools includes schemas when detail=true."""
+        registry.register(greet)
+
+        output = await registry.meta_list_tools(detail=True)
+        assert "greet" in output
+        assert "schema:" in output
+        assert "name" in output  # greet's parameters_schema has 'name'
+
+    @pytest.mark.asyncio
     async def test_meta_call_tool(self, registry):
         """meta_call_tool dispatches correctly."""
         registry.register(greet)

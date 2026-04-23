@@ -482,10 +482,19 @@ class Orchestrator:
             elif chat_response.finish_reason in ("stop", "length"):
                 content = chat_response.content or ""
                 if not content.strip() and not chat_response.tool_calls:
-                    raise EmptyResponseError(
-                        f"Model returned finish_reason={chat_response.finish_reason!r} "
-                        f"with empty content and no tool calls"
+                    # Empty response — retry via policy instead of failing immediately
+                    decision = self._policy.retry_after_error(
+                        EmptyResponseError(
+                            f"Model returned finish_reason={chat_response.finish_reason!r} "
+                            f"with empty content and no tool calls"
+                        ),
+                        turn.iterations,
                     )
+                    if decision.action == RetryAction.FAIL:
+                        raise PolicyFailureError(decision.reason)
+                    await self._safe_transition(turn, TurnState.RETRYING)
+                    turn.iterations += 1
+                    continue
 
                 await self._set_typing(ctx.platform, ctx.platform_user, False)
 
@@ -900,7 +909,10 @@ class Orchestrator:
         # Handle meta-tools
         if tc.name == "list_tools":
             tag = tc.arguments.get("tag") if tc.arguments else None
-            content = await self._tools.meta_list_tools(tag, allowed_names=allowed_tools)
+            detail = tc.arguments.get("detail") if tc.arguments else False
+            content = await self._tools.meta_list_tools(
+                tag, allowed_names=allowed_tools, detail=detail
+            )
             return ToolCallResult(
                 status="ok",
                 content=content,

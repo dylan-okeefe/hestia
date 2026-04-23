@@ -15,7 +15,8 @@ def make_write_file_tool(config: StorageConfig, **kw: Any) -> Any:
 
     @tool(
         name="write_file",
-        public_description="Write content to a file, creating it if it doesn't exist.",
+        public_description="Write content to a file. Params: path (str), content (str).",
+
         requires_confirmation=True,
         tags=["system", "builtin"],
         capabilities=[WRITE_LOCAL],

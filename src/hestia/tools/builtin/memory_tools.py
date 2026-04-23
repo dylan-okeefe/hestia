@@ -34,7 +34,8 @@ def make_search_memory_tool(
 
     @tool(
         name="search_memory",
-        public_description="Search your long-term memory for previously saved notes.",
+        public_description="Search long-term memory. Params: query (str), limit (int, default 5).",
+
         tags=["memory", "builtin"],
         capabilities=[MEMORY_READ],
     )
@@ -71,7 +72,8 @@ def make_save_memory_tool(
 
     @tool(
         name="save_memory",
-        public_description="Save a note to long-term memory for future recall.",
+        public_description="Save a note to memory. Params: content (str), tags (str or list, default '').",
+
         tags=["memory", "builtin"],
         capabilities=[MEMORY_WRITE],
     )
@@ -113,7 +115,8 @@ def make_list_memories_tool(
 
     @tool(
         name="list_memories",
-        public_description="List recent memories, optionally filtered by tag.",
+        public_description="List recent memories. Params: tag (str, default ''), limit (int, default 20).",
+
         tags=["memory", "builtin"],
         capabilities=[MEMORY_READ],
     )
@@ -150,7 +153,8 @@ def make_delete_memory_tool(store: MemoryStore) -> Callable[..., Coroutine[Any, 
 
     @tool(
         name="delete_memory",
-        public_description="Delete a memory record by its id. Use list_memories to find ids.",
+        public_description="Delete a memory by id. Params: memory_id (str).",
+
         tags=["memory", "builtin"],
         capabilities=[MEMORY_WRITE],
         requires_confirmation=True,

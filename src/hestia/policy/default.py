@@ -159,6 +159,15 @@ class DefaultPolicyEngine(PolicyEngine):
                 reason="transient inference error",
             )
 
+        # Empty responses are often transient (bad sample from the model)
+        from hestia.errors import EmptyResponseError
+
+        if isinstance(error, EmptyResponseError):
+            return RetryDecision(
+                action=RetryAction.RETRY,
+                reason="empty model response",
+            )
+
         # Non-transient errors (tool errors, logic errors, etc.) fail immediately
         return RetryDecision(
             action=RetryAction.FAIL,

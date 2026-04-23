@@ -20,7 +20,8 @@ def make_create_scheduled_task_tool(
 
     @tool(
         name="create_scheduled_task",
-        public_description="Create a recurring scheduled task that runs automatically.",
+        public_description="Create a recurring scheduled task. Params: prompt (str), cron_expression (str), description (str, default ''), notify (bool, default False).",
+
         tags=["scheduler", "builtin"],
         capabilities=[ORCHESTRATION],
     )

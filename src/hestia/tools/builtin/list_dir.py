@@ -15,7 +15,8 @@ def make_list_dir_tool(config: StorageConfig, **kw: Any) -> Any:
 
     @tool(
         name="list_dir",
-        public_description="List the contents of a directory.",
+        public_description="List directory contents. Params: path (str, default '.'), max_entries (int, default 200).",
+
         tags=["system", "builtin"],
         capabilities=[READ_LOCAL],
     )

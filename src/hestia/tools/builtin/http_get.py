@@ -164,7 +164,7 @@ async def _fetch_with_curl_cffi(url: str, timeout_seconds: int) -> str:
 
 @tool(
     name="http_get",
-    public_description="Fetch the contents of a URL via HTTP GET.",
+    public_description="Fetch a URL via HTTP GET. Params: url (str), timeout_seconds (int, default 30). No custom headers supported.",
     max_inline_chars=6000,
     tags=["network", "builtin"],
     capabilities=[NETWORK_EGRESS],

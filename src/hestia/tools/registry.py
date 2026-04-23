@@ -175,7 +175,8 @@ class ToolRegistry:
                 description=(
                     "List all available tools. Returns tool names and one-line descriptions. "
                     "Call this before call_tool to discover what's available. "
-                    "Also call this when the user asks about your capabilities or what you can do."
+                    "Also call this when the user asks about your capabilities or what you can do. "
+                    "Set detail=true to include full parameter schemas for every tool."
                 ),
                 parameters={
                     "type": "object",
@@ -183,7 +184,14 @@ class ToolRegistry:
                         "tag": {
                             "type": "string",
                             "description": "Optional tag filter",
-                        }
+                        },
+                        "detail": {
+                            "type": "boolean",
+                            "description": (
+                                "If true, include full JSON parameter schemas for each tool. "
+                                "Costs more tokens but eliminates guessing about argument names and types."
+                            ),
+                        },
                     },
                 },
             ),
@@ -217,13 +225,17 @@ class ToolRegistry:
         return [list_tools_schema, call_tool_schema]
 
     async def meta_list_tools(
-        self, tag: str | None = None, allowed_names: list[str] | None = None
+        self,
+        tag: str | None = None,
+        allowed_names: list[str] | None = None,
+        detail: bool = False,
     ) -> str:
         """Handler for the list_tools meta-tool.
 
         Args:
             tag: Optional tag filter
             allowed_names: Optional list of allowed tool names (for session filtering)
+            detail: If true, include full parameter schemas
         """
         names = self.list_names(tag=tag)
         if allowed_names is not None:
@@ -233,6 +245,11 @@ class ToolRegistry:
             m = self._tools[n]
             caps = ", ".join(m.capabilities) or "none"
             lines.append(f"- {n}: {m.public_description} [caps: {caps}]")
+            if detail and m.parameters_schema:
+                schema_str = json.dumps(m.parameters_schema, indent=2)
+                # Indent schema under the tool bullet for readability
+                indented = "\n".join("    " + ln for ln in schema_str.splitlines())
+                lines.append(f"  schema:\n{indented}")
         return "\n".join(lines) if lines else "(no tools)"
 
     async def meta_call_tool(self, name: str, arguments: dict[str, Any]) -> ToolCallResult:

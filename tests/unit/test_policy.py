@@ -66,6 +66,14 @@ class TestRetryAfterError:
         decision = policy.retry_after_error(error, attempt=1)
         assert decision.action == RetryAction.RETRY_WITH_BACKOFF
 
+    def test_retry_empty_response(self, policy):
+        """Retry on empty model response."""
+        from hestia.errors import EmptyResponseError
+        error = EmptyResponseError("empty")
+        decision = policy.retry_after_error(error, attempt=1)
+        assert decision.action == RetryAction.RETRY
+        assert "empty" in decision.reason
+
     def test_no_retry_on_generic_error(self, policy):
         """Don't retry generic exceptions."""
         error = ValueError("some error")
