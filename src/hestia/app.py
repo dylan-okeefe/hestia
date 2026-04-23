@@ -664,19 +664,26 @@ def make_app(cfg: HestiaConfig) -> CliAppContext:
     return app
 
 
-def run_async(coro_factory: Callable[..., Awaitable[Any]]) -> Callable[..., Any]:
-    """Decorator: wrap a Click command body so the inner async function
-    receives ``app`` and is run inside ``asyncio.run``. Calls ``bootstrap_db`` once.
+def async_command(coro: Callable[..., Awaitable[Any]]) -> Callable[..., Any]:
+    """Decorator for async Click commands.
+
+    Must be used together with ``@click.pass_obj`` so ``app`` is injected
+    explicitly by Click rather than hidden inside the decorator.
+
+    Example::
+
+        @cli.command()
+        @click.pass_obj
+        @async_command
+        async def my_cmd(app: CliAppContext, flag: bool) -> None:
+            ...
     """
 
-    @functools.wraps(coro_factory)
-    def wrapper(*args: Any, **kwargs: Any) -> Any:
-        ctx = click.get_current_context()
-        app: CliAppContext = ctx.obj
-
+    @functools.wraps(coro)
+    def wrapper(app: CliAppContext, *args: Any, **kwargs: Any) -> Any:
         async def _runner() -> Any:
             await app.bootstrap_db()
-            return await coro_factory(app, *args, **kwargs)
+            return await coro(app, *args, **kwargs)
 
         return asyncio.run(_runner())
 

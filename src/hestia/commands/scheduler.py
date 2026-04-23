@@ -21,7 +21,7 @@ from ._shared import _format_datetime
 logger = logging.getLogger(__name__)
 
 
-async def _cmd_schedule_add(
+async def cmd_schedule_add(
     app: CliAppContext,
     cron: str | None,
     fire_at_str: str | None,
@@ -100,7 +100,7 @@ async def _cmd_schedule_add(
         sys.exit(1)
 
 
-async def _cmd_schedule_list(app: CliAppContext) -> None:
+async def cmd_schedule_list(app: CliAppContext) -> None:
     """List scheduled tasks."""
     store = _require_scheduler_store(app)
     tasks = await store.list_tasks_for_session(session_id=None, include_disabled=True)
@@ -131,7 +131,7 @@ async def _cmd_schedule_list(app: CliAppContext) -> None:
         click.echo(f"{task.id:<20} {desc:<25} {sched:<20} {enabled:<8} {next_run}")
 
 
-async def _cmd_schedule_show(app: CliAppContext, task_id: str) -> None:
+async def cmd_schedule_show(app: CliAppContext, task_id: str) -> None:
     """Show details of a scheduled task."""
     store = _require_scheduler_store(app)
     task = await store.get_task(task_id)
@@ -155,7 +155,7 @@ async def _cmd_schedule_show(app: CliAppContext, task_id: str) -> None:
         click.echo(f"Last error:  {task.last_error}")
 
 
-async def _cmd_schedule_enable(app: CliAppContext, task_id: str) -> None:
+async def cmd_schedule_enable(app: CliAppContext, task_id: str) -> None:
     """Enable a scheduled task."""
     store = _require_scheduler_store(app)
     success = await store.set_enabled(task_id, True)
@@ -165,7 +165,7 @@ async def _cmd_schedule_enable(app: CliAppContext, task_id: str) -> None:
     click.echo(f"Task {task_id} enabled")
 
 
-async def _cmd_schedule_run(app: CliAppContext, task_id: str) -> None:
+async def cmd_schedule_run(app: CliAppContext, task_id: str) -> None:
     """Manually trigger a scheduled task."""
     store = _require_scheduler_store(app)
     task = await store.get_task(task_id)
@@ -196,7 +196,7 @@ async def _cmd_schedule_run(app: CliAppContext, task_id: str) -> None:
         sys.exit(1)
 
 
-async def _cmd_schedule_disable(app: CliAppContext, task_id: str) -> None:
+async def cmd_schedule_disable(app: CliAppContext, task_id: str) -> None:
     """Disable a scheduled task."""
     store = _require_scheduler_store(app)
     success = await store.disable_task(task_id)
@@ -206,7 +206,7 @@ async def _cmd_schedule_disable(app: CliAppContext, task_id: str) -> None:
     click.echo(f"Task {task_id} disabled")
 
 
-async def _cmd_schedule_remove(app: CliAppContext, task_id: str) -> None:
+async def cmd_schedule_remove(app: CliAppContext, task_id: str) -> None:
     """Remove a scheduled task."""
     store = _require_scheduler_store(app)
     success = await store.delete_task(task_id)
@@ -216,7 +216,7 @@ async def _cmd_schedule_remove(app: CliAppContext, task_id: str) -> None:
     click.echo(f"Task {task_id} removed")
 
 
-def _cmd_schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None:
+def cmd_schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None:
     """Run the scheduler daemon (blocks until Ctrl-C)."""
     app: CliAppContext = ctx.obj
     # Headless daemon — no confirmation callback

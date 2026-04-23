@@ -53,7 +53,7 @@ config = HestiaConfig(
 '''
 
 
-async def _cmd_init(app: CliAppContext, create_config: bool = False) -> None:
+async def cmd_init(app: CliAppContext, create_config: bool = False) -> None:
     """Initialize database, artifacts, and slot directories."""
     cfg = app.config
     cfg.storage.artifacts_dir.mkdir(parents=True, exist_ok=True)
@@ -71,7 +71,7 @@ async def _cmd_init(app: CliAppContext, create_config: bool = False) -> None:
             click.echo("Created starter config.py")
 
 
-async def _cmd_health(app: CliAppContext) -> None:
+async def cmd_health(app: CliAppContext) -> None:
     """Check inference server health."""
     try:
         health_info = await app.inference.health()
@@ -85,7 +85,7 @@ async def _cmd_health(app: CliAppContext) -> None:
         await app.inference.close()
 
 
-async def _cmd_status(app: CliAppContext) -> None:
+async def cmd_status(app: CliAppContext) -> None:
     """Show system status summary."""
     store = _require_scheduler_store(app)
 
@@ -142,7 +142,7 @@ async def _cmd_status(app: CliAppContext) -> None:
     await app.inference.close()
 
 
-async def _cmd_failures_list(app: CliAppContext, limit: int, failure_class: str | None) -> None:
+async def cmd_failures_list(app: CliAppContext, limit: int, failure_class: str | None) -> None:
     """List recent failures."""
     bundles = await app.failure_store.list_recent(limit=limit, failure_class=failure_class)
     if not bundles:
@@ -159,7 +159,7 @@ async def _cmd_failures_list(app: CliAppContext, limit: int, failure_class: str 
             click.echo("  ...")
 
 
-async def _cmd_failures_summary(app: CliAppContext, days: int) -> None:
+async def cmd_failures_summary(app: CliAppContext, days: int) -> None:
     """Show failure counts by class."""
     since = utcnow() - timedelta(days=days)
     counts = await app.failure_store.count_by_class(since=since)
@@ -173,7 +173,7 @@ async def _cmd_failures_summary(app: CliAppContext, days: int) -> None:
         click.echo("  No failures in this period.")
 
 
-async def _cmd_audit_run(app: CliAppContext, output_json: bool, output: str | None) -> None:
+async def cmd_audit_run(app: CliAppContext, output_json: bool, output: str | None) -> None:
     """Run security audit checks."""
     from hestia.audit import SecurityAuditor
 
@@ -194,7 +194,7 @@ async def _cmd_audit_run(app: CliAppContext, output_json: bool, output: str | No
         sys.exit(1)
 
 
-async def _cmd_audit_egress(app: CliAppContext, since: str) -> None:
+async def cmd_audit_egress(app: CliAppContext, since: str) -> None:
     """Print domain-level egress aggregation."""
     since_dt = _parse_since(since)
     rows = await app.trace_store.egress_summary(since=since_dt)
@@ -214,7 +214,7 @@ async def _cmd_audit_egress(app: CliAppContext, since: str) -> None:
         click.echo(f"{domain:<40} {total:>10} {failures:>10} {anomaly}")
 
 
-async def _cmd_email_check(app: CliAppContext) -> None:
+async def cmd_email_check(app: CliAppContext) -> None:
     """Check email connectivity (IMAP login test)."""
     cfg = app.config
     if not cfg.email.imap_host:
@@ -235,7 +235,7 @@ async def _cmd_email_check(app: CliAppContext) -> None:
     click.echo(f"Messages found: {len(messages)}")
 
 
-async def _cmd_email_list_cmd(
+async def cmd_email_list_cmd(
     app: CliAppContext, folder: str, limit: int, unread_only: bool
 ) -> None:
     """List recent emails."""
@@ -258,7 +258,7 @@ async def _cmd_email_list_cmd(
         click.echo(f"[{m['message_id']}] {m['from']} | {m['subject']} | {m['date']}")
 
 
-async def _cmd_email_read_cmd(app: CliAppContext, message_id: str) -> None:
+async def cmd_email_read_cmd(app: CliAppContext, message_id: str) -> None:
     """Read a single email by IMAP UID."""
     cfg = app.config
     if not cfg.email.imap_host:
@@ -286,7 +286,7 @@ async def _cmd_email_read_cmd(app: CliAppContext, message_id: str) -> None:
             click.echo(f"  - {att['filename']} ({att['content_type']})")
 
 
-async def _cmd_doctor(app: CliAppContext, plain: bool) -> int:
+async def cmd_doctor(app: CliAppContext, plain: bool) -> int:
     """Run health checks. Returns exit code (0 if all green, 1 if any fail)."""
     from hestia.doctor import run_checks, render_results  # noqa: I001
 

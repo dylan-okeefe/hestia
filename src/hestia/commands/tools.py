@@ -10,7 +10,7 @@ from hestia.app import CliAppContext
 from hestia.skills.state import SkillState
 
 
-async def _cmd_skill_list(app: CliAppContext, state_filter: str | None, show_all: bool) -> None:
+async def cmd_skill_list(app: CliAppContext, state_filter: str | None, show_all: bool) -> None:
     """List skills with their states."""
     if app.skill_store is None:
         click.echo("Skill store not available", err=True)
@@ -43,7 +43,7 @@ async def _cmd_skill_list(app: CliAppContext, state_filter: str | None, show_all
         )
 
 
-async def _cmd_skill_show(app: CliAppContext, name: str) -> None:
+async def cmd_skill_show(app: CliAppContext, name: str) -> None:
     """Show skill details."""
     if app.skill_store is None:
         click.echo("Skill store not available", err=True)
@@ -64,7 +64,7 @@ async def _cmd_skill_show(app: CliAppContext, name: str) -> None:
     click.echo(f"Caps:        {', '.join(record.capabilities) or 'none'}")
 
 
-async def _cmd_skill_promote(app: CliAppContext, name: str) -> None:
+async def cmd_skill_promote(app: CliAppContext, name: str) -> None:
     """Advance skill state (draft -> tested -> trusted)."""
     if app.skill_store is None:
         click.echo("Skill store not available", err=True)
@@ -95,7 +95,7 @@ async def _cmd_skill_promote(app: CliAppContext, name: str) -> None:
     click.echo(f"Promoted '{name}': {record.state.value} -> {new_state.value}")
 
 
-async def _cmd_skill_demote(app: CliAppContext, name: str) -> None:
+async def cmd_skill_demote(app: CliAppContext, name: str) -> None:
     """Move skill back one state."""
     if app.skill_store is None:
         click.echo("Skill store not available", err=True)
@@ -126,7 +126,7 @@ async def _cmd_skill_demote(app: CliAppContext, name: str) -> None:
     click.echo(f"Demoted '{name}': {record.state.value} -> {new_state.value}")
 
 
-async def _cmd_skill_disable(app: CliAppContext, name: str) -> None:
+async def cmd_skill_disable(app: CliAppContext, name: str) -> None:
     """Disable a skill without removing it."""
     if app.skill_store is None:
         click.echo("Skill store not available", err=True)
