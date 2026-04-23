@@ -20,7 +20,7 @@ from hestia.errors import HestiaError
 logger = logging.getLogger(__name__)
 
 
-async def _cmd_chat(app: CliAppContext) -> None:
+async def _cmd_chat(app: CliAppContext, new_session: bool = False) -> None:
     """Start an interactive chat session."""
     if not app.config.inference.model_name:
         raise ValueError(
@@ -35,8 +35,12 @@ async def _cmd_chat(app: CliAppContext) -> None:
     if recovered:
         click.echo(f"Recovered {recovered} stale turn(s) from previous crash.")
 
-    session = await app.session_store.get_or_create_session("cli", "default")
-    click.echo(f"Session: {session.id}")
+    if new_session:
+        session = await app.session_store.create_session("cli", "default")
+        click.echo(f"New session: {session.id}")
+    else:
+        session = await app.session_store.get_or_create_session("cli", "default")
+        click.echo(f"Session: {session.id}")
 
     compiled = await _compile_and_set_memory_epoch(app, session)
     if compiled:

@@ -62,7 +62,7 @@ from hestia.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_CALIBRATION_PATH = Path("docs/calibration.json")
+DEFAULT_CALIBRATION_PATH = Path(__file__).parent.parent.parent / "docs" / "calibration.json"
 
 
 def _make_policy(cfg: HestiaConfig) -> DefaultPolicyEngine:
@@ -124,6 +124,7 @@ class CoreAppContext:
     _handoff_summarizer: SessionHandoffSummarizer | None = field(
         default=None, repr=False
     )
+    _injection_scanner: InjectionScanner | None = field(default=None, repr=False)
 
     @property
     def inference(self) -> InferenceClient:
@@ -185,12 +186,14 @@ class CoreAppContext:
         return self._handoff_summarizer
 
     def make_injection_scanner(self) -> InjectionScanner:
-        """Create an InjectionScanner from config."""
-        return InjectionScanner(
-            enabled=self.config.security.injection_scanner_enabled,
-            entropy_threshold=self.config.security.injection_entropy_threshold,
-            skip_filters_for_structured=self.config.security.injection_skip_filters_for_structured,
-        )
+        """Create an InjectionScanner from config (cached)."""
+        if self._injection_scanner is None:
+            self._injection_scanner = InjectionScanner(
+                enabled=self.config.security.injection_scanner_enabled,
+                entropy_threshold=self.config.security.injection_entropy_threshold,
+                skip_filters_for_structured=self.config.security.injection_skip_filters_for_structured,
+            )
+        return self._injection_scanner
 
 
 @dataclass
@@ -604,6 +607,19 @@ def make_app(cfg: HestiaConfig) -> CliAppContext:
     email_search_and_read = make_email_search_and_read_tool(EmailAdapter(cfg.email))
     if email_search_and_read is not None:
         tool_registry.register(email_search_and_read)
+
+    if cfg.email.password and not cfg.email.password_env:
+        click.echo(
+            click.style(
+                "Warning: email.password is set in plaintext. Consider using "
+                "email.password_env to load it from an environment variable.",
+                fg="yellow",
+            ),
+            err=True,
+        )
+        logger.warning(
+            "email.password is set in plaintext. Consider using email.password_env."
+        )
 
     core = CoreAppContext(
         config=cfg,

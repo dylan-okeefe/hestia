@@ -118,16 +118,18 @@ def cli(
     ctx.obj = make_app(cfg)
 
 @cli.command()
+@click.option("--create-config", is_flag=True, help="Write a starter config.py")
 @run_async
-async def init(app: CliAppContext) -> None:
+async def init(app: CliAppContext, create_config: bool) -> None:
     """Initialize database, artifacts, and slot directories."""
-    await _cmd_init(app)
+    await _cmd_init(app, create_config)
 
 @cli.command()
+@click.option("--new-session", is_flag=True, help="Force a new session instead of resuming")
 @run_async
-async def chat(app: CliAppContext) -> None:
+async def chat(app: CliAppContext, new_session: bool) -> None:
     """Start an interactive chat session."""
-    await _cmd_chat(app)
+    await _cmd_chat(app, new_session)
 
 @cli.command()
 @click.argument("message")
@@ -292,6 +294,15 @@ def memory() -> None:
     """Manage long-term memory."""
     pass
 
+def _format_memory_row(mem: Any, id_width: int = 20) -> str:
+    tags = f"[{mem.tags}]" if mem.tags else ""
+    date = mem.created_at.strftime("%Y-%m-%d %H:%M")
+    content = mem.content.replace("\n", " ")
+    if len(content) > 60:
+        content = content[:57] + "..."
+    return f"{mem.id:<{id_width}} {date} {tags:<20} {content}"
+
+
 @memory.command(name="search")
 @click.argument("query")
 @click.option("--limit", type=int, default=5)
@@ -302,10 +313,10 @@ async def memory_search(app: CliAppContext, query: str, limit: int) -> None:
     if not results:
         click.echo("No memories found.")
         return
+    click.echo(f"{'ID':<20} {'Date':<16} {'Tags':<20} Content")
+    click.echo("-" * 80)
     for mem in results:
-        tags = f" [{mem.tags}]" if mem.tags else ""
-        date = mem.created_at.strftime("%Y-%m-%d %H:%M")
-        click.echo(f"{mem.id}  {date}{tags}  {mem.content}")
+        click.echo(_format_memory_row(mem))
 
 @memory.command(name="list")
 @click.option("--tag", default=None)
@@ -317,10 +328,10 @@ async def memory_list(app: CliAppContext, tag: str | None, limit: int) -> None:
     if not results:
         click.echo("No memories found.")
         return
+    click.echo(f"{'ID':<20} {'Date':<16} {'Tags':<20} Content")
+    click.echo("-" * 80)
     for mem in results:
-        tags = f" [{mem.tags}]" if mem.tags else ""
-        date = mem.created_at.strftime("%Y-%m-%d %H:%M")
-        click.echo(f"{mem.id}  {date}{tags}  {mem.content}")
+        click.echo(_format_memory_row(mem))
 
 @memory.command(name="add")
 @click.argument("content")

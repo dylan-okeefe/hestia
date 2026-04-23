@@ -408,46 +408,35 @@ class TrustConfig(_ConfigFromEnv):
     # Active trust preset name (paranoid, household, developer, etc.)
     preset: str | None = None
 
-    _PRESET_CACHE: ClassVar[dict[str, TrustConfig]] = {}
-
     @classmethod
     def paranoid(cls) -> TrustConfig:
         """Strictest posture. Current default. Auto-approves nothing; scheduler
         and subagents cannot shell or write."""
-        preset = "paranoid"
-        if preset not in cls._PRESET_CACHE:
-            cls._PRESET_CACHE[preset] = cls()
-        return cls._PRESET_CACHE[preset]
+        return cls()
 
     @classmethod
     def household(cls) -> TrustConfig:
         """Recommended posture for single-operator personal deployments.
         Auto-approves terminal and write_file on headless platforms;
         scheduler and subagents can shell and write."""
-        preset = "household"
-        if preset not in cls._PRESET_CACHE:
-            cls._PRESET_CACHE[preset] = cls(
-                auto_approve_tools=["terminal", "write_file"],
-                scheduler_shell_exec=True,
-                subagent_shell_exec=True,
-                subagent_write_local=True,
-            )
-        return cls._PRESET_CACHE[preset]
+        return cls(
+            auto_approve_tools=["terminal", "write_file"],
+            scheduler_shell_exec=True,
+            subagent_shell_exec=True,
+            subagent_write_local=True,
+        )
 
     @classmethod
     def developer(cls) -> TrustConfig:
         """Most permissive posture. Auto-approves everything;
         all capabilities available everywhere. Intended for development/testing
         only — do not use in a deployment exposed to other users."""
-        preset = "developer"
-        if preset not in cls._PRESET_CACHE:
-            cls._PRESET_CACHE[preset] = cls(
-                auto_approve_tools=["*"],  # wildcard — matches any tool name
-                scheduler_shell_exec=True,
-                subagent_shell_exec=True,
-                subagent_write_local=True,
-            )
-        return cls._PRESET_CACHE[preset]
+        return cls(
+            auto_approve_tools=["*"],  # wildcard — matches any tool name
+            scheduler_shell_exec=True,
+            subagent_shell_exec=True,
+            subagent_write_local=True,
+        )
 
     @classmethod
     def prompt_on_mobile(cls) -> TrustConfig:
@@ -467,15 +456,12 @@ class TrustConfig(_ConfigFromEnv):
         explicit ✅/❌ prompt on your phone for ``terminal``, ``write_file``,
         and ``email_send``.
         """
-        preset = "prompt_on_mobile"
-        if preset not in cls._PRESET_CACHE:
-            cls._PRESET_CACHE[preset] = cls(
-                auto_approve_tools=[],
-                scheduler_shell_exec=True,
-                subagent_shell_exec=True,
-                subagent_write_local=True,
-            )
-        return cls._PRESET_CACHE[preset]
+        return cls(
+            auto_approve_tools=[],
+            scheduler_shell_exec=True,
+            subagent_shell_exec=True,
+            subagent_write_local=True,
+        )
 
 
 @dataclass
@@ -710,35 +696,7 @@ class HestiaConfig(_ConfigFromEnv):
                 f"got {type(config).__name__}"
             )
         validate_inference_model_name(config.inference.model_name)
-        # Guard against post-instantiation mutation
-        if config.inference.max_tokens < 0:
-            raise ValueError(
-                f"InferenceConfig.max_tokens must be non-negative, "
-                f"got {config.inference.max_tokens}"
-            )
-        if config.identity.max_tokens < 0:
-            raise ValueError(
-                f"IdentityConfig.max_tokens must be non-negative, "
-                f"got {config.identity.max_tokens}"
-            )
-        from croniter import croniter
-
-        try:
-            croniter(config.style.cron)
-        except Exception as exc:
-            raise ValueError(
-                f"StyleConfig.cron is not a valid cron expression: {config.style.cron}"
-            ) from exc
-        try:
-            croniter(config.reflection.cron)
-        except Exception as exc:
-            raise ValueError(
-                f"ReflectionConfig.cron is not a valid cron expression: "
-                f"{config.reflection.cron}"
-            ) from exc
         return config
-
-    _PRESET_ENABLE_CACHE: ClassVar[dict[tuple[Any, ...], bool]] = {}
 
     @classmethod
     def for_trust(cls, trust: TrustConfig) -> HestiaConfig:
@@ -752,21 +710,7 @@ class HestiaConfig(_ConfigFromEnv):
 
             config = HestiaConfig.for_trust(TrustConfig.household())
         """
-        key = (
-            tuple(trust.auto_approve_tools),
-            trust.scheduler_shell_exec,
-            trust.subagent_shell_exec,
-            trust.subagent_write_local,
-            trust.subagent_email_send,
-            trust.scheduler_email_send,
-            trust.preset,
-        )
-        if key not in cls._PRESET_ENABLE_CACHE:
-            cls._PRESET_ENABLE_CACHE[key] = trust not in (
-                TrustConfig.paranoid(),
-                TrustConfig(),
-            )
-        enable = cls._PRESET_ENABLE_CACHE[key]
+        enable = trust not in (TrustConfig.paranoid(), TrustConfig())
         return cls(
             trust=trust,
             handoff=HandoffConfig(enabled=enable),
