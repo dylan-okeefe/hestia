@@ -44,6 +44,7 @@ from hestia.style.store import StyleProfileStore
 from hestia.tools.builtin import (
     current_time,
     http_get,
+    make_create_scheduled_task_tool,
     make_delegate_task_tool,
     make_delete_memory_tool,
     make_email_search_and_read_tool,
@@ -657,6 +658,12 @@ def make_app(cfg: HestiaConfig) -> CliAppContext:
         features.skill_index_builder = SkillIndexBuilder(skill_store)
 
     app = CliAppContext(core=core, features=features)
+
+    # Register scheduler tool (bound to scheduler and session stores)
+    if scheduler_store is not None:
+        tool_registry.register(
+            make_create_scheduled_task_tool(scheduler_store, session_store)
+        )
 
     # Register delegate task tool (needs app for orchestrator factory)
     tool_registry.register(make_delegate_task_tool(session_store, app.make_orchestrator))
