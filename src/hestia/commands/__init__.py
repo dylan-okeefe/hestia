@@ -10,6 +10,8 @@ from __future__ import annotations
 from typing import Any
 
 from hestia.commands.admin import (
+    cmd_artifacts_list,
+    cmd_artifacts_purge,
     cmd_audit_egress,
     cmd_audit_run,
     cmd_doctor,
@@ -66,6 +68,8 @@ __all__ = [
     "cmd_failures_list",
     "cmd_failures_summary",
     "cmd_health",
+    "cmd_artifacts_list",
+    "cmd_artifacts_purge",
     "cmd_init",
     "cmd_policy_show",
     "cmd_reflection_accept",

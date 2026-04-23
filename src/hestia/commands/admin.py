@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import logging
 import sys
-from datetime import UTC, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import click
 import httpx
@@ -110,6 +111,29 @@ async def cmd_init(
         else:
             soul_path.write_text(_SOUL_TEMPLATE, encoding="utf-8")
             click.echo("Created starter SOUL.md")
+
+
+async def cmd_artifacts_list(app: CliAppContext) -> list[Any]:
+    """Return a list of artifact metadata."""
+    return app.artifact_store.list()
+
+
+async def cmd_artifacts_purge(app: CliAppContext, older_than_days: int | None = None) -> int:
+    """Purge artifacts, optionally filtering by age.
+
+    If older_than_days is None, only expired artifacts are removed (GC).
+    If set, all artifacts older than that many days are removed.
+    """
+    if older_than_days is None:
+        return app.artifact_store.gc()
+
+    cutoff = datetime.now(UTC).timestamp() - (older_than_days * 24 * 60 * 60)
+    removed = 0
+    for meta in app.artifact_store.list():
+        if meta.created_at < cutoff and app.artifact_store.delete(meta.handle):
+            removed += 1
+
+    return removed
 
 
 async def cmd_health(app: CliAppContext) -> None:

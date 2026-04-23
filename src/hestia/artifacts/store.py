@@ -268,6 +268,55 @@ class ArtifactStore:
         content = self.fetch_content(handle)
         return Artifact(metadata=metadata, content=content)
 
+    def list(self) -> list[ArtifactMetadata]:
+        """List all non-expired artifacts.
+
+        Returns:
+            List of ArtifactMetadata, newest first.
+        """
+        results: list[ArtifactMetadata] = []
+        now = time.time()
+
+        for metadata_path in self._root.glob("*.json"):
+            if metadata_path.name == "inline.json":
+                continue
+
+            try:
+                with open(metadata_path) as f:
+                    data = json.load(f)
+                    metadata = ArtifactMetadata(**data)
+
+                if now <= metadata.expires_at:
+                    results.append(metadata)
+            except (json.JSONDecodeError, OSError, TypeError):
+                continue
+
+        results.sort(key=lambda m: m.created_at, reverse=True)
+        return results
+
+    def delete(self, handle: str) -> bool:
+        """Delete an artifact by handle.
+
+        Returns:
+            True if the artifact was found and deleted.
+        """
+        metadata_path = self._root / f"{handle}.json"
+        if not metadata_path.exists():
+            return False
+
+        with contextlib.suppress(OSError):
+            metadata_path.unlink()
+
+        content_path = self._root / f"{handle}.bin"
+        with contextlib.suppress(OSError):
+            content_path.unlink()
+
+        if handle in self._inline:
+            del self._inline[handle]
+            self._save_inline_index()
+
+        return True
+
     def gc(self) -> int:
         """Garbage collect expired artifacts.
 

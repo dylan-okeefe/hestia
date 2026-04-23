@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,8 @@ from hestia.app import (
     make_app,
 )
 from hestia.commands import (
+    cmd_artifacts_list,
+    cmd_artifacts_purge,
     cmd_ask,
     cmd_audit_egress,
     cmd_audit_run,
@@ -373,6 +376,43 @@ async def memory_remove(app: CliAppContext, memory_id: str) -> None:
         click.echo(f"Memory not found: {memory_id}", err=True)
         sys.exit(1)
     click.echo(f"Deleted: {memory_id}")
+
+# Artifact command group
+@cli.group(name="artifacts")
+def artifacts() -> None:
+    """Manage artifact storage."""
+    pass
+
+
+@artifacts.command(name="list")
+@click.pass_obj
+@async_command
+async def artifacts_list(app: CliAppContext) -> None:
+    """List stored artifacts."""
+    results = await cmd_artifacts_list(app)
+    if not results:
+        click.echo("No artifacts found.")
+        return
+    click.echo(f"{'Handle':<20} {'Size':>10} {'Type':<20} {'Source':<15} Created")
+    click.echo("-" * 90)
+    for meta in results:
+        size = f"{meta.size_bytes:,} B"
+        created = datetime.fromtimestamp(meta.created_at).strftime("%Y-%m-%d %H:%M")
+        source = meta.source_tool or "—"
+        click.echo(
+            f"{meta.handle:<20} {size:>10} {meta.content_type:<20} "
+            f"{source:<15} {created}"
+        )
+
+
+@artifacts.command(name="purge")
+@click.option("--older-than", type=int, default=None, help="Remove artifacts older than N days")
+@click.pass_obj
+@async_command
+async def artifacts_purge(app: CliAppContext, older_than: int | None) -> None:
+    """Purge artifacts (expired by default, or all older than N days)."""
+    removed = await cmd_artifacts_purge(app, older_than_days=older_than)
+    click.echo(f"Removed {removed} artifact(s).")
 
 # Skill command group
 @cli.group()
