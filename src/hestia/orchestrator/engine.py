@@ -180,6 +180,7 @@ class Orchestrator:
         system_prompt: str = "You are a helpful assistant.",
         platform: Platform | None = None,
         platform_user: str | None = None,
+        voice_reply: bool = False,
     ) -> Turn:
         """Process a single user turn through the state machine."""
         session_token = current_session_id.set(session.id)
@@ -205,6 +206,7 @@ class Orchestrator:
                 platform=platform,
                 platform_user=platform_user,
                 session=session,
+                voice_reply=voice_reply,
             )
 
             try:
@@ -285,6 +287,15 @@ class Orchestrator:
                     session.platform, session.platform_user
                 )
                 style_prefix = format_style_prefix_from_data(metrics)
+
+        if ctx.voice_reply:
+            effective_system_prompt = (
+                "You are replying via voice message. Use plain, natural "
+                "language. Avoid markdown, code blocks, bullet lists, tables, "
+                "and emoji. Keep your response concise and easy to speak "
+                "aloud.\n\n"
+                + effective_system_prompt
+            )
 
         ctx.tools = self._tools.meta_tool_schemas()
         self._builder.set_style_prefix(style_prefix)

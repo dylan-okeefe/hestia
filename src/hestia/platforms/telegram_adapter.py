@@ -441,6 +441,7 @@ class TelegramAdapter(Platform):
                 system_prompt=self._system_prompt,
                 platform=self,
                 platform_user=str(user_id),
+                voice_reply=True,
             )
         except Exception as e:
             logger.exception("Turn failed for voice message from %s", user_id)

@@ -91,6 +91,9 @@ class TurnContext:
     style_prefix: str | None = None
     allowed_tools: list[str] | None = None
 
+    # Per-turn delivery hint (set by platform adapter)
+    voice_reply: bool = False
+
     # Accumulated during _run_inference_loop
     tool_chain: list[str] = field(default_factory=list)
     artifact_handles: list[str] = field(default_factory=list)
