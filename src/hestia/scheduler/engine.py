@@ -110,6 +110,8 @@ class Scheduler:
         async def deliver(text: str) -> None:
             await self._response_callback(task, text)
             if task.notify and self._notifier is not None:
+                if text.strip() == "SILENT":
+                    return
                 session_for_notify = await self._session_store.get_session(task.session_id)
                 if session_for_notify is not None:
                     await self._notifier.send(
