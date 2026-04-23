@@ -205,6 +205,21 @@ src/hestia/
   policy/             # Policy engine
 ```
 
+## Deployment worktree
+
+`~/Hestia-runtime` is a git worktree of this repo and serves as the live
+deployment / runtime directory. It is typically on a `runtime` branch (or
+`develop` when not running a feature experiment). Configuration secrets,
+SQLite database, slots, artifacts, and platform logs live there — **not** in
+`/home/dylan/Hestia`.
+
+### Testing from the runtime directory
+
+Matrix end-to-end tests **must** be run from `~/Hestia-runtime`, not from the
+main repo worktree, because they depend on runtime-specific secrets
+(`.matrix.secrets.py`) and the live database state. When running matrix tests,
+always `cd ~/Hestia-runtime` first.
+
 ## Voice development (Telegram)
 
 The voice stack lives in `src/hestia/platforms/telegram_adapter.py` (voice
