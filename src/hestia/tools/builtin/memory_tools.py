@@ -55,7 +55,8 @@ def make_search_memory_tool(
 
         lines = []
         for mem in results:
-            tags = f" [{mem.tags}]" if mem.tags else ""
+            tags_str = ", ".join(mem.tags) if mem.tags else ""
+            tags = f" [{tags_str}]" if tags_str else ""
             date = mem.created_at.strftime("%Y-%m-%d %H:%M")
             lines.append(f"[{mem.id}] ({date}){tags} {mem.content}")
         return "\n".join(lines)
@@ -74,17 +75,23 @@ def make_save_memory_tool(
         tags=["memory", "builtin"],
         capabilities=[MEMORY_WRITE],
     )
-    async def save_memory(content: str, tags: str = "") -> str:
+    async def save_memory(content: str, tags: str | list[str] = "") -> str:
         """Save a note to long-term memory.
 
         Args:
             content: The text content to remember
-            tags: Space-separated tags for categorization (e.g., "project todo")
+            tags: Comma-separated tags or list of tags for categorization
+                  (e.g., "project, todo" or ["project", "todo"])
 
         Returns:
             Confirmation with the memory ID.
         """
-        tag_list = tags.split() if tags else []
+        if isinstance(tags, list):
+            tag_list = tags
+        elif tags:
+            tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+        else:
+            tag_list = []
         # Associate with current session and user identity (set by orchestrator)
         session_id = current_session_id.get()
         platform = current_platform.get()
@@ -129,7 +136,8 @@ def make_list_memories_tool(
 
         lines = []
         for mem in results:
-            tags = f" [{mem.tags}]" if mem.tags else ""
+            tags_str = ", ".join(mem.tags) if mem.tags else ""
+            tags = f" [{tags_str}]" if tags_str else ""
             date = mem.created_at.strftime("%Y-%m-%d %H:%M")
             lines.append(f"[{mem.id}] ({date}){tags} {mem.content}")
         return "\n".join(lines)

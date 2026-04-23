@@ -146,7 +146,8 @@ class MemoryEpochCompiler:
             # Format: "- [tags] content" or "- content" if no tags
             content = mem.content.strip()
             if mem.tags:
-                lines.append(f"- [{mem.tags}] {content}")
+                tags_str = ", ".join(mem.tags)
+                lines.append(f"- [{tags_str}] {content}")
             else:
                 lines.append(f"- {content}")
 

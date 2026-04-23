@@ -220,7 +220,7 @@ class TestMemoryEpochCompiler:
         epoch = await compiler.compile(session)
 
         # Check format: tagged memories should have [tags] prefix
-        assert "[important work] Tagged memory" in epoch.compiled_text or "[work important] Tagged memory" in epoch.compiled_text
+        assert "[important, work] Tagged memory" in epoch.compiled_text
         assert "- Untagged memory" in epoch.compiled_text
 
         await db.close()

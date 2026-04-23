@@ -20,7 +20,7 @@ from hestia.tools.capabilities import (
 from hestia.tools.registry import ToolNotFoundError
 
 
-async def _cmd_policy_show(app: CliAppContext) -> None:
+async def cmd_policy_show(app: CliAppContext) -> None:
     """Show current effective policy configuration."""
     cfg = app.config
     policy_engine = app.policy

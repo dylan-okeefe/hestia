@@ -23,7 +23,7 @@ class Memory:
 
     id: str
     content: str
-    tags: str  # space-separated tags
+    tags: list[str]  # pipe-delimited in DB, list in Python
     created_at: datetime
     session_id: str | None  # which session created this memory
     platform: str | None = None  # platform identifier (e.g. "cli", "matrix")
@@ -203,7 +203,7 @@ class MemoryStore:
             )
 
         memory_id = f"mem_{uuid.uuid4().hex[:16]}"
-        tag_str = " ".join(tags) if tags else ""
+        tag_str = "|".join(tags) if tags else ""
         now = utcnow()
 
         insert = sa.text(
@@ -230,7 +230,7 @@ class MemoryStore:
         return Memory(
             id=memory_id,
             content=content,
-            tags=tag_str,
+            tags=tags if tags else [],
             session_id=session_id,
             created_at=now,
             platform=platform,
@@ -348,12 +348,18 @@ class MemoryStore:
                 params["tag"] = quoted_tag
             else:
                 where_clauses.append(
-                    "(tags = :tag OR tags LIKE :p0 OR tags LIKE :p1 OR tags LIKE :p2)"
+                    "(tags = :tag OR tags LIKE :p0 OR tags LIKE :p1 OR tags LIKE :p2 OR "
+                    "tags LIKE :s0 OR tags LIKE :s1 OR tags LIKE :s2)"
                 )
                 params["tag"] = tag
-                params["p0"] = f"{tag} %"
-                params["p1"] = f"% {tag} %"
-                params["p2"] = f"% {tag}"
+                # pipe-delimited (new format)
+                params["p0"] = f"{tag}|%"
+                params["p1"] = f"%|{tag}|%"
+                params["p2"] = f"%|{tag}"
+                # space-delimited (legacy format, for backward compat)
+                params["s0"] = f"{tag} %"
+                params["s1"] = f"% {tag} %"
+                params["s2"] = f"% {tag}"
 
         if platform is not None and platform_user is not None:
             where_clauses.append("platform = :platform AND platform_user = :platform_user")
@@ -442,10 +448,17 @@ class MemoryStore:
         created_at = row.created_at
         if isinstance(created_at, str):
             created_at = datetime.fromisoformat(created_at)
+        raw_tags = row.tags or ""
+        if "|" in raw_tags:
+            tags = raw_tags.split("|")
+        elif raw_tags:
+            tags = raw_tags.split()
+        else:
+            tags = []
         return Memory(
             id=row.id,
             content=row.content,
-            tags=row.tags,
+            tags=tags,
             session_id=row.session_id,
             created_at=created_at,
             platform=row.platform if hasattr(row, "platform") else None,
