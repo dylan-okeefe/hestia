@@ -190,6 +190,7 @@ def schedule() -> None:
 @click.option("--session-id", help="Bind task to an existing session ID")
 @click.option("--platform", help="Platform for session binding (e.g., matrix)")
 @click.option("--platform-user", help="Platform user for session binding (e.g., room ID)")
+@click.option("--notify", is_flag=True, help="Push task output to the session's platform")
 @click.argument("prompt")
 @run_async
 async def schedule_add(
@@ -200,10 +201,11 @@ async def schedule_add(
     session_id: str | None,
     platform: str | None,
     platform_user: str | None,
+    notify: bool,
     prompt: str,
 ) -> None:
     await _cmd_schedule_add(
-        app, cron, fire_at_str, description, session_id, platform, platform_user, prompt
+        app, cron, fire_at_str, description, session_id, platform, platform_user, notify, prompt
     )
 
 @schedule.command(name="list")
@@ -282,12 +284,6 @@ def run_matrix(ctx: click.Context) -> None:
         asyncio.run(_run_matrix(app, app.config))
     except KeyboardInterrupt:
         click.echo("\nShutting down.")
-
-
-@cli.group()
-def setup() -> None:
-    """Operator bootstrap helpers."""
-    pass
 
 
 # Memory command group
@@ -414,24 +410,15 @@ async def skill_disable(app: CliAppContext, name: str) -> None:
     _check_experimental_skills()
     await _cmd_skill_disable(app, name)
 
-@skill.command(name="test")
-@click.argument("name")
-def skill_test(name: str) -> None:
-    """Run skill in sandbox mode (not yet implemented)."""
-    _check_experimental_skills()
-    click.echo(f"Skill testing not yet implemented for: {name}")
-    click.echo("Note: Run the skill manually and observe results.")
-
 class AuditGroup(click.Group):
     """Custom group that defaults to 'run' when no subcommand is given."""
 
     def invoke(self, ctx: click.Context) -> Any:
-        if ctx.protected_args:
-            return super().invoke(ctx)
-        ctx.invoked_subcommand = "run"
-        return self.commands["run"].invoke(ctx)
+        if ctx.invoked_subcommand is None:
+            ctx.invoked_subcommand = "run"
+        return super().invoke(ctx)
 
-@cli.group(name="audit", cls=AuditGroup)
+@cli.group(name="audit", cls=AuditGroup, invoke_without_command=True)
 def audit_group() -> None:
     """Security audit commands."""
     pass

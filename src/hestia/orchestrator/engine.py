@@ -7,13 +7,14 @@ import uuid
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
-from hestia.context.builder import BuildResult, ContextBuilder
+from hestia.context.builder import ContextBuilder
 from hestia.core.clock import utcnow
 from hestia.core.inference import InferenceClient
-from hestia.core.types import Message, Session, ToolCall, ToolSchema
+from hestia.core.types import Message, Session, ToolCall
 from hestia.errors import (
     ContextTooLargeError,
     EmptyResponseError,
+    HestiaError,
     IllegalTransitionError,
     MaxIterationsError,
     PersistenceError,
@@ -24,7 +25,7 @@ from hestia.errors import (
 from hestia.inference.slot_manager import SlotManager
 from hestia.memory.handoff import SessionHandoffSummarizer
 from hestia.orchestrator.transitions import assert_transition
-from hestia.orchestrator.types import Turn, TurnState, TurnTransition
+from hestia.orchestrator.types import ResponseCallback, Turn, TurnContext, TurnState, TurnTransition
 from hestia.persistence.failure_store import FailureBundle
 from hestia.persistence.sessions import SessionStore
 from hestia.platforms.base import Platform
@@ -47,9 +48,21 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _sanitize_user_error(error: Exception) -> str:
+    """Return a user-facing message for an unexpected error.
+
+    HestiaError subclasses are intentionally raised with user-friendly
+    messages, so they pass through. Everything else is sanitized to a
+    generic message to avoid leaking internal details (SQL errors,
+    file paths, stack traces) to end users.
+    """
+    if isinstance(error, HestiaError):
+        return str(error)
+    return "Something went wrong. The operator has been notified."
+
+
 # Callback types
 ConfirmCallback = Callable[[str, dict[str, Any]], Awaitable[bool]]
-ResponseCallback = Callable[[str], Awaitable[None]]
 
 
 class Orchestrator:
@@ -179,57 +192,29 @@ class Orchestrator:
         try:
             turn = self._create_turn(session.id, user_message)
             await self._persist_turn(turn)
-            tool_chain: list[str] = []
-            delegated: bool = False
             await self._set_typing(platform, platform_user, True)
 
             turn_start_time = utcnow()
-            total_prompt_tokens = 0
-            total_completion_tokens = 0
-            total_reasoning_tokens = 0
-            artifact_handles: list[str] = []
             trace_record_id: str | None = None
-            allowed_tools: list[str] | None = None
+
+            ctx = TurnContext(
+                turn=turn,
+                user_message=user_message,
+                system_prompt=system_prompt,
+                respond_callback=respond_callback,
+                platform=platform,
+                platform_user=platform_user,
+                session=session,
+            )
 
             try:
-                (
-                    session, build_result, tools, slot_id_to_use,
-                    running_history, style_prefix, allowed_tools,
-                ) = await self._prepare_turn_context(
-                    session, turn, user_message, system_prompt
-                )
-                (
-                    content, tool_chain, artifact_handles,
-                    total_prompt_tokens, total_completion_tokens,
-                    total_reasoning_tokens, delegated,
-                ) = await self._run_inference_loop(
-                    session=session,
-                    turn=turn,
-                    build_result=build_result,
-                    tools=tools,
-                    slot_id_to_use=slot_id_to_use,
-                    respond_callback=respond_callback,
-                    platform=platform,
-                    platform_user=platform_user,
-                    user_message=user_message,
-                    allowed_tools=allowed_tools,
-                    style_prefix=style_prefix,
-                    system_prompt=system_prompt,
-                    running_history=running_history,
-                    tool_chain=tool_chain,
-                    artifact_handles=artifact_handles,
-                    total_prompt_tokens=total_prompt_tokens,
-                    total_completion_tokens=total_completion_tokens,
-                    total_reasoning_tokens=total_reasoning_tokens,
-                    delegated=delegated,
-                )
-
+                await self._prepare_turn_context(session, ctx)
+                await self._run_inference_loop(ctx)
 
             except ContextTooLargeError as exc:
                 await self._set_typing(platform, platform_user, False)
                 trace_record_id = await self._handle_context_too_large(
-                    session, turn, exc, user_message, platform, platform_user,
-                    respond_callback, allowed_tools, tool_chain, trace_record_id,
+                    ctx, exc, trace_record_id
                 )
 
             except IllegalTransitionError:
@@ -238,15 +223,12 @@ class Orchestrator:
             except Exception as e:
                 await self._set_typing(platform, platform_user, False)
                 trace_record_id = await self._handle_unexpected_error(
-                    session, turn, e, user_message, platform, platform_user,
-                    respond_callback, allowed_tools, tool_chain, trace_record_id,
+                    ctx, e, trace_record_id
                 )
 
             finally:
                 await self._finalize_turn(
-                    session, turn, user_message, turn_start_time, tool_chain, delegated,
-                    artifact_handles, trace_record_id,
-                    total_prompt_tokens, total_completion_tokens, total_reasoning_tokens,
+                    ctx, turn_start_time, trace_record_id
                 )
 
             return turn
@@ -261,27 +243,19 @@ class Orchestrator:
     async def _prepare_turn_context(
         self,
         session: Session,
-        turn: Turn,
-        user_message: Message,
-        system_prompt: str,
-    ) -> tuple[
-        Session,
-        BuildResult,
-        list[ToolSchema],
-        int | None,
-        list[Message],
-        str | None,
-        list[str] | None,
-    ]:
+        ctx: TurnContext,
+    ) -> None:
         """Prepare context, tools, slot, and history for the inference loop."""
-        await self._safe_transition(turn, TurnState.BUILDING_CONTEXT)
+        await self._safe_transition(ctx.turn, TurnState.BUILDING_CONTEXT)
         all_tool_names = self._tools.list_names()
-        allowed_tools = self._policy.filter_tools(session, all_tool_names, self._tools)
+        ctx.allowed_tools = self._policy.filter_tools(
+            session, all_tool_names, self._tools
+        )
         history = await self._store.get_messages(session.id)
-        await self._store.append_message(session.id, user_message)
-        running_history: list[Message] = history + [user_message]
+        await self._store.append_message(session.id, ctx.user_message)
+        ctx.running_history = history + [ctx.user_message]
 
-        effective_system_prompt = system_prompt
+        effective_system_prompt = ctx.system_prompt
         if self._proposal_store is not None and not history:
             pending_count = await self._proposal_store.pending_count()
             if pending_count > 0:
@@ -291,7 +265,7 @@ class Orchestrator:
                     "greets you or asks 'what's new', summarize the "
                     "top 3 and ask whether to accept/reject/defer. "
                     "Do not apply any proposal without an explicit "
-                    f"accept.\n\n{system_prompt}"
+                    f"accept.\n\n{ctx.system_prompt}"
                 )
 
         style_prefix: str | None = None
@@ -312,43 +286,38 @@ class Orchestrator:
                 )
                 style_prefix = format_style_prefix_from_data(metrics)
 
-        tools = self._tools.meta_tool_schemas()
+        ctx.tools = self._tools.meta_tool_schemas()
         self._builder.set_style_prefix(style_prefix)
-        build_result = await self._builder.build(
+        ctx.build_result = await self._builder.build(
             session=session,
             history=history,
             system_prompt=effective_system_prompt,
-            tools=tools,
-            new_user_message=user_message,
+            tools=ctx.tools,
+            new_user_message=ctx.user_message,
         )
+        ctx.style_prefix = style_prefix
 
-        slot_id_to_use = session.slot_id
+        ctx.slot_id = session.slot_id
         if self._slot_manager is not None:
             assignment = await self._slot_manager.acquire(session)
-            slot_id_to_use = assignment.slot_id
+            ctx.slot_id = assignment.slot_id
             refreshed = await self._store.get_session(session.id)
             if refreshed is not None:
                 session = refreshed
 
-        return (
-            session, build_result, tools, slot_id_to_use,
-            running_history, style_prefix, allowed_tools,
-        )
+        ctx.session = session
 
     async def _handle_context_too_large(
         self,
-        session: Session,
-        turn: Turn,
+        ctx: TurnContext,
         exc: ContextTooLargeError,
-        user_message: Message,
-        platform: Platform | None,
-        platform_user: str | None,
-        respond_callback: ResponseCallback,
-        allowed_tools: list[str] | None,
-        tool_chain: list[str],
         trace_record_id: str | None,
     ) -> str | None:
         """Handle ContextTooLargeError: handoff, transition, warning, record failure."""
+        session = ctx.session
+        turn = ctx.turn
+        if session is None:
+            return trace_record_id
         if self._handoff_summarizer is not None:
             try:
                 history = await self._store.get_messages(session.id)
@@ -369,37 +338,33 @@ class Orchestrator:
                 "of our conversation. Type /reset to start fresh, and "
                 "I'll keep the summary for reference."
             )
-            if platform is not None:
-                await platform.send_system_warning(platform_user or "", warning_text)
+            if ctx.platform is not None:
+                await ctx.platform.send_system_warning(ctx.platform_user or "", warning_text)
             else:
-                await respond_callback(f"⚠️ {warning_text}")
+                await ctx.respond_callback(f"⚠️ {warning_text}")
         return await self._record_failure_if_enabled(
-            session, turn, exc, user_message, "context_too_large",
-            allowed_tools, tool_chain, trace_record_id,
+            session, turn, exc, ctx.user_message, "context_too_large",
+            ctx.allowed_tools, ctx.tool_chain, trace_record_id,
         )
 
     async def _handle_unexpected_error(
         self,
-        session: Session,
-        turn: Turn,
+        ctx: TurnContext,
         error: Exception,
-        user_message: Message,
-        platform: Platform | None,
-        platform_user: str | None,
-        respond_callback: ResponseCallback,
-        allowed_tools: list[str] | None,
-        tool_chain: list[str],
         trace_record_id: str | None,
     ) -> str | None:
         """Handle unexpected errors: notify user, transition to FAILED, record failure."""
+        turn = ctx.turn
+        session = ctx.session
         if turn.state in (TurnState.DONE, TurnState.FAILED):
             logger.error(
                 "Error after turn reached terminal state %s: %s",
                 turn.state.value,
                 error,
             )
+            sanitized = _sanitize_user_error(error)
             try:
-                await respond_callback(f"Error delivering response: {error}")
+                await ctx.respond_callback(f"Error delivering response: {sanitized}")
             except Exception as notify_err:
                 logger.warning(
                     "Failed to send post-terminal error notification: %s",
@@ -408,51 +373,38 @@ class Orchestrator:
         else:
             await self._safe_transition(turn, TurnState.FAILED)
             turn.error = str(error)
-            await respond_callback(f"Error: {error}")
+            sanitized = _sanitize_user_error(error)
+            await ctx.respond_callback(f"Error: {sanitized}")
+        if session is None:
+            return trace_record_id
         return await self._record_failure_if_enabled(
-            session, turn, error, user_message, "exception",
-            allowed_tools, tool_chain, trace_record_id,
+            session, turn, error, ctx.user_message, "exception",
+            ctx.allowed_tools, ctx.tool_chain, trace_record_id,
         )
 
-    async def _run_inference_loop(
-        self,
-        session: Session,
-        turn: Turn,
-        build_result: BuildResult,
-        tools: list[ToolSchema],
-        slot_id_to_use: int | None,
-        respond_callback: ResponseCallback,
-        platform: Platform | None,
-        platform_user: str | None,
-        user_message: Message,
-        allowed_tools: list[str] | None,
-        style_prefix: str | None,
-        system_prompt: str,
-        running_history: list[Message],
-        tool_chain: list[str],
-        artifact_handles: list[str],
-        total_prompt_tokens: int,
-        total_completion_tokens: int,
-        total_reasoning_tokens: int,
-        delegated: bool,
-    ) -> tuple[str, list[str], list[str], int, int, int, bool]:
+    async def _run_inference_loop(self, ctx: TurnContext) -> str:
         """Run the model inference loop: chat → tool dispatch → iterate."""
+        session = ctx.session
+        turn = ctx.turn
+        if session is None or ctx.build_result is None:
+            raise RuntimeError("TurnContext not prepared before _run_inference_loop")
+
         content = ""
         while turn.iterations < self._max_iterations:
             await self._safe_transition(turn, TurnState.AWAITING_MODEL)
-            await self._set_typing(platform, platform_user, True)
+            await self._set_typing(ctx.platform, ctx.platform_user, True)
 
             turn.reasoning_budget = self._policy.reasoning_budget(session, turn.iterations)
 
             chat_response = await self._inference.chat(
-                messages=build_result.messages,
-                tools=tools,
-                slot_id=slot_id_to_use,
+                messages=ctx.build_result.messages,
+                tools=ctx.tools,
+                slot_id=ctx.slot_id,
                 reasoning_budget=turn.reasoning_budget,
             )
 
-            total_prompt_tokens += getattr(chat_response, "prompt_tokens", 0) or 0
-            total_completion_tokens += getattr(chat_response, "completion_tokens", 0) or 0
+            ctx.total_prompt_tokens += getattr(chat_response, "prompt_tokens", 0) or 0
+            ctx.total_completion_tokens += getattr(chat_response, "completion_tokens", 0) or 0
 
             assistant_msg = Message(
                 role="assistant",
@@ -467,11 +419,11 @@ class Orchestrator:
                 await self._safe_transition(turn, TurnState.EXECUTING_TOOLS)
 
                 tool_names = [tc.name for tc in chat_response.tool_calls]
-                tool_chain.extend(tool_names)
+                ctx.tool_chain.extend(tool_names)
                 logger.debug("Executing tools: %s", ", ".join(tool_names))
-                await self._set_typing(platform, platform_user, True)
+                await self._set_typing(ctx.platform, ctx.platform_user, True)
 
-                task_desc = (user_message.content or "").strip()
+                task_desc = (ctx.user_message.content or "").strip()
                 use_policy_delegation = (
                     "delegate_task" in self._tools.list_names()
                     and self._policy.should_delegate(
@@ -481,34 +433,34 @@ class Orchestrator:
                         len(chat_response.tool_calls),
                     )
                 )
-                delegated = use_policy_delegation
+                ctx.delegated = use_policy_delegation
 
                 if use_policy_delegation:
                     await self._safe_transition(turn, TurnState.AWAITING_SUBAGENT)
                     tool_results, handles = await self._execute_policy_delegation(
-                        user_message, chat_response.tool_calls
+                        ctx.user_message, chat_response.tool_calls
                     )
-                    artifact_handles.extend(handles)
+                    ctx.artifact_handles.extend(handles)
                     await self._safe_transition(turn, TurnState.EXECUTING_TOOLS)
                 else:
                     tool_results, handles = await self._execute_tool_calls(
-                        session, chat_response.tool_calls, allowed_tools
+                        session, chat_response.tool_calls, ctx.allowed_tools
                     )
-                    artifact_handles.extend(handles)
+                    ctx.artifact_handles.extend(handles)
 
                 for result_msg in tool_results:
                     await self._store.append_message(session.id, result_msg)
 
                 await self._safe_transition(turn, TurnState.BUILDING_CONTEXT)
 
-                running_history.append(assistant_msg)
-                running_history.extend(tool_results)
-                self._builder.set_style_prefix(style_prefix)
-                build_result = await self._builder.build(
+                ctx.running_history.append(assistant_msg)
+                ctx.running_history.extend(tool_results)
+                self._builder.set_style_prefix(ctx.style_prefix)
+                ctx.build_result = await self._builder.build(
                     session=session,
-                    history=running_history,
-                    system_prompt=system_prompt,
-                    tools=tools,
+                    history=ctx.running_history,
+                    system_prompt=ctx.system_prompt,
+                    tools=ctx.tools,
                     new_user_message=None,
                 )
 
@@ -524,11 +476,11 @@ class Orchestrator:
                         f"with empty content and no tool calls"
                     )
 
-                await self._set_typing(platform, platform_user, False)
+                await self._set_typing(ctx.platform, ctx.platform_user, False)
 
                 await self._safe_transition(turn, TurnState.DONE)
                 turn.final_response = content
-                await respond_callback(content)
+                await ctx.respond_callback(content)
                 break
 
             else:
@@ -543,15 +495,7 @@ class Orchestrator:
         else:
             raise MaxIterationsError(self._max_iterations, turn.iterations)
 
-        return (
-            content,
-            tool_chain,
-            artifact_handles,
-            total_prompt_tokens,
-            total_completion_tokens,
-            total_reasoning_tokens,
-            delegated,
-        )
+        return content
 
     async def _record_failure_if_enabled(
         self,
@@ -588,19 +532,16 @@ class Orchestrator:
 
     async def _finalize_turn(
         self,
-        session: Session,
-        turn: Turn,
-        user_message: Message,
+        ctx: TurnContext,
         turn_start_time: Any,
-        tool_chain: list[str],
-        delegated: bool,
-        artifact_handles: list[str],
         trace_record_id: str | None,
-        total_prompt_tokens: int,
-        total_completion_tokens: int,
-        total_reasoning_tokens: int,
     ) -> None:
         """Finalize turn: save slot, update turn, record trace, set artifact handles."""
+        session = ctx.session
+        turn = ctx.turn
+        if session is None:
+            return
+
         if turn.state == TurnState.DONE and self._slot_manager is not None:
             try:
                 await self._slot_manager.save(session)
@@ -617,7 +558,7 @@ class Orchestrator:
             try:
                 from hestia.persistence.trace_store import TraceRecord
 
-                raw_summary = user_message.content or ""
+                raw_summary = ctx.user_message.content or ""
                 if len(raw_summary) > 200:
                     user_input_summary = raw_summary[:200] + "..."
                 else:
@@ -637,23 +578,25 @@ class Orchestrator:
                     started_at=turn_start_time,
                     ended_at=turn_end_time,
                     user_input_summary=user_input_summary,
-                    tools_called=tool_chain,
-                    tool_call_count=len(tool_chain),
-                    delegated=delegated,
+                    tools_called=ctx.tool_chain,
+                    tool_call_count=len(ctx.tool_chain),
+                    delegated=ctx.delegated,
                     outcome=outcome,
-                    artifact_handles=artifact_handles,
-                    prompt_tokens=total_prompt_tokens if total_prompt_tokens > 0 else None,
+                    artifact_handles=ctx.artifact_handles,
+                    prompt_tokens=ctx.total_prompt_tokens if ctx.total_prompt_tokens > 0 else None,
                     completion_tokens=(
-                        total_completion_tokens if total_completion_tokens > 0 else None
+                        ctx.total_completion_tokens if ctx.total_completion_tokens > 0 else None
                     ),
-                    reasoning_tokens=total_reasoning_tokens if total_reasoning_tokens > 0 else None,
+                    reasoning_tokens=(
+                        ctx.total_reasoning_tokens if ctx.total_reasoning_tokens > 0 else None
+                    ),
                     total_duration_ms=total_duration_ms,
                 )
                 await self._trace_store.record(trace)
             except Exception as trace_err:  # noqa: BLE001
                 logger.error("Failed to record trace: %s", trace_err)
 
-        turn.artifact_handles = list(artifact_handles)
+        turn.artifact_handles = list(ctx.artifact_handles)
 
     def _build_failure_bundle(
         self,

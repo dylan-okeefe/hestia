@@ -82,6 +82,7 @@ class ScheduledTask:
     last_run_at: datetime | None
     next_run_at: datetime | None
     last_error: str | None
+    notify: bool = False
 
 
 @dataclass

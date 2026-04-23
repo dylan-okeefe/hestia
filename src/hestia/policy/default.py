@@ -12,8 +12,6 @@ from hestia.policy.engine import (
     RetryAction,
     RetryDecision,
 )
-
-logger = logging.getLogger(__name__)
 from hestia.runtime_context import scheduler_tick_active
 
 if TYPE_CHECKING:

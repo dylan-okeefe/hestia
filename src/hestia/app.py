@@ -7,6 +7,7 @@ import functools
 import logging
 import os
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -95,6 +96,328 @@ class CliConfirmHandler:
         click.echo(f"\nTool call requested: {tool_name}")
         click.echo(f"Arguments: {arguments}")
         return click.confirm("Execute?", default=True)
+
+
+@dataclass
+class CoreAppContext:
+    """Always-available application subsystems."""
+
+    config: HestiaConfig
+    db: Database
+    session_store: SessionStore
+    tool_registry: ToolRegistry
+    policy: DefaultPolicyEngine
+    memory_store: MemoryStore
+    failure_store: FailureStore
+    trace_store: TraceStore
+    artifact_store: ArtifactStore
+    scheduler_store: SchedulerStore
+    epoch_compiler: MemoryEpochCompiler
+    verbose: bool = False
+    confirm_callback: ConfirmCallback | None = None
+    calibration_path: Path | None = None
+    compiled_identity: str | None = None
+
+    _inference: InferenceClient | None = field(default=None, repr=False)
+    _context_builder: ContextBuilder | None = field(default=None, repr=False)
+    _slot_manager: SlotManager | None = field(default=None, repr=False)
+    _handoff_summarizer: SessionHandoffSummarizer | None = field(
+        default=None, repr=False
+    )
+
+    @property
+    def inference(self) -> InferenceClient:
+        """Lazy inference client — created on first access."""
+        if self._inference is None:
+            model_name = self.config.inference.model_name.strip()
+            if not model_name:
+                raise ValueError(
+                    "inference.model_name is required — set it to your llama.cpp model "
+                    "filename (e.g. 'my-model-Q4_K_M.gguf'), or for tests only set "
+                    "HESTIA_ALLOW_DUMMY_MODEL=1 and use model_name='dummy'."
+                )
+            self._inference = InferenceClient(
+                self.config.inference.base_url, model_name
+            )
+        return self._inference
+
+    @property
+    def context_builder(self) -> ContextBuilder:
+        """Lazy context builder — created on first access."""
+        if self._context_builder is None:
+            path = self.calibration_path or DEFAULT_CALIBRATION_PATH
+            cb = ContextBuilder.from_calibration_file(
+                self.inference, self.policy, path
+            )
+            if self.compiled_identity:
+                cb.set_identity_prefix(self.compiled_identity)
+            if self.config.compression.enabled:
+                cb.enable_compression(
+                    InferenceHistoryCompressor(
+                        self.inference, max_chars=self.config.compression.max_chars
+                    )
+                )
+            self._context_builder = cb
+        return self._context_builder
+
+    @property
+    def slot_manager(self) -> SlotManager:
+        """Lazy slot manager — created on first access."""
+        if self._slot_manager is None:
+            self._slot_manager = SlotManager(
+                inference=self.inference,
+                session_store=self.session_store,
+                slot_dir=self.config.slots.slot_dir,
+                pool_size=self.config.slots.pool_size,
+            )
+        return self._slot_manager
+
+    @property
+    def handoff_summarizer(self) -> SessionHandoffSummarizer | None:
+        """Lazy handoff summarizer — created on first access if enabled."""
+        if self._handoff_summarizer is None and self.config.handoff.enabled:
+            self._handoff_summarizer = SessionHandoffSummarizer(
+                inference=self.inference,
+                memory_store=self.memory_store,
+                max_chars=self.config.handoff.max_chars,
+                min_messages=self.config.handoff.min_messages,
+            )
+        return self._handoff_summarizer
+
+    def make_injection_scanner(self) -> InjectionScanner:
+        """Create an InjectionScanner from config."""
+        return InjectionScanner(
+            enabled=self.config.security.injection_scanner_enabled,
+            entropy_threshold=self.config.security.injection_entropy_threshold,
+            skip_filters_for_structured=self.config.security.injection_skip_filters_for_structured,
+        )
+
+
+@dataclass
+class FeatureAppContext:
+    """Optional application subsystems (created only when enabled)."""
+
+    skill_store: SkillStore | None = None
+    proposal_store: ProposalStore | None = None
+    style_store: StyleProfileStore | None = None
+    style_builder: StyleProfileBuilder | None = None
+    skill_index_builder: SkillIndexBuilder | None = None
+
+    _reflection_scheduler: ReflectionScheduler | None = field(
+        default=None, repr=False
+    )
+    _style_scheduler: StyleScheduler | None = field(default=None, repr=False)
+
+    @property
+    def reflection_scheduler(self) -> ReflectionScheduler | None:
+        """Lazy reflection scheduler — created on first access.
+
+        Construction is unconditional so callers can read status/failure
+        history even when the scheduler is not auto-started by daemons.
+        Whether the scheduler actually ticks is governed by
+        ``config.reflection.enabled`` checks at the start sites.
+        """
+        # This property is accessed via CliAppContext which has config
+        # on the core context. We can't build here without config.
+        return self._reflection_scheduler
+
+    @property
+    def style_scheduler(self) -> StyleScheduler | None:
+        """Lazy style scheduler — created on first access if builder is available."""
+        return self._style_scheduler
+
+
+class CliAppContext:
+    """Typed application context shared across CLI commands.
+
+    Facade that delegates to :class:`CoreAppContext` and
+    :class:`FeatureAppContext`. Keeps command signatures stable
+    while allowing phased startup.
+    """
+
+    def __init__(
+        self,
+        core: CoreAppContext,
+        features: FeatureAppContext | None = None,
+    ) -> None:
+        self._core = core
+        self._features = features or FeatureAppContext()
+        self._bootstrapped = False
+
+    # --- Delegate properties for command compatibility ---
+
+    @property
+    def config(self) -> HestiaConfig:
+        return self._core.config
+
+    @property
+    def db(self) -> Database:
+        return self._core.db
+
+    @property
+    def session_store(self) -> SessionStore:
+        return self._core.session_store
+
+    @property
+    def tool_registry(self) -> ToolRegistry:
+        return self._core.tool_registry
+
+    @property
+    def policy(self) -> DefaultPolicyEngine:
+        return self._core.policy
+
+    @property
+    def memory_store(self) -> MemoryStore:
+        return self._core.memory_store
+
+    @property
+    def failure_store(self) -> FailureStore:
+        return self._core.failure_store
+
+    @property
+    def trace_store(self) -> TraceStore:
+        return self._core.trace_store
+
+    @property
+    def artifact_store(self) -> ArtifactStore:
+        return self._core.artifact_store
+
+    @property
+    def scheduler_store(self) -> SchedulerStore:
+        return self._core.scheduler_store
+
+    @property
+    def epoch_compiler(self) -> MemoryEpochCompiler:
+        return self._core.epoch_compiler
+
+    @property
+    def verbose(self) -> bool:
+        return self._core.verbose
+
+    @property
+    def confirm_callback(self) -> ConfirmCallback | None:
+        return self._core.confirm_callback
+
+    @confirm_callback.setter
+    def confirm_callback(self, callback: ConfirmCallback | None) -> None:
+        self._core.confirm_callback = callback
+
+    @property
+    def inference(self) -> InferenceClient:
+        return self._core.inference
+
+    @property
+    def context_builder(self) -> ContextBuilder:
+        return self._core.context_builder
+
+    @property
+    def slot_manager(self) -> SlotManager:
+        return self._core.slot_manager
+
+    @property
+    def handoff_summarizer(self) -> SessionHandoffSummarizer | None:
+        return self._core.handoff_summarizer
+
+    # --- Feature delegates ---
+
+    @property
+    def skill_store(self) -> SkillStore | None:
+        return self._features.skill_store
+
+    @property
+    def proposal_store(self) -> ProposalStore | None:
+        return self._features.proposal_store
+
+    @property
+    def style_store(self) -> StyleProfileStore | None:
+        return self._features.style_store
+
+    @property
+    def style_builder(self) -> StyleProfileBuilder | None:
+        return self._features.style_builder
+
+    @property
+    def skill_index_builder(self) -> SkillIndexBuilder | None:
+        return self._features.skill_index_builder
+
+    @property
+    def reflection_scheduler(self) -> ReflectionScheduler | None:
+        """Lazy reflection scheduler — created on first access."""
+        if self._features._reflection_scheduler is None:
+            if self._features.proposal_store is None:
+                return None
+            runner = ReflectionRunner(
+                config=self.config.reflection,
+                inference=self.inference,
+                trace_store=self.trace_store,
+                proposal_store=self._features.proposal_store,
+            )
+            sched = ReflectionScheduler(
+                config=self.config.reflection,
+                runner=runner,
+                session_store=self.session_store,
+            )
+            sched.wire_failure_handler(runner)
+            self._features._reflection_scheduler = sched
+        return self._features._reflection_scheduler
+
+    @property
+    def style_scheduler(self) -> StyleScheduler | None:
+        """Lazy style scheduler — created on first access if builder is available."""
+        if self._features._style_scheduler is None and self._features.style_builder is not None:
+            self._features._style_scheduler = StyleScheduler(
+                config=self.config.style,
+                builder=self._features.style_builder,
+                session_store=self.session_store,
+            )
+        return self._features._style_scheduler
+
+    # --- Methods ---
+
+    def set_confirm_callback(self, callback: ConfirmCallback | None) -> None:
+        """Set the tool-confirmation callback used when constructing orchestrators."""
+        self._core.confirm_callback = callback
+
+    async def bootstrap_db(self) -> None:
+        """Connect to database and create tables. Idempotent."""
+        if self._bootstrapped:
+            return
+        await self.db.connect()
+        await self.db.create_tables()
+        await self.memory_store.create_table()
+        await self.failure_store.create_table()
+        await self.trace_store.create_table()
+        if self.skill_store is not None:
+            await self.skill_store.create_table()
+        if self.proposal_store is not None:
+            await self.proposal_store.create_table()
+        if self.style_store is not None:
+            await self.style_store.create_table()
+        self._bootstrapped = True
+
+    def make_injection_scanner(self) -> InjectionScanner:
+        """Create an InjectionScanner from config."""
+        return self._core.make_injection_scanner()
+
+    def make_orchestrator(self) -> Orchestrator:
+        """Create an Orchestrator with the current app context."""
+        return Orchestrator(
+            inference=self.inference,
+            session_store=self.session_store,
+            context_builder=self.context_builder,
+            tool_registry=self.tool_registry,
+            policy=self.policy,
+            confirm_callback=self.confirm_callback,
+            max_iterations=self.config.max_iterations,
+            slot_manager=self.slot_manager,
+            failure_store=self.failure_store,
+            trace_store=self.trace_store,
+            handoff_summarizer=self.handoff_summarizer,
+            injection_scanner=self.make_injection_scanner(),
+            proposal_store=self.proposal_store,
+            style_store=self.style_store,
+            style_config=self.config.style,
+        )
 
 
 async def _compile_and_set_memory_epoch(
@@ -200,213 +523,25 @@ def _require_scheduler_store(app: CliAppContext) -> SchedulerStore:
     return app.scheduler_store
 
 
-class CliAppContext:
-    """Typed application context shared across CLI commands."""
-
-    def __init__(
-        self,
-        config: HestiaConfig,
-        db: Database,
-        session_store: SessionStore,
-        tool_registry: ToolRegistry,
-        policy: DefaultPolicyEngine,
-        memory_store: MemoryStore,
-        failure_store: FailureStore,
-        trace_store: TraceStore,
-        artifact_store: ArtifactStore,
-        scheduler_store: SchedulerStore | None = None,
-        skill_store: SkillStore | None = None,
-        proposal_store: ProposalStore | None = None,
-        style_store: StyleProfileStore | None = None,
-        style_builder: StyleProfileBuilder | None = None,
-        epoch_compiler: MemoryEpochCompiler | None = None,
-        skill_index_builder: SkillIndexBuilder | None = None,
-        verbose: bool = False,
-        confirm_callback: ConfirmCallback | None = None,
-        calibration_path: Path | None = None,
-        compiled_identity: str | None = None,
-    ) -> None:
-        self.config = config
-        self.db = db
-        self.session_store = session_store
-        self.tool_registry = tool_registry
-        self.policy = policy
-        self.memory_store = memory_store
-        self.failure_store = failure_store
-        self.trace_store = trace_store
-        self.artifact_store = artifact_store
-        self.scheduler_store = scheduler_store
-        self.skill_store = skill_store
-        self.proposal_store = proposal_store
-        self.style_store = style_store
-        self.style_builder = style_builder
-        self.epoch_compiler = epoch_compiler
-        self.skill_index_builder = skill_index_builder
-        self.verbose = verbose
-        self.confirm_callback = confirm_callback
-        self._calibration_path = calibration_path
-        self._compiled_identity = compiled_identity
-        self._inference: InferenceClient | None = None
-        self._context_builder: ContextBuilder | None = None
-        self._slot_manager: SlotManager | None = None
-        self._reflection_scheduler: ReflectionScheduler | None = None
-        self._style_scheduler: StyleScheduler | None = None
-        self._handoff_summarizer: SessionHandoffSummarizer | None = None
-        self._bootstrapped = False
-
-    def set_confirm_callback(self, callback: ConfirmCallback | None) -> None:
-        """Set the tool-confirmation callback used when constructing orchestrators."""
-        self.confirm_callback = callback
-
-    @property
-    def inference(self) -> InferenceClient:
-        """Lazy inference client — created on first access."""
-        if self._inference is None:
-            model_name = self.config.inference.model_name.strip()
-            if not model_name:
-                raise ValueError(
-                    "inference.model_name is required — set it to your llama.cpp model "
-                    "filename (e.g. 'my-model-Q4_K_M.gguf'), or for tests only set "
-                    "HESTIA_ALLOW_DUMMY_MODEL=1 and use model_name='dummy'."
-                )
-            self._inference = InferenceClient(self.config.inference.base_url, model_name)
-        return self._inference
-
-    @property
-    def context_builder(self) -> ContextBuilder:
-        """Lazy context builder — created on first access."""
-        if self._context_builder is None:
-            path = self._calibration_path or DEFAULT_CALIBRATION_PATH
-            cb = ContextBuilder.from_calibration_file(self.inference, self.policy, path)
-            if self._compiled_identity:
-                cb.set_identity_prefix(self._compiled_identity)
-            if self.config.compression.enabled:
-                cb.enable_compression(
-                    InferenceHistoryCompressor(
-                        self.inference, max_chars=self.config.compression.max_chars
-                    )
-                )
-            self._context_builder = cb
-        return self._context_builder
-
-    @property
-    def slot_manager(self) -> SlotManager:
-        """Lazy slot manager — created on first access."""
-        if self._slot_manager is None:
-            self._slot_manager = SlotManager(
-                inference=self.inference,
-                session_store=self.session_store,
-                slot_dir=self.config.slots.slot_dir,
-                pool_size=self.config.slots.pool_size,
-            )
-        return self._slot_manager
-
-    @property
-    def reflection_scheduler(self) -> ReflectionScheduler | None:
-        """Lazy reflection scheduler — created on first access.
-
-        Construction is unconditional so callers can read status/failure
-        history even when the scheduler is not auto-started by daemons.
-        Whether the scheduler actually ticks is governed by
-        ``config.reflection.enabled`` checks at the start sites.
-        """
-        if self._reflection_scheduler is None:
-            if self.proposal_store is None:
-                return None
-            runner = ReflectionRunner(
-                config=self.config.reflection,
-                inference=self.inference,
-                trace_store=self.trace_store,
-                proposal_store=self.proposal_store,
-            )
-            sched = ReflectionScheduler(
-                config=self.config.reflection,
-                runner=runner,
-                session_store=self.session_store,
-            )
-            sched.wire_failure_handler(runner)
-            self._reflection_scheduler = sched
-        return self._reflection_scheduler
-
-    @property
-    def style_scheduler(self) -> StyleScheduler | None:
-        """Lazy style scheduler — created on first access if builder is available."""
-        if self._style_scheduler is None and self.style_builder is not None:
-            self._style_scheduler = StyleScheduler(
-                config=self.config.style,
-                builder=self.style_builder,
-                session_store=self.session_store,
-            )
-        return self._style_scheduler
-
-    @property
-    def handoff_summarizer(self) -> SessionHandoffSummarizer | None:
-        """Lazy handoff summarizer — created on first access if enabled."""
-        if self._handoff_summarizer is None and self.config.handoff.enabled:
-            self._handoff_summarizer = SessionHandoffSummarizer(
-                inference=self.inference,
-                memory_store=self.memory_store,
-                max_chars=self.config.handoff.max_chars,
-                min_messages=self.config.handoff.min_messages,
-            )
-        return self._handoff_summarizer
-
-    async def bootstrap_db(self) -> None:
-        """Connect to database and create tables. Idempotent."""
-        if self._bootstrapped:
-            return
-        await self.db.connect()
-        await self.db.create_tables()
-        await self.memory_store.create_table()
-        await self.failure_store.create_table()
-        await self.trace_store.create_table()
-        if self.skill_store is not None:
-            await self.skill_store.create_table()
-        if self.proposal_store is not None:
-            await self.proposal_store.create_table()
-        if self.style_store is not None:
-            await self.style_store.create_table()
-        self._bootstrapped = True
-
-    def make_injection_scanner(self) -> InjectionScanner:
-        """Create an InjectionScanner from config."""
-        return InjectionScanner(
-            enabled=self.config.security.injection_scanner_enabled,
-            entropy_threshold=self.config.security.injection_entropy_threshold,
-            skip_filters_for_structured=self.config.security.injection_skip_filters_for_structured,
-        )
-
-    def make_orchestrator(self) -> Orchestrator:
-        """Create an Orchestrator with the current app context."""
-        return Orchestrator(
-            inference=self.inference,
-            session_store=self.session_store,
-            context_builder=self.context_builder,
-            tool_registry=self.tool_registry,
-            policy=self.policy,
-            confirm_callback=self.confirm_callback,
-            max_iterations=self.config.max_iterations,
-            slot_manager=self.slot_manager,
-            failure_store=self.failure_store,
-            trace_store=self.trace_store,
-            handoff_summarizer=self.handoff_summarizer,
-            injection_scanner=self.make_injection_scanner(),
-            proposal_store=self.proposal_store,
-            style_store=self.style_store,
-            style_config=self.config.style,
-        )
-
-
 def make_app(cfg: HestiaConfig) -> CliAppContext:
     """Build subsystems from config and return typed app context."""
-    if not cfg.inference.model_name.strip() and os.environ.get("HESTIA_ALLOW_DUMMY_MODEL") == "1":
+    if (
+        not cfg.inference.model_name.strip()
+        and os.environ.get("HESTIA_ALLOW_DUMMY_MODEL") == "1"
+    ):
         cfg.inference.model_name = "dummy"
     validate_inference_model_name(cfg.inference.model_name)
 
+    # Phase 1: Core subsystems (always created)
     db = Database(cfg.storage.database_url)
     artifact_store = ArtifactStore(cfg.storage.artifacts_dir)
     session_store = SessionStore(db)
     policy = _make_policy(cfg)
+    memory_store = MemoryStore(db)
+    failure_store = FailureStore(db)
+    trace_store = TraceStore(db)
+    scheduler_store = SchedulerStore(db)
+    epoch_compiler = MemoryEpochCompiler(memory_store, max_tokens=500)
 
     # Honor environment overrides for personality / calibration paths
     env_soul = os.environ.get("HESTIA_SOUL_PATH")
@@ -439,9 +574,6 @@ def make_app(cfg: HestiaConfig) -> CliAppContext:
         )
         logger.warning("Calibration file not found at %s", calibration_path)
 
-    # Memory store for long-term memory
-    memory_store = MemoryStore(db)
-
     # Tool registry with built-in tools
     tool_registry = ToolRegistry(artifact_store)
     tool_registry.register(current_time)
@@ -469,28 +601,11 @@ def make_app(cfg: HestiaConfig) -> CliAppContext:
     for email_tool in make_email_tools(cfg.email):
         tool_registry.register(email_tool)
 
-    email_search_and_read = make_email_search_and_read_tool(
-        EmailAdapter(cfg.email)
-    )
+    email_search_and_read = make_email_search_and_read_tool(EmailAdapter(cfg.email))
     if email_search_and_read is not None:
         tool_registry.register(email_search_and_read)
 
-    # Create typed context stores first
-    failure_store = FailureStore(db)
-    scheduler_store = SchedulerStore(db)
-    trace_store = TraceStore(db)
-    skill_store = SkillStore(db)
-    proposal_store = ProposalStore(db)
-    style_store = StyleProfileStore(db)
-    style_builder = StyleProfileBuilder(db, style_store, cfg.style)
-
-    # Initialize memory epoch compiler
-    epoch_compiler = MemoryEpochCompiler(memory_store, max_tokens=500)
-
-    # Initialize skill index builder
-    skill_index_builder = SkillIndexBuilder(skill_store)
-
-    app = CliAppContext(
+    core = CoreAppContext(
         config=cfg,
         db=db,
         session_store=session_store,
@@ -501,17 +616,31 @@ def make_app(cfg: HestiaConfig) -> CliAppContext:
         trace_store=trace_store,
         artifact_store=artifact_store,
         scheduler_store=scheduler_store,
-        skill_store=skill_store,
-        proposal_store=proposal_store,
-        style_store=style_store,
-        style_builder=style_builder,
         epoch_compiler=epoch_compiler,
-        skill_index_builder=skill_index_builder,
         verbose=cfg.verbose,
-        confirm_callback=None,
         calibration_path=calibration_path,
         compiled_identity=compiled_identity,
     )
+
+    # Phase 2: Feature subsystems (conditional on config)
+    features = FeatureAppContext()
+
+    # Proposal store is lightweight; keep it available for status queries
+    # even when reflection auto-tick is disabled.
+    features.proposal_store = ProposalStore(db)
+
+    # Style store is also lightweight; commands can query it even when
+    # style injection is disabled.
+    style_store = StyleProfileStore(db)
+    features.style_store = style_store
+    features.style_builder = StyleProfileBuilder(db, style_store, cfg.style)
+
+    if os.environ.get("HESTIA_EXPERIMENTAL_SKILLS") == "1":
+        skill_store = SkillStore(db)
+        features.skill_store = skill_store
+        features.skill_index_builder = SkillIndexBuilder(skill_store)
+
+    app = CliAppContext(core=core, features=features)
 
     # Register delegate task tool (needs app for orchestrator factory)
     tool_registry.register(make_delegate_task_tool(session_store, app.make_orchestrator))
@@ -523,13 +652,16 @@ def run_async(coro_factory: Callable[..., Awaitable[Any]]) -> Callable[..., Any]
     """Decorator: wrap a Click command body so the inner async function
     receives ``app`` and is run inside ``asyncio.run``. Calls ``bootstrap_db`` once.
     """
+
     @functools.wraps(coro_factory)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
         ctx = click.get_current_context()
         app: CliAppContext = ctx.obj
+
         async def _runner() -> Any:
             await app.bootstrap_db()
             return await coro_factory(app, *args, **kwargs)
-        return asyncio.run(_runner())
-    return wrapper
 
+        return asyncio.run(_runner())
+
+    return wrapper

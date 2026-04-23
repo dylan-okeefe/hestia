@@ -8,6 +8,7 @@ import pytest
 from click.testing import CliRunner
 
 from hestia.cli import cli
+from hestia.memory import MemoryEpochCompiler
 
 
 @pytest.fixture
@@ -47,7 +48,9 @@ def make_app(tmp_path):
         trace_store = TraceStore(db)
         scheduler_store = SchedulerStore(db)
         skill_store = SkillStore(db)
-        return CliAppContext(
+        from hestia.app import CoreAppContext, FeatureAppContext
+
+        core = CoreAppContext(
             config=cfg,
             db=db,
             session_store=session_store,
@@ -58,8 +61,10 @@ def make_app(tmp_path):
             trace_store=trace_store,
             artifact_store=artifact_store,
             scheduler_store=scheduler_store,
-            skill_store=skill_store,
+            epoch_compiler=MemoryEpochCompiler(memory_store, max_tokens=500),
         )
+        features = FeatureAppContext(skill_store=skill_store)
+        return CliAppContext(core=core, features=features)
 
     return _factory
 

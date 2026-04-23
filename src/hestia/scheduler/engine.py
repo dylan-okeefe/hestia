@@ -14,6 +14,7 @@ from hestia.core.types import Message, ScheduledTask, SessionState
 from hestia.orchestrator import Orchestrator
 from hestia.persistence.scheduler import SchedulerStore, _calculate_next_run
 from hestia.persistence.sessions import SessionStore
+from hestia.platforms.notifier import PlatformNotifier
 from hestia.runtime_context import scheduler_tick_active
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,7 @@ class Scheduler:
         response_callback: SchedulerResponseCallback,
         tick_interval_seconds: float = 5.0,
         system_prompt: str | None = None,
+        notifier: PlatformNotifier | None = None,
     ):
         self._scheduler_store = scheduler_store
         self._session_store = session_store
@@ -41,6 +43,7 @@ class Scheduler:
         self._response_callback = response_callback
         self._tick_interval = tick_interval_seconds
         self._system_prompt = system_prompt or "You are a helpful assistant."
+        self._notifier = notifier
         self._stop_event = asyncio.Event()
         self._loop_task: asyncio.Task[Any] | None = None
 
@@ -106,6 +109,14 @@ class Scheduler:
 
         async def deliver(text: str) -> None:
             await self._response_callback(task, text)
+            if task.notify and self._notifier is not None:
+                session_for_notify = await self._session_store.get_session(task.session_id)
+                if session_for_notify is not None:
+                    await self._notifier.send(
+                        session_for_notify.platform,
+                        session_for_notify.platform_user,
+                        text,
+                    )
 
         turn_error: str | None = None
         tick_token = scheduler_tick_active.set(True)

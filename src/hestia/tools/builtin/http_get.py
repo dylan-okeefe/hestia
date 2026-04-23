@@ -30,8 +30,9 @@ _BLOCKED_RANGES = [
 class SSRFSafeTransport(httpx.AsyncBaseTransport):
     """Transport that validates every connection target against blocked IP ranges.
 
-    Prevents both redirect-based SSRF and DNS rebinding attacks by checking
-    the resolved IP at connection time, not at request time.
+    Prevents redirect-based SSRF by checking the resolved IP at connection
+    time. Does not fully mitigate DNS rebinding (``getaddrinfo`` and
+    ``httpx`` may perform separate lookups).
     """
 
     def __init__(self) -> None:
