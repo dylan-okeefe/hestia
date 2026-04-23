@@ -167,7 +167,7 @@ class ToolRegistry:
     # --- Meta-tool schemas (what the model actually sees) ---
 
     def meta_tool_schemas(self) -> list[ToolSchema]:
-        """Return the two meta-tools (list_tools, call_tool) as ToolSchema."""
+        """Return the three meta-tools (list_tools, describe_tool, call_tool) as ToolSchema."""
         list_tools_schema = ToolSchema(
             type="function",
             function=FunctionSchema(
@@ -175,8 +175,7 @@ class ToolRegistry:
                 description=(
                     "List all available tools. Returns tool names and one-line descriptions. "
                     "Call this before call_tool to discover what's available. "
-                    "Also call this when the user asks about your capabilities or what you can do. "
-                    "Set detail=true to include full parameter schemas for every tool."
+                    "Also call this when the user asks about your capabilities or what you can do."
                 ),
                 parameters={
                     "type": "object",
@@ -185,14 +184,31 @@ class ToolRegistry:
                             "type": "string",
                             "description": "Optional tag filter",
                         },
-                        "detail": {
-                            "type": "boolean",
-                            "description": (
-                                "If true, include full JSON parameter schemas for each tool. "
-                                "Costs more tokens but eliminates guessing about argument names and types."
-                            ),
+                    },
+                },
+            ),
+        )
+
+        describe_tool_schema = ToolSchema(
+            type="function",
+            function=FunctionSchema(
+                name="describe_tool",
+                description=(
+                    "Get the full JSON parameter schema and description for one or more tools. "
+                    "Call this after list_tools when you need to know the exact argument names, "
+                    "types, and defaults for a specific tool before calling it. "
+                    "Much cheaper than fetching all schemas at once."
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "names": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Tool name(s) to describe. Can be a single name or a list.",
                         },
                     },
+                    "required": ["names"],
                 },
             ),
         )
@@ -203,7 +219,7 @@ class ToolRegistry:
                 name="call_tool",
                 description=(
                     "Invoke a tool by name with arguments. Use list_tools first to "
-                    "discover what exists."
+                    "discover what exists, then describe_tool if you need exact parameter names."
                 ),
                 parameters={
                     "type": "object",
@@ -222,20 +238,18 @@ class ToolRegistry:
             ),
         )
 
-        return [list_tools_schema, call_tool_schema]
+        return [list_tools_schema, describe_tool_schema, call_tool_schema]
 
     async def meta_list_tools(
         self,
         tag: str | None = None,
         allowed_names: list[str] | None = None,
-        detail: bool = False,
     ) -> str:
         """Handler for the list_tools meta-tool.
 
         Args:
             tag: Optional tag filter
             allowed_names: Optional list of allowed tool names (for session filtering)
-            detail: If true, include full parameter schemas
         """
         names = self.list_names(tag=tag)
         if allowed_names is not None:
@@ -245,11 +259,41 @@ class ToolRegistry:
             m = self._tools[n]
             caps = ", ".join(m.capabilities) or "none"
             lines.append(f"- {n}: {m.public_description} [caps: {caps}]")
-            if detail and m.parameters_schema:
+        return "\n".join(lines) if lines else "(no tools)"
+
+    async def meta_describe_tool(
+        self,
+        names: str | list[str],
+        allowed_names: list[str] | None = None,
+    ) -> str:
+        """Handler for the describe_tool meta-tool.
+
+        Args:
+            names: Tool name or list of names to describe
+            allowed_names: Optional list of allowed tool names (for session filtering)
+        """
+        if isinstance(names, str):
+            names = [names]
+
+        lines = []
+        for n in names:
+            if allowed_names is not None and n not in allowed_names:
+                lines.append(f"- {n}: (not available in this session)")
+                continue
+            try:
+                m = self.describe(n)
+            except ToolNotFoundError:
+                lines.append(f"- {n}: (tool not found)")
+                continue
+
+            caps = ", ".join(m.capabilities) or "none"
+            lines.append(f"- {n}: {m.public_description} [caps: {caps}]")
+            if m.parameters_schema:
                 schema_str = json.dumps(m.parameters_schema, indent=2)
-                # Indent schema under the tool bullet for readability
                 indented = "\n".join("    " + ln for ln in schema_str.splitlines())
                 lines.append(f"  schema:\n{indented}")
+            else:
+                lines.append("  schema: (no explicit schema — infer from description)")
         return "\n".join(lines) if lines else "(no tools)"
 
     async def meta_call_tool(self, name: str, arguments: dict[str, Any]) -> ToolCallResult:

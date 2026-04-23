@@ -909,9 +909,18 @@ class Orchestrator:
         # Handle meta-tools
         if tc.name == "list_tools":
             tag = tc.arguments.get("tag") if tc.arguments else None
-            detail = tc.arguments.get("detail") if tc.arguments else False
-            content = await self._tools.meta_list_tools(
-                tag, allowed_names=allowed_tools, detail=detail
+            content = await self._tools.meta_list_tools(tag, allowed_names=allowed_tools)
+            return ToolCallResult(
+                status="ok",
+                content=content,
+                artifact_handle=None,
+                truncated=False,
+            )
+
+        if tc.name == "describe_tool":
+            names = tc.arguments.get("names") if tc.arguments else []
+            content = await self._tools.meta_describe_tool(
+                names, allowed_names=allowed_tools
             )
             return ToolCallResult(
                 status="ok",

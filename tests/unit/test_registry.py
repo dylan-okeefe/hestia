@@ -210,12 +210,13 @@ class TestMetaTools:
     """Tests for meta-tool operations."""
 
     def test_meta_tool_schemas(self, registry):
-        """meta_tool_schemas returns list_tools and call_tool."""
+        """meta_tool_schemas returns list_tools, describe_tool, and call_tool."""
         schemas = registry.meta_tool_schemas()
-        assert len(schemas) == 2
+        assert len(schemas) == 3
 
         names = [s.function.name for s in schemas]
         assert "list_tools" in names
+        assert "describe_tool" in names
         assert "call_tool" in names
 
     @pytest.mark.asyncio
@@ -247,14 +248,27 @@ class TestMetaTools:
         assert "add" not in output
 
     @pytest.mark.asyncio
-    async def test_meta_list_tools_with_detail(self, registry):
-        """meta_list_tools includes schemas when detail=true."""
+    async def test_meta_describe_tool(self, registry):
+        """describe_tool returns schemas for specific tools."""
         registry.register(greet)
+        registry.register(add)
 
-        output = await registry.meta_list_tools(detail=True)
+        output = await registry.meta_describe_tool("greet")
         assert "greet" in output
         assert "schema:" in output
         assert "name" in output  # greet's parameters_schema has 'name'
+        assert "add" not in output  # only requested greet
+
+    @pytest.mark.asyncio
+    async def test_meta_describe_tool_list(self, registry):
+        """describe_tool accepts a list of names."""
+        registry.register(greet)
+        registry.register(add)
+
+        output = await registry.meta_describe_tool(["greet", "add"])
+        assert "greet" in output
+        assert "add" in output
+        assert "schema:" in output
 
     @pytest.mark.asyncio
     async def test_meta_call_tool(self, registry):
