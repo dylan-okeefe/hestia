@@ -186,10 +186,11 @@ class StyleProfileBuilder:
 
         tag_counts: dict[str, int] = {}
         for row in rows:
-            tags = (row.tags or "").strip()
-            if not tags:
+            raw_tags = row.tags or ""
+            if not raw_tags:
                 continue
-            for tag in tags.split():
+            tag_list = raw_tags.split("|") if "|" in raw_tags else raw_tags.split()
+            for tag in tag_list:
                 tag_counts[tag] = tag_counts.get(tag, 0) + 1
 
         if not tag_counts:

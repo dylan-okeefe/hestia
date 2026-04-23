@@ -309,7 +309,8 @@ def memory() -> None:
     pass
 
 def _format_memory_row(mem: Any, id_width: int = 20) -> str:
-    tags = f"[{mem.tags}]" if mem.tags else ""
+    tags_str = ", ".join(mem.tags) if mem.tags else ""
+    tags = f"[{tags_str}]" if tags_str else ""
     date = mem.created_at.strftime("%Y-%m-%d %H:%M")
     content = mem.content.replace("\n", " ")
     if len(content) > 60:
@@ -356,7 +357,7 @@ async def memory_list(app: CliAppContext, tag: str | None, limit: int) -> None:
 @async_command
 async def memory_add(app: CliAppContext, content: str, tags: str) -> None:
     """Add a memory manually."""
-    tag_list = tags.split() if tags else []
+    tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
     mem = await app.memory_store.save(content=content, tags=tag_list)
     click.echo(f"Saved: {mem.id}")
 

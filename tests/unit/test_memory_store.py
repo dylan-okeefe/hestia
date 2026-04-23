@@ -109,13 +109,13 @@ class TestMemoryStore:
         mem = Memory(
             id="mem_test",
             content="Test content",
-            tags="tag1 tag2",
+            tags=["tag1", "tag2"],
             created_at=datetime.now(),
             session_id="sess_123",
         )
         assert mem.id == "mem_test"
         assert mem.content == "Test content"
-        assert mem.tags == "tag1 tag2"
+        assert mem.tags == ["tag1", "tag2"]
         assert mem.session_id == "sess_123"
 
     @pytest.mark.asyncio
