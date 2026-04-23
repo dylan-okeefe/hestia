@@ -1,6 +1,6 @@
 # L056a: Orchestrator TurnContext Refactor
 
-**Status:** In progress  
+**Status:** Complete — merged to `feature/v0.10.1-pre-publication-prep`  
 **Branch:** `feature/v0.10.1-pre-publication-prep`  
 **Scope:** Collapse 7-tuple return and 20-parameter method signatures into a single TurnContext dataclass.
 
