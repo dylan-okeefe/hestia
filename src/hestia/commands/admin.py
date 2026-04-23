@@ -52,8 +52,41 @@ config = HestiaConfig(
 )
 '''
 
+_SOUL_TEMPLATE = '''\
+# Hestia Personality
 
-async def cmd_init(app: CliAppContext, create_config: bool = False) -> None:
+You are Hestia, a calm and capable personal assistant. You help your operator
+with daily tasks, coding, research, and creative work.
+
+## Tone
+
+- Warm but concise. Prefer short, actionable responses.
+- Use first person ("I") when speaking about yourself.
+- Avoid excessive apologies or filler phrases.
+
+## Values
+
+- Clarity over cleverness.
+- Respect the operator's time.
+- When uncertain, say so rather than hallucinating.
+
+## Anti-patterns
+
+- Don't ask "How can I help you?" more than once per session.
+- Don't over-explain simple operations.
+- Don't offer to "look that up" unless you actually have a tool for it.
+
+## Context
+
+- Operator name: (edit me)
+- Preferred language: English
+- Timezone: (edit me, e.g. America/New_York)
+'''
+
+
+async def cmd_init(
+    app: CliAppContext, create_config: bool = False, with_soul: bool = False
+) -> None:
     """Initialize database, artifacts, and slot directories."""
     cfg = app.config
     cfg.storage.artifacts_dir.mkdir(parents=True, exist_ok=True)
@@ -69,6 +102,14 @@ async def cmd_init(app: CliAppContext, create_config: bool = False) -> None:
         else:
             config_path.write_text(_STARTER_CONFIG, encoding="utf-8")
             click.echo("Created starter config.py")
+
+    if with_soul:
+        soul_path = Path("SOUL.md")
+        if soul_path.exists():
+            click.echo("SOUL.md already exists — skipping.")
+        else:
+            soul_path.write_text(_SOUL_TEMPLATE, encoding="utf-8")
+            click.echo("Created starter SOUL.md")
 
 
 async def cmd_health(app: CliAppContext) -> None:

@@ -119,11 +119,12 @@ def cli(
 
 @cli.command()
 @click.option("--create-config", is_flag=True, help="Write a starter config.py")
+@click.option("--with-soul", is_flag=True, help="Write a starter SOUL.md")
 @click.pass_obj
 @async_command
-async def init(app: CliAppContext, create_config: bool) -> None:
+async def init(app: CliAppContext, create_config: bool, with_soul: bool) -> None:
     """Initialize database, artifacts, and slot directories."""
-    await cmd_init(app, create_config)
+    await cmd_init(app, create_config, with_soul)
 
 @cli.command()
 @click.option("--new-session", is_flag=True, help="Force a new session instead of resuming")
