@@ -19,7 +19,41 @@ from ._shared import _parse_since
 logger = logging.getLogger(__name__)
 
 
-async def _cmd_init(app: CliAppContext) -> None:
+_STARTER_CONFIG = '''\
+from pathlib import Path
+from hestia.config import (
+    HestiaConfig,
+    InferenceConfig,
+    SlotConfig,
+    StorageConfig,
+    TelegramConfig,
+    TrustConfig,
+)
+
+config = HestiaConfig(
+    inference=InferenceConfig(
+        base_url="http://localhost:8001",
+        model_name="your-model-Q4_K_M.gguf",
+    ),
+    slots=SlotConfig(
+        slot_dir=Path("slots"),
+        pool_size=4,
+    ),
+    storage=StorageConfig(
+        database_url="sqlite+aiosqlite:///hestia.db",
+        artifacts_dir=Path("artifacts"),
+        allowed_roots=["."],
+    ),
+    telegram=TelegramConfig(
+        bot_token="YOUR_TOKEN_HERE",
+        allowed_users=["YOUR_USER_ID"],
+    ),
+    trust=TrustConfig.household(),
+)
+'''
+
+
+async def _cmd_init(app: CliAppContext, create_config: bool = False) -> None:
     """Initialize database, artifacts, and slot directories."""
     cfg = app.config
     cfg.storage.artifacts_dir.mkdir(parents=True, exist_ok=True)
@@ -27,6 +61,14 @@ async def _cmd_init(app: CliAppContext) -> None:
     click.echo(f"Initialized database at {cfg.storage.database_url}")
     click.echo(f"Initialized artifacts directory at {cfg.storage.artifacts_dir}")
     click.echo(f"Initialized slot directory at {cfg.slots.slot_dir}")
+
+    if create_config:
+        config_path = Path("config.py")
+        if config_path.exists():
+            click.echo("config.py already exists — skipping.")
+        else:
+            config_path.write_text(_STARTER_CONFIG, encoding="utf-8")
+            click.echo("Created starter config.py")
 
 
 async def _cmd_health(app: CliAppContext) -> None:

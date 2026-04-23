@@ -45,6 +45,35 @@ class MemoryStore:
     def __init__(self, db: Database) -> None:
         self._db = db
         self._fts5_available = True
+        self._fts5_probed = False
+
+    async def _probe_fts5(self, conn: Any) -> None:
+        """Detect FTS5 support once per instance."""
+        if self._fts5_probed:
+            return
+        await conn.execute(sa.text("DROP TABLE IF EXISTS _fts5_probe"))
+        try:
+            await conn.execute(
+                sa.text("CREATE VIRTUAL TABLE _fts5_probe USING fts5(x)")
+            )
+            await conn.execute(sa.text("DROP TABLE _fts5_probe"))
+            self._fts5_available = True
+        except (OperationalError, DatabaseError) as exc:
+            logger.info(
+                "FTS5 unavailable (%s: %s); falling back to LIKE queries",
+                type(exc).__name__,
+                exc,
+            )
+            self._fts5_available = False
+        except Exception:
+            logger.exception(
+                "Unexpected error while probing SQLite FTS5 support — "
+                "treating as unavailable so startup can proceed, but this "
+                "should be investigated"
+            )
+            self._fts5_available = False
+        finally:
+            self._fts5_probed = True
 
     async def create_table(self) -> None:
         """Create the memory table, migrating from old schema if needed.
@@ -52,34 +81,7 @@ class MemoryStore:
         Call this during startup alongside db.create_tables().
         """
         async with self._db.engine.connect() as conn:
-            # Clean up any leftover probe table from a prior failed run
-            await conn.execute(sa.text("DROP TABLE IF EXISTS _fts5_probe"))
-
-            # Detect FTS5 support. SQLite raises OperationalError for
-            # "no such module: fts5" and DatabaseError for other engine-level
-            # probe failures. Anything outside that window is genuinely
-            # unexpected and worth surfacing at ERROR — M-1 narrowed this
-            # from a bare `except Exception` that had been hiding real bugs.
-            try:
-                await conn.execute(
-                    sa.text("CREATE VIRTUAL TABLE _fts5_probe USING fts5(x)")
-                )
-                await conn.execute(sa.text("DROP TABLE _fts5_probe"))
-                self._fts5_available = True
-            except (OperationalError, DatabaseError) as exc:
-                logger.info(
-                    "FTS5 unavailable (%s: %s); falling back to LIKE queries",
-                    type(exc).__name__,
-                    exc,
-                )
-                self._fts5_available = False
-            except Exception:
-                logger.exception(
-                    "Unexpected error while probing SQLite FTS5 support — "
-                    "treating as unavailable so startup can proceed, but this "
-                    "should be investigated"
-                )
-                self._fts5_available = False
+            await self._probe_fts5(conn)
 
             # Check if an old-schema table exists (no platform/platform_user)
             old_schema_exists = False

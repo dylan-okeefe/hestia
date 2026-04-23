@@ -2,7 +2,9 @@
 
 import json
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 from hestia.context.compressed_summary_strategy import CompressedSummaryStrategy
 from hestia.context.compressor import HistoryCompressor
@@ -29,6 +31,14 @@ class BuildResult:
     truncated_count: int  # how many historical messages got dropped
     kept_first_user: bool  # sanity flag for the Qwen template requirement
     memory_epoch_included: bool  # whether memory epoch was included
+
+
+@lru_cache(maxsize=8)
+def _load_calibration(path: Path) -> dict[str, Any]:
+    """Load calibration data from disk (cached by path)."""
+    with open(path) as f:
+        data: dict[str, Any] = json.load(f)
+        return data
 
 
 class ContextBuilder:
@@ -155,10 +165,9 @@ class ContextBuilder:
         """
         path = calibration_path or Path("docs/calibration.json")
         if path.exists():
-            with open(path) as f:
-                data = json.load(f)
-                body_factor = data.get("body_factor", 1.0)
-                meta_tool_overhead = data.get("meta_tool_overhead_tokens", 0)
+            data = _load_calibration(path)
+            body_factor = data.get("body_factor", 1.0)
+            meta_tool_overhead = data.get("meta_tool_overhead_tokens", 0)
         else:
             body_factor = 1.0
             meta_tool_overhead = 0
