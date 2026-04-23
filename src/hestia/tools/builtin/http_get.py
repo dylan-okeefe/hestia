@@ -13,17 +13,25 @@ from hestia.tools.metadata import tool
 
 logger = logging.getLogger(__name__)
 
+# Optional curl_cffi for sites that block based on TLS/HTTP fingerprints.
+try:
+    from curl_cffi.requests import AsyncSession as CurlCffiSession
+
+    _CURL_CFFI_AVAILABLE = True
+except ImportError:
+    _CURL_CFFI_AVAILABLE = False
+
 # IP ranges that must never be fetched
 _BLOCKED_RANGES = [
-    ipaddress.ip_network("0.0.0.0/8"),         # current network
-    ipaddress.ip_network("10.0.0.0/8"),         # private class A
-    ipaddress.ip_network("127.0.0.0/8"),        # loopback
-    ipaddress.ip_network("169.254.0.0/16"),     # link-local / cloud metadata
-    ipaddress.ip_network("172.16.0.0/12"),      # private class B
-    ipaddress.ip_network("192.168.0.0/16"),     # private class C
-    ipaddress.ip_network("::1/128"),            # IPv6 loopback
-    ipaddress.ip_network("fc00::/7"),           # IPv6 unique local
-    ipaddress.ip_network("fe80::/10"),          # IPv6 link-local
+    ipaddress.ip_network("0.0.0.0/8"),  # current network
+    ipaddress.ip_network("10.0.0.0/8"),  # private class A
+    ipaddress.ip_network("127.0.0.0/8"),  # loopback
+    ipaddress.ip_network("169.254.0.0/16"),  # link-local / cloud metadata
+    ipaddress.ip_network("172.16.0.0/12"),  # private class B
+    ipaddress.ip_network("192.168.0.0/16"),  # private class C
+    ipaddress.ip_network("::1/128"),  # IPv6 loopback
+    ipaddress.ip_network("fc00::/7"),  # IPv6 unique local
+    ipaddress.ip_network("fe80::/10"),  # IPv6 link-local
 ]
 
 
@@ -86,6 +94,74 @@ def _is_url_safe(url: str) -> str | None:
     return None
 
 
+_BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/135.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+}
+
+
+async def _fetch_with_httpx(url: str, timeout_seconds: int) -> httpx.Response:
+    async with httpx.AsyncClient(
+        transport=SSRFSafeTransport(),
+        follow_redirects=True,
+        timeout=timeout_seconds,
+        headers=_BROWSER_HEADERS,
+    ) as client:
+        return await client.get(url)
+
+
+async def _fetch_with_curl_cffi(url: str, timeout_seconds: int) -> str:
+    """Fetch using curl_cffi with browser TLS/HTTP fingerprint impersonation.
+
+    curl_cffi does not support custom transports, so SSRF protection here is
+    limited to the pre-flight ``_is_url_safe`` check and manual redirect
+    validation. This is a best-effort fallback for sites that block based on
+    fingerprints rather than IP-based access control.
+    """
+    # Pre-flight already done by caller; manual redirect loop for safety.
+    current_url = url
+    redirects = 0
+    max_redirects = 10
+
+    async with CurlCffiSession() as session:
+        while redirects < max_redirects:
+            response = await session.get(
+                current_url,
+                headers=_BROWSER_HEADERS,
+                timeout=timeout_seconds,
+                allow_redirects=False,
+                impersonate="chrome131",
+            )
+            await _record_egress(
+                str(current_url), response.status_code, len(response.content)
+            )
+
+            if response.status_code in (301, 302, 303, 307, 308):
+                location = response.headers.get("location")
+                if not location:
+                    raise RuntimeError(
+                        f"Redirect response {response.status_code} without Location header"
+                    )
+                # Resolve relative redirects
+                from urllib.parse import urljoin
+
+                current_url = urljoin(current_url, location)
+                if error := _is_url_safe(current_url):
+                    raise RuntimeError(f"SSRF blocked redirect: {error}")
+                redirects += 1
+                continue
+
+            response.raise_for_status()
+            return response.text
+
+    raise RuntimeError(f"Too many redirects (>{max_redirects})")
+
+
 @tool(
     name="http_get",
     public_description="Fetch the contents of a URL via HTTP GET.",
@@ -99,29 +175,28 @@ async def http_get(url: str, timeout_seconds: int = 30) -> str:
     Returns the response body as text, capped by the tool's max_inline_chars.
     Large responses are automatically promoted to artifacts by the registry.
     Blocks requests to private/internal IP ranges for SSRF protection.
+
+    If the site returns 403 (Forbidden) and ``curl-cffi`` is installed,
+    automatically retries with browser TLS/HTTP fingerprint impersonation
+    to evade bot detection that fingerprints on cipher suites or headers.
     """
     # SSRF pre-flight check (user-friendly errors)
     if error := _is_url_safe(url):
         return error
 
-    async with httpx.AsyncClient(
-        transport=SSRFSafeTransport(),
-        follow_redirects=True,
-        timeout=timeout_seconds,
-        headers={
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
-            ),
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5",
-        },
-    ) as client:
-        response = await client.get(url)
-        await _record_egress(str(response.url), response.status_code, len(response.content))
-        response.raise_for_status()
-        return response.text
+    response = await _fetch_with_httpx(url, timeout_seconds)
+    await _record_egress(str(response.url), response.status_code, len(response.content))
+
+    if response.status_code == 403 and _CURL_CFFI_AVAILABLE:
+        logger.debug("HTTP 403 from %s; retrying with curl_cffi impersonation", url)
+        try:
+            return await _fetch_with_curl_cffi(url, timeout_seconds)
+        except Exception as exc:
+            logger.debug("curl_cffi fallback failed: %s", exc)
+            # Fall through to return the original 403 error
+
+    response.raise_for_status()
+    return response.text
 
 
 async def _record_egress(url: str, status: int, size: int) -> None:

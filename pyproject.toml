@@ -29,6 +29,9 @@ voice = [
     "piper-tts>=1.2.0",
     "py-cord[voice]>=2.6.0",
 ]
+browser = [
+    "curl-cffi>=0.15.0",
+]
 
 [project.scripts]
 hestia = "hestia.cli:main"
@@ -80,7 +83,7 @@ module = [
     "asyncpg",
     "faster_whisper",
     "piper",
-
+    "curl_cffi",
 ]
 ignore_missing_imports = true
 
