@@ -174,7 +174,8 @@ class ToolRegistry:
                 name="list_tools",
                 description=(
                     "List all available tools. Returns tool names and one-line descriptions. "
-                    "Call this before call_tool to discover what's available."
+                    "Call this before call_tool to discover what's available. "
+                    "Also call this when the user asks about your capabilities or what you can do."
                 ),
                 parameters={
                     "type": "object",
