@@ -17,6 +17,31 @@ from hestia.persistence.db import Database
 logger = logging.getLogger(__name__)
 
 
+def _sanitize_fts5_query(query: str) -> str:
+    """Escape a raw query so FTS5 does not misinterpret special characters.
+
+    FTS5 treats hyphens, colons, and other punctuation as operators or
+    column specifiers. Wrapping the query in double quotes forces FTS5 to
+    treat it as a literal phrase, which is what users expect for simple
+    keyword/tag searches.
+
+    If the query already contains explicit FTS5 operators (AND, OR, NOT)
+    or is already quoted, it is returned unchanged so advanced syntax
+    continues to work.
+    """
+    stripped = query.strip()
+    if stripped.startswith('"') and stripped.endswith('"'):
+        return query
+    if any(op in stripped.upper() for op in (" AND ", " OR ", " NOT ")):
+        return query
+    # Hyphens and colons are the most common characters that trigger
+    # "no such column" or syntax errors in FTS5.
+    if "-" in stripped or ":" in stripped:
+        escaped = stripped.replace('"', '""')
+        return f'"{escaped}"'
+    return query
+
+
 @dataclass
 class Memory:
     """A single memory entry."""
@@ -265,7 +290,7 @@ class MemoryStore:
         params: dict[str, Any] = {"limit": limit}
 
         if self._fts5_available:
-            params["query"] = query
+            params["query"] = _sanitize_fts5_query(query)
             if platform is not None and platform_user is not None:
                 sql = sa.text(
                     "SELECT id, content, tags, session_id, created_at, platform, platform_user "

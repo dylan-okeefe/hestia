@@ -45,6 +45,10 @@ from hestia.tools.builtin import (
     current_time,
     http_get,
     make_create_scheduled_task_tool,
+    make_delete_scheduled_task_tool,
+    make_disable_scheduled_task_tool,
+    make_enable_scheduled_task_tool,
+    make_list_scheduled_tasks_tool,
     make_delegate_task_tool,
     make_delete_memory_tool,
     make_email_search_and_read_tool,
@@ -659,10 +663,22 @@ def make_app(cfg: HestiaConfig) -> CliAppContext:
 
     app = CliAppContext(core=core, features=features)
 
-    # Register scheduler tool (bound to scheduler and session stores)
+    # Register scheduler tools (bound to scheduler and session stores)
     if scheduler_store is not None:
         tool_registry.register(
             make_create_scheduled_task_tool(scheduler_store, session_store)
+        )
+        tool_registry.register(
+            make_list_scheduled_tasks_tool(scheduler_store, session_store)
+        )
+        tool_registry.register(
+            make_disable_scheduled_task_tool(scheduler_store, session_store)
+        )
+        tool_registry.register(
+            make_enable_scheduled_task_tool(scheduler_store, session_store)
+        )
+        tool_registry.register(
+            make_delete_scheduled_task_tool(scheduler_store, session_store)
         )
 
     # Register delegate task tool (needs app for orchestrator factory)
