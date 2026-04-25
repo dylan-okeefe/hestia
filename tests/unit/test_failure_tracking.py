@@ -13,6 +13,7 @@ from hestia.errors import (
     IllegalTransitionError,
     InferenceServerError,
     InferenceTimeoutError,
+    MaxIterationsError,
     PersistenceError,
     classify_error,
 )
@@ -66,8 +67,8 @@ class TestClassifyError:
         assert severity == "high"
 
     def test_classify_max_iterations(self):
-        """Max iterations error maps to MAX_ITERATIONS."""
-        exc = Exception("max iterations exceeded")
+        """MaxIterationsError maps to MAX_ITERATIONS."""
+        exc = MaxIterationsError(10, 10)
         fc, severity = classify_error(exc)
         assert fc == FailureClass.MAX_ITERATIONS
         assert severity == "medium"

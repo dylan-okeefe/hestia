@@ -5,7 +5,8 @@ import pytest
 import respx
 
 from hestia.config import WebSearchConfig
-from hestia.tools.builtin.web_search import make_web_search_tool
+from hestia.errors import FailureClass, classify_error
+from hestia.tools.builtin.web_search import WebSearchError, make_web_search_tool
 
 
 class TestMakeWebSearchTool:
@@ -163,3 +164,14 @@ class TestWebSearchTavily:
 
         payload = json.loads(request_json)
         assert payload["time_range"] == "week"
+
+
+class TestWebSearchError:
+    """Tests for WebSearchError classification."""
+
+    def test_classify_web_search_error(self):
+        """WebSearchError maps to TOOL_ERROR via classify_error."""
+        exc = WebSearchError("tavily down")
+        fc, severity = classify_error(exc)
+        assert fc == FailureClass.TOOL_ERROR
+        assert severity == "medium"

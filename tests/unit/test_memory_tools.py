@@ -4,8 +4,8 @@ import pytest
 
 from hestia.memory.store import MemoryStore
 from hestia.persistence.db import Database
+from hestia.runtime_context import current_session_id
 from hestia.tools.builtin.memory_tools import (
-    current_session_id,
     make_list_memories_tool,
     make_save_memory_tool,
     make_search_memory_tool,

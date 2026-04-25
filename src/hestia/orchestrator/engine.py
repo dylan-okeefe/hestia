@@ -5,6 +5,7 @@ import json
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from hestia.context.builder import ContextBuilder
@@ -31,10 +32,14 @@ from hestia.persistence.sessions import SessionStore
 from hestia.platforms.base import Platform
 from hestia.policy.engine import PolicyEngine, RetryAction
 from hestia.reflection.store import ProposalStore
-from hestia.runtime_context import current_platform, current_platform_user
+from hestia.runtime_context import (
+    current_platform,
+    current_platform_user,
+    current_session_id,
+    current_trace_store,
+)
 from hestia.security import InjectionScanner
 from hestia.style.context import format_style_prefix_from_data
-from hestia.tools.builtin import current_session_id, current_trace_store
 from hestia.tools.metadata import ToolMetadata
 from hestia.tools.registry import ToolNotFoundError, ToolRegistry
 from hestia.tools.types import ToolCallResult
@@ -276,8 +281,6 @@ class Orchestrator:
             and self._style_config is not None
             and self._style_config.enabled
         ):
-            from datetime import timedelta
-
             since = utcnow() - timedelta(days=self._style_config.lookback_days)
             turn_count = await self._style_store.count_turns_in_window(
                 session.platform, session.platform_user, since

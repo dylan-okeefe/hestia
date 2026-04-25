@@ -84,6 +84,10 @@ class ScheduledTask:
     last_error: str | None
     notify: bool = False
 
+    def __post_init__(self) -> None:
+        if bool(self.cron_expression) and bool(self.fire_at):
+            raise ValueError("Only one of cron_expression or fire_at may be set")
+
 
 @dataclass
 class ChatResponse:

@@ -1,10 +1,13 @@
 """Unit tests for new built-in tools (write_file, list_dir, http_get)."""
 
+import asyncio
+import socket
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
 
-from hestia.tools.builtin.http_get import _is_url_safe, http_get
+from hestia.tools.builtin.http_get import SSRFSafeTransport, _is_url_safe, http_get
 from hestia.config import StorageConfig
 from hestia.tools.builtin.list_dir import make_list_dir_tool
 from hestia.tools.builtin.write_file import make_write_file_tool
@@ -127,3 +130,22 @@ class TestHttpGet:
         assert _is_url_safe("http://1.1.1.1/") is None
         assert _is_url_safe("https://93.184.216.34/") is None
         assert _is_url_safe("http://127.0.0.1/secret") is None
+
+    @pytest.mark.asyncio
+    async def test_transport_uses_asyncio_to_thread_for_getaddrinfo(self):
+        """SSRFSafeTransport calls socket.getaddrinfo via asyncio.to_thread."""
+        transport = SSRFSafeTransport()
+        request = httpx.Request("GET", "http://example.com/")
+
+        with patch("asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
+            mock_to_thread.return_value = [
+                (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("93.184.216.34", 0))
+            ]
+            # We need the inner transport to not actually make a request
+            with patch.object(transport._inner, "handle_async_request", new_callable=AsyncMock) as mock_inner:
+                mock_inner.return_value = httpx.Response(200, text="ok")
+                await transport.handle_async_request(request)
+
+        mock_to_thread.assert_awaited_once()
+        assert mock_to_thread.call_args[0][0] == socket.getaddrinfo
+        assert mock_to_thread.call_args[0][1] == "example.com"

@@ -181,7 +181,6 @@ def make_delegate_task_tool(
                 # ``turn.artifact_handles`` as each successful tool call
                 # returns an artifact handle; delegate_task surfaces them
                 # to the caller so the parent can attach / reference them.
-                artifact_refs: list[str] = list(turn.artifact_handles)
 
                 # Determine status from turn (use string comparison to avoid circular import)
                 state_value = getattr(turn.state, "value", str(turn.state))
@@ -208,7 +207,7 @@ def make_delegate_task_tool(
                     tool_calls_made=turn.tool_calls_made,
                 )
 
-            except TimeoutError:
+            except asyncio.TimeoutError:
                 duration = (utcnow() - start_time).total_seconds()
                 # On timeout we don't have a completed Turn to inspect, so
                 # artifact_refs stays empty. Any artifacts the subagent did
