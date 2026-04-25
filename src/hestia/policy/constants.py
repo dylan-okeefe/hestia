@@ -1,4 +1,4 @@
-"""Shared policy tuning constants (single source of truth for Copilot M-6 / M-12)."""
+"""Shared policy tuning constants."""
 
 from typing import Final, Literal
 

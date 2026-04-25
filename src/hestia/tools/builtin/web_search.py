@@ -36,11 +36,10 @@ async def _tavily_search(
     time_range: str | None,
     timeout_seconds: int,
 ) -> list[dict[str, Any]]:
-    # Copilot H-4: send the API key as ``Authorization: Bearer ...``
-    # instead of embedding it in the request body. The body ends up in
-    # proxy/HTTP-debug logs (including httpx's own DEBUG logs) and any
-    # outbound SIEM that captures request payloads; the Authorization
-    # header is conventionally redacted. Tavily accepts both forms.
+    # Send the API key as ``Authorization: Bearer ...`` instead of embedding it in
+    # the request body. The body ends up in proxy/HTTP-debug logs (including httpx's
+    # own DEBUG logs) and any outbound SIEM that captures request payloads; the
+    # Authorization header is conventionally redacted. Tavily accepts both forms.
     payload: dict[str, Any] = {
         "query": query,
         "max_results": max_results,

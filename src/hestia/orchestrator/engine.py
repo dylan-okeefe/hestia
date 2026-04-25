@@ -330,8 +330,6 @@ class Orchestrator:
         """Handle ContextTooLargeError: handoff, transition, warning, record failure."""
         session = ctx.session
         turn = ctx.turn
-        if session is None:
-            return trace_record_id
         if self._handoff_summarizer is not None:
             try:
                 history = await self._store.get_messages(session.id)
@@ -389,8 +387,6 @@ class Orchestrator:
             turn.error = str(error)
             sanitized = _sanitize_user_error(error)
             await ctx.respond_callback(f"Error: {sanitized}")
-        if session is None:
-            return trace_record_id
         return await self._record_failure_if_enabled(
             session, turn, error, ctx.user_message, "exception",
             ctx.allowed_tools, ctx.tool_chain, trace_record_id,
@@ -400,7 +396,7 @@ class Orchestrator:
         """Run the model inference loop: chat → tool dispatch → iterate."""
         session = ctx.session
         turn = ctx.turn
-        if session is None or ctx.build_result is None:
+        if ctx.build_result is None:
             raise RuntimeError("TurnContext not prepared before _run_inference_loop")
 
         content = ""
@@ -562,9 +558,6 @@ class Orchestrator:
         """Finalize turn: save slot, update turn, record trace, set artifact handles."""
         session = ctx.session
         turn = ctx.turn
-        if session is None:
-            return
-
         if turn.state == TurnState.DONE and self._slot_manager is not None:
             try:
                 await self._slot_manager.save(session)

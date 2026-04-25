@@ -79,11 +79,11 @@ class TurnContext:
     user_message: Message
     system_prompt: str
     respond_callback: ResponseCallback
+    session: Session
     platform: Platform | None = None
     platform_user: str | None = None
 
     # Set by _prepare_turn_context
-    session: Session | None = None
     build_result: BuildResult | None = None
     tools: list[ToolSchema] = field(default_factory=list)
     slot_id: int | None = None
