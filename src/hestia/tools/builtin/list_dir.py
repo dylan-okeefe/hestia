@@ -1,5 +1,6 @@
 """List directory tool (factory)."""
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -31,19 +32,19 @@ def make_list_dir_tool(config: StorageConfig, **kw: Any) -> Any:
             return error
 
         target = Path(path)
-        if not target.is_dir():
+        if not await asyncio.to_thread(target.is_dir):
             return f"Error: {path} is not a directory"
 
-        all_items = sorted(target.iterdir())
+        all_items = await asyncio.to_thread(lambda: sorted(target.iterdir()))
         entries = []
         for i, item in enumerate(all_items):
             if i >= max_entries:
                 entries.append(f"... ({len(all_items) - max_entries} more entries)")
                 break
-            kind = "dir" if item.is_dir() else "file"
+            kind = "dir" if await asyncio.to_thread(item.is_dir) else "file"
             size = ""
-            if item.is_file():
-                size = f" ({item.stat().st_size} bytes)"
+            if await asyncio.to_thread(item.is_file):
+                size = f" ({(await asyncio.to_thread(item.stat)).st_size} bytes)"
             entries.append(f"  [{kind}] {item.name}{size}")
 
         if not entries:

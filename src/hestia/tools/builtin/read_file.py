@@ -1,5 +1,6 @@
 """Read file tool (factory)."""
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -40,11 +41,11 @@ def make_read_file_tool(config: StorageConfig, **kw: Any) -> Any:
             return error
 
         p = Path(path)
-        if not p.exists():
+        if not await asyncio.to_thread(p.exists):
             return f"File not found: {path}"
-        if not p.is_file():
+        if not await asyncio.to_thread(p.is_file):
             return f"Not a file: {path}"
-        data = p.read_bytes()[:max_bytes]
+        data = (await asyncio.to_thread(p.read_bytes))[:max_bytes]
         try:
             return data.decode("utf-8")
         except UnicodeDecodeError:
