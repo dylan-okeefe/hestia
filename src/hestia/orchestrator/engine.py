@@ -32,10 +32,14 @@ from hestia.persistence.sessions import SessionStore
 from hestia.platforms.base import Platform
 from hestia.policy.engine import PolicyEngine, RetryAction
 from hestia.reflection.store import ProposalStore
-from hestia.runtime_context import current_platform, current_platform_user
+from hestia.runtime_context import (
+    current_platform,
+    current_platform_user,
+    current_session_id,
+    current_trace_store,
+)
 from hestia.security import InjectionScanner
 from hestia.style.context import format_style_prefix_from_data
-from hestia.tools.builtin import current_session_id, current_trace_store
 from hestia.tools.metadata import ToolMetadata
 from hestia.tools.registry import ToolNotFoundError, ToolRegistry
 from hestia.tools.types import ToolCallResult

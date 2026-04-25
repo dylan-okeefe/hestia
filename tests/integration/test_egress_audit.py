@@ -6,8 +6,8 @@ import respx
 from hestia.config import WebSearchConfig
 from hestia.persistence.db import Database
 from hestia.persistence.trace_store import TraceStore
+from hestia.runtime_context import current_session_id, current_trace_store
 from hestia.tools.builtin.http_get import http_get
-from hestia.tools.builtin.memory_tools import current_session_id, current_trace_store
 from hestia.tools.builtin.web_search import make_web_search_tool
 
 

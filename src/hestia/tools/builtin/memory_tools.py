@@ -1,30 +1,16 @@
 """Memory tools — search and save to long-term memory."""
 
-import contextvars
 from collections.abc import Callable, Coroutine
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 from hestia.memory.store import MemoryStore
-from hestia.runtime_context import current_platform, current_platform_user
+from hestia.runtime_context import (
+    current_platform,
+    current_platform_user,
+    current_session_id,
+)
 from hestia.tools.capabilities import MEMORY_READ, MEMORY_WRITE
 from hestia.tools.metadata import tool
-
-if TYPE_CHECKING:
-    from hestia.persistence.trace_store import TraceStore
-
-# Context variable to hold the current session ID during tool execution.
-# This is set by the orchestrator at the start of process_turn and cleared
-# in a finally block. Tools can read this to associate saves with sessions.
-current_session_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
-    "current_session_id", default=None
-)
-
-# Context variable to hold the current TraceStore during tool execution.
-# Set by the orchestrator when a turn starts so that network tools can
-# record egress events.
-current_trace_store: contextvars.ContextVar["TraceStore | None"] = contextvars.ContextVar(
-    "current_trace_store", default=None
-)
 
 
 def make_search_memory_tool(

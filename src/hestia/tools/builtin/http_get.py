@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from hestia.tools.builtin.memory_tools import current_session_id, current_trace_store
+from hestia.runtime_context import current_session_id, current_trace_store
 from hestia.tools.capabilities import NETWORK_EGRESS
 from hestia.tools.metadata import tool
 
