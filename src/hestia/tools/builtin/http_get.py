@@ -1,5 +1,6 @@
 """HTTP GET tool with SSRF protection."""
 
+import asyncio
 import ipaddress
 import logging
 import socket
@@ -51,7 +52,7 @@ class SSRFSafeTransport(httpx.AsyncBaseTransport):
         if hostname:
             # Resolve at connection time — same lookup httpx will use
             try:
-                addr_info = socket.getaddrinfo(str(hostname), None)
+                addr_info = await asyncio.to_thread(socket.getaddrinfo, str(hostname), None)
             except socket.gaierror as exc:
                 raise httpx.ConnectError(f"Cannot resolve hostname: {hostname}") from exc
 
