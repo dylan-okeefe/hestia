@@ -92,9 +92,18 @@ class Scheduler:
         task = await self._scheduler_store.get_task(task_id)
         if task is None:
             raise ValueError(f"Task not found: {task_id}")
-        await self._fire_task(task, utcnow())
+        await self._fire_task(task, utcnow(), _force=True)
 
-    async def _fire_task(self, task: ScheduledTask, now: datetime) -> None:
+    async def _fire_task(
+        self, task: ScheduledTask, now: datetime, *, _force: bool = False
+    ) -> None:
+        if not _force and not task.enabled:
+            logger.warning(
+                "Skipping disabled task %s (next_run_at=%s)",
+                task.id,
+                task.next_run_at,
+            )
+            return
         logger.info("Firing scheduled task %s", task.id)
         session = await self._session_store.get_session(task.session_id)
         if session is None or session.state != SessionState.ACTIVE:

@@ -164,7 +164,14 @@ async def _fetch_with_curl_cffi(url: str, timeout_seconds: int) -> str:
 
 @tool(
     name="http_get",
-    public_description="Fetch a URL via HTTP GET. Params: url (str), timeout_seconds (int, default 30). No custom headers supported.",
+    public_description=(
+        "Fetch any web page or API via HTTP GET. Use this for reading pages, "
+        "calling REST APIs, or searching via raw-HTML-friendly engines like "
+        "DuckDuckGo (html.duckduckgo.com/html/?q=...). DOES NOT work on "
+        "JavaScript-heavy sites like Google Search, Google Maps, or Yelp. "
+        "For general web searches, use the search_web tool instead. "
+        "Params: url (str), timeout_seconds (int, default 30)."
+    ),
     max_inline_chars=6000,
     tags=["network", "builtin"],
     capabilities=[NETWORK_EGRESS],

@@ -23,6 +23,7 @@ from hestia.tools.builtin.scheduler_tools import (
     make_list_scheduled_tasks_tool,
 )
 from hestia.tools.builtin.terminal import terminal
+from hestia.tools.builtin.search_web import search_web
 from hestia.tools.builtin.web_search import make_web_search_tool
 from hestia.tools.builtin.write_file import make_write_file_tool
 from hestia.tools.capabilities import (
@@ -54,6 +55,7 @@ __all__ = [
     "make_read_file_tool",
     "make_save_memory_tool",
     "make_search_memory_tool",
+    "search_web",
     "make_web_search_tool",
     "make_email_search_and_read_tool",
     "make_email_tools",

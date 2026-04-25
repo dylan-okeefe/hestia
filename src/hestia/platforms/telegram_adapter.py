@@ -11,7 +11,7 @@ import tempfile
 import time
 from typing import TYPE_CHECKING, Any
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import Chat, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import TelegramError
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
@@ -28,6 +28,50 @@ from hestia.voice.pipeline import get_voice_pipeline
 
 if TYPE_CHECKING:
     from hestia.config import VoiceConfig
+
+
+def _md_to_tg_html(text: str) -> str:
+    """Convert basic Markdown to Telegram HTML parse_mode.
+
+    Handles **bold**, *italic*, `inline code`, and ```code blocks```.
+    Escapes HTML entities to avoid parse errors.
+    """
+    import re
+
+    # 1. Escape HTML special chars
+    text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    # 2. Triple backtick code blocks
+    text = re.sub(
+        r"```(\w*)\n(.*?)\n```",
+        lambda m: f"<pre><code class=\"language-{m.group(1)}\">{m.group(2)}</code></pre>",
+        text,
+        flags=re.DOTALL,
+    )
+    text = re.sub(
+        r"```(.*?)```",
+        r"<pre>\1</pre>",
+        text,
+        flags=re.DOTALL,
+    )
+
+    # 3. Inline code
+    text = re.sub(r"`([^`]+)`", r"<code>\1</code>", text)
+
+    # 4. Bold (**text**)
+    text = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", text)
+
+    # 5. Italic (*text*) — only if not already inside <b> tags and not double asterisks
+    def _italic_repl(m: re.Match) -> str:
+        inner = m.group(1)
+        # Skip if it looks like it was meant to be bold (contains * or already has tags)
+        if "*" in inner or "<b>" in inner or "</b>" in inner:
+            return m.group(0)
+        return f"<i>{inner}</i>"
+
+    text = re.sub(r"\*([^*\n]+)\*", _italic_repl, text)
+
+    return text
     from hestia.orchestrator.engine import Orchestrator
     from hestia.persistence.sessions import SessionStore
 
@@ -146,7 +190,8 @@ class TelegramAdapter(Platform):
         chat_id = int(user)
         msg = await self._app.bot.send_message(
             chat_id=chat_id,
-            text=text,
+            text=_md_to_tg_html(text),
+            parse_mode="HTML",
         )
         return str(msg.message_id)
 
@@ -168,7 +213,8 @@ class TelegramAdapter(Platform):
             await self._app.bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=int(msg_id),
-                text=text,
+                text=_md_to_tg_html(text),
+                parse_mode="HTML",
             )
             self._last_edit_times[msg_id] = time.monotonic()
         except TelegramError as e:
@@ -186,7 +232,8 @@ class TelegramAdapter(Platform):
         chat_id = int(user)
         await self._app.bot.send_message(
             chat_id=chat_id,
-            text=f"⚠️ {text}",
+            text=f"⚠️ {_md_to_tg_html(text)}",
+            parse_mode="HTML",
         )
 
     async def set_typing(self, user: str, typing: bool = True) -> None:
@@ -308,15 +355,23 @@ class TelegramAdapter(Platform):
 
         user_id = update.effective_user.id
         username = update.effective_user.username or str(user_id)
+        chat = update.effective_chat
+        in_group = chat is not None and chat.type in (Chat.GROUP, Chat.SUPERGROUP)
 
         if not self._is_allowed(user_id, username):
+            # Silently ignore non-allowed users in groups to avoid spam
+            if in_group:
+                return
             await update.effective_message.reply_text("Not authorized.")
             return
+
+        # In group chats, route replies to the group; in private chats, DM the user
+        platform_user = str(chat.id) if in_group else str(user_id)
 
         if self._on_message is not None:
             await self._on_message(
                 self.name,
-                str(user_id),
+                platform_user,
                 update.effective_message.text,
             )
 
@@ -334,8 +389,12 @@ class TelegramAdapter(Platform):
         user_id = update.effective_user.id
         username = update.effective_user.username or str(user_id)
         message = update.effective_message
+        chat = update.effective_chat
+        in_group = chat is not None and chat.type in (Chat.GROUP, Chat.SUPERGROUP)
 
         if not self._is_allowed(user_id, username):
+            if in_group:
+                return
             await message.reply_text("Not authorized.")
             return
 
@@ -388,7 +447,9 @@ class TelegramAdapter(Platform):
             return
 
         # 4. Feed to orchestrator as a normal text turn
-        session = await self._session_store.get_or_create_session("telegram", str(user_id))
+        # In groups, use chat ID as session key so replies stay in the group
+        platform_user = str(chat.id) if in_group else str(user_id)
+        session = await self._session_store.get_or_create_session("telegram", platform_user)
         user_message = HestiaMessage(role="user", content=transcript)
 
         async def respond_voice(response_text: str) -> None:
@@ -401,7 +462,8 @@ class TelegramAdapter(Platform):
             except Exception as synth_err:
                 logger.warning("TTS failed for voice reply: %s", synth_err)
                 await message.reply_text(
-                    f"(Voice synthesis failed; sending text instead)\n\n{response_text}"
+                    f"(Voice synthesis failed; sending text instead)\n\n{_md_to_tg_html(response_text)}",
+                    parse_mode="HTML",
                 )
                 return
 
@@ -410,7 +472,8 @@ class TelegramAdapter(Platform):
             except Exception as enc_err:
                 logger.warning("OGG encoding failed for voice reply: %s", enc_err)
                 await message.reply_text(
-                    f"(Voice encoding failed; sending text instead)\n\n{response_text}"
+                    f"(Voice encoding failed; sending text instead)\n\n{_md_to_tg_html(response_text)}",
+                    parse_mode="HTML",
                 )
                 return
 
@@ -428,7 +491,8 @@ class TelegramAdapter(Platform):
                 await message.reply_voice(voice=io.BytesIO(truncated_ogg))
                 await message.reply_text(
                     "(Voice reply truncated to fit Telegram's 1MB limit. "
-                    "Full text:)\n\n" + response_text
+                    "Full text:)\n\n" + _md_to_tg_html(response_text),
+                    parse_mode="HTML",
                 )
             else:
                 await message.reply_voice(voice=io.BytesIO(full_audio_ogg))
@@ -440,7 +504,7 @@ class TelegramAdapter(Platform):
                 respond_callback=respond_voice,
                 system_prompt=self._system_prompt,
                 platform=self,
-                platform_user=str(user_id),
+                platform_user=platform_user,
                 voice_reply=True,
             )
         except Exception as e:

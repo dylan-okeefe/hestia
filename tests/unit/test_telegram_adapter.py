@@ -81,6 +81,7 @@ class TestTelegramAdapterAsync:
         mock_bot.send_message.assert_called_once_with(
             chat_id=12345,
             text="Hello, world!",
+            parse_mode="HTML",
         )
         assert result == "42"
 
@@ -247,6 +248,7 @@ class TestTelegramAdapterAsync:
         mock_bot.send_message.assert_called_once_with(
             chat_id=12345,
             text="⚠️ Something went wrong",
+            parse_mode="HTML",
         )
 
     @pytest.mark.asyncio
@@ -264,6 +266,7 @@ class TestTelegramAdapterAsync:
         mock_bot.send_message.assert_called_once_with(
             chat_id=12345,
             text="⚠️ Context budget exceeded",
+            parse_mode="HTML",
         )
 
     @pytest.mark.asyncio

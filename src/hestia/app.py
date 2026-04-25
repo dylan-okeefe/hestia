@@ -61,6 +61,7 @@ from hestia.tools.builtin import (
     make_search_memory_tool,
     make_web_search_tool,
     make_write_file_tool,
+    search_web,
     terminal,
 )
 from hestia.tools.registry import ToolRegistry
@@ -600,10 +601,13 @@ def make_app(cfg: HestiaConfig) -> CliAppContext:
     tool_registry.register(make_delete_memory_tool(memory_store))
     tool_registry.register(make_read_artifact_tool(artifact_store))
 
-    # Register web search if configured
+    # Register web search if configured (Tavily)
     web_search_tool = make_web_search_tool(cfg.web_search)
     if web_search_tool is not None:
         tool_registry.register(web_search_tool)
+    else:
+        # Fallback: DuckDuckGo HTML search (no API key required)
+        tool_registry.register(search_web)
 
     # Register email tools if configured
     for email_tool in make_email_tools(cfg.email):

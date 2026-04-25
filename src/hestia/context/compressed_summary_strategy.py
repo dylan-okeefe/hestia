@@ -49,14 +49,18 @@ class CompressedSummaryStrategy:
         if not summary:
             return None
 
-        summary_msg = Message(
+        # Merge the summary into the existing system prompt so we never
+        # emit a second system message — strict chat templates (e.g. Qwen)
+        # raise "System message must be at the beginning" when they see one.
+        original_system = protected_top[0]
+        augmented_system = Message(
             role="system",
-            content=f"[PRIOR CONTEXT SUMMARY]\n{summary}",
+            content=f"{original_system.content}\n\n[PRIOR CONTEXT SUMMARY]\n{summary}",
         )
 
         # Try inserting right after the system message (index 0)
-        messages = list(protected_top)
-        messages.insert(1, summary_msg)
+        messages = [augmented_system]
+        messages.extend(protected_top[1:])
         messages.extend(included_history)
         messages.extend(protected_bottom)
 
@@ -68,8 +72,8 @@ class CompressedSummaryStrategy:
         if included_history:
             retry_included = list(included_history)
             retry_included.pop(0)
-            messages = list(protected_top)
-            messages.insert(1, summary_msg)
+            messages = [augmented_system]
+            messages.extend(protected_top[1:])
             messages.extend(retry_included)
             messages.extend(protected_bottom)
 
