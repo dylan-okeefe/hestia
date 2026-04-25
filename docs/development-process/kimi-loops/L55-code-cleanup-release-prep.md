@@ -116,6 +116,26 @@ uv run ruff check src/ tests/
 - Merge `feature/l55-code-cleanup-release-prep` to `develop`.
 - Advance `KIMI_CURRENT.md` to L56.
 
+## Review carry-forward (from L54)
+
+- **Subagent step budget is real.** L54's subagent hit its 100-step limit at
+  section 10 of 10. Future subagent tasks must be scoped to **2–3 sections max**
+  (roughly 20–30 file edits + test runs). If a section touches many files
+  (e.g., §1 comment stripping), split it across multiple subagent runs.
+- **Subagents can introduce import-order bugs.** L54 subagent removed
+  `import logging` from `web_search.py` but left `logger.debug()` calls,
+  causing an undefined-name error. Review diffs for incomplete import
+  cleanup after any module move.
+- **`__post_init__` validators must tolerate DB deserialization.** The
+  `ScheduledTask` validator was initially "exactly one of" but database
+  `_row_to_task` creates objects with both fields `None`. Changed to mutual
+  exclusion (both-set is an error; both-None is OK). Any future dataclass
+  validators that touch persisted rows need the same tolerance.
+- **ContextVar moves need import audits.** When moving ContextVars between
+  modules, grep for all references (including test files and `__init__.py`
+  re-exports) — the subagent missed `tests/unit/test_memory_tools.py` and
+  `tests/integration/test_egress_audit.py` initially.
+
 ## Dependencies
 
 - L54 should merge first (it touches overlapping files like `engine.py`).
