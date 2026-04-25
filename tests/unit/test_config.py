@@ -13,9 +13,9 @@ from hestia.config import (
     TelegramConfig,
     ReflectionConfig,
     StyleConfig,
-    _ConfigFromEnv,
     validate_inference_model_name,
 )
+from hestia.config_env import _ConfigFromEnv
 
 
 class TestDefaultConfig:
