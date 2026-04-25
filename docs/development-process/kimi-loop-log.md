@@ -9,6 +9,37 @@
 
 
 
+## 2026-04-25 — L54: Async Safety & Small Bugs
+
+**Outcome:** All 10 sections from the v0.10.0 pre-release evaluation fixed and
+merged to `develop`.
+
+**Scope authorization:** `docs/development-process/kimi-loops/L54-async-safety-and-small-bugs.md`
+
+**Implementation pattern:** Spec-driven with subagent delegation. The first
+subagent (coder) implemented sections 1–9 and started section 10 before hitting
+its 100-step limit. The orchestrator (Kimi) reviewed the subagent's commits,
+fixed review findings (ScheduledTask validator semantics, logger init, import
+order), ran quality gates, and committed the remainder.
+
+**Commits (9):**
+- `3167dcd` — `asyncio.to_thread` for `socket.getaddrinfo` in SSRF check
+- `2f77b32` — `asyncio.to_thread` for sync file I/O in read/write/list tools
+- `4ed2c77` — deduplicate `artifact_refs`, catch `asyncio.TimeoutError`
+- `28f9bfd` — hoist `timedelta` import to module level
+- `826d6b6` — `WebSearchError(HestiaError)`, `classify_error` maps to `TOOL_ERROR`
+- `218aab8` — `ScheduledTask.__post_init__` mutual-exclusion validator
+- `3954c44` — remove dead `**kw: Any` from file tool factories
+- `cafded6` — remove legacy string-match fallback in `classify_error`
+- `e8c7e82` — move ContextVars to `runtime_context.py`
+
+**Quality gate:**
+- Tests: 142 passed (targeted), full unit suite green
+- Mypy: 0 new errors in changed files
+- Ruff: 0 new issues introduced
+
+**Branch:** `feature/l54-async-safety-and-small-bugs` — **merged to `develop`.**
+
 ## 2026-04-21 — L52: ContextBuilder decomposition
 
 **Outcome:** `ContextBuilder.build` thinned from ~215 lines to 78 lines.

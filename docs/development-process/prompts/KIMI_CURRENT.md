@@ -24,23 +24,18 @@ and polish items. These have been organized into a 6-loop arc (L54–L59).
 
 ---
 
-## Active loop: L54 — Async Safety & Small Bugs
+## Active loop: L55 — Code Cleanup & Release Prep
 
-**Branch:** `feature/l54-async-safety-and-small-bugs`  
-**Spec:** [`kimi-loops/L54-async-safety-and-small-bugs.md`](kimi-loops/L54-async-safety-and-small-bugs.md)  
+**Branch:** `feature/l55-code-cleanup-release-prep`  
+**Spec:** [`kimi-loops/L55-code-cleanup-release-prep.md`](kimi-loops/L55-code-cleanup-release-prep.md)  
 **Merge target:** `develop`
 
 **Scope summary:**
-1. `socket.getaddrinfo()` → `asyncio.to_thread()` in http_get SSRF check
-2. `read_file` / `write_file` / `list_dir` → `asyncio.to_thread()` for sync I/O
-3. Remove duplicate `artifact_refs` assignment in delegate_task
-4. `TimeoutError` → `asyncio.TimeoutError` in delegate_task
-5. Hoist `timedelta` import out of hot path in engine.py
-6. `WebSearchError` should inherit `HestiaError`
-7. Enforce `ScheduledTask` exactly-one-of invariant
-8. Remove dead `**kw: Any` from file tool factories
-9. Remove legacy string-match fallback in `classify_error`
-10. Move ContextVars from `memory_tools.py` to `runtime_context.py`
+1. Strip internal review-tracking comments (`# Copilot H-X`, `# M-X`, etc.)
+2. `TurnContext.session` should be non-optional
+3. `SkillIndexBuilder` divergence — one canonical format method
+4. Tool factory return type cleanup (remove `cast()`)
+5. Meta-command handler relocation to `commands/meta.py`
 
 **Quality gates:** `pytest`, `mypy`, `ruff` — all green before merge.
 
@@ -50,7 +45,6 @@ and polish items. These have been organized into a 6-loop arc (L54–L59).
 
 | Loop | Branch | Spec | Merge target |
 |------|--------|------|--------------|
-| L55 | `feature/l55-code-cleanup-release-prep` | [`kimi-loops/L55-code-cleanup-release-prep.md`](kimi-loops/L55-code-cleanup-release-prep.md) | `develop` |
 | L56 | `feature/l56-orchestrator-decomposition` | [`kimi-loops/L56-orchestrator-decomposition.md`](kimi-loops/L56-orchestrator-decomposition.md) | release-prep |
 | L57 | `feature/l57-app-bootstrap-cleanup` | [`kimi-loops/L57-app-bootstrap-cleanup.md`](kimi-loops/L57-app-bootstrap-cleanup.md) | release-prep |
 | L58 | `feature/l58-config-and-ux-polish` | [`kimi-loops/L58-config-and-ux-polish.md`](kimi-loops/L58-config-and-ux-polish.md) | release-prep |
