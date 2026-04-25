@@ -41,7 +41,7 @@ async def _handle_meta_command(
         click.echo(f"Platform User: {session.platform_user}")
         click.echo(f"State: {session.state.value}")
         click.echo(f"Temperature: {session.temperature.value}")
-        click.echo(f"Started: {session.started_at}")
+        click.echo(f"Started: {session.started_at} UTC")
         return False, session
 
     if cmd == "/history":

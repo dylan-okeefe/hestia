@@ -215,7 +215,7 @@ async def cmd_failures_list(app: CliAppContext, limit: int, failure_class: str |
         return
     for bundle in bundles:
         click.echo(f"\nID: {bundle.id}")
-        click.echo(f"  Time: {bundle.created_at}")
+        click.echo(f"  Time: {bundle.created_at} UTC")
         click.echo(f"  Class: {bundle.failure_class} (severity: {bundle.severity})")
         click.echo(f"  Session: {bundle.session_id}")
         click.echo(f"  Turn: {bundle.turn_id}")
@@ -266,7 +266,7 @@ async def cmd_audit_egress(app: CliAppContext, since: str) -> None:
     if not rows:
         click.echo("No egress events found in the given window.")
         return
-    click.echo(f"Egress summary since {since_dt.isoformat()}\n")
+    click.echo(f"Egress summary since {since_dt.isoformat()} UTC\n")
     click.echo(f"{'Domain':<40} {'Requests':>10} {'Failures':>10} {'Anomaly'}")
     click.echo("-" * 80)
     for row in rows:
