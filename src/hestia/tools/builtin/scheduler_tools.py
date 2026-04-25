@@ -5,11 +5,38 @@ from __future__ import annotations
 from collections.abc import Callable, Coroutine
 from typing import Any
 
+from hestia.core.types import Session
 from hestia.persistence.scheduler import SchedulerStore
 from hestia.persistence.sessions import SessionStore
 from hestia.runtime_context import current_platform, current_platform_user
 from hestia.tools.capabilities import ORCHESTRATION
 from hestia.tools.metadata import tool
+
+
+async def _get_session_for_tool(
+    session_store: SessionStore, description: str
+) -> Session | str:
+    platform = current_platform.get()
+    platform_user = current_platform_user.get()
+
+    if platform is None or platform_user is None:
+        return (
+            f"Error: Cannot {description} outside a platform context. "
+            "Run this from Telegram or Matrix."
+        )
+
+    return await session_store.get_or_create_session(platform, platform_user)
+
+
+async def _verify_task_ownership(
+    scheduler_store: SchedulerStore, task_id: str, session_id: str
+) -> str | None:
+    task = await scheduler_store.get_task(task_id)
+    if task is None:
+        return f"Error: Task {task_id} not found."
+    if task.session_id != session_id:
+        return "Error: Task does not belong to your session."
+    return None
 
 
 def make_create_scheduled_task_tool(
@@ -51,16 +78,9 @@ def make_create_scheduled_task_tool(
         Returns:
             Confirmation with the task ID and next run time.
         """
-        platform = current_platform.get()
-        platform_user = current_platform_user.get()
-
-        if platform is None or platform_user is None:
-            return (
-                "Error: Cannot create scheduled task outside a platform context. "
-                "Run this from Telegram or Matrix."
-            )
-
-        session = await session_store.get_or_create_session(platform, platform_user)
+        session = await _get_session_for_tool(session_store, "create scheduled task")
+        if isinstance(session, str):
+            return session
 
         task = await scheduler_store.create_task(
             session_id=session.id,
@@ -102,16 +122,10 @@ def make_list_scheduled_tasks_tool(
         Returns:
             Formatted list of tasks with IDs, schedules, and status.
         """
-        platform = current_platform.get()
-        platform_user = current_platform_user.get()
+        session = await _get_session_for_tool(session_store, "list scheduled tasks")
+        if isinstance(session, str):
+            return session
 
-        if platform is None or platform_user is None:
-            return (
-                "Error: Cannot list scheduled tasks outside a platform context. "
-                "Run this from Telegram or Matrix."
-            )
-
-        session = await session_store.get_or_create_session(platform, platform_user)
         tasks = await scheduler_store.list_tasks_for_session(
             session_id=session.id, include_disabled=include_disabled
         )
@@ -155,22 +169,13 @@ def make_disable_scheduled_task_tool(
         Returns:
             Confirmation or error message.
         """
-        platform = current_platform.get()
-        platform_user = current_platform_user.get()
+        session = await _get_session_for_tool(session_store, "disable scheduled task")
+        if isinstance(session, str):
+            return session
 
-        if platform is None or platform_user is None:
-            return (
-                "Error: Cannot disable scheduled task outside a platform context. "
-                "Run this from Telegram or Matrix."
-            )
-
-        session = await session_store.get_or_create_session(platform, platform_user)
-        # Verify the task belongs to this session
-        task = await scheduler_store.get_task(task_id)
-        if task is None:
-            return f"Error: Task {task_id} not found."
-        if task.session_id != session.id:
-            return "Error: Task does not belong to your session."
+        error = await _verify_task_ownership(scheduler_store, task_id, session.id)
+        if error:
+            return error
 
         success = await scheduler_store.disable_task(task_id)
         if success:
@@ -201,21 +206,13 @@ def make_enable_scheduled_task_tool(
         Returns:
             Confirmation or error message.
         """
-        platform = current_platform.get()
-        platform_user = current_platform_user.get()
+        session = await _get_session_for_tool(session_store, "enable scheduled task")
+        if isinstance(session, str):
+            return session
 
-        if platform is None or platform_user is None:
-            return (
-                "Error: Cannot enable scheduled task outside a platform context. "
-                "Run this from Telegram or Matrix."
-            )
-
-        session = await session_store.get_or_create_session(platform, platform_user)
-        task = await scheduler_store.get_task(task_id)
-        if task is None:
-            return f"Error: Task {task_id} not found."
-        if task.session_id != session.id:
-            return "Error: Task does not belong to your session."
+        error = await _verify_task_ownership(scheduler_store, task_id, session.id)
+        if error:
+            return error
 
         success = await scheduler_store.set_enabled(task_id, True)
         if success:
@@ -247,21 +244,13 @@ def make_delete_scheduled_task_tool(
         Returns:
             Confirmation or error message.
         """
-        platform = current_platform.get()
-        platform_user = current_platform_user.get()
+        session = await _get_session_for_tool(session_store, "delete scheduled task")
+        if isinstance(session, str):
+            return session
 
-        if platform is None or platform_user is None:
-            return (
-                "Error: Cannot delete scheduled task outside a platform context. "
-                "Run this from Telegram or Matrix."
-            )
-
-        session = await session_store.get_or_create_session(platform, platform_user)
-        task = await scheduler_store.get_task(task_id)
-        if task is None:
-            return f"Error: Task {task_id} not found."
-        if task.session_id != session.id:
-            return "Error: Task does not belong to your session."
+        error = await _verify_task_ownership(scheduler_store, task_id, session.id)
+        if error:
+            return error
 
         success = await scheduler_store.delete_task(task_id)
         if success:
