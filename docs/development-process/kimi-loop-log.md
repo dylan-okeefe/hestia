@@ -9,6 +9,36 @@
 
 
 
+## 2026-04-25 — L56: Orchestrator Decomposition
+
+**Outcome:** `engine.py` decomposed from 978 lines to 284 lines. Three phase
+classes extracted: `TurnAssembly` (126 lines), `TurnExecution` (430 lines),
+`TurnFinalization` (328 lines).
+
+**Scope authorization:** `docs/development-process/kimi-loops/L56-orchestrator-decomposition.md`
+
+**Implementation pattern:** Sequential subagent delegation, one phase per
+subagent. Each subagent extracted its phase and left thin proxy methods in
+`Orchestrator` for test compatibility.
+
+**Commits:**
+- `29389b7` — `TurnAssembly` extraction
+- `a771e87` — `TurnExecution` extraction
+- `cae1d15` — `TurnFinalization` extraction
+- `353ae95` — Thin `Orchestrator` coordinator
+
+**Quality gate:**
+- Tests: 78 passed
+- Ruff: all checks passed
+- Mypy: no issues in 7 source files
+
+**Review finding:** `execution.py` (430) and `finalization.py` (328) exceed the
+250-line target. Further decomposition deferred — the primary goal
+(`engine.py` < 300 lines) is achieved.
+
+**Branch:** `feature/l56-orchestrator-decomposition` — **do NOT merge to develop**
+until v0.11 release-prep.
+
 ## 2026-04-25 — L55: Code Cleanup & Release Prep
 
 **Outcome:** All 5 sections completed and merged to `develop`.
