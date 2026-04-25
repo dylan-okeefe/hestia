@@ -1,6 +1,5 @@
 """Orchestrator engine for managing turn execution."""
 
-import json
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
@@ -10,21 +9,13 @@ from hestia.context.builder import ContextBuilder
 from hestia.core.clock import utcnow
 from hestia.core.inference import InferenceClient
 from hestia.core.types import Message, Session, ToolCall
-from hestia.errors import (
-    ContextTooLargeError,
-    HestiaError,
-    IllegalTransitionError,
-    PersistenceError,
-    PlatformError,
-    classify_error,
-)
+from hestia.errors import ContextTooLargeError, IllegalTransitionError, PlatformError
 from hestia.inference.slot_manager import SlotManager
-from hestia.memory.handoff import SessionHandoffSummarizer
 from hestia.orchestrator.assembly import TurnAssembly
 from hestia.orchestrator.execution import TurnExecution
+from hestia.orchestrator.finalization import TurnFinalization
 from hestia.orchestrator.transitions import assert_transition
 from hestia.orchestrator.types import ResponseCallback, Turn, TurnContext, TurnState, TurnTransition
-from hestia.persistence.failure_store import FailureBundle
 from hestia.persistence.sessions import SessionStore
 from hestia.platforms.base import Platform
 from hestia.policy.engine import PolicyEngine
@@ -47,19 +38,6 @@ if TYPE_CHECKING:
     from hestia.tools.types import ToolCallResult
 
 logger = logging.getLogger(__name__)
-
-
-def _sanitize_user_error(error: Exception) -> str:
-    """Return a user-facing message for an unexpected error.
-
-    HestiaError subclasses are intentionally raised with user-friendly
-    messages, so they pass through. Everything else is sanitized to a
-    generic message to avoid leaking internal details (SQL errors,
-    file paths, stack traces) to end users.
-    """
-    if isinstance(error, HestiaError):
-        return str(error)
-    return "Something went wrong. The operator has been notified."
 
 
 # Callback types
@@ -85,7 +63,7 @@ class Orchestrator:
         slot_manager: SlotManager | None = None,
         failure_store: "FailureStore | None" = None,
         trace_store: "TraceStore | None" = None,
-        handoff_summarizer: SessionHandoffSummarizer | None = None,
+        handoff_summarizer: Any = None,
         injection_scanner: InjectionScanner | None = None,
         proposal_store: ProposalStore | None = None,
         style_store: "StyleProfileStore | None" = None,
@@ -142,6 +120,14 @@ class Orchestrator:
             injection_scanner=injection_scanner,
             max_iterations=max_iterations,
         )
+        self._turn_finalization = TurnFinalization(
+            slot_manager=slot_manager,
+            failure_store=failure_store,
+            trace_store=trace_store,
+            handoff_summarizer=handoff_summarizer,
+            policy=policy,
+            session_store=session_store,
+        )
 
     async def recover_stale_turns(self) -> int:
         """Mark any turns in non-terminal states as FAILED.
@@ -174,13 +160,7 @@ class Orchestrator:
             logger.warning("close_session called for unknown session %s", session_id)
             return
 
-        if self._handoff_summarizer is not None:
-            try:
-                history = await self._store.get_messages(session_id)
-                await self._handoff_summarizer.summarize_and_store(session, history)
-            except Exception:  # noqa: BLE001 — handoff is best-effort
-                logger.warning("Handoff summarizer failed for %s", session_id, exc_info=True)
-
+        await self._turn_finalization.summarize_handoff(session)
         await self._store.archive_session(session_id)
 
     async def _set_typing(
@@ -257,7 +237,7 @@ class Orchestrator:
                 )
 
             finally:
-                await self._finalize_turn(
+                await self._turn_finalization.finalize_turn(
                     ctx, turn_start_time, trace_record_id
                 )
 
@@ -310,16 +290,7 @@ class Orchestrator:
         """Handle ContextTooLargeError: handoff, transition, warning, record failure."""
         session = ctx.session
         turn = ctx.turn
-        if self._handoff_summarizer is not None:
-            try:
-                history = await self._store.get_messages(session.id)
-                await self._handoff_summarizer.summarize_and_store(session, history)
-            except Exception:
-                logger.warning(
-                    "Handoff summarizer failed during overflow handling for %s",
-                    session.id,
-                    exc_info=True,
-                )
+        await self._turn_finalization.summarize_handoff(session)
         if turn.state not in (TurnState.DONE, TurnState.FAILED):
             await self._safe_transition(turn, TurnState.FAILED)
             turn.error = str(exc)
@@ -334,7 +305,7 @@ class Orchestrator:
                 await ctx.platform.send_system_warning(ctx.platform_user or "", warning_text)
             else:
                 await ctx.respond_callback(f"⚠️ {warning_text}")
-        return await self._record_failure_if_enabled(
+        return await self._turn_finalization.record_failure_if_enabled(
             session, turn, exc, ctx.user_message, "context_too_large",
             ctx.allowed_tools, ctx.tool_chain, trace_record_id,
         )
@@ -354,7 +325,7 @@ class Orchestrator:
                 turn.state.value,
                 error,
             )
-            sanitized = _sanitize_user_error(error)
+            sanitized = TurnFinalization.sanitize_user_error(error)
             try:
                 await ctx.respond_callback(f"Error delivering response: {sanitized}")
             except Exception as notify_err:
@@ -365,180 +336,11 @@ class Orchestrator:
         else:
             await self._safe_transition(turn, TurnState.FAILED)
             turn.error = str(error)
-            sanitized = _sanitize_user_error(error)
+            sanitized = TurnFinalization.sanitize_user_error(error)
             await ctx.respond_callback(f"Error: {sanitized}")
-        return await self._record_failure_if_enabled(
+        return await self._turn_finalization.record_failure_if_enabled(
             session, turn, error, ctx.user_message, "exception",
             ctx.allowed_tools, ctx.tool_chain, trace_record_id,
-        )
-
-    async def _record_failure_if_enabled(
-        self,
-        session: Session,
-        turn: Turn,
-        error: Exception,
-        user_message: Message,
-        failure_kind: str,
-        allowed_tools: list[str] | None,
-        tool_chain: list[str],
-        trace_record_id: str | None,
-    ) -> str | None:
-        """Record a failure bundle if failure_store is configured."""
-        if self._failure_store is None:
-            return trace_record_id
-
-        try:
-            bundle = self._build_failure_bundle(
-                session=session,
-                turn=turn,
-                error=error,
-                user_input=user_message.content or "",
-                failure_kind=failure_kind,
-                allowed_tools=allowed_tools,
-                tool_chain=tool_chain,
-            )
-            if bundle.trace_id is not None:
-                trace_record_id = bundle.trace_id
-            await self._failure_store.record(bundle)
-        except Exception as record_err:  # noqa: BLE001
-            logger.error("Failed to record failure bundle: %s", record_err)
-
-        return trace_record_id
-
-    async def _finalize_turn(
-        self,
-        ctx: TurnContext,
-        turn_start_time: Any,
-        trace_record_id: str | None,
-    ) -> None:
-        """Finalize turn: save slot, update turn, record trace, set artifact handles."""
-        session = ctx.session
-        turn = ctx.turn
-        if turn.state == TurnState.DONE and self._slot_manager is not None:
-            try:
-                await self._slot_manager.save(session)
-            except (OSError, PersistenceError) as e:
-                logger.warning("Failed to save slot for session %s: %s", session.id, e)
-
-        turn_end_time = utcnow()
-        total_duration_ms = int((turn_end_time - turn_start_time).total_seconds() * 1000)
-
-        turn.completed_at = turn_end_time
-        await self._store.update_turn(turn)
-
-        if self._trace_store is not None:
-            try:
-                from hestia.persistence.trace_store import TraceRecord
-
-                raw_summary = ctx.user_message.content or ""
-                if len(raw_summary) > 200:
-                    user_input_summary = raw_summary[:200] + "..."
-                else:
-                    user_input_summary = raw_summary
-
-                outcome = "success" if turn.state == TurnState.DONE else "failed"
-                if turn.state not in (TurnState.DONE, TurnState.FAILED):
-                    outcome = "partial"
-
-                if trace_record_id is None:
-                    trace_record_id = str(uuid.uuid4())
-
-                trace = TraceRecord(
-                    id=trace_record_id,
-                    session_id=session.id,
-                    turn_id=turn.id,
-                    started_at=turn_start_time,
-                    ended_at=turn_end_time,
-                    user_input_summary=user_input_summary,
-                    tools_called=ctx.tool_chain,
-                    tool_call_count=len(ctx.tool_chain),
-                    delegated=ctx.delegated,
-                    outcome=outcome,
-                    artifact_handles=ctx.artifact_handles,
-                    prompt_tokens=ctx.total_prompt_tokens if ctx.total_prompt_tokens > 0 else None,
-                    completion_tokens=(
-                        ctx.total_completion_tokens if ctx.total_completion_tokens > 0 else None
-                    ),
-                    reasoning_tokens=(
-                        ctx.total_reasoning_tokens if ctx.total_reasoning_tokens > 0 else None
-                    ),
-                    total_duration_ms=total_duration_ms,
-                )
-                await self._trace_store.record(trace)
-            except Exception as trace_err:  # noqa: BLE001
-                logger.error("Failed to record trace: %s", trace_err)
-
-        turn.artifact_handles = list(ctx.artifact_handles)
-
-    def _build_failure_bundle(
-        self,
-        *,
-        session: Session,
-        turn: Turn,
-        error: Exception,
-        user_input: str,
-        failure_kind: str,
-        allowed_tools: list[str] | None,
-        tool_chain: list[str],
-    ) -> "FailureBundle":
-        """Construct a FailureBundle from common turn state.
-
-        Centralises slot snapshot, policy snapshot JSON, and input summary
-        truncation; previously duplicated across two except blocks."""
-        if failure_kind == "context_too_large":
-            failure_class = "context_overflow"
-            severity = "medium"
-        else:
-            failure_class, severity = classify_error(error)
-            failure_class = failure_class.value
-
-        raw_summary = user_input
-        user_input_summary = raw_summary[:200] + "..." if len(raw_summary) > 200 else raw_summary
-
-        reasoning_budget = turn.reasoning_budget
-        if reasoning_budget is None:
-            reasoning_budget = self._policy.reasoning_budget(session, turn.iterations)
-        policy_snapshot = json.dumps(
-            {
-                "reasoning_budget": reasoning_budget,
-                "turn_token_budget": self._policy.turn_token_budget(session),
-                "tool_filter_active": allowed_tools is not None,
-            },
-            default=str,
-        )
-
-        try:
-            temp_value = None
-            if session.temperature is not None:
-                temp_value = session.temperature.value
-            slot_snapshot = json.dumps(
-                {
-                    "slot_id": session.slot_id,
-                    "temperature": temp_value,
-                    "slot_saved_path": session.slot_saved_path,
-                },
-                default=str,
-            )
-        except (TypeError, AttributeError):
-            slot_snapshot = json.dumps({"error": "slot snapshot serialization failed"})
-
-        trace_id = None
-        if self._trace_store is not None:
-            trace_id = str(uuid.uuid4())
-
-        return FailureBundle(
-            id=str(uuid.uuid4()),
-            session_id=session.id,
-            turn_id=turn.id,
-            failure_class=failure_class,
-            severity=severity,
-            error_message=str(error),
-            tool_chain=json.dumps(tool_chain),
-            created_at=utcnow(),
-            request_summary=user_input_summary,
-            policy_snapshot=policy_snapshot,
-            slot_snapshot=slot_snapshot,
-            trace_id=trace_id,
         )
 
     def _create_turn(self, session_id: str, user_message: Message) -> Turn:
@@ -589,4 +391,3 @@ class Orchestrator:
                 turn.id,
             )
             raise
-
