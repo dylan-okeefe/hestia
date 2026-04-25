@@ -11,11 +11,11 @@ from hestia.app import (
     CliAppContext,
     CliConfirmHandler,
     CliResponseHandler,
-    _compile_and_set_memory_epoch,
 )
 from hestia.commands.meta import _handle_meta_command
 from hestia.core.types import Message
 from hestia.errors import HestiaError
+from hestia.persistence.memory_epochs import _compile_and_set_memory_epoch
 
 logger = logging.getLogger(__name__)
 

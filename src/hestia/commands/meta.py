@@ -64,7 +64,7 @@ async def _handle_meta_command(
         click.echo(f"New session: {new_session.id}")
         # Refresh memory epoch for new session
         if app is not None:
-            from hestia.app import _compile_and_set_memory_epoch
+            from hestia.persistence.memory_epochs import _compile_and_set_memory_epoch
 
             compiled = await _compile_and_set_memory_epoch(app, new_session)
             if compiled:
@@ -73,7 +73,7 @@ async def _handle_meta_command(
 
     if cmd == "/refresh":
         if app is not None:
-            from hestia.app import _compile_and_set_memory_epoch
+            from hestia.persistence.memory_epochs import _compile_and_set_memory_epoch
 
             compiled = await _compile_and_set_memory_epoch(app, session)
             if compiled:
