@@ -72,6 +72,17 @@
 
 After each loop: merge to `develop` when green, bump queue in `KIMI_CURRENT.md`, append [`kimi-loop-log.md`](kimi-loop-log.md).
 
+### v0.10.0 pre-release evaluation → v0.10.x / v0.11 arc
+
+| Order | Branch (suggested) | Executor spec | Merge target |
+|-------|-------------------|----------------|--------------|
+| 54 | `feature/l54-async-safety-and-small-bugs` | [`kimi-loops/L54-async-safety-and-small-bugs.md`](kimi-loops/L54-async-safety-and-small-bugs.md) | `develop` |
+| 55 | `feature/l55-code-cleanup-release-prep` | [`kimi-loops/L55-code-cleanup-release-prep.md`](kimi-loops/L55-code-cleanup-release-prep.md) | `develop` |
+| 56 | `feature/l56-orchestrator-decomposition` | [`kimi-loops/L56-orchestrator-decomposition.md`](kimi-loops/L56-orchestrator-decomposition.md) | release-prep |
+| 57 | `feature/l57-app-bootstrap-cleanup` | [`kimi-loops/L57-app-bootstrap-cleanup.md`](kimi-loops/L57-app-bootstrap-cleanup.md) | release-prep |
+| 58 | `feature/l58-config-and-ux-polish` | [`kimi-loops/L58-config-and-ux-polish.md`](kimi-loops/L58-config-and-ux-polish.md) | release-prep |
+| 59 | `feature/l59-security-docs-and-infrastructure` | [`kimi-loops/L59-security-docs-and-infrastructure.md`](kimi-loops/L59-security-docs-and-infrastructure.md) | release-prep |
+
 ### Review carry-forward (required before the next Kimi run)
 
 When Cursor advances the queue, open the **upcoming** `kimi-loops/L*.md` (the file `KIMI_CURRENT` will point at next) and add or update:
