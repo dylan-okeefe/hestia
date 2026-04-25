@@ -8,32 +8,10 @@ from pathlib import Path
 from typing import Literal
 
 from hestia.config_env import _ConfigFromEnv
+from hestia.core.validators import validate_inference_model_name
+from hestia.errors import EmailConfigError
 
-
-class EmailConfigError(ValueError):
-    """Raised when email configuration is invalid."""
-
-    pass
-
-
-def validate_inference_model_name(model_name: str) -> None:
-    """Reject the reserved ``dummy`` model name unless explicitly allowed.
-
-    The literal ``dummy`` is used only in tests behind ``HESTIA_ALLOW_DUMMY_MODEL=1``.
-    """
-    stripped = model_name.strip()
-    if stripped.lower() != "dummy":
-        return
-    if os.environ.get("HESTIA_ALLOW_DUMMY_MODEL") == "1":
-        return
-    raise ValueError(
-        'inference.model_name "dummy" is reserved for automated tests only. '
-        "Configure a real llama.cpp model filename, or set environment variable "
-        "HESTIA_ALLOW_DUMMY_MODEL=1 if you intentionally use a dummy model."
-    )
-
-# Default location for operator-authored personality (compiled identity; see ADR-0025).
-DEFAULT_SOUL_MD_PATH = Path("SOUL.md")
+DEFAULT_SOUL_MD_PATH = Path("SOUL.md")  # compiled identity default (ADR-0025)
 
 
 # ---------------------------------------------------------------------------
@@ -47,14 +25,12 @@ class IdentityConfig(_ConfigFromEnv):
 
     _ENV_PREFIX = "IDENTITY"
 
-    soul_path: Path | None = field(
-        default_factory=lambda: DEFAULT_SOUL_MD_PATH,
-    )  # None = disable; default reads SOUL.md in cwd (DEFAULT_SOUL_MD_PATH)
+    soul_path: Path | None = field(default_factory=lambda: DEFAULT_SOUL_MD_PATH)
     compiled_cache_path: Path = field(
         default_factory=lambda: Path(".hestia/compiled_identity.txt")
     )
-    max_tokens: int = 300  # Hard cap on compiled view size
-    recompile_on_change: bool = True  # Recompile if soul.md changes
+    max_tokens: int = 300
+    recompile_on_change: bool = True
 
     def __post_init__(self) -> None:
         if self.max_tokens < 0:
@@ -71,19 +47,12 @@ class InferenceConfig(_ConfigFromEnv):
 
     base_url: str = "http://localhost:8001"
     model_name: str = ""
-    # Per-slot context budget; should equal llama-server's --ctx-size / --parallel
     context_length: int = 8192
     default_reasoning_budget: int = 2048
     max_tokens: int = 1024
 
     def __post_init__(self) -> None:
-        # Reject the literal placeholder "dummy" at config-load: historically
-        # this slipped through and surfaced later as mystifying 404 / "model
-        # not found" errors from llama-server. Empty model_name is still
-        # allowed here (CLI/setup paths like `hestia doctor` lazily
-        # fall back to a placeholder string when they don't need real
-        # inference); the real-inference guard lives in
-        # InferenceClient.__init__.
+        # Reject literal "dummy" at config-load (see H-5).
         if self.model_name == "dummy" and os.environ.get("HESTIA_ALLOW_DUMMY_MODEL") != "1":
             raise ValueError(
                 "inference.model_name == 'dummy' is rejected at config-load — "
@@ -105,13 +74,7 @@ class SlotConfig(_ConfigFromEnv):
     _ENV_PREFIX = "SLOT"
 
     slot_dir: Path = field(default_factory=lambda: Path("slots"))
-    """Directory where llama-server persists slot snapshots. **Must match
-    `llama-server --slot-save-path`.** Hestia sends only the basename to
-    llama.cpp; llama-server writes the file here. Hestia itself does not
-    write to this directory — it is purely a declaration of where slot
-    files will land so that out-of-band cleanup (gc, TTL, etc.) knows
-    where to look.
-    """
+    """Directory for llama-server slot snapshots (must match --slot-save-path)."""
     pool_size: int = 4
 
 
@@ -160,11 +123,7 @@ class TelegramConfig(_ConfigFromEnv):
 
 @dataclass
 class MatrixConfig(_ConfigFromEnv):
-    """Configuration for the Matrix adapter.
-
-    Security: allowed_rooms is a whitelist. Empty list denies all inbound.
-    Session mapping: one Matrix room -> one Hestia session (room ID as platform_user).
-    """
+    """Matrix adapter configuration."""
 
     _ENV_PREFIX = "MATRIX"
 
@@ -179,18 +138,7 @@ class MatrixConfig(_ConfigFromEnv):
 
 @dataclass
 class TrustConfig(_ConfigFromEnv):
-    """How much latitude to grant the agent in headless contexts.
-
-    Hestia's threat model for personal-use deployments is "operator is the
-    only user; trust the model to act on operator's behalf." This differs
-    from multi-tenant SaaS. TrustConfig lets operators pick the posture that
-    matches their deployment.
-
-    Defaults here match the `paranoid` preset: safest posture for a fresh
-    install or OSS download. Operators should explicitly opt into `household`
-    or `developer` via `TrustConfig.household()` / `TrustConfig.developer()`
-    in their `config.py`.
-    """
+    """Trust posture for headless contexts (paranoid, household, developer)."""
 
     _ENV_PREFIX = "TRUST"
 
@@ -223,15 +171,12 @@ class TrustConfig(_ConfigFromEnv):
 
     @classmethod
     def paranoid(cls) -> TrustConfig:
-        """Strictest posture. Current default. Auto-approves nothing; scheduler
-        and subagents cannot shell or write."""
+        """Strictest posture."""
         return cls()
 
     @classmethod
     def household(cls) -> TrustConfig:
-        """Recommended posture for single-operator personal deployments.
-        Auto-approves terminal and write_file on headless platforms;
-        scheduler and subagents can shell and write."""
+        """Recommended for single-operator personal deployments."""
         return cls(
             auto_approve_tools=["terminal", "write_file"],
             scheduler_shell_exec=True,
@@ -241,9 +186,7 @@ class TrustConfig(_ConfigFromEnv):
 
     @classmethod
     def developer(cls) -> TrustConfig:
-        """Most permissive posture. Auto-approves everything;
-        all capabilities available everywhere. Intended for development/testing
-        only — do not use in a deployment exposed to other users."""
+        """Most permissive posture (development/testing only)."""
         return cls(
             auto_approve_tools=["*"],  # wildcard — matches any tool name
             scheduler_shell_exec=True,
@@ -253,22 +196,7 @@ class TrustConfig(_ConfigFromEnv):
 
     @classmethod
     def prompt_on_mobile(cls) -> TrustConfig:
-        """Mobile-confirmation posture.
-
-        Auto-approves nothing. Every ``requires_confirmation=True`` tool
-        routes through the platform's confirm callback before executing.
-        Whether the call blocks the conversation thread depends on the
-        platform (Telegram inline keyboards block; Matrix reply-pattern
-        does not).
-
-        Keeps the rest of the ``household`` defaults: both ``handoff`` and
-        ``compression`` are enabled, and scheduler / subagents can shell
-        and write.
-
-        Use this when you run Hestia on Telegram or Matrix and want an
-        explicit ✅/❌ prompt on your phone for ``terminal``, ``write_file``,
-        and ``email_send``.
-        """
+        """Mobile-confirmation posture (household capabilities, prompts for approval)."""
         return cls(
             auto_approve_tools=[],
             scheduler_shell_exec=True,
@@ -279,12 +207,7 @@ class TrustConfig(_ConfigFromEnv):
 
 @dataclass
 class HandoffConfig(_ConfigFromEnv):
-    """Controls session-close summary generation.
-
-    Disabled by default. When enabled, the orchestrator generates a
-    2-3 sentence summary at session close and stores it as a memory
-    entry with tag ``handoff``.
-    """
+    """Session-close summary generation (disabled by default)."""
 
     _ENV_PREFIX = "HANDOFF"
 
@@ -295,13 +218,7 @@ class HandoffConfig(_ConfigFromEnv):
 
 @dataclass
 class CompressionConfig(_ConfigFromEnv):
-    """Controls in-turn history compression on overflow.
-
-    Disabled by default. When enabled, the context builder calls a
-    :class:`~hestia.context.compressor.HistoryCompressor` on dropped
-    messages and splices the summary back into the effective system
-    prompt for that turn.
-    """
+    """In-turn history compression on overflow (disabled by default)."""
 
     _ENV_PREFIX = "COMPRESSION"
 
@@ -433,12 +350,7 @@ class VoiceConfig(_ConfigFromEnv):
 
 @dataclass
 class WebSearchConfig(_ConfigFromEnv):
-    """Configuration for the web_search tool.
-
-    Default `provider=""` disables the tool entirely — it won't register
-    in the tool registry if unconfigured. Operators opt in by setting
-    provider + api_key in their config.py.
-    """
+    """web_search tool configuration (provider=\"\" disables)."""
 
     _ENV_PREFIX = "WEB_SEARCH"
 
@@ -452,11 +364,7 @@ class WebSearchConfig(_ConfigFromEnv):
 
 @dataclass
 class HestiaConfig(_ConfigFromEnv):
-    """Top-level Hestia configuration.
-
-    CLI options override values set here. Config files are loaded
-    with HestiaConfig.from_file() and merged with CLI overrides.
-    """
+    """Top-level Hestia configuration."""
 
     _ENV_PREFIX = "HESTIA"
 
@@ -484,14 +392,7 @@ class HestiaConfig(_ConfigFromEnv):
 
     @classmethod
     def from_file(cls, path: Path) -> HestiaConfig:
-        """Load config from a Python file.
-
-        The file must define a `config` variable of type HestiaConfig.
-
-        .. note::
-            The loaded module is executed with ``exec_module`` — treat config
-            files as trusted operator-authored code. See ``SECURITY.md``.
-        """
+        """Load config from a Python file (must define `config` variable)."""
         import importlib.util
 
         if not path.exists():
@@ -513,16 +414,7 @@ class HestiaConfig(_ConfigFromEnv):
 
     @classmethod
     def for_trust(cls, trust: TrustConfig) -> HestiaConfig:
-        """Create a config with handoff/compression implied by the trust preset.
-
-        - ``paranoid()`` → handoff=False, compression=False
-        - ``household()`` → handoff=True, compression=True
-        - ``developer()`` → handoff=True, compression=True
-
-        Example::
-
-            config = HestiaConfig.for_trust(TrustConfig.household())
-        """
+        """Create a config with handoff/compression implied by trust preset."""
         enable = trust not in (TrustConfig.paranoid(), TrustConfig())
         return cls(
             trust=trust,

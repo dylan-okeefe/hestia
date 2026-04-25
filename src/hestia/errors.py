@@ -3,6 +3,10 @@
 from enum import StrEnum
 
 
+class EmailConfigError(ValueError):
+    """Raised when email configuration is invalid."""
+
+
 class HestiaError(Exception):
     """Base class for all Hestia errors."""
 
