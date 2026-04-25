@@ -9,6 +9,54 @@
 
 
 
+## 2026-04-25 — L57: App Bootstrap Cleanup
+
+**Outcome:** `app.py` reduced by ~29 lines of scheduler duplication, 21 property
+delegates collapsed to `__getattr__`, `_compile_and_set_memory_epoch` relocated.
+
+**Scope authorization:** `docs/development-process/kimi-loops/L57-app-bootstrap-cleanup.md`
+
+**Commits:**
+- `25793c6` — `_get_session_for_tool` + `_verify_task_ownership` helpers
+- `d5e9e07` — `_compile_and_set_memory_epoch` → `persistence/memory_epochs.py`
+- `525e405` — `CliAppContext.__getattr__` replaces 21 property delegates
+
+**Quality gate:**
+- Tests: 89 passed
+- Ruff: all checks passed
+- Mypy: no issues found
+
+**Branch:** `feature/l57-app-bootstrap-cleanup` — **do NOT merge to develop** until
+v0.11 release-prep.
+
+## 2026-04-25 — L56: Orchestrator Decomposition
+
+**Outcome:** `engine.py` decomposed from 978 lines to 284 lines. Three phase
+classes extracted: `TurnAssembly` (126 lines), `TurnExecution` (430 lines),
+`TurnFinalization` (328 lines).
+
+**Scope authorization:** `docs/development-process/kimi-loops/L56-orchestrator-decomposition.md`
+
+**Implementation pattern:** Sequential subagent delegation, one phase per
+subagent.
+
+**Commits:**
+- `29389b7` — `TurnAssembly` extraction
+- `a771e87` — `TurnExecution` extraction
+- `cae1d15` — `TurnFinalization` extraction
+- `353ae95` — Thin `Orchestrator` coordinator
+
+**Quality gate:**
+- Tests: 78 passed
+- Ruff: all checks passed
+- Mypy: no issues in 7 source files
+
+**Review finding:** `execution.py` (430) and `finalization.py` (328) exceed the
+250-line target. Further decomposition deferred.
+
+**Branch:** `feature/l56-orchestrator-decomposition` — **do NOT merge to develop**
+until v0.11 release-prep.
+
 ## 2026-04-25 — L55: Code Cleanup & Release Prep
 
 **Outcome:** All 5 sections completed and merged to `develop`.
