@@ -3,11 +3,12 @@
 import json
 import logging
 import uuid
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 from hestia.core.clock import utcnow
 from hestia.core.types import Message, Session
-from hestia.errors import HestiaError, PersistenceError, classify_error
+from hestia.errors import ContextTooLargeError, HestiaError, PersistenceError, classify_error
 from hestia.orchestrator.types import Turn, TurnContext, TurnState
 from hestia.persistence.failure_store import FailureBundle
 
@@ -20,6 +21,8 @@ if TYPE_CHECKING:
     from hestia.policy.engine import PolicyEngine
 
 logger = logging.getLogger(__name__)
+
+TransitionCallback = Callable[[Turn, TurnState, str], Awaitable[None]]
 
 
 class TurnFinalization:
@@ -122,6 +125,86 @@ class TurnFinalization:
                 logger.error("Failed to record trace: %s", trace_err)
 
         turn.artifact_handles = list(ctx.artifact_handles)
+
+    async def handle_context_too_large(
+        self,
+        ctx: TurnContext,
+        exc: ContextTooLargeError,
+        trace_record_id: str | None,
+        transition: TransitionCallback,
+    ) -> str | None:
+        """Handle ContextTooLargeError: handoff, transition, warning, record failure."""
+        session = ctx.session
+        turn = ctx.turn
+        await self.summarize_handoff(session)
+        if turn.state not in (TurnState.DONE, TurnState.FAILED):
+            await transition(turn, TurnState.FAILED, "")
+            turn.error = str(exc)
+            raw_budget = (
+                self._policy.turn_token_budget(session)
+                if self._policy is not None
+                else None
+            )
+            warning_text = (
+                f"This session has grown past my context budget "
+                f"({raw_budget:,} tokens per slot). I've saved a summary "
+                "of our conversation. Type /reset to start fresh, and "
+                "I'll keep the summary for reference."
+            )
+            if ctx.platform is not None:
+                await ctx.platform.send_system_warning(ctx.platform_user or "", warning_text)
+            else:
+                await ctx.respond_callback(f"⚠️ {warning_text}")
+        return await self.record_failure_if_enabled(
+            session,
+            turn,
+            exc,
+            ctx.user_message,
+            "context_too_large",
+            ctx.allowed_tools,
+            ctx.tool_chain,
+            trace_record_id,
+        )
+
+    async def handle_unexpected_error(
+        self,
+        ctx: TurnContext,
+        error: Exception,
+        trace_record_id: str | None,
+        transition: TransitionCallback,
+    ) -> str | None:
+        """Handle unexpected errors: notify user, transition to FAILED, record failure."""
+        turn = ctx.turn
+        session = ctx.session
+        if turn.state in (TurnState.DONE, TurnState.FAILED):
+            logger.error(
+                "Error after turn reached terminal state %s: %s",
+                turn.state.value,
+                error,
+            )
+            sanitized = self.sanitize_user_error(error)
+            try:
+                await ctx.respond_callback(f"Error delivering response: {sanitized}")
+            except Exception as notify_err:
+                logger.warning(
+                    "Failed to send post-terminal error notification: %s",
+                    notify_err,
+                )
+        else:
+            await transition(turn, TurnState.FAILED, "")
+            turn.error = str(error)
+            sanitized = self.sanitize_user_error(error)
+            await ctx.respond_callback(f"Error: {sanitized}")
+        return await self.record_failure_if_enabled(
+            session,
+            turn,
+            error,
+            ctx.user_message,
+            "exception",
+            ctx.allowed_tools,
+            ctx.tool_chain,
+            trace_record_id,
+        )
 
     async def record_failure_if_enabled(
         self,

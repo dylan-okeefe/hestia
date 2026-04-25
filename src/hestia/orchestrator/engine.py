@@ -39,10 +39,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-
 # Callback types
 ConfirmCallback = Callable[[str, dict[str, Any]], Awaitable[bool]]
-
 
 class Orchestrator:
     """Manages turn execution through the state machine.
@@ -69,37 +67,10 @@ class Orchestrator:
         style_store: "StyleProfileStore | None" = None,
         style_config: "StyleConfig | None" = None,
     ):
-        """Initialize the orchestrator.
-
-        Args:
-            inference: Client for LLM inference
-            session_store: Persistence layer for sessions and turns
-            context_builder: Builds message lists within token budget
-            tool_registry: Registry for tool dispatch
-            policy: Policy engine for decisions
-            confirm_callback: Optional callback for tool confirmation
-            max_iterations: Hard limit to prevent infinite tool loops
-            slot_manager: Optional SlotManager for KV-cache slot management.
-                When None, falls back to session.slot_id (legacy behavior).
-            failure_store: Optional store for recording failure bundles.
-            trace_store: Optional store for recording execution traces.
-            handoff_summarizer: Optional summarizer for session-close summaries.
-        """
-        self._inference = inference
+        """Initialize the orchestrator."""
         self._store = session_store
-        self._builder = context_builder
-        self._tools = tool_registry
-        self._policy = policy
-        self._confirm_callback = confirm_callback
-        self._max_iterations = max_iterations
-        self._slot_manager = slot_manager
-        self._failure_store = failure_store
         self._trace_store = trace_store
-        self._handoff_summarizer = handoff_summarizer
-        self._injection_scanner = injection_scanner
-        self._proposal_store = proposal_store
-        self._style_store = style_store
-        self._style_config = style_config
+        self._tools = tool_registry
         self._turn_assembly = TurnAssembly(
             context_builder=context_builder,
             tool_registry=tool_registry,
@@ -214,7 +185,11 @@ class Orchestrator:
                 await self._set_typing(ctx.platform, ctx.platform_user, typing)
 
             try:
-                await self._prepare_turn_context(session, ctx)
+                await self._turn_assembly.prepare(
+                    session=session,
+                    ctx=ctx,
+                    transition=self._safe_transition,
+                )
                 await self._turn_execution.run(
                     ctx,
                     transition=self._safe_transition,
@@ -223,8 +198,8 @@ class Orchestrator:
 
             except ContextTooLargeError as exc:
                 await self._set_typing(platform, platform_user, False)
-                trace_record_id = await self._handle_context_too_large(
-                    ctx, exc, trace_record_id
+                trace_record_id = await self._turn_finalization.handle_context_too_large(
+                    ctx, exc, trace_record_id, self._safe_transition
                 )
 
             except IllegalTransitionError:
@@ -232,8 +207,8 @@ class Orchestrator:
 
             except Exception as e:
                 await self._set_typing(platform, platform_user, False)
-                trace_record_id = await self._handle_unexpected_error(
-                    ctx, e, trace_record_id
+                trace_record_id = await self._turn_finalization.handle_unexpected_error(
+                    ctx, e, trace_record_id, self._safe_transition
                 )
 
             finally:
@@ -249,18 +224,6 @@ class Orchestrator:
             current_platform_user.reset(platform_user_token)
             if trace_token is not None:
                 current_trace_store.reset(trace_token)
-
-    async def _prepare_turn_context(
-        self,
-        session: Session,
-        ctx: TurnContext,
-    ) -> None:
-        """Prepare context, tools, slot, and history for the inference loop."""
-        await self._turn_assembly.prepare(
-            session=session,
-            ctx=ctx,
-            transition=self._safe_transition,
-        )
 
     async def _execute_tool_calls(
         self, session: Session, tool_calls: list[ToolCall], allowed_tools: list[str] | None = None
@@ -281,81 +244,11 @@ class Orchestrator:
             tool=tool, tool_name=tool_name, arguments=arguments, session=session
         )
 
-    async def _handle_context_too_large(
-        self,
-        ctx: TurnContext,
-        exc: ContextTooLargeError,
-        trace_record_id: str | None,
-    ) -> str | None:
-        """Handle ContextTooLargeError: handoff, transition, warning, record failure."""
-        session = ctx.session
-        turn = ctx.turn
-        await self._turn_finalization.summarize_handoff(session)
-        if turn.state not in (TurnState.DONE, TurnState.FAILED):
-            await self._safe_transition(turn, TurnState.FAILED)
-            turn.error = str(exc)
-            raw_budget = self._policy.turn_token_budget(session)
-            warning_text = (
-                f"This session has grown past my context budget "
-                f"({raw_budget:,} tokens per slot). I've saved a summary "
-                "of our conversation. Type /reset to start fresh, and "
-                "I'll keep the summary for reference."
-            )
-            if ctx.platform is not None:
-                await ctx.platform.send_system_warning(ctx.platform_user or "", warning_text)
-            else:
-                await ctx.respond_callback(f"⚠️ {warning_text}")
-        return await self._turn_finalization.record_failure_if_enabled(
-            session, turn, exc, ctx.user_message, "context_too_large",
-            ctx.allowed_tools, ctx.tool_chain, trace_record_id,
-        )
-
-    async def _handle_unexpected_error(
-        self,
-        ctx: TurnContext,
-        error: Exception,
-        trace_record_id: str | None,
-    ) -> str | None:
-        """Handle unexpected errors: notify user, transition to FAILED, record failure."""
-        turn = ctx.turn
-        session = ctx.session
-        if turn.state in (TurnState.DONE, TurnState.FAILED):
-            logger.error(
-                "Error after turn reached terminal state %s: %s",
-                turn.state.value,
-                error,
-            )
-            sanitized = TurnFinalization.sanitize_user_error(error)
-            try:
-                await ctx.respond_callback(f"Error delivering response: {sanitized}")
-            except Exception as notify_err:
-                logger.warning(
-                    "Failed to send post-terminal error notification: %s",
-                    notify_err,
-                )
-        else:
-            await self._safe_transition(turn, TurnState.FAILED)
-            turn.error = str(error)
-            sanitized = TurnFinalization.sanitize_user_error(error)
-            await ctx.respond_callback(f"Error: {sanitized}")
-        return await self._turn_finalization.record_failure_if_enabled(
-            session, turn, error, ctx.user_message, "exception",
-            ctx.allowed_tools, ctx.tool_chain, trace_record_id,
-        )
-
     def _create_turn(self, session_id: str, user_message: Message) -> Turn:
-        """Create a new Turn instance."""
         return Turn(
-            id=str(uuid.uuid4()),
-            session_id=session_id,
-            state=TurnState.RECEIVED,
-            user_message=user_message,
-            started_at=utcnow(),
-            completed_at=None,
-            iterations=0,
-            tool_calls_made=0,
-            final_response=None,
-            error=None,
+            id=str(uuid.uuid4()), session_id=session_id, state=TurnState.RECEIVED,
+            user_message=user_message, started_at=utcnow(), completed_at=None,
+            iterations=0, tool_calls_made=0, final_response=None, error=None,
             transitions=[],
         )
 
@@ -366,7 +259,6 @@ class Orchestrator:
     async def _transition(self, turn: Turn, to_state: TurnState, note: str = "") -> None:
         """Validate and execute a state transition."""
         assert_transition(turn.state, to_state)
-
         transition = TurnTransition(
             from_state=turn.state,
             to_state=to_state,
@@ -375,7 +267,6 @@ class Orchestrator:
         )
         turn.transitions.append(transition)
         turn.state = to_state
-
         await self._store.append_transition(turn.id, transition)
         await self._store.update_turn(turn)
 
