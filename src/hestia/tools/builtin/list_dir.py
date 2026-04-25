@@ -10,7 +10,7 @@ from hestia.tools.capabilities import READ_LOCAL
 from hestia.tools.metadata import tool
 
 
-def make_list_dir_tool(config: StorageConfig, **kw: Any) -> Any:
+def make_list_dir_tool(config: StorageConfig) -> Any:
     """Create a list_dir tool with path sandboxing."""
     allowed_roots = config.allowed_roots
 

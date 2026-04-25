@@ -10,7 +10,7 @@ from hestia.tools.capabilities import READ_LOCAL
 from hestia.tools.metadata import tool
 
 
-def make_read_file_tool(config: StorageConfig, **kw: Any) -> Any:
+def make_read_file_tool(config: StorageConfig) -> Any:
     """Create a read_file tool with path sandboxing."""
     allowed_roots = config.allowed_roots
 

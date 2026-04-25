@@ -10,7 +10,7 @@ from hestia.tools.capabilities import WRITE_LOCAL
 from hestia.tools.metadata import tool
 
 
-def make_write_file_tool(config: StorageConfig, **kw: Any) -> Any:
+def make_write_file_tool(config: StorageConfig) -> Any:
     """Create a write_file tool with path sandboxing."""
     allowed_roots = config.allowed_roots
 
