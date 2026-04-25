@@ -266,7 +266,7 @@ async def cmd_audit_egress(app: CliAppContext, since: str) -> None:
     if not rows:
         click.echo("No egress events found in the given window.")
         return
-    click.echo(f"Egress summary since {since_dt.isoformat()} UTC\n")
+    click.echo(f"Egress summary since {since_dt.strftime('%Y-%m-%d %H:%M:%S')} UTC\n")
     click.echo(f"{'Domain':<40} {'Requests':>10} {'Failures':>10} {'Anomaly'}")
     click.echo("-" * 80)
     for row in rows:

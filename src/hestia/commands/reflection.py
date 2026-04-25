@@ -16,7 +16,8 @@ async def cmd_reflection_status(app: CliAppContext) -> None:
         ok = "ok" if sched_status["ok"] else "degraded"
         click.echo(f"Scheduler: {ok} ({sched_status['failure_count']} failure(s))")
         if sched_status["last_run_at"]:
-            click.echo(f"Last run: {sched_status['last_run_at'].isoformat()} UTC")
+            lr = sched_status["last_run_at"].strftime("%Y-%m-%d %H:%M:%S")
+            click.echo(f"Last run: {lr} UTC")
         else:
             click.echo("Last run: never")
         if sched_status["last_errors"]:
@@ -68,8 +69,8 @@ async def cmd_reflection_show(app: CliAppContext, proposal_id: str) -> None:
     click.echo(f"Type:        {p.type}")
     click.echo(f"Status:      {p.status}")
     click.echo(f"Confidence:  {p.confidence:.2f}")
-    click.echo(f"Created:     {p.created_at} UTC")
-    click.echo(f"Expires:     {p.expires_at} UTC")
+    click.echo(f"Created:     {p.created_at.strftime('%Y-%m-%d %H:%M:%S')} UTC")
+    click.echo(f"Expires:     {p.expires_at.strftime('%Y-%m-%d %H:%M:%S')} UTC")
     click.echo(f"Evidence:    {', '.join(p.evidence)}")
     click.echo(f"Summary:     {p.summary}")
     click.echo(f"Action:      {p.action}")

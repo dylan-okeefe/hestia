@@ -91,8 +91,13 @@ async def cmd_schedule_add(
         if task.cron_expression:
             click.echo(f"  Schedule: cron '{task.cron_expression}'")
         elif task.fire_at:
-            click.echo(f"  Schedule: at {task.fire_at} UTC")
-        click.echo(f"  Next run: {task.next_run_at} UTC")
+            fa = task.fire_at.strftime("%Y-%m-%d %H:%M:%S")
+            click.echo(f"  Schedule: at {fa} UTC")
+        if task.next_run_at:
+            nr = task.next_run_at.strftime("%Y-%m-%d %H:%M:%S")
+            click.echo(f"  Next run: {nr} UTC")
+        else:
+            click.echo("  Next run: N/A")
         if task.notify:
             click.echo("  Notify: yes")
     except (HestiaError, ValueError) as e:
@@ -128,7 +133,7 @@ async def cmd_schedule_list(app: CliAppContext) -> None:
             next_run = next_run_dt.strftime("%Y-%m-%d %H:%M UTC")
         else:
             next_run = "-"
-        click.echo(f"{task.id:<20} {desc:<25} {sched:<20} {enabled:<8} {next_run}")
+        click.echo(f"{task.id:<20} {desc:<25} {sched:<24} {enabled:<8} {next_run}")
 
 
 async def cmd_schedule_show(app: CliAppContext, task_id: str) -> None:

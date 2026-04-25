@@ -10,12 +10,11 @@ from hestia.config import (
     IdentityConfig,
     InferenceConfig,
     MatrixConfig,
-    TelegramConfig,
     ReflectionConfig,
     StyleConfig,
+    TelegramConfig,
     validate_inference_model_name,
 )
-from hestia.config_env import _ConfigFromEnv
 
 
 class TestDefaultConfig:
@@ -212,11 +211,6 @@ class TestConfigFromEnvMixin:
         env = {"HESTIA_MATRIX_ALLOWED_ROOMS": "not-json"}
         with pytest.raises(ValueError, match="HESTIA_MATRIX_ALLOWED_ROOMS"):
             MatrixConfig.from_env(environ=env)
-
-    def test_unknown_fields_ignored(self):
-        """Env vars that do not map to known fields are silently ignored."""
-        cfg = MatrixConfig.from_env(environ={"HESTIA_MATRIX_UNKNOWN_FIELD": "42"})
-        assert cfg.homeserver == "https://matrix.org"  # default unchanged
 
     def test_unknown_fields_ignored(self):
         """Env vars that do not map to known fields are silently ignored."""
