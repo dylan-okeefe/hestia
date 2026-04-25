@@ -5,6 +5,7 @@ import json
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from hestia.context.builder import ContextBuilder
@@ -276,8 +277,6 @@ class Orchestrator:
             and self._style_config is not None
             and self._style_config.enabled
         ):
-            from datetime import timedelta
-
             since = utcnow() - timedelta(days=self._style_config.lookback_days)
             turn_count = await self._style_store.count_turns_in_window(
                 session.platform, session.platform_user, since
