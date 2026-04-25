@@ -2,9 +2,11 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, TypeVar
 
 from hestia.tools.types import ToolHandler
+
+F = TypeVar("F", bound=Callable[..., Any])
 
 
 @dataclass
@@ -33,7 +35,7 @@ def tool(
     ordering: str = "concurrent",
     tags: list[str] | None = None,
     capabilities: list[str] | None = None,
-) -> Callable[[ToolHandler], ToolHandler]:
+) -> Callable[[F], F]:
     """Decorator to register a tool.
 
     Attaches ToolMetadata to the function so it can be discovered and registered
@@ -54,7 +56,7 @@ def tool(
         Decorator function
     """
 
-    def decorator(func: ToolHandler) -> ToolHandler:
+    def decorator(func: F) -> F:
         meta = ToolMetadata(
             name=name,
             public_description=public_description,

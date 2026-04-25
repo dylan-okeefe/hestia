@@ -229,4 +229,4 @@ def make_delegate_task_tool(
             # Archive the subagent session
             await session_store.archive_session(subagent_session.id)
 
-    return cast("Callable[..., Coroutine[Any, Any, str]]", delegate_task)
+    return delegate_task

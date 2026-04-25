@@ -1,7 +1,7 @@
 """Memory tools — search and save to long-term memory."""
 
 from collections.abc import Callable, Coroutine
-from typing import Any, cast
+from typing import Any
 
 from hestia.memory.store import MemoryStore
 from hestia.runtime_context import (
@@ -48,7 +48,7 @@ def make_search_memory_tool(
             lines.append(f"[{mem.id}] ({date}){tags} {mem.content}")
         return "\n".join(lines)
 
-    return cast("Callable[..., Coroutine[Any, Any, str]]", search_memory)
+    return search_memory
 
 
 def make_save_memory_tool(
@@ -91,7 +91,7 @@ def make_save_memory_tool(
         preview = content[:80] + ("..." if len(content) > 80 else "")
         return f"Saved memory {mem.id}: {preview}"
 
-    return cast("Callable[..., Coroutine[Any, Any, str]]", save_memory)
+    return save_memory
 
 
 def make_list_memories_tool(
@@ -131,7 +131,7 @@ def make_list_memories_tool(
             lines.append(f"[{mem.id}] ({date}){tags} {mem.content}")
         return "\n".join(lines)
 
-    return cast("Callable[..., Coroutine[Any, Any, str]]", list_memories)
+    return list_memories
 
 
 def make_delete_memory_tool(store: MemoryStore) -> Callable[..., Coroutine[Any, Any, str]]:
@@ -151,4 +151,4 @@ def make_delete_memory_tool(store: MemoryStore) -> Callable[..., Coroutine[Any, 
             return f"No memory with id {memory_id}"
         return f"Deleted memory {memory_id}"
 
-    return cast("Callable[..., Coroutine[Any, Any, str]]", delete_memory)
+    return delete_memory

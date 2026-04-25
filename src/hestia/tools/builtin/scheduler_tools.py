@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Coroutine
-from typing import Any, cast
+from typing import Any
 
 from hestia.persistence.scheduler import SchedulerStore
 from hestia.persistence.sessions import SessionStore
@@ -78,7 +78,7 @@ def make_create_scheduled_task_tool(
             f"  Notify: {'yes' if notify else 'no'}"
         )
 
-    return cast("Callable[..., Coroutine[Any, Any, str]]", create_scheduled_task)
+    return create_scheduled_task
 
 
 def make_list_scheduled_tasks_tool(
@@ -130,7 +130,7 @@ def make_list_scheduled_tasks_tool(
             )
         return "\n".join(lines)
 
-    return cast("Callable[..., Coroutine[Any, Any, str]]", list_scheduled_tasks)
+    return list_scheduled_tasks
 
 
 def make_disable_scheduled_task_tool(
@@ -177,7 +177,7 @@ def make_disable_scheduled_task_tool(
             return f"Disabled scheduled task {task_id}."
         return f"Error: Could not disable task {task_id}."
 
-    return cast("Callable[..., Coroutine[Any, Any, str]]", disable_scheduled_task)
+    return disable_scheduled_task
 
 
 def make_enable_scheduled_task_tool(
@@ -222,7 +222,7 @@ def make_enable_scheduled_task_tool(
             return f"Enabled scheduled task {task_id}."
         return f"Error: Could not enable task {task_id}."
 
-    return cast("Callable[..., Coroutine[Any, Any, str]]", enable_scheduled_task)
+    return enable_scheduled_task
 
 
 def make_delete_scheduled_task_tool(
@@ -268,4 +268,4 @@ def make_delete_scheduled_task_tool(
             return f"Deleted scheduled task {task_id}."
         return f"Error: Could not delete task {task_id}."
 
-    return cast("Callable[..., Coroutine[Any, Any, str]]", delete_scheduled_task)
+    return delete_scheduled_task
