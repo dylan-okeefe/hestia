@@ -12,8 +12,8 @@ from hestia.app import (
     CliConfirmHandler,
     CliResponseHandler,
     _compile_and_set_memory_epoch,
-    _handle_meta_command,
 )
+from hestia.commands.meta import _handle_meta_command
 from hestia.core.types import Message
 from hestia.errors import HestiaError
 
