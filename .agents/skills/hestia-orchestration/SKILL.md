@@ -116,18 +116,28 @@ src/hestia/
 
 ## When to ask Dylan vs. proceed
 
+**Default stance: proceed without asking.** You are the orchestrator. Keep
+loops moving sequentially (§0, §1, §2, ...) without waiting for Dylan's input
+between sections. Spawn subagents, run quality gates, fix issues, and commit.
+Only stop for the categories below.
+
 **Proceed without asking:**
 - Trivial fixes (typos, single-line type corrections, test gaps)
 - Refactoring that preserves behavior and passes all gates
 - Moving a TODO comment or updating a docstring
+- Continuing to the next section of an in-flight spec
+- Adding tests for uncovered paths discovered during review
+- Minor spec adjustments that don't change scope or architecture
 
 **Ask Dylan:**
+- Something is horribly wrong (tests broken in ways you can't fix, data loss
+  risk, security vulnerability, or the spec is self-contradicting)
 - New dependencies or version bumps
 - Changes to trust/security policy behavior
 - Schema migrations that alter existing data
 - Removing or changing public API surfaces
 - Anything that costs money (API keys, new services)
-- When a spec is ambiguous or contradictory
+- When a spec is ambiguous or contradictory and you cannot resolve it
 
 ## Handoff files
 
