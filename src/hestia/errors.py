@@ -160,12 +160,10 @@ def classify_error(exc: Exception) -> tuple[FailureClass, str]:
         if isinstance(exc, exc_type):
             return fc, sev
 
-    # Fallback string-match for policy failures and legacy call sites that
-    # still raise bare Exception("Max iterations ... exceeded"). Any new code
-    # should raise MaxIterationsError / PolicyFailureError directly so the
-    # classifier can dispatch on type.
-    error_msg = str(exc).lower()
-    if "max iterations" in error_msg:
-        return FailureClass.MAX_ITERATIONS, "medium"
+    # Lazy import to avoid circular dependency with web_search module.
+    from hestia.tools.builtin.web_search import WebSearchError
+
+    if isinstance(exc, WebSearchError):
+        return FailureClass.TOOL_ERROR, "medium"
 
     return FailureClass.UNKNOWN, "medium"
