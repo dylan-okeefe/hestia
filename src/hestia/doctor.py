@@ -109,7 +109,7 @@ async def _check_dependencies_in_sync(app: CliAppContext) -> CheckResult:
 
     Uses ``asyncio.create_subprocess_exec`` so concurrent ``doctor``
     checks don't stall the event loop for the full 10s ``uv pip check``
-    runtime (Copilot C-5).
+    runtime.
     """
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -182,7 +182,7 @@ async def _check_config_schema(app: CliAppContext) -> CheckResult:
 
 
 async def _check_allowed_roots_cwd(app: CliAppContext) -> CheckResult:
-    """Warn when ``allowed_roots`` is ``[\".]`` under a broad CWD (Copilot M-10)."""
+    """Warn when ``allowed_roots`` is ``[\".]`` under a broad CWD."""
     roots = app.config.storage.allowed_roots
     if "." not in roots:
         return CheckResult("allowed_roots_cwd", True, "")
@@ -242,8 +242,8 @@ async def _check_llamacpp_reachable(app: CliAppContext) -> CheckResult:
     """Hit the llama.cpp /health endpoint when configured.
 
     Uses ``httpx.AsyncClient`` so the 2 s health-check timeout does not
-    block the event loop for other concurrent doctor checks (Copilot
-    C-5). Retains the same error classification as the sync version.
+    block the event loop for other concurrent doctor checks.
+    Retains the same error classification as the sync version.
     """
     base_url = app.config.inference.base_url
     if not base_url:

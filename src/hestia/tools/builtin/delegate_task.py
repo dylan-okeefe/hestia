@@ -154,7 +154,7 @@ def make_delegate_task_tool(
 
             # Get orchestrator via factory. Each delegation gets a fresh
             # orchestrator (and typically its own SlotManager) for isolation;
-            # VRAM is not shared with the parent turn (Copilot M-11).
+            # VRAM is not shared with the parent turn.
             orchestrator = orchestrator_factory()
 
             # Run the subagent with timeout (respond_callback must be async — engine awaits it)

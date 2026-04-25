@@ -102,7 +102,7 @@ class EmailAdapter:
     def _smtp_connect(self) -> smtplib.SMTP:
         """Open an authenticated SMTP connection.
 
-        Connection type is chosen by ``smtp_port`` (Copilot C-6):
+        Connection type is chosen by ``smtp_port``:
 
         * Port 465 → ``smtplib.SMTP_SSL`` (implicit TLS). This is the
           preferred path: TLS is negotiated at connect time, so every
@@ -275,13 +275,11 @@ class EmailAdapter:
                 if not uids:
                     return []
 
-                # M-7 (2026-04-20): IMAP SEARCH does **not** guarantee
-                # UIDs come back in arrival / INTERNALDATE order. The old
-                # ``uids[-limit:]`` + ``reversed(uids)`` trick was relying
-                # on that, which silently broke on servers that return
-                # them in another order (e.g. after expunges).
-                # Fix: fetch INTERNALDATE for every matched UID, sort
-                # newest-first on the client, then take ``limit``.
+                # IMAP SEARCH does **not** guarantee UIDs come back in arrival /
+                # INTERNALDATE order. The old ``uids[-limit:]`` + ``reversed(uids)`` trick
+                # was relying on that, which silently broke on servers that return them in
+                # another order (e.g. after expunges). Fix: fetch INTERNALDATE for every
+                # matched UID, sort newest-first on the client, then take ``limit``.
                 sortable: list[tuple[datetime, str]] = []
                 for uid in uids:
                     uid_str = uid.decode() if isinstance(uid, bytes) else str(uid)

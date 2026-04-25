@@ -51,8 +51,8 @@ class TraceStore:
     The ``traces`` and ``egress_events`` tables are declared in
     :mod:`hestia.persistence.schema` and created by
     :meth:`Database.create_tables`. :meth:`create_table` here is kept as a
-    no-op shim for backward compatibility with callers that predate the H-10
-    DDL consolidation (2026-04-20). New code should rely on
+    no-op shim for backward compatibility with callers that predate the DDL
+    consolidation. New code should rely on
     ``Database.create_tables`` exclusively.
     """
 
@@ -65,7 +65,7 @@ class TraceStore:
         Schema creation now lives in
         :meth:`hestia.persistence.db.Database.create_tables` via the shared
         SQLAlchemy metadata. The duplicated raw DDL that lived here was the
-        source of drift flagged by the Copilot audit (H-10, 2026-04-20).
+        source of drift flagged by the Copilot audit.
         """
         return None
 

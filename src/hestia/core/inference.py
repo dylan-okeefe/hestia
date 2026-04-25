@@ -198,10 +198,9 @@ class InferenceClient:
             raise InferenceServerError(f"Chat completion failed: {e.response.text}") from e
 
         data = response.json()
-        # Copilot H-1: guard the empty-choices case. llama-server (and
-        # OpenAI-compatible proxies) can return ``{"choices": []}`` on
-        # certain sampler configurations or when the request is refused
-        # by a safety layer; indexing [0] unguarded raises IndexError
+        # Guard the empty-choices case: llama-server (and OpenAI-compatible proxies)
+        # can return ``{"choices": []}`` on certain sampler configurations or when the
+        # request is refused by a safety layer; indexing [0] unguarded raises IndexError
         # with no useful provenance.
         choices = data.get("choices", [])
         if not choices:
@@ -214,10 +213,9 @@ class InferenceClient:
         if raw_tool_calls:
             for tc in raw_tool_calls:
                 fn = tc["function"]
-                # Copilot H-2: models occasionally emit tool_call arguments
-                # as a JSON scalar (string, number, null) instead of an
-                # object. ``**arguments`` would then raise TypeError
-                # downstream without naming the tool. Validate here.
+                # Models occasionally emit tool_call arguments as a JSON scalar (string,
+                # number, null) instead of an object. ``**arguments`` would then raise
+                # TypeError downstream without naming the tool. Validate here.
                 try:
                     arguments = json.loads(fn["arguments"])
                 except json.JSONDecodeError as exc:

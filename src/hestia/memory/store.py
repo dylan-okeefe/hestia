@@ -355,14 +355,11 @@ class MemoryStore:
             if platform_user is None:
                 platform_user = ctx_platform_user
 
-        # Invariant (M-13 / 2026-04-20): every entry appended to
-        # ``where_clauses`` below is a *literal* string fragment chosen by
-        # this function's own control flow — never derived from caller
-        # input. All user-supplied values (`tag`, `platform`,
-        # `platform_user`) flow through ``params`` and are bound by
-        # SQLAlchemy via the ``:name`` placeholders. That is what makes
-        # the f-string assembly below safe despite Copilot H-13's
-        # concern.
+        # Every entry appended to ``where_clauses`` below is a *literal* string fragment
+        # chosen by this function's own control flow — never derived from caller input. All
+        # user-supplied values (`tag`, `platform`, `platform_user`) flow through ``params``
+        # and are bound by SQLAlchemy via the ``:name`` placeholders. That is what makes
+        # the f-string assembly below safe.
         params: dict[str, Any] = {"limit": limit}
         where_clauses: list[str] = []
 

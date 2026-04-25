@@ -106,14 +106,12 @@ class ToolRegistry:
         if meta.handler is None:
             raise ToolError(f"Tool {name!r} has no handler")
 
-        # Copilot H-9: the prior handler catch was restricted to
-        # (TypeError, ValueError, OSError), so RuntimeError, httpx.HTTPError,
-        # application-level exceptions from third-party tools, etc. escaped
-        # the registry and aborted the whole turn. We now catch broad
-        # Exception (but NOT BaseException — CancelledError and
-        # KeyboardInterrupt must still propagate) and wrap in
-        # ToolExecutionError so the orchestrator can dispatch on type
-        # via ToolCallResult.error_type instead of string-matching.
+        # The prior handler catch was restricted to (TypeError, ValueError, OSError),
+        # so RuntimeError, httpx.HTTPError, application-level exceptions from third-party
+        # tools, etc. escaped the registry and aborted the whole turn. We now catch broad
+        # Exception (but NOT BaseException — CancelledError and KeyboardInterrupt must
+        # still propagate) and wrap in ToolExecutionError so the orchestrator can dispatch
+        # on type via ToolCallResult.error_type instead of string-matching.
         try:
             raw = await meta.handler(**arguments)
         except asyncio.CancelledError:
@@ -134,7 +132,7 @@ class ToolRegistry:
 
         ``ArtifactStore.store`` is synchronous (writes bytes + JSON metadata
         to disk); we offload it via ``asyncio.to_thread`` so the event
-        loop stays responsive during large-artifact writes (Copilot C-3).
+        loop stays responsive during large-artifact writes.
         """
         size = len(content)
 

@@ -19,7 +19,7 @@ class EmailConfigError(ValueError):
 
 
 def validate_inference_model_name(model_name: str) -> None:
-    """Reject the reserved ``dummy`` model name unless explicitly allowed (H-5).
+    """Reject the reserved ``dummy`` model name unless explicitly allowed.
 
     The literal ``dummy`` is used only in tests behind ``HESTIA_ALLOW_DUMMY_MODEL=1``.
     """
