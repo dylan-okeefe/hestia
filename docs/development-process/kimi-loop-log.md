@@ -9,6 +9,30 @@
 
 
 
+## 2026-04-25 — L55: Code Cleanup & Release Prep
+
+**Outcome:** All 5 sections completed and merged to `develop`.
+
+**Scope authorization:** `docs/development-process/kimi-loops/L55-code-cleanup-release-prep.md`
+
+**Implementation pattern:** Sequential subagent delegation with review between
+each chunk. Each subagent got 1 section (or 2 small related sections) to stay
+well under the 100-step limit.
+
+**Subagent chunks:**
+1. §5 — `_handle_meta_command` → `commands/meta.py` (ab6979d)
+2. §2 — `TurnContext.session` non-optional (7fb2a52)
+3. §1 — Strip 20 review-tracking comments (6d9a745)
+4. §3 — `SkillIndexBuilder` canonical formatting (a20c06d)
+5. §4 — `@tool` TypeVar + 10 `cast()` removals (d644c9b)
+
+**Quality gate:**
+- Tests: 120 passed (targeted subset)
+- Mypy: 0 new errors
+- Ruff: 0 new issues
+
+**Branch:** `feature/l55-code-cleanup-release-prep` — **merged to `develop`.**
+
 ## 2026-04-25 — L54: Async Safety & Small Bugs
 
 **Outcome:** All 10 sections from the v0.10.0 pre-release evaluation fixed and

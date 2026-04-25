@@ -2,42 +2,42 @@
 
 **Orchestrator:** Kimi (self-orchestrating via subagents)
 
-**Last set by:** Kimi — 2026-04-25 (v0.10.0 pre-release evaluation processed)
+**Last set by:** Kimi — 2026-04-25 (L55 merged to develop)
 
 ---
 
 ## Current task
 
-**Status:** **ACTIVE — L54 in progress.**
+**Status:** **ACTIVE — L56 queued.**
 
 The v0.10.0 pre-release evaluation identified ~15 bugs, architecture seams,
-and polish items. These have been organized into a 6-loop arc (L54–L59).
+and polish items. Organized into a 6-loop arc (L54–L59).
 
-**L54 and L55** are pre-release hotfixes that merge directly to `develop`.
-**L56–L59** are v0.11 feature-branch work.
+**L54 and L55** are complete and merged to `develop`.
+**L56–L59** are v0.11 feature-branch work (do not merge to develop until
+release-prep).
 
 ### Recently completed (merged to develop):
-- **L47–L52** — ADR normalization, config consistency, orchestrator extract,
-  commands split, test coverage, ContextBuilder decomposition.
+- **L54** — Async safety & small bugs (9 commits, 10 sections)
+- **L55** — Code cleanup & release prep (5 commits, 5 sections)
 - **L53 (ad-hoc)** — Tavily integration, Telegram HTML markdown, DuckDuckGo
   fallback, conversation audit guide.
 
 ---
 
-## Active loop: L55 — Code Cleanup & Release Prep
+## Active loop: L56 — Orchestrator Decomposition
 
-**Branch:** `feature/l55-code-cleanup-release-prep`  
-**Spec:** [`kimi-loops/L55-code-cleanup-release-prep.md`](kimi-loops/L55-code-cleanup-release-prep.md)  
-**Merge target:** `develop`
+**Branch:** `feature/l56-orchestrator-decomposition`  
+**Spec:** [`kimi-loops/L56-orchestrator-decomposition.md`](kimi-loops/L56-orchestrator-decomposition.md)  
+**Merge target:** release-prep (do NOT merge to develop until v0.11 release-prep)
 
 **Scope summary:**
-1. Strip internal review-tracking comments (`# Copilot H-X`, `# M-X`, etc.)
-2. `TurnContext.session` should be non-optional
-3. `SkillIndexBuilder` divergence — one canonical format method
-4. Tool factory return type cleanup (remove `cast()`)
-5. Meta-command handler relocation to `commands/meta.py`
+Decompose `orchestrator/engine.py` (982 lines, 15+ concerns) into three phases:
+1. **TurnAssembly** — context building, style prefix, voice prompt, slot acquisition
+2. **TurnExecution** — inference loop, tool dispatch, confirmation gating, injection scanning
+3. **TurnFinalization** — trace recording, failure bundles, slot save, handoff summary
 
-**Quality gates:** `pytest`, `mypy`, `ruff` — all green before merge.
+**Quality gates:** `pytest`, `mypy`, `ruff` — all green.
 
 ---
 
@@ -45,7 +45,6 @@ and polish items. These have been organized into a 6-loop arc (L54–L59).
 
 | Loop | Branch | Spec | Merge target |
 |------|--------|------|--------------|
-| L56 | `feature/l56-orchestrator-decomposition` | [`kimi-loops/L56-orchestrator-decomposition.md`](kimi-loops/L56-orchestrator-decomposition.md) | release-prep |
 | L57 | `feature/l57-app-bootstrap-cleanup` | [`kimi-loops/L57-app-bootstrap-cleanup.md`](kimi-loops/L57-app-bootstrap-cleanup.md) | release-prep |
 | L58 | `feature/l58-config-and-ux-polish` | [`kimi-loops/L58-config-and-ux-polish.md`](kimi-loops/L58-config-and-ux-polish.md) | release-prep |
 | L59 | `feature/l59-security-docs-and-infrastructure` | [`kimi-loops/L59-security-docs-and-infrastructure.md`](kimi-loops/L59-security-docs-and-infrastructure.md) | release-prep |
@@ -57,10 +56,6 @@ and polish items. These have been organized into a 6-loop arc (L54–L59).
 ### Voice Phase B (Discord) → v0.11+ candidate
 - Specified in `v0.8.0-release-and-voice-launch.md` Track 5 Phase B.
 - **Blocked on Dylan-side prereqs** (Discord token, guild/channel IDs, etc.).
-
-### Deferred (pre-existing backlog)
-- **L39** — `hestia upgrade` command.
-- **L44** — Dogfooding journal rollup.
 
 ---
 
