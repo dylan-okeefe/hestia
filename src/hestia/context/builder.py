@@ -266,10 +266,14 @@ class ContextBuilder:
             )
 
         if self._join_overhead is None:
-            self._join_overhead = await self._compute_join_overhead(
+            overhead = await self._compute_join_overhead(
                 history, protected_top, protected_bottom
             )
-        _join_overhead = self._join_overhead
+            # Only cache when we had enough messages to measure, or when the
+            # overhead is non-zero (indicating a real measurement).
+            if overhead != 0 or len(history) >= 2 or len(protected_top + protected_bottom) >= 2:
+                self._join_overhead = overhead
+        _join_overhead = self._join_overhead or 0
 
         available_budget = raw_budget - protected_count
 

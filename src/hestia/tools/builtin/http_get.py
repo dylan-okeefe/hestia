@@ -219,5 +219,6 @@ async def _record_egress(url: str, status: int, size: int) -> None:
                 status=status,
                 size=size,
             )
-        except Exception:
+        except Exception:  # noqa: BLE001
+            # Egress audit is best-effort; never fail the tool call because of it.
             logger.debug("Failed to record egress event", exc_info=True)

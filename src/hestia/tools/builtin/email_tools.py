@@ -372,7 +372,8 @@ def make_email_search_and_read_tool(adapter: EmailAdapter) -> Any:
             for uid in uids[:limit]:
                 try:
                     msg = await adapter.read_message(uid)
-                except Exception:
+                except Exception:  # noqa: BLE001
+                    # Skip one bad message rather than failing the entire batch.
                     logger.warning("Failed to read email uid=%s; skipping", uid, exc_info=True)
                     continue
                 body = msg.get("body", "")

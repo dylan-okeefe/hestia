@@ -91,7 +91,8 @@ class MemoryStore:
                 exc,
             )
             self._fts5_available = False
-        except Exception:
+        except Exception:  # noqa: BLE001
+            # FTS5 probe failure should not block startup.
             logger.exception(
                 "Unexpected error while probing SQLite FTS5 support — "
                 "treating as unavailable so startup can proceed, but this "
@@ -120,9 +121,9 @@ class MemoryStore:
                 await conn.execute(sa.text("SELECT 1 FROM memory LIMIT 1"))
                 try:
                     await conn.execute(sa.text("SELECT platform FROM memory LIMIT 1"))
-                except Exception:
+                except sa.exc.OperationalError:
                     old_schema_exists = True
-            except Exception:
+            except sa.exc.OperationalError:
                 logger.debug("memory table does not exist (fresh database)", exc_info=True)
 
             if old_schema_exists and self._fts5_available:

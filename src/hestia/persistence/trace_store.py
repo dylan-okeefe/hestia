@@ -183,7 +183,7 @@ class TraceStore:
         """
         try:
             domain = urlparse(url).hostname or "unknown"
-        except Exception:
+        except ValueError:
             domain = "unknown"
 
         sql = sa.text(

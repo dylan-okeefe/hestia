@@ -58,6 +58,7 @@ def mock_app(sample_session):
     app.trace_store = trace_store
 
     app.epoch_compiler = None
+    app.close = AsyncMock()
 
     orchestrator = MagicMock()
     turn = MagicMock()

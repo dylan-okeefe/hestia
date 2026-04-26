@@ -432,7 +432,8 @@ async def _check_skills_status(app: CliAppContext) -> CheckResult:
                 "set_skill_index_prefix" in source
                 and "skill_index_builder" in source
             )
-        except Exception:
+        except Exception:  # noqa: BLE001
+            # Introspection may fail for many reasons; doctor checks must not crash.
             pass
 
         if not wired:

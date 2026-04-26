@@ -53,7 +53,8 @@ class PlatformNotifier:
             await bot.send_message(chat_id=int(platform_user), text=text)
             logger.debug("Sent Telegram notification to %s", platform_user)
             return True
-        except Exception:
+        except Exception:  # noqa: BLE001
+            # Platform notifications are best-effort; log and continue.
             logger.exception("Failed to send Telegram notification to %s", platform_user)
             return False
 
@@ -83,6 +84,7 @@ class PlatformNotifier:
                 response.raise_for_status()
                 logger.debug("Sent Matrix notification to %s", platform_user)
                 return True
-        except Exception:
+        except Exception:  # noqa: BLE001
+            # Platform notifications are best-effort; log and continue.
             logger.exception("Failed to send Matrix notification to %s", platform_user)
             return False
