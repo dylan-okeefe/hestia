@@ -106,28 +106,30 @@ class TraceStore:
             await conn.commit()
 
     async def list_recent(
-        self, limit: int = 20, outcome: str | None = None
+        self, limit: int = 20, outcome: str | None = None, session_id: str | None = None
     ) -> list[TraceRecord]:
-        """List recent traces with optional outcome filter."""
+        """List recent traces with optional outcome and session filters."""
+        clauses: list[str] = []
+        params: dict[str, Any] = {"limit": limit}
+
         if outcome:
-            sql = sa.text(
-                "SELECT id, session_id, turn_id, started_at, ended_at, "
-                "user_input_summary, tools_called, tool_call_count, delegated, outcome, "
-                "artifact_handles, prompt_tokens, completion_tokens, reasoning_tokens, "
-                "total_duration_ms "
-                "FROM traces WHERE outcome = :outcome "
-                "ORDER BY started_at DESC LIMIT :limit"
-            )
-            params = {"outcome": outcome, "limit": limit}
-        else:
-            sql = sa.text(
-                "SELECT id, session_id, turn_id, started_at, ended_at, "
-                "user_input_summary, tools_called, tool_call_count, delegated, outcome, "
-                "artifact_handles, prompt_tokens, completion_tokens, reasoning_tokens, "
-                "total_duration_ms "
-                "FROM traces ORDER BY started_at DESC LIMIT :limit"
-            )
-            params = {"limit": limit}
+            clauses.append("outcome = :outcome")
+            params["outcome"] = outcome
+        if session_id:
+            clauses.append("session_id = :session_id")
+            params["session_id"] = session_id
+
+        base_sql = (
+            "SELECT id, session_id, turn_id, started_at, ended_at, "
+            "user_input_summary, tools_called, tool_call_count, delegated, outcome, "
+            "artifact_handles, prompt_tokens, completion_tokens, reasoning_tokens, "
+            "total_duration_ms FROM traces"
+        )
+        if clauses:
+            base_sql += " WHERE " + " AND ".join(clauses)
+        base_sql += " ORDER BY started_at DESC LIMIT :limit"
+
+        sql = sa.text(base_sql)
 
         async with self._db.engine.connect() as conn:
             result = await conn.execute(sql, params)

@@ -13,6 +13,7 @@ from hestia.app import (
     CliResponseHandler,
     _compile_and_set_memory_epoch,
 )
+from hestia.commands._shared import _format_token_usage
 from hestia.commands.meta import _handle_meta_command
 from hestia.core.types import Message
 from hestia.errors import HestiaError
@@ -64,11 +65,16 @@ async def cmd_chat(app: CliAppContext, new_session: bool = False) -> None:
                 continue
 
             user_message = Message(role="user", content=user_input)
-            await orchestrator.process_turn(
+            turn = await orchestrator.process_turn(
                 session=session,
                 user_message=user_message,
                 respond_callback=response_handler,
             )
+            if app.verbose:
+                trace = await app.trace_store.get_by_turn(turn.id)
+                usage = _format_token_usage(trace)
+                if usage:
+                    click.echo(usage)
         except KeyboardInterrupt:
             click.echo("\nUse /quit or /exit to end the session.")
         except (HestiaError, httpx.HTTPError, OSError) as e:
@@ -102,8 +108,13 @@ async def cmd_ask(app: CliAppContext, message: str) -> None:
 
     response_handler = CliResponseHandler(verbose=app.verbose)
 
-    await orchestrator.process_turn(
+    turn = await orchestrator.process_turn(
         session=session,
         user_message=user_message,
         respond_callback=response_handler,
     )
+    if app.verbose:
+        trace = await app.trace_store.get_by_turn(turn.id)
+        usage = _format_token_usage(trace)
+        if usage:
+            click.echo(usage)

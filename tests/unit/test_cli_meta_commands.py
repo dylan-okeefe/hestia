@@ -1,12 +1,14 @@
 """Unit tests for CLI meta-commands."""
 
 from datetime import datetime
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from hestia.core.types import Session, SessionState, SessionTemperature
 from hestia.persistence.db import Database
 from hestia.persistence.sessions import SessionStore
+from hestia.persistence.trace_store import TraceRecord
 
 # Import the handler function - we need to import it from the CLI module
 # Since it's an async function inside cli.py, we'll test it directly
@@ -138,3 +140,112 @@ async def test_meta_command_with_whitespace(store, sample_session):
     should_exit, _ = await _handle_meta_command("  /quit  ", sample_session, store)
 
     assert should_exit is True
+
+
+@pytest.mark.asyncio
+async def test_meta_command_tokens_no_app(store, sample_session, capsys):
+    """/tokens without app should print error."""
+    from hestia.app import _handle_meta_command
+
+    should_exit, _ = await _handle_meta_command("/tokens", sample_session, store)
+
+    assert should_exit is False
+
+
+@pytest.mark.asyncio
+async def test_meta_command_tokens_no_trace_store(store, sample_session, capsys):
+    """/tokens with no trace store should print not available."""
+    from hestia.app import _handle_meta_command
+
+    app = MagicMock()
+    app.trace_store = None
+
+    should_exit, _ = await _handle_meta_command("/tokens", sample_session, store, app)
+
+    assert should_exit is False
+    captured = capsys.readouterr()
+    assert "Trace store not available" in captured.out
+
+
+@pytest.mark.asyncio
+async def test_meta_command_tokens_empty(store, sample_session, capsys):
+    """/tokens with no traces should print no usage yet."""
+    from hestia.app import _handle_meta_command
+
+    app = MagicMock()
+    app.trace_store = MagicMock()
+    app.trace_store.list_recent = AsyncMock(return_value=[])
+
+    should_exit, _ = await _handle_meta_command("/tokens", sample_session, store, app)
+
+    assert should_exit is False
+    captured = capsys.readouterr()
+    assert "No token usage recorded for this session yet" in captured.out
+
+
+@pytest.mark.asyncio
+async def test_meta_command_tokens_with_usage(store, sample_session, capsys):
+    """/tokens should display formatted token usage."""
+    from hestia.app import _handle_meta_command
+
+    trace = TraceRecord(
+        id="trace-1",
+        session_id=sample_session.id,
+        turn_id="turn-1",
+        started_at=datetime.now(),
+        ended_at=datetime.now(),
+        user_input_summary="hello",
+        tools_called=[],
+        tool_call_count=0,
+        delegated=False,
+        outcome="success",
+        artifact_handles=[],
+        prompt_tokens=1234,
+        completion_tokens=567,
+        reasoning_tokens=None,
+        total_duration_ms=1000,
+    )
+
+    app = MagicMock()
+    app.trace_store = MagicMock()
+    app.trace_store.list_recent = AsyncMock(return_value=[trace])
+
+    should_exit, _ = await _handle_meta_command("/tokens", sample_session, store, app)
+
+    assert should_exit is False
+    captured = capsys.readouterr()
+    assert "Tokens: 1,234 prompt + 567 completion = 1,801 total" in captured.out
+
+
+@pytest.mark.asyncio
+async def test_meta_command_tokens_with_reasoning(store, sample_session, capsys):
+    """/tokens should include reasoning tokens when present."""
+    from hestia.app import _handle_meta_command
+
+    trace = TraceRecord(
+        id="trace-1",
+        session_id=sample_session.id,
+        turn_id="turn-1",
+        started_at=datetime.now(),
+        ended_at=datetime.now(),
+        user_input_summary="hello",
+        tools_called=[],
+        tool_call_count=0,
+        delegated=False,
+        outcome="success",
+        artifact_handles=[],
+        prompt_tokens=1234,
+        completion_tokens=567,
+        reasoning_tokens=89,
+        total_duration_ms=1000,
+    )
+
+    app = MagicMock()
+    app.trace_store = MagicMock()
+    app.trace_store.list_recent = AsyncMock(return_value=[trace])
+
+    should_exit, _ = await _handle_meta_command("/tokens", sample_session, store, app)
+
+    assert should_exit is False
+    captured = capsys.readouterr()
+    assert "Tokens: 1,234 prompt + 567 completion (+ 89 reasoning) = 1,890 total" in captured.out

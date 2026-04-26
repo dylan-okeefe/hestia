@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+from hestia.persistence.trace_store import TraceRecord
+
 
 def _format_datetime(dt: datetime | None) -> str:
     """Format a datetime for display in the CLI (local time with zone)."""
@@ -34,3 +36,26 @@ def _parse_since(since: str) -> datetime:
         return now - timedelta(hours=hours)
     # fallback: assume days
     return now - timedelta(days=int(since))
+
+
+def _format_token_usage(trace: TraceRecord | None) -> str | None:
+    """Format token usage from a TraceRecord for CLI display.
+
+    Returns None if the trace has no token data.
+    """
+    if trace is None:
+        return None
+    if trace.prompt_tokens is None and trace.completion_tokens is None:
+        return None
+
+    prompt = trace.prompt_tokens or 0
+    completion = trace.completion_tokens or 0
+    reasoning = trace.reasoning_tokens or 0
+    total = prompt + completion + reasoning
+
+    if reasoning > 0:
+        return (
+            f"Tokens: {prompt:,} prompt + {completion:,} completion "
+            f"(+ {reasoning:,} reasoning) = {total:,} total"
+        )
+    return f"Tokens: {prompt:,} prompt + {completion:,} completion = {total:,} total"
