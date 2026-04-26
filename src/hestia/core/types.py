@@ -86,7 +86,9 @@ class ScheduledTask:
 
     def __post_init__(self) -> None:
         if bool(self.cron_expression) and bool(self.fire_at):
-            raise ValueError("Only one of cron_expression or fire_at may be set")
+            raise ValueError("Exactly one of cron_expression or fire_at must be set")
+        if not (bool(self.cron_expression) or bool(self.fire_at)):
+            raise ValueError("Exactly one of cron_expression or fire_at must be set")
 
 
 @dataclass
