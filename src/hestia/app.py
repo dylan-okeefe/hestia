@@ -426,6 +426,7 @@ class CliAppContext:
             proposal_store=self.proposal_store,
             style_store=self.style_store,
             style_config=self.config.style,
+            skill_index_builder=self.skill_index_builder,
         )
 
 
