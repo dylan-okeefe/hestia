@@ -260,6 +260,17 @@ class SessionStore:
                 return self._row_to_session(row)
             return None
 
+    async def get_sessions_batch(self, session_ids: list[str]) -> list[Session]:
+        """Get multiple sessions by ID in a single query."""
+        if not session_ids:
+            return []
+        query = sa.select(sessions).where(sessions.c.id.in_(session_ids))
+
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(query)
+            rows = result.fetchall()
+            return [self._row_to_session(row) for row in rows]
+
     async def append_message(self, session_id: str, msg: Message) -> None:
         """Append a message with auto-incrementing idx. Updates last_active_at.
 
