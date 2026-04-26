@@ -13,6 +13,7 @@ import click
 
 from hestia.app import (
     AppContext,
+    CliAppContext,
     async_command,
     make_app,
 )
@@ -30,6 +31,8 @@ from hestia.commands import (
     cmd_failures_list,
     cmd_failures_summary,
     cmd_health,
+    cmd_history_list,
+    cmd_history_show,
     cmd_init,
     cmd_policy_show,
     cmd_reflection_accept,
@@ -616,6 +619,27 @@ async def doctor(app: AppContext, plain: bool) -> None:
     exit_code = await cmd_doctor(app, plain=plain)
     if exit_code != 0:
         sys.exit(exit_code)
+
+# History command
+@cli.command(name="history")
+@click.argument("session_id", required=False)
+@click.option("--limit", type=int, default=20, help="Number of sessions to list.")
+@click.option("--json", "output_json", is_flag=True, help="Output as JSON.")
+@click.pass_obj
+@async_command
+async def history(
+    app: CliAppContext, session_id: str | None, limit: int, output_json: bool
+) -> None:
+    """List recent sessions or show a conversation.
+
+    Without SESSION_ID: lists recent sessions.
+    With SESSION_ID: prints the conversation for that session.
+    """
+    if session_id:
+        await cmd_history_show(app, session_id, output_json)
+    else:
+        await cmd_history_list(app, limit, output_json)
+
 
 # Reflection commands
 @cli.group(name="reflection")

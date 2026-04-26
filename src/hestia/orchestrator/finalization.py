@@ -52,6 +52,30 @@ class TurnFinalization:
         generic message to avoid leaking internal details (SQL errors,
         file paths, stack traces) to end users.
         """
+        from hestia.errors import (
+            ContextTooLargeError,
+            InferenceTimeoutError,
+            MaxIterationsError,
+            PolicyFailureError,
+            ToolExecutionError,
+        )
+
+        if isinstance(error, InferenceTimeoutError):
+            return "The AI is taking longer than expected. Try again in a moment."
+        if isinstance(error, ContextTooLargeError):
+            return (
+                "Our conversation has grown very long. I'll summarize and continue "
+                "— just ask your next question."
+            )
+        if isinstance(error, ToolExecutionError):
+            return (
+                f"I tried to use the {error.tool_name} tool but it failed. "
+                f"You can retry or try a different approach."
+            )
+        if isinstance(error, MaxIterationsError):
+            return "I'm having trouble responding right now. Please try again."
+        if isinstance(error, PolicyFailureError):
+            return "I'm having trouble responding right now. Please try again."
         if isinstance(error, HestiaError):
             return str(error)
         return "Something went wrong. The operator has been notified."

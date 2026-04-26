@@ -9,6 +9,22 @@
 
 
 
+## 2026-04-26 — L74 Complete (UX Gaps & Config Validation)
+
+**Outcome:** Added history command, startup config validation, and better error messages.
+
+**Changes:**
+- `hestia history [session_id]` — lists sessions or shows conversation; supports `--json`
+- `SessionStore.list_sessions()` for recent session retrieval
+- `HestiaConfigError` + `_validate_config_at_startup()` — catches broken config before subsystem creation
+- `sanitize_user_error()` maps common failures to actionable user-facing messages
+
+**Quality gate:** 1057 passed, 6 skipped; ruff clean; mypy clean.
+
+**Branch:** `feature/l74-ux-gaps-and-config-validation`
+
+---
+
 ## 2026-04-26 — L72 Complete (Tool Call Boundaries & SSRF Defense)
 
 **Outcome:** Added tool-call cap and made curl_cffi fallback opt-in.

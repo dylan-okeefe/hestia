@@ -7,6 +7,12 @@ class EmailConfigError(ValueError):
     """Raised when email configuration is invalid."""
 
 
+class HestiaConfigError(ValueError):
+    """Raised when the Hestia configuration is invalid or incomplete."""
+
+    pass
+
+
 class HestiaError(Exception):
     """Base class for all Hestia errors."""
 

@@ -653,6 +653,25 @@ class SessionStore:
             await conn.execute(update)
             await conn.commit()
 
+    async def list_sessions(self, limit: int = 20) -> list[Session]:
+        """List recent sessions ordered by last activity.
+
+        Args:
+            limit: Maximum number of sessions to return.
+
+        Returns:
+            List of sessions, most recently active first.
+        """
+        query = (
+            sa.select(sessions)
+            .order_by(sessions.c.last_active_at.desc())
+            .limit(limit)
+        )
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(query)
+            rows = result.fetchall()
+            return [self._row_to_session(row) for row in rows]
+
     # --- Stats queries for CLI status command ---
 
     async def count_sessions_by_state(self) -> dict[str, int]:
