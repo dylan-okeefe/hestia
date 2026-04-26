@@ -2,48 +2,59 @@
 
 **Orchestrator:** Kimi (self-orchestrating via subagents)
 
-**Last set by:** Kimi — 2026-04-25 (L54–L59 arc merged to develop)
+**Last set by:** Kimi — 2026-04-25 (L60–L62 arc complete)
 
 ---
 
 ## Current task
 
-**Status:** **ACTIVE — L60 queued.**
+**Status:** **IDLE — All queued work complete.**
 
-New work arc from `docs/development-process/reviews/docs-and-code-overhaul-april-26.md`.
-Organized into 3 loops (L60–L62).
-
-**L60, L61, L62** are v0.11 feature-branch work (do not merge to develop until
-release-prep).
+The April 26 review arc (L60–L62) and the v0.10.0 pre-release arc (L54–L59)
+are both fully complete on feature branches.
 
 ---
 
-## Active loop: L60 — Documentation Overhaul
+## Completed arcs
 
-**Branch:** `feature/l60-docs-overhaul`  
-**Spec:** [`kimi-loops/L60-docs-overhaul.md`](kimi-loops/L60-docs-overhaul.md)  
-**Merge target:** release-prep
+### L54–L59 (v0.10.0 pre-release evaluation)
+| Loop | Branch | Status |
+|------|--------|--------|
+| L54 | `feature/l54-async-safety-and-small-bugs` | **Merged to `develop`** |
+| L55 | `feature/l55-code-cleanup-release-prep` | **Merged to `develop`** |
+| L56 | `feature/l56-orchestrator-decomposition` | **Merged to `develop`** |
+| L57 | `feature/l57-app-bootstrap-cleanup` | **Merged to `develop`** |
+| L58 | `feature/l58-config-and-ux-polish` | **Merged to `develop`** |
+| L59 | `feature/l59-security-docs-and-infrastructure` | **Merged to `develop`** |
 
-**Scope summary:**
-1. **§1** — README ToC and section reorder
-2. **§2** — Tighten Features section, group tool table by category
-3. **§3** — Create docs/README.md, docs/guides/README.md, docs/handoffs/README.md
-4. **§4** — Remove horizontal rules, verify links, update UPGRADE.md
+### L60–L62 (April 26 review)
+| Loop | Branch | Status |
+|------|--------|--------|
+| L60 | `feature/l60-docs-overhaul` | Complete, pushed |
+| L61 | `feature/l61-bug-fixes-and-cleanup` | Complete, pushed |
+| L62 | `feature/l62-orchestrator-decomposition` | Complete, pushed |
 
 ---
 
-## Queue
+## What's queued (not authorized yet)
 
-| Loop | Branch | Spec | Merge target |
-|------|--------|------|--------------|
-| L61 | `feature/l61-bug-fixes-and-cleanup` | [`kimi-loops/L61-bug-fixes-and-cleanup.md`](kimi-loops/L61-bug-fixes-and-cleanup.md) | release-prep |
-| L62 | `feature/l62-orchestrator-decomposition` | [`kimi-loops/L62-orchestrator-decomposition.md`](kimi-loops/L62-orchestrator-decomposition.md) | release-prep |
+### Merge L60–L62 to develop
+- Sequential merge: L60 → L61 → L62
+- Integration testing
+
+### Release prep → v0.11
+- Integration testing across all merged work
+- Release notes and version bump
+
+### Voice Phase B (Discord) → v0.11+ candidate
+- Specified in `v0.8.0-release-and-voice-launch.md` Track 5 Phase B.
+- **Blocked on Dylan-side prereqs** (Discord token, guild/channel IDs, etc.).
 
 ---
 
 ## Reference
 
-- Review doc: [`../reviews/docs-and-code-overhaul-april-26.md`](../reviews/docs-and-code-overhaul-april-26.md)
+- April 26 review: [`../reviews/docs-and-code-overhaul-april-26.md`](../reviews/docs-and-code-overhaul-april-26.md)
 - Queue: [`../kimi-phase-queue.md`](../kimi-phase-queue.md)
 - Loop log: [`../kimi-loop-log.md`](../kimi-loop-log.md)
 - Release discipline: `.cursorrules`

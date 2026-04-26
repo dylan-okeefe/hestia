@@ -9,6 +9,27 @@
 
 
 
+## 2026-04-25 — L60–L62 Arc Complete (Docs & Code Overhaul)
+
+**Outcome:** All 3 loops from the April 26 review are complete on feature branches.
+
+**Scope authorization:** `docs/development-process/reviews/docs-and-code-overhaul-april-26.md`
+
+**Subagent chunks:**
+1. **L60** — README ToC, reorder, Features tightening, new docs landing pages, UPGRADE.md
+2. **L61** — Four duplicate-definition bugs, WebSearchError inline, list_dir perf fix
+3. **L62** — Wire TurnExecution/TurnFinalization into Orchestrator; engine.py 913 → 305 lines
+
+**Quality gate:**
+- L60: ruff clean, links verified
+- L61: 70 tests passed, ruff/mypy clean
+- L62: 21 orchestrator tests passed, engine.py 305 lines (<350)
+
+**Branches:**
+- `feature/l60-docs-overhaul` — pushed
+- `feature/l61-bug-fixes-and-cleanup` — pushed
+- `feature/l62-orchestrator-decomposition` — pushed
+
 ## 2026-04-25 — L54–L59 Arc Complete
 
 **Outcome:** All 6 loops from the v0.10.0 pre-release evaluation arc are complete
