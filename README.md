@@ -12,6 +12,7 @@ This project came out of my experience wrestling with using/modifying [**Hermes*
 
 ---
 
+
 ## Contents
 - [Who this is for](#who-this-is-for)
 - [Quickstart](#quickstart)
@@ -31,7 +32,6 @@ This project came out of my experience wrestling with using/modifying [**Hermes*
 - [Acknowledgments](#acknowledgments)
 - [License](#license)
 
----
 
 ## Who this is for
 
@@ -39,7 +39,6 @@ Hestia is built for people who run their own infrastructure. If you already have
 
 You probably do not want Hestia if you are looking for a plug-and-play ChatGPT replacement, a multi-tenant SaaS, or a coding agent. There are better tools for all three.
 
----
 
 ## Quickstart
 
@@ -65,7 +64,6 @@ For Telegram, Matrix, or daemon use, copy `deploy/example_config.py` to `config.
 hestia ask "What is the capital of France?"   # Single-shot, no persistence
 ```
 
----
 
 ## Features
 
@@ -146,7 +144,6 @@ Hestia can learn *how* you prefer to communicate without touching your identity 
 
 A framework for defining multi-step workflows as decorated Python functions. Skills declare required tools and capabilities and can be indexed into the system prompt. The framework is functional but not yet invoked automatically; opt in with `HESTIA_EXPERIMENTAL_SKILLS=1` to build your own. A `run_skill` meta-tool and a built-in skill library are planned. See [ADR-024](docs/adr/ADR-024-skills-user-defined-python-functions.md).
 
----
 
 ## Platforms
 
@@ -158,7 +155,6 @@ A framework for defining multi-step workflows as decorated Python functions. Ski
 
 **Email (tool-only)** — Hestia can read mail via IMAP and draft replies via SMTP, with send behind an explicit confirmation. See the [email-setup guide](docs/guides/email-setup.md). Note: email is a *tool* the model calls, not an inbound adapter — there is no listener on forwarded mail yet. See the roadmap for the planned inbound-email adapter.
 
----
 
 ## Voice
 
@@ -182,7 +178,6 @@ Replies that exceed Telegram's 1 MB voice-note limit are iteratively shortened a
 
 Discord voice was attempted as part of the v0.9.x arc and shelved due to DAVE E2EE complexity. The live-call story stays in Telegram territory for now.
 
----
 
 ## Configuration
 
@@ -226,7 +221,6 @@ CLI flags (`--config`, `--db-path`, `--inference-url`, `--verbose`) override con
 
 **PostgreSQL.** SQLite is the default. For PostgreSQL: `uv sync --extra postgres`.
 
----
 
 ## Trust and multi-user
 
@@ -261,7 +255,6 @@ config = HestiaConfig(
 
 See the [multi-user setup guide](docs/guides/multi-user-setup.md) for the full picture, including threat model and troubleshooting.
 
----
 
 ## Running on your hardware
 
@@ -298,7 +291,6 @@ The flags that matter: `-np 4` sets four KV-cache slots (match `SlotConfig.pool_
 
 Real token counting via `/tokenize` — no estimates. The meta-tool pattern — two generic tools instead of eighteen on every request. KV-cache save/restore — warm sessions skip prompt re-ingestion. Automatic artifact overflow — large tool results go to disk. Truncation-first compression — oldest history is dropped at build time, not summarized in the hot path.
 
----
 
 ## Giving Hestia a personality
 
@@ -328,7 +320,6 @@ You are Hestia, a personal assistant running on Dylan's home server.
 
 Hestia compiles the soul document into a compact identity view (bounded by `IdentityConfig.max_tokens`, default 300) cached under `.hestia/compiled_identity.txt`. Keep the soul short (under ~1000 words) and put the most important traits first. Override via `identity=IdentityConfig(soul_path=Path("deploy/SOUL.md"))`, disable with `soul_path=None`, or set `HESTIA_SOUL_PATH` in the environment.
 
----
 
 ## Context budget and long sessions
 
@@ -344,7 +335,6 @@ Both default to off. `TrustConfig.household()` and `developer()` imply both on.
 
 If the protected block alone exceeds the budget, Hestia raises a visible warning instead of silently truncating — reduce `IdentityConfig.max_tokens`, shorten `SOUL.md`, or increase `--ctx-size / --parallel`.
 
----
 
 ## Security
 
@@ -366,7 +356,6 @@ See [`SECURITY.md`](SECURITY.md) for the full policy and responsible-disclosure 
 
 **Config file execution.** Config files are Python modules loaded via `importlib`. That is intentional — it lets you compute values and import secrets from the environment — but treat them like any executable script. Never load a config file from an untrusted source.
 
----
 
 ## Running as a daemon
 
@@ -390,7 +379,6 @@ sudo systemctl enable --now hestia-agent@$USER
 
 `hestia-agent` depends on `hestia-llama`, so systemd starts them in order and restarts on failure. For per-user systemd, swap `sudo` for `--user`. Configure secrets via environment variables (`HESTIA_TELEGRAM_TOKEN`, `EMAIL_APP_PASSWORD`, etc.) so they never live in source control. See [`deploy/README.md`](deploy/README.md) for the full operator walkthrough.
 
----
 
 ## CLI
 
@@ -429,7 +417,6 @@ Ops:
 
 Run `hestia <command> --help` for flags on any specific command.
 
----
 
 ## How a turn actually flows
 
@@ -449,7 +436,6 @@ When you send Hestia a message, seven things happen:
 
 **Response.** Final text goes back to whatever platform you called in from — CLI, Telegram message, Matrix reply, or Telegram voice note.
 
----
 
 ## Development
 
@@ -465,7 +451,6 @@ uv run mypy src/hestia                           # type check
 
 **Architecture decisions.** 20+ ADRs in [`docs/DECISIONS.md`](docs/DECISIONS.md) covering everything from why it is called Hestia to why FTS5 over vector search to how the Discord voice E2EE story ended.
 
----
 
 ## Acknowledgments
 
@@ -479,7 +464,6 @@ Built with and indebted to:
 - [python-telegram-bot](https://github.com/python-telegram-bot/python-telegram-bot) and [matrix-nio](https://github.com/matrix-nio/matrix-nio) for platform adapters.
 - [aiosqlite](https://github.com/omnilib/aiosqlite), [SQLAlchemy](https://www.sqlalchemy.org/), and SQLite's FTS5 for persistence and search.
 
----
 
 ## License
 
