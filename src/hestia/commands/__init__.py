@@ -25,6 +25,7 @@ from hestia.commands.admin import (
     cmd_status,
 )
 from hestia.commands.chat import cmd_ask, cmd_chat
+from hestia.commands.history import cmd_history_list, cmd_history_show
 from hestia.commands.policy import cmd_policy_show
 from hestia.commands.reflection import (
     cmd_reflection_accept,
@@ -68,6 +69,8 @@ __all__ = [
     "cmd_failures_list",
     "cmd_failures_summary",
     "cmd_health",
+    "cmd_history_list",
+    "cmd_history_show",
     "cmd_artifacts_list",
     "cmd_artifacts_purge",
     "cmd_init",

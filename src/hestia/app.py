@@ -439,6 +439,49 @@ def _require_scheduler_store(app: CliAppContext) -> SchedulerStore:
     return app.scheduler_store
 
 
+def _validate_config_at_startup(cfg: HestiaConfig) -> None:
+    """Validate config before creating subsystems. Raises HestiaConfigError on failure."""
+    from hestia.errors import HestiaConfigError
+
+    # Telegram platform requires a bot token
+    if cfg.telegram.bot_token == "" and cfg.matrix.access_token == "":
+        # No platform is fully configured — this is okay for CLI-only mode,
+        # but warn if the user seems to expect a platform adapter.
+        pass
+
+    if cfg.telegram.bot_token == "" and cfg.telegram.allowed_users:
+        raise HestiaConfigError(
+            "telegram.allowed_users is set but telegram.bot_token is empty. "
+            "Set telegram.bot_token to your Telegram bot token."
+        )
+
+    # Email: if any host is configured, both should be present
+    if cfg.email.imap_host or cfg.email.smtp_host:
+        if not cfg.email.imap_host:
+            raise HestiaConfigError(
+                "email.smtp_host is set but email.imap_host is empty. "
+                "Set email.imap_host to your IMAP server hostname."
+            )
+        if not cfg.email.smtp_host:
+            raise HestiaConfigError(
+                "email.imap_host is set but email.smtp_host is empty. "
+                "Set email.smtp_host to your SMTP server hostname."
+            )
+
+    # Database URL: if it's a file path, ensure parent directory exists
+    db_url = cfg.storage.database_url
+    if db_url.startswith("sqlite") and "://" in db_url:
+        # Extract file path from sqlite URL
+        path_part = db_url.split("://", 1)[1]
+        if path_part and not path_part.startswith(":memory:"):
+            db_path = Path(path_part)
+            if db_path.parent != Path(".") and not db_path.parent.exists():
+                raise HestiaConfigError(
+                    f"Database directory does not exist: {db_path.parent}. "
+                    f"Create it or update storage.database_url."
+                )
+
+
 def make_app(cfg: HestiaConfig) -> CliAppContext:
     """Build subsystems from config and return typed app context."""
     if (
@@ -447,6 +490,7 @@ def make_app(cfg: HestiaConfig) -> CliAppContext:
     ):
         cfg.inference.model_name = "dummy"
     validate_inference_model_name(cfg.inference.model_name)
+    _validate_config_at_startup(cfg)
 
     # Phase 1: Core subsystems (always created)
     db = Database(cfg.storage.database_url)
