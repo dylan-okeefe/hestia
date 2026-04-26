@@ -54,7 +54,6 @@ async def run_checks(app: AppContext) -> list[CheckResult]:
         _check_trust_preset_resolves,
         _check_trust_preset_safe_for_production,
         _check_memory_epoch,
-        _check_skills_status,
     ]
     results: list[CheckResult] = []
     for fn in checks:
@@ -401,44 +400,6 @@ async def _check_trust_preset_safe_for_production(app: AppContext) -> CheckResul
         "Trust preset 'developer' auto-approves all tools. "
         "This is not recommended for production. "
         "Set HESTIA_ENV=development to acknowledge, or switch to a safer preset.",
-    )
-
-
-async def _check_skills_status(app: AppContext) -> CheckResult:
-    """Report skills subsystem status and wiring."""
-    if os.environ.get("HESTIA_EXPERIMENTAL_SKILLS") == "1":
-        base_msg = "Skills: experimental enabled"
-        if app.skill_index_builder is None:
-            return CheckResult(
-                "skills_status",
-                True,
-                f"{base_msg} but no skill_index_builder configured",
-            )
-        # Check if wired into the orchestrator flow
-        wired = False
-        try:
-            from hestia.orchestrator.assembly import TurnAssembly
-
-            source = inspect.getsource(TurnAssembly.prepare)
-            wired = (
-                "set_skill_index_prefix" in source
-                and "skill_index_builder" in source
-            )
-        except Exception:
-            pass
-
-        if not wired:
-            return CheckResult(
-                "skills_status",
-                True,
-                f"{base_msg}\n    Skills index not wired to context builder",
-            )
-        return CheckResult("skills_status", True, base_msg)
-
-    return CheckResult(
-        "skills_status",
-        True,
-        "Skills: experimental disabled (set HESTIA_EXPERIMENTAL_SKILLS=1 to opt in)",
     )
 
 

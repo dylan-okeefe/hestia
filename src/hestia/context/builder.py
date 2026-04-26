@@ -74,7 +74,6 @@ class ContextBuilder:
         meta_tool_overhead: int = 0,
         identity_prefix: str | None = None,
         memory_epoch_prefix: str | None = None,
-        skill_index_prefix: str | None = None,
         style_prefix: str | None = None,
         compressor: HistoryCompressor | None = None,
         compress_on_overflow: bool = False,
@@ -88,7 +87,6 @@ class ContextBuilder:
             meta_tool_overhead: Constant overhead when tools are present
             identity_prefix: Optional compiled identity view to prepend to system prompt
             memory_epoch_prefix: Optional compiled memory epoch to prepend to system prompt
-            skill_index_prefix: Optional skill index to prepend to system prompt
             style_prefix: Optional style profile addendum to prepend to system prompt
             compressor: Optional history compressor for overflow recovery
             compress_on_overflow: Whether to compress dropped history
@@ -99,7 +97,6 @@ class ContextBuilder:
         self._meta_tool_overhead = meta_tool_overhead
         self._identity_prefix = identity_prefix
         self._memory_epoch_prefix = memory_epoch_prefix
-        self._skill_index_prefix = skill_index_prefix
         self._style_prefix = style_prefix
         self._compressor = compressor
         self._compress_on_overflow = compress_on_overflow
@@ -123,14 +120,6 @@ class ContextBuilder:
             memory_epoch_prefix: Compiled memory epoch, or None to clear
         """
         self._memory_epoch_prefix = memory_epoch_prefix
-
-    def set_skill_index_prefix(self, skill_index_prefix: str | None) -> None:
-        """Set the skill index prefix to prepend to system prompts.
-
-        Args:
-            skill_index_prefix: Skill index text, or None to clear
-        """
-        self._skill_index_prefix = skill_index_prefix
 
     def set_style_prefix(self, style_prefix: str | None) -> None:
         """Set the style profile prefix to prepend to system prompts.
@@ -183,7 +172,6 @@ class ContextBuilder:
         return [
             _PrefixLayer("identity", self._identity_prefix),
             _PrefixLayer("memory_epoch", self._memory_epoch_prefix),
-            _PrefixLayer("skill_index", self._skill_index_prefix),
             _PrefixLayer("style", self._style_prefix),
         ]
 

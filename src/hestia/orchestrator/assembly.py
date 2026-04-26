@@ -16,7 +16,6 @@ if TYPE_CHECKING:
     from hestia.persistence.sessions import SessionStore
     from hestia.policy.engine import PolicyEngine
     from hestia.reflection.store import ProposalStore
-    from hestia.skills.index import SkillIndexBuilder
     from hestia.style.store import StyleProfileStore
     from hestia.tools.registry import ToolRegistry
 
@@ -37,7 +36,6 @@ class TurnAssembly:
         style_store: "StyleProfileStore | None" = None,
         style_config: "StyleConfig | None" = None,
         slot_manager: "SlotManager | None" = None,
-        skill_index_builder: "SkillIndexBuilder | None" = None,
     ):
         self._builder = context_builder
         self._tools = tool_registry
@@ -47,7 +45,6 @@ class TurnAssembly:
         self._style_store = style_store
         self._style_config = style_config
         self._slot_manager = slot_manager
-        self._skill_index_builder = skill_index_builder
 
     async def prepare(
         self,
@@ -105,9 +102,6 @@ class TurnAssembly:
 
         ctx.tools = self._tools.meta_tool_schemas()
         self._builder.set_style_prefix(style_prefix)
-        if self._skill_index_builder is not None:
-            skill_index = await self._skill_index_builder.build_index()
-            self._builder.set_skill_index_prefix(skill_index.text)
         ctx.build_result = await self._builder.build(
             session=session,
             history=history,

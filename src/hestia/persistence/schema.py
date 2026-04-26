@@ -162,24 +162,6 @@ egress_events = sa.Table(
     sa.Index("idx_egress_created", "created_at"),
 )
 
-skills = sa.Table(
-    "skills",
-    metadata,
-    sa.Column("id", sa.String, primary_key=True),
-    sa.Column("name", sa.String, nullable=False, unique=True),
-    sa.Column("description", sa.Text, nullable=False),
-    sa.Column("file_path", sa.String, nullable=False),
-    sa.Column("state", sa.String, nullable=False),  # draft, tested, trusted, deprecated, disabled
-    sa.Column("capabilities", sa.Text, nullable=False),  # JSON list
-    sa.Column("required_tools", sa.Text, nullable=False),  # JSON list
-    sa.Column("created_at", sa.DateTime, nullable=False),
-    sa.Column("last_run_at", sa.DateTime, nullable=True),
-    sa.Column("run_count", sa.Integer, nullable=False, default=0),
-    sa.Column("failure_count", sa.Integer, nullable=False, default=0),
-    sa.Index("idx_skills_state", "state"),
-    sa.Index("idx_skills_name", "name"),
-)
-
 style_profiles = sa.Table(
     "style_profiles",
     metadata,

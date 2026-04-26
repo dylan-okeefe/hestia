@@ -15,7 +15,6 @@ from hestia.doctor import (
     _check_memory_epoch,
     _check_platform_prereqs,
     _check_python_version,
-    _check_skills_status,
     _check_sqlite_dbs_readable,
     _check_trust_preset_resolves,
 )
@@ -29,16 +28,11 @@ def make_app(tmp_path):
         from hestia.app import AppContext
         from hestia.config import HestiaConfig
         from hestia.persistence.db import Database
-        from hestia.persistence.skill_store import SkillStore
-
         if cfg is None:
             cfg = HestiaConfig.default()
         cfg.storage.database_url = f"sqlite+aiosqlite:///{tmp_path}/test.db"
         cfg.storage.artifacts_dir = tmp_path / "artifacts"
-        db = Database(cfg.storage.database_url)
-        skill_store = SkillStore(db)
         app = AppContext(cfg)
-        app.skill_store = skill_store
         return app
 
     return _factory
@@ -158,13 +152,8 @@ class TestSQLiteDBsReadable:
         cfg.storage.database_url = f"sqlite+aiosqlite:///{db_path}"
 
         from hestia.app import AppContext
-        from hestia.persistence.db import Database
-        from hestia.persistence.skill_store import SkillStore
 
-        db = Database(cfg.storage.database_url)
-        skill_store = SkillStore(db)
         app = AppContext(cfg)
-        app.skill_store = skill_store
         result = await _check_sqlite_dbs_readable(app)
         assert result.ok is False
 
@@ -304,52 +293,6 @@ class TestTrustPresetResolves:
         result = await _check_trust_preset_resolves(app)
         assert result.ok is False
         assert "unknown trust preset" in result.detail
-
-
-class TestSkillsStatus:
-    """Tests for _check_skills_status."""
-
-    async def test_skills_disabled(self, make_app, monkeypatch):
-        """When HESTIA_EXPERIMENTAL_SKILLS is not set."""
-        monkeypatch.delenv("HESTIA_EXPERIMENTAL_SKILLS", raising=False)
-        app = make_app()
-        result = await _check_skills_status(app)
-        assert result.ok is True
-        assert "experimental disabled" in result.detail
-        assert "HESTIA_EXPERIMENTAL_SKILLS=1" in result.detail
-
-    async def test_skills_enabled_and_wired(self, make_app, monkeypatch):
-        """When HESTIA_EXPERIMENTAL_SKILLS=1 and wiring is present."""
-        monkeypatch.setenv("HESTIA_EXPERIMENTAL_SKILLS", "1")
-        app = make_app()
-        from hestia.persistence.skill_store import SkillStore
-        from hestia.skills.index import SkillIndexBuilder
-
-        app.skill_index_builder = SkillIndexBuilder(SkillStore(app.db))
-        result = await _check_skills_status(app)
-        assert result.ok is True
-        assert "experimental enabled" in result.detail
-        assert "not wired" not in result.detail.lower()
-
-    async def test_skills_enabled_not_wired(self, make_app, monkeypatch):
-        """When HESTIA_EXPERIMENTAL_SKILLS=1 but wiring is missing."""
-        monkeypatch.setenv("HESTIA_EXPERIMENTAL_SKILLS", "1")
-        app = make_app()
-        from hestia.persistence.skill_store import SkillStore
-        from hestia.skills.index import SkillIndexBuilder
-
-        app.skill_index_builder = SkillIndexBuilder(SkillStore(app.db))
-
-        import inspect
-
-        def fake_getsource(obj):
-            return "def prepare(self): pass"
-
-        monkeypatch.setattr(inspect, "getsource", fake_getsource)
-        result = await _check_skills_status(app)
-        assert result.ok is True
-        assert "experimental enabled" in result.detail
-        assert "Skills index not wired to context builder" in result.detail
 
 
 class TestMemoryEpoch:

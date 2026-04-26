@@ -48,14 +48,6 @@ from hestia.commands.scheduler import (
     cmd_schedule_show,
 )
 from hestia.commands.style import cmd_style_show
-from hestia.commands.tools import (
-    cmd_skill_demote,
-    cmd_skill_disable,
-    cmd_skill_list,
-    cmd_skill_promote,
-    cmd_skill_show,
-)
-
 __all__ = [
     "cli",
     "cmd_ask",
@@ -91,11 +83,6 @@ __all__ = [
     "cmd_schedule_remove",
     "cmd_schedule_run",
     "cmd_schedule_show",
-    "cmd_skill_demote",
-    "cmd_skill_disable",
-    "cmd_skill_list",
-    "cmd_skill_promote",
-    "cmd_skill_show",
     "cmd_status",
     "cmd_style_show",
 ]

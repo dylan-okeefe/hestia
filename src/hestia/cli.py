@@ -51,11 +51,6 @@ from hestia.commands import (
     cmd_schedule_remove,
     cmd_schedule_run,
     cmd_schedule_show,
-    cmd_skill_demote,
-    cmd_skill_disable,
-    cmd_skill_list,
-    cmd_skill_promote,
-    cmd_skill_show,
     cmd_status,
     cmd_style_show,
 )
@@ -417,78 +412,6 @@ async def artifacts_purge(app: AppContext, older_than: int | None) -> None:
     """Purge artifacts (expired by default, or all older than N days)."""
     removed = await cmd_artifacts_purge(app, older_than_days=older_than)
     click.echo(f"Removed {removed} artifact(s).")
-
-# Skill command group
-@cli.group()
-def skill() -> None:
-    """Manage skills."""
-    pass
-
-
-_EXPERIMENTAL_SKILLS_MESSAGE = (
-    "Skills are an experimental preview. Set HESTIA_EXPERIMENTAL_SKILLS=1 to opt in. "
-    "See README.md#skills."
-)
-
-
-def _check_experimental_skills() -> None:
-    import os
-
-    if os.environ.get("HESTIA_EXPERIMENTAL_SKILLS") != "1":
-        click.echo(_EXPERIMENTAL_SKILLS_MESSAGE, err=True)
-        sys.exit(1)
-
-
-@skill.command(name="list")
-@click.option(
-    "--state",
-    "state_filter",
-    default=None,
-    help="Filter by state (draft, tested, trusted, deprecated, disabled)",
-)
-@click.option("--all", "show_all", is_flag=True, help="Include disabled skills")
-@click.pass_obj
-@async_command
-async def skill_list(app: AppContext, state_filter: str | None, show_all: bool) -> None:
-    """List skills with their states."""
-    _check_experimental_skills()
-    await cmd_skill_list(app, state_filter, show_all)
-
-@skill.command(name="show")
-@click.argument("name")
-@click.pass_obj
-@async_command
-async def skill_show(app: AppContext, name: str) -> None:
-    """Show skill details."""
-    _check_experimental_skills()
-    await cmd_skill_show(app, name)
-
-@skill.command(name="promote")
-@click.argument("name")
-@click.pass_obj
-@async_command
-async def skill_promote(app: AppContext, name: str) -> None:
-    """Advance skill state (draft -> tested -> trusted)."""
-    _check_experimental_skills()
-    await cmd_skill_promote(app, name)
-
-@skill.command(name="demote")
-@click.argument("name")
-@click.pass_obj
-@async_command
-async def skill_demote(app: AppContext, name: str) -> None:
-    """Move skill back one state."""
-    _check_experimental_skills()
-    await cmd_skill_demote(app, name)
-
-@skill.command(name="disable")
-@click.argument("name")
-@click.pass_obj
-@async_command
-async def skill_disable(app: AppContext, name: str) -> None:
-    """Disable a skill without removing it."""
-    _check_experimental_skills()
-    await cmd_skill_disable(app, name)
 
 class AuditGroup(click.Group):
     """Custom group that defaults to 'run' when no subcommand is given."""

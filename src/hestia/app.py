@@ -29,14 +29,12 @@ from hestia.persistence.db import Database
 from hestia.persistence.failure_store import FailureStore
 from hestia.persistence.scheduler import SchedulerStore
 from hestia.persistence.sessions import SessionStore
-from hestia.persistence.skill_store import SkillStore
 from hestia.persistence.trace_store import TraceStore
 from hestia.policy.default import DefaultPolicyEngine
 from hestia.reflection.runner import ReflectionRunner
 from hestia.reflection.scheduler import ReflectionScheduler
 from hestia.reflection.store import ProposalStore
 from hestia.security import InjectionScanner
-from hestia.skills.index import SkillIndexBuilder
 from hestia.style.builder import StyleProfileBuilder
 from hestia.style.scheduler import StyleScheduler
 from hestia.style.store import StyleProfileStore
@@ -134,10 +132,6 @@ class AppContext:
         self.proposal_store = ProposalStore(self.db)
         self.style_store = StyleProfileStore(self.db)
         self.style_builder = StyleProfileBuilder(self.db, self.style_store, config.style)
-
-        # Optional feature subsystems
-        self.skill_store: SkillStore | None = None
-        self.skill_index_builder: SkillIndexBuilder | None = None
 
         # Private caches for lazy construction
         self._calibration_path: Path | None = None
@@ -239,8 +233,6 @@ class AppContext:
         await self.memory_store.create_table()
         await self.failure_store.create_table()
         await self.trace_store.create_table()
-        if self.skill_store is not None:
-            await self.skill_store.create_table()
         await self.proposal_store.create_table()
         await self.style_store.create_table()
         self._bootstrapped = True
@@ -277,7 +269,6 @@ class AppContext:
             proposal_store=self.proposal_store,
             style_store=self.style_store,
             style_config=self.config.style,
-            skill_index_builder=self.skill_index_builder,
         )
 
     def register_tools(self) -> None:
@@ -434,14 +425,6 @@ def _warn_on_missing_files(cfg: HestiaConfig, calibration_path: Path) -> None:
 
 
 
-def _register_optional_features(app: AppContext) -> None:
-    """Register optional feature subsystems based on environment flags."""
-    if os.environ.get("HESTIA_EXPERIMENTAL_SKILLS") == "1":
-        skill_store = SkillStore(app.db)
-        app.skill_store = skill_store
-        app.skill_index_builder = SkillIndexBuilder(skill_store)
-
-
 def make_app(cfg: HestiaConfig | None = None, config_path: Path | None = None) -> AppContext:
     """Build subsystems from config and return the application context."""
     cfg = _load_and_validate_config(cfg, config_path)
@@ -458,7 +441,6 @@ def make_app(cfg: HestiaConfig | None = None, config_path: Path | None = None) -
 
     _warn_on_missing_files(cfg, calibration_path)
     app.register_tools()
-    _register_optional_features(app)
 
     return app
 

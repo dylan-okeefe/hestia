@@ -38,7 +38,6 @@ if TYPE_CHECKING:
     from hestia.config import StyleConfig
     from hestia.persistence.failure_store import FailureStore
     from hestia.persistence.trace_store import TraceStore
-    from hestia.skills.index import SkillIndexBuilder
     from hestia.style.store import StyleProfileStore
 
 logger = logging.getLogger(__name__)
@@ -67,7 +66,6 @@ class Orchestrator:
         proposal_store: ProposalStore | None = None,
         style_store: "StyleProfileStore | None" = None,
         style_config: "StyleConfig | None" = None,
-        skill_index_builder: "SkillIndexBuilder | None" = None,
     ):
         """Initialize the orchestrator."""
         self._inference = inference
@@ -96,7 +94,6 @@ class Orchestrator:
             style_store=style_store,
             style_config=style_config,
             slot_manager=slot_manager,
-            skill_index_builder=skill_index_builder,
         )
 
         self._execution = TurnExecution(

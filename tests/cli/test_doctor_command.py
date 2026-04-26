@@ -21,16 +21,11 @@ def make_app(tmp_path):
         from hestia.app import AppContext
         from hestia.config import HestiaConfig
         from hestia.persistence.db import Database
-        from hestia.persistence.skill_store import SkillStore
-
         if cfg is None:
             cfg = HestiaConfig.default()
         cfg.storage.database_url = f"sqlite+aiosqlite:///{tmp_path}/test.db"
         cfg.storage.artifacts_dir = tmp_path / "artifacts"
-        db = Database(cfg.storage.database_url)
-        skill_store = SkillStore(db)
         app = AppContext(cfg)
-        app.skill_store = skill_store
         return app
 
     return _factory
