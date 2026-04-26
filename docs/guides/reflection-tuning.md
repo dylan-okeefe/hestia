@@ -150,3 +150,23 @@ If `run --now` produces no proposals even when you expect some, check:
 2. Are there recent traces? (`hestia status` shows trace counts.)
 3. Is the inference server running? Reflection uses the same `InferenceClient` as chat.
 4. Check logs for inference errors during pattern mining or proposal generation.
+
+## Quick-start config
+
+The fastest way to enable reflection:
+
+```python
+from hestia.config import HestiaConfig, ReflectionConfig
+
+config = HestiaConfig(
+    reflection=ReflectionConfig(
+        enabled=True,
+        cron="0 3 * * *",
+        idle_minutes=15,
+        lookback_turns=100,
+        proposals_per_run=5,
+    ),
+)
+```
+
+See [ADR-018](../adr/ADR-018-reflection-loop-architecture.md) for the full architecture.
