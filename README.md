@@ -12,6 +12,27 @@ This project came out of my experience wrestling with using/modifying [**Hermes*
 
 ---
 
+## Contents
+- [Who this is for](#who-this-is-for)
+- [Quickstart](#quickstart)
+- [Features](#features)
+- [Platforms](#platforms)
+- [Voice](#voice)
+- [Configuration](#configuration)
+- [Trust and multi-user](#trust-and-multi-user)
+- [Running on your hardware](#running-on-your-hardware)
+- [Giving Hestia a personality](#giving-hestia-a-personality)
+- [Context budget and long sessions](#context-budget-and-long-sessions)
+- [Security](#security)
+- [Running as a daemon](#running-as-a-daemon)
+- [CLI](#cli)
+- [How a turn actually flows](#how-a-turn-actually-flows)
+- [Development](#development)
+- [Acknowledgments](#acknowledgments)
+- [License](#license)
+
+---
+
 ## Who this is for
 
 Hestia is built for people who run their own infrastructure. If you already have a GPU sitting idle, or you run things like Home Assistant, Synapse, or Jellyfin, Hestia fits into that world. It is for people who want an assistant that lives on their hardware, respects their privacy, and can be extended with Python.
@@ -43,26 +64,6 @@ For Telegram, Matrix, or daemon use, copy `deploy/example_config.py` to `config.
 ```bash
 hestia ask "What is the capital of France?"   # Single-shot, no persistence
 ```
-
----
-
-## How a turn actually flows
-
-When you send Hestia a message, seven things happen:
-
-**Context assembly.** Hestia loads conversation history from SQLite, counts real tokens against llama.cpp's `/tokenize` endpoint, and trims old messages to fit the context window. Your compiled identity (from `SOUL.md`) is prepended.
-
-**Tool selection.** Instead of describing every tool on every turn, Hestia exposes two meta-tools: `list_tools` and `call_tool`. The model asks what's available when it needs to, and calls by name. Saves roughly 2,900 tokens per request compared to enumerating the full toolset.
-
-**Inference.** The assembled context goes to your local llama.cpp server. Hestia manages KV-cache slots so resuming a conversation skips prompt re-ingestion — a warm session restores from disk in ~200ms.
-
-**Tool execution.** If the model asks to call a tool, Hestia runs it, appends the result to the conversation, and continues the loop until the model produces a final text response or hits the iteration limit. Dangerous tools like `write_file` and `terminal` require explicit approval.
-
-**Overflow handling.** Tool outputs that are too large for context are auto-saved as **artifacts** — files on disk with a short handle like `art_a7f3b2c9d1`. A preview enters the conversation; the model can `read_artifact` when it needs the full content.
-
-**Memory.** The model can save facts and search them later, backed by SQLite's FTS5 full-text search. No embeddings, no vector DB, no external services. It is just text search that works, scoped per user.
-
-**Response.** Final text goes back to whatever platform you called in from — CLI, Telegram message, Matrix reply, or Telegram voice note.
 
 ---
 
@@ -157,6 +158,18 @@ A framework for defining multi-step workflows as decorated Python functions. Ski
 
 ---
 
+## Platforms
+
+**CLI** — the development interface. `hestia chat` is the REPL; `hestia ask "question"` is a one-shot. Best for building tools and debugging.
+
+**Telegram** — the mobile interface. Long-polling bot with rate-limited status messages ("Thinking…", "Running search_memory…"), HTTP/1.1 forcing for API stability, user allow-list, and voice messages (see above).
+
+**Matrix** — the automation interface. Matrix has proper CLI clients (`matrix-commander`, `matrix-nio`), so you can script conversations against Hestia, capture responses, and assert on them. That makes it the natural choice for integration tests and CI. Also fine for personal use if you already run Synapse. See [Matrix integration design](docs/design/matrix-integration.md).
+
+**Email (tool-only)** — Hestia can read mail via IMAP and draft replies via SMTP, with send behind an explicit confirmation. See the [email-setup guide](docs/guides/email-setup.md). Note: email is a *tool* the model calls, not an inbound adapter — there is no listener on forwarded mail yet. See the roadmap for the planned inbound-email adapter.
+
+---
+
 ## Voice
 
 Hestia can receive and reply with voice messages on Telegram. You record a voice note, Hestia transcribes it with Whisper, runs the turn normally, synthesizes the reply with Piper, and sends a voice note back. All inference is local.
@@ -178,99 +191,6 @@ Install the voice extra (`uv sync --extra voice`), put ffmpeg on your PATH (`sud
 Replies that exceed Telegram's 1 MB voice-note limit are iteratively shortened and the full text is posted as a follow-up so nothing is silently dropped. Destructive tools still use the inline-keyboard confirmation; verbal confirmation is not in scope.
 
 Discord voice was attempted as part of the v0.9.x arc and shelved due to DAVE E2EE complexity. The live-call story stays in Telegram territory for now.
-
----
-
-## Giving Hestia a personality
-
-Create `SOUL.md` in your project root. The default system prompt is "You are a helpful assistant." — you can do better:
-
-```markdown
-# Hestia
-
-You are Hestia, a personal assistant running on Dylan's home server.
-
-## Personality
-- Warm but not saccharine. Helpful without being performatively eager.
-- Direct. If something won't work, say so.
-- You have opinions about technology. Share them when asked.
-- You don't use emoji unless the human does first.
-
-## Things you know about your human
-- Runs Ubuntu on an RTX 3060. Respects the hardware budget.
-- Prefers straightforward answers over hedged corporate-speak.
-- Works on software projects. Familiar with Python, git, Linux.
-
-## Things you don't do
-- You don't pretend to have feelings you don't have.
-- You don't apologize for things that aren't your fault.
-- You don't pad responses with filler.
-```
-
-Hestia compiles the soul document into a compact identity view (bounded by `IdentityConfig.max_tokens`, default 300) cached under `.hestia/compiled_identity.txt`. Keep the soul short (under ~1000 words) and put the most important traits first. Override via `identity=IdentityConfig(soul_path=Path("deploy/SOUL.md"))`, disable with `soul_path=None`, or set `HESTIA_SOUL_PATH` in the environment.
-
----
-
-## Platforms
-
-**CLI** — the development interface. `hestia chat` is the REPL; `hestia ask "question"` is a one-shot. Best for building tools and debugging.
-
-**Telegram** — the mobile interface. Long-polling bot with rate-limited status messages ("Thinking…", "Running search_memory…"), HTTP/1.1 forcing for API stability, user allow-list, and voice messages (see above).
-
-**Matrix** — the automation interface. Matrix has proper CLI clients (`matrix-commander`, `matrix-nio`), so you can script conversations against Hestia, capture responses, and assert on them. That makes it the natural choice for integration tests and CI. Also fine for personal use if you already run Synapse. See [Matrix integration design](docs/design/matrix-integration.md).
-
-**Email (tool-only)** — Hestia can read mail via IMAP and draft replies via SMTP, with send behind an explicit confirmation. See the [email-setup guide](docs/guides/email-setup.md). Note: email is a *tool* the model calls, not an inbound adapter — there is no listener on forwarded mail yet. See the roadmap for the planned inbound-email adapter.
-
----
-
-## Trust and multi-user
-
-Hestia's default posture is strict. `terminal` and `write_file` require explicit confirmation. The scheduler cannot call shell commands. Subagents cannot shell or write files. That is the right default for a fresh install but likely too restrictive for a single-operator personal deployment.
-
-Four presets in `TrustConfig`:
-
-- **`paranoid()`** (default) — nothing auto-approves on headless platforms.
-- **`household()`** (recommended personal use) — auto-approves `terminal` and `write_file`; scheduler and subagents can shell and write.
-- **`prompt_on_mobile()`** — like `household()` for background sessions, but keeps ✅/❌ confirmation prompts for `terminal`, `write_file`, and `email_send` on your phone.
-- **`developer()`** — auto-approves everything. Dev/test only.
-
-Opt in:
-
-```python
-config = HestiaConfig(
-    trust=TrustConfig.household(),
-)
-```
-
-Multiple users are supported with per-user memory scoping and trust overrides. Memories saved by one user are invisible to others. Platform allow-lists (Telegram `allowed_users`, Matrix `allowed_rooms`) support `fnmatch` wildcards. Grant different autonomy per person via `trust_overrides` keyed on `platform:platform_user`:
-
-```python
-config = HestiaConfig(
-    trust=TrustConfig.paranoid(),
-    trust_overrides={
-        "telegram:<your_user_id>": TrustConfig.household(),
-        "matrix:#family:example.org": TrustConfig.prompt_on_mobile(),
-    },
-)
-```
-
-See the [multi-user setup guide](docs/guides/multi-user-setup.md) for the full picture, including threat model and troubleshooting.
-
----
-
-## Context budget and long sessions
-
-The context window is divided into three tiers: the **per-slot budget** (`InferenceConfig.context_length`, must equal llama-server's `--ctx-size / --parallel`), a **protected block** (system prompt + compiled identity + memory epoch + skill index + new user message, never dropped), and **history** (previous turns, oldest dropped first when tight).
-
-Two opt-in features preserve continuity when history is dropped:
-
-**History compression.** When enabled, dropped history is summarized by a quick inference call and the summary is spliced into the system prompt for that turn only.
-
-**Session handoff summaries.** When enabled, Hestia generates a 2–3 sentence summary on session close and stores it as a memory tagged `handoff`, so the next session can find it via normal memory search.
-
-Both default to off. `TrustConfig.household()` and `developer()` imply both on.
-
-If the protected block alone exceeds the budget, Hestia raises a visible warning instead of silently truncating — reduce `IdentityConfig.max_tokens`, shorten `SOUL.md`, or increase `--ctx-size / --parallel`.
 
 ---
 
@@ -318,6 +238,41 @@ CLI flags (`--config`, `--db-path`, `--inference-url`, `--verbose`) override con
 
 ---
 
+## Trust and multi-user
+
+Hestia's default posture is strict. `terminal` and `write_file` require explicit confirmation. The scheduler cannot call shell commands. Subagents cannot shell or write files. That is the right default for a fresh install but likely too restrictive for a single-operator personal deployment.
+
+Four presets in `TrustConfig`:
+
+- **`paranoid()`** (default) — nothing auto-approves on headless platforms.
+- **`household()`** (recommended personal use) — auto-approves `terminal` and `write_file`; scheduler and subagents can shell and write.
+- **`prompt_on_mobile()`** — like `household()` for background sessions, but keeps ✅/❌ confirmation prompts for `terminal`, `write_file`, and `email_send` on your phone.
+- **`developer()`** — auto-approves everything. Dev/test only.
+
+Opt in:
+
+```python
+config = HestiaConfig(
+    trust=TrustConfig.household(),
+)
+```
+
+Multiple users are supported with per-user memory scoping and trust overrides. Memories saved by one user are invisible to others. Platform allow-lists (Telegram `allowed_users`, Matrix `allowed_rooms`) support `fnmatch` wildcards. Grant different autonomy per person via `trust_overrides` keyed on `platform:platform_user`:
+
+```python
+config = HestiaConfig(
+    trust=TrustConfig.paranoid(),
+    trust_overrides={
+        "telegram:<your_user_id>": TrustConfig.household(),
+        "matrix:#family:example.org": TrustConfig.prompt_on_mobile(),
+    },
+)
+```
+
+See the [multi-user setup guide](docs/guides/multi-user-setup.md) for the full picture, including threat model and troubleshooting.
+
+---
+
 ## Running on your hardware
 
 Hestia is built for consumer GPUs. Rough sizing guide:
@@ -352,6 +307,52 @@ The flags that matter: `-np 4` sets four KV-cache slots (match `SlotConfig.pool_
 ### What makes Hestia efficient
 
 Real token counting via `/tokenize` — no estimates. The meta-tool pattern — two generic tools instead of eighteen on every request. KV-cache save/restore — warm sessions skip prompt re-ingestion. Automatic artifact overflow — large tool results go to disk. Truncation-first compression — oldest history is dropped at build time, not summarized in the hot path.
+
+---
+
+## Giving Hestia a personality
+
+Create `SOUL.md` in your project root. The default system prompt is "You are a helpful assistant." — you can do better:
+
+```markdown
+# Hestia
+
+You are Hestia, a personal assistant running on Dylan's home server.
+
+## Personality
+- Warm but not saccharine. Helpful without being performatively eager.
+- Direct. If something won't work, say so.
+- You have opinions about technology. Share them when asked.
+- You don't use emoji unless the human does first.
+
+## Things you know about your human
+- Runs Ubuntu on an RTX 3060. Respects the hardware budget.
+- Prefers straightforward answers over hedged corporate-speak.
+- Works on software projects. Familiar with Python, git, Linux.
+
+## Things you don't do
+- You don't pretend to have feelings you don't have.
+- You don't apologize for things that aren't your fault.
+- You don't pad responses with filler.
+```
+
+Hestia compiles the soul document into a compact identity view (bounded by `IdentityConfig.max_tokens`, default 300) cached under `.hestia/compiled_identity.txt`. Keep the soul short (under ~1000 words) and put the most important traits first. Override via `identity=IdentityConfig(soul_path=Path("deploy/SOUL.md"))`, disable with `soul_path=None`, or set `HESTIA_SOUL_PATH` in the environment.
+
+---
+
+## Context budget and long sessions
+
+The context window is divided into three tiers: the **per-slot budget** (`InferenceConfig.context_length`, must equal llama-server's `--ctx-size / --parallel`), a **protected block** (system prompt + compiled identity + memory epoch + skill index + new user message, never dropped), and **history** (previous turns, oldest dropped first when tight).
+
+Two opt-in features preserve continuity when history is dropped:
+
+**History compression.** When enabled, dropped history is summarized by a quick inference call and the summary is spliced into the system prompt for that turn only.
+
+**Session handoff summaries.** When enabled, Hestia generates a 2–3 sentence summary on session close and stores it as a memory tagged `handoff`, so the next session can find it via normal memory search.
+
+Both default to off. `TrustConfig.household()` and `developer()` imply both on.
+
+If the protected block alone exceeds the budget, Hestia raises a visible warning instead of silently truncating — reduce `IdentityConfig.max_tokens`, shorten `SOUL.md`, or increase `--ctx-size / --parallel`.
 
 ---
 
@@ -437,6 +438,26 @@ Ops:
 ```
 
 Run `hestia <command> --help` for flags on any specific command.
+
+---
+
+## How a turn actually flows
+
+When you send Hestia a message, seven things happen:
+
+**Context assembly.** Hestia loads conversation history from SQLite, counts real tokens against llama.cpp's `/tokenize` endpoint, and trims old messages to fit the context window. Your compiled identity (from `SOUL.md`) is prepended.
+
+**Tool selection.** Instead of describing every tool on every turn, Hestia exposes two meta-tools: `list_tools` and `call_tool`. The model asks what's available when it needs to, and calls by name. Saves roughly 2,900 tokens per request compared to enumerating the full toolset.
+
+**Inference.** The assembled context goes to your local llama.cpp server. Hestia manages KV-cache slots so resuming a conversation skips prompt re-ingestion — a warm session restores from disk in ~200ms.
+
+**Tool execution.** If the model asks to call a tool, Hestia runs it, appends the result to the conversation, and continues the loop until the model produces a final text response or hits the iteration limit. Dangerous tools like `write_file` and `terminal` require explicit approval.
+
+**Overflow handling.** Tool outputs that are too large for context are auto-saved as **artifacts** — files on disk with a short handle like `art_a7f3b2c9d1`. A preview enters the conversation; the model can `read_artifact` when it needs the full content.
+
+**Memory.** The model can save facts and search them later, backed by SQLite's FTS5 full-text search. No embeddings, no vector DB, no external services. It is just text search that works, scoped per user.
+
+**Response.** Final text goes back to whatever platform you called in from — CLI, Telegram message, Matrix reply, or Telegram voice note.
 
 ---
 
