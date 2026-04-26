@@ -9,6 +9,52 @@
 
 
 
+## 2026-04-26 — L72 Complete (Tool Call Boundaries & SSRF Defense)
+
+**Outcome:** Added tool-call cap and made curl_cffi fallback opt-in.
+
+**Changes:**
+- `PolicyConfig.max_tool_calls_per_turn` (default: 10) — truncates excess tool calls with error messages
+- `HestiaConfig.use_curl_cffi_fallback` (default: False) — curl_cffi retry only when explicitly enabled
+- `make_http_get_tool()` factory replaces direct `http_get` registration in app bootstrap
+
+**Quality gate:** 1057 passed, 6 skipped; ruff clean; mypy clean.
+
+**Branch:** `feature/l72-tool-call-boundaries-and-ssrf`
+
+---
+
+## 2026-04-26 — L71 Complete (App Context Gravity Well)
+
+**Outcome:** Collapsed three-class app-context hierarchy into single `AppContext`.
+
+**Changes:**
+- Deleted `CoreAppContext`, `FeatureAppContext`, `CliAppContext` facade.
+- Created `AppContext` with `@functools.cached_property` for lazy subsystems.
+- Broke `make_app()` into phase helpers.
+- Net −332 lines across 20 files.
+
+**Quality gate:** 1057 passed, 6 skipped; ruff clean; mypy clean.
+
+**Branch:** `feature/l71-app-context-gravity-well`
+
+---
+
+## 2026-04-26 — L70 Complete (Memory Scope & Concurrent Tool Safety)
+
+**Outcome:** Two April-22 review findings (M2, M3) fixed and tested.
+
+**Changes:**
+- `memory/store.py`: `_resolve_scope` now normalizes partial `platform`/`platform_user` to both `None` with a warning, preventing isolation leaks.
+- `orchestrator/execution.py`: `_run_one` wrapper catches exceptions during concurrent tool dispatch and returns `ToolCallResult.error(...)`, shielding sibling tools from `asyncio.gather` cancellation.
+- Tests added for both fixes.
+
+**Quality gate:** 1062 passed, 6 skipped; ruff clean; mypy clean.
+
+**Branch:** `feature/l70-memory-search-scope-and-concurrent-tool-safety`
+
+---
+
 ## 2026-04-25 — L60–L62 Arc Complete (Docs & Code Overhaul)
 
 **Outcome:** All 3 loops from the April 26 review are complete on feature branches.
