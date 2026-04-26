@@ -99,6 +99,7 @@ class TelegramAdapter(Platform):
         self._app: Application[Any, Any, Any, Any, Any, Any] | None = None
         self._on_message: IncomingMessageCallback | None = None
         self._last_edit_times: dict[str, float] = {}  # msg_id -> last edit timestamp
+        self._last_edit_max_age = 3600.0  # 1 hour TTL
         self._confirmation_store = ConfirmationStore()
         self._confirmation_timeout_seconds = 60.0
 
@@ -195,10 +196,19 @@ class TelegramAdapter(Platform):
         )
         return str(msg.message_id)
 
+    def _prune_last_edit_times(self) -> None:
+        """Evict entries older than _last_edit_max_age to prevent unbounded growth."""
+        cutoff = time.monotonic() - self._last_edit_max_age
+        stale = [k for k, v in self._last_edit_times.items() if v < cutoff]
+        for k in stale:
+            del self._last_edit_times[k]
+
     async def edit_message(self, user: str, msg_id: str, text: str) -> None:
         """Edit a message in-place, rate-limited to avoid 429s."""
         if self._app is None:
             raise RuntimeError("Telegram adapter not started")
+
+        self._prune_last_edit_times()
 
         # Rate limiting: max 1 edit per rate_limit_edits_seconds per message
         now = time.monotonic()

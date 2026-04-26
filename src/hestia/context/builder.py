@@ -1,6 +1,7 @@
 """ContextBuilder assembles the message list for a turn under a token budget."""
 
 import json
+from collections import OrderedDict
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -102,8 +103,10 @@ class ContextBuilder:
         self._style_prefix = style_prefix
         self._compressor = compressor
         self._compress_on_overflow = compress_on_overflow
-        self._tokenize_cache: dict[tuple[str, str], int] = {}
+        self._tokenize_cache: OrderedDict[tuple[str, str], int] = OrderedDict()
         self._join_overhead: int | None = None
+        self._system_token_count: int | None = None
+        self._last_system_content: str | None = None
 
     def set_identity_prefix(self, identity_prefix: str | None) -> None:
         """Set the identity prefix to prepend to system prompts.
@@ -263,10 +266,10 @@ class ContextBuilder:
             )
 
         if self._join_overhead is None:
-            overhead = await self._compute_join_overhead(history, protected_top, protected_bottom)
-            if overhead != 0 or len(history) >= 2 or len(protected_top + protected_bottom) >= 2:
-                self._join_overhead = overhead
-        _join_overhead = self._join_overhead or 0
+            self._join_overhead = await self._compute_join_overhead(
+                history, protected_top, protected_bottom
+            )
+        _join_overhead = self._join_overhead
 
         available_budget = raw_budget - protected_count
 
@@ -330,10 +333,13 @@ class ContextBuilder:
         """
         key = (message.role, message.content or "")
         if key in self._tokenize_cache:
+            self._tokenize_cache.move_to_end(key)
             return self._tokenize_cache[key]
         tokens = await self._inference.tokenize(self._render_message(message))
         count = len(tokens)
         self._tokenize_cache[key] = count
+        if len(self._tokenize_cache) > 4096:
+            self._tokenize_cache.popitem(last=False)
         return count
 
     async def _count_body(self, messages: list[Message]) -> int:
@@ -347,7 +353,16 @@ class ContextBuilder:
         Returns:
             Raw token count for body only
         """
-        return await self._inference.count_request(messages, tools=[])
+        # Cache static-content counts (e.g. system prompt) that rarely change.
+        cache_key = "|".join(f"{m.role}:{m.content}" for m in messages)
+        if cache_key == self._last_system_content and self._system_token_count is not None:
+            return self._system_token_count
+        count = await self._inference.count_request(messages, tools=[])
+        # Only cache single-message system prompts (the static prefix).
+        if len(messages) == 1 and messages[0].role == "system":
+            self._last_system_content = cache_key
+            self._system_token_count = count
+        return count
 
     def _apply_correction(self, body_count: int, has_tools: bool) -> int:
         """Apply calibration correction to body count.
