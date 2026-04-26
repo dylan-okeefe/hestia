@@ -9,6 +9,24 @@
 
 
 
+## 2026-04-25 — L54–L59 Arc Complete
+
+**Outcome:** All 6 loops from the v0.10.0 pre-release evaluation arc are complete
+and merged to `develop`.
+
+**Merged to `develop`:**
+- L54 — Async safety & small bugs (merged earlier)
+- L55 — Code cleanup & release prep (merged earlier)
+- L56 — Orchestrator decomposition
+- L57 — App bootstrap cleanup
+- L58 — Config, UX & timezone polish
+- L59 — Security docs & infrastructure
+
+**Quality gate post-merge:**
+- Tests: 159 passed (targeted subset)
+- Mypy: 1 pre-existing error in `engine.py` (no new errors)
+- Ruff: 32 pre-existing issues (no new issues)
+
 ## 2026-04-25 — L56: Orchestrator Decomposition
 
 **Outcome:** `engine.py` decomposed from 978 lines to 284 lines. Three phase

@@ -2,46 +2,40 @@
 
 **Orchestrator:** Kimi (self-orchestrating via subagents)
 
-**Last set by:** Kimi — 2026-04-25 (L56 complete on feature branch)
+**Last set by:** Kimi — 2026-04-25 (L54–L59 arc merged to develop)
 
 ---
 
 ## Current task
 
-**Status:** **ACTIVE — L57 queued.**
+**Status:** **IDLE — All queued loops complete and merged to `develop`.**
 
-**L54 and L55** are merged to `develop`.
-**L56** is complete on `feature/l56-orchestrator-decomposition` (do not merge until
-v0.11 release-prep).
-
-### Recently completed:
-- **L56** — Orchestrator decomposition (4 commits, engine.py 978→284 lines)
-- **L55** — Code cleanup & release prep (5 commits, merged to develop)
-- **L54** — Async safety & small bugs (9 commits, merged to develop)
+The v0.10.0 pre-release evaluation arc (L54–L59) is fully landed on `develop`.
 
 ---
 
-## Active loop: L57 — App Bootstrap Cleanup
+## Completed loops
 
-**Branch:** `feature/l57-app-bootstrap-cleanup`  
-**Spec:** [`kimi-loops/L57-app-bootstrap-cleanup.md`](kimi-loops/L57-app-bootstrap-cleanup.md)  
-**Merge target:** release-prep (do NOT merge to develop until v0.11 release-prep)
-
-**Scope summary:**
-1. Scheduler tool factory collapse — extract `_get_session_for_tool()` helper
-2. `CliAppContext` facade simplification
-3. `_compile_and_set_memory_epoch` relocation to `persistence/memory_epochs.py`
-
-**Quality gates:** `pytest`, `mypy`, `ruff` — all green.
+| Loop | Branch | Status |
+|------|--------|--------|
+| L54 | `feature/l54-async-safety-and-small-bugs` | **Merged to `develop`** |
+| L55 | `feature/l55-code-cleanup-release-prep` | **Merged to `develop`** |
+| L56 | `feature/l56-orchestrator-decomposition` | **Merged to `develop`** |
+| L57 | `feature/l57-app-bootstrap-cleanup` | **Merged to `develop`** |
+| L58 | `feature/l58-config-and-ux-polish` | **Merged to `develop`** |
+| L59 | `feature/l59-security-docs-and-infrastructure` | **Merged to `develop`** |
 
 ---
 
-## Queue (next up)
+## What's queued (not authorized yet)
 
-| Loop | Branch | Spec | Merge target |
-|------|--------|------|--------------|
-| L58 | `feature/l58-config-and-ux-polish` | [`kimi-loops/L58-config-and-ux-polish.md`](kimi-loops/L58-config-and-ux-polish.md) | release-prep |
-| L59 | `feature/l59-security-docs-and-infrastructure` | [`kimi-loops/L59-security-docs-and-infrastructure.md`](kimi-loops/L59-security-docs-and-infrastructure.md) | release-prep |
+### Voice Phase B (Discord) → v0.11+ candidate
+- Specified in `v0.8.0-release-and-voice-launch.md` Track 5 Phase B.
+- **Blocked on Dylan-side prereqs** (Discord token, guild/channel IDs, etc.).
+
+### Release prep → v0.11
+- Integration testing across all merged work
+- Release notes and version bump
 
 ---
 
