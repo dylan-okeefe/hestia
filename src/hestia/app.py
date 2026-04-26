@@ -50,6 +50,7 @@ from hestia.tools.builtin import (
     make_enable_scheduled_task_tool,
     make_http_get_tool,
     make_list_dir_tool,
+    make_terminal_tool,
     make_list_memories_tool,
     make_list_scheduled_tasks_tool,
     make_read_artifact_tool,
@@ -279,7 +280,7 @@ class AppContext:
         reg.register(current_time)
         reg.register(make_http_get_tool(cfg.use_curl_cffi_fallback))
         reg.register(make_list_dir_tool(cfg.storage))
-        reg.register(terminal)
+        reg.register(make_terminal_tool(cfg.trust.blocked_shell_patterns or None))
         reg.register(make_read_file_tool(cfg.storage))
         reg.register(make_write_file_tool(cfg.storage))
         reg.register(make_search_memory_tool(self.memory_store))

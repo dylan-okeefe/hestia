@@ -36,7 +36,7 @@ from hestia.tools.builtin.scheduler_tools import (
     make_list_scheduled_tasks_tool,
 )
 from hestia.tools.builtin.search_web import search_web
-from hestia.tools.builtin.terminal import terminal
+from hestia.tools.builtin.terminal import make_terminal_tool
 from hestia.tools.builtin.web_search import make_web_search_tool
 from hestia.tools.builtin.write_file import make_write_file_tool
 from hestia.tools.capabilities import (
@@ -82,6 +82,6 @@ __all__ = [
     "READ_LOCAL",
     "SHELL_EXEC",
     "SubagentResult",
-    "terminal",
+    "make_terminal_tool",
     "WRITE_LOCAL",
 ]

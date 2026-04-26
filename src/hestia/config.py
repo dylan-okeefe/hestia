@@ -174,6 +174,12 @@ class TrustConfig(_ConfigFromEnv):
     # Allow scheduler ticks to trigger email_send.
     scheduler_email_send: bool = False
 
+    # Shell command patterns to block in the terminal tool (regex).
+    # Defense-in-depth: these are checked before execution regardless of
+    # confirmation status. Empty list means no additional blocking beyond
+    # the tool's built-in defaults.
+    blocked_shell_patterns: list[str] = field(default_factory=list)
+
     # Active trust preset name (paranoid, household, developer, etc.)
     preset: str | None = None
 

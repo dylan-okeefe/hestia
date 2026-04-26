@@ -13,7 +13,7 @@ from hestia.tools.builtin.http_get import SSRFSafeTransport, _is_url_safe, http_
 from hestia.tools.builtin.list_dir import make_list_dir_tool
 from hestia.tools.builtin.read_artifact import make_read_artifact_tool
 from hestia.tools.builtin.read_file import make_read_file_tool
-from hestia.tools.builtin.terminal import terminal
+from hestia.tools.builtin.terminal import make_terminal_tool
 from hestia.tools.builtin.write_file import make_write_file_tool
 
 
@@ -223,8 +223,12 @@ class TestReadArtifact:
 class TestTerminal:
     """Tests for terminal tool."""
 
+    @pytest.fixture
+    def terminal(self):
+        return make_terminal_tool()
+
     @pytest.mark.asyncio
-    async def test_echo_command(self):
+    async def test_echo_command(self, terminal):
         """echo command returns stdout."""
         result = await terminal("echo hello")
         assert "exit_code: 0" in result
@@ -232,32 +236,47 @@ class TestTerminal:
         assert "--- stdout ---" in result
 
     @pytest.mark.asyncio
-    async def test_stderr_captured(self):
+    async def test_stderr_captured(self, terminal):
         """stderr is captured and returned."""
         result = await terminal("echo error >&2")
         assert "--- stderr ---" in result
         assert "error" in result
 
     @pytest.mark.asyncio
-    async def test_nonzero_exit_code(self):
+    async def test_nonzero_exit_code(self, terminal):
         """Non-zero exit code is reported."""
         result = await terminal("exit 42")
         assert "exit_code: 42" in result
 
     @pytest.mark.asyncio
-    async def test_timeout(self):
+    async def test_timeout(self, terminal):
         """Timeout is respected."""
         result = await terminal("sleep 5", timeout=0.5)
         assert "TIMEOUT" in result
         assert "0.5s" in result
 
     @pytest.mark.asyncio
-    async def test_list_directory(self):
+    async def test_list_directory(self, terminal):
         """Can list directory contents."""
         result = await terminal("ls /tmp")
         assert "exit_code: 0" in result
         # /tmp should have something in it on most systems
         assert len(result) > len("exit_code: 0\n--- stdout ---\n")
+
+    @pytest.mark.asyncio
+    async def test_blocked_pattern_rejects_command(self):
+        """Commands matching blocked patterns are rejected without execution."""
+        terminal = make_terminal_tool([r"rm\s+-rf\s+/"])
+        result = await terminal("rm -rf /")
+        assert "BLOCKED" in result
+
+    @pytest.mark.asyncio
+    async def test_non_blocked_command_runs(self):
+        """Commands not matching blocked patterns execute normally."""
+        terminal = make_terminal_tool([r"rm\s+-rf\s+/"])
+        result = await terminal("echo hello")
+        assert "BLOCKED" not in result
+        assert "hello" in result
 
 
 class TestHttpGet:

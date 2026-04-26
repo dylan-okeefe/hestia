@@ -91,7 +91,8 @@ def tool_registry(artifact_store, memory_store, file_sandbox):
     """Tool registry with all built-in tools except delegate_task."""
     registry = ToolRegistry(artifact_store)
 
-    from hestia.tools.builtin import current_time, http_get, terminal
+    from hestia.tools.builtin import current_time, http_get, make_terminal_tool
+    terminal = make_terminal_tool()
     from hestia.tools.builtin.list_dir import make_list_dir_tool
     from hestia.tools.builtin.memory_tools import (
         make_list_memories_tool,

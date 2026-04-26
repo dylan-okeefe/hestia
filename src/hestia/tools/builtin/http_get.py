@@ -237,14 +237,22 @@ def make_http_get_tool(use_curl_cffi_fallback: bool = False) -> Callable[..., An
 
 
 async def _record_egress(url: str, status: int, size: int) -> None:
-    """Best-effort egress logging via the current trace store."""
+    """Best-effort egress logging via the current trace store.
+
+    Query parameters are stripped before storage to avoid persisting
+    API keys or tokens that may appear in URLs.
+    """
+    from urllib.parse import urlparse, urlunparse
+
     trace_store = current_trace_store.get()
     session_id = current_session_id.get()
     if trace_store is not None and session_id is not None:
         try:
+            parsed = urlparse(url)
+            safe_url = urlunparse(parsed._replace(query="", fragment=""))
             await trace_store.record_egress(
                 session_id=session_id,
-                url=url,
+                url=safe_url,
                 status=status,
                 size=size,
             )

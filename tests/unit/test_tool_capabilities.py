@@ -11,7 +11,7 @@ from hestia.tools.builtin import (
     make_list_dir_tool,
     make_read_file_tool,
     make_write_file_tool,
-    terminal,
+    make_terminal_tool,
 )
 from hestia.tools.builtin.delegate_task import make_delegate_task_tool
 from hestia.tools.builtin.memory_tools import (
@@ -21,6 +21,8 @@ from hestia.tools.builtin.memory_tools import (
 )
 from hestia.tools.builtin.read_artifact import make_read_artifact_tool
 from hestia.tools.metadata import ToolMetadata, tool
+
+terminal = make_terminal_tool()
 
 
 class TestToolCapabilities:

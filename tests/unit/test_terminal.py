@@ -7,7 +7,9 @@ import tempfile
 
 import pytest
 
-from hestia.tools.builtin.terminal import terminal
+from hestia.tools.builtin.terminal import make_terminal_tool
+
+terminal = make_terminal_tool()
 
 
 class TestTerminal:
