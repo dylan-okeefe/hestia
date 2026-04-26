@@ -75,40 +75,46 @@ Conversations are persisted in SQLite. Sessions resume across restarts, and if y
 
 ### Tools
 
-Nineteen built-ins plus a `@tool` decorator for writing your own:
+Nineteen built-ins plus a `@tool` decorator for writing your own — see [custom tools guide](docs/guides/custom-tools.md).
+
+#### Filesystem
+
+| Tool | What it does | Confirm? |
+|------|-------------|----------|
+| `read_file` / `list_dir` | Sandboxed filesystem reads | No |
+| `write_file` | Sandboxed file write | Yes |
+
+#### Memory
+
+| Tool | What it does | Confirm? |
+|------|-------------|----------|
+| `search_memory` / `save_memory` / `list_memories` | Long-term memory | No |
+
+#### Email
+
+| Tool | What it does | Confirm? |
+|------|-------------|----------|
+| `email_list` / `email_read` / `email_search` | IMAP reads | No |
+| `email_draft` / `email_move` / `email_flag` | IMAP mutations | No |
+| `email_send` | SMTP send | Yes |
+
+#### Network
+
+| Tool | What it does | Confirm? |
+|------|-------------|----------|
+| `http_get` | HTTP GET; blocks private IPs (SSRF) | No |
+| `web_search` | Tavily search (when configured) | No |
+
+#### Orchestration
 
 | Tool | What it does | Confirm? |
 |------|-------------|----------|
 | `current_time` | Returns current date/time | No |
-| `read_file` / `list_dir` | Sandboxed filesystem reads | No |
-| `write_file` | Sandboxed file write | Yes |
 | `terminal` | Shell command | Yes |
-| `http_get` | HTTP GET; blocks private IPs (SSRF) | No |
 | `read_artifact` | Retrieve an artifact by handle | No |
-| `search_memory` / `save_memory` / `list_memories` | Long-term memory | No |
 | `delegate_task` | Spawn a subagent session | No |
-| `email_list` / `email_read` / `email_search` | IMAP reads | No |
-| `email_draft` / `email_move` / `email_flag` | IMAP mutations | No |
-| `email_send` | SMTP send | Yes |
-| `web_search` | Tavily search (when configured) | No |
 
 Tools declare capabilities (`read_local`, `write_local`, `shell_exec`, `network_egress`, `memory_read`, `memory_write`, `orchestration`). The policy engine uses these to restrict access by context — subagents cannot shell, scheduled tasks cannot write files by default.
-
-Writing your own:
-
-```python
-from hestia.tools.metadata import tool
-
-@tool(
-    name="weather",
-    public_description="Get weather for a location",
-    capabilities=["network_egress"],
-)
-async def get_weather(location: str) -> str:
-    return f"Weather for {location}: sunny, 22C"
-```
-
-Register it at config build time and the model sees it in `list_tools`.
 
 ### Long-term memory (user-scoped)
 
@@ -130,23 +136,7 @@ Large tool outputs (files, HTTP bodies, command output) are auto-saved to `artif
 
 When enabled, Hestia reviews recent traces during idle hours and proposes concrete improvements — "user corrected timezone formatting 3 times → add `preferred_timezone` to SOUL.md" or "`read_file` → `search_memory` → `save_memory` chain appeared 8 times → register a `research_and_remember` chain." Proposals are **never** auto-applied; they queue for operator review via `hestia reflection {list,show,accept,reject,defer}`.
 
-Config:
-
-```python
-from hestia.config import HestiaConfig, ReflectionConfig
-
-config = HestiaConfig(
-    reflection=ReflectionConfig(
-        enabled=True,
-        cron="0 3 * * *",
-        idle_minutes=15,
-        lookback_turns=100,
-        proposals_per_run=5,
-    ),
-)
-```
-
-See [reflection-tuning.md](docs/guides/reflection-tuning.md) and [ADR-018](docs/adr/ADR-018-reflection-loop-architecture.md).
+See [reflection-tuning.md](docs/guides/reflection-tuning.md) for config examples and [ADR-018](docs/adr/ADR-018-reflection-loop-architecture.md) for architecture.
 
 ### Style profile (opt-in)
 
