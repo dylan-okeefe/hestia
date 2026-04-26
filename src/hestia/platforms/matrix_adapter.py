@@ -262,7 +262,7 @@ class MatrixAdapter(Platform):
                         pass
                 except asyncio.CancelledError:
                     raise
-                except Exception as e:  # Background sync loop — intentionally broad
+                except Exception as e:  # noqa: BLE001 — background sync loop — intentionally broad
                     logger.warning("Matrix sync error: %s", e)
                     await asyncio.sleep(5)  # Back off on error
         except asyncio.CancelledError:

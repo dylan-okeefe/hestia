@@ -250,7 +250,7 @@ class TurnExecution:
                 tc = tool_calls[idx]
                 try:
                     result = await self._dispatch_tool_call(session, tc, allowed_tools)
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 — concurrent tool shield
                     logger.exception("Tool call %s failed during concurrent dispatch", tc.name)
                     result = ToolCallResult.error(
                         f"Tool {tc.name} failed: {exc}", error_type=type(exc).__name__

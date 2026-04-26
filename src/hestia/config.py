@@ -335,7 +335,7 @@ class StyleConfig(_ConfigFromEnv):
 
         try:
             croniter(self.cron)
-        except Exception as exc:
+        except ValueError as exc:
             raise ValueError(
                 f"StyleConfig.cron is not a valid cron expression: {self.cron}"
             ) from exc
@@ -360,7 +360,7 @@ class ReflectionConfig(_ConfigFromEnv):
 
         try:
             croniter(self.cron)
-        except Exception as exc:
+        except ValueError as exc:
             raise ValueError(
                 f"ReflectionConfig.cron is not a valid cron expression: {self.cron}"
             ) from exc

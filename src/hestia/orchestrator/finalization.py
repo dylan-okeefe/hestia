@@ -205,7 +205,7 @@ class TurnFinalization:
             sanitized = self.sanitize_user_error(error)
             try:
                 await ctx.respond_callback(f"Error delivering response: {sanitized}")
-            except Exception as notify_err:
+            except Exception as notify_err:  # noqa: BLE001 — best-effort notification
                 logger.warning(
                     "Failed to send post-terminal error notification: %s",
                     notify_err,

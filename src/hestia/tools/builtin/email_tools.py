@@ -68,7 +68,7 @@ def make_email_tools(config: EmailConfig) -> list[Any]:
                 limit=limit,
                 unread_only=unread_only,
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — email adapter boundary
             return f"email_list failed: {type(exc).__name__}: {exc}"
         if not messages:
             return "No messages found."
@@ -106,7 +106,7 @@ def make_email_tools(config: EmailConfig) -> list[Any]:
         """Read a single email by IMAP UID."""
         try:
             result = await adapter.read_message(message_id)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — email adapter boundary
             return f"email_read failed: {type(exc).__name__}: {exc}"
         headers = result["headers"]
         body = result["body"]
@@ -158,7 +158,7 @@ def make_email_tools(config: EmailConfig) -> list[Any]:
         """Search emails using simplified query syntax."""
         try:
             uids = await adapter.search_messages(query, folder=folder)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — email adapter boundary
             return f"email_search failed: {type(exc).__name__}: {exc}"
         if not uids:
             return "No matching messages found."
@@ -212,7 +212,7 @@ def make_email_tools(config: EmailConfig) -> list[Any]:
                 body=body,
                 reply_to=reply_to,
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — email adapter boundary
             return f"email_draft failed: {type(exc).__name__}: {exc}"
         return f"Draft created with id: {draft_id}"
 
@@ -242,7 +242,7 @@ def make_email_tools(config: EmailConfig) -> list[Any]:
         """Send a draft email. Requires confirmation."""
         try:
             result = await adapter.send_draft(draft_id)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — email adapter boundary
             return f"email_send failed: {type(exc).__name__}: {exc}"
         return result
 
@@ -275,7 +275,7 @@ def make_email_tools(config: EmailConfig) -> list[Any]:
         """Move an email to another folder."""
         try:
             result = await adapter.move_message(message_id, folder)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — email adapter boundary
             return f"email_move failed: {type(exc).__name__}: {exc}"
         return result
 
@@ -309,7 +309,7 @@ def make_email_tools(config: EmailConfig) -> list[Any]:
         """Flag an email."""
         try:
             result = await adapter.flag_message(message_id, flag)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — email adapter boundary
             return f"email_flag failed: {type(exc).__name__}: {exc}"
         return result
 

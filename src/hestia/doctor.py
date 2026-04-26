@@ -59,7 +59,7 @@ async def run_checks(app: AppContext) -> list[CheckResult]:
     for fn in checks:
         try:
             results.append(await fn(app))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — defensive check boundary  # noqa: BLE001
             # Defensive: every check *should* catch its own exceptions, but if
             # one doesn't we surface it rather than aborting the whole suite.
             results.append(
@@ -127,7 +127,7 @@ async def _check_dependencies_in_sync(app: AppContext) -> CheckResult:
             False,
             "uv not found on PATH; cannot verify dependency sync",
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — defensive check boundary
         return CheckResult(
             "dependencies_in_sync",
             False,
@@ -232,7 +232,7 @@ async def _check_sqlite_dbs_readable(app: AppContext) -> CheckResult:
             False,
             f"{path}: {status}",
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — defensive check boundary  # noqa: BLE001 — defensive check boundary
         return CheckResult(
             "sqlite_dbs_readable",
             False,
@@ -277,7 +277,7 @@ async def _check_llamacpp_reachable(app: AppContext) -> CheckResult:
             False,
             f"cannot connect to llama.cpp at {health_url}",
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — defensive check boundary
         return CheckResult(
             "llamacpp_reachable",
             False,
@@ -436,7 +436,7 @@ async def _check_memory_epoch(app: AppContext) -> CheckResult:
             False,
             f"{epoch_path}: contents do not parse as int",
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — defensive check boundary  # noqa: BLE001 — defensive check boundary
         return CheckResult(
             "memory_epoch",
             False,

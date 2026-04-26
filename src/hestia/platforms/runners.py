@@ -155,7 +155,7 @@ async def run_platform(
                 platform=adapter,
                 platform_user=platform_user,
             )
-        except Exception as e:  # Outermost boundary — intentionally broad
+        except Exception as e:  # noqa: BLE001 — outermost boundary — intentionally broad
             logger.exception("Turn failed for %s %s", user_label, platform_user)
             await adapter.send_error(platform_user, f"Turn failed: {e}")
         finally:

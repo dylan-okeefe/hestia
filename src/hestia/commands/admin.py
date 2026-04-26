@@ -290,7 +290,7 @@ async def cmd_email_check(app: AppContext) -> None:
     adapter = EmailAdapter(cfg.email)
     try:
         messages = await adapter.list_messages(limit=1)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — email adapter boundary
         click.echo(f"Email check failed: {type(exc).__name__}: {exc}", err=True)
         sys.exit(1)
     click.echo(
@@ -313,7 +313,7 @@ async def cmd_email_list_cmd(
     adapter = EmailAdapter(cfg.email)
     try:
         messages = await adapter.list_messages(folder=folder, limit=limit, unread_only=unread_only)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — email adapter boundary
         click.echo(f"Failed: {type(exc).__name__}: {exc}", err=True)
         sys.exit(1)
     if not messages:
@@ -334,7 +334,7 @@ async def cmd_email_read_cmd(app: AppContext, message_id: str) -> None:
     adapter = EmailAdapter(cfg.email)
     try:
         result = await adapter.read_message(message_id)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — email adapter boundary
         click.echo(f"Failed: {type(exc).__name__}: {exc}", err=True)
         sys.exit(1)
     headers = result["headers"]

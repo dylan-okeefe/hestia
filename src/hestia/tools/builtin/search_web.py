@@ -77,7 +77,7 @@ async def search_web(query: str, max_results: int = 5) -> str:
 
     try:
         html = await http_get(url, timeout_seconds=30)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — tool boundary
         return f"Search failed: {e}"
 
     matches = _RESULT_RE.findall(html)

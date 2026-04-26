@@ -425,7 +425,7 @@ class TelegramAdapter(Platform):
             with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as ogg:
                 await voice_file.download_to_drive(ogg.name)
                 ogg_path = ogg.name
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — voice download boundary
             logger.warning("Failed to download voice message: %s", e)
             await message.reply_text("Sorry, I couldn't download that voice message.")
             return
@@ -433,7 +433,7 @@ class TelegramAdapter(Platform):
         # 2. Convert .ogg/opus to PCM 16kHz mono via ffmpeg
         try:
             pcm_bytes = await self._ogg_to_pcm(ogg_path, sample_rate=16000)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — audio conversion boundary
             logger.warning("Failed to convert voice message to PCM: %s", e)
             await message.reply_text("Sorry, I couldn't process that audio format.")
             return
@@ -451,7 +451,7 @@ class TelegramAdapter(Platform):
         try:
             pipeline = await get_voice_pipeline(self._voice_config)
             transcript = await pipeline.transcribe(pcm_bytes, sample_rate=16000)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — STT boundary
             logger.warning("STT failed for voice message: %s", e)
             await message.reply_text("Sorry, I couldn't understand that audio.")
             return
@@ -477,7 +477,7 @@ class TelegramAdapter(Platform):
             try:
                 async for chunk in pipeline.synthesize(response_text):
                     audio_chunks.append(chunk)
-            except Exception as synth_err:
+            except Exception as synth_err:  # noqa: BLE001 — TTS boundary
                 logger.warning("TTS failed for voice reply: %s", synth_err)
                 _prefix = "(Voice synthesis failed; sending text instead)"
                 _text = f"{_prefix}\n\n{_md_to_tg_html(response_text)}"
@@ -486,7 +486,7 @@ class TelegramAdapter(Platform):
 
             try:
                 full_audio_ogg = await self._pcm_chunks_to_ogg_opus(audio_chunks)
-            except Exception as enc_err:
+            except Exception as enc_err:  # noqa: BLE001 — audio encoding boundary
                 logger.warning("OGG encoding failed for voice reply: %s", enc_err)
                 _prefix = "(Voice encoding failed; sending text instead)"
                 _text = f"{_prefix}\n\n{_md_to_tg_html(response_text)}"
@@ -501,7 +501,7 @@ class TelegramAdapter(Platform):
                     truncated_ogg = await self._truncate_ogg_to_size(
                         full_audio_ogg, 1_000_000, duration_seconds
                     )
-                except Exception as trunc_err:
+                except Exception as trunc_err:  # noqa: BLE001 — best-effort truncation
                     logger.warning("OGG truncation failed: %s", trunc_err)
                     truncated_ogg = full_audio_ogg
                 await message.reply_voice(voice=io.BytesIO(truncated_ogg))
@@ -523,7 +523,7 @@ class TelegramAdapter(Platform):
                 platform_user=platform_user,
                 voice_reply=True,
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — turn boundary
             logger.exception("Turn failed for voice message from %s", user_id)
             await message.reply_text(f"Turn failed: {e}")
 

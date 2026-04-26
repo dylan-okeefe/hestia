@@ -204,7 +204,7 @@ class Orchestrator:
             except IllegalTransitionError:
                 raise
 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 — turn boundary safety net
                 await self._set_typing(platform, platform_user, False)
                 trace_record_id = await self._handle_unexpected_error(
                     ctx, e, trace_record_id

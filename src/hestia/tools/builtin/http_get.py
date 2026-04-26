@@ -177,7 +177,7 @@ async def _http_get_impl(url: str, timeout_seconds: int, use_curl_cffi: bool) ->
         logger.debug("HTTP 403 from %s; retrying with curl_cffi impersonation", url)
         try:
             return await _fetch_with_curl_cffi(url, timeout_seconds)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — tool boundary
             logger.debug("curl_cffi fallback failed: %s", exc)
             # Fall through to return the original 403 error
 
