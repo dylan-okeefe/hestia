@@ -14,10 +14,12 @@ from typing import Any
 import click
 
 from hestia.artifacts.store import ArtifactStore
-from hestia.config import HestiaConfig, validate_inference_model_name
+from hestia.config import HestiaConfig
 from hestia.context.builder import ContextBuilder
 from hestia.context.compressor import InferenceHistoryCompressor
 from hestia.core.inference import InferenceClient
+from hestia.core.types import Session
+from hestia.core.validators import validate_inference_model_name
 from hestia.email.adapter import EmailAdapter
 from hestia.identity import IdentityCompiler
 from hestia.inference import SlotManager
@@ -252,11 +254,55 @@ class CliAppContext:
         self._features = features or FeatureAppContext()
         self._bootstrapped = False
 
-    def __getattr__(self, name: str) -> Any:
-        try:
-            return getattr(self._core, name)
-        except AttributeError:
-            return getattr(self._features, name)
+    # --- Delegate properties for command compatibility ---
+
+    @property
+    def config(self) -> HestiaConfig:
+        return self._core.config
+
+    @property
+    def db(self) -> Database:
+        return self._core.db
+
+    @property
+    def session_store(self) -> SessionStore:
+        return self._core.session_store
+
+    @property
+    def tool_registry(self) -> ToolRegistry:
+        return self._core.tool_registry
+
+    @property
+    def policy(self) -> DefaultPolicyEngine:
+        return self._core.policy
+
+    @property
+    def memory_store(self) -> MemoryStore:
+        return self._core.memory_store
+
+    @property
+    def failure_store(self) -> FailureStore:
+        return self._core.failure_store
+
+    @property
+    def trace_store(self) -> TraceStore:
+        return self._core.trace_store
+
+    @property
+    def artifact_store(self) -> ArtifactStore:
+        return self._core.artifact_store
+
+    @property
+    def scheduler_store(self) -> SchedulerStore:
+        return self._core.scheduler_store
+
+    @property
+    def epoch_compiler(self) -> MemoryEpochCompiler:
+        return self._core.epoch_compiler
+
+    @property
+    def verbose(self) -> bool:
+        return self._core.verbose
 
     @property
     def confirm_callback(self) -> ConfirmCallback | None:
@@ -265,6 +311,44 @@ class CliAppContext:
     @confirm_callback.setter
     def confirm_callback(self, callback: ConfirmCallback | None) -> None:
         self._core.confirm_callback = callback
+
+    @property
+    def inference(self) -> InferenceClient:
+        return self._core.inference
+
+    @property
+    def context_builder(self) -> ContextBuilder:
+        return self._core.context_builder
+
+    @property
+    def slot_manager(self) -> SlotManager:
+        return self._core.slot_manager
+
+    @property
+    def handoff_summarizer(self) -> SessionHandoffSummarizer | None:
+        return self._core.handoff_summarizer
+
+    # --- Feature delegates ---
+
+    @property
+    def skill_store(self) -> SkillStore | None:
+        return self._features.skill_store
+
+    @property
+    def proposal_store(self) -> ProposalStore | None:
+        return self._features.proposal_store
+
+    @property
+    def style_store(self) -> StyleProfileStore | None:
+        return self._features.style_store
+
+    @property
+    def style_builder(self) -> StyleProfileBuilder | None:
+        return self._features.style_builder
+
+    @property
+    def skill_index_builder(self) -> SkillIndexBuilder | None:
+        return self._features.skill_index_builder
 
     @property
     def reflection_scheduler(self) -> ReflectionScheduler | None:
@@ -346,13 +430,36 @@ class CliAppContext:
         )
 
 
+async def _compile_and_set_memory_epoch(
+    app: CliAppContext,
+    session: Session,
+) -> bool:
+    """Compile memory epoch for the session and set it in context builder.
+
+    Args:
+        app: The CLI app context
+        session: The current session
+
+    Returns:
+        True if an epoch was compiled and set, False otherwise
+    """
+    if app.epoch_compiler is None:
+        return False
+
+    epoch = await app.epoch_compiler.compile(session)
+    if epoch.memory_count > 0:
+        app.context_builder.set_memory_epoch_prefix(epoch.compiled_text)
+        return True
+    return False
+
+
 def _require_scheduler_store(app: CliAppContext) -> SchedulerStore:
     """Return the scheduler store or raise a clear error."""
     if app.scheduler_store is None:
         raise click.UsageError(
             "Scheduler is not configured. Set `scheduler.enabled = True` in your config."
         )
-    return app.scheduler_store  # type: ignore[no-any-return]
+    return app.scheduler_store
 
 
 def make_app(cfg: HestiaConfig) -> CliAppContext:

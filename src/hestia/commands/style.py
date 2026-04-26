@@ -30,4 +30,4 @@ async def cmd_style_show(app: CliAppContext, platform: str | None, user: str | N
             click.echo("Failures:")
             click.echo(f"  Total: {sched_status['failure_count']}")
             for err in sched_status["last_errors"]:
-                click.echo(f"  {err['timestamp']}  {err['type']:<20} {err['message']}")
+                click.echo(f"  {err['timestamp']} UTC  {err['type']:<20} {err['message']}")

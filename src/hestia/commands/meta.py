@@ -11,6 +11,7 @@ from hestia.persistence.sessions import SessionStore
 
 if TYPE_CHECKING:
     from hestia.app import CliAppContext
+from hestia.commands._shared import _format_token_usage, _format_utc
 
 
 async def _handle_meta_command(
@@ -32,6 +33,7 @@ async def _handle_meta_command(
         click.echo("  /history         Print the current session message history")
         click.echo("  /session         Print the current session metadata")
         click.echo("  /refresh         Refresh the memory epoch")
+        click.echo("  /tokens          Show token usage for the most recent turn")
         click.echo("  /help            Show this help")
         return False, session
 
@@ -41,7 +43,14 @@ async def _handle_meta_command(
         click.echo(f"Platform User: {session.platform_user}")
         click.echo(f"State: {session.state.value}")
         click.echo(f"Temperature: {session.temperature.value}")
-        click.echo(f"Started: {session.started_at}")
+        click.echo(f"Started: {_format_utc(session.started_at)}")
+        if session.slot_id is not None:
+            click.echo(f"Slot ID: {session.slot_id}")
+        if session.slot_saved_path:
+            click.echo(f"Slot path: {session.slot_saved_path}")
+        if app is not None and app.policy is not None:
+            click.echo(f"Context window: {app.policy.ctx_window} tokens")
+            click.echo(f"Turn budget: {app.policy.turn_token_budget(session)} tokens")
         return False, session
 
     if cmd == "/history":
@@ -82,6 +91,24 @@ async def _handle_meta_command(
                 click.echo("No memories to include in epoch.")
         else:
             click.echo("Cannot refresh: app context not available.")
+        return False, session
+
+    if cmd == "/tokens":
+        if app is None:
+            click.echo("Cannot show tokens: app context not available.")
+            return False, session
+        if app.trace_store is None:
+            click.echo("Trace store not available.")
+            return False, session
+        traces = await app.trace_store.list_recent(session_id=session.id, limit=1)
+        if not traces:
+            click.echo("No token usage recorded for this session yet.")
+            return False, session
+        usage = _format_token_usage(traces[0])
+        if usage is None:
+            click.echo("No token usage recorded for this session yet.")
+        else:
+            click.echo(usage)
         return False, session
 
     click.echo(f"Unknown command: {cmd}. Type /help for a list.")

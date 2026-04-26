@@ -16,7 +16,7 @@ from hestia.core.types import ScheduledTask
 from hestia.errors import HestiaError
 from hestia.scheduler import Scheduler
 
-from ._shared import _format_datetime
+from ._shared import _format_utc
 
 logger = logging.getLogger(__name__)
 
@@ -91,8 +91,8 @@ async def cmd_schedule_add(
         if task.cron_expression:
             click.echo(f"  Schedule: cron '{task.cron_expression}'")
         elif task.fire_at:
-            click.echo(f"  Schedule: at {task.fire_at}")
-        click.echo(f"  Next run: {task.next_run_at}")
+            click.echo(f"  Schedule: at {_format_utc(task.fire_at)}")
+        click.echo(f"  Next run: {_format_utc(task.next_run_at)}")
         if task.notify:
             click.echo("  Notify: yes")
     except (HestiaError, ValueError) as e:
@@ -100,15 +100,19 @@ async def cmd_schedule_add(
         sys.exit(1)
 
 
-async def cmd_schedule_list(app: CliAppContext) -> None:
+async def cmd_schedule_list(app: CliAppContext, verbose: bool = False) -> None:
     """List scheduled tasks."""
     store = _require_scheduler_store(app)
     tasks = await store.list_tasks_for_session(session_id=None, include_disabled=True)
     if not tasks:
         click.echo("No scheduled tasks.")
         return
-    click.echo(f"{'ID':<20} {'Description':<25} {'Schedule':<20} {'Enabled':<8} {'Next Run'}")
-    click.echo("-" * 95)
+    if verbose:
+        click.echo(f"{'ID':<20} {'Description':<25} {'Schedule':<24} {'Enabled':<8} {'Next Run'}")
+        click.echo("-" * 99)
+    else:
+        click.echo(f"{'Description':<25} {'Schedule':<24} {'Enabled':<8} {'Next Run'}")
+        click.echo("-" * 79)
     for task in tasks:
         desc = (task.description or "")[:24]
         if task.cron_expression:
@@ -117,7 +121,7 @@ async def cmd_schedule_list(app: CliAppContext) -> None:
             fire_at = task.fire_at
             if fire_at.tzinfo is None:
                 fire_at = fire_at.replace(tzinfo=UTC)
-            sched = f"at: {fire_at.astimezone().strftime('%Y-%m-%d %H:%M')[:16]}"
+            sched = f"at: {_format_utc(fire_at)[:-4]}"  # strip ' UTC' to match column width
         else:
             sched = "unknown"
         enabled = "yes" if task.enabled else "no"
@@ -125,10 +129,13 @@ async def cmd_schedule_list(app: CliAppContext) -> None:
             next_run_dt = task.next_run_at
             if next_run_dt.tzinfo is None:
                 next_run_dt = next_run_dt.replace(tzinfo=UTC)
-            next_run = next_run_dt.astimezone().strftime("%Y-%m-%d %H:%M")
+            next_run = _format_utc(next_run_dt)[:-4]  # strip ' UTC' to match column width
         else:
             next_run = "-"
-        click.echo(f"{task.id:<20} {desc:<25} {sched:<20} {enabled:<8} {next_run}")
+        if verbose:
+            click.echo(f"{task.id:<20} {desc:<25} {sched:<24} {enabled:<8} {next_run}")
+        else:
+            click.echo(f"{desc:<25} {sched:<24} {enabled:<8} {next_run}")
 
 
 async def cmd_schedule_show(app: CliAppContext, task_id: str) -> None:
@@ -146,11 +153,11 @@ async def cmd_schedule_show(app: CliAppContext, task_id: str) -> None:
     if task.cron_expression:
         click.echo(f"Schedule:    cron '{task.cron_expression}'")
     elif task.fire_at:
-        click.echo(f"Schedule:    at {_format_datetime(task.fire_at)}")
+        click.echo(f"Schedule:    at {_format_utc(task.fire_at)}")
     click.echo(f"Enabled:     {'yes' if task.enabled else 'no'}")
     click.echo(f"Notify:      {'yes' if task.notify else 'no'}")
-    click.echo(f"Next run:    {_format_datetime(task.next_run_at)}")
-    click.echo(f"Last run:    {_format_datetime(task.last_run_at)}")
+    click.echo(f"Next run:    {_format_utc(task.next_run_at)}")
+    click.echo(f"Last run:    {_format_utc(task.last_run_at)}")
     if task.last_error:
         click.echo(f"Last error:  {task.last_error}")
 

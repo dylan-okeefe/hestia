@@ -134,7 +134,7 @@ async def init(app: CliAppContext, create_config: bool, with_soul: bool) -> None
 @click.pass_obj
 @async_command
 async def chat(app: CliAppContext, new_session: bool) -> None:
-    """Start an interactive chat session."""
+    """Start an interactive REPL chat session (persistent session)."""
     await cmd_chat(app, new_session)
 
 @cli.command()
@@ -142,7 +142,7 @@ async def chat(app: CliAppContext, new_session: bool) -> None:
 @click.pass_obj
 @async_command
 async def ask(app: CliAppContext, message: str) -> None:
-    """Send a single message and get a response."""
+    """Send a single message and get a response (no session persistence)."""
     await cmd_ask(app, message)
 
 @cli.command()
@@ -223,11 +223,12 @@ async def schedule_add(
     )
 
 @schedule.command(name="list")
+@click.option("--verbose", "-v", is_flag=True, help="Show task IDs")
 @click.pass_obj
 @async_command
-async def schedule_list(app: CliAppContext) -> None:
+async def schedule_list(app: CliAppContext, verbose: bool) -> None:
     """List scheduled tasks."""
-    await cmd_schedule_list(app)
+    await cmd_schedule_list(app, verbose=verbose)
 
 @schedule.command(name="show")
 @click.argument("task_id")

@@ -2,225 +2,16 @@
 
 from __future__ import annotations
 
-import dataclasses
-import json
 import os
-import types
-import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, ClassVar, Literal, Self, Union, get_args, get_origin, get_type_hints
+from typing import Literal
 
+from hestia.config_env import _ConfigFromEnv
+from hestia.core.validators import validate_inference_model_name
+from hestia.errors import EmailConfigError
 
-class EmailConfigError(ValueError):
-    """Raised when email configuration is invalid."""
-
-    pass
-
-
-def validate_inference_model_name(model_name: str) -> None:
-    """Reject the reserved ``dummy`` model name unless explicitly allowed.
-
-    The literal ``dummy`` is used only in tests behind ``HESTIA_ALLOW_DUMMY_MODEL=1``.
-    """
-    stripped = model_name.strip()
-    if stripped.lower() != "dummy":
-        return
-    if os.environ.get("HESTIA_ALLOW_DUMMY_MODEL") == "1":
-        return
-    raise ValueError(
-        'inference.model_name "dummy" is reserved for automated tests only. '
-        "Configure a real llama.cpp model filename, or set environment variable "
-        "HESTIA_ALLOW_DUMMY_MODEL=1 if you intentionally use a dummy model."
-    )
-
-# Default location for operator-authored personality (compiled identity; see ADR-0025).
-DEFAULT_SOUL_MD_PATH = Path("SOUL.md")
-
-
-def _is_optional(field_type: Any) -> bool:
-    """Return True if *field_type* is ``X | None``."""
-    origin = get_origin(field_type)
-    if origin is not Union and origin is not types.UnionType:
-        return False
-    return type(None) in get_args(field_type)
-
-
-def _coerce_env_value(raw: str, field_type: Any, field_name: str) -> Any:
-    """Convert a raw env string to the Python type indicated by *field_type*.
-
-    Raises ``ValueError`` with a clear message on parse failure.
-    """
-    origin = get_origin(field_type)
-    args = get_args(field_type)
-
-    # Optional[X]  (including X | None)
-    if _is_optional(field_type):
-        non_none = [a for a in args if a is not type(None)]
-        if len(non_none) == 1:
-            inner = non_none[0]
-            if raw.strip() == "":
-                return None
-            return _coerce_env_value(raw, inner, field_name)
-        # Complex union – fall back to string
-        return raw
-
-    # Literal[...]
-    if origin is Literal:
-        return raw
-
-    # list[str]
-    if origin is list:
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"invalid JSON for {field_name}: {exc}") from exc
-        if not isinstance(parsed, list):
-            raise ValueError(
-                f"expected JSON list for {field_name}, got {type(parsed).__name__}"
-            )
-        if args and args[0] is str and not all(isinstance(x, str) for x in parsed):
-            raise ValueError(f"expected JSON list of strings for {field_name}")
-        return parsed
-
-    # tuple[int, ...] or tuple[str, ...]
-    if origin is tuple:
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError:
-            # Fall back to comma-separated for non-JSON input (legacy env values)
-            parsed = [x.strip() for x in raw.split(",") if x.strip()]
-        if isinstance(parsed, int):
-            # Bare integer like "123" for tuple[int, ...] — wrap it
-            parsed = [parsed]
-        if not isinstance(parsed, list):
-            raise ValueError(
-                f"expected JSON list for {field_name}, got {type(parsed).__name__}"
-            )
-        if args and args[-1] is Ellipsis and len(args) == 2:
-            inner_type = args[0]
-            try:
-                return tuple(inner_type(x) for x in parsed)
-            except (ValueError, TypeError) as exc:
-                raise ValueError(
-                    f"expected JSON list of {inner_type.__name__} for {field_name}: {exc}"
-                ) from exc
-        # Fixed-length tuple – coerce each element if we can, else return tuple
-        return tuple(parsed)
-
-    # Basic scalar types
-    if field_type is str:
-        return raw
-    if field_type is int:
-        try:
-            return int(raw)
-        except ValueError as exc:
-            raise ValueError(f"expected integer for {field_name}, got {raw!r}") from exc
-    if field_type is float:
-        try:
-            return float(raw)
-        except ValueError as exc:
-            raise ValueError(f"expected float for {field_name}, got {raw!r}") from exc
-    if field_type is bool:
-        lowered = raw.strip().lower()
-        if lowered in ("1", "true", "yes", "on"):
-            return True
-        if lowered in ("0", "false", "no", "off"):
-            return False
-        raise ValueError(f"expected boolean for {field_name}, got {raw!r}")
-    if field_type is Path:
-        return Path(raw)
-
-    # Unsupported – caller should skip
-    raise TypeError(f"unsupported env type {field_type!r} for {field_name}")
-
-
-class _ConfigFromEnv:
-    """Mixin that adds ``from_env`` to dataclass-based config objects."""
-
-    _ENV_PREFIX: ClassVar[str] = ""
-    _ENV_KEY_OVERRIDES: ClassVar[dict[str, str]] = {}
-    _LEGACY_ALIASES: ClassVar[dict[str, list[str]]] = {}
-
-    @classmethod
-    def from_env(cls, environ: dict[str, str] | None = None) -> Self:
-        """Instantiate from environment variables.
-
-        The canonical prefix is ``HESTIA_{_ENV_PREFIX}_*``.  When
-        ``_ENV_PREFIX`` is empty it is derived from the class name
-        (e.g. ``InferenceConfig`` → ``INFERENCE``).
-        """
-        env = environ if environ is not None else os.environ
-        prefix = cls._ENV_PREFIX or cls.__name__.removesuffix("Config").upper()
-        return cls(**cls.from_env_dict(prefix, env))
-
-    @classmethod
-    def from_env_dict(
-        cls, prefix: str, environ: dict[str, str] | os._Environ[str]
-    ) -> dict[str, Any]:
-        """Build a kwargs dict for the dataclass constructor.
-
-        Handles ``str``, ``int``, ``float``, ``bool``, ``Path``,
-        ``list[str]``, ``tuple[int, ...]``, ``tuple[str, ...]`` and
-        optional variants.
-        """
-        hints = get_type_hints(cls)
-        result: dict[str, Any] = {}
-
-        assert dataclasses.is_dataclass(cls)
-        for f in dataclasses.fields(cls):
-            if not f.init:
-                continue
-
-            field_type = hints.get(f.name, f.type)
-            env_key = cls._ENV_KEY_OVERRIDES.get(
-                f.name, f"HESTIA_{prefix}_{f.name.upper()}"
-            )
-
-            raw = environ.get(env_key)
-            if raw is None:
-                for legacy_key in cls._LEGACY_ALIASES.get(env_key, []):
-                    raw = environ.get(legacy_key)
-                    if raw is not None:
-                        warnings.warn(
-                            f"Legacy env key {legacy_key!r} is deprecated, "
-                            f"use {env_key!r}",
-                            DeprecationWarning,
-                            stacklevel=4,
-                        )
-                        break
-
-            if raw is None:
-                continue  # use dataclass default
-
-            # Empty string for non-str/non-Literal types means "use default"
-            if raw.strip() == "":
-                effective_type = field_type
-                if _is_optional(field_type):
-                    non_none = [a for a in get_args(field_type) if a is not type(None)]
-                    if len(non_none) == 1:
-                        effective_type = non_none[0]
-                if effective_type is str or (
-                    get_origin(effective_type) is Literal and "" in get_args(effective_type)
-                ):
-                    pass  # allow empty string
-                else:
-                    continue
-
-            # Skip complex nested types (sub-configs, dicts, etc.)
-            if dataclasses.is_dataclass(field_type) and isinstance(field_type, type):
-                continue
-            if get_origin(field_type) in (dict,):
-                continue
-
-            try:
-                value = _coerce_env_value(raw, field_type, f.name)
-            except ValueError as exc:
-                raise ValueError(f"{env_key}: {exc}") from exc
-
-            result[f.name] = value
-
-        return result
+DEFAULT_SOUL_MD_PATH = Path("SOUL.md")  # compiled identity default (ADR-0025)
 
 
 # ---------------------------------------------------------------------------
@@ -234,14 +25,12 @@ class IdentityConfig(_ConfigFromEnv):
 
     _ENV_PREFIX = "IDENTITY"
 
-    soul_path: Path | None = field(
-        default_factory=lambda: DEFAULT_SOUL_MD_PATH,
-    )  # None = disable; default reads SOUL.md in cwd (DEFAULT_SOUL_MD_PATH)
+    soul_path: Path | None = field(default_factory=lambda: DEFAULT_SOUL_MD_PATH)
     compiled_cache_path: Path = field(
         default_factory=lambda: Path(".hestia/compiled_identity.txt")
     )
-    max_tokens: int = 300  # Hard cap on compiled view size
-    recompile_on_change: bool = True  # Recompile if soul.md changes
+    max_tokens: int = 300
+    recompile_on_change: bool = True
 
     def __post_init__(self) -> None:
         if self.max_tokens < 0:
@@ -258,19 +47,12 @@ class InferenceConfig(_ConfigFromEnv):
 
     base_url: str = "http://localhost:8001"
     model_name: str = ""
-    # Per-slot context budget; should equal llama-server's --ctx-size / --parallel
     context_length: int = 8192
     default_reasoning_budget: int = 2048
     max_tokens: int = 1024
 
     def __post_init__(self) -> None:
-        # Reject the literal placeholder "dummy" at config-load: historically
-        # this slipped through and surfaced later as mystifying 404 / "model
-        # not found" errors from llama-server. Empty model_name is still
-        # allowed here (CLI/setup paths like `hestia doctor` lazily
-        # fall back to a placeholder string when they don't need real
-        # inference); the real-inference guard lives in
-        # InferenceClient.__init__.
+        # Reject literal "dummy" at config-load (see H-5).
         if self.model_name == "dummy" and os.environ.get("HESTIA_ALLOW_DUMMY_MODEL") != "1":
             raise ValueError(
                 "inference.model_name == 'dummy' is rejected at config-load — "
@@ -292,13 +74,7 @@ class SlotConfig(_ConfigFromEnv):
     _ENV_PREFIX = "SLOT"
 
     slot_dir: Path = field(default_factory=lambda: Path("slots"))
-    """Directory where llama-server persists slot snapshots. **Must match
-    `llama-server --slot-save-path`.** Hestia sends only the basename to
-    llama.cpp; llama-server writes the file here. Hestia itself does not
-    write to this directory — it is purely a declaration of where slot
-    files will land so that out-of-band cleanup (gc, TTL, etc.) knows
-    where to look.
-    """
+    """Directory for llama-server slot snapshots (must match --slot-save-path)."""
     pool_size: int = 4
 
 
@@ -347,11 +123,7 @@ class TelegramConfig(_ConfigFromEnv):
 
 @dataclass
 class MatrixConfig(_ConfigFromEnv):
-    """Configuration for the Matrix adapter.
-
-    Security: allowed_rooms is a whitelist. Empty list denies all inbound.
-    Session mapping: one Matrix room -> one Hestia session (room ID as platform_user).
-    """
+    """Matrix adapter configuration."""
 
     _ENV_PREFIX = "MATRIX"
 
@@ -366,18 +138,7 @@ class MatrixConfig(_ConfigFromEnv):
 
 @dataclass
 class TrustConfig(_ConfigFromEnv):
-    """How much latitude to grant the agent in headless contexts.
-
-    Hestia's threat model for personal-use deployments is "operator is the
-    only user; trust the model to act on operator's behalf." This differs
-    from multi-tenant SaaS. TrustConfig lets operators pick the posture that
-    matches their deployment.
-
-    Defaults here match the `paranoid` preset: safest posture for a fresh
-    install or OSS download. Operators should explicitly opt into `household`
-    or `developer` via `TrustConfig.household()` / `TrustConfig.developer()`
-    in their `config.py`.
-    """
+    """Trust posture for headless contexts (paranoid, household, developer)."""
 
     _ENV_PREFIX = "TRUST"
 
@@ -410,15 +171,12 @@ class TrustConfig(_ConfigFromEnv):
 
     @classmethod
     def paranoid(cls) -> TrustConfig:
-        """Strictest posture. Current default. Auto-approves nothing; scheduler
-        and subagents cannot shell or write."""
+        """Strictest posture."""
         return cls()
 
     @classmethod
     def household(cls) -> TrustConfig:
-        """Recommended posture for single-operator personal deployments.
-        Auto-approves terminal and write_file on headless platforms;
-        scheduler and subagents can shell and write."""
+        """Recommended for single-operator personal deployments."""
         return cls(
             auto_approve_tools=["terminal", "write_file"],
             scheduler_shell_exec=True,
@@ -428,9 +186,7 @@ class TrustConfig(_ConfigFromEnv):
 
     @classmethod
     def developer(cls) -> TrustConfig:
-        """Most permissive posture. Auto-approves everything;
-        all capabilities available everywhere. Intended for development/testing
-        only — do not use in a deployment exposed to other users."""
+        """Most permissive posture (development/testing only)."""
         return cls(
             auto_approve_tools=["*"],  # wildcard — matches any tool name
             scheduler_shell_exec=True,
@@ -440,22 +196,7 @@ class TrustConfig(_ConfigFromEnv):
 
     @classmethod
     def prompt_on_mobile(cls) -> TrustConfig:
-        """Mobile-confirmation posture.
-
-        Auto-approves nothing. Every ``requires_confirmation=True`` tool
-        routes through the platform's confirm callback before executing.
-        Whether the call blocks the conversation thread depends on the
-        platform (Telegram inline keyboards block; Matrix reply-pattern
-        does not).
-
-        Keeps the rest of the ``household`` defaults: both ``handoff`` and
-        ``compression`` are enabled, and scheduler / subagents can shell
-        and write.
-
-        Use this when you run Hestia on Telegram or Matrix and want an
-        explicit ✅/❌ prompt on your phone for ``terminal``, ``write_file``,
-        and ``email_send``.
-        """
+        """Mobile-confirmation posture (household capabilities, prompts for approval)."""
         return cls(
             auto_approve_tools=[],
             scheduler_shell_exec=True,
@@ -466,12 +207,7 @@ class TrustConfig(_ConfigFromEnv):
 
 @dataclass
 class HandoffConfig(_ConfigFromEnv):
-    """Controls session-close summary generation.
-
-    Disabled by default. When enabled, the orchestrator generates a
-    2-3 sentence summary at session close and stores it as a memory
-    entry with tag ``handoff``.
-    """
+    """Session-close summary generation (disabled by default)."""
 
     _ENV_PREFIX = "HANDOFF"
 
@@ -482,13 +218,7 @@ class HandoffConfig(_ConfigFromEnv):
 
 @dataclass
 class CompressionConfig(_ConfigFromEnv):
-    """Controls in-turn history compression on overflow.
-
-    Disabled by default. When enabled, the context builder calls a
-    :class:`~hestia.context.compressor.HistoryCompressor` on dropped
-    messages and splices the summary back into the effective system
-    prompt for that turn.
-    """
+    """In-turn history compression on overflow (disabled by default)."""
 
     _ENV_PREFIX = "COMPRESSION"
 
@@ -620,12 +350,7 @@ class VoiceConfig(_ConfigFromEnv):
 
 @dataclass
 class WebSearchConfig(_ConfigFromEnv):
-    """Configuration for the web_search tool.
-
-    Default `provider=""` disables the tool entirely — it won't register
-    in the tool registry if unconfigured. Operators opt in by setting
-    provider + api_key in their config.py.
-    """
+    """web_search tool configuration (provider=\"\" disables)."""
 
     _ENV_PREFIX = "WEB_SEARCH"
 
@@ -639,11 +364,7 @@ class WebSearchConfig(_ConfigFromEnv):
 
 @dataclass
 class HestiaConfig(_ConfigFromEnv):
-    """Top-level Hestia configuration.
-
-    CLI options override values set here. Config files are loaded
-    with HestiaConfig.from_file() and merged with CLI overrides.
-    """
+    """Top-level Hestia configuration."""
 
     _ENV_PREFIX = "HESTIA"
 
@@ -671,14 +392,7 @@ class HestiaConfig(_ConfigFromEnv):
 
     @classmethod
     def from_file(cls, path: Path) -> HestiaConfig:
-        """Load config from a Python file.
-
-        The file must define a `config` variable of type HestiaConfig.
-
-        .. note::
-            The loaded module is executed with ``exec_module`` — treat config
-            files as trusted operator-authored code. See ``SECURITY.md``.
-        """
+        """Load config from a Python file (must define `config` variable)."""
         import importlib.util
 
         if not path.exists():
@@ -700,16 +414,7 @@ class HestiaConfig(_ConfigFromEnv):
 
     @classmethod
     def for_trust(cls, trust: TrustConfig) -> HestiaConfig:
-        """Create a config with handoff/compression implied by the trust preset.
-
-        - ``paranoid()`` → handoff=False, compression=False
-        - ``household()`` → handoff=True, compression=True
-        - ``developer()`` → handoff=True, compression=True
-
-        Example::
-
-            config = HestiaConfig.for_trust(TrustConfig.household())
-        """
+        """Create a config with handoff/compression implied by trust preset."""
         enable = trust not in (TrustConfig.paranoid(), TrustConfig())
         return cls(
             trust=trust,
