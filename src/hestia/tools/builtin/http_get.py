@@ -4,6 +4,7 @@ import asyncio
 import ipaddress
 import logging
 import socket
+from typing import Any, Callable
 from urllib.parse import urlparse
 
 import httpx
@@ -158,9 +159,30 @@ async def _fetch_with_curl_cffi(url: str, timeout_seconds: int) -> str:
                 continue
 
             response.raise_for_status()
-            return response.text
+            return str(response.text)
 
     raise RuntimeError(f"Too many redirects (>{max_redirects})")
+
+
+async def _http_get_impl(url: str, timeout_seconds: int, use_curl_cffi: bool) -> str:
+    """Fetch a URL and return its text content."""
+    # SSRF pre-flight check (user-friendly errors)
+    if error := _is_url_safe(url):
+        return error
+
+    response = await _fetch_with_httpx(url, timeout_seconds)
+    await _record_egress(str(response.url), response.status_code, len(response.content))
+
+    if response.status_code == 403 and use_curl_cffi and _CURL_CFFI_AVAILABLE:
+        logger.debug("HTTP 403 from %s; retrying with curl_cffi impersonation", url)
+        try:
+            return await _fetch_with_curl_cffi(url, timeout_seconds)
+        except Exception as exc:
+            logger.debug("curl_cffi fallback failed: %s", exc)
+            # Fall through to return the original 403 error
+
+    response.raise_for_status()
+    return response.text
 
 
 @tool(
@@ -184,27 +206,34 @@ async def http_get(url: str, timeout_seconds: int = 30) -> str:
     Large responses are automatically promoted to artifacts by the registry.
     Blocks requests to private/internal IP ranges for SSRF protection.
 
-    If the site returns 403 (Forbidden) and ``curl-cffi`` is installed,
-    automatically retries with browser TLS/HTTP fingerprint impersonation
-    to evade bot detection that fingerprints on cipher suites or headers.
+    The curl_cffi fallback (browser TLS/HTTP fingerprint impersonation) is only
+    used when ``config.use_curl_cffi_fallback`` is explicitly enabled.
     """
-    # SSRF pre-flight check (user-friendly errors)
-    if error := _is_url_safe(url):
-        return error
+    return await _http_get_impl(url, timeout_seconds, use_curl_cffi=False)
 
-    response = await _fetch_with_httpx(url, timeout_seconds)
-    await _record_egress(str(response.url), response.status_code, len(response.content))
 
-    if response.status_code == 403 and _CURL_CFFI_AVAILABLE:
-        logger.debug("HTTP 403 from %s; retrying with curl_cffi impersonation", url)
-        try:
-            return await _fetch_with_curl_cffi(url, timeout_seconds)
-        except Exception as exc:
-            logger.debug("curl_cffi fallback failed: %s", exc)
-            # Fall through to return the original 403 error
+def make_http_get_tool(use_curl_cffi_fallback: bool = False) -> Callable[..., Any]:
+    """Factory for http_get with configurable curl_cffi fallback."""
 
-    response.raise_for_status()
-    return response.text
+    @tool(
+        name="http_get",
+        public_description=(
+            "Fetch any web page or API via HTTP GET. Use this for reading pages, "
+            "calling REST APIs, or searching via raw-HTML-friendly engines like "
+            "DuckDuckGo (html.duckduckgo.com/html/?q=...). DOES NOT work on "
+            "JavaScript-heavy sites like Google Search, Google Maps, or Yelp. "
+            "For general web searches, use the search_web tool instead. "
+            "Params: url (str), timeout_seconds (int, default 30)."
+        ),
+        max_inline_chars=6000,
+        tags=["network", "builtin"],
+        capabilities=[NETWORK_EGRESS],
+    )
+    async def http_get(url: str, timeout_seconds: int = 30) -> str:
+        """Fetch a URL and return its text content."""
+        return await _http_get_impl(url, timeout_seconds, use_curl_cffi=use_curl_cffi_fallback)
+
+    return http_get
 
 
 async def _record_egress(url: str, status: int, size: int) -> None:

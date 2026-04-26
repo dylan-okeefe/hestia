@@ -9,6 +9,21 @@
 
 
 
+## 2026-04-26 — L72 Complete (Tool Call Boundaries & SSRF Defense)
+
+**Outcome:** Added tool-call cap and made curl_cffi fallback opt-in.
+
+**Changes:**
+- `PolicyConfig.max_tool_calls_per_turn` (default: 10) — truncates excess tool calls with error messages
+- `HestiaConfig.use_curl_cffi_fallback` (default: False) — curl_cffi retry only when explicitly enabled
+- `make_http_get_tool()` factory replaces direct `http_get` registration in app bootstrap
+
+**Quality gate:** 1057 passed, 6 skipped; ruff clean; mypy clean.
+
+**Branch:** `feature/l72-tool-call-boundaries-and-ssrf`
+
+---
+
 ## 2026-04-26 — L71 Complete (App Context Gravity Well)
 
 **Outcome:** Collapsed three-class app-context hierarchy into single `AppContext`.
@@ -16,8 +31,7 @@
 **Changes:**
 - Deleted `CoreAppContext`, `FeatureAppContext`, `CliAppContext` facade.
 - Created `AppContext` with `@functools.cached_property` for lazy subsystems.
-- Broke `make_app()` into phase helpers (`_load_and_validate_config`, `_warn_on_missing_files`, `register_tools`, `_register_optional_features`).
-- Updated all command/type annotations across 13 source files and 7 test files.
+- Broke `make_app()` into phase helpers.
 - Net −332 lines across 20 files.
 
 **Quality gate:** 1057 passed, 6 skipped; ruff clean; mypy clean.
@@ -31,39 +45,13 @@
 **Outcome:** Two April-22 review findings (M2, M3) fixed and tested.
 
 **Changes:**
-- `memory/store.py`: `_resolve_scope` now normalizes partial `platform`/`platform_user` to both `None` with a warning, preventing isolation leaks in `search`/`list_memories`/`delete`/`count`.
+- `memory/store.py`: `_resolve_scope` now normalizes partial `platform`/`platform_user` to both `None` with a warning, preventing isolation leaks.
 - `orchestrator/execution.py`: `_run_one` wrapper catches exceptions during concurrent tool dispatch and returns `ToolCallResult.error(...)`, shielding sibling tools from `asyncio.gather` cancellation.
 - Tests added for both fixes.
 
 **Quality gate:** 1062 passed, 6 skipped; ruff clean; mypy clean.
 
 **Branch:** `feature/l70-memory-search-scope-and-concurrent-tool-safety`
-
----
-
-## 2026-04-26 — L63–L69 Arc Complete (Security, Caches, Exception Transparency)
-
-**Outcome:** Seven sequential loops completed on feature branches. Focus areas: security defaults, inference client lifecycle, slot manager concurrency, meta-tool extensibility, bounded caches, memory store precision, and exception handling transparency.
-
-**Subagent chunks:**
-1. **L63** — `allowed_roots` deny-all default; credential redaction in `__repr__`; doctor trust-hardening warnings
-2. **L64** — Extract `_request()` helper; async context manager; lifecycle wiring into shutdown paths
-3. **L65** — Batched LRU victim query; lock release before HTTP I/O; slot_save 400 → ERROR + COLD demotion
-4. **L66** — `_META_TOOL_HANDLERS` dispatch table; `core/serialization.py` extraction
-5. **L67** — OrderedDict LRU tokenize cache (4096 cap); static token cache; `_join_overhead` caching fix; TTL eviction for Telegram edit times; batched `list_dir` filesystem calls
-6. **L68** — FTS5 escape `*`/`^`/bare `NOT`; `_resolve_scope` deduplication; remove dead `hasattr` checks; simplify tag LIKE fallback
-7. **L69** — Narrow `except Exception` to specific types where safe; add `# noqa: BLE001` + comment to all remaining catch-all handlers; fix test blockers from previous loops
-
-**Quality gate:** 1059 passed, 6 skipped; ruff clean; mypy clean (3 pre-existing errors unrelated to changes).
-
-**Branches:**
-- `feature/l63-security-defaults-and-trust-hardening`
-- `feature/l64-inference-client-consolidation`
-- `feature/l65-slot-manager-concurrency`
-- `feature/l66-meta-tool-extensibility`
-- `feature/l67-bounded-caches-and-daemon-stability`
-- `feature/l68-memory-store-precision`
-- `feature/l69-exception-handling-transparency`
 
 ---
 

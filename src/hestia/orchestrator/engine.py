@@ -58,6 +58,7 @@ class Orchestrator:
         policy: PolicyEngine,
         confirm_callback: ConfirmCallback | None = None,
         max_iterations: int = 10,
+        max_tool_calls_per_turn: int = 10,
         slot_manager: SlotManager | None = None,
         failure_store: "FailureStore | None" = None,
         trace_store: "TraceStore | None" = None,
@@ -76,6 +77,7 @@ class Orchestrator:
         self._policy = policy
         self._confirm_callback = confirm_callback
         self._max_iterations = max_iterations
+        self._max_tool_calls_per_turn = max_tool_calls_per_turn
         self._slot_manager = slot_manager
         self._failure_store = failure_store
         self._trace_store = trace_store
@@ -106,6 +108,7 @@ class Orchestrator:
             confirm_callback=confirm_callback,
             injection_scanner=injection_scanner,
             max_iterations=max_iterations,
+            max_tool_calls_per_turn=max_tool_calls_per_turn,
         )
 
         self._finalization = TurnFinalization(

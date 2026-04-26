@@ -42,7 +42,6 @@ from hestia.style.scheduler import StyleScheduler
 from hestia.style.store import StyleProfileStore
 from hestia.tools.builtin import (
     current_time,
-    http_get,
     make_create_scheduled_task_tool,
     make_delegate_task_tool,
     make_delete_memory_tool,
@@ -51,6 +50,7 @@ from hestia.tools.builtin import (
     make_email_search_and_read_tool,
     make_email_tools,
     make_enable_scheduled_task_tool,
+    make_http_get_tool,
     make_list_dir_tool,
     make_list_memories_tool,
     make_list_scheduled_tasks_tool,
@@ -268,6 +268,7 @@ class AppContext:
             policy=self.policy,
             confirm_callback=self.confirm_callback,
             max_iterations=self.config.max_iterations,
+            max_tool_calls_per_turn=self.config.policy.max_tool_calls_per_turn,
             slot_manager=self.slot_manager,
             failure_store=self.failure_store,
             trace_store=self.trace_store,
@@ -285,7 +286,7 @@ class AppContext:
         reg = self.tool_registry
 
         reg.register(current_time)
-        reg.register(http_get)
+        reg.register(make_http_get_tool(cfg.use_curl_cffi_fallback))
         reg.register(make_list_dir_tool(cfg.storage))
         reg.register(terminal)
         reg.register(make_read_file_tool(cfg.storage))
@@ -386,6 +387,7 @@ def _warn_on_missing_files(cfg: HestiaConfig, calibration_path: Path) -> None:
             err=True,
         )
         logger.warning("Calibration file not found at %s", calibration_path)
+
 
 
 def _register_optional_features(app: AppContext) -> None:
