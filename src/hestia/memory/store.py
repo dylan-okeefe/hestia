@@ -21,10 +21,10 @@ logger = logging.getLogger(__name__)
 def _sanitize_fts5_query(query: str) -> str:
     """Escape a raw query so FTS5 does not misinterpret special characters.
 
-    FTS5 treats hyphens, colons, and other punctuation as operators or
-    column specifiers. Wrapping the query in double quotes forces FTS5 to
-    treat it as a literal phrase, which is what users expect for simple
-    keyword/tag searches.
+    FTS5 treats hyphens, colons, asterisks, carets, and other punctuation
+    as operators or column specifiers. Wrapping the query in double quotes
+    forces FTS5 to treat it as a literal phrase, which is what users expect
+    for simple keyword/tag searches.
 
     If the query already contains explicit FTS5 operators (AND, OR, NOT)
     or is already quoted, it is returned unchanged so advanced syntax
@@ -35,9 +35,9 @@ def _sanitize_fts5_query(query: str) -> str:
         return query
     if any(op in stripped.upper() for op in (" AND ", " OR ", " NOT ")):
         return query
-    # Hyphens and colons are the most common characters that trigger
-    # "no such column" or syntax errors in FTS5.
-    if "-" in stripped or ":" in stripped:
+    # Hyphens, colons, asterisks, and carets are the most common characters
+    # that trigger "no such column" or syntax errors in FTS5.
+    if "-" in stripped or ":" in stripped or "*" in stripped or "^" in stripped:
         escaped = stripped.replace('"', '""')
         return f'"{escaped}"'
     return query
@@ -210,6 +210,18 @@ class MemoryStore:
         platform_user = current_platform_user.get()
         return platform, platform_user
 
+    def _resolve_scope(
+        self, platform: str | None, platform_user: str | None
+    ) -> tuple[str | None, str | None]:
+        """Fill in missing platform/user from runtime ContextVars."""
+        if platform is None or platform_user is None:
+            ctx_platform, ctx_platform_user = self._get_user_scope()
+            if platform is None:
+                platform = ctx_platform
+            if platform_user is None:
+                platform_user = ctx_platform_user
+        return platform, platform_user
+
     async def save(
         self,
         content: str,
@@ -230,12 +242,7 @@ class MemoryStore:
         Returns:
             The created Memory
         """
-        if platform is None or platform_user is None:
-            ctx_platform, ctx_platform_user = self._get_user_scope()
-            if platform is None:
-                platform = ctx_platform
-            if platform_user is None:
-                platform_user = ctx_platform_user
+        platform, platform_user = self._resolve_scope(platform, platform_user)
         if platform is None or platform_user is None:
             logger.warning(
                 "memory.save called outside an identity context; "
@@ -297,12 +304,7 @@ class MemoryStore:
         Returns:
             List of matching memories, ordered by relevance (BM25 rank) or recency
         """
-        if platform is None or platform_user is None:
-            ctx_platform, ctx_platform_user = self._get_user_scope()
-            if platform is None:
-                platform = ctx_platform
-            if platform_user is None:
-                platform_user = ctx_platform_user
+        platform, platform_user = self._resolve_scope(platform, platform_user)
 
         params: dict[str, Any] = {"limit": limit}
 
@@ -365,12 +367,7 @@ class MemoryStore:
         Returns:
             List of memories, newest first
         """
-        if platform is None or platform_user is None:
-            ctx_platform, ctx_platform_user = self._get_user_scope()
-            if platform is None:
-                platform = ctx_platform
-            if platform_user is None:
-                platform_user = ctx_platform_user
+        platform, platform_user = self._resolve_scope(platform, platform_user)
 
         # Every entry appended to ``where_clauses`` below is a *literal* string fragment
         # chosen by this function's own control flow — never derived from caller input. All
@@ -387,18 +384,13 @@ class MemoryStore:
                 params["tag"] = quoted_tag
             else:
                 where_clauses.append(
-                    "(tags = :tag OR tags LIKE :p0 OR tags LIKE :p1 OR tags LIKE :p2 OR "
-                    "tags LIKE :s0 OR tags LIKE :s1 OR tags LIKE :s2)"
+                    "(tags = :tag OR tags LIKE :p0 OR tags LIKE :p1 OR tags LIKE :p2)"
                 )
                 params["tag"] = tag
-                # pipe-delimited (new format)
+                # pipe-delimited exact-match patterns
                 params["p0"] = f"{tag}|%"
                 params["p1"] = f"%|{tag}|%"
                 params["p2"] = f"%|{tag}"
-                # space-delimited (legacy format, for backward compat)
-                params["s0"] = f"{tag} %"
-                params["s1"] = f"% {tag} %"
-                params["s2"] = f"% {tag}"
 
         if platform is not None and platform_user is not None:
             where_clauses.append("platform = :platform AND platform_user = :platform_user")
@@ -433,12 +425,7 @@ class MemoryStore:
 
         Returns True if the memory was found and deleted.
         """
-        if platform is None or platform_user is None:
-            ctx_platform, ctx_platform_user = self._get_user_scope()
-            if platform is None:
-                platform = ctx_platform
-            if platform_user is None:
-                platform_user = ctx_platform_user
+        platform, platform_user = self._resolve_scope(platform, platform_user)
 
         if platform is not None and platform_user is not None:
             sql = sa.text(
@@ -461,12 +448,7 @@ class MemoryStore:
         platform_user: str | None = None,
     ) -> int:
         """Return the total number of memories, optionally scoped to a user."""
-        if platform is None or platform_user is None:
-            ctx_platform, ctx_platform_user = self._get_user_scope()
-            if platform is None:
-                platform = ctx_platform
-            if platform_user is None:
-                platform_user = ctx_platform_user
+        platform, platform_user = self._resolve_scope(platform, platform_user)
 
         if platform is not None and platform_user is not None:
             sql = sa.text(
@@ -500,6 +482,6 @@ class MemoryStore:
             tags=tags,
             session_id=row.session_id,
             created_at=created_at,
-            platform=row.platform if hasattr(row, "platform") else None,
-            platform_user=row.platform_user if hasattr(row, "platform_user") else None,
+            platform=row.platform,
+            platform_user=row.platform_user,
         )
