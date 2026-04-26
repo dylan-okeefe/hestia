@@ -6,11 +6,11 @@ import sys
 
 import click
 
-from hestia.app import CliAppContext
+from hestia.app import AppContext
 from hestia.commands._shared import _format_utc
 
 
-async def cmd_reflection_status(app: CliAppContext) -> None:
+async def cmd_reflection_status(app: AppContext) -> None:
     """Show reflection scheduler health and proposal counts."""
     if app.reflection_scheduler is not None:
         sched_status = app.reflection_scheduler.status()
@@ -40,7 +40,7 @@ async def cmd_reflection_status(app: CliAppContext) -> None:
         click.echo("Proposal store: not configured")
 
 
-async def cmd_reflection_list(app: CliAppContext, status: str) -> None:
+async def cmd_reflection_list(app: AppContext, status: str) -> None:
     """List proposals."""
     if app.proposal_store is None:
         click.echo("Proposal store not configured.", err=True)
@@ -56,7 +56,7 @@ async def cmd_reflection_list(app: CliAppContext, status: str) -> None:
         click.echo(f"{p.id:<20} {p.type:<18} {p.confidence:<12.2f} {summary}")
 
 
-async def cmd_reflection_show(app: CliAppContext, proposal_id: str) -> None:
+async def cmd_reflection_show(app: AppContext, proposal_id: str) -> None:
     """Show full details of a proposal."""
     if app.proposal_store is None:
         click.echo("Proposal store not configured.", err=True)
@@ -78,7 +78,7 @@ async def cmd_reflection_show(app: CliAppContext, proposal_id: str) -> None:
         click.echo(f"Review note: {p.review_note}")
 
 
-async def cmd_reflection_accept(app: CliAppContext, proposal_id: str) -> None:
+async def cmd_reflection_accept(app: AppContext, proposal_id: str) -> None:
     """Accept a proposal (marks it accepted; does not auto-apply)."""
     if app.proposal_store is None:
         click.echo("Proposal store not configured.", err=True)
@@ -93,7 +93,7 @@ async def cmd_reflection_accept(app: CliAppContext, proposal_id: str) -> None:
     click.echo(f"Accepted proposal {proposal_id}")
 
 
-async def cmd_reflection_reject(app: CliAppContext, proposal_id: str, note: str | None) -> None:
+async def cmd_reflection_reject(app: AppContext, proposal_id: str, note: str | None) -> None:
     """Reject a proposal."""
     if app.proposal_store is None:
         click.echo("Proposal store not configured.", err=True)
@@ -108,7 +108,7 @@ async def cmd_reflection_reject(app: CliAppContext, proposal_id: str, note: str 
     click.echo(f"Rejected proposal {proposal_id}")
 
 
-async def cmd_reflection_defer(app: CliAppContext, proposal_id: str, until: str | None) -> None:
+async def cmd_reflection_defer(app: AppContext, proposal_id: str, until: str | None) -> None:
     """Defer a proposal."""
     if app.proposal_store is None:
         click.echo("Proposal store not configured.", err=True)
@@ -124,7 +124,7 @@ async def cmd_reflection_defer(app: CliAppContext, proposal_id: str, until: str 
     click.echo(f"Deferred proposal {proposal_id}")
 
 
-async def cmd_reflection_run(app: CliAppContext, now: bool) -> None:
+async def cmd_reflection_run(app: AppContext, now: bool) -> None:
     """Run reflection manually (requires --now)."""
     if not now:
         click.echo("Use --now to trigger reflection manually.", err=True)
@@ -160,7 +160,7 @@ async def cmd_reflection_run(app: CliAppContext, now: bool) -> None:
         click.echo("No proposals generated.")
 
 
-async def cmd_reflection_history(app: CliAppContext) -> None:
+async def cmd_reflection_history(app: AppContext) -> None:
     """Show past proposals and their outcomes."""
     if app.proposal_store is None:
         click.echo("Proposal store not configured.", err=True)

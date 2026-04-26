@@ -1,7 +1,7 @@
 """Pytest configuration for the whole test tree.
 
 H-5 (Copilot): ``model_name == "dummy"`` is rejected unless
-``HESTIA_ALLOW_DUMMY_MODEL=1``. Many unit tests build ``CliAppContext`` via
+``HESTIA_ALLOW_DUMMY_MODEL=1``. Many unit tests build ``AppContext`` via
 ``make_app`` with an empty ``inference.model_name``; the app layer maps that to
 ``dummy`` only when this env is set so ``InferenceClient`` construction succeeds.
 """

@@ -7,7 +7,6 @@ import functools
 import logging
 import os
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -104,293 +103,132 @@ class CliConfirmHandler:
         return click.confirm("Execute?", default=True)
 
 
-@dataclass
-class CoreAppContext:
-    """Always-available application subsystems."""
+class AppContext:
+    """Single composition root for Hestia subsystems.
 
-    config: HestiaConfig
-    db: Database
-    session_store: SessionStore
-    tool_registry: ToolRegistry
-    policy: DefaultPolicyEngine
-    memory_store: MemoryStore
-    failure_store: FailureStore
-    trace_store: TraceStore
-    artifact_store: ArtifactStore
-    scheduler_store: SchedulerStore
-    epoch_compiler: MemoryEpochCompiler
-    verbose: bool = False
-    confirm_callback: ConfirmCallback | None = None
-    calibration_path: Path | None = None
-    compiled_identity: str | None = None
+    Replaces the previous three-class split (CoreAppContext +
+    FeatureAppContext + CliAppContext facade).  Cheap subsystems are
+    created eagerly; expensive or connection-holding subsystems are
+    lazy via :func:`functools.cached_property`.
+    """
 
-    _inference: InferenceClient | None = field(default=None, repr=False)
-    _context_builder: ContextBuilder | None = field(default=None, repr=False)
-    _slot_manager: SlotManager | None = field(default=None, repr=False)
-    _handoff_summarizer: SessionHandoffSummarizer | None = field(
-        default=None, repr=False
-    )
-    _injection_scanner: InjectionScanner | None = field(default=None, repr=False)
+    def __init__(self, config: HestiaConfig) -> None:
+        self.config = config
+        self.verbose = config.verbose
+        self.confirm_callback: ConfirmCallback | None = None
+        self._bootstrapped = False
 
-    @property
+        # Eager core subsystems
+        self.db = Database(config.storage.database_url)
+        self.artifact_store = ArtifactStore(config.storage.artifacts_dir)
+        self.session_store = SessionStore(self.db)
+        self.policy = _make_policy(config)
+        self.memory_store = MemoryStore(self.db)
+        self.failure_store = FailureStore(self.db)
+        self.trace_store = TraceStore(self.db)
+        self.scheduler_store = SchedulerStore(self.db)
+        self.epoch_compiler = MemoryEpochCompiler(self.memory_store, max_tokens=500)
+        self.tool_registry = ToolRegistry(self.artifact_store)
+
+        # Eager feature subsystems (lightweight; always available for status queries)
+        self.proposal_store = ProposalStore(self.db)
+        self.style_store = StyleProfileStore(self.db)
+        self.style_builder = StyleProfileBuilder(self.db, self.style_store, config.style)
+
+        # Optional feature subsystems
+        self.skill_store: SkillStore | None = None
+        self.skill_index_builder: SkillIndexBuilder | None = None
+
+        # Private caches for lazy construction
+        self._calibration_path: Path | None = None
+        self._compiled_identity: str | None = None
+
+    # --- Lazy core subsystems ---
+
+    @functools.cached_property
     def inference(self) -> InferenceClient:
         """Lazy inference client — created on first access."""
-        if self._inference is None:
-            model_name = self.config.inference.model_name.strip()
-            if not model_name:
-                raise ValueError(
-                    "inference.model_name is required — set it to your llama.cpp model "
-                    "filename (e.g. 'my-model-Q4_K_M.gguf'), or for tests only set "
-                    "HESTIA_ALLOW_DUMMY_MODEL=1 and use model_name='dummy'."
-                )
-            self._inference = InferenceClient(
-                self.config.inference.base_url, model_name
+        model_name = self.config.inference.model_name.strip()
+        if not model_name:
+            raise ValueError(
+                "inference.model_name is required — set it to your llama.cpp model "
+                "filename (e.g. 'my-model-Q4_K_M.gguf'), or for tests only set "
+                "HESTIA_ALLOW_DUMMY_MODEL=1 and use model_name='dummy'."
             )
-        return self._inference
+        return InferenceClient(self.config.inference.base_url, model_name)
 
-    @property
+    @functools.cached_property
     def context_builder(self) -> ContextBuilder:
         """Lazy context builder — created on first access."""
-        if self._context_builder is None:
-            path = self.calibration_path or DEFAULT_CALIBRATION_PATH
-            cb = ContextBuilder.from_calibration_file(
-                self.inference, self.policy, path
-            )
-            if self.compiled_identity:
-                cb.set_identity_prefix(self.compiled_identity)
-            if self.config.compression.enabled:
-                cb.enable_compression(
-                    InferenceHistoryCompressor(
-                        self.inference, max_chars=self.config.compression.max_chars
-                    )
+        path = self._calibration_path or DEFAULT_CALIBRATION_PATH
+        cb = ContextBuilder.from_calibration_file(self.inference, self.policy, path)
+        if self._compiled_identity:
+            cb.set_identity_prefix(self._compiled_identity)
+        if self.config.compression.enabled:
+            cb.enable_compression(
+                InferenceHistoryCompressor(
+                    self.inference, max_chars=self.config.compression.max_chars
                 )
-            self._context_builder = cb
-        return self._context_builder
+            )
+        return cb
 
-    @property
+    @functools.cached_property
     def slot_manager(self) -> SlotManager:
         """Lazy slot manager — created on first access."""
-        if self._slot_manager is None:
-            self._slot_manager = SlotManager(
-                inference=self.inference,
-                session_store=self.session_store,
-                slot_dir=self.config.slots.slot_dir,
-                pool_size=self.config.slots.pool_size,
-            )
-        return self._slot_manager
+        return SlotManager(
+            inference=self.inference,
+            session_store=self.session_store,
+            slot_dir=self.config.slots.slot_dir,
+            pool_size=self.config.slots.pool_size,
+        )
 
-    @property
+    @functools.cached_property
     def handoff_summarizer(self) -> SessionHandoffSummarizer | None:
         """Lazy handoff summarizer — created on first access if enabled."""
-        if self._handoff_summarizer is None and self.config.handoff.enabled:
-            self._handoff_summarizer = SessionHandoffSummarizer(
+        if self.config.handoff.enabled:
+            return SessionHandoffSummarizer(
                 inference=self.inference,
                 memory_store=self.memory_store,
                 max_chars=self.config.handoff.max_chars,
                 min_messages=self.config.handoff.min_messages,
             )
-        return self._handoff_summarizer
+        return None
 
-    def make_injection_scanner(self) -> InjectionScanner:
-        """Create an InjectionScanner from config (cached)."""
-        if self._injection_scanner is None:
-            self._injection_scanner = InjectionScanner(
-                enabled=self.config.security.injection_scanner_enabled,
-                entropy_threshold=self.config.security.injection_entropy_threshold,
-                skip_filters_for_structured=self.config.security.injection_skip_filters_for_structured,
-            )
-        return self._injection_scanner
+    # --- Lazy feature subsystems ---
 
-    async def close(self) -> None:
-        """Close lazily-created resources."""
-        if self._inference is not None:
-            await self._inference.close()
-
-
-@dataclass
-class FeatureAppContext:
-    """Optional application subsystems (created only when enabled)."""
-
-    skill_store: SkillStore | None = None
-    proposal_store: ProposalStore | None = None
-    style_store: StyleProfileStore | None = None
-    style_builder: StyleProfileBuilder | None = None
-    skill_index_builder: SkillIndexBuilder | None = None
-
-    _reflection_scheduler: ReflectionScheduler | None = field(
-        default=None, repr=False
-    )
-    _style_scheduler: StyleScheduler | None = field(default=None, repr=False)
-
-    @property
-    def reflection_scheduler(self) -> ReflectionScheduler | None:
-        """Lazy reflection scheduler — created on first access.
-
-        Construction is unconditional so callers can read status/failure
-        history even when the scheduler is not auto-started by daemons.
-        Whether the scheduler actually ticks is governed by
-        ``config.reflection.enabled`` checks at the start sites.
-        """
-        # This property is accessed via CliAppContext which has config
-        # on the core context. We can't build here without config.
-        return self._reflection_scheduler
-
-    @property
-    def style_scheduler(self) -> StyleScheduler | None:
-        """Lazy style scheduler — created on first access if builder is available."""
-        return self._style_scheduler
-
-
-class CliAppContext:
-    """Typed application context shared across CLI commands.
-
-    Facade that delegates to :class:`CoreAppContext` and
-    :class:`FeatureAppContext`. Keeps command signatures stable
-    while allowing phased startup.
-    """
-
-    def __init__(
-        self,
-        core: CoreAppContext,
-        features: FeatureAppContext | None = None,
-    ) -> None:
-        self._core = core
-        self._features = features or FeatureAppContext()
-        self._bootstrapped = False
-
-    # --- Delegate properties for command compatibility ---
-
-    @property
-    def config(self) -> HestiaConfig:
-        return self._core.config
-
-    @property
-    def db(self) -> Database:
-        return self._core.db
-
-    @property
-    def session_store(self) -> SessionStore:
-        return self._core.session_store
-
-    @property
-    def tool_registry(self) -> ToolRegistry:
-        return self._core.tool_registry
-
-    @property
-    def policy(self) -> DefaultPolicyEngine:
-        return self._core.policy
-
-    @property
-    def memory_store(self) -> MemoryStore:
-        return self._core.memory_store
-
-    @property
-    def failure_store(self) -> FailureStore:
-        return self._core.failure_store
-
-    @property
-    def trace_store(self) -> TraceStore:
-        return self._core.trace_store
-
-    @property
-    def artifact_store(self) -> ArtifactStore:
-        return self._core.artifact_store
-
-    @property
-    def scheduler_store(self) -> SchedulerStore:
-        return self._core.scheduler_store
-
-    @property
-    def epoch_compiler(self) -> MemoryEpochCompiler:
-        return self._core.epoch_compiler
-
-    @property
-    def verbose(self) -> bool:
-        return self._core.verbose
-
-    @property
-    def confirm_callback(self) -> ConfirmCallback | None:
-        return self._core.confirm_callback
-
-    @confirm_callback.setter
-    def confirm_callback(self, callback: ConfirmCallback | None) -> None:
-        self._core.confirm_callback = callback
-
-    @property
-    def inference(self) -> InferenceClient:
-        return self._core.inference
-
-    @property
-    def context_builder(self) -> ContextBuilder:
-        return self._core.context_builder
-
-    @property
-    def slot_manager(self) -> SlotManager:
-        return self._core.slot_manager
-
-    @property
-    def handoff_summarizer(self) -> SessionHandoffSummarizer | None:
-        return self._core.handoff_summarizer
-
-    # --- Feature delegates ---
-
-    @property
-    def skill_store(self) -> SkillStore | None:
-        return self._features.skill_store
-
-    @property
-    def proposal_store(self) -> ProposalStore | None:
-        return self._features.proposal_store
-
-    @property
-    def style_store(self) -> StyleProfileStore | None:
-        return self._features.style_store
-
-    @property
-    def style_builder(self) -> StyleProfileBuilder | None:
-        return self._features.style_builder
-
-    @property
-    def skill_index_builder(self) -> SkillIndexBuilder | None:
-        return self._features.skill_index_builder
-
-    @property
+    @functools.cached_property
     def reflection_scheduler(self) -> ReflectionScheduler | None:
         """Lazy reflection scheduler — created on first access."""
-        if self._features._reflection_scheduler is None:
-            if self._features.proposal_store is None:
-                return None
-            runner = ReflectionRunner(
-                config=self.config.reflection,
-                inference=self.inference,
-                trace_store=self.trace_store,
-                proposal_store=self._features.proposal_store,
-            )
-            sched = ReflectionScheduler(
-                config=self.config.reflection,
-                runner=runner,
-                session_store=self.session_store,
-            )
-            sched.wire_failure_handler(runner)
-            self._features._reflection_scheduler = sched
-        return self._features._reflection_scheduler
+        runner = ReflectionRunner(
+            config=self.config.reflection,
+            inference=self.inference,
+            trace_store=self.trace_store,
+            proposal_store=self.proposal_store,
+        )
+        sched = ReflectionScheduler(
+            config=self.config.reflection,
+            runner=runner,
+            session_store=self.session_store,
+        )
+        sched.wire_failure_handler(runner)
+        return sched
 
-    @property
+    @functools.cached_property
     def style_scheduler(self) -> StyleScheduler | None:
         """Lazy style scheduler — created on first access if builder is available."""
-        if self._features._style_scheduler is None and self._features.style_builder is not None:
-            self._features._style_scheduler = StyleScheduler(
+        if self.style_builder is not None:
+            return StyleScheduler(
                 config=self.config.style,
-                builder=self._features.style_builder,
+                builder=self.style_builder,
                 session_store=self.session_store,
             )
-        return self._features._style_scheduler
+        return None
 
     # --- Methods ---
 
     def set_confirm_callback(self, callback: ConfirmCallback | None) -> None:
         """Set the tool-confirmation callback used when constructing orchestrators."""
-        self._core.confirm_callback = callback
+        self.confirm_callback = callback
 
     async def bootstrap_db(self) -> None:
         """Connect to database and create tables. Idempotent."""
@@ -403,15 +241,22 @@ class CliAppContext:
         await self.trace_store.create_table()
         if self.skill_store is not None:
             await self.skill_store.create_table()
-        if self.proposal_store is not None:
-            await self.proposal_store.create_table()
-        if self.style_store is not None:
-            await self.style_store.create_table()
+        await self.proposal_store.create_table()
+        await self.style_store.create_table()
         self._bootstrapped = True
 
     def make_injection_scanner(self) -> InjectionScanner:
-        """Create an InjectionScanner from config."""
-        return self._core.make_injection_scanner()
+        """Create an InjectionScanner from config (cached on instance)."""
+        return InjectionScanner(
+            enabled=self.config.security.injection_scanner_enabled,
+            entropy_threshold=self.config.security.injection_entropy_threshold,
+            skip_filters_for_structured=self.config.security.injection_skip_filters_for_structured,
+        )
+
+    async def close(self) -> None:
+        """Close lazily-created resources."""
+        if hasattr(self, '_inference') and self._inference is not None:
+            await self._inference.close()
 
     def make_orchestrator(self) -> Orchestrator:
         """Create an Orchestrator with the current app context."""
@@ -434,22 +279,77 @@ class CliAppContext:
             skill_index_builder=self.skill_index_builder,
         )
 
-    async def close(self) -> None:
-        """Close all resources held by the app context."""
-        await self._core.close()
+    def register_tools(self) -> None:
+        """Register built-in and conditional tools."""
+        cfg = self.config
+        reg = self.tool_registry
+
+        reg.register(current_time)
+        reg.register(http_get)
+        reg.register(make_list_dir_tool(cfg.storage))
+        reg.register(terminal)
+        reg.register(make_read_file_tool(cfg.storage))
+        reg.register(make_write_file_tool(cfg.storage))
+        reg.register(make_search_memory_tool(self.memory_store))
+        reg.register(make_save_memory_tool(self.memory_store))
+        reg.register(make_list_memories_tool(self.memory_store))
+        reg.register(make_delete_memory_tool(self.memory_store))
+        reg.register(make_read_artifact_tool(self.artifact_store))
+
+        web_search_tool = make_web_search_tool(cfg.web_search)
+        if web_search_tool is not None:
+            reg.register(web_search_tool)
+        else:
+            reg.register(search_web)
+
+        for email_tool in make_email_tools(cfg.email):
+            reg.register(email_tool)
+
+        email_search_and_read = make_email_search_and_read_tool(EmailAdapter(cfg.email))
+        if email_search_and_read is not None:
+            reg.register(email_search_and_read)
+
+        if cfg.email.password and not cfg.email.password_env:
+            click.echo(
+                click.style(
+                    "Warning: email.password is set in plaintext. Consider using "
+                    "email.password_env to load it from an environment variable.",
+                    fg="yellow",
+                ),
+                err=True,
+            )
+            logger.warning(
+                "email.password is set in plaintext. Consider using email.password_env."
+            )
+
+        # Scheduler tools (bound to scheduler and session stores)
+        if self.scheduler_store is not None:
+            reg.register(make_create_scheduled_task_tool(self.scheduler_store, self.session_store))
+            reg.register(make_list_scheduled_tasks_tool(self.scheduler_store, self.session_store))
+            reg.register(make_disable_scheduled_task_tool(self.scheduler_store, self.session_store))
+            reg.register(make_enable_scheduled_task_tool(self.scheduler_store, self.session_store))
+            reg.register(make_delete_scheduled_task_tool(self.scheduler_store, self.session_store))
+
+        # Delegate task tool (needs app for orchestrator factory)
+        reg.register(make_delegate_task_tool(self.session_store, self.make_orchestrator))
 
 
-def _require_scheduler_store(app: CliAppContext) -> SchedulerStore:
-    """Return the scheduler store or raise a clear error."""
-    if app.scheduler_store is None:
-        raise click.UsageError(
-            "Scheduler is not configured. Set `scheduler.enabled = True` in your config."
-        )
-    return app.scheduler_store
+# Backward-compatible aliases (deprecated, will be removed in a future release)
+CoreAppContext = AppContext
+FeatureAppContext = AppContext
+CliAppContext = AppContext
 
 
-def make_app(cfg: HestiaConfig) -> CliAppContext:
-    """Build subsystems from config and return typed app context."""
+def _load_and_validate_config(
+    cfg: HestiaConfig | None = None, config_path: Path | None = None
+) -> HestiaConfig:
+    """Load config from file or default locations, apply env overrides, and validate."""
+    if cfg is None:
+        if config_path:
+            cfg = HestiaConfig.from_file(config_path)
+        else:
+            cfg = HestiaConfig.default()
+
     if (
         not cfg.inference.model_name.strip()
         and os.environ.get("HESTIA_ALLOW_DUMMY_MODEL") == "1"
@@ -457,28 +357,16 @@ def make_app(cfg: HestiaConfig) -> CliAppContext:
         cfg.inference.model_name = "dummy"
     validate_inference_model_name(cfg.inference.model_name)
 
-    # Phase 1: Core subsystems (always created)
-    db = Database(cfg.storage.database_url)
-    artifact_store = ArtifactStore(cfg.storage.artifacts_dir)
-    session_store = SessionStore(db)
-    policy = _make_policy(cfg)
-    memory_store = MemoryStore(db)
-    failure_store = FailureStore(db)
-    trace_store = TraceStore(db)
-    scheduler_store = SchedulerStore(db)
-    epoch_compiler = MemoryEpochCompiler(memory_store, max_tokens=500)
-
-    # Honor environment overrides for personality / calibration paths
+    # Environment overrides for personality / calibration paths
     env_soul = os.environ.get("HESTIA_SOUL_PATH")
     if env_soul:
         cfg.identity.soul_path = Path(env_soul)
-    env_calibration = os.environ.get("HESTIA_CALIBRATION_PATH")
-    calibration_path = Path(env_calibration) if env_calibration else DEFAULT_CALIBRATION_PATH
 
-    # Compile identity from SOUL.md when present
-    identity_compiler = IdentityCompiler(cfg.identity)
-    compiled_identity = identity_compiler.get_compiled_text()
+    return cfg
 
+
+def _warn_on_missing_files(cfg: HestiaConfig, calibration_path: Path) -> None:
+    """Emit warnings when expected personality or calibration files are missing."""
     soul_path = cfg.identity.soul_path
     if soul_path is not None and not soul_path.exists():
         click.echo(
@@ -499,112 +387,43 @@ def make_app(cfg: HestiaConfig) -> CliAppContext:
         )
         logger.warning("Calibration file not found at %s", calibration_path)
 
-    # Tool registry with built-in tools
-    tool_registry = ToolRegistry(artifact_store)
-    tool_registry.register(current_time)
-    tool_registry.register(http_get)
-    tool_registry.register(make_list_dir_tool(cfg.storage))
-    tool_registry.register(terminal)
 
-    # Register file tools with path sandboxing
-    tool_registry.register(make_read_file_tool(cfg.storage))
-    tool_registry.register(make_write_file_tool(cfg.storage))
-
-    # Register memory tools (bound to the memory store instance)
-    tool_registry.register(make_search_memory_tool(memory_store))
-    tool_registry.register(make_save_memory_tool(memory_store))
-    tool_registry.register(make_list_memories_tool(memory_store))
-    tool_registry.register(make_delete_memory_tool(memory_store))
-    tool_registry.register(make_read_artifact_tool(artifact_store))
-
-    # Register web search if configured (Tavily)
-    web_search_tool = make_web_search_tool(cfg.web_search)
-    if web_search_tool is not None:
-        tool_registry.register(web_search_tool)
-    else:
-        # Fallback: DuckDuckGo HTML search (no API key required)
-        tool_registry.register(search_web)
-
-    # Register email tools if configured
-    for email_tool in make_email_tools(cfg.email):
-        tool_registry.register(email_tool)
-
-    email_search_and_read = make_email_search_and_read_tool(EmailAdapter(cfg.email))
-    if email_search_and_read is not None:
-        tool_registry.register(email_search_and_read)
-
-    if cfg.email.password and not cfg.email.password_env:
-        click.echo(
-            click.style(
-                "Warning: email.password is set in plaintext. Consider using "
-                "email.password_env to load it from an environment variable.",
-                fg="yellow",
-            ),
-            err=True,
-        )
-        logger.warning(
-            "email.password is set in plaintext. Consider using email.password_env."
-        )
-
-    core = CoreAppContext(
-        config=cfg,
-        db=db,
-        session_store=session_store,
-        tool_registry=tool_registry,
-        policy=policy,
-        memory_store=memory_store,
-        failure_store=failure_store,
-        trace_store=trace_store,
-        artifact_store=artifact_store,
-        scheduler_store=scheduler_store,
-        epoch_compiler=epoch_compiler,
-        verbose=cfg.verbose,
-        calibration_path=calibration_path,
-        compiled_identity=compiled_identity,
-    )
-
-    # Phase 2: Feature subsystems (conditional on config)
-    features = FeatureAppContext()
-
-    # Proposal store is lightweight; keep it available for status queries
-    # even when reflection auto-tick is disabled.
-    features.proposal_store = ProposalStore(db)
-
-    # Style store is also lightweight; commands can query it even when
-    # style injection is disabled.
-    style_store = StyleProfileStore(db)
-    features.style_store = style_store
-    features.style_builder = StyleProfileBuilder(db, style_store, cfg.style)
-
+def _register_optional_features(app: AppContext) -> None:
+    """Register optional feature subsystems based on environment flags."""
     if os.environ.get("HESTIA_EXPERIMENTAL_SKILLS") == "1":
-        skill_store = SkillStore(db)
-        features.skill_store = skill_store
-        features.skill_index_builder = SkillIndexBuilder(skill_store)
+        skill_store = SkillStore(app.db)
+        app.skill_store = skill_store
+        app.skill_index_builder = SkillIndexBuilder(skill_store)
 
-    app = CliAppContext(core=core, features=features)
 
-    # Register scheduler tools (bound to scheduler and session stores)
-    if scheduler_store is not None:
-        tool_registry.register(
-            make_create_scheduled_task_tool(scheduler_store, session_store)
-        )
-        tool_registry.register(
-            make_list_scheduled_tasks_tool(scheduler_store, session_store)
-        )
-        tool_registry.register(
-            make_disable_scheduled_task_tool(scheduler_store, session_store)
-        )
-        tool_registry.register(
-            make_enable_scheduled_task_tool(scheduler_store, session_store)
-        )
-        tool_registry.register(
-            make_delete_scheduled_task_tool(scheduler_store, session_store)
-        )
+def make_app(cfg: HestiaConfig | None = None, config_path: Path | None = None) -> AppContext:
+    """Build subsystems from config and return the application context."""
+    cfg = _load_and_validate_config(cfg, config_path)
 
-    # Register delegate task tool (needs app for orchestrator factory)
-    tool_registry.register(make_delegate_task_tool(session_store, app.make_orchestrator))
+    env_calibration = os.environ.get("HESTIA_CALIBRATION_PATH")
+    calibration_path = Path(env_calibration) if env_calibration else DEFAULT_CALIBRATION_PATH
+
+    app = AppContext(cfg)
+    app._calibration_path = calibration_path
+
+    # Compile identity from SOUL.md when present
+    identity_compiler = IdentityCompiler(cfg.identity)
+    app._compiled_identity = identity_compiler.get_compiled_text()
+
+    _warn_on_missing_files(cfg, calibration_path)
+    app.register_tools()
+    _register_optional_features(app)
 
     return app
+
+
+def _require_scheduler_store(app: AppContext) -> SchedulerStore:
+    """Return the scheduler store or raise a clear error."""
+    if app.scheduler_store is None:
+        raise click.UsageError(
+            "Scheduler is not configured. Set `scheduler.enabled = True` in your config."
+        )
+    return app.scheduler_store
 
 
 def async_command(coro: Callable[..., Awaitable[Any]]) -> Callable[..., Any]:
@@ -618,12 +437,12 @@ def async_command(coro: Callable[..., Awaitable[Any]]) -> Callable[..., Any]:
         @cli.command()
         @click.pass_obj
         @async_command
-        async def my_cmd(app: CliAppContext, flag: bool) -> None:
+        async def my_cmd(app: AppContext, flag: bool) -> None:
             ...
     """
 
     @functools.wraps(coro)
-    def wrapper(app: CliAppContext, *args: Any, **kwargs: Any) -> Any:
+    def wrapper(app: AppContext, *args: Any, **kwargs: Any) -> Any:
         async def _runner() -> Any:
             await app.bootstrap_db()
             return await coro(app, *args, **kwargs)
@@ -633,4 +452,5 @@ def async_command(coro: Callable[..., Awaitable[Any]]) -> Callable[..., Any]:
     return wrapper
 
 
+# Backward-compatible re-export (tests import from app.py)
 from hestia.commands.meta import _handle_meta_command  # noqa: E402, F401

@@ -11,7 +11,7 @@ from typing import Any
 import click
 import httpx
 
-from hestia.app import CliAppContext, _require_scheduler_store
+from hestia.app import AppContext, _require_scheduler_store
 from hestia.core.clock import utcnow
 from hestia.errors import HestiaError
 
@@ -86,7 +86,7 @@ with daily tasks, coding, research, and creative work.
 
 
 async def cmd_init(
-    app: CliAppContext, create_config: bool = False, with_soul: bool = False
+    app: AppContext, create_config: bool = False, with_soul: bool = False
 ) -> None:
     """Initialize database, artifacts, and slot directories."""
     cfg = app.config
@@ -113,12 +113,12 @@ async def cmd_init(
             click.echo("Created starter SOUL.md")
 
 
-async def cmd_artifacts_list(app: CliAppContext) -> list[Any]:
+async def cmd_artifacts_list(app: AppContext) -> list[Any]:
     """Return a list of artifact metadata."""
     return app.artifact_store.list()
 
 
-async def cmd_artifacts_purge(app: CliAppContext, older_than_days: int | None = None) -> int:
+async def cmd_artifacts_purge(app: AppContext, older_than_days: int | None = None) -> int:
     """Purge artifacts, optionally filtering by age.
 
     If older_than_days is None, only expired artifacts are removed (GC).
@@ -136,7 +136,7 @@ async def cmd_artifacts_purge(app: CliAppContext, older_than_days: int | None = 
     return removed
 
 
-async def cmd_health(app: CliAppContext) -> None:
+async def cmd_health(app: AppContext) -> None:
     """Check inference server health."""
     try:
         health_info = await app.inference.health()
@@ -150,7 +150,7 @@ async def cmd_health(app: CliAppContext) -> None:
         await app.inference.close()
 
 
-async def cmd_status(app: CliAppContext) -> None:
+async def cmd_status(app: AppContext) -> None:
     """Show system status summary."""
     store = _require_scheduler_store(app)
 
@@ -207,7 +207,7 @@ async def cmd_status(app: CliAppContext) -> None:
     await app.inference.close()
 
 
-async def cmd_failures_list(app: CliAppContext, limit: int, failure_class: str | None) -> None:
+async def cmd_failures_list(app: AppContext, limit: int, failure_class: str | None) -> None:
     """List recent failures."""
     bundles = await app.failure_store.list_recent(limit=limit, failure_class=failure_class)
     if not bundles:
@@ -224,7 +224,7 @@ async def cmd_failures_list(app: CliAppContext, limit: int, failure_class: str |
             click.echo("  ...")
 
 
-async def cmd_failures_summary(app: CliAppContext, days: int) -> None:
+async def cmd_failures_summary(app: AppContext, days: int) -> None:
     """Show failure counts by class."""
     since = utcnow() - timedelta(days=days)
     counts = await app.failure_store.count_by_class(since=since)
@@ -238,7 +238,7 @@ async def cmd_failures_summary(app: CliAppContext, days: int) -> None:
         click.echo("  No failures in this period.")
 
 
-async def cmd_audit_run(app: CliAppContext, output_json: bool, output: str | None) -> None:
+async def cmd_audit_run(app: AppContext, output_json: bool, output: str | None) -> None:
     """Run security audit checks."""
     from hestia.audit import SecurityAuditor
 
@@ -259,7 +259,7 @@ async def cmd_audit_run(app: CliAppContext, output_json: bool, output: str | Non
         sys.exit(1)
 
 
-async def cmd_audit_egress(app: CliAppContext, since: str) -> None:
+async def cmd_audit_egress(app: AppContext, since: str) -> None:
     """Print domain-level egress aggregation."""
     since_dt = _parse_since(since)
     rows = await app.trace_store.egress_summary(since=since_dt)
@@ -279,7 +279,7 @@ async def cmd_audit_egress(app: CliAppContext, since: str) -> None:
         click.echo(f"{domain:<40} {total:>10} {failures:>10} {anomaly}")
 
 
-async def cmd_email_check(app: CliAppContext) -> None:
+async def cmd_email_check(app: AppContext) -> None:
     """Check email connectivity (IMAP login test)."""
     cfg = app.config
     if not cfg.email.imap_host:
@@ -301,7 +301,7 @@ async def cmd_email_check(app: CliAppContext) -> None:
 
 
 async def cmd_email_list_cmd(
-    app: CliAppContext, folder: str, limit: int, unread_only: bool
+    app: AppContext, folder: str, limit: int, unread_only: bool
 ) -> None:
     """List recent emails."""
     cfg = app.config
@@ -323,7 +323,7 @@ async def cmd_email_list_cmd(
         click.echo(f"[{m['message_id']}] {m['from']} | {m['subject']} | {m['date']}")
 
 
-async def cmd_email_read_cmd(app: CliAppContext, message_id: str) -> None:
+async def cmd_email_read_cmd(app: AppContext, message_id: str) -> None:
     """Read a single email by IMAP UID."""
     cfg = app.config
     if not cfg.email.imap_host:
@@ -351,7 +351,7 @@ async def cmd_email_read_cmd(app: CliAppContext, message_id: str) -> None:
             click.echo(f"  - {att['filename']} ({att['content_type']})")
 
 
-async def cmd_doctor(app: CliAppContext, plain: bool) -> int:
+async def cmd_doctor(app: AppContext, plain: bool) -> int:
     """Run health checks. Returns exit code (0 if all green, 1 if any fail)."""
     from hestia.doctor import run_checks, render_results  # noqa: I001
 

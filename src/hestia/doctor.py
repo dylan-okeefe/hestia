@@ -18,7 +18,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from hestia.app import CliAppContext
+from hestia.app import AppContext
 
 
 @dataclass(frozen=True)
@@ -34,7 +34,7 @@ class CheckResult:
 # Public API
 # ---------------------------------------------------------------------------
 
-async def run_checks(app: CliAppContext) -> list[CheckResult]:
+async def run_checks(app: AppContext) -> list[CheckResult]:
     """Run all health checks against the live app context.
 
     Order matters only insofar as later checks depend on earlier ones being
@@ -95,7 +95,7 @@ def render_results(results: list[CheckResult], *, plain: bool = False) -> str:
 # Individual checks
 # ---------------------------------------------------------------------------
 
-async def _check_python_version(app: CliAppContext) -> CheckResult:
+async def _check_python_version(app: AppContext) -> CheckResult:
     """Check Python >= 3.11."""
     if sys.version_info >= (3, 11):  # noqa: UP036
         return CheckResult("python_version", True, "")
@@ -107,7 +107,7 @@ async def _check_python_version(app: CliAppContext) -> CheckResult:
     )
 
 
-async def _check_dependencies_in_sync(app: CliAppContext) -> CheckResult:
+async def _check_dependencies_in_sync(app: AppContext) -> CheckResult:
     """Run ``uv pip check`` to verify lockfile sync.
 
     Uses ``asyncio.create_subprocess_exec`` so concurrent ``doctor``
@@ -162,7 +162,7 @@ async def _check_dependencies_in_sync(app: CliAppContext) -> CheckResult:
     )
 
 
-async def _check_config_file_loads(app: CliAppContext) -> CheckResult:
+async def _check_config_file_loads(app: AppContext) -> CheckResult:
     """Smoke-test that config loaded successfully."""
     if app.config is None:
         return CheckResult("config_file_loads", False, "app.config is None")
@@ -170,7 +170,7 @@ async def _check_config_file_loads(app: CliAppContext) -> CheckResult:
     return CheckResult("config_file_loads", True, f"loaded from {source}")
 
 
-async def _check_config_schema(app: CliAppContext) -> CheckResult:
+async def _check_config_schema(app: AppContext) -> CheckResult:
     """Validate config schema_version when present."""
     # Deferred to L39: add schema_version to HestiaConfig and compare against current.
     version = getattr(app.config, "schema_version", None)
@@ -184,17 +184,9 @@ async def _check_config_schema(app: CliAppContext) -> CheckResult:
     return CheckResult("config_schema", True, f"schema_version={version}")
 
 
-async def _check_allowed_roots_cwd(app: CliAppContext) -> CheckResult:
-    """Warn when ``allowed_roots`` is empty (deny-all default) or contains '.'."""
+async def _check_allowed_roots_cwd(app: AppContext) -> CheckResult:
+    """Warn when ``allowed_roots`` is ``[\".]`` under a broad CWD."""
     roots = app.config.storage.allowed_roots
-    if not roots:
-        return CheckResult(
-            "allowed_roots_cwd",
-            True,
-            "allowed_roots is empty (default deny-all). "
-            "Filesystem tools (read_file, write_file, list_dir) are disabled. "
-            "Set storage.allowed_roots to explicit paths to enable them.",
-        )
     if "." not in roots:
         return CheckResult("allowed_roots_cwd", True, "")
     cwd = Path.cwd().resolve()
@@ -211,7 +203,7 @@ async def _check_allowed_roots_cwd(app: CliAppContext) -> CheckResult:
     return CheckResult("allowed_roots_cwd", True, "")
 
 
-async def _check_sqlite_dbs_readable(app: CliAppContext) -> CheckResult:
+async def _check_sqlite_dbs_readable(app: AppContext) -> CheckResult:
     """PRAGMA integrity_check on the SQLite database file."""
     db_url = getattr(app.db, "_url", "")
     if not db_url.startswith("sqlite"):
@@ -249,7 +241,7 @@ async def _check_sqlite_dbs_readable(app: CliAppContext) -> CheckResult:
         )
 
 
-async def _check_llamacpp_reachable(app: CliAppContext) -> CheckResult:
+async def _check_llamacpp_reachable(app: AppContext) -> CheckResult:
     """Hit the llama.cpp /health endpoint when configured.
 
     Uses ``httpx.AsyncClient`` so the 2 s health-check timeout does not
@@ -294,7 +286,7 @@ async def _check_llamacpp_reachable(app: CliAppContext) -> CheckResult:
         )
 
 
-async def _check_platform_prereqs(app: CliAppContext) -> CheckResult:
+async def _check_platform_prereqs(app: AppContext) -> CheckResult:
     """Validate that enabled platforms have required credentials."""
     cfg = app.config
     failures: list[str] = []
@@ -339,7 +331,7 @@ async def _check_platform_prereqs(app: CliAppContext) -> CheckResult:
     return CheckResult("platform_prereqs", True, f"enabled: {', '.join(enabled)}")
 
 
-async def _check_voice_prerequisites(app: CliAppContext) -> CheckResult:
+async def _check_voice_prerequisites(app: AppContext) -> CheckResult:
     """Verify voice dependencies are present when the extra is installed."""
     import importlib.util
 
@@ -372,7 +364,7 @@ async def _check_voice_prerequisites(app: CliAppContext) -> CheckResult:
     )
 
 
-async def _check_trust_preset_resolves(app: CliAppContext) -> CheckResult:
+async def _check_trust_preset_resolves(app: AppContext) -> CheckResult:
     """Verify trust preset matches a known name."""
     preset = app.config.trust.preset
     if preset is None:
@@ -391,7 +383,7 @@ async def _check_trust_preset_resolves(app: CliAppContext) -> CheckResult:
     )
 
 
-async def _check_trust_preset_safe_for_production(app: CliAppContext) -> CheckResult:
+async def _check_trust_preset_safe_for_production(app: AppContext) -> CheckResult:
     """Fail when the dangerous 'developer' preset is used outside a dev environment."""
     preset = app.config.trust.preset
     if preset != "developer":
@@ -412,7 +404,7 @@ async def _check_trust_preset_safe_for_production(app: CliAppContext) -> CheckRe
     )
 
 
-async def _check_skills_status(app: CliAppContext) -> CheckResult:
+async def _check_skills_status(app: AppContext) -> CheckResult:
     """Report skills subsystem status and wiring."""
     if os.environ.get("HESTIA_EXPERIMENTAL_SKILLS") == "1":
         base_msg = "Skills: experimental enabled"
@@ -432,8 +424,7 @@ async def _check_skills_status(app: CliAppContext) -> CheckResult:
                 "set_skill_index_prefix" in source
                 and "skill_index_builder" in source
             )
-        except Exception:  # noqa: BLE001
-            # Introspection may fail for many reasons; doctor checks must not crash.
+        except Exception:
             pass
 
         if not wired:
@@ -451,7 +442,7 @@ async def _check_skills_status(app: CliAppContext) -> CheckResult:
     )
 
 
-async def _check_memory_epoch(app: CliAppContext) -> CheckResult:
+async def _check_memory_epoch(app: AppContext) -> CheckResult:
     """Check memory epoch file exists and is readable integer."""
     memory_cfg = getattr(app.config, "memory", None)
     if memory_cfg is None:

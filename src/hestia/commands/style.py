@@ -6,10 +6,10 @@ import sys
 
 import click
 
-from hestia.app import CliAppContext
+from hestia.app import AppContext
 
 
-async def cmd_style_show(app: CliAppContext, platform: str | None, user: str | None) -> None:
+async def cmd_style_show(app: AppContext, platform: str | None, user: str | None) -> None:
     """Pretty-print the current style profile for a user."""
     if app.style_store is None:
         click.echo("Style store not available", err=True)
