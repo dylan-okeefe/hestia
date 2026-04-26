@@ -1,10 +1,9 @@
 """Unit tests for security audit module."""
 
 import json
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from datetime import datetime, timezone
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 from hestia.audit import SecurityAuditor
 from hestia.audit.checks import AuditFinding, AuditReport
@@ -212,7 +211,10 @@ class TestSecurityAuditor:
         auditor = SecurityAuditor(config)
         report = await auditor.run_audit()
 
-        critical = [f for f in report.findings if f.severity == "critical" and "overly broad" in f.message]
+        critical = [
+            f for f in report.findings
+            if f.severity == "critical" and "overly broad" in f.message
+        ]
         assert len(critical) == 1
         assert "overly broad" in critical[0].message.lower()
 
@@ -277,7 +279,10 @@ class TestSecurityAuditor:
         auditor = SecurityAuditor(config, trace_store=mock_trace_store)
         report = await auditor.run_audit()
 
-        warnings = [f for f in report.findings if f.severity == "warning" and "save_memory" in f.message]
+        warnings = [
+            f for f in report.findings
+            if f.severity == "warning" and "save_memory" in f.message
+        ]
         assert len(warnings) == 1
         assert "save_memory after http_get" in warnings[0].message
 
@@ -292,7 +297,10 @@ class TestSecurityAuditor:
         auditor = SecurityAuditor(config, trace_store=mock_trace_store)
         report = await auditor.run_audit()
 
-        warnings = [f for f in report.findings if f.severity == "warning" and "save_memory after http_get" in f.message]
+        warnings = [
+            f for f in report.findings
+            if f.severity == "warning" and "save_memory after http_get" in f.message
+        ]
         assert len(warnings) == 1
 
     @pytest.mark.asyncio
@@ -305,7 +313,10 @@ class TestSecurityAuditor:
         auditor = SecurityAuditor(config, trace_store=mock_trace_store)
         report = await auditor.run_audit()
 
-        warnings = [f for f in report.findings if f.severity == "warning" and "after http_get" in f.message]
+        warnings = [
+            f for f in report.findings
+            if f.severity == "warning" and "after http_get" in f.message
+        ]
         assert len(warnings) == 0
 
     @pytest.mark.asyncio

@@ -21,7 +21,7 @@ class TestEmailConfigPasswordEnv:
         monkeypatch.delenv("MISSING_EMAIL_PW", raising=False)
         cfg = EmailConfig(password_env="MISSING_EMAIL_PW")
         with pytest.raises(EmailConfigError, match="environment variable is not defined"):
-            cfg.resolved_password
+            _ = cfg.resolved_password
 
     def test_plaintext_password_still_works(self) -> None:
         """password without password_env => plaintext returned."""

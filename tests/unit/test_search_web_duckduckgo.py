@@ -1,7 +1,10 @@
 """Unit tests for DuckDuckGo search_web fallback tool."""
 
-import sys
-from unittest.mock import patch
+
+# The search_web submodule is shadowed by the search_web function in
+# hestia.tools.builtin.__init__, so we must load the actual module via
+# importlib to monkeypatch module-level names.
+import importlib
 
 import pytest
 
@@ -12,10 +15,6 @@ from hestia.tools.builtin.search_web import (
     search_web,
 )
 
-# The search_web submodule is shadowed by the search_web function in
-# hestia.tools.builtin.__init__, so we must load the actual module via
-# importlib to monkeypatch module-level names.
-import importlib
 _search_web_module = importlib.import_module("hestia.tools.builtin.search_web")
 
 

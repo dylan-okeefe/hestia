@@ -8,7 +8,6 @@ import pytest
 from hestia.core.types import Message
 from hestia.errors import ContextTooLargeError
 from hestia.orchestrator.engine import Orchestrator
-from hestia.orchestrator.types import TurnState
 
 
 @pytest.mark.asyncio
@@ -56,17 +55,19 @@ async def test_context_too_large_failure_bundle():
         failure_store=mock_failure_store,
     )
 
-    with patch.object(orchestrator, "_create_turn", return_value=mock_turn):
-        with patch.object(orchestrator, "_persist_turn", AsyncMock()):
-            with patch.object(orchestrator, "_transition", AsyncMock()):
-                user_message = Message(role="user", content="overflow me")
-                respond_callback = AsyncMock()
+    with (
+        patch.object(orchestrator, "_create_turn", return_value=mock_turn),
+        patch.object(orchestrator, "_persist_turn", AsyncMock()),
+        patch.object(orchestrator, "_transition", AsyncMock()),
+    ):
+        user_message = Message(role="user", content="overflow me")
+        respond_callback = AsyncMock()
 
-                await orchestrator.process_turn(
-                    session=mock_session,
-                    user_message=user_message,
-                    respond_callback=respond_callback,
-                )
+        await orchestrator.process_turn(
+            session=mock_session,
+            user_message=user_message,
+            respond_callback=respond_callback,
+        )
 
     mock_failure_store.record.assert_called_once()
     bundle = mock_failure_store.record.call_args[0][0]
@@ -134,17 +135,19 @@ async def test_generic_exception_failure_bundle():
         failure_store=mock_failure_store,
     )
 
-    with patch.object(orchestrator, "_create_turn", return_value=mock_turn):
-        with patch.object(orchestrator, "_persist_turn", AsyncMock()):
-            with patch.object(orchestrator, "_transition", AsyncMock()):
-                user_message = Message(role="user", content="break me")
-                respond_callback = AsyncMock()
+    with (
+        patch.object(orchestrator, "_create_turn", return_value=mock_turn),
+        patch.object(orchestrator, "_persist_turn", AsyncMock()),
+        patch.object(orchestrator, "_transition", AsyncMock()),
+    ):
+        user_message = Message(role="user", content="break me")
+        respond_callback = AsyncMock()
 
-                await orchestrator.process_turn(
-                    session=mock_session,
-                    user_message=user_message,
-                    respond_callback=respond_callback,
-                )
+        await orchestrator.process_turn(
+            session=mock_session,
+            user_message=user_message,
+            respond_callback=respond_callback,
+        )
 
     mock_failure_store.record.assert_called_once()
     bundle = mock_failure_store.record.call_args[0][0]
@@ -215,14 +218,16 @@ async def test_failure_bundle_shape_parity():
     )
     mock_failure_store.record.reset_mock()
 
-    with patch.object(orchestrator, "_create_turn", return_value=mock_turn):
-        with patch.object(orchestrator, "_persist_turn", AsyncMock()):
-            with patch.object(orchestrator, "_transition", AsyncMock()):
-                await orchestrator.process_turn(
-                    session=mock_session,
-                    user_message=Message(role="user", content="overflow"),
-                    respond_callback=AsyncMock(),
-                )
+    with (
+        patch.object(orchestrator, "_create_turn", return_value=mock_turn),
+        patch.object(orchestrator, "_persist_turn", AsyncMock()),
+        patch.object(orchestrator, "_transition", AsyncMock()),
+    ):
+        await orchestrator.process_turn(
+            session=mock_session,
+            user_message=Message(role="user", content="overflow"),
+            respond_callback=AsyncMock(),
+        )
 
     ctx_bundle = mock_failure_store.record.call_args[0][0]
 
@@ -230,14 +235,16 @@ async def test_failure_bundle_shape_parity():
     mock_context_builder.build = AsyncMock(side_effect=RuntimeError("boom"))
     mock_failure_store.record.reset_mock()
 
-    with patch.object(orchestrator, "_create_turn", return_value=mock_turn):
-        with patch.object(orchestrator, "_persist_turn", AsyncMock()):
-            with patch.object(orchestrator, "_transition", AsyncMock()):
-                await orchestrator.process_turn(
-                    session=mock_session,
-                    user_message=Message(role="user", content="boom"),
-                    respond_callback=AsyncMock(),
-                )
+    with (
+        patch.object(orchestrator, "_create_turn", return_value=mock_turn),
+        patch.object(orchestrator, "_persist_turn", AsyncMock()),
+        patch.object(orchestrator, "_transition", AsyncMock()),
+    ):
+        await orchestrator.process_turn(
+            session=mock_session,
+            user_message=Message(role="user", content="boom"),
+            respond_callback=AsyncMock(),
+        )
 
     exc_bundle = mock_failure_store.record.call_args[0][0]
 

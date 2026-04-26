@@ -2,10 +2,9 @@
 
 import pytest
 
-from hestia.config import TrustConfig
+from hestia.config import StorageConfig, TrustConfig
 from hestia.core.types import Session, SessionState, SessionTemperature
 from hestia.policy.default import DefaultPolicyEngine
-from hestia.config import StorageConfig
 
 
 @pytest.fixture

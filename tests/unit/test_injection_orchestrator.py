@@ -1,7 +1,8 @@
 """Tests that the orchestrator wires the injection scanner on tool results."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, Mock
+
+import pytest
 
 from hestia.core.types import Message, Session, SessionState, ToolCall
 from hestia.orchestrator import Orchestrator
@@ -100,7 +101,7 @@ async def test_scanner_annotates_injected_tool_result(
     )
 
     msg = Message(role="user", content="run tool")
-    turn = await orchestrator.process_turn(
+    await orchestrator.process_turn(
         session=mock_session,
         user_message=msg,
         respond_callback=AsyncMock(),
@@ -135,7 +136,7 @@ async def test_scanner_disabled_leaves_content_untouched(
     )
 
     msg = Message(role="user", content="run tool")
-    turn = await orchestrator.process_turn(
+    await orchestrator.process_turn(
         session=mock_session,
         user_message=msg,
         respond_callback=AsyncMock(),

@@ -1,5 +1,6 @@
 """Unit tests for tool capability labels."""
 
+from hestia.config import StorageConfig
 from hestia.tools.builtin import (
     NETWORK_EGRESS,
     READ_LOCAL,
@@ -20,7 +21,6 @@ from hestia.tools.builtin.memory_tools import (
 )
 from hestia.tools.builtin.read_artifact import make_read_artifact_tool
 from hestia.tools.metadata import ToolMetadata, tool
-from hestia.config import StorageConfig
 
 
 class TestToolCapabilities:
@@ -32,7 +32,7 @@ class TestToolCapabilities:
         read_file = make_read_file_tool(StorageConfig(allowed_roots=["/tmp"]))
         write_file = make_write_file_tool(StorageConfig(allowed_roots=["/tmp"]))
         list_dir = make_list_dir_tool(StorageConfig(allowed_roots=["/tmp"]))
-        
+
         # Check tools with @tool decorator
         tools_to_check = [
             ("current_time", current_time),
@@ -86,7 +86,7 @@ class TestToolCapabilities:
         """Memory tools have MEMORY_READ or MEMORY_WRITE capabilities."""
         from hestia.persistence.db import Database
 
-        db = Database("sqlite+aiosqlite:///:memory:")
+        Database("sqlite+aiosqlite:///:memory:")
         # Note: We can't await here in a sync test, so we just check the factory
         # creates tools with the right capabilities using mock
 

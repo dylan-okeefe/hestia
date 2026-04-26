@@ -1,16 +1,12 @@
 """Tests for skills experimental feature flag."""
 
-import sys
-from unittest.mock import MagicMock, patch
 
-import click
 import pytest
 from click.testing import CliRunner
 
 from hestia.cli import cli
 from hestia.errors import ExperimentalFeatureError
 from hestia.skills.decorator import skill
-from hestia.skills.state import SkillState
 from hestia.skills.types import SkillContext, SkillResult
 
 

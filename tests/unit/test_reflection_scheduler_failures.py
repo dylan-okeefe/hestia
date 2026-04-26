@@ -30,7 +30,9 @@ class TestReflectionSchedulerFailures:
         return sched
 
     @pytest.mark.asyncio
-    async def test_failure_recorded_when_inference_raises(self, scheduler: ReflectionScheduler) -> None:
+    async def test_failure_recorded_when_inference_raises(
+        self, scheduler: ReflectionScheduler
+    ) -> None:
         """Patch runner.run to raise; tick should record failure with stage='tick'."""
         scheduler._is_due = lambda now: True  # type: ignore[method-assign]
         scheduler._is_idle = AsyncMock(return_value=True)  # type: ignore[method-assign]
@@ -93,7 +95,9 @@ class TestReflectionRunnerFailureCallback:
         proposal_store = MagicMock()
 
         on_failure = MagicMock()
-        runner = ReflectionRunner(config, inference, trace_store, proposal_store, on_failure=on_failure)
+        runner = ReflectionRunner(
+            config, inference, trace_store, proposal_store, on_failure=on_failure
+        )
         return runner, on_failure
 
     @pytest.mark.asyncio
@@ -116,12 +120,16 @@ class TestReflectionRunnerFailureCallback:
     async def test_proposal_failure_calls_on_failure(
         self, runner_with_callback: tuple[ReflectionRunner, MagicMock]
     ) -> None:
-        """When inference.chat raises during proposal generation, on_failure('proposal', exc) is called."""
+        """When inference.chat raises during proposal generation,
+        on_failure('proposal', exc) is called."""
         runner, on_failure = runner_with_callback
 
         # First call (mining) succeeds, second call (proposal) fails
         runner._inference.chat = AsyncMock(  # type: ignore[method-assign]
-            return_value=MagicMock(content='{"observations": [{"category": "test", "turn_id": "t1", "description": "d", "confidence": 0.5}]}')
+            return_value=MagicMock(
+                content='{"observations": [{"category": "test", "turn_id": "t1", '
+                        '"description": "d", "confidence": 0.5}]}'
+            )
         )
 
         # Override to fail on second call
@@ -130,7 +138,10 @@ class TestReflectionRunnerFailureCallback:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
-                return MagicMock(content='{"observations": [{"category": "test", "turn_id": "t1", "description": "d", "confidence": 0.5}]}')
+                return MagicMock(
+                    content='{"observations": [{"category": "test", "turn_id": "t1", '
+                            '"description": "d", "confidence": 0.5}]}'
+                )
             raise RuntimeError("proposal failed")
 
         runner._inference.chat = AsyncMock(side_effect=side_effect)  # type: ignore[method-assign]

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from hestia.context.builder import ContextBuilder
-from hestia.core.types import Message, Session, SessionState, SessionTemperature
+from hestia.core.types import Session, SessionState, SessionTemperature
 from hestia.policy.default import DefaultPolicyEngine
 
 

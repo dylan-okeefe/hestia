@@ -68,8 +68,9 @@ class TestGmailFolderConfiguration:
         )
         adapter = EmailAdapter(config)
 
-        with patch("hestia.email.adapter.imaplib.IMAP4_SSL", mock_cls):
-            with patch("hestia.email.adapter.smtplib.SMTP") as mock_smtp:
+        with patch("hestia.email.adapter.imaplib.IMAP4_SSL", mock_cls), patch(
+            "hestia.email.adapter.smtplib.SMTP"
+        ) as mock_smtp:
                 mock_smtp_inst = mock_smtp.return_value
                 # C-6: starttls() now validated against (220, *).
                 mock_smtp_inst.starttls.return_value = (220, b"Ready")

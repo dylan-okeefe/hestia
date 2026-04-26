@@ -8,7 +8,6 @@ import httpx
 import pytest
 
 from hestia.app import CliAppContext
-from hestia.memory import MemoryEpochCompiler
 from hestia.doctor import (
     _check_config_file_loads,
     _check_config_schema,
@@ -20,6 +19,7 @@ from hestia.doctor import (
     _check_sqlite_dbs_readable,
     _check_trust_preset_resolves,
 )
+from hestia.memory import MemoryEpochCompiler
 
 
 @pytest.fixture

@@ -1,6 +1,5 @@
 """Unit tests for Telegram markdown-to-HTML conversion."""
 
-import pytest
 
 from hestia.platforms.telegram_adapter import _md_to_tg_html
 

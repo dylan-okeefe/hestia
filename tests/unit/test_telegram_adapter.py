@@ -99,7 +99,7 @@ class TestTelegramAdapterAsync:
         # First edit
         start_time = asyncio.get_event_loop().time()
         await adapter.edit_message("12345", "100", "First edit")
-        first_edit_time = asyncio.get_event_loop().time() - start_time
+        asyncio.get_event_loop().time() - start_time
 
         # Second edit immediately - should be rate limited
         start_time = asyncio.get_event_loop().time()

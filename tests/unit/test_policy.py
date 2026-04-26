@@ -2,11 +2,11 @@
 
 import pytest
 
+from hestia.config import StorageConfig
 from hestia.core.types import Session, SessionState, SessionTemperature
 from hestia.errors import InferenceServerError, InferenceTimeoutError
 from hestia.policy.default import DefaultPolicyEngine
 from hestia.policy.engine import RetryAction
-from hestia.config import StorageConfig
 
 
 @pytest.fixture

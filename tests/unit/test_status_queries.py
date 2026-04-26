@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from hestia.core.types import Message, Session, SessionState, SessionTemperature
+from hestia.core.types import Message
 from hestia.orchestrator.types import Turn, TurnState
 from hestia.persistence.db import Database
 from hestia.persistence.scheduler import SchedulerStore
@@ -36,8 +36,8 @@ class TestSessionStoreQueries:
         """Counts sessions grouped by state."""
         # Create sessions in different states
         s1 = await session_store.create_session("cli", "user1")
-        s2 = await session_store.create_session("cli", "user2")
-        s3 = await session_store.create_session("cli", "user3")
+        await session_store.create_session("cli", "user2")
+        await session_store.create_session("cli", "user3")
 
         # Archive one session
         await session_store.archive_session(s1.id)

@@ -129,7 +129,7 @@ async def test_total_tokens_matches_joined_string_baseline(inference, policy, se
             break
     protected_bottom = [new_msg]
     raw_budget = policy.turn_token_budget(session)
-    protected_count = await builder._count_messages(
+    await builder._count_messages(
         protected_top + protected_bottom, False
     )
 
@@ -151,7 +151,10 @@ async def test_total_tokens_matches_joined_string_baseline(inference, policy, se
 
     # The cached result and reference may differ by at most 1 message at the
     # boundary because the join-overhead approximation can shift by a token.
-    cached_included = [m for m in result.messages if m.role != "system" and m not in protected_bottom]
+    cached_included = [
+        m for m in result.messages
+        if m.role != "system" and m not in protected_bottom
+    ]
     # Remove first_user from comparison
     if first_user in cached_included:
         cached_included.remove(first_user)

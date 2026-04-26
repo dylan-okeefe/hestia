@@ -54,7 +54,7 @@ class TestSearchMemoryTool:
             await store.save(f"Memory {i}")
         result = await search_tool("Memory", limit=2)
         # Should have 2 results (format: [id] (date) content)
-        lines = [l for l in result.split("\n") if l.strip()]
+        lines = [line for line in result.split("\n") if line.strip()]
         assert len(lines) == 2
 
     @pytest.mark.asyncio
@@ -120,7 +120,7 @@ class TestSearchMemoryTool:
             await store.save(f"Memory {i}")
 
         result = await list_tool(limit=3)
-        lines = [l for l in result.split("\n") if l.strip()]
+        lines = [line for line in result.split("\n") if line.strip()]
         assert len(lines) == 3
 
     @pytest.mark.asyncio
