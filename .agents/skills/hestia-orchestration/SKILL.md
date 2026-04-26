@@ -66,6 +66,24 @@ Before declaring a chunk done, verify:
 
 See `references/review-checklist.md` for the detailed version with examples.
 
+## Intent-based evaluation (mandatory for all specs)
+
+Every spec must capture **why** a change matters, not just **what** to change. When writing `L*.md` specs:
+
+- Include an **## Intent & Meaning** section that explains the architectural, security, or operational problem the loop solves.
+- For each § section, briefly state the **intent** of that specific change.
+- Include an **## Acceptance (Intent-Based)** section with criteria that verify the *spirit* of the change was achieved, not just the mechanical diff.
+
+When self-reviewing or handoff-reviewing a completed loop, evaluate:
+
+- **Did the code change match the spec?** (the usual check)
+- **Does the change actually achieve the intent?** For example:
+  - If the intent was "make eviction not stall other turns," verify under synthetic load, not just that the lock was moved.
+  - If the intent was "safe by default," verify that a blank-config startup is actually safe, not just that a default was changed.
+  - If the intent was "make meta-tools as easy to add as regular tools," verify that adding a hypothetical fourth meta-tool requires zero edits to the dispatcher.
+
+Do not treat intent-based acceptance as optional documentation. It is a gate. If the spec was fulfilled but the intent was not, the loop is not done — revise or escalate to Dylan.
+
 ## Git flow
 
 - Branch from `develop`: `git checkout -b feature/l<NN>-<slug>`
