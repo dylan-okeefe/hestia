@@ -9,6 +9,57 @@
 
 
 
+## 2026-04-25 — L59: Security Docs & Infrastructure
+
+**Outcome:** All 4 sections completed on feature branch.
+
+**Scope authorization:** `docs/development-process/kimi-loops/L59-security-docs-and-infrastructure.md`
+
+**Implementation pattern:** Sequential subagent delegation with review between
+chunks. Two subagent runs: one for §1–§2 (docs + allowlist hardening), one for
+§3–§4 (memory schema check + skills wiring).
+
+**Subagent chunks:**
+1. §1 — Document injection scanner annotate-not-block design (4ed2924)
+2. §2 — Raise `ValueError` on invalid Telegram `allowed_users` entry (91a167c)
+3. §3 — Memory schema mismatch check + alembic exclusion docs (38282a9)
+4. §4 — Wire skill index into `TurnAssembly`, add doctor check (4750c9b)
+
+**Quality gate:**
+- Tests: 120 passed (targeted subset)
+- Mypy: 0 new errors
+- Ruff: 0 new issues
+
+**Branch:** `feature/l59-security-docs-and-infrastructure` — **pushed to origin.**
+
+## 2026-04-25 — L58: Config, UX & Timezone Polish
+
+**Outcome:** All 6 sections (+ §0 review cleanup) completed on feature branch.
+
+**Scope authorization:** `docs/development-process/kimi-loops/L58-config-and-ux-polish.md`
+
+**Implementation pattern:** Sequential subagent delegation with deep review
+between chunks. The orchestrator (Kimi) reviewed L58 §1 output, identified
+gaps, fixed bugs (duplicate test, column width mismatch, redundant timezone
+output), updated the spec with findings, and auto-continued through §2–§6.
+
+**Subagent chunks:**
+1. §1 — Extract `_ConfigFromEnv` to `config_env.py` + 18 tests (93378f3)
+2. §2 — UTC suffix on timestamps (79831c2)
+3. §0 cleanup — Add 8 missing config_env tests, trim config.py to 427 lines (e9cc899, c7a865c)
+4. §0 cleanup — Unify timestamp formatting via `_format_utc()` (5a2b973)
+5. §3 — Token usage visibility + `/tokens` REPL command (6ac5fe4)
+6. §4 — Slot info and context budget in `/session` (f4d4c8b)
+7. §5–§6 — ask vs chat clarity, schedule list format (ce9735b)
+
+**Quality gate:**
+- Tests: 100 passed (targeted subset covering all changes)
+- Mypy: 0 new errors
+- Ruff: 0 new issues
+- `config.py`: 427 lines (<500 target)
+
+**Branch:** `feature/l58-config-and-ux-polish` — **pushed to origin.**
+
 ## 2026-04-25 — L55: Code Cleanup & Release Prep
 
 **Outcome:** All 5 sections completed and merged to `develop`.

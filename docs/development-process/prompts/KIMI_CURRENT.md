@@ -2,52 +2,32 @@
 
 **Orchestrator:** Kimi (self-orchestrating via subagents)
 
-**Last set by:** Kimi — 2026-04-25 (L55 merged to develop)
+**Last set by:** Kimi — 2026-04-25 (L59 complete)
 
 ---
 
 ## Current task
 
-**Status:** **ACTIVE — L56 queued.**
+**Status:** **IDLE — All queued loops complete.**
 
 The v0.10.0 pre-release evaluation identified ~15 bugs, architecture seams,
-and polish items. Organized into a 6-loop arc (L54–L59).
+and polish items. Organized into a 6-loop arc (L54–L59). **All complete.**
 
-**L54 and L55** are complete and merged to `develop`.
-**L56–L59** are v0.11 feature-branch work (do not merge to develop until
-release-prep).
-
-### Recently completed (merged to develop):
-- **L54** — Async safety & small bugs (9 commits, 10 sections)
-- **L55** — Code cleanup & release prep (5 commits, 5 sections)
-- **L53 (ad-hoc)** — Tavily integration, Telegram HTML markdown, DuckDuckGo
-  fallback, conversation audit guide.
+**L54 and L55** are merged to `develop`.
+**L56, L57, L58, and L59** are complete on their feature branches.
 
 ---
 
-## Active loop: L56 — Orchestrator Decomposition
+## Completed loops
 
-**Branch:** `feature/l56-orchestrator-decomposition`  
-**Spec:** [`kimi-loops/L56-orchestrator-decomposition.md`](kimi-loops/L56-orchestrator-decomposition.md)  
-**Merge target:** release-prep (do NOT merge to develop until v0.11 release-prep)
-
-**Scope summary:**
-Decompose `orchestrator/engine.py` (982 lines, 15+ concerns) into three phases:
-1. **TurnAssembly** — context building, style prefix, voice prompt, slot acquisition
-2. **TurnExecution** — inference loop, tool dispatch, confirmation gating, injection scanning
-3. **TurnFinalization** — trace recording, failure bundles, slot save, handoff summary
-
-**Quality gates:** `pytest`, `mypy`, `ruff` — all green.
-
----
-
-## Queue (next up)
-
-| Loop | Branch | Spec | Merge target |
-|------|--------|------|--------------|
-| L57 | `feature/l57-app-bootstrap-cleanup` | [`kimi-loops/L57-app-bootstrap-cleanup.md`](kimi-loops/L57-app-bootstrap-cleanup.md) | release-prep |
-| L58 | `feature/l58-config-and-ux-polish` | [`kimi-loops/L58-config-and-ux-polish.md`](kimi-loops/L58-config-and-ux-polish.md) | release-prep |
-| L59 | `feature/l59-security-docs-and-infrastructure` | [`kimi-loops/L59-security-docs-and-infrastructure.md`](kimi-loops/L59-security-docs-and-infrastructure.md) | release-prep |
+| Loop | Branch | Status |
+|------|--------|--------|
+| L54 | `feature/l54-async-safety-and-small-bugs` | Merged to `develop` |
+| L55 | `feature/l55-code-cleanup-release-prep` | Merged to `develop` |
+| L56 | `feature/l56-orchestrator-decomposition` | Complete, on branch |
+| L57 | `feature/l57-app-bootstrap-cleanup` | Complete, on branch |
+| L58 | `feature/l58-config-and-ux-polish` | Complete, on branch |
+| L59 | `feature/l59-security-docs-and-infrastructure` | Complete, on branch |
 
 ---
 
@@ -56,6 +36,11 @@ Decompose `orchestrator/engine.py` (982 lines, 15+ concerns) into three phases:
 ### Voice Phase B (Discord) → v0.11+ candidate
 - Specified in `v0.8.0-release-and-voice-launch.md` Track 5 Phase B.
 - **Blocked on Dylan-side prereqs** (Discord token, guild/channel IDs, etc.).
+
+### Release prep → v0.11
+- Merge L56–L59 to a release branch
+- Integration testing across all feature branches
+- Release notes and version bump
 
 ---
 
