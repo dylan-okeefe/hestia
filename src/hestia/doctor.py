@@ -52,6 +52,7 @@ async def run_checks(app: CliAppContext) -> list[CheckResult]:
         _check_platform_prereqs,
         _check_voice_prerequisites,
         _check_trust_preset_resolves,
+        _check_trust_preset_safe_for_production,
         _check_memory_epoch,
         _check_skills_status,
     ]
@@ -184,8 +185,16 @@ async def _check_config_schema(app: CliAppContext) -> CheckResult:
 
 
 async def _check_allowed_roots_cwd(app: CliAppContext) -> CheckResult:
-    """Warn when ``allowed_roots`` is ``[\".]`` under a broad CWD."""
+    """Warn when ``allowed_roots`` is empty (deny-all default) or contains '.'."""
     roots = app.config.storage.allowed_roots
+    if not roots:
+        return CheckResult(
+            "allowed_roots_cwd",
+            True,
+            "allowed_roots is empty (default deny-all). "
+            "Filesystem tools (read_file, write_file, list_dir) are disabled. "
+            "Set storage.allowed_roots to explicit paths to enable them.",
+        )
     if "." not in roots:
         return CheckResult("allowed_roots_cwd", True, "")
     cwd = Path.cwd().resolve()
@@ -379,6 +388,27 @@ async def _check_trust_preset_resolves(app: CliAppContext) -> CheckResult:
         "trust_preset_resolves",
         False,
         f"unknown trust preset '{preset}'; known: {', '.join(sorted(known))}",
+    )
+
+
+async def _check_trust_preset_safe_for_production(app: CliAppContext) -> CheckResult:
+    """Fail when the dangerous 'developer' preset is used outside a dev environment."""
+    preset = app.config.trust.preset
+    if preset != "developer":
+        return CheckResult("trust_preset_safe", True, "")
+    hestia_env = os.environ.get("HESTIA_ENV", "")
+    if hestia_env == "development":
+        return CheckResult(
+            "trust_preset_safe",
+            True,
+            "trust preset 'developer' with HESTIA_ENV=development — acknowledged",
+        )
+    return CheckResult(
+        "trust_preset_safe",
+        False,
+        "Trust preset 'developer' auto-approves all tools. "
+        "This is not recommended for production. "
+        "Set HESTIA_ENV=development to acknowledge, or switch to a safer preset.",
     )
 
 

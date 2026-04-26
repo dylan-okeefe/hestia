@@ -95,7 +95,7 @@ class StorageConfig(_ConfigFromEnv):
 
     database_url: str = "sqlite+aiosqlite:///hestia.db"
     artifacts_dir: Path = field(default_factory=lambda: Path("artifacts"))
-    allowed_roots: list[str] = field(default_factory=lambda: ["."])
+    allowed_roots: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -119,6 +119,14 @@ class TelegramConfig(_ConfigFromEnv):
     read_timeout_seconds: float = 30.0
     long_poll_timeout_seconds: float = 30.0
     voice_messages: bool = False  # Phase A feature flag
+
+    def __repr__(self) -> str:
+        fields = []
+        for k, v in self.__dict__.items():
+            if k == "bot_token":
+                v = "***" if v else ""
+            fields.append(f"{k}={v!r}")
+        return f"{self.__class__.__name__}({', '.join(fields)})"
 
 
 @dataclass
@@ -186,7 +194,19 @@ class TrustConfig(_ConfigFromEnv):
 
     @classmethod
     def developer(cls) -> TrustConfig:
-        """Most permissive posture (development/testing only)."""
+        """Most permissive posture (development/testing only).
+
+        WARNING: auto_approve_tools=[\"*\"] grants the LLM unrestricted access
+        to all tools including terminal and write_file. Use only in isolated
+        development environments.
+        """
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.warning(
+            "developer trust preset selected — all tools auto-approved. "
+            "This is dangerous outside a development environment."
+        )
         return cls(
             auto_approve_tools=["*"],  # wildcard — matches any tool name
             scheduler_shell_exec=True,
@@ -260,6 +280,14 @@ class EmailConfig(_ConfigFromEnv):
                 )
             return val
         return self.password
+
+    def __repr__(self) -> str:
+        fields = []
+        for k, v in self.__dict__.items():
+            if k in ("password", "resolved_password"):
+                v = "***" if v else ""
+            fields.append(f"{k}={v!r}")
+        return f"{self.__class__.__name__}({', '.join(fields)})"
 
 
 @dataclass
