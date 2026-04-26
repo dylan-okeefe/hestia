@@ -64,6 +64,7 @@ class Turn:
 
 # Callback types
 ResponseCallback = Callable[[str], Awaitable[None]]
+TransitionCallback = Callable[[Turn, TurnState, str], Awaitable[None]]
 
 
 @dataclass
