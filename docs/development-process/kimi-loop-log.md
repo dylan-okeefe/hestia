@@ -9,6 +9,34 @@
 
 
 
+## 2026-04-25 — L58: Config, UX & Timezone Polish
+
+**Outcome:** All 6 sections (+ §0 review cleanup) completed on feature branch.
+
+**Scope authorization:** `docs/development-process/kimi-loops/L58-config-and-ux-polish.md`
+
+**Implementation pattern:** Sequential subagent delegation with deep review
+between chunks. The orchestrator (Kimi) reviewed L58 §1 output, identified
+gaps, fixed bugs (duplicate test, column width mismatch, redundant timezone
+output), updated the spec with findings, and auto-continued through §2–§6.
+
+**Subagent chunks:**
+1. §1 — Extract `_ConfigFromEnv` to `config_env.py` + 18 tests (93378f3)
+2. §2 — UTC suffix on timestamps (79831c2)
+3. §0 cleanup — Add 8 missing config_env tests, trim config.py to 427 lines (e9cc899, c7a865c)
+4. §0 cleanup — Unify timestamp formatting via `_format_utc()` (5a2b973)
+5. §3 — Token usage visibility + `/tokens` REPL command (6ac5fe4)
+6. §4 — Slot info and context budget in `/session` (f4d4c8b)
+7. §5–§6 — ask vs chat clarity, schedule list format (ce9735b)
+
+**Quality gate:**
+- Tests: 100 passed (targeted subset covering all changes)
+- Mypy: 0 new errors
+- Ruff: 0 new issues
+- `config.py`: 427 lines (<500 target)
+
+**Branch:** `feature/l58-config-and-ux-polish` — **pushed to origin.**
+
 ## 2026-04-25 — L55: Code Cleanup & Release Prep
 
 **Outcome:** All 5 sections completed and merged to `develop`.
