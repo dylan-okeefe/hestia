@@ -66,8 +66,8 @@ def _md_to_tg_html(text: str) -> str:
     # 5. Italic (*text*) — only if not already inside <b> tags and not double asterisks
     def _italic_repl(m: re.Match[str]) -> str:
         inner = m.group(1)
-        # Skip if it looks like it was meant to be bold (contains * or already has tags)
-        if "*" in inner or "<b>" in inner or "</b>" in inner:
+        # Skip if it already contains bold tags (can happen with nested patterns)
+        if "<b>" in inner or "</b>" in inner:
             return m.group(0)
         return f"<i>{inner}</i>"
 
