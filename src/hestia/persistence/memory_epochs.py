@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING
 from hestia.core.types import Session
 
 if TYPE_CHECKING:
-    from hestia.app import CliAppContext
+    from hestia.app import AppContext
 
 
 async def _compile_and_set_memory_epoch(
-    app: CliAppContext,
+    app: AppContext,
     session: Session,
 ) -> bool:
     """Compile memory epoch for the session and set it in context builder.

@@ -12,7 +12,7 @@ from typing import Any
 import click
 
 from hestia.app import (
-    CliAppContext,
+    AppContext,
     async_command,
     make_app,
 )
@@ -125,7 +125,7 @@ def cli(
 @click.option("--with-soul", is_flag=True, help="Write a starter SOUL.md")
 @click.pass_obj
 @async_command
-async def init(app: CliAppContext, create_config: bool, with_soul: bool) -> None:
+async def init(app: AppContext, create_config: bool, with_soul: bool) -> None:
     """Initialize database, artifacts, and slot directories."""
     await cmd_init(app, create_config, with_soul)
 
@@ -133,7 +133,7 @@ async def init(app: CliAppContext, create_config: bool, with_soul: bool) -> None
 @click.option("--new-session", is_flag=True, help="Force a new session instead of resuming")
 @click.pass_obj
 @async_command
-async def chat(app: CliAppContext, new_session: bool) -> None:
+async def chat(app: AppContext, new_session: bool) -> None:
     """Start an interactive REPL chat session (persistent session)."""
     await cmd_chat(app, new_session)
 
@@ -141,14 +141,14 @@ async def chat(app: CliAppContext, new_session: bool) -> None:
 @click.argument("message")
 @click.pass_obj
 @async_command
-async def ask(app: CliAppContext, message: str) -> None:
+async def ask(app: AppContext, message: str) -> None:
     """Send a single message and get a response (no session persistence)."""
     await cmd_ask(app, message)
 
 @cli.command()
 @click.pass_obj
 @async_command
-async def health(app: CliAppContext) -> None:
+async def health(app: AppContext) -> None:
     """Check inference server health."""
     await cmd_health(app)
 
@@ -163,7 +163,7 @@ def version() -> None:
 @cli.command()
 @click.pass_obj
 @async_command
-async def status(app: CliAppContext) -> None:
+async def status(app: AppContext) -> None:
     """Show system status summary."""
     await cmd_status(app)
 
@@ -178,7 +178,7 @@ def failures() -> None:
 @click.option("--class", "failure_class", default=None, help="Filter by failure class")
 @click.pass_obj
 @async_command
-async def failures_list(app: CliAppContext, limit: int, failure_class: str | None) -> None:
+async def failures_list(app: AppContext, limit: int, failure_class: str | None) -> None:
     """List recent failures."""
     await cmd_failures_list(app, limit, failure_class)
 
@@ -186,7 +186,7 @@ async def failures_list(app: CliAppContext, limit: int, failure_class: str | Non
 @click.option("--days", type=int, default=7, help="Number of days to summarize")
 @click.pass_obj
 @async_command
-async def failures_summary(app: CliAppContext, days: int) -> None:
+async def failures_summary(app: AppContext, days: int) -> None:
     """Show failure counts by class."""
     await cmd_failures_summary(app, days)
 
@@ -208,7 +208,7 @@ def schedule() -> None:
 @click.pass_obj
 @async_command
 async def schedule_add(
-    app: CliAppContext,
+    app: AppContext,
     cron: str | None,
     fire_at_str: str | None,
     description: str | None,
@@ -226,7 +226,7 @@ async def schedule_add(
 @click.option("--verbose", "-v", is_flag=True, help="Show task IDs")
 @click.pass_obj
 @async_command
-async def schedule_list(app: CliAppContext, verbose: bool) -> None:
+async def schedule_list(app: AppContext, verbose: bool) -> None:
     """List scheduled tasks."""
     await cmd_schedule_list(app, verbose=verbose)
 
@@ -234,7 +234,7 @@ async def schedule_list(app: CliAppContext, verbose: bool) -> None:
 @click.argument("task_id")
 @click.pass_obj
 @async_command
-async def schedule_show(app: CliAppContext, task_id: str) -> None:
+async def schedule_show(app: AppContext, task_id: str) -> None:
     """Show details of a scheduled task."""
     await cmd_schedule_show(app, task_id)
 
@@ -242,7 +242,7 @@ async def schedule_show(app: CliAppContext, task_id: str) -> None:
 @click.argument("task_id")
 @click.pass_obj
 @async_command
-async def schedule_disable(app: CliAppContext, task_id: str) -> None:
+async def schedule_disable(app: AppContext, task_id: str) -> None:
     """Disable a scheduled task."""
     await cmd_schedule_disable(app, task_id)
 
@@ -250,7 +250,7 @@ async def schedule_disable(app: CliAppContext, task_id: str) -> None:
 @click.argument("task_id")
 @click.pass_obj
 @async_command
-async def schedule_remove(app: CliAppContext, task_id: str) -> None:
+async def schedule_remove(app: AppContext, task_id: str) -> None:
     """Remove a scheduled task."""
     await cmd_schedule_remove(app, task_id)
 
@@ -258,7 +258,7 @@ async def schedule_remove(app: CliAppContext, task_id: str) -> None:
 @click.argument("task_id")
 @click.pass_obj
 @async_command
-async def schedule_enable(app: CliAppContext, task_id: str) -> None:
+async def schedule_enable(app: AppContext, task_id: str) -> None:
     """Enable a scheduled task."""
     await cmd_schedule_enable(app, task_id)
 
@@ -266,7 +266,7 @@ async def schedule_enable(app: CliAppContext, task_id: str) -> None:
 @click.argument("task_id")
 @click.pass_obj
 @async_command
-async def schedule_run(app: CliAppContext, task_id: str) -> None:
+async def schedule_run(app: AppContext, task_id: str) -> None:
     """Manually trigger a scheduled task."""
     await cmd_schedule_run(app, task_id)
 
@@ -286,7 +286,7 @@ def schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None:
 @click.pass_context
 def run_telegram(ctx: click.Context) -> None:
     """Run Hestia as a Telegram bot (blocks until Ctrl-C)."""
-    app: CliAppContext = ctx.obj
+    app: AppContext = ctx.obj
     from hestia.platforms.runners import run_telegram as _run_telegram
 
     try:
@@ -298,7 +298,7 @@ def run_telegram(ctx: click.Context) -> None:
 @click.pass_context
 def run_matrix(ctx: click.Context) -> None:
     """Run Hestia as a Matrix bot (blocks until Ctrl-C)."""
-    app: CliAppContext = ctx.obj
+    app: AppContext = ctx.obj
     from hestia.platforms.runners import run_matrix as _run_matrix
 
     try:
@@ -328,7 +328,7 @@ def _format_memory_row(mem: Any, id_width: int = 20) -> str:
 @click.option("--limit", type=int, default=5)
 @click.pass_obj
 @async_command
-async def memory_search(app: CliAppContext, query: str, limit: int) -> None:
+async def memory_search(app: AppContext, query: str, limit: int) -> None:
     """Search memories."""
     results = await app.memory_store.search(query, limit=limit)
     if not results:
@@ -344,7 +344,7 @@ async def memory_search(app: CliAppContext, query: str, limit: int) -> None:
 @click.option("--limit", type=int, default=20)
 @click.pass_obj
 @async_command
-async def memory_list(app: CliAppContext, tag: str | None, limit: int) -> None:
+async def memory_list(app: AppContext, tag: str | None, limit: int) -> None:
     """List recent memories."""
     results = await app.memory_store.list_memories(tag=tag, limit=limit)
     if not results:
@@ -360,7 +360,7 @@ async def memory_list(app: CliAppContext, tag: str | None, limit: int) -> None:
 @click.option("--tags", default="")
 @click.pass_obj
 @async_command
-async def memory_add(app: CliAppContext, content: str, tags: str) -> None:
+async def memory_add(app: AppContext, content: str, tags: str) -> None:
     """Add a memory manually."""
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
     mem = await app.memory_store.save(content=content, tags=tag_list)
@@ -370,7 +370,7 @@ async def memory_add(app: CliAppContext, content: str, tags: str) -> None:
 @click.argument("memory_id")
 @click.pass_obj
 @async_command
-async def memory_remove(app: CliAppContext, memory_id: str) -> None:
+async def memory_remove(app: AppContext, memory_id: str) -> None:
     """Delete a memory by ID."""
     success = await app.memory_store.delete(memory_id)
     if not success:
@@ -388,7 +388,7 @@ def artifacts() -> None:
 @artifacts.command(name="list")
 @click.pass_obj
 @async_command
-async def artifacts_list(app: CliAppContext) -> None:
+async def artifacts_list(app: AppContext) -> None:
     """List stored artifacts."""
     results = await cmd_artifacts_list(app)
     if not results:
@@ -410,7 +410,7 @@ async def artifacts_list(app: CliAppContext) -> None:
 @click.option("--older-than", type=int, default=None, help="Remove artifacts older than N days")
 @click.pass_obj
 @async_command
-async def artifacts_purge(app: CliAppContext, older_than: int | None) -> None:
+async def artifacts_purge(app: AppContext, older_than: int | None) -> None:
     """Purge artifacts (expired by default, or all older than N days)."""
     removed = await cmd_artifacts_purge(app, older_than_days=older_than)
     click.echo(f"Removed {removed} artifact(s).")
@@ -446,7 +446,7 @@ def _check_experimental_skills() -> None:
 @click.option("--all", "show_all", is_flag=True, help="Include disabled skills")
 @click.pass_obj
 @async_command
-async def skill_list(app: CliAppContext, state_filter: str | None, show_all: bool) -> None:
+async def skill_list(app: AppContext, state_filter: str | None, show_all: bool) -> None:
     """List skills with their states."""
     _check_experimental_skills()
     await cmd_skill_list(app, state_filter, show_all)
@@ -455,7 +455,7 @@ async def skill_list(app: CliAppContext, state_filter: str | None, show_all: boo
 @click.argument("name")
 @click.pass_obj
 @async_command
-async def skill_show(app: CliAppContext, name: str) -> None:
+async def skill_show(app: AppContext, name: str) -> None:
     """Show skill details."""
     _check_experimental_skills()
     await cmd_skill_show(app, name)
@@ -464,7 +464,7 @@ async def skill_show(app: CliAppContext, name: str) -> None:
 @click.argument("name")
 @click.pass_obj
 @async_command
-async def skill_promote(app: CliAppContext, name: str) -> None:
+async def skill_promote(app: AppContext, name: str) -> None:
     """Advance skill state (draft -> tested -> trusted)."""
     _check_experimental_skills()
     await cmd_skill_promote(app, name)
@@ -473,7 +473,7 @@ async def skill_promote(app: CliAppContext, name: str) -> None:
 @click.argument("name")
 @click.pass_obj
 @async_command
-async def skill_demote(app: CliAppContext, name: str) -> None:
+async def skill_demote(app: AppContext, name: str) -> None:
     """Move skill back one state."""
     _check_experimental_skills()
     await cmd_skill_demote(app, name)
@@ -482,7 +482,7 @@ async def skill_demote(app: CliAppContext, name: str) -> None:
 @click.argument("name")
 @click.pass_obj
 @async_command
-async def skill_disable(app: CliAppContext, name: str) -> None:
+async def skill_disable(app: AppContext, name: str) -> None:
     """Disable a skill without removing it."""
     _check_experimental_skills()
     await cmd_skill_disable(app, name)
@@ -505,7 +505,7 @@ def audit_group() -> None:
 @click.option("--output", "-o", type=click.Path(), help="Save report to file")
 @click.pass_obj
 @async_command
-async def audit_run(app: CliAppContext, output_json: bool, output: str | None) -> None:
+async def audit_run(app: AppContext, output_json: bool, output: str | None) -> None:
     """Run security audit checks."""
     await cmd_audit_run(app, output_json, output)
 
@@ -513,7 +513,7 @@ async def audit_run(app: CliAppContext, output_json: bool, output: str | None) -
 @click.option("--since", default="7d", help="Time window (e.g. 7d, 24h, 30d)")
 @click.pass_obj
 @async_command
-async def audit_egress(app: CliAppContext, since: str) -> None:
+async def audit_egress(app: AppContext, since: str) -> None:
     """Print domain-level egress aggregation."""
     await cmd_audit_egress(app, since)
 
@@ -526,7 +526,7 @@ def email() -> None:
 @email.command(name="check")
 @click.pass_obj
 @async_command
-async def email_check(app: CliAppContext) -> None:
+async def email_check(app: AppContext) -> None:
     """Check email connectivity (IMAP login test)."""
     await cmd_email_check(app)
 
@@ -536,7 +536,7 @@ async def email_check(app: CliAppContext) -> None:
 @click.option("--unread-only", is_flag=True, default=False)
 @click.pass_obj
 @async_command
-async def email_list_cmd(app: CliAppContext, folder: str, limit: int, unread_only: bool) -> None:
+async def email_list_cmd(app: AppContext, folder: str, limit: int, unread_only: bool) -> None:
     """List recent emails."""
     await cmd_email_list_cmd(app, folder, limit, unread_only)
 
@@ -544,7 +544,7 @@ async def email_list_cmd(app: CliAppContext, folder: str, limit: int, unread_onl
 @click.argument("message_id")
 @click.pass_obj
 @async_command
-async def email_read_cmd(app: CliAppContext, message_id: str) -> None:
+async def email_read_cmd(app: AppContext, message_id: str) -> None:
     """Read a single email by IMAP UID."""
     await cmd_email_read_cmd(app, message_id)
 
@@ -558,7 +558,7 @@ def style() -> None:
 @click.option("--user", default=None)
 @click.pass_obj
 @async_command
-async def style_show(app: CliAppContext, platform: str | None, user: str | None) -> None:
+async def style_show(app: AppContext, platform: str | None, user: str | None) -> None:
     """Pretty-print the current style profile for a user."""
     await cmd_style_show(app, platform, user)
 
@@ -567,7 +567,7 @@ async def style_show(app: CliAppContext, platform: str | None, user: str | None)
 @click.option("--user", default=None)
 @click.pass_obj
 @async_command
-async def style_reset(app: CliAppContext, platform: str | None, user: str | None) -> None:
+async def style_reset(app: AppContext, platform: str | None, user: str | None) -> None:
     """Wipe the style profile so it rebuilds from scratch."""
     if app.style_store is None:
         click.echo("Style store not available", err=True)
@@ -579,7 +579,7 @@ async def style_reset(app: CliAppContext, platform: str | None, user: str | None
 
 @style.command(name="disable")
 @click.pass_obj
-def style_disable(app: CliAppContext) -> None:
+def style_disable(app: AppContext) -> None:
     """Disable style profile injection for this process only.
 
     To disable persistently, set ``style.enabled = false`` in your config
@@ -599,7 +599,7 @@ def policy() -> None:
 @policy.command(name="show")
 @click.pass_obj
 @async_command
-async def policy_show(app: CliAppContext) -> None:
+async def policy_show(app: AppContext) -> None:
     """Show current effective policy configuration."""
     await cmd_policy_show(app)
 
@@ -607,7 +607,7 @@ async def policy_show(app: CliAppContext) -> None:
 @click.option("--plain", is_flag=True, help="Use ASCII [ok]/[FAIL] markers instead of ✓/✗.")
 @click.pass_obj
 @async_command
-async def doctor(app: CliAppContext, plain: bool) -> None:
+async def doctor(app: AppContext, plain: bool) -> None:
     """Run a one-shot health check against the current Hestia install.
 
     Exits non-zero if any check fails. Read-only; never mutates state.
@@ -626,7 +626,7 @@ def reflection() -> None:
 @reflection.command(name="status")
 @click.pass_obj
 @async_command
-async def reflection_status(app: CliAppContext) -> None:
+async def reflection_status(app: AppContext) -> None:
     """Show reflection scheduler health and proposal counts."""
     await cmd_reflection_status(app)
 
@@ -634,7 +634,7 @@ async def reflection_status(app: CliAppContext) -> None:
 @click.option("--status", default="pending", help="Filter by status")
 @click.pass_obj
 @async_command
-async def reflection_list(app: CliAppContext, status: str) -> None:
+async def reflection_list(app: AppContext, status: str) -> None:
     """List proposals."""
     await cmd_reflection_list(app, status)
 
@@ -642,7 +642,7 @@ async def reflection_list(app: CliAppContext, status: str) -> None:
 @click.argument("proposal_id")
 @click.pass_obj
 @async_command
-async def reflection_show(app: CliAppContext, proposal_id: str) -> None:
+async def reflection_show(app: AppContext, proposal_id: str) -> None:
     """Show full details of a proposal."""
     await cmd_reflection_show(app, proposal_id)
 
@@ -650,7 +650,7 @@ async def reflection_show(app: CliAppContext, proposal_id: str) -> None:
 @click.argument("proposal_id")
 @click.pass_obj
 @async_command
-async def reflection_accept(app: CliAppContext, proposal_id: str) -> None:
+async def reflection_accept(app: AppContext, proposal_id: str) -> None:
     """Accept a proposal (marks it accepted; does not auto-apply)."""
     await cmd_reflection_accept(app, proposal_id)
 
@@ -659,7 +659,7 @@ async def reflection_accept(app: CliAppContext, proposal_id: str) -> None:
 @click.option("--note", default=None, help="Optional rejection note")
 @click.pass_obj
 @async_command
-async def reflection_reject(app: CliAppContext, proposal_id: str, note: str | None) -> None:
+async def reflection_reject(app: AppContext, proposal_id: str, note: str | None) -> None:
     """Reject a proposal."""
     await cmd_reflection_reject(app, proposal_id, note)
 
@@ -668,7 +668,7 @@ async def reflection_reject(app: CliAppContext, proposal_id: str, note: str | No
 @click.option("--until", default=None, help="Defer until ISO datetime (e.g. 2026-05-01T00:00:00)")
 @click.pass_obj
 @async_command
-async def reflection_defer(app: CliAppContext, proposal_id: str, until: str | None) -> None:
+async def reflection_defer(app: AppContext, proposal_id: str, until: str | None) -> None:
     """Defer a proposal."""
     await cmd_reflection_defer(app, proposal_id, until)
 
@@ -676,14 +676,14 @@ async def reflection_defer(app: CliAppContext, proposal_id: str, until: str | No
 @click.option("--now", is_flag=True, help="Trigger reflection immediately")
 @click.pass_obj
 @async_command
-async def reflection_run(app: CliAppContext, now: bool) -> None:
+async def reflection_run(app: AppContext, now: bool) -> None:
     """Run reflection manually (requires --now)."""
     await cmd_reflection_run(app, now)
 
 @reflection.command(name="history")
 @click.pass_obj
 @async_command
-async def reflection_history(app: CliAppContext) -> None:
+async def reflection_history(app: AppContext) -> None:
     """Show past proposals and their outcomes."""
     await cmd_reflection_history(app)
 

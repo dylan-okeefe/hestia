@@ -8,7 +8,7 @@ import click
 import httpx
 
 from hestia.app import (
-    CliAppContext,
+    AppContext,
     CliConfirmHandler,
     CliResponseHandler,
 )
@@ -21,7 +21,7 @@ from hestia.persistence.memory_epochs import _compile_and_set_memory_epoch
 logger = logging.getLogger(__name__)
 
 
-async def cmd_chat(app: CliAppContext, new_session: bool = False) -> None:
+async def cmd_chat(app: AppContext, new_session: bool = False) -> None:
     """Start an interactive chat session."""
     if not app.config.inference.model_name:
         raise ValueError(
@@ -87,7 +87,7 @@ async def cmd_chat(app: CliAppContext, new_session: bool = False) -> None:
     click.echo("Goodbye!")
 
 
-async def cmd_ask(app: CliAppContext, message: str) -> None:
+async def cmd_ask(app: AppContext, message: str) -> None:
     """Send a single message and get a response."""
     if not app.config.inference.model_name:
         raise ValueError(

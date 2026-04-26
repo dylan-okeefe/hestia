@@ -10,7 +10,7 @@ from hestia.core.types import Session
 from hestia.persistence.sessions import SessionStore
 
 if TYPE_CHECKING:
-    from hestia.app import CliAppContext
+    from hestia.app import AppContext
 from hestia.commands._shared import _format_token_usage, _format_utc
 
 
@@ -18,7 +18,7 @@ async def _handle_meta_command(
     cmd: str,
     session: Session,
     session_store: SessionStore,
-    app: CliAppContext | None = None,
+    app: AppContext | None = None,
 ) -> tuple[bool, Session]:
     """Handle a /meta command. Returns (should_exit, possibly_new_session)."""
     cmd = cmd.strip().lower()

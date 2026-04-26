@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 import click
 import httpx
 
-from hestia.app import CliAppContext, _require_scheduler_store
+from hestia.app import AppContext, _require_scheduler_store
 from hestia.core.types import ScheduledTask
 from hestia.errors import HestiaError
 from hestia.scheduler import Scheduler
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 async def cmd_schedule_add(
-    app: CliAppContext,
+    app: AppContext,
     cron: str | None,
     fire_at_str: str | None,
     description: str | None,
@@ -100,7 +100,7 @@ async def cmd_schedule_add(
         sys.exit(1)
 
 
-async def cmd_schedule_list(app: CliAppContext, verbose: bool = False) -> None:
+async def cmd_schedule_list(app: AppContext, verbose: bool = False) -> None:
     """List scheduled tasks."""
     store = _require_scheduler_store(app)
     tasks = await store.list_tasks_for_session(session_id=None, include_disabled=True)
@@ -138,7 +138,7 @@ async def cmd_schedule_list(app: CliAppContext, verbose: bool = False) -> None:
             click.echo(f"{desc:<25} {sched:<24} {enabled:<8} {next_run}")
 
 
-async def cmd_schedule_show(app: CliAppContext, task_id: str) -> None:
+async def cmd_schedule_show(app: AppContext, task_id: str) -> None:
     """Show details of a scheduled task."""
     store = _require_scheduler_store(app)
     task = await store.get_task(task_id)
@@ -162,7 +162,7 @@ async def cmd_schedule_show(app: CliAppContext, task_id: str) -> None:
         click.echo(f"Last error:  {task.last_error}")
 
 
-async def cmd_schedule_enable(app: CliAppContext, task_id: str) -> None:
+async def cmd_schedule_enable(app: AppContext, task_id: str) -> None:
     """Enable a scheduled task."""
     store = _require_scheduler_store(app)
     success = await store.set_enabled(task_id, True)
@@ -172,7 +172,7 @@ async def cmd_schedule_enable(app: CliAppContext, task_id: str) -> None:
     click.echo(f"Task {task_id} enabled")
 
 
-async def cmd_schedule_run(app: CliAppContext, task_id: str) -> None:
+async def cmd_schedule_run(app: AppContext, task_id: str) -> None:
     """Manually trigger a scheduled task."""
     store = _require_scheduler_store(app)
     task = await store.get_task(task_id)
@@ -203,7 +203,7 @@ async def cmd_schedule_run(app: CliAppContext, task_id: str) -> None:
         sys.exit(1)
 
 
-async def cmd_schedule_disable(app: CliAppContext, task_id: str) -> None:
+async def cmd_schedule_disable(app: AppContext, task_id: str) -> None:
     """Disable a scheduled task."""
     store = _require_scheduler_store(app)
     success = await store.disable_task(task_id)
@@ -213,7 +213,7 @@ async def cmd_schedule_disable(app: CliAppContext, task_id: str) -> None:
     click.echo(f"Task {task_id} disabled")
 
 
-async def cmd_schedule_remove(app: CliAppContext, task_id: str) -> None:
+async def cmd_schedule_remove(app: AppContext, task_id: str) -> None:
     """Remove a scheduled task."""
     store = _require_scheduler_store(app)
     success = await store.delete_task(task_id)
@@ -225,7 +225,7 @@ async def cmd_schedule_remove(app: CliAppContext, task_id: str) -> None:
 
 def cmd_schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None:
     """Run the scheduler daemon (blocks until Ctrl-C)."""
-    app: CliAppContext = ctx.obj
+    app: AppContext = ctx.obj
     # Headless daemon — no confirmation callback
     app.set_confirm_callback(None)
     cfg = app.config

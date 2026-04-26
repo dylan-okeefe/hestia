@@ -7,7 +7,6 @@ from dataclasses import dataclass
 import httpx
 import pytest
 
-from hestia.app import CliAppContext
 from hestia.doctor import (
     _check_config_file_loads,
     _check_config_schema,
@@ -20,7 +19,6 @@ from hestia.doctor import (
     _check_sqlite_dbs_readable,
     _check_trust_preset_resolves,
 )
-from hestia.memory import MemoryEpochCompiler
 
 
 @pytest.fixture
@@ -28,49 +26,20 @@ def make_app(tmp_path):
     """Build a minimal CliAppContext for doctor tests."""
 
     def _factory(cfg=None):
-        from hestia.artifacts.store import ArtifactStore
+        from hestia.app import AppContext
         from hestia.config import HestiaConfig
-        from hestia.memory import MemoryStore
         from hestia.persistence.db import Database
-        from hestia.persistence.failure_store import FailureStore
-        from hestia.persistence.scheduler import SchedulerStore
-        from hestia.persistence.sessions import SessionStore
         from hestia.persistence.skill_store import SkillStore
-        from hestia.persistence.trace_store import TraceStore
-        from hestia.policy.default import DefaultPolicyEngine
-        from hestia.tools.registry import ToolRegistry
 
         if cfg is None:
             cfg = HestiaConfig.default()
         cfg.storage.database_url = f"sqlite+aiosqlite:///{tmp_path}/test.db"
         cfg.storage.artifacts_dir = tmp_path / "artifacts"
         db = Database(cfg.storage.database_url)
-        artifact_store = ArtifactStore(cfg.storage.artifacts_dir)
-        session_store = SessionStore(db)
-        tool_registry = ToolRegistry(artifact_store)
-        policy = DefaultPolicyEngine()
-        memory_store = MemoryStore(db)
-        failure_store = FailureStore(db)
-        trace_store = TraceStore(db)
-        scheduler_store = SchedulerStore(db)
         skill_store = SkillStore(db)
-        from hestia.app import CoreAppContext, FeatureAppContext
-
-        core = CoreAppContext(
-            config=cfg,
-            db=db,
-            session_store=session_store,
-            tool_registry=tool_registry,
-            policy=policy,
-            memory_store=memory_store,
-            failure_store=failure_store,
-            trace_store=trace_store,
-            artifact_store=artifact_store,
-            scheduler_store=scheduler_store,
-            epoch_compiler=MemoryEpochCompiler(memory_store, max_tokens=500),
-        )
-        features = FeatureAppContext(skill_store=skill_store)
-        return CliAppContext(core=core, features=features)
+        app = AppContext(cfg)
+        app.skill_store = skill_store
+        return app
 
     return _factory
 
@@ -153,7 +122,7 @@ class TestConfigFileLoads:
     """Tests for _check_config_file_loads."""
 
     async def test_config_file_loads_ok(self, make_app):
-        """Smoke test on a normal CliAppContext."""
+        """Smoke test on a normal AppContext."""
         app = make_app()
         result = await _check_config_file_loads(app)
         assert result.ok is True
@@ -188,44 +157,14 @@ class TestSQLiteDBsReadable:
         db_path.write_bytes(b"NOT A SQLITE DB")
         cfg.storage.database_url = f"sqlite+aiosqlite:///{db_path}"
 
-        from hestia.artifacts.store import ArtifactStore
-        from hestia.memory import MemoryStore
+        from hestia.app import AppContext
         from hestia.persistence.db import Database
-        from hestia.persistence.failure_store import FailureStore
-        from hestia.persistence.scheduler import SchedulerStore
-        from hestia.persistence.sessions import SessionStore
         from hestia.persistence.skill_store import SkillStore
-        from hestia.persistence.trace_store import TraceStore
-        from hestia.policy.default import DefaultPolicyEngine
-        from hestia.tools.registry import ToolRegistry
 
         db = Database(cfg.storage.database_url)
-        artifact_store = ArtifactStore(cfg.storage.artifacts_dir)
-        session_store = SessionStore(db)
-        tool_registry = ToolRegistry(artifact_store)
-        policy = DefaultPolicyEngine()
-        memory_store = MemoryStore(db)
-        failure_store = FailureStore(db)
-        trace_store = TraceStore(db)
-        scheduler_store = SchedulerStore(db)
         skill_store = SkillStore(db)
-        from hestia.app import CoreAppContext, FeatureAppContext
-
-        core = CoreAppContext(
-            config=cfg,
-            db=db,
-            session_store=session_store,
-            tool_registry=tool_registry,
-            policy=policy,
-            memory_store=memory_store,
-            failure_store=failure_store,
-            trace_store=trace_store,
-            artifact_store=artifact_store,
-            scheduler_store=scheduler_store,
-            epoch_compiler=MemoryEpochCompiler(memory_store, max_tokens=500),
-        )
-        features = FeatureAppContext(skill_store=skill_store)
-        app = CliAppContext(core=core, features=features)
+        app = AppContext(cfg)
+        app.skill_store = skill_store
         result = await _check_sqlite_dbs_readable(app)
         assert result.ok is False
 
@@ -386,7 +325,7 @@ class TestSkillsStatus:
         from hestia.persistence.skill_store import SkillStore
         from hestia.skills.index import SkillIndexBuilder
 
-        app._features.skill_index_builder = SkillIndexBuilder(SkillStore(app.db))
+        app.skill_index_builder = SkillIndexBuilder(SkillStore(app.db))
         result = await _check_skills_status(app)
         assert result.ok is True
         assert "experimental enabled" in result.detail
@@ -399,7 +338,7 @@ class TestSkillsStatus:
         from hestia.persistence.skill_store import SkillStore
         from hestia.skills.index import SkillIndexBuilder
 
-        app._features.skill_index_builder = SkillIndexBuilder(SkillStore(app.db))
+        app.skill_index_builder = SkillIndexBuilder(SkillStore(app.db))
 
         import inspect
 
