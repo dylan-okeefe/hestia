@@ -7,6 +7,7 @@ import sys
 import click
 
 from hestia.app import CliAppContext
+from hestia.commands._shared import _format_utc
 
 
 async def cmd_reflection_status(app: CliAppContext) -> None:
@@ -16,8 +17,7 @@ async def cmd_reflection_status(app: CliAppContext) -> None:
         ok = "ok" if sched_status["ok"] else "degraded"
         click.echo(f"Scheduler: {ok} ({sched_status['failure_count']} failure(s))")
         if sched_status["last_run_at"]:
-            lr = sched_status["last_run_at"].strftime("%Y-%m-%d %H:%M:%S")
-            click.echo(f"Last run: {lr} UTC")
+            click.echo(f"Last run: {_format_utc(sched_status['last_run_at'])}")
         else:
             click.echo("Last run: never")
         if sched_status["last_errors"]:
@@ -69,8 +69,8 @@ async def cmd_reflection_show(app: CliAppContext, proposal_id: str) -> None:
     click.echo(f"Type:        {p.type}")
     click.echo(f"Status:      {p.status}")
     click.echo(f"Confidence:  {p.confidence:.2f}")
-    click.echo(f"Created:     {p.created_at.strftime('%Y-%m-%d %H:%M:%S')} UTC")
-    click.echo(f"Expires:     {p.expires_at.strftime('%Y-%m-%d %H:%M:%S')} UTC")
+    click.echo(f"Created:     {_format_utc(p.created_at)}")
+    click.echo(f"Expires:     {_format_utc(p.expires_at)}")
     click.echo(f"Evidence:    {', '.join(p.evidence)}")
     click.echo(f"Summary:     {p.summary}")
     click.echo(f"Action:      {p.action}")

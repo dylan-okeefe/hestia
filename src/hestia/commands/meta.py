@@ -11,6 +11,7 @@ from hestia.persistence.sessions import SessionStore
 
 if TYPE_CHECKING:
     from hestia.app import CliAppContext
+from hestia.commands._shared import _format_utc
 
 
 async def _handle_meta_command(
@@ -41,7 +42,7 @@ async def _handle_meta_command(
         click.echo(f"Platform User: {session.platform_user}")
         click.echo(f"State: {session.state.value}")
         click.echo(f"Temperature: {session.temperature.value}")
-        click.echo(f"Started: {session.started_at} UTC")
+        click.echo(f"Started: {_format_utc(session.started_at)}")
         return False, session
 
     if cmd == "/history":

@@ -6,12 +6,21 @@ from datetime import UTC, datetime, timedelta
 
 
 def _format_datetime(dt: datetime | None) -> str:
-    """Format a datetime for display in the CLI."""
+    """Format a datetime for display in the CLI (local time with zone)."""
     if dt is None:
         return "N/A"
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=UTC)
     return dt.astimezone().strftime("%Y-%m-%d %H:%M %Z")
+
+
+def _format_utc(dt: datetime | None) -> str:
+    """Format a datetime for display in the CLI (UTC)."""
+    if dt is None:
+        return "N/A"
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
 def _parse_since(since: str) -> datetime:

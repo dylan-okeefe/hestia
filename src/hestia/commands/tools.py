@@ -7,6 +7,7 @@ import sys
 import click
 
 from hestia.app import CliAppContext
+from hestia.commands._shared import _format_utc
 from hestia.skills.state import SkillState
 
 
@@ -56,9 +57,8 @@ async def cmd_skill_show(app: CliAppContext, name: str) -> None:
     click.echo(f"Description: {record.description}")
     click.echo(f"State:       {record.state.value}")
     click.echo(f"File path:   {record.file_path}")
-    click.echo(f"Created:     {record.created_at} UTC")
-    last_run = f"{record.last_run_at} UTC" if record.last_run_at else "Never"
-    click.echo(f"Last run:    {last_run}")
+    click.echo(f"Created:     {_format_utc(record.created_at)}")
+    click.echo(f"Last run:    {_format_utc(record.last_run_at)}")
     click.echo(f"Run count:   {record.run_count}")
     click.echo(f"Failures:    {record.failure_count}")
     click.echo(f"Tools:       {', '.join(record.required_tools) or 'none'}")

@@ -15,7 +15,7 @@ from hestia.app import CliAppContext, _require_scheduler_store
 from hestia.core.clock import utcnow
 from hestia.errors import HestiaError
 
-from ._shared import _parse_since
+from ._shared import _format_utc, _parse_since
 
 logger = logging.getLogger(__name__)
 
@@ -191,7 +191,7 @@ async def cmd_status(app: CliAppContext) -> None:
         next_run = stats["next_run_at"]
         if next_run.tzinfo is None:
             next_run = next_run.replace(tzinfo=UTC)
-        click.echo(f"  Next due: {next_run.astimezone().strftime('%Y-%m-%d %H:%M %Z')}")
+        click.echo(f"  Next due: {_format_utc(next_run)}")
     else:
         click.echo("  Next due: none")
 
@@ -215,7 +215,7 @@ async def cmd_failures_list(app: CliAppContext, limit: int, failure_class: str |
         return
     for bundle in bundles:
         click.echo(f"\nID: {bundle.id}")
-        click.echo(f"  Time: {bundle.created_at} UTC")
+        click.echo(f"  Time: {_format_utc(bundle.created_at)}")
         click.echo(f"  Class: {bundle.failure_class} (severity: {bundle.severity})")
         click.echo(f"  Session: {bundle.session_id}")
         click.echo(f"  Turn: {bundle.turn_id}")
@@ -266,7 +266,7 @@ async def cmd_audit_egress(app: CliAppContext, since: str) -> None:
     if not rows:
         click.echo("No egress events found in the given window.")
         return
-    click.echo(f"Egress summary since {since_dt.strftime('%Y-%m-%d %H:%M:%S')} UTC\n")
+    click.echo(f"Egress summary since {_format_utc(since_dt)}\n")
     click.echo(f"{'Domain':<40} {'Requests':>10} {'Failures':>10} {'Anomaly'}")
     click.echo("-" * 80)
     for row in rows:
