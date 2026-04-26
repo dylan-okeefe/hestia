@@ -35,10 +35,14 @@ git clone https://github.com/dylanokeefe/hestia.git
 cd hestia
 uv sync
 hestia init
-hestia chat
+hestia chat          # REPL with persistent session
 ```
 
 For Telegram, Matrix, or daemon use, copy `deploy/example_config.py` to `config.py`, fill in your bot token and model name, and run `hestia --config config.py telegram` (or `matrix`). See [Running on your hardware](#running-on-your-hardware) for GPU sizing and llama-server flags.
+
+```bash
+hestia ask "What is the capital of France?"   # Single-shot, no persistence
+```
 
 ---
 
@@ -403,8 +407,8 @@ sudo systemctl enable --now hestia-agent@$USER
 hestia [--config PATH] [--db-path PATH] [--inference-url URL] [--model NAME] [-v] COMMAND
 
 Core:
-  chat                 Interactive REPL
-  ask MESSAGE          One-shot
+  chat                 Interactive REPL (persistent session)
+  ask MESSAGE          Single-shot query (no session persistence)
   init                 Set up DB, artifacts, slots
   health               Check llama.cpp server
   doctor               Run self-checks

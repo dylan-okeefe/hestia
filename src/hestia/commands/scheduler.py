@@ -100,15 +100,19 @@ async def cmd_schedule_add(
         sys.exit(1)
 
 
-async def cmd_schedule_list(app: CliAppContext) -> None:
+async def cmd_schedule_list(app: CliAppContext, verbose: bool = False) -> None:
     """List scheduled tasks."""
     store = _require_scheduler_store(app)
     tasks = await store.list_tasks_for_session(session_id=None, include_disabled=True)
     if not tasks:
         click.echo("No scheduled tasks.")
         return
-    click.echo(f"{'ID':<20} {'Description':<25} {'Schedule':<24} {'Enabled':<8} {'Next Run'}")
-    click.echo("-" * 99)
+    if verbose:
+        click.echo(f"{'ID':<20} {'Description':<25} {'Schedule':<24} {'Enabled':<8} {'Next Run'}")
+        click.echo("-" * 99)
+    else:
+        click.echo(f"{'Description':<25} {'Schedule':<24} {'Enabled':<8} {'Next Run'}")
+        click.echo("-" * 79)
     for task in tasks:
         desc = (task.description or "")[:24]
         if task.cron_expression:
@@ -128,7 +132,10 @@ async def cmd_schedule_list(app: CliAppContext) -> None:
             next_run = _format_utc(next_run_dt)[:-4]  # strip ' UTC' to match column width
         else:
             next_run = "-"
-        click.echo(f"{task.id:<20} {desc:<25} {sched:<24} {enabled:<8} {next_run}")
+        if verbose:
+            click.echo(f"{task.id:<20} {desc:<25} {sched:<24} {enabled:<8} {next_run}")
+        else:
+            click.echo(f"{desc:<25} {sched:<24} {enabled:<8} {next_run}")
 
 
 async def cmd_schedule_show(app: CliAppContext, task_id: str) -> None:

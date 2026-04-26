@@ -295,6 +295,33 @@ class TestScheduleList:
         assert result.exit_code == 0
         assert "Daily summary" in result.output
         assert "cron" in result.output
+        # ID should be hidden by default
+        assert "task_" not in result.output
+
+    def test_list_verbose_shows_ids(self, runner, tmp_path):
+        """List with --verbose shows task IDs."""
+        db_path = tmp_path / "test.db"
+        runner.invoke(
+            cli,
+            [
+                "--db-path",
+                str(db_path),
+                "schedule",
+                "add",
+                "--cron",
+                "0 9 * * *",
+                "--description",
+                "Daily summary",
+                "Summarize my day",
+            ],
+        )
+
+        result = runner.invoke(
+            cli, ["--db-path", str(db_path), "schedule", "list", "--verbose"]
+        )
+        assert result.exit_code == 0
+        assert "Daily summary" in result.output
+        assert "task_" in result.output
 
 
 class TestScheduleShow:
