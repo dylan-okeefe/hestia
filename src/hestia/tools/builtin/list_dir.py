@@ -16,8 +16,10 @@ def make_list_dir_tool(config: StorageConfig) -> Any:
 
     @tool(
         name="list_dir",
-        public_description="List directory contents. Params: path (str, default '.'), max_entries (int, default 200).",
-
+        public_description=(
+            "List directory contents. "
+            "Params: path (str, default '.'), max_entries (int, default 200)."
+        ),
         tags=["system", "builtin"],
         capabilities=[READ_LOCAL],
     )
@@ -35,21 +37,26 @@ def make_list_dir_tool(config: StorageConfig) -> Any:
         if not await asyncio.to_thread(target.is_dir):
             return f"Error: {path} is not a directory"
 
-        all_items = await asyncio.to_thread(lambda: sorted(target.iterdir()))
-        entries = []
-        for i, item in enumerate(all_items):
-            if i >= max_entries:
-                entries.append(f"... ({len(all_items) - max_entries} more entries)")
-                break
-            kind = "dir" if await asyncio.to_thread(item.is_dir) else "file"
-            size = ""
-            if await asyncio.to_thread(item.is_file):
-                size = f" ({(await asyncio.to_thread(item.stat)).st_size} bytes)"
-            entries.append(f"  [{kind}] {item.name}{size}")
+        def _build_listing() -> str:
+            all_items = sorted(target.iterdir())
+            entries = []
+            for i, item in enumerate(all_items):
+                if i >= max_entries:
+                    entries.append(
+                        f"... ({len(all_items) - max_entries} more entries)"
+                    )
+                    break
+                kind = "dir" if item.is_dir() else "file"
+                size = ""
+                if item.is_file():
+                    size = f" ({item.stat().st_size} bytes)"
+                entries.append(f"  [{kind}] {item.name}{size}")
 
-        if not entries:
-            return f"{path}: (empty)"
+            if not entries:
+                return f"{path}: (empty)"
 
-        return f"{path}:\n" + "\n".join(entries)
+            return f"{path}:\n" + "\n".join(entries)
+
+        return await asyncio.to_thread(_build_listing)
 
     return list_dir
