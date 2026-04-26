@@ -282,6 +282,7 @@ class PolicyConfig(_ConfigFromEnv):
 
     delegation_keywords: tuple[str, ...] | None = None
     research_keywords: tuple[str, ...] | None = None
+    max_tool_calls_per_turn: int = 10
 
 
 @dataclass
@@ -389,6 +390,7 @@ class HestiaConfig(_ConfigFromEnv):
     system_prompt: str = "You are a helpful assistant."
     max_iterations: int = 10
     verbose: bool = False
+    use_curl_cffi_fallback: bool = False
 
     @classmethod
     def from_file(cls, path: Path) -> HestiaConfig:

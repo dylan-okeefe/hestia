@@ -45,6 +45,7 @@ class TurnExecution:
         confirm_callback: ConfirmCallback | None = None,
         injection_scanner: InjectionScanner | None = None,
         max_iterations: int = 10,
+        max_tool_calls_per_turn: int = 10,
     ):
         self._tools = tool_registry
         self._inference = inference_client
@@ -54,6 +55,7 @@ class TurnExecution:
         self._confirm_callback = confirm_callback
         self._injection_scanner = injection_scanner
         self._max_iterations = max_iterations
+        self._max_tool_calls_per_turn = max_tool_calls_per_turn
 
     async def run(
         self,
@@ -195,6 +197,26 @@ class TurnExecution:
         """
         result_messages: list[Message] = []
         artifact_handles: list[str] = []
+
+        if len(tool_calls) > self._max_tool_calls_per_turn:
+            logger.warning(
+                "Model requested %d tool calls; capping at %d",
+                len(tool_calls),
+                self._max_tool_calls_per_turn,
+            )
+            # Return error results for the excess calls
+            for tc in tool_calls[self._max_tool_calls_per_turn :]:
+                msg = Message(
+                    role="tool",
+                    content=(
+                        f"Tool call {tc.name} was rejected: too many tool calls "
+                        f"in this turn (limit: {self._max_tool_calls_per_turn})."
+                    ),
+                    tool_call_id=tc.id,
+                    created_at=utcnow(),
+                )
+                result_messages.append(msg)
+            tool_calls = tool_calls[: self._max_tool_calls_per_turn]
 
         # Partition by dispatch mode. Tools requiring confirmation or marked
         # ordering="serial" run sequentially; everything else gathers concurrently.

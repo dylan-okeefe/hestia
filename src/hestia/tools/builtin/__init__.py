@@ -4,7 +4,7 @@ from hestia.runtime_context import current_session_id, current_trace_store
 from hestia.tools.builtin.current_time import current_time
 from hestia.tools.builtin.delegate_task import SubagentResult, make_delegate_task_tool
 from hestia.tools.builtin.email_tools import make_email_search_and_read_tool, make_email_tools
-from hestia.tools.builtin.http_get import http_get
+from hestia.tools.builtin.http_get import http_get, make_http_get_tool
 from hestia.tools.builtin.list_dir import make_list_dir_tool
 from hestia.tools.builtin.memory_tools import (
     make_delete_memory_tool,
@@ -21,8 +21,8 @@ from hestia.tools.builtin.scheduler_tools import (
     make_enable_scheduled_task_tool,
     make_list_scheduled_tasks_tool,
 )
-from hestia.tools.builtin.terminal import terminal
 from hestia.tools.builtin.search_web import search_web
+from hestia.tools.builtin.terminal import terminal
 from hestia.tools.builtin.web_search import make_web_search_tool
 from hestia.tools.builtin.write_file import make_write_file_tool
 from hestia.tools.capabilities import (
@@ -41,6 +41,7 @@ __all__ = [
     "current_trace_store",
     "current_time",
     "http_get",
+    "make_http_get_tool",
     "make_list_dir_tool",
     "make_delegate_task_tool",
     "make_delete_memory_tool",

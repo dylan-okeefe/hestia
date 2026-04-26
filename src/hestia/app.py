@@ -43,7 +43,6 @@ from hestia.style.scheduler import StyleScheduler
 from hestia.style.store import StyleProfileStore
 from hestia.tools.builtin import (
     current_time,
-    http_get,
     make_create_scheduled_task_tool,
     make_delegate_task_tool,
     make_delete_memory_tool,
@@ -52,6 +51,7 @@ from hestia.tools.builtin import (
     make_email_search_and_read_tool,
     make_email_tools,
     make_enable_scheduled_task_tool,
+    make_http_get_tool,
     make_list_dir_tool,
     make_list_memories_tool,
     make_list_scheduled_tasks_tool,
@@ -418,6 +418,7 @@ class CliAppContext:
             policy=self.policy,
             confirm_callback=self.confirm_callback,
             max_iterations=self.config.max_iterations,
+            max_tool_calls_per_turn=self.config.policy.max_tool_calls_per_turn,
             slot_manager=self.slot_manager,
             failure_store=self.failure_store,
             trace_store=self.trace_store,
@@ -493,7 +494,7 @@ def make_app(cfg: HestiaConfig) -> CliAppContext:
     # Tool registry with built-in tools
     tool_registry = ToolRegistry(artifact_store)
     tool_registry.register(current_time)
-    tool_registry.register(http_get)
+    tool_registry.register(make_http_get_tool(cfg.use_curl_cffi_fallback))
     tool_registry.register(make_list_dir_tool(cfg.storage))
     tool_registry.register(terminal)
 
