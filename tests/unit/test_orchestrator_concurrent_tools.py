@@ -1,12 +1,12 @@
 """Tests for concurrent tool dispatch in the orchestrator (L40)."""
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
 from hestia.core.types import Session, SessionState, SessionTemperature, ToolCall
-from hestia.orchestrator.engine import Orchestrator
+from hestia.orchestrator.execution import TurnExecution
 from hestia.tools.metadata import ToolMetadata
 from hestia.tools.registry import ToolRegistry
 
@@ -27,28 +27,13 @@ def _make_session() -> Session:
     )
 
 
-def _make_orchestrator() -> Orchestrator:
-    mock_inference = MagicMock()
-    mock_session_store = MagicMock()
-    mock_context_builder = MagicMock()
-    mock_tool_registry = ToolRegistry(MagicMock())
-    mock_policy = MagicMock()
-
-    mock_policy.filter_tools.return_value = None
-    mock_policy.reasoning_budget.return_value = 2048
-
-    mock_session_store.insert_turn = AsyncMock()
-    mock_session_store.update_turn = AsyncMock()
-    mock_session_store.append_transition = AsyncMock()
-    mock_session_store.append_message = AsyncMock()
-    mock_session_store.get_messages = AsyncMock(return_value=[])
-
-    return Orchestrator(
-        inference=mock_inference,
-        session_store=mock_session_store,
-        context_builder=mock_context_builder,
-        tool_registry=mock_tool_registry,
-        policy=mock_policy,
+def _make_turn_execution(registry: ToolRegistry | None = None) -> TurnExecution:
+    return TurnExecution(
+        tool_registry=registry or ToolRegistry(MagicMock()),
+        inference_client=MagicMock(),
+        policy=MagicMock(),
+        context_builder=MagicMock(),
+        session_store=MagicMock(),
         confirm_callback=None,
     )
 
@@ -56,8 +41,8 @@ def _make_orchestrator() -> Orchestrator:
 @pytest.mark.asyncio
 async def test_concurrent_tools_run_in_parallel():
     """Three concurrent tools should complete in ~0.3 s, not ~0.9 s."""
-    orchestrator = _make_orchestrator()
-    registry = orchestrator._tools
+    turn_execution = _make_turn_execution()
+    registry = turn_execution._tools
 
     sleep_time = 0.3
 
@@ -84,7 +69,7 @@ async def test_concurrent_tools_run_in_parallel():
     ]
 
     start = asyncio.get_event_loop().time()
-    messages, handles = await orchestrator._execute_tool_calls(
+    messages, handles = await turn_execution._execute_tool_calls(
         _make_session(), tool_calls
     )
     elapsed = asyncio.get_event_loop().time() - start
@@ -102,8 +87,8 @@ async def test_concurrent_tools_run_in_parallel():
 @pytest.mark.asyncio
 async def test_serial_tools_run_sequentially():
     """A tool marked ordering='serial' forces sequential dispatch."""
-    orchestrator = _make_orchestrator()
-    registry = orchestrator._tools
+    turn_execution = _make_turn_execution()
+    registry = turn_execution._tools
 
     sleep_time = 0.3
 
@@ -136,7 +121,7 @@ async def test_serial_tools_run_sequentially():
     ]
 
     start = asyncio.get_event_loop().time()
-    messages, handles = await orchestrator._execute_tool_calls(
+    messages, handles = await turn_execution._execute_tool_calls(
         _make_session(), tool_calls
     )
     elapsed = asyncio.get_event_loop().time() - start
@@ -149,8 +134,8 @@ async def test_serial_tools_run_sequentially():
 @pytest.mark.asyncio
 async def test_confirmation_tool_runs_serially():
     """A tool with requires_confirmation=True runs serially even if others are concurrent."""
-    orchestrator = _make_orchestrator()
-    registry = orchestrator._tools
+    turn_execution = _make_turn_execution()
+    registry = turn_execution._tools
 
     sleep_time = 0.3
 
@@ -183,7 +168,7 @@ async def test_confirmation_tool_runs_serially():
     ]
 
     start = asyncio.get_event_loop().time()
-    messages, handles = await orchestrator._execute_tool_calls(
+    messages, handles = await turn_execution._execute_tool_calls(
         _make_session(), tool_calls
     )
     elapsed = asyncio.get_event_loop().time() - start
