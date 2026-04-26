@@ -9,6 +9,23 @@
 
 
 
+## 2026-04-26 — L71 Complete (App Context Gravity Well)
+
+**Outcome:** Collapsed three-class app-context hierarchy into single `AppContext`.
+
+**Changes:**
+- Deleted `CoreAppContext`, `FeatureAppContext`, `CliAppContext` facade.
+- Created `AppContext` with `@functools.cached_property` for lazy subsystems.
+- Broke `make_app()` into phase helpers (`_load_and_validate_config`, `_warn_on_missing_files`, `register_tools`, `_register_optional_features`).
+- Updated all command/type annotations across 13 source files and 7 test files.
+- Net −332 lines across 20 files.
+
+**Quality gate:** 1057 passed, 6 skipped; ruff clean; mypy clean.
+
+**Branch:** `feature/l71-app-context-gravity-well`
+
+---
+
 ## 2026-04-26 — L70 Complete (Memory Scope & Concurrent Tool Safety)
 
 **Outcome:** Two April-22 review findings (M2, M3) fixed and tested.
