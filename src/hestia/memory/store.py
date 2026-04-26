@@ -221,6 +221,15 @@ class MemoryStore:
                 platform = ctx_platform
             if platform_user is None:
                 platform_user = ctx_platform_user
+        if (platform is None) != (platform_user is None):
+            logger.warning(
+                "Partial identity context (platform=%r, platform_user=%r); "
+                "treating as unscoped to avoid isolation leak",
+                platform,
+                platform_user,
+            )
+            platform = None
+            platform_user = None
         return platform, platform_user
 
     async def save(

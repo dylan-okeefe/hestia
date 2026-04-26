@@ -176,3 +176,64 @@ async def test_confirmation_tool_runs_serially():
     assert len(messages) == 2
     # danger is serial → total > 0.5 s
     assert elapsed > 0.5
+
+
+@pytest.mark.asyncio
+async def test_concurrent_tool_exception_does_not_kill_siblings():
+    """M3: an exception in one concurrent tool is captured; siblings complete."""
+    turn_execution = _make_turn_execution()
+    registry = turn_execution._tools
+
+    async def ok_tool(**kwargs: object) -> str:
+        await asyncio.sleep(0.1)
+        return "ok"
+
+    async def boom_tool(**kwargs: object) -> str:
+        await asyncio.sleep(0.05)
+        raise RuntimeError("intentional failure")
+
+    registry._tools["ok_a"] = ToolMetadata(
+        name="ok_a",
+        public_description="ok",
+        internal_description="",
+        parameters_schema={},
+        requires_confirmation=False,
+        ordering="concurrent",
+        handler=ok_tool,
+    )
+    registry._tools["boom"] = ToolMetadata(
+        name="boom",
+        public_description="boom",
+        internal_description="",
+        parameters_schema={},
+        requires_confirmation=False,
+        ordering="concurrent",
+        handler=boom_tool,
+    )
+    registry._tools["ok_b"] = ToolMetadata(
+        name="ok_b",
+        public_description="ok",
+        internal_description="",
+        parameters_schema={},
+        requires_confirmation=False,
+        ordering="concurrent",
+        handler=ok_tool,
+    )
+
+    tool_calls = [
+        ToolCall(id="tc1", name="ok_a", arguments={}),
+        ToolCall(id="tc2", name="boom", arguments={}),
+        ToolCall(id="tc3", name="ok_b", arguments={}),
+    ]
+
+    messages, handles = await turn_execution._execute_tool_calls(
+        _make_session(), tool_calls
+    )
+
+    assert len(messages) == 3
+    # ok_a and ok_b succeeded
+    assert messages[0].content == "ok"
+    assert messages[2].content == "ok"
+    # boom errored gracefully
+    assert messages[1].role == "tool"
+    assert "intentional failure" in messages[1].content

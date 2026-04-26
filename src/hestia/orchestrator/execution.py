@@ -226,7 +226,13 @@ class TurnExecution:
 
             async def _run_one(idx: int) -> tuple[int, ToolCallResult]:
                 tc = tool_calls[idx]
-                result = await self._dispatch_tool_call(session, tc, allowed_tools)
+                try:
+                    result = await self._dispatch_tool_call(session, tc, allowed_tools)
+                except Exception as exc:
+                    logger.exception("Tool call %s failed during concurrent dispatch", tc.name)
+                    result = ToolCallResult.error(
+                        f"Tool {tc.name} failed: {exc}", error_type=type(exc).__name__
+                    )
                 return idx, result
 
             for idx, result in await asyncio.gather(
