@@ -18,7 +18,6 @@ from hestia.config import HestiaConfig
 from hestia.context.builder import ContextBuilder
 from hestia.context.compressor import InferenceHistoryCompressor
 from hestia.core.inference import InferenceClient
-from hestia.core.types import Session
 from hestia.core.validators import validate_inference_model_name
 from hestia.email.adapter import EmailAdapter
 from hestia.identity import IdentityCompiler
@@ -429,29 +428,6 @@ class CliAppContext:
             style_config=self.config.style,
             skill_index_builder=self.skill_index_builder,
         )
-
-
-async def _compile_and_set_memory_epoch(
-    app: CliAppContext,
-    session: Session,
-) -> bool:
-    """Compile memory epoch for the session and set it in context builder.
-
-    Args:
-        app: The CLI app context
-        session: The current session
-
-    Returns:
-        True if an epoch was compiled and set, False otherwise
-    """
-    if app.epoch_compiler is None:
-        return False
-
-    epoch = await app.epoch_compiler.compile(session)
-    if epoch.memory_count > 0:
-        app.context_builder.set_memory_epoch_prefix(epoch.compiled_text)
-        return True
-    return False
 
 
 def _require_scheduler_store(app: CliAppContext) -> SchedulerStore:

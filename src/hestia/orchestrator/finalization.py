@@ -3,13 +3,12 @@
 import json
 import logging
 import uuid
-from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 from hestia.core.clock import utcnow
 from hestia.core.types import Message, Session
 from hestia.errors import ContextTooLargeError, HestiaError, PersistenceError, classify_error
-from hestia.orchestrator.types import Turn, TurnContext, TurnState
+from hestia.orchestrator.types import TransitionCallback, Turn, TurnContext, TurnState
 from hestia.persistence.failure_store import FailureBundle
 
 if TYPE_CHECKING:
@@ -21,9 +20,6 @@ if TYPE_CHECKING:
     from hestia.policy.engine import PolicyEngine
 
 logger = logging.getLogger(__name__)
-
-TransitionCallback = Callable[[Turn, TurnState, str], Awaitable[None]]
-
 
 class TurnFinalization:
     """Handles turn finalization concerns: slot save, trace recording,

@@ -13,17 +13,13 @@ from typing import Any
 import httpx
 
 from hestia.config import WebSearchConfig
-from hestia.errors import HestiaError
+from hestia.errors import WebSearchError
 from hestia.runtime_context import current_session_id, current_trace_store
 from hestia.tools.builtin.http_get import SSRFSafeTransport
 from hestia.tools.capabilities import NETWORK_EGRESS
 from hestia.tools.metadata import tool
 
 logger = logging.getLogger(__name__)
-
-
-class WebSearchError(HestiaError):
-    """Raised when the configured provider fails."""
 
 
 async def _tavily_search(

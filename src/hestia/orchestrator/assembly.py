@@ -1,12 +1,11 @@
 """Turn assembly phase: prepares context, tools, slot, and history."""
 
 import logging
-from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from hestia.core.clock import utcnow
-from hestia.orchestrator.types import Turn, TurnContext, TurnState
+from hestia.orchestrator.types import TransitionCallback, TurnContext, TurnState
 from hestia.style.context import format_style_prefix_from_data
 
 if TYPE_CHECKING:
@@ -22,9 +21,6 @@ if TYPE_CHECKING:
     from hestia.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
-
-TransitionCallback = Callable[[Turn, TurnState, str], Awaitable[None]]
-
 
 class TurnAssembly:
     """Prepares a turn for execution by building context, injecting style and

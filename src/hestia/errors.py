@@ -85,6 +85,12 @@ class MissingExtraError(HestiaError):
     pass
 
 
+class WebSearchError(HestiaError):
+    """Raised when the configured web-search provider fails."""
+
+    pass
+
+
 class MaxIterationsError(HestiaError):
     """Orchestrator turn exceeded the configured max iteration count.
 
@@ -158,16 +164,11 @@ def classify_error(exc: Exception) -> tuple[FailureClass, str]:
         PersistenceError: (FailureClass.PERSISTENCE_ERROR, "high"),
         IllegalTransitionError: (FailureClass.ILLEGAL_TRANSITION, "high"),
         MaxIterationsError: (FailureClass.MAX_ITERATIONS, "medium"),
+        WebSearchError: (FailureClass.TOOL_ERROR, "medium"),
     }
 
     for exc_type, (fc, sev) in mapping.items():
         if isinstance(exc, exc_type):
             return fc, sev
-
-    # Lazy import to avoid circular dependency with web_search module.
-    from hestia.tools.builtin.web_search import WebSearchError
-
-    if isinstance(exc, WebSearchError):
-        return FailureClass.TOOL_ERROR, "medium"
 
     return FailureClass.UNKNOWN, "medium"
