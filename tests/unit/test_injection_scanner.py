@@ -1,6 +1,5 @@
 """Unit tests for the injection scanner."""
 
-import math
 import random
 import string
 
@@ -140,11 +139,17 @@ class TestFalsePositives:
         assert not result.triggered, f"Unexpected triggers: {result.reasons}"
 
     def test_wikipedia_snippet(self, scanner):
-        content = """Python is a high-level, general-purpose programming language.
-Its design philosophy emphasizes code readability with the use of significant indentation.
-Python is dynamically typed and garbage-collected. It supports multiple programming paradigms,
-including structured (particularly procedural), object-oriented and functional programming.
-Python is often described as a "batteries included" language due to its comprehensive standard library."""
+        content = (
+            "Python is a high-level, general-purpose programming language.\n"
+            "Its design philosophy emphasizes code readability with the use of "
+            "significant indentation.\n"
+            "Python is dynamically typed and garbage-collected. It supports multiple "
+            "programming paradigms,\n"
+            "including structured (particularly procedural), object-oriented and "
+            "functional programming.\n"
+            'Python is often described as a "batteries included" language due to its '
+            "comprehensive standard library."
+        )
         result = scanner.scan(content)
         assert not result.triggered, f"Unexpected triggers: {result.reasons}"
 

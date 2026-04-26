@@ -93,9 +93,10 @@ async def test_artifact_handle_accumulated_in_trace():
     mock_turn.transitions = []
     mock_turn.state = TurnState.RECEIVED
 
-    with patch.object(orchestrator, "_create_turn", return_value=mock_turn):
-        with patch.object(orchestrator, "_persist_turn", AsyncMock()):
-            turn = await orchestrator.process_turn(
+    with patch.object(orchestrator, "_create_turn", return_value=mock_turn), patch.object(
+        orchestrator, "_persist_turn", AsyncMock()
+    ):
+        turn = await orchestrator.process_turn(
                 session=mock_session,
                 user_message=Message(role="user", content="Draw a cat."),
                 respond_callback=AsyncMock(),

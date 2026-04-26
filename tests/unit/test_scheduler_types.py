@@ -1,6 +1,6 @@
 """Unit tests for scheduler-related types."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -20,7 +20,7 @@ class TestScheduledTask:
             "cron_expression": None,
             "fire_at": None,
             "enabled": True,
-            "created_at": datetime.now(timezone.utc),
+            "created_at": datetime.now(UTC),
             "last_run_at": None,
             "next_run_at": None,
             "last_error": None,
@@ -37,21 +37,29 @@ class TestScheduledTask:
 
     def test_fire_at_only_is_valid(self):
         """Exactly one of fire_at is valid."""
-        task = self._make_task(fire_at=datetime.now(timezone.utc))
+        task = self._make_task(fire_at=datetime.now(UTC))
         assert task.cron_expression is None
         assert task.fire_at is not None
 
     def test_both_set_raises(self):
         """Both cron_expression and fire_at raises ValueError."""
-        with pytest.raises(ValueError, match="Exactly one of cron_expression or fire_at must be set"):
-            self._make_task(cron_expression="0 9 * * *", fire_at=datetime.now(timezone.utc))
+        with pytest.raises(
+            ValueError, match="Exactly one of cron_expression or fire_at must be set"
+        ):
+            self._make_task(
+                cron_expression="0 9 * * *", fire_at=datetime.now(UTC)
+            )
 
     def test_neither_set_raises(self):
         """Neither cron_expression nor fire_at raises ValueError."""
-        with pytest.raises(ValueError, match="Exactly one of cron_expression or fire_at must be set"):
+        with pytest.raises(
+            ValueError, match="Exactly one of cron_expression or fire_at must be set"
+        ):
             self._make_task()
 
     def test_empty_string_cron_treated_as_unset(self):
         """Empty string cron_expression is treated as unset."""
-        with pytest.raises(ValueError, match="Exactly one of cron_expression or fire_at must be set"):
+        with pytest.raises(
+            ValueError, match="Exactly one of cron_expression or fire_at must be set"
+        ):
             self._make_task(cron_expression="")

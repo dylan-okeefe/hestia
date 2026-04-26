@@ -1,12 +1,11 @@
 """Unit tests for the IdentityCompiler."""
 
 import hashlib
-from pathlib import Path
 
 import pytest
 
 from hestia.config import IdentityConfig
-from hestia.identity.compiler import CompileResult, IdentityCompiler
+from hestia.identity.compiler import IdentityCompiler
 
 
 class TestDeterministicCompiler:

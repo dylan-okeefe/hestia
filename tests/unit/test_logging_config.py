@@ -2,8 +2,6 @@
 
 import logging
 
-import pytest
-
 from hestia.logging_config import setup_logging
 
 

@@ -1,15 +1,14 @@
 """Tests for policy delegation keywords config."""
 
-import pytest
 
 from hestia.config import PolicyConfig
+from hestia.core.clock import utcnow
 from hestia.core.types import Session, SessionState, SessionTemperature
 from hestia.policy.default import (
     DEFAULT_DELEGATION_KEYWORDS,
     DEFAULT_RESEARCH_KEYWORDS,
     DefaultPolicyEngine,
 )
-from hestia.core.clock import utcnow
 
 
 def _make_session() -> Session:

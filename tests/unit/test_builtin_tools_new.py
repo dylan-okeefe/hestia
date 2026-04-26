@@ -1,14 +1,13 @@
 """Unit tests for new built-in tools (write_file, list_dir, http_get)."""
 
-import asyncio
 import socket
 from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
 
-from hestia.tools.builtin.http_get import SSRFSafeTransport, _is_url_safe, http_get
 from hestia.config import StorageConfig
+from hestia.tools.builtin.http_get import SSRFSafeTransport, _is_url_safe, http_get
 from hestia.tools.builtin.list_dir import make_list_dir_tool
 from hestia.tools.builtin.write_file import make_write_file_tool
 
@@ -32,7 +31,7 @@ class TestWriteFile:
         """Creates parent directories if they don't exist."""
         write_file = make_write_file_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
         target = tmp_path / "nested" / "deep" / "file.txt"
-        result = await write_file(str(target), "Nested content")
+        await write_file(str(target), "Nested content")
 
         assert target.exists()
         assert target.read_text() == "Nested content"
@@ -142,7 +141,9 @@ class TestHttpGet:
                 (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("93.184.216.34", 0))
             ]
             # We need the inner transport to not actually make a request
-            with patch.object(transport._inner, "handle_async_request", new_callable=AsyncMock) as mock_inner:
+            with patch.object(
+                transport._inner, "handle_async_request", new_callable=AsyncMock
+            ) as mock_inner:
                 mock_inner.return_value = httpx.Response(200, text="ok")
                 await transport.handle_async_request(request)
 

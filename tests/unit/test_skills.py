@@ -4,7 +4,7 @@ import pytest
 
 from hestia.persistence.db import Database
 from hestia.persistence.skill_store import SkillRecord, SkillStore
-from hestia.skills.decorator import skill, SkillDefinition
+from hestia.skills.decorator import SkillDefinition, skill
 from hestia.skills.index import SkillIndexBuilder
 from hestia.skills.state import SkillState
 from hestia.skills.types import SkillContext, SkillResult
@@ -169,7 +169,8 @@ class TestSkillStore:
             id="s1", name="skill_1", description="First", file_path="/a.py", state=SkillState.DRAFT,
         ))
         await skill_store.upsert(SkillRecord(
-            id="s2", name="skill_2", description="Second", file_path="/b.py", state=SkillState.TRUSTED,
+            id="s2", name="skill_2", description="Second",
+            file_path="/b.py", state=SkillState.TRUSTED,
         ))
 
         records = await skill_store.list_all()
@@ -185,7 +186,8 @@ class TestSkillStore:
             id="s1", name="skill_1", description="First", file_path="/a.py", state=SkillState.DRAFT,
         ))
         await skill_store.upsert(SkillRecord(
-            id="s2", name="skill_2", description="Second", file_path="/b.py", state=SkillState.TRUSTED,
+            id="s2", name="skill_2", description="Second",
+            file_path="/b.py", state=SkillState.TRUSTED,
         ))
 
         records = await skill_store.list_all(state=SkillState.TRUSTED)
@@ -199,7 +201,8 @@ class TestSkillStore:
             id="s1", name="skill_1", description="First", file_path="/a.py", state=SkillState.DRAFT,
         ))
         await skill_store.upsert(SkillRecord(
-            id="s2", name="skill_2", description="Second", file_path="/b.py", state=SkillState.DISABLED,
+            id="s2", name="skill_2", description="Second",
+            file_path="/b.py", state=SkillState.DISABLED,
         ))
 
         records = await skill_store.list_all(exclude_disabled=True)

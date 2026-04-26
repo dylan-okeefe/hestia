@@ -13,8 +13,8 @@ from hestia.config import (
     ReflectionConfig,
     StyleConfig,
     TelegramConfig,
+    validate_inference_model_name,
 )
-from hestia.core.validators import validate_inference_model_name
 
 
 class TestDefaultConfig:

@@ -12,6 +12,7 @@ import sqlalchemy as sa
 from sqlalchemy.exc import DatabaseError, OperationalError
 
 from hestia.core.clock import utcnow
+from hestia.errors import PersistenceError
 from hestia.persistence.db import Database
 
 logger = logging.getLogger(__name__)
@@ -104,6 +105,11 @@ class MemoryStore:
         """Create the memory table, migrating from old schema if needed.
 
         Call this during startup alongside db.create_tables().
+
+        Note: This method is NOT managed by alembic because SQLite FTS5
+        virtual tables are not supported by SQLAlchemy's Table/MetaData
+        API. Alembic can only manage regular tables, so FTS5 DDL is
+        handled here via raw SQL.
         """
         async with self._db.engine.connect() as conn:
             await self._probe_fts5(conn)
@@ -142,6 +148,17 @@ class MemoryStore:
                 await self._create_fts5_table(conn)
             else:
                 await self._create_regular_table(conn)
+
+            # Runtime schema version check: verify expected columns exist
+            try:
+                await conn.execute(
+                    sa.text("SELECT platform, platform_user FROM memory LIMIT 1")
+                )
+            except OperationalError as exc:
+                raise PersistenceError(
+                    "Memory table schema mismatch: expected columns "
+                    "'platform' and 'platform_user'. Run 'hestia init' to recreate."
+                ) from exc
 
             await conn.commit()
 

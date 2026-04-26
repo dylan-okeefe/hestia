@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from telegram import Bot, CallbackQuery, Message, Update, User
+from telegram import Bot, CallbackQuery, Message, Update
 from telegram.ext import Application
 
 from hestia.config import TelegramConfig
@@ -60,7 +60,7 @@ class TestTelegramConfirmation:
 
         # Simulate pressing ✅
         callback_data = yes_button.callback_data
-        request_id = callback_data.split(":")[1]
+        callback_data.split(":")[1]
 
         mock_query = MagicMock(spec=CallbackQuery)
         mock_query.data = callback_data

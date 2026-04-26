@@ -5,11 +5,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from hestia.core.types import Message, Session, SessionState, SessionTemperature, ToolCall
+from hestia.core.types import Session, SessionState, SessionTemperature, ToolCall
 from hestia.orchestrator.engine import Orchestrator
 from hestia.tools.metadata import ToolMetadata
 from hestia.tools.registry import ToolRegistry
-from hestia.tools.types import ToolCallResult
 
 
 def _make_session() -> Session:

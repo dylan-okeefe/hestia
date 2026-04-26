@@ -21,7 +21,8 @@ class TestProposalLifecycle:
         await db.close()
 
     async def test_create_and_get(self, proposal_store):
-        from datetime import datetime, timedelta
+        from datetime import timedelta
+
         from hestia.core.clock import utcnow
 
         now = utcnow()
@@ -45,7 +46,8 @@ class TestProposalLifecycle:
         assert fetched.status == "pending"
 
     async def test_list_by_status(self, proposal_store):
-        from datetime import datetime, timedelta
+        from datetime import timedelta
+
         from hestia.core.clock import utcnow
 
         now = utcnow()
@@ -70,7 +72,8 @@ class TestProposalLifecycle:
         assert len(accepted) == 1
 
     async def test_accept_reject_defer(self, proposal_store):
-        from datetime import datetime, timedelta
+        from datetime import timedelta
+
         from hestia.core.clock import utcnow
 
         now = utcnow()
@@ -97,7 +100,8 @@ class TestProposalLifecycle:
         assert fetched.reviewed_at is not None
 
     async def test_prune_expired(self, proposal_store):
-        from datetime import datetime, timedelta
+        from datetime import timedelta
+
         from hestia.core.clock import utcnow
 
         now = utcnow()
@@ -139,7 +143,8 @@ class TestProposalLifecycle:
         assert fetched2.status == "pending"
 
     async def test_count_by_status(self, proposal_store):
-        from datetime import datetime, timedelta
+        from datetime import timedelta
+
         from hestia.core.clock import utcnow
 
         now = utcnow()

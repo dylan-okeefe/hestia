@@ -28,6 +28,8 @@ from hestia.voice.pipeline import get_voice_pipeline
 
 if TYPE_CHECKING:
     from hestia.config import VoiceConfig
+    from hestia.orchestrator.engine import Orchestrator
+    from hestia.persistence.sessions import SessionStore
 
 
 def _md_to_tg_html(text: str) -> str:
@@ -62,7 +64,7 @@ def _md_to_tg_html(text: str) -> str:
     text = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", text)
 
     # 5. Italic (*text*) — only if not already inside <b> tags and not double asterisks
-    def _italic_repl(m: re.Match) -> str:
+    def _italic_repl(m: re.Match[str]) -> str:
         inner = m.group(1)
         # Skip if it looks like it was meant to be bold (contains * or already has tags)
         if "*" in inner or "<b>" in inner or "</b>" in inner:
@@ -72,8 +74,7 @@ def _md_to_tg_html(text: str) -> str:
     text = re.sub(r"\*([^*\n]+)\*", _italic_repl, text)
 
     return text
-    from hestia.orchestrator.engine import Orchestrator
-    from hestia.persistence.sessions import SessionStore
+
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +111,7 @@ class TelegramAdapter(Platform):
         self._system_prompt: str = ""
         self._voice_config: VoiceConfig | None = None
 
-        # Validate allowed_users entries (warn, don't hard-fail, for backward compat)
+        # Validate allowed_users entries (hard-fail at startup)
         for entry in self._config.allowed_users:
             if "*" in entry or "?" in entry or "[" in entry:
                 continue  # Wildcard patterns skip strict validation
@@ -118,10 +119,9 @@ class TelegramAdapter(Platform):
                 continue
             if validate_telegram_username(entry):
                 continue
-            logger.warning(
-                "Telegram allowed_users entry %r does not look like a valid "
-                "user ID or username",
-                entry,
+            raise ValueError(
+                f"Invalid allowed_users entry {entry!r}: must be a numeric "
+                "Telegram user ID or a valid username."
             )
 
     @property
@@ -366,7 +366,11 @@ class TelegramAdapter(Platform):
             return
 
         # In group chats, route replies to the group; in private chats, DM the user
-        platform_user = str(chat.id) if in_group else str(user_id)
+        if in_group:
+            assert chat is not None
+            platform_user = str(chat.id)
+        else:
+            platform_user = str(user_id)
 
         if self._on_message is not None:
             await self._on_message(
@@ -448,7 +452,11 @@ class TelegramAdapter(Platform):
 
         # 4. Feed to orchestrator as a normal text turn
         # In groups, use chat ID as session key so replies stay in the group
-        platform_user = str(chat.id) if in_group else str(user_id)
+        if in_group:
+            assert chat is not None
+            platform_user = str(chat.id)
+        else:
+            platform_user = str(user_id)
         session = await self._session_store.get_or_create_session("telegram", platform_user)
         user_message = HestiaMessage(role="user", content=transcript)
 
@@ -461,20 +469,18 @@ class TelegramAdapter(Platform):
                     audio_chunks.append(chunk)
             except Exception as synth_err:
                 logger.warning("TTS failed for voice reply: %s", synth_err)
-                await message.reply_text(
-                    f"(Voice synthesis failed; sending text instead)\n\n{_md_to_tg_html(response_text)}",
-                    parse_mode="HTML",
-                )
+                _prefix = "(Voice synthesis failed; sending text instead)"
+                _text = f"{_prefix}\n\n{_md_to_tg_html(response_text)}"
+                await message.reply_text(_text, parse_mode="HTML")
                 return
 
             try:
                 full_audio_ogg = await self._pcm_chunks_to_ogg_opus(audio_chunks)
             except Exception as enc_err:
                 logger.warning("OGG encoding failed for voice reply: %s", enc_err)
-                await message.reply_text(
-                    f"(Voice encoding failed; sending text instead)\n\n{_md_to_tg_html(response_text)}",
-                    parse_mode="HTML",
-                )
+                _prefix = "(Voice encoding failed; sending text instead)"
+                _text = f"{_prefix}\n\n{_md_to_tg_html(response_text)}"
+                await message.reply_text(_text, parse_mode="HTML")
                 return
 
             # 6. Telegram voice note limit handling (1 MB)

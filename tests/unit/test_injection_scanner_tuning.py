@@ -4,8 +4,6 @@ import json
 import random
 import string
 
-import pytest
-
 from hestia.security.injection import InjectionScanner
 
 
@@ -52,7 +50,8 @@ class TestStructuredContentFilters:
             ".footer{font-size:0.875rem;color:#666;text-align:center;margin-top:2rem;}"
             ".sidebar{width:250px;background:#f4f4f4;padding:1rem;border-right:1px solid #ddd;}"
             ".main{flex:1;padding:1rem;background:#fff;}"
-            ".card{background:#fff;border:1px solid #e0e0e0;border-radius:8px;padding:1rem;margin-bottom:1rem;}"
+            ".card{background:#fff;border:1px solid #e0e0e0;border-radius:8px;"
+            "padding:1rem;margin-bottom:1rem;}"
         )
         assert len(content) > 500
         scanner = InjectionScanner()
