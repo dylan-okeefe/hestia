@@ -85,40 +85,61 @@ class InferenceClient:
         """Close the HTTP client."""
         await self._client.aclose()
 
-    async def health(self) -> dict[str, Any]:
-        """GET /health. Returns server health info."""
+    async def __aenter__(self) -> "InferenceClient":
+        return self
+
+    async def __aexit__(self, *_exc: object) -> None:
+        await self.close()
+
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json_payload: dict[str, Any] | None = None,
+        timeout: float | None = None,
+    ) -> httpx.Response:
+        """Make an HTTP request and translate errors.
+
+        All public HTTP methods should route through here so that error
+        handling, retry logic, and request logging live in one place.
+        """
         try:
-            response = await self._client.get(
-                f"{self.base_url}/health",
-                timeout=10.0,
+            response = await self._client.request(
+                method,
+                f"{self.base_url}{path}",
+                json=json_payload,
+                timeout=timeout,
             )
             response.raise_for_status()
-            result: dict[str, Any] = response.json()
-            return result
+            return response
         except httpx.TimeoutException as e:
-            raise InferenceTimeoutError(f"Health check timed out: {e}") from e
+            raise InferenceTimeoutError(f"{method} {path} timed out") from e
         except httpx.HTTPStatusError as e:
-            raise InferenceServerError(f"Health check failed: {e.response.text}") from e
+            raise InferenceServerError(
+                f"{method} {path} returned {e.response.status_code}: {e.response.text}"
+            ) from e
+
+    async def health(self) -> dict[str, Any]:
+        """GET /health. Returns server health info."""
+        response = await self._request("GET", "/health", timeout=10.0)
+        result: dict[str, Any] = response.json()
+        return result
 
     async def tokenize(self, text: str) -> list[int]:
         """POST /tokenize. Returns token IDs.
 
         Use len(tokenize(text)) for accurate token counts.
         """
-        try:
-            response = await self._client.post(
-                f"{self.base_url}/tokenize",
-                json={"content": text},
-                timeout=10.0,
-            )
-            response.raise_for_status()
-            data = response.json()
-            tokens: list[int] = data.get("tokens", [])
-            return tokens
-        except httpx.TimeoutException as e:
-            raise InferenceTimeoutError(f"Tokenize timed out: {e}") from e
-        except httpx.HTTPStatusError as e:
-            raise InferenceServerError(f"Tokenize failed: {e.response.text}") from e
+        response = await self._request(
+            "POST",
+            "/tokenize",
+            json_payload={"content": text},
+            timeout=10.0,
+        )
+        data = response.json()
+        tokens: list[int] = data.get("tokens", [])
+        return tokens
 
     async def count_request(
         self,
@@ -185,17 +206,12 @@ class InferenceClient:
         if slot_id is not None:
             request_body["slot_id"] = slot_id
 
-        try:
-            response = await self._client.post(
-                f"{self.base_url}/v1/chat/completions",
-                json=request_body,
-                timeout=self.timeout,
-            )
-            response.raise_for_status()
-        except httpx.TimeoutException as e:
-            raise InferenceTimeoutError(f"Chat completion timed out: {e}") from e
-        except httpx.HTTPStatusError as e:
-            raise InferenceServerError(f"Chat completion failed: {e.response.text}") from e
+        response = await self._request(
+            "POST",
+            "/v1/chat/completions",
+            json_payload=request_body,
+            timeout=self.timeout,
+        )
 
         data = response.json()
         # Guard the empty-choices case: llama-server (and OpenAI-compatible proxies)
@@ -250,41 +266,26 @@ class InferenceClient:
 
     async def slot_save(self, slot_id: int, filename: str) -> None:
         """POST /slots/{id}?action=save"""
-        try:
-            response = await self._client.post(
-                f"{self.base_url}/slots/{slot_id}?action=save",
-                json={"filename": filename},
-                timeout=30.0,
-            )
-            response.raise_for_status()
-        except httpx.TimeoutException as e:
-            raise InferenceTimeoutError(f"Slot save timed out: {e}") from e
-        except httpx.HTTPStatusError as e:
-            raise InferenceServerError(f"Slot save failed: {e.response.text}") from e
+        await self._request(
+            "POST",
+            f"/slots/{slot_id}?action=save",
+            json_payload={"filename": filename},
+            timeout=30.0,
+        )
 
     async def slot_restore(self, slot_id: int, filename: str) -> None:
         """POST /slots/{id}?action=restore"""
-        try:
-            response = await self._client.post(
-                f"{self.base_url}/slots/{slot_id}?action=restore",
-                json={"filename": filename},
-                timeout=30.0,
-            )
-            response.raise_for_status()
-        except httpx.TimeoutException as e:
-            raise InferenceTimeoutError(f"Slot restore timed out: {e}") from e
-        except httpx.HTTPStatusError as e:
-            raise InferenceServerError(f"Slot restore failed: {e.response.text}") from e
+        await self._request(
+            "POST",
+            f"/slots/{slot_id}?action=restore",
+            json_payload={"filename": filename},
+            timeout=30.0,
+        )
 
     async def slot_erase(self, slot_id: int) -> None:
         """POST /slots/{id}?action=erase"""
-        try:
-            response = await self._client.post(
-                f"{self.base_url}/slots/{slot_id}?action=erase",
-                timeout=10.0,
-            )
-            response.raise_for_status()
-        except httpx.TimeoutException as e:
-            raise InferenceTimeoutError(f"Slot erase timed out: {e}") from e
-        except httpx.HTTPStatusError as e:
-            raise InferenceServerError(f"Slot erase failed: {e.response.text}") from e
+        await self._request(
+            "POST",
+            f"/slots/{slot_id}?action=erase",
+            timeout=10.0,
+        )

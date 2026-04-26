@@ -277,7 +277,7 @@ def cmd_schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None
             with contextlib.suppress(asyncio.CancelledError):
                 loop.run_until_complete(main_task)
         finally:
-            loop.run_until_complete(app.inference.close())
+            loop.run_until_complete(app.close())
             loop.close()
 
     run_daemon()

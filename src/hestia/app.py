@@ -201,6 +201,11 @@ class CoreAppContext:
             )
         return self._injection_scanner
 
+    async def close(self) -> None:
+        """Close lazily-created resources."""
+        if self._inference is not None:
+            await self._inference.close()
+
 
 @dataclass
 class FeatureAppContext:
@@ -428,6 +433,10 @@ class CliAppContext:
             style_config=self.config.style,
             skill_index_builder=self.skill_index_builder,
         )
+
+    async def close(self) -> None:
+        """Close all resources held by the app context."""
+        await self._core.close()
 
 
 def _require_scheduler_store(app: CliAppContext) -> SchedulerStore:

@@ -85,6 +85,7 @@ async def cmd_chat(app: CliAppContext, new_session: bool = False) -> None:
                 traceback.print_exc()
 
     click.echo("Goodbye!")
+    await app.close()
 
 
 async def cmd_ask(app: CliAppContext, message: str) -> None:
@@ -118,3 +119,4 @@ async def cmd_ask(app: CliAppContext, message: str) -> None:
         usage = _format_token_usage(trace)
         if usage:
             click.echo(usage)
+    await app.close()

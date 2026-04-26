@@ -14,8 +14,8 @@ import imaplib
 import logging
 import re
 import smtplib
-from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+from collections.abc import AsyncGenerator, Generator
+from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime
 from email.message import EmailMessage
 from typing import Any
@@ -137,6 +137,21 @@ class EmailAdapter:
                 )
         smtp.login(self.config.username, pwd)
         return smtp
+
+    @contextmanager
+    def _smtp_session(self) -> Generator[smtplib.SMTP, None, None]:
+        """Context-manager-friendly SMTP session.
+
+        Ensures ``quit()`` is called even if the caller raises.
+        """
+        smtp = self._smtp_connect()
+        try:
+            yield smtp
+        finally:
+            try:
+                smtp.quit()
+            except (smtplib.SMTPException, OSError) as e:
+                logger.debug("SMTP quit suppressed: %s", e)
 
     @staticmethod
     def _decode_header_value(value: str | bytes) -> str:
@@ -496,11 +511,8 @@ class EmailAdapter:
                 msg = self._fetch_full(imap, draft_id, drafts)
 
                 # 2. Send via SMTP
-                smtp = self._smtp_connect()
-                try:
+                with self._smtp_session() as smtp:
                     smtp.send_message(msg)
-                finally:
-                    smtp.quit()
 
                 # 3. Copy to Sent, mark draft deleted
                 imap.select(drafts)
