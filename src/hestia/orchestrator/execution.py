@@ -55,6 +55,15 @@ class TurnExecution:
         self._injection_scanner = injection_scanner
         self._max_iterations = max_iterations
 
+        # Meta-tool dispatch table — adding a new meta-tool is one line.
+        self._meta_tools: dict[
+            str, Callable[[Session, ToolCall, list[str] | None], Awaitable[ToolCallResult]]
+        ] = {
+            "list_tools": self._meta_list_tools,
+            "describe_tool": self._meta_describe_tool,
+            "call_tool": self._meta_call_tool,
+        }
+
     async def run(
         self,
         ctx: TurnContext,
@@ -324,6 +333,67 @@ class TurnExecution:
 
         return None
 
+    async def _meta_list_tools(
+        self, _session: Session, tc: ToolCall, allowed_tools: list[str] | None
+    ) -> ToolCallResult:
+        tag = tc.arguments.get("tag") if tc.arguments else None
+        content = await self._tools.meta_list_tools(tag, allowed_names=allowed_tools)
+        return ToolCallResult(
+            status="ok",
+            content=content,
+            artifact_handle=None,
+            truncated=False,
+        )
+
+    async def _meta_describe_tool(
+        self, _session: Session, tc: ToolCall, allowed_tools: list[str] | None
+    ) -> ToolCallResult:
+        raw_names = tc.arguments.get("names") if tc.arguments else []
+        names: str | list[str] = raw_names if isinstance(raw_names, (str, list)) else []
+        content = await self._tools.meta_describe_tool(names, allowed_names=allowed_tools)
+        return ToolCallResult(
+            status="ok",
+            content=content,
+            artifact_handle=None,
+            truncated=False,
+        )
+
+    async def _meta_call_tool(
+        self, session: Session, tc: ToolCall, allowed_tools: list[str] | None
+    ) -> ToolCallResult:
+        name = tc.arguments.get("name") if tc.arguments else None
+        arguments = tc.arguments.get("arguments") if tc.arguments else {}
+        if not isinstance(arguments, dict):
+            return ToolCallResult.error(
+                f"Malformed arguments for tool '{tc.name}'.",
+            )
+        if not name:
+            return ToolCallResult.error(
+                "Missing 'name' argument for call_tool",
+            )
+
+        # Check if inner tool is allowed
+        if allowed_tools is not None and name not in allowed_tools:
+            return ToolCallResult.error(
+                f"Tool '{name}' is not available in this session context.",
+            )
+
+        # Confirmation enforcement: check the INNER tool's metadata before dispatch
+        try:
+            inner_meta = self._tools.describe(name)
+        except ToolNotFoundError:
+            return ToolCallResult.error(
+                f"Tool not found: {name}",
+            )
+
+        confirm_result = await self._check_confirmation(
+            tool=inner_meta, tool_name=name, arguments=arguments, session=session
+        )
+        if confirm_result is not None:
+            return confirm_result
+
+        return await self._tools.meta_call_tool(name, arguments)
+
     async def _dispatch_tool_call(
         self, session: Session, tc: ToolCall, allowed_tools: list[str] | None = None
     ) -> ToolCallResult:
@@ -336,70 +406,17 @@ class TurnExecution:
         # Check if tool is allowed (meta-tools are always available)
         if (
             allowed_tools is not None
-            and tc.name not in ("call_tool", "list_tools")
+            and tc.name not in self._meta_tools
             and tc.name not in allowed_tools
         ):
             return ToolCallResult.error(
                 f"Tool '{tc.name}' is not available in this session context.",
             )
 
-        # Handle meta-tools
-        if tc.name == "list_tools":
-            tag = tc.arguments.get("tag") if tc.arguments else None
-            content = await self._tools.meta_list_tools(tag, allowed_names=allowed_tools)
-            return ToolCallResult(
-                status="ok",
-                content=content,
-                artifact_handle=None,
-                truncated=False,
-            )
-
-        if tc.name == "describe_tool":
-            raw_names = tc.arguments.get("names") if tc.arguments else []
-            names: str | list[str] = raw_names if isinstance(raw_names, (str, list)) else []
-            content = await self._tools.meta_describe_tool(
-                names, allowed_names=allowed_tools
-            )
-            return ToolCallResult(
-                status="ok",
-                content=content,
-                artifact_handle=None,
-                truncated=False,
-            )
-
-        if tc.name == "call_tool":
-            name = tc.arguments.get("name") if tc.arguments else None
-            arguments = tc.arguments.get("arguments") if tc.arguments else {}
-            if not isinstance(arguments, dict):
-                return ToolCallResult.error(
-                    f"Malformed arguments for tool '{tc.name}'.",
-                )
-            if not name:
-                return ToolCallResult.error(
-                    "Missing 'name' argument for call_tool",
-                )
-
-            # Check if inner tool is allowed
-            if allowed_tools is not None and name not in allowed_tools:
-                return ToolCallResult.error(
-                    f"Tool '{name}' is not available in this session context.",
-                )
-
-            # Confirmation enforcement: check the INNER tool's metadata before dispatch
-            try:
-                inner_meta = self._tools.describe(name)
-            except ToolNotFoundError:
-                return ToolCallResult.error(
-                    f"Tool not found: {name}",
-                )
-
-            confirm_result = await self._check_confirmation(
-                tool=inner_meta, tool_name=name, arguments=arguments, session=session
-            )
-            if confirm_result is not None:
-                return confirm_result
-
-            return await self._tools.meta_call_tool(name, arguments)
+        # Handle meta-tools via dispatch table
+        handler = self._meta_tools.get(tc.name)
+        if handler is not None:
+            return await handler(session, tc, allowed_tools)
 
         # Direct tool call (non-meta-tool)
         # Check if tool exists and handle confirmation

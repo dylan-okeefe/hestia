@@ -5,6 +5,7 @@ from typing import Any
 
 import httpx
 
+from hestia.core.serialization import message_to_dict
 from hestia.core.types import ChatResponse, Message, ToolCall, ToolSchema
 from hestia.errors import InferenceServerError, InferenceTimeoutError
 
@@ -27,35 +28,6 @@ def _strip_historical_reasoning(messages: list[Message]) -> list[Message]:
             created_at=msg.created_at,
         )
         result.append(new_msg)
-    return result
-
-
-def _message_to_dict(msg: Message) -> dict[str, Any]:
-    """Convert a Message to an OpenAI-compatible dict."""
-    result: dict[str, Any] = {
-        "role": msg.role,
-        "content": msg.content,
-    }
-
-    if msg.tool_calls:
-        result["tool_calls"] = [
-            {
-                "id": tc.id,
-                "type": "function",
-                "function": {
-                    "name": tc.name,
-                    "arguments": json.dumps(tc.arguments),
-                },
-            }
-            for tc in msg.tool_calls
-        ]
-
-    if msg.tool_call_id:
-        result["tool_call_id"] = msg.tool_call_id
-
-    # Note: We intentionally do NOT include reasoning_content here.
-    # It gets stripped before sending.
-
     return result
 
 
@@ -158,7 +130,7 @@ class InferenceClient:
         # Build the request body
         request_body: dict[str, Any] = {
             "model": self.model_name,
-            "messages": [_message_to_dict(m) for m in clean_messages],
+            "messages": [message_to_dict(m) for m in clean_messages],
         }
 
         if tools:
@@ -193,7 +165,7 @@ class InferenceClient:
 
         request_body: dict[str, Any] = {
             "model": self.model_name,
-            "messages": [_message_to_dict(m) for m in clean_messages],
+            "messages": [message_to_dict(m) for m in clean_messages],
             "max_tokens": max_tokens,
             "temperature": temperature,
             "reasoning_format": "deepseek",

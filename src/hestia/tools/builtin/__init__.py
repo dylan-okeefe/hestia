@@ -1,4 +1,18 @@
-"""Built-in tools for Hestia."""
+"""Built-in tools for Hestia.
+
+Tool construction follows one of two patterns:
+
+1. Plain @tool decorated function — for tools with no external dependencies
+   (e.g. ``current_time``, ``http_get``, ``terminal``).
+
+2. Factory function ``make_*_tool(...)`` returning a decorated function — for
+   tools that need runtime dependencies bound at startup
+   (e.g. ``make_read_file_tool(storage_config)``, ``make_search_memory_tool(memory_store)``).
+
+When adding a new tool, prefer pattern (1) if the tool is self-contained.
+Use pattern (2) only when the tool needs a config object, store, or adapter
+that is not importable at module load time.
+"""
 
 from hestia.runtime_context import current_session_id, current_trace_store
 from hestia.tools.builtin.current_time import current_time

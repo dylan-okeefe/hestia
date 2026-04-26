@@ -9,7 +9,8 @@ from typing import Any
 from hestia.context.compressed_summary_strategy import CompressedSummaryStrategy
 from hestia.context.compressor import HistoryCompressor
 from hestia.context.history_window_selector import HistoryWindowSelector
-from hestia.core.inference import InferenceClient, _message_to_dict
+from hestia.core.inference import InferenceClient
+from hestia.core.serialization import message_to_dict
 from hestia.core.types import Message, Session, ToolSchema
 from hestia.errors import ContextTooLargeError
 from hestia.policy.engine import PolicyEngine
@@ -208,12 +209,12 @@ class ContextBuilder:
             _m1, _m2 = _combo[0], _combo[1]
         if _m1 is not None and _m2 is not None:
             _single_body = json.dumps(
-                {"model": self._inference.model_name, "messages": [_message_to_dict(_m1)]}
+                {"model": self._inference.model_name, "messages": [message_to_dict(_m1)]}
             )
             _combined_body = json.dumps(
                 {
                     "model": self._inference.model_name,
-                    "messages": [_message_to_dict(_m1), _message_to_dict(_m2)],
+                    "messages": [message_to_dict(_m1), message_to_dict(_m2)],
                 }
             )
             _single_count = len(await self._inference.tokenize(_single_body))
@@ -305,7 +306,7 @@ class ContextBuilder:
         """Render a single message to the same JSON representation used by
         :meth:`InferenceClient.count_request`.
         """
-        return json.dumps(_message_to_dict(message))
+        return json.dumps(message_to_dict(message))
 
     async def _count_tokens(self, message: Message) -> int:
         """Count tokens for a single message, with per-builder caching.
