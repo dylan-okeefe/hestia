@@ -14,7 +14,6 @@ from hestia.core.types import Message, Session, ToolCall
 from hestia.errors import (
     ContextTooLargeError,
     EmptyResponseError,
-    HestiaError,
     IllegalTransitionError,
     MaxIterationsError,
     PersistenceError,
@@ -25,6 +24,7 @@ from hestia.errors import (
 from hestia.inference.slot_manager import SlotManager
 from hestia.memory.handoff import SessionHandoffSummarizer
 from hestia.orchestrator.assembly import TurnAssembly
+from hestia.orchestrator.finalization import TurnFinalization
 from hestia.orchestrator.transitions import assert_transition
 from hestia.orchestrator.types import ResponseCallback, Turn, TurnContext, TurnState, TurnTransition
 from hestia.persistence.failure_store import FailureBundle
@@ -51,19 +51,6 @@ if TYPE_CHECKING:
     from hestia.style.store import StyleProfileStore
 
 logger = logging.getLogger(__name__)
-
-
-def _sanitize_user_error(error: Exception) -> str:
-    """Return a user-facing message for an unexpected error.
-
-    HestiaError subclasses are intentionally raised with user-friendly
-    messages, so they pass through. Everything else is sanitized to a
-    generic message to avoid leaking internal details (SQL errors,
-    file paths, stack traces) to end users.
-    """
-    if isinstance(error, HestiaError):
-        return str(error)
-    return "Something went wrong. The operator has been notified."
 
 
 # Callback types
@@ -322,7 +309,7 @@ class Orchestrator:
                 turn.state.value,
                 error,
             )
-            sanitized = _sanitize_user_error(error)
+            sanitized = TurnFinalization.sanitize_user_error(error)
             try:
                 await ctx.respond_callback(f"Error delivering response: {sanitized}")
             except Exception as notify_err:
@@ -333,7 +320,7 @@ class Orchestrator:
         else:
             await self._safe_transition(turn, TurnState.FAILED)
             turn.error = str(error)
-            sanitized = _sanitize_user_error(error)
+            sanitized = TurnFinalization.sanitize_user_error(error)
             await ctx.respond_callback(f"Error: {sanitized}")
         return await self._record_failure_if_enabled(
             session, turn, error, ctx.user_message, "exception",
