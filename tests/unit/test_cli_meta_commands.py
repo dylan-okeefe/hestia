@@ -75,7 +75,7 @@ async def test_meta_command_help(store, sample_session, capsys):
 
 
 @pytest.mark.asyncio
-async def test_meta_command_session(store, sample_session):
+async def test_meta_command_session(store, sample_session, capsys):
     """/session should print session metadata."""
     from hestia.app import _handle_meta_command
 
@@ -83,6 +83,34 @@ async def test_meta_command_session(store, sample_session):
 
     assert should_exit is False
     assert new_session.id == sample_session.id
+    captured = capsys.readouterr()
+    assert "Session ID: test_session_123" in captured.out
+    assert "Temperature: cold" in captured.out
+
+
+@pytest.mark.asyncio
+async def test_meta_command_session_with_slot_and_budget(store, sample_session, capsys):
+    """/session should show slot and budget info when available."""
+    from hestia.app import _handle_meta_command
+
+    sample_session.slot_id = 7
+    sample_session.slot_saved_path = "/tmp/slot.json"
+
+    app_mock = MagicMock()
+    app_mock.policy = MagicMock()
+    app_mock.policy.ctx_window = 16384
+    app_mock.policy.turn_token_budget.return_value = 4096
+
+    should_exit, new_session = await _handle_meta_command(
+        "/session", sample_session, store, app=app_mock
+    )
+
+    assert should_exit is False
+    captured = capsys.readouterr()
+    assert "Slot ID: 7" in captured.out
+    assert "Slot path: /tmp/slot.json" in captured.out
+    assert "Context window: 16384 tokens" in captured.out
+    assert "Turn budget: 4096 tokens" in captured.out
 
 
 @pytest.mark.asyncio

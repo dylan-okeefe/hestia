@@ -44,6 +44,13 @@ async def _handle_meta_command(
         click.echo(f"State: {session.state.value}")
         click.echo(f"Temperature: {session.temperature.value}")
         click.echo(f"Started: {_format_utc(session.started_at)}")
+        if session.slot_id is not None:
+            click.echo(f"Slot ID: {session.slot_id}")
+        if session.slot_saved_path:
+            click.echo(f"Slot path: {session.slot_saved_path}")
+        if app is not None and app.policy is not None:
+            click.echo(f"Context window: {app.policy.ctx_window} tokens")
+            click.echo(f"Turn budget: {app.policy.turn_token_budget(session)} tokens")
         return False, session
 
     if cmd == "/history":
