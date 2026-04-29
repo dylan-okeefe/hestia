@@ -6,7 +6,11 @@ from typing import TYPE_CHECKING
 from hestia.config import PolicyConfig, TrustConfig
 from hestia.core.types import Session
 from hestia.errors import InferenceServerError, InferenceTimeoutError
-from hestia.policy.constants import CONTEXT_PRESSURE_THRESHOLD, PLATFORM_SUBAGENT
+from hestia.policy.constants import (
+    CONTEXT_PRESSURE_THRESHOLD,
+    PLATFORM_SCHEDULER,
+    PLATFORM_SUBAGENT,
+)
 from hestia.policy.engine import (
     PolicyEngine,
     RetryAction,
@@ -255,7 +259,7 @@ class DefaultPolicyEngine(PolicyEngine):
                 if not (set(registry.describe(name).capabilities) & blocked)
             ]
 
-        if session.platform == "scheduler" or scheduler_tick_active.get():
+        if session.platform == PLATFORM_SCHEDULER or scheduler_tick_active.get():
             blocked = set()
             if not trust.scheduler_shell_exec:
                 blocked.add(SHELL_EXEC)

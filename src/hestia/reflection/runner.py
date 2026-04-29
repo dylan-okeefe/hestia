@@ -5,6 +5,7 @@ import json
 import logging
 import re
 import uuid
+from collections.abc import Callable
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -66,7 +67,7 @@ class ReflectionRunner:
         inference: InferenceClient,
         trace_store: TraceStore,
         proposal_store: ProposalStore,
-        on_failure: Any | None = None,
+        on_failure: Callable[[str, Exception], None] | None = None,
     ) -> None:
         self._config = config
         self._inference = inference
@@ -74,7 +75,7 @@ class ReflectionRunner:
         self._proposal_store = proposal_store
         self._on_failure = on_failure
 
-    def set_failure_handler(self, handler: Any | None) -> None:
+    def set_failure_handler(self, handler: Callable[[str, Exception], None] | None) -> None:
         self._on_failure = handler
 
     def _record_failure(self, stage: str, exc: Exception) -> None:
