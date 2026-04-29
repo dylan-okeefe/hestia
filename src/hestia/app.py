@@ -255,8 +255,8 @@ class AppContext:
 
     async def close(self) -> None:
         """Close lazily-created resources."""
-        if hasattr(self, '_inference') and self._inference is not None:
-            await self._inference.close()
+        if 'inference' in self.__dict__:
+            await self.inference.close()
         if self.email_adapter is not None:
             self.email_adapter.close()
 

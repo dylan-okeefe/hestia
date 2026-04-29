@@ -171,6 +171,7 @@ def classify_error(exc: Exception) -> tuple[FailureClass, str]:
         IllegalTransitionError: (FailureClass.ILLEGAL_TRANSITION, "high"),
         MaxIterationsError: (FailureClass.MAX_ITERATIONS, "medium"),
         WebSearchError: (FailureClass.TOOL_ERROR, "medium"),
+        ToolExecutionError: (FailureClass.TOOL_ERROR, "medium"),
     }
 
     for exc_type, (fc, sev) in mapping.items():
