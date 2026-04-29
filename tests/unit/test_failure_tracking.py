@@ -15,6 +15,7 @@ from hestia.errors import (
     InferenceTimeoutError,
     MaxIterationsError,
     PersistenceError,
+    ToolExecutionError,
     classify_error,
 )
 from hestia.persistence.db import Database
@@ -71,6 +72,13 @@ class TestClassifyError:
         exc = MaxIterationsError(10, 10)
         fc, severity = classify_error(exc)
         assert fc == FailureClass.MAX_ITERATIONS
+        assert severity == "medium"
+
+    def test_classify_tool_execution_error(self):
+        """ToolExecutionError maps to TOOL_ERROR."""
+        exc = ToolExecutionError("test_tool", ValueError("boom"))
+        fc, severity = classify_error(exc)
+        assert fc == FailureClass.TOOL_ERROR
         assert severity == "medium"
 
     def test_classify_unknown(self):
