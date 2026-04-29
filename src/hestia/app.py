@@ -17,6 +17,7 @@ from hestia.config import HestiaConfig
 from hestia.context.builder import ContextBuilder
 from hestia.context.compressor import InferenceHistoryCompressor
 from hestia.core.inference import InferenceClient
+from hestia.core.rate_limiter import SessionRateLimiter
 from hestia.core.validators import validate_inference_model_name
 from hestia.email.adapter import EmailAdapter
 from hestia.identity import IdentityCompiler
@@ -132,6 +133,12 @@ class AppContext:
         self.proposal_store = ProposalStore(self.db)
         self.style_store = StyleProfileStore(self.db)
         self.style_builder = StyleProfileBuilder(self.db, self.style_store, config.style)
+        self.rate_limiter: SessionRateLimiter | None = None
+        if config.rate_limit.enabled:
+            self.rate_limiter = SessionRateLimiter(
+                rate=config.rate_limit.requests_per_minute / 60.0,
+                capacity=config.rate_limit.burst_size,
+            )
         self.email_adapter = EmailAdapter(config.email) if config.email.imap_host else None
 
         # Private caches for lazy construction
@@ -272,6 +279,7 @@ class AppContext:
             proposal_store=self.proposal_store,
             style_store=self.style_store,
             style_config=self.config.style,
+            rate_limiter=self.rate_limiter,
         )
 
     def register_tools(self) -> None:

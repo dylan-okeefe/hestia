@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from hestia.context.builder import ContextBuilder
 from hestia.core.clock import utcnow
 from hestia.core.inference import InferenceClient
+from hestia.core.rate_limiter import SessionRateLimiter
 from hestia.core.types import Message, Session
 from hestia.errors import (
     ContextTooLargeError,
@@ -66,6 +67,7 @@ class Orchestrator:
         proposal_store: ProposalStore | None = None,
         style_store: "StyleProfileStore | None" = None,
         style_config: "StyleConfig | None" = None,
+        rate_limiter: SessionRateLimiter | None = None,
     ):
         """Initialize the orchestrator."""
         self._inference = inference
@@ -84,6 +86,7 @@ class Orchestrator:
         self._proposal_store = proposal_store
         self._style_store = style_store
         self._style_config = style_config
+        self._rate_limiter = rate_limiter
 
         self._assembly = TurnAssembly(
             context_builder=context_builder,
@@ -165,6 +168,11 @@ class Orchestrator:
         voice_reply: bool = False,
     ) -> Turn:
         """Process a single user turn through the state machine."""
+        if self._rate_limiter is not None and not self._rate_limiter.allow(session.id):
+            await respond_callback(
+                "Rate limit exceeded. Please wait a moment before sending another message."
+            )
+            raise PlatformError("Rate limit exceeded for session")  # noqa: TRY003
         session_token = current_session_id.set(session.id)
         platform_token = current_platform.set(session.platform)
         platform_user_token = current_platform_user.set(session.platform_user)

@@ -297,6 +297,17 @@ class EmailConfig(_ConfigFromEnv):
 
 
 @dataclass
+class RateLimitConfig(_ConfigFromEnv):
+    """Per-session rate limiting configuration."""
+
+    _ENV_PREFIX = "RATE_LIMIT"
+
+    enabled: bool = False
+    requests_per_minute: float = 30.0
+    burst_size: int = 5
+
+
+@dataclass
 class SecurityConfig(_ConfigFromEnv):
     """Security-related toggles for Hestia."""
 
@@ -419,6 +430,7 @@ class HestiaConfig(_ConfigFromEnv):
     reflection: ReflectionConfig = field(default_factory=ReflectionConfig)
     style: StyleConfig = field(default_factory=StyleConfig)
     policy: PolicyConfig = field(default_factory=PolicyConfig)
+    rate_limit: RateLimitConfig = field(default_factory=RateLimitConfig)
     voice: VoiceConfig = field(default_factory=VoiceConfig)
     trust_overrides: dict[str, TrustConfig] = field(default_factory=dict)
     system_prompt: str = "You are a helpful assistant."
