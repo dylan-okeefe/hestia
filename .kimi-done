@@ -1,6 +1,6 @@
 HESTIA_KIMI_DONE=1
-LOOP=L47
-BRANCH=chore/l47-adr-normalization
-COMMIT=TBD
-TESTS=1 passed
-RUFF_SRC=25
+LOOP=L86
+BRANCH=feature/l86-april-29-cleanup-docs
+COMMIT=<
+TESTS=1031 passed, 6 skipped, 15 warnings (unit+integration)
+RUFF_SRC=baseline (no new issues in changed files)

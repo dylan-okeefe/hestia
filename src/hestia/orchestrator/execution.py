@@ -262,7 +262,9 @@ class TurnExecution:
             ):
                 concurrent_results[idx] = result
 
-        # Run serial tools sequentially
+        # Run serial tools sequentially. We intentionally do NOT wrap each
+        # call in try/except because serial tools may include confirmation-
+        # gated tools where a failure should stop the turn.
         serial_results: dict[int, ToolCallResult] = {}
         for idx in serial_indices:
             tc = tool_calls[idx]

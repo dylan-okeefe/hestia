@@ -7,6 +7,7 @@ import contextlib
 import io
 import logging
 import os
+import re
 import tempfile
 import time
 from typing import TYPE_CHECKING, Any
@@ -38,7 +39,6 @@ def _md_to_tg_html(text: str) -> str:
     Handles **bold**, *italic*, `inline code`, and ```code blocks```.
     Escapes HTML entities to avoid parse errors.
     """
-    import re
 
     # 1. Escape HTML special chars
     text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
