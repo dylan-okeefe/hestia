@@ -225,8 +225,8 @@ class SlotManager:
             raise
         finally:
             # Ensure we hold the lock on exit regardless of success/failure.
-            # If we already re-acquired in the except block, acquire() is a
-            # no-op (asyncio.Lock is reentrant-safe for the same task).
+            # If we already re-acquired in the except block, locked() is True
+            # and this acquire() is skipped. asyncio.Lock is NOT reentrant.
             if not self._lock.locked():
                 await self._lock.acquire()
 

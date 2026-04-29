@@ -14,6 +14,8 @@ class TokenBucket:
         self.last_update = time.monotonic()
 
     def consume(self, tokens: float = 1.0) -> bool:
+        # Reads/writes to self.tokens and self.last_update assume asyncio's
+        # single-threaded event loop and are not safe under asyncio.to_thread.
         now = time.monotonic()
         elapsed = now - self.last_update
         self.tokens = min(self.capacity, self.tokens + elapsed * self.rate)

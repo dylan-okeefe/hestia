@@ -136,6 +136,9 @@ class EmailAdapter:
             smtp = smtplib.SMTP_SSL(self.config.smtp_host, self.config.smtp_port)
         else:
             smtp = smtplib.SMTP(self.config.smtp_host, self.config.smtp_port)
+            # SMTPException raised by starttls() itself is caught by the calling
+            # _smtp_session context manager; this branch only handles a "successful
+            # but wrong code" response.
             code, _ = smtp.starttls()
             if code != 220:
                 smtp.close()
