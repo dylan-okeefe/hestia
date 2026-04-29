@@ -49,3 +49,18 @@ class TestSessionRateLimiter:
         assert not limiter.allow("sess")
         time.sleep(0.15)
         assert limiter.allow("sess")
+
+    def test_evicts_oldest_bucket_when_max_exceeded(self):
+        limiter = SessionRateLimiter(rate=1.0, capacity=1.0, max_buckets=3)
+        limiter.allow("sess_a")
+        limiter.allow("sess_b")
+        limiter.allow("sess_c")
+        assert set(limiter._buckets.keys()) == {"sess_a", "sess_b", "sess_c"}
+
+        limiter.allow("sess_d")
+        assert set(limiter._buckets.keys()) == {"sess_b", "sess_c", "sess_d"}
+
+        # Re-accessing sess_b should refresh it; evicting sess_c next
+        limiter.allow("sess_b")
+        limiter.allow("sess_e")
+        assert set(limiter._buckets.keys()) == {"sess_b", "sess_d", "sess_e"}

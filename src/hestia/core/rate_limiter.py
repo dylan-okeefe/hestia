@@ -29,14 +29,21 @@ class TokenBucket:
 class SessionRateLimiter:
     """Per-session token-bucket rate limiter."""
 
-    def __init__(self, rate: float, capacity: float) -> None:
+    def __init__(self, rate: float, capacity: float, max_buckets: int = 10_000) -> None:
         self._rate = rate
         self._capacity = capacity
+        self._max_buckets = max_buckets
         self._buckets: dict[str, TokenBucket] = {}
 
     def allow(self, session_id: str) -> bool:
         bucket = self._buckets.get(session_id)
         if bucket is None:
+            if len(self._buckets) >= self._max_buckets:
+                oldest_key = next(iter(self._buckets))
+                del self._buckets[oldest_key]
             bucket = TokenBucket(self._rate, self._capacity)
             self._buckets[session_id] = bucket
+        else:
+            # Refresh position for LRU ordering (Python 3.7+ dict preserves insertion order)
+            self._buckets[session_id] = self._buckets.pop(session_id)
         return bucket.consume()

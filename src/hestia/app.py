@@ -138,6 +138,7 @@ class AppContext:
             self.rate_limiter = SessionRateLimiter(
                 rate=config.rate_limit.requests_per_minute / 60.0,
                 capacity=config.rate_limit.burst_size,
+                max_buckets=config.rate_limit.max_buckets,
             )
         self.email_adapter = EmailAdapter(config.email) if config.email.imap_host else None
 
