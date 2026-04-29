@@ -13,7 +13,7 @@ import click
 
 from hestia.app import (
     AppContext,
-    CliAppContext,
+    AppContext,
     async_command,
     make_app,
 )
@@ -551,7 +551,7 @@ async def doctor(app: AppContext, plain: bool) -> None:
 @click.pass_obj
 @async_command
 async def history(
-    app: CliAppContext, session_id: str | None, limit: int, output_json: bool
+    app: AppContext, session_id: str | None, limit: int, output_json: bool
 ) -> None:
     """List recent sessions or show a conversation.
 

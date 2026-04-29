@@ -8,10 +8,10 @@ from typing import TYPE_CHECKING
 import click
 
 if TYPE_CHECKING:
-    from hestia.app import CliAppContext
+    from hestia.app import AppContext
 
 
-async def cmd_history_list(app: CliAppContext, limit: int, output_json: bool) -> None:
+async def cmd_history_list(app: AppContext, limit: int, output_json: bool) -> None:
     """List recent sessions."""
     session_list = await app.session_store.list_sessions(limit=limit)
 
@@ -48,7 +48,7 @@ async def cmd_history_list(app: CliAppContext, limit: int, output_json: bool) ->
 
 
 async def cmd_history_show(
-    app: CliAppContext, session_id: str, output_json: bool
+    app: AppContext, session_id: str, output_json: bool
 ) -> None:
     """Show conversation for a specific session."""
     session = await app.session_store.get_session(session_id)

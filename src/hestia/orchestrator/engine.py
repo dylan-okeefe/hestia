@@ -192,13 +192,16 @@ class Orchestrator:
             )
 
             try:
-                await self._prepare_turn_context(session, ctx)
-                await self._run_inference_loop(ctx)
+                await self._assembly.prepare(session, ctx, self._safe_transition)
+                await self._execution.run(
+                    ctx, self._safe_transition,
+                    lambda typing: self._set_typing(ctx.platform, ctx.platform_user, typing),
+                )
 
             except ContextTooLargeError as exc:
                 await self._set_typing(platform, platform_user, False)
-                trace_record_id = await self._handle_context_too_large(
-                    ctx, exc, trace_record_id
+                trace_record_id = await self._finalization.handle_context_too_large(
+                    ctx, exc, trace_record_id, self._safe_transition
                 )
 
             except IllegalTransitionError:
@@ -206,14 +209,12 @@ class Orchestrator:
 
             except Exception as e:  # noqa: BLE001 — turn boundary safety net
                 await self._set_typing(platform, platform_user, False)
-                trace_record_id = await self._handle_unexpected_error(
-                    ctx, e, trace_record_id
+                trace_record_id = await self._finalization.handle_unexpected_error(
+                    ctx, e, trace_record_id, self._safe_transition
                 )
 
             finally:
-                await self._finalize_turn(
-                    ctx, turn_start_time, trace_record_id
-                )
+                await self._finalization.finalize_turn(ctx, turn_start_time, trace_record_id)
 
             return turn
 
@@ -223,43 +224,6 @@ class Orchestrator:
             current_platform_user.reset(platform_user_token)
             if trace_token is not None:
                 current_trace_store.reset(trace_token)
-
-    async def _prepare_turn_context(self, session: Session, ctx: TurnContext) -> None:
-        await self._assembly.prepare(session, ctx, self._safe_transition)
-
-    async def _handle_context_too_large(
-        self,
-        ctx: TurnContext,
-        exc: ContextTooLargeError,
-        trace_record_id: str | None,
-    ) -> str | None:
-        return await self._finalization.handle_context_too_large(
-            ctx, exc, trace_record_id, self._safe_transition
-        )
-
-    async def _handle_unexpected_error(
-        self,
-        ctx: TurnContext,
-        error: Exception,
-        trace_record_id: str | None,
-    ) -> str | None:
-        return await self._finalization.handle_unexpected_error(
-            ctx, error, trace_record_id, self._safe_transition
-        )
-
-    async def _run_inference_loop(self, ctx: TurnContext) -> str:
-        async def set_typing(typing: bool) -> None:
-            await self._set_typing(ctx.platform, ctx.platform_user, typing)
-
-        return await self._execution.run(ctx, self._safe_transition, set_typing)
-
-    async def _finalize_turn(
-        self,
-        ctx: TurnContext,
-        turn_start_time: Any,
-        trace_record_id: str | None,
-    ) -> None:
-        await self._finalization.finalize_turn(ctx, turn_start_time, trace_record_id)
 
     def _create_turn(self, session_id: str, user_message: Message) -> Turn:
         return Turn(

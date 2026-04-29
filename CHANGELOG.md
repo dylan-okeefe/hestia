@@ -5,6 +5,46 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-04-26
+
+Security hardening, structural consolidation, and subsystem cleanup.
+
+### Security
+- `allowed_roots` defaults to `[]` (deny-all) instead of `["."]`.
+- `EmailConfig.__repr__` masks `password`; `TelegramConfig.__repr__` masks `bot_token`.
+- `TrustConfig.developer()` emits a `logger.warning()` on use.
+- `hestia doctor` fails when `trust.preset == "developer"` outside a dev environment.
+- Terminal tool now blocks dangerous patterns (`rm -rf /`, disk overwrite, fork bombs) via `make_terminal_tool()`.
+- `TrustConfig.blocked_shell_patterns` allows operator customization of blocked commands.
+- Egress audit logs strip query parameters before persisting URLs, preventing API-key leakage.
+- Tool calls per turn are capped at `PolicyConfig.max_tool_calls_per_turn` (default 10).
+- `curl_cffi` fallback is opt-in via `HestiaConfig.use_curl_cffi_fallback` (default `False`).
+
+### Structural
+- Collapsed `CoreAppContext` + `FeatureAppContext` + `CliAppContext` facade into single `AppContext` with `@functools.cached_property` for lazy subsystems. `make_app()` broken into phased helpers.
+- `InferenceClient` consolidated: single `_request()` helper replaces 7 copy-pasted try/except blocks. `__aenter__`/`__aexit__` added for proper lifecycle.
+- Meta-tool dispatch replaced open-coded type switch with `self._meta_tools` dict.
+- `message_to_dict` moved to `core/serialization.py`.
+- `_tokenize_cache` bounded to 4096 entries with LRU eviction.
+- `_last_edit_times` prunes stale entries on access.
+
+### Reliability
+- `SlotManager._pick_lru_victim` uses single batch query instead of N serial round-trips.
+- `_evict_session_locked` releases lock before HTTP I/O and re-acquires after.
+- Concurrent tool dispatch catches exceptions per-tool so one failure doesn't cancel siblings.
+- Memory scope resolves partial identity to `(None, None)` with warning, preventing cross-user leaks.
+- `ContextBuilder` caches static system-prompt token counts.
+
+### UX
+- New `hestia history` command (`history list`, `history show`) for session/conversation retrieval.
+- Startup config validation (`_validate_config_at_startup`) catches broken config before subsystem creation.
+- `TurnFinalization.sanitize_user_error()` maps specific errors to human-friendly messages.
+
+### Cleanup
+- **Skills subsystem removed entirely** (~1,500 lines deleted). The experimental scaffolding had no working meta-tool and was dead weight.
+- `test_builtin_tools.py` and `test_builtin_tools_new.py` consolidated.
+- All unacknowledged `except Exception` catches acknowledged with `# noqa: BLE001` and context comments.
+
 ## [0.10.0] — 2026-04-22
 
 Minor release. Completes Telegram voice-message hardening, officially
