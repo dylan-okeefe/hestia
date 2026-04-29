@@ -1,5 +1,6 @@
 """ContextBuilder assembles the message list for a turn under a token budget."""
 
+import asyncio
 import json
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -265,8 +266,17 @@ class ContextBuilder:
 
         available_budget = raw_budget - protected_count
 
+        # Batch token counting: compute all history message counts in parallel
+        history_counts: dict[int, int] = {}
+        if history:
+            counts = await asyncio.gather(*(self._count_tokens(msg) for msg in history))
+            history_counts = {
+                id(msg): c + _join_overhead
+                for msg, c in zip(history, counts, strict=True)
+            }
+
         async def _history_token_count(msg: Message) -> int:
-            return await self._count_tokens(msg) + _join_overhead
+            return history_counts.get(id(msg), 0)
 
         selector = HistoryWindowSelector()
         included, dropped, truncated_count = await selector.select(

@@ -50,17 +50,16 @@ from hestia.tools.builtin import (
     make_enable_scheduled_task_tool,
     make_http_get_tool,
     make_list_dir_tool,
-    make_terminal_tool,
     make_list_memories_tool,
     make_list_scheduled_tasks_tool,
     make_read_artifact_tool,
     make_read_file_tool,
     make_save_memory_tool,
     make_search_memory_tool,
+    make_terminal_tool,
     make_web_search_tool,
     make_write_file_tool,
     search_web,
-    terminal,
 )
 from hestia.tools.registry import ToolRegistry
 
@@ -133,6 +132,7 @@ class AppContext:
         self.proposal_store = ProposalStore(self.db)
         self.style_store = StyleProfileStore(self.db)
         self.style_builder = StyleProfileBuilder(self.db, self.style_store, config.style)
+        self.email_adapter = EmailAdapter(config.email) if config.email.imap_host else None
 
         # Private caches for lazy construction
         self._calibration_path: Path | None = None
@@ -250,6 +250,8 @@ class AppContext:
         """Close lazily-created resources."""
         if hasattr(self, '_inference') and self._inference is not None:
             await self._inference.close()
+        if self.email_adapter is not None:
+            self.email_adapter.close()
 
     def make_orchestrator(self) -> Orchestrator:
         """Create an Orchestrator with the current app context."""
@@ -295,10 +297,13 @@ class AppContext:
         else:
             reg.register(search_web)
 
-        for email_tool in make_email_tools(cfg.email):
+        for email_tool in make_email_tools(cfg.email, adapter=self.email_adapter):
             reg.register(email_tool)
 
-        email_search_and_read = make_email_search_and_read_tool(EmailAdapter(cfg.email))
+        email_search_and_read = (
+            make_email_search_and_read_tool(self.email_adapter)
+            if self.email_adapter else None
+        )
         if email_search_and_read is not None:
             reg.register(email_search_and_read)
 
@@ -381,10 +386,7 @@ def _load_and_validate_config(
 ) -> HestiaConfig:
     """Load config from file or default locations, apply env overrides, and validate."""
     if cfg is None:
-        if config_path:
-            cfg = HestiaConfig.from_file(config_path)
-        else:
-            cfg = HestiaConfig.default()
+        cfg = HestiaConfig.from_file(config_path) if config_path else HestiaConfig.default()
 
     if (
         not cfg.inference.model_name.strip()

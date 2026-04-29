@@ -16,7 +16,7 @@ from hestia.tools.metadata import tool
 logger = logging.getLogger(__name__)
 
 
-def make_email_tools(config: EmailConfig) -> list[Any]:
+def make_email_tools(config: EmailConfig, adapter: EmailAdapter | None = None) -> list[Any]:
     """Build email tools bound to the configured adapter.
 
     Returns an empty list if ``config.imap_host`` is empty — caller should
@@ -25,7 +25,7 @@ def make_email_tools(config: EmailConfig) -> list[Any]:
     if not config.imap_host:
         return []
 
-    adapter = EmailAdapter(config)
+    adapter = adapter or EmailAdapter(config)
 
     @tool(
         name="email_list",

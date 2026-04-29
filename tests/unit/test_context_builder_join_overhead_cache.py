@@ -153,14 +153,24 @@ class TestJoinOverheadCache:
             sample_session, history, "You are helpful.", [], new_user_message=new_msg
         )
 
-        # The last 3 tokenize inputs are:
-        # - single_body (1 message)
-        # - combined_body (2 messages)
-        # - rendered _m2 for _count_tokens
-        assert len(counting_client._tokenize_inputs) >= 3
-        single_input = counting_client._tokenize_inputs[-3]
-        combined_input = counting_client._tokenize_inputs[-2]
-        m2_input = counting_client._tokenize_inputs[-1]
+        # Identify the three inputs by shape rather than position
+        # (batching may add extra tokenize calls after them).
+        single_input = None
+        combined_input = None
+        m2_input = None
+        for inp in counting_client._tokenize_inputs:
+            if '"model"' in inp:
+                msg_count = inp.count('"role"')
+                if msg_count == 1:
+                    single_input = inp
+                elif msg_count == 2:
+                    combined_input = inp
+            elif '"role": "assistant"' in inp and m2_input is None:
+                m2_input = inp
+
+        assert single_input is not None
+        assert combined_input is not None
+        assert m2_input is not None
 
         single_count = len([0] * (len(single_input) // 4 + 1))
         combined_count = len([0] * (len(combined_input) // 4 + 1))

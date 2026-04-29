@@ -6,6 +6,7 @@ All blocking stdlib I/O is dispatched via asyncio.to_thread.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import contextvars
 import email
 import email.utils
@@ -45,6 +46,14 @@ class EmailAdapter:
         self._imap_session_var: contextvars.ContextVar[
             imaplib.IMAP4_SSL | None
         ] = contextvars.ContextVar("_imap_session_var", default=None)
+        self._smtp: smtplib.SMTP | None = None
+
+    def close(self) -> None:
+        """Close any held SMTP connection."""
+        if self._smtp is not None:
+            with contextlib.suppress(smtplib.SMTPException, OSError):
+                self._smtp.quit()
+            self._smtp = None
 
     # ------------------------------------------------------------------
     # IMAP session management
