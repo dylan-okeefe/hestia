@@ -305,6 +305,7 @@ class RateLimitConfig(_ConfigFromEnv):
     enabled: bool = False
     requests_per_minute: float = 30.0
     burst_size: int = 5
+    max_buckets: int = 10_000
 
 
 @dataclass
