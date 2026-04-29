@@ -2,7 +2,6 @@
 
 import logging
 import uuid
-from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 from hestia.context.builder import ContextBuilder
@@ -18,6 +17,7 @@ from hestia.errors import (
 from hestia.inference.slot_manager import SlotManager
 from hestia.memory.handoff import SessionHandoffSummarizer
 from hestia.orchestrator.assembly import TurnAssembly
+from hestia.orchestrator.execution import ConfirmCallback as ConfirmCallback
 from hestia.orchestrator.execution import TurnExecution
 from hestia.orchestrator.finalization import TurnFinalization
 from hestia.orchestrator.transitions import assert_transition
@@ -42,8 +42,6 @@ if TYPE_CHECKING:
     from hestia.style.store import StyleProfileStore
 
 logger = logging.getLogger(__name__)
-
-ConfirmCallback = Callable[[str, dict[str, Any]], Awaitable[bool]]
 
 
 class Orchestrator:
