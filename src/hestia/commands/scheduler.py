@@ -238,6 +238,7 @@ def cmd_schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None
         await app.bootstrap_db()
         store = _require_scheduler_store(app)
         orchestrator = app.make_orchestrator()
+        await app.context_builder.warm_up()
         from hestia.platforms.notifier import PlatformNotifier
 
         notifier = PlatformNotifier(app.config)

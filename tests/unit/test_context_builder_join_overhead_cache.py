@@ -178,3 +178,26 @@ class TestJoinOverheadCache:
         expected = combined_count - single_count - m2_count
 
         assert builder._join_overhead == expected
+
+    @pytest.mark.asyncio
+    async def test_warm_up_computes_join_overhead(self, counting_client, policy):
+        """warm_up() eagerly computes and caches join overhead."""
+        builder = ContextBuilder(counting_client, policy, body_factor=1.0)
+        assert builder._join_overhead is None
+
+        await builder.warm_up()
+
+        assert builder._join_overhead is not None
+        # Two tokenize calls for the dummy history measurement
+        assert counting_client.model_body_tokenize_count == 2
+
+    @pytest.mark.asyncio
+    async def test_warm_up_is_noop_when_already_cached(self, counting_client, policy):
+        """warm_up() is a no-op when join overhead is already cached."""
+        builder = ContextBuilder(counting_client, policy, body_factor=1.0)
+        builder._join_overhead = 42
+
+        await builder.warm_up()
+
+        assert builder._join_overhead == 42
+        assert counting_client.model_body_tokenize_count == 0
