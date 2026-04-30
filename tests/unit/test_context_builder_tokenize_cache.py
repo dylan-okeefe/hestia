@@ -183,3 +183,45 @@ async def test_role_and_content_are_the_cache_key(inference, policy, session):
     # been called only once for that unique key.
     # We verify by checking that the cache size for that key is 1.
     assert builder._tokenize_cache[("user", "shared")] > 0
+
+
+@pytest.mark.asyncio
+async def test_count_body_cache_key_collides_under_old_string_join(inference, policy, session):
+    """Two different message lists must not share a cache key.
+
+    Under the old ``"|".join(f"{m.role}:{m.content}" for m in messages)``
+    scheme, the two lists below both serialize to
+    ``user:a|assistant:b|assistant:c`` and would incorrectly share a cache
+    entry.  The hash(tuple(...)) key distinguishes them.
+    """
+    builder = ContextBuilder(inference, policy)
+
+    # These lists produce the same old-style string-join key but have different
+    # message counts, so the counts differ.
+    #   old key = user:a|assistant:b|assistant:c
+    list_a = [
+        Message(role="user", content="a|assistant:b"),
+        Message(role="assistant", content="c"),
+    ]
+    list_b = [
+        Message(role="user", content="a"),
+        Message(role="assistant", content="b"),
+        Message(role="assistant", content="c"),
+    ]
+
+    # Verify the old-style string-join scheme would collide
+    old_key_a = "|".join(f"{m.role}:{m.content}" for m in list_a)
+    old_key_b = "|".join(f"{m.role}:{m.content}" for m in list_b)
+    assert old_key_a == old_key_b, "old-style keys should collide for this test"
+
+    # The new hash-based keys must differ
+    new_key_a = hash(tuple((m.role, m.content) for m in list_a))
+    new_key_b = hash(tuple((m.role, m.content) for m in list_b))
+    assert new_key_a != new_key_b, "new-style keys must not collide"
+
+    # Because the keys differ, count_request is called for both lists.
+    # The fake inference client adds a base 10 per message, so the 2-message
+    # list and 3-message list produce different totals despite identical keys.
+    count_a = await builder._count_body(list_a)
+    count_b = await builder._count_body(list_b)
+    assert count_a != count_b
