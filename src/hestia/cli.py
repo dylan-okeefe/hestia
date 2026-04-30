@@ -81,6 +81,10 @@ def cli(
     # Build typed app context (lazy inference — no httpx client spun up yet)
     ctx.obj = make_app(cfg)
 
+# ---------------------------------------------------------------------------
+# Core commands
+# ---------------------------------------------------------------------------
+
 @cli.command()
 @click.option("--create-config", is_flag=True, help="Write a starter config.py")
 @click.option("--with-soul", is_flag=True, help="Write a starter SOUL.md")
@@ -90,6 +94,7 @@ async def init(app: AppContext, create_config: bool, with_soul: bool) -> None:
     """Initialize database, artifacts, and slot directories."""
     await _commands.cmd_init(app, create_config, with_soul)
 
+
 @cli.command()
 @click.option("--new-session", is_flag=True, help="Force a new session instead of resuming")
 @click.pass_obj
@@ -97,6 +102,7 @@ async def init(app: AppContext, create_config: bool, with_soul: bool) -> None:
 async def chat(app: AppContext, new_session: bool) -> None:
     """Start an interactive REPL chat session (persistent session)."""
     await _commands.cmd_chat(app, new_session)
+
 
 @cli.command()
 @click.argument("message")
@@ -106,12 +112,14 @@ async def ask(app: AppContext, message: str) -> None:
     """Send a single message and get a response (no session persistence)."""
     await _commands.cmd_ask(app, message)
 
+
 @cli.command()
 @click.pass_obj
 @async_command
 async def health(app: AppContext) -> None:
     """Check inference server health."""
     await _commands.cmd_health(app)
+
 
 @cli.command()
 def version() -> None:
@@ -121,6 +129,7 @@ def version() -> None:
     click.echo(f"Hestia {get_version('hestia')}")
     click.echo(f"Python {sys.version}")
 
+
 @cli.command()
 @click.pass_obj
 @async_command
@@ -128,7 +137,11 @@ async def status(app: AppContext) -> None:
     """Show system status summary."""
     await _commands.cmd_status(app)
 
-# Failures command group
+
+# ---------------------------------------------------------------------------
+# Failure management
+# ---------------------------------------------------------------------------
+
 @cli.group()
 def failures() -> None:
     """View failure history."""
@@ -151,7 +164,11 @@ async def failures_summary(app: AppContext, days: int) -> None:
     """Show failure counts by class."""
     await _commands.cmd_failures_summary(app, days)
 
-# Schedule command group
+
+# ---------------------------------------------------------------------------
+# Scheduling
+# ---------------------------------------------------------------------------
+
 @cli.group()
 def schedule() -> None:
     """Manage scheduled tasks."""
@@ -243,6 +260,11 @@ def schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None:
     """Run the scheduler daemon (blocks until Ctrl-C)."""
     _commands.cmd_schedule_daemon(ctx, tick_interval)
 
+
+# ---------------------------------------------------------------------------
+# Platform runners
+# ---------------------------------------------------------------------------
+
 @cli.command(name="telegram")
 @click.pass_context
 def run_telegram(ctx: click.Context) -> None:
@@ -268,7 +290,10 @@ def run_matrix(ctx: click.Context) -> None:
         click.echo("\nShutting down.")
 
 
-# Memory command group
+# ---------------------------------------------------------------------------
+# Memory
+# ---------------------------------------------------------------------------
+
 @cli.group()
 def memory() -> None:
     """Manage long-term memory."""
@@ -339,7 +364,11 @@ async def memory_remove(app: AppContext, memory_id: str) -> None:
         sys.exit(1)
     click.echo(f"Deleted: {memory_id}")
 
-# Artifact command group
+
+# ---------------------------------------------------------------------------
+# Artifacts
+# ---------------------------------------------------------------------------
+
 @cli.group(name="artifacts")
 def artifacts() -> None:
     """Manage artifact storage."""
@@ -376,6 +405,11 @@ async def artifacts_purge(app: AppContext, older_than: int | None) -> None:
     removed = await _commands.cmd_artifacts_purge(app, older_than_days=older_than)
     click.echo(f"Removed {removed} artifact(s).")
 
+
+# ---------------------------------------------------------------------------
+# Audit
+# ---------------------------------------------------------------------------
+
 class AuditGroup(click.Group):
     """Custom group that defaults to 'run' when no subcommand is given."""
 
@@ -406,7 +440,11 @@ async def audit_egress(app: AppContext, since: str) -> None:
     """Print domain-level egress aggregation."""
     await _commands.cmd_audit_egress(app, since)
 
-# Email CLI
+
+# ---------------------------------------------------------------------------
+# Email
+# ---------------------------------------------------------------------------
+
 @cli.group()
 def email() -> None:
     """Email integration commands."""
@@ -436,6 +474,11 @@ async def email_list_cmd(app: AppContext, folder: str, limit: int, unread_only: 
 async def email_read_cmd(app: AppContext, message_id: str) -> None:
     """Read a single email by IMAP UID."""
     await _commands.cmd_email_read_cmd(app, message_id)
+
+
+# ---------------------------------------------------------------------------
+# Style
+# ---------------------------------------------------------------------------
 
 @cli.group()
 def style() -> None:
@@ -480,6 +523,11 @@ def style_disable(app: AppContext) -> None:
         "Set style.enabled=false in config to make this permanent."
     )
 
+
+# ---------------------------------------------------------------------------
+# Policy
+# ---------------------------------------------------------------------------
+
 @cli.group()
 def policy() -> None:
     """Manage and view security policies."""
@@ -491,6 +539,11 @@ def policy() -> None:
 async def policy_show(app: AppContext) -> None:
     """Show current effective policy configuration."""
     await _commands.cmd_policy_show(app)
+
+
+# ---------------------------------------------------------------------------
+# Diagnostics
+# ---------------------------------------------------------------------------
 
 @cli.command()
 @click.option("--plain", is_flag=True, help="Use ASCII [ok]/[FAIL] markers instead of ✓/✗.")
@@ -506,7 +559,7 @@ async def doctor(app: AppContext, plain: bool) -> None:
     if exit_code != 0:
         sys.exit(exit_code)
 
-# History command
+
 @cli.command(name="history")
 @click.argument("session_id", required=False)
 @click.option("--limit", type=int, default=20, help="Number of sessions to list.")
@@ -527,7 +580,11 @@ async def history(
         await _commands.cmd_history_list(app, limit, output_json)
 
 
-# Reflection commands
+
+# ---------------------------------------------------------------------------
+# Reflection
+# ---------------------------------------------------------------------------
+
 @cli.group(name="reflection")
 def reflection() -> None:
     """Manage reflection proposals."""
@@ -596,6 +653,11 @@ async def reflection_run(app: AppContext, now: bool) -> None:
 async def reflection_history(app: AppContext) -> None:
     """Show past proposals and their outcomes."""
     await _commands.cmd_reflection_history(app)
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 
 def main() -> None:
     """Entry point for the CLI."""
