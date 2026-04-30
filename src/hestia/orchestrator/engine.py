@@ -66,6 +66,7 @@ class Orchestrator:
         style_store: "StyleProfileStore | None" = None,
         style_config: "StyleConfig | None" = None,
         rate_limiter: SessionRateLimiter | None = None,
+        stream: bool = False,
     ):
         """Initialize the orchestrator."""
         self._inference = inference
@@ -85,6 +86,7 @@ class Orchestrator:
         self._style_store = style_store
         self._style_config = style_config
         self._rate_limiter = rate_limiter
+        self._stream = stream
 
         self._assembly = TurnAssembly(
             context_builder=context_builder,
@@ -107,6 +109,7 @@ class Orchestrator:
             injection_scanner=injection_scanner,
             max_iterations=max_iterations,
             max_tool_calls_per_turn=max_tool_calls_per_turn,
+            stream=stream,
         )
 
         self._finalization = TurnFinalization(
@@ -195,6 +198,7 @@ class Orchestrator:
                 platform_user=platform_user,
                 session=session,
                 voice_reply=voice_reply,
+                stream_callback=None,
             )
 
             try:

@@ -281,6 +281,7 @@ class AppContext:
             style_store=self.style_store,
             style_config=self.config.style,
             rate_limiter=self.rate_limiter,
+            stream=self.config.inference.stream,
         )
 
     def register_tools(self) -> None:
