@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from urllib.parse import urlparse, urlunparse
 
 import httpx
 
@@ -20,6 +21,12 @@ from hestia.tools.capabilities import NETWORK_EGRESS
 from hestia.tools.metadata import tool
 
 logger = logging.getLogger(__name__)
+
+
+def _strip_query_params(url: str) -> str:
+    """Return URL with query string and fragment removed."""
+    parsed = urlparse(url)
+    return urlunparse(parsed._replace(query="", fragment=""))
 
 
 async def _tavily_search(
@@ -58,11 +65,21 @@ async def _tavily_search(
         try:
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            await _record_egress(str(exc.request.url), exc.response.status_code if exc.response else None, 0)
+            await _record_egress(
+                _strip_query_params(str(exc.request.url)),
+                exc.response.status_code if exc.response else None,
+                0,
+            )
+            if exc.response is not None:
+                logger.debug("Tavily error response body: %s", exc.response.text)
             raise WebSearchError(
-                f"Tavily request failed: {exc.response.status_code} {exc.response.text[:200]}"
+                f"Tavily request failed: {exc.response.status_code}"
+                if exc.response is not None
+                else "Tavily request failed"
             ) from exc
-        await _record_egress(str(response.url), response.status_code, len(response.content))
+        await _record_egress(
+            _strip_query_params(str(response.url)), response.status_code, len(response.content)
+        )
         data = response.json()
 
     results = data.get("results") or []
