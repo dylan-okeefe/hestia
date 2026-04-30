@@ -183,6 +183,22 @@ class TrustConfig(_ConfigFromEnv):
     # Active trust preset name (paranoid, household, developer, etc.)
     preset: str | None = None
 
+    def is_paranoid(self) -> bool:
+        """Return True when this config matches the strictest trust posture.
+
+        Checks only the fields that distinguish paranoid from non-paranoid
+        presets so the comparison is semantic, not tied to ``__eq__``.
+        """
+        return (
+            self.auto_approve_tools == []
+            and not self.scheduler_shell_exec
+            and not self.subagent_shell_exec
+            and not self.subagent_write_local
+            and not self.subagent_email_send
+            and not self.scheduler_email_send
+            and self.blocked_shell_patterns == []
+        )
+
     @classmethod
     def paranoid(cls) -> TrustConfig:
         """Strictest posture."""
@@ -464,7 +480,7 @@ class HestiaConfig(_ConfigFromEnv):
     @classmethod
     def for_trust(cls, trust: TrustConfig) -> HestiaConfig:
         """Create a config with handoff/compression implied by trust preset."""
-        enable = trust not in (TrustConfig.paranoid(), TrustConfig())
+        enable = not trust.is_paranoid()
         return cls(
             trust=trust,
             handoff=HandoffConfig(enabled=enable),

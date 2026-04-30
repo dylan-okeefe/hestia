@@ -61,6 +61,12 @@ class TestHestiaConfigForTrust:
         assert cfg.handoff.enabled is True
         assert cfg.compression.enabled is True
 
+    def test_prompt_on_mobile_enables_handoff_and_compression(self):
+        """prompt_on_mobile() implies handoff=True, compression=True."""
+        cfg = HestiaConfig.for_trust(TrustConfig.prompt_on_mobile())
+        assert cfg.handoff.enabled is True
+        assert cfg.compression.enabled is True
+
     def test_default_is_paranoid(self):
         """Default HestiaConfig matches paranoid preset."""
         default = HestiaConfig.default()
