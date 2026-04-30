@@ -386,17 +386,24 @@ class AuditGroup(click.Group):
 
 @cli.group(name="audit", cls=AuditGroup, invoke_without_command=True)
 def audit_group() -> None:
-    """Security audit commands."""
+    """Run deterministic security audits against Hestia configuration.
+
+    Checks tool capabilities, sandbox settings, configuration issues,
+    dependency vulnerabilities, and recent trace patterns. Focuses on
+    security posture, not runtime health. For health checks, use ``doctor``.
+    """
     pass
 
 @audit_group.command(name="run")
 @click.option("--json", "output_json", is_flag=True, help="Output as JSON")
 @click.option("--output", "-o", type=click.Path(), help="Save report to file")
+@click.option("--strict", "-s", is_flag=True, default=False,
+              help="Exit with code 1 if any check fails or warns.")
 @click.pass_obj
 @async_command
-async def audit_run(app: AppContext, output_json: bool, output: str | None) -> None:
+async def audit_run(app: AppContext, output_json: bool, output: str | None, strict: bool) -> None:
     """Run security audit checks."""
-    await _commands.cmd_audit_run(app, output_json, output)
+    await _commands.cmd_audit_run(app, output_json, output, strict)
 
 @audit_group.command(name="egress")
 @click.option("--since", default="7d", help="Time window (e.g. 7d, 24h, 30d)")
@@ -497,10 +504,13 @@ async def policy_show(app: AppContext) -> None:
 @click.pass_obj
 @async_command
 async def doctor(app: AppContext, plain: bool) -> None:
-    """Run a one-shot health check against the current Hestia install.
+    """Run read-only health checks against the current Hestia install.
 
-    Exits non-zero if any check fails. Read-only; never mutates state.
-    Run this first when something seems wrong.
+    Checks environment, dependencies, database integrity, and external
+    service reachability. Exits non-zero if any check fails. Read-only;
+    never mutates state. Run this first when something seems wrong.
+
+    For security posture checks, use ``audit``.
     """
     exit_code = await _commands.cmd_doctor(app, plain=plain)
     if exit_code != 0:

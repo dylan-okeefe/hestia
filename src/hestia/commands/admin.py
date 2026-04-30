@@ -238,7 +238,12 @@ async def cmd_failures_summary(app: AppContext, days: int) -> None:
         click.echo("  No failures in this period.")
 
 
-async def cmd_audit_run(app: AppContext, output_json: bool, output: str | None) -> None:
+async def cmd_audit_run(
+    app: AppContext,
+    output_json: bool,
+    output: str | None,
+    strict: bool = False,
+) -> None:
     """Run security audit checks."""
     from hestia.audit import SecurityAuditor
 
@@ -254,8 +259,19 @@ async def cmd_audit_run(app: AppContext, output_json: bool, output: str | None) 
         click.echo(f"Audit report saved to: {output}")
     else:
         click.echo(result)
+
     critical_count = sum(1 for f in report.findings if f.severity == "critical")
-    if critical_count > 0:
+    warning_count = sum(1 for f in report.findings if f.severity == "warning")
+
+    if strict:
+        non_info_count = critical_count + warning_count
+        click.echo(
+            f"Strict mode: {non_info_count} non-info finding(s) "
+            f"({critical_count} critical, {warning_count} warning)."
+        )
+        if non_info_count > 0:
+            sys.exit(1)
+    elif critical_count > 0:
         sys.exit(1)
 
 
