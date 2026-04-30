@@ -4,7 +4,8 @@ import asyncio
 import ipaddress
 import logging
 import socket
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 from urllib.parse import urlparse
 
 import httpx
