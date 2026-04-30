@@ -1,6 +1,13 @@
 """Email adapter using IMAP for read/draft and SMTP for send.
 
 All blocking stdlib I/O is dispatched via asyncio.to_thread.
+
+Async boundary note:
+- IMAP operations (imaplib) are wrapped in asyncio.to_thread because the
+  EmailAdapter public API is async and imaplib is purely blocking.
+- SMTP operations (smtplib) are NOT wrapped here; they are called from
+  within the same to_thread blocks that already isolate IMAP work, so
+  adding a second layer would be unnecessary and complicate error handling.
 """
 
 from __future__ import annotations
@@ -73,9 +80,9 @@ class EmailAdapter:
             yield existing
             return
 
-        conn = self._imap_connect()
+        conn = await asyncio.to_thread(self._imap_connect)
         try:
-            conn.select(folder)
+            await asyncio.to_thread(conn.select, folder)
             self._imap_session_var.set(conn)
             yield conn
         finally:
@@ -83,12 +90,12 @@ class EmailAdapter:
             try:
                 # close() is only valid in SELECTED state; in AUTH it raises
                 if getattr(conn, "state", None) == "SELECTED":
-                    conn.close()
+                    await asyncio.to_thread(conn.close)
             except (imaplib.IMAP4.abort, imaplib.IMAP4.error, OSError) as e:
                 logger.debug("IMAP close suppressed: %s", e)
             finally:
                 try:
-                    conn.logout()
+                    await asyncio.to_thread(conn.logout)
                 except (imaplib.IMAP4.abort, imaplib.IMAP4.error, OSError) as e:
                     logger.debug("IMAP logout suppressed: %s", e)
 
