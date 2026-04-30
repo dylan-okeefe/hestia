@@ -2,225 +2,16 @@
 
 from __future__ import annotations
 
-import dataclasses
-import json
 import os
-import types
-import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, ClassVar, Literal, Self, Union, get_args, get_origin, get_type_hints
+from typing import Literal
 
+from hestia.config_env import _ConfigFromEnv
+from hestia.core.validators import validate_inference_model_name
+from hestia.errors import EmailConfigError
 
-class EmailConfigError(ValueError):
-    """Raised when email configuration is invalid."""
-
-    pass
-
-
-def validate_inference_model_name(model_name: str) -> None:
-    """Reject the reserved ``dummy`` model name unless explicitly allowed (H-5).
-
-    The literal ``dummy`` is used only in tests behind ``HESTIA_ALLOW_DUMMY_MODEL=1``.
-    """
-    stripped = model_name.strip()
-    if stripped.lower() != "dummy":
-        return
-    if os.environ.get("HESTIA_ALLOW_DUMMY_MODEL") == "1":
-        return
-    raise ValueError(
-        'inference.model_name "dummy" is reserved for automated tests only. '
-        "Configure a real llama.cpp model filename, or set environment variable "
-        "HESTIA_ALLOW_DUMMY_MODEL=1 if you intentionally use a dummy model."
-    )
-
-# Default location for operator-authored personality (compiled identity; see ADR-0025).
-DEFAULT_SOUL_MD_PATH = Path("SOUL.md")
-
-
-def _is_optional(field_type: Any) -> bool:
-    """Return True if *field_type* is ``X | None``."""
-    origin = get_origin(field_type)
-    if origin is not Union and origin is not types.UnionType:
-        return False
-    return type(None) in get_args(field_type)
-
-
-def _coerce_env_value(raw: str, field_type: Any, field_name: str) -> Any:
-    """Convert a raw env string to the Python type indicated by *field_type*.
-
-    Raises ``ValueError`` with a clear message on parse failure.
-    """
-    origin = get_origin(field_type)
-    args = get_args(field_type)
-
-    # Optional[X]  (including X | None)
-    if _is_optional(field_type):
-        non_none = [a for a in args if a is not type(None)]
-        if len(non_none) == 1:
-            inner = non_none[0]
-            if raw.strip() == "":
-                return None
-            return _coerce_env_value(raw, inner, field_name)
-        # Complex union – fall back to string
-        return raw
-
-    # Literal[...]
-    if origin is Literal:
-        return raw
-
-    # list[str]
-    if origin is list:
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"invalid JSON for {field_name}: {exc}") from exc
-        if not isinstance(parsed, list):
-            raise ValueError(
-                f"expected JSON list for {field_name}, got {type(parsed).__name__}"
-            )
-        if args and args[0] is str and not all(isinstance(x, str) for x in parsed):
-            raise ValueError(f"expected JSON list of strings for {field_name}")
-        return parsed
-
-    # tuple[int, ...] or tuple[str, ...]
-    if origin is tuple:
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError:
-            # Fall back to comma-separated for non-JSON input (legacy env values)
-            parsed = [x.strip() for x in raw.split(",") if x.strip()]
-        if isinstance(parsed, int):
-            # Bare integer like "123" for tuple[int, ...] — wrap it
-            parsed = [parsed]
-        if not isinstance(parsed, list):
-            raise ValueError(
-                f"expected JSON list for {field_name}, got {type(parsed).__name__}"
-            )
-        if args and args[-1] is Ellipsis and len(args) == 2:
-            inner_type = args[0]
-            try:
-                return tuple(inner_type(x) for x in parsed)
-            except (ValueError, TypeError) as exc:
-                raise ValueError(
-                    f"expected JSON list of {inner_type.__name__} for {field_name}: {exc}"
-                ) from exc
-        # Fixed-length tuple – coerce each element if we can, else return tuple
-        return tuple(parsed)
-
-    # Basic scalar types
-    if field_type is str:
-        return raw
-    if field_type is int:
-        try:
-            return int(raw)
-        except ValueError as exc:
-            raise ValueError(f"expected integer for {field_name}, got {raw!r}") from exc
-    if field_type is float:
-        try:
-            return float(raw)
-        except ValueError as exc:
-            raise ValueError(f"expected float for {field_name}, got {raw!r}") from exc
-    if field_type is bool:
-        lowered = raw.strip().lower()
-        if lowered in ("1", "true", "yes", "on"):
-            return True
-        if lowered in ("0", "false", "no", "off"):
-            return False
-        raise ValueError(f"expected boolean for {field_name}, got {raw!r}")
-    if field_type is Path:
-        return Path(raw)
-
-    # Unsupported – caller should skip
-    raise TypeError(f"unsupported env type {field_type!r} for {field_name}")
-
-
-class _ConfigFromEnv:
-    """Mixin that adds ``from_env`` to dataclass-based config objects."""
-
-    _ENV_PREFIX: ClassVar[str] = ""
-    _ENV_KEY_OVERRIDES: ClassVar[dict[str, str]] = {}
-    _LEGACY_ALIASES: ClassVar[dict[str, list[str]]] = {}
-
-    @classmethod
-    def from_env(cls, environ: dict[str, str] | None = None) -> Self:
-        """Instantiate from environment variables.
-
-        The canonical prefix is ``HESTIA_{_ENV_PREFIX}_*``.  When
-        ``_ENV_PREFIX`` is empty it is derived from the class name
-        (e.g. ``InferenceConfig`` → ``INFERENCE``).
-        """
-        env = environ if environ is not None else os.environ
-        prefix = cls._ENV_PREFIX or cls.__name__.removesuffix("Config").upper()
-        return cls(**cls.from_env_dict(prefix, env))
-
-    @classmethod
-    def from_env_dict(
-        cls, prefix: str, environ: dict[str, str] | os._Environ[str]
-    ) -> dict[str, Any]:
-        """Build a kwargs dict for the dataclass constructor.
-
-        Handles ``str``, ``int``, ``float``, ``bool``, ``Path``,
-        ``list[str]``, ``tuple[int, ...]``, ``tuple[str, ...]`` and
-        optional variants.
-        """
-        hints = get_type_hints(cls)
-        result: dict[str, Any] = {}
-
-        assert dataclasses.is_dataclass(cls)
-        for f in dataclasses.fields(cls):
-            if not f.init:
-                continue
-
-            field_type = hints.get(f.name, f.type)
-            env_key = cls._ENV_KEY_OVERRIDES.get(
-                f.name, f"HESTIA_{prefix}_{f.name.upper()}"
-            )
-
-            raw = environ.get(env_key)
-            if raw is None:
-                for legacy_key in cls._LEGACY_ALIASES.get(env_key, []):
-                    raw = environ.get(legacy_key)
-                    if raw is not None:
-                        warnings.warn(
-                            f"Legacy env key {legacy_key!r} is deprecated, "
-                            f"use {env_key!r}",
-                            DeprecationWarning,
-                            stacklevel=4,
-                        )
-                        break
-
-            if raw is None:
-                continue  # use dataclass default
-
-            # Empty string for non-str/non-Literal types means "use default"
-            if raw.strip() == "":
-                effective_type = field_type
-                if _is_optional(field_type):
-                    non_none = [a for a in get_args(field_type) if a is not type(None)]
-                    if len(non_none) == 1:
-                        effective_type = non_none[0]
-                if effective_type is str or (
-                    get_origin(effective_type) is Literal and "" in get_args(effective_type)
-                ):
-                    pass  # allow empty string
-                else:
-                    continue
-
-            # Skip complex nested types (sub-configs, dicts, etc.)
-            if dataclasses.is_dataclass(field_type) and isinstance(field_type, type):
-                continue
-            if get_origin(field_type) in (dict,):
-                continue
-
-            try:
-                value = _coerce_env_value(raw, field_type, f.name)
-            except ValueError as exc:
-                raise ValueError(f"{env_key}: {exc}") from exc
-
-            result[f.name] = value
-
-        return result
+DEFAULT_SOUL_MD_PATH = Path("SOUL.md")  # compiled identity default (ADR-0025)
 
 
 # ---------------------------------------------------------------------------
@@ -234,14 +25,12 @@ class IdentityConfig(_ConfigFromEnv):
 
     _ENV_PREFIX = "IDENTITY"
 
-    soul_path: Path | None = field(
-        default_factory=lambda: DEFAULT_SOUL_MD_PATH,
-    )  # None = disable; default reads SOUL.md in cwd (DEFAULT_SOUL_MD_PATH)
+    soul_path: Path | None = field(default_factory=lambda: DEFAULT_SOUL_MD_PATH)
     compiled_cache_path: Path = field(
         default_factory=lambda: Path(".hestia/compiled_identity.txt")
     )
-    max_tokens: int = 300  # Hard cap on compiled view size
-    recompile_on_change: bool = True  # Recompile if soul.md changes
+    max_tokens: int = 300
+    recompile_on_change: bool = True
 
     def __post_init__(self) -> None:
         if self.max_tokens < 0:
@@ -258,19 +47,13 @@ class InferenceConfig(_ConfigFromEnv):
 
     base_url: str = "http://localhost:8001"
     model_name: str = ""
-    # Per-slot context budget; should equal llama-server's --ctx-size / --parallel
     context_length: int = 8192
     default_reasoning_budget: int = 2048
     max_tokens: int = 1024
+    stream: bool = False
 
     def __post_init__(self) -> None:
-        # Reject the literal placeholder "dummy" at config-load: historically
-        # this slipped through and surfaced later as mystifying 404 / "model
-        # not found" errors from llama-server. Empty model_name is still
-        # allowed here (CLI/setup paths like `hestia doctor` lazily
-        # fall back to a placeholder string when they don't need real
-        # inference); the real-inference guard lives in
-        # InferenceClient.__init__.
+        # Reject literal "dummy" at config-load (see H-5).
         if self.model_name == "dummy" and os.environ.get("HESTIA_ALLOW_DUMMY_MODEL") != "1":
             raise ValueError(
                 "inference.model_name == 'dummy' is rejected at config-load — "
@@ -292,13 +75,7 @@ class SlotConfig(_ConfigFromEnv):
     _ENV_PREFIX = "SLOT"
 
     slot_dir: Path = field(default_factory=lambda: Path("slots"))
-    """Directory where llama-server persists slot snapshots. **Must match
-    `llama-server --slot-save-path`.** Hestia sends only the basename to
-    llama.cpp; llama-server writes the file here. Hestia itself does not
-    write to this directory — it is purely a declaration of where slot
-    files will land so that out-of-band cleanup (gc, TTL, etc.) knows
-    where to look.
-    """
+    """Directory for llama-server slot snapshots (must match --slot-save-path)."""
     pool_size: int = 4
 
 
@@ -319,7 +96,7 @@ class StorageConfig(_ConfigFromEnv):
 
     database_url: str = "sqlite+aiosqlite:///hestia.db"
     artifacts_dir: Path = field(default_factory=lambda: Path("artifacts"))
-    allowed_roots: list[str] = field(default_factory=lambda: ["."])
+    allowed_roots: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -344,14 +121,18 @@ class TelegramConfig(_ConfigFromEnv):
     long_poll_timeout_seconds: float = 30.0
     voice_messages: bool = False  # Phase A feature flag
 
+    def __repr__(self) -> str:
+        fields = []
+        for k, v in self.__dict__.items():
+            if k == "bot_token":
+                v = "***" if v else ""
+            fields.append(f"{k}={v!r}")
+        return f"{self.__class__.__name__}({', '.join(fields)})"
+
 
 @dataclass
 class MatrixConfig(_ConfigFromEnv):
-    """Configuration for the Matrix adapter.
-
-    Security: allowed_rooms is a whitelist. Empty list denies all inbound.
-    Session mapping: one Matrix room -> one Hestia session (room ID as platform_user).
-    """
+    """Matrix adapter configuration."""
 
     _ENV_PREFIX = "MATRIX"
 
@@ -366,18 +147,7 @@ class MatrixConfig(_ConfigFromEnv):
 
 @dataclass
 class TrustConfig(_ConfigFromEnv):
-    """How much latitude to grant the agent in headless contexts.
-
-    Hestia's threat model for personal-use deployments is "operator is the
-    only user; trust the model to act on operator's behalf." This differs
-    from multi-tenant SaaS. TrustConfig lets operators pick the posture that
-    matches their deployment.
-
-    Defaults here match the `paranoid` preset: safest posture for a fresh
-    install or OSS download. Operators should explicitly opt into `household`
-    or `developer` via `TrustConfig.household()` / `TrustConfig.developer()`
-    in their `config.py`.
-    """
+    """Trust posture for headless contexts (paranoid, household, developer)."""
 
     _ENV_PREFIX = "TRUST"
 
@@ -405,87 +175,82 @@ class TrustConfig(_ConfigFromEnv):
     # Allow scheduler ticks to trigger email_send.
     scheduler_email_send: bool = False
 
+    # Shell command patterns to block in the terminal tool (regex).
+    # Defense-in-depth: these are checked before execution regardless of
+    # confirmation status. Empty list means no additional blocking beyond
+    # the tool's built-in defaults.
+    blocked_shell_patterns: list[str] = field(default_factory=list)
+
     # Active trust preset name (paranoid, household, developer, etc.)
     preset: str | None = None
 
-    _PRESET_CACHE: ClassVar[dict[str, TrustConfig]] = {}
+    def is_paranoid(self) -> bool:
+        """Return True when this config matches the strictest trust posture.
+
+        Checks only the fields that distinguish paranoid from non-paranoid
+        presets so the comparison is semantic, not tied to ``__eq__``.
+        """
+        return (
+            self.auto_approve_tools == []
+            and not self.scheduler_shell_exec
+            and not self.subagent_shell_exec
+            and not self.subagent_write_local
+            and not self.subagent_email_send
+            and not self.scheduler_email_send
+            and self.blocked_shell_patterns == []
+        )
 
     @classmethod
     def paranoid(cls) -> TrustConfig:
-        """Strictest posture. Current default. Auto-approves nothing; scheduler
-        and subagents cannot shell or write."""
-        preset = "paranoid"
-        if preset not in cls._PRESET_CACHE:
-            cls._PRESET_CACHE[preset] = cls()
-        return cls._PRESET_CACHE[preset]
+        """Strictest posture."""
+        return cls()
 
     @classmethod
     def household(cls) -> TrustConfig:
-        """Recommended posture for single-operator personal deployments.
-        Auto-approves terminal and write_file on headless platforms;
-        scheduler and subagents can shell and write."""
-        preset = "household"
-        if preset not in cls._PRESET_CACHE:
-            cls._PRESET_CACHE[preset] = cls(
-                auto_approve_tools=["terminal", "write_file"],
-                scheduler_shell_exec=True,
-                subagent_shell_exec=True,
-                subagent_write_local=True,
-            )
-        return cls._PRESET_CACHE[preset]
+        """Recommended for single-operator personal deployments."""
+        return cls(
+            auto_approve_tools=["terminal", "write_file"],
+            scheduler_shell_exec=True,
+            subagent_shell_exec=True,
+            subagent_write_local=True,
+        )
 
     @classmethod
     def developer(cls) -> TrustConfig:
-        """Most permissive posture. Auto-approves everything;
-        all capabilities available everywhere. Intended for development/testing
-        only — do not use in a deployment exposed to other users."""
-        preset = "developer"
-        if preset not in cls._PRESET_CACHE:
-            cls._PRESET_CACHE[preset] = cls(
-                auto_approve_tools=["*"],  # wildcard — matches any tool name
-                scheduler_shell_exec=True,
-                subagent_shell_exec=True,
-                subagent_write_local=True,
-            )
-        return cls._PRESET_CACHE[preset]
+        """Most permissive posture (development/testing only).
+
+        WARNING: auto_approve_tools=[\"*\"] grants the LLM unrestricted access
+        to all tools including terminal and write_file. Use only in isolated
+        development environments.
+        """
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.warning(
+            "developer trust preset selected — all tools auto-approved. "
+            "This is dangerous outside a development environment."
+        )
+        return cls(
+            auto_approve_tools=["*"],  # wildcard — matches any tool name
+            scheduler_shell_exec=True,
+            subagent_shell_exec=True,
+            subagent_write_local=True,
+        )
 
     @classmethod
     def prompt_on_mobile(cls) -> TrustConfig:
-        """Mobile-confirmation posture.
-
-        Auto-approves nothing. Every ``requires_confirmation=True`` tool
-        routes through the platform's confirm callback before executing.
-        Whether the call blocks the conversation thread depends on the
-        platform (Telegram inline keyboards block; Matrix reply-pattern
-        does not).
-
-        Keeps the rest of the ``household`` defaults: both ``handoff`` and
-        ``compression`` are enabled, and scheduler / subagents can shell
-        and write.
-
-        Use this when you run Hestia on Telegram or Matrix and want an
-        explicit ✅/❌ prompt on your phone for ``terminal``, ``write_file``,
-        and ``email_send``.
-        """
-        preset = "prompt_on_mobile"
-        if preset not in cls._PRESET_CACHE:
-            cls._PRESET_CACHE[preset] = cls(
-                auto_approve_tools=[],
-                scheduler_shell_exec=True,
-                subagent_shell_exec=True,
-                subagent_write_local=True,
-            )
-        return cls._PRESET_CACHE[preset]
+        """Mobile-confirmation posture (household capabilities, prompts for approval)."""
+        return cls(
+            auto_approve_tools=[],
+            scheduler_shell_exec=True,
+            subagent_shell_exec=True,
+            subagent_write_local=True,
+        )
 
 
 @dataclass
 class HandoffConfig(_ConfigFromEnv):
-    """Controls session-close summary generation.
-
-    Disabled by default. When enabled, the orchestrator generates a
-    2-3 sentence summary at session close and stores it as a memory
-    entry with tag ``handoff``.
-    """
+    """Session-close summary generation (disabled by default)."""
 
     _ENV_PREFIX = "HANDOFF"
 
@@ -496,13 +261,7 @@ class HandoffConfig(_ConfigFromEnv):
 
 @dataclass
 class CompressionConfig(_ConfigFromEnv):
-    """Controls in-turn history compression on overflow.
-
-    Disabled by default. When enabled, the context builder calls a
-    :class:`~hestia.context.compressor.HistoryCompressor` on dropped
-    messages and splices the summary back into the effective system
-    prompt for that turn.
-    """
+    """In-turn history compression on overflow (disabled by default)."""
 
     _ENV_PREFIX = "COMPRESSION"
 
@@ -545,6 +304,26 @@ class EmailConfig(_ConfigFromEnv):
             return val
         return self.password
 
+    def __repr__(self) -> str:
+        fields = []
+        for k, v in self.__dict__.items():
+            if k in ("password", "resolved_password"):
+                v = "***" if v else ""
+            fields.append(f"{k}={v!r}")
+        return f"{self.__class__.__name__}({', '.join(fields)})"
+
+
+@dataclass
+class RateLimitConfig(_ConfigFromEnv):
+    """Per-session rate limiting configuration."""
+
+    _ENV_PREFIX = "RATE_LIMIT"
+
+    enabled: bool = False
+    requests_per_minute: float = 30.0
+    burst_size: int = 5
+    max_buckets: int = 10_000
+
 
 @dataclass
 class SecurityConfig(_ConfigFromEnv):
@@ -566,6 +345,7 @@ class PolicyConfig(_ConfigFromEnv):
 
     delegation_keywords: tuple[str, ...] | None = None
     research_keywords: tuple[str, ...] | None = None
+    max_tool_calls_per_turn: int = 10
 
 
 @dataclass
@@ -584,7 +364,7 @@ class StyleConfig(_ConfigFromEnv):
 
         try:
             croniter(self.cron)
-        except Exception as exc:
+        except ValueError as exc:
             raise ValueError(
                 f"StyleConfig.cron is not a valid cron expression: {self.cron}"
             ) from exc
@@ -609,7 +389,7 @@ class ReflectionConfig(_ConfigFromEnv):
 
         try:
             croniter(self.cron)
-        except Exception as exc:
+        except ValueError as exc:
             raise ValueError(
                 f"ReflectionConfig.cron is not a valid cron expression: {self.cron}"
             ) from exc
@@ -634,12 +414,7 @@ class VoiceConfig(_ConfigFromEnv):
 
 @dataclass
 class WebSearchConfig(_ConfigFromEnv):
-    """Configuration for the web_search tool.
-
-    Default `provider=""` disables the tool entirely — it won't register
-    in the tool registry if unconfigured. Operators opt in by setting
-    provider + api_key in their config.py.
-    """
+    """web_search tool configuration (provider=\"\" disables)."""
 
     _ENV_PREFIX = "WEB_SEARCH"
 
@@ -651,48 +426,292 @@ class WebSearchConfig(_ConfigFromEnv):
     time_range: str | None = None  # Tavily: "day" | "week" | "month" | "year" | None
 
 
+# ---------------------------------------------------------------------------
+# Grouped config containers
+# ---------------------------------------------------------------------------
+
+
 @dataclass
-class HestiaConfig(_ConfigFromEnv):
-    """Top-level Hestia configuration.
-
-    CLI options override values set here. Config files are loaded
-    with HestiaConfig.from_file() and merged with CLI overrides.
-    """
-
-    _ENV_PREFIX = "HESTIA"
+class CoreConfig:
+    """Core engine and infrastructure configuration."""
 
     inference: InferenceConfig = field(default_factory=InferenceConfig)
     slots: SlotConfig = field(default_factory=SlotConfig)
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
+    identity: IdentityConfig = field(default_factory=IdentityConfig)
+
+
+@dataclass
+class PlatformConfig:
+    """Platform adapter configuration."""
+
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
     matrix: MatrixConfig = field(default_factory=MatrixConfig)
-    identity: IdentityConfig = field(default_factory=IdentityConfig)
-    trust: TrustConfig = field(default_factory=TrustConfig)
+    email: EmailConfig = field(default_factory=EmailConfig)
+    voice: VoiceConfig = field(default_factory=VoiceConfig)
+
+
+@dataclass
+class FeatureConfig:
+    """Feature subsystem configuration."""
+
     web_search: WebSearchConfig = field(default_factory=WebSearchConfig)
     handoff: HandoffConfig = field(default_factory=HandoffConfig)
     compression: CompressionConfig = field(default_factory=CompressionConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
-    email: EmailConfig = field(default_factory=EmailConfig)
     reflection: ReflectionConfig = field(default_factory=ReflectionConfig)
     style: StyleConfig = field(default_factory=StyleConfig)
     policy: PolicyConfig = field(default_factory=PolicyConfig)
-    voice: VoiceConfig = field(default_factory=VoiceConfig)
+    rate_limit: RateLimitConfig = field(default_factory=RateLimitConfig)
+
+
+# ---------------------------------------------------------------------------
+# Top-level config
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class HestiaConfig(_ConfigFromEnv):
+    """Top-level Hestia configuration."""
+
+    _ENV_PREFIX = "HESTIA"
+
+    core: CoreConfig = field(default_factory=CoreConfig)
+    platforms: PlatformConfig = field(default_factory=PlatformConfig)
+    features: FeatureConfig = field(default_factory=FeatureConfig)
+    trust: TrustConfig = field(default_factory=TrustConfig)
     trust_overrides: dict[str, TrustConfig] = field(default_factory=dict)
     system_prompt: str = "You are a helpful assistant."
     max_iterations: int = 10
     verbose: bool = False
+    use_curl_cffi_fallback: bool = False
+
+    def __init__(
+        self,
+        *,
+        core: CoreConfig | None = None,
+        platforms: PlatformConfig | None = None,
+        features: FeatureConfig | None = None,
+        trust: TrustConfig | None = None,
+        trust_overrides: dict[str, TrustConfig] | None = None,
+        system_prompt: str = "You are a helpful assistant.",
+        max_iterations: int = 10,
+        verbose: bool = False,
+        use_curl_cffi_fallback: bool = False,
+        # Deprecated flat fields (backward compat)
+        inference: InferenceConfig | None = None,
+        slots: SlotConfig | None = None,
+        scheduler: SchedulerConfig | None = None,
+        storage: StorageConfig | None = None,
+        identity: IdentityConfig | None = None,
+        telegram: TelegramConfig | None = None,
+        matrix: MatrixConfig | None = None,
+        email: EmailConfig | None = None,
+        voice: VoiceConfig | None = None,
+        web_search: WebSearchConfig | None = None,
+        handoff: HandoffConfig | None = None,
+        compression: CompressionConfig | None = None,
+        security: SecurityConfig | None = None,
+        reflection: ReflectionConfig | None = None,
+        style: StyleConfig | None = None,
+        policy: PolicyConfig | None = None,
+        rate_limit: RateLimitConfig | None = None,
+    ) -> None:
+        if core is None:
+            core = CoreConfig(
+                inference=inference or InferenceConfig(),
+                slots=slots or SlotConfig(),
+                scheduler=scheduler or SchedulerConfig(),
+                storage=storage or StorageConfig(),
+                identity=identity or IdentityConfig(),
+            )
+        if platforms is None:
+            platforms = PlatformConfig(
+                telegram=telegram or TelegramConfig(),
+                matrix=matrix or MatrixConfig(),
+                email=email or EmailConfig(),
+                voice=voice or VoiceConfig(),
+            )
+        if features is None:
+            features = FeatureConfig(
+                web_search=web_search or WebSearchConfig(),
+                handoff=handoff or HandoffConfig(),
+                compression=compression or CompressionConfig(),
+                security=security or SecurityConfig(),
+                reflection=reflection or ReflectionConfig(),
+                style=style or StyleConfig(),
+                policy=policy or PolicyConfig(),
+                rate_limit=rate_limit or RateLimitConfig(),
+            )
+        self.core = core
+        self.platforms = platforms
+        self.features = features
+        self.trust = trust or TrustConfig()
+        self.trust_overrides = trust_overrides if trust_overrides is not None else {}
+        self.system_prompt = system_prompt
+        self.max_iterations = max_iterations
+        self.verbose = verbose
+        self.use_curl_cffi_fallback = use_curl_cffi_fallback
+
+    # -- Deprecated flat aliases (delegate to grouped versions) -----------------
+
+    @property
+    def inference(self) -> InferenceConfig:
+        """Deprecated: use core.inference instead."""
+        return self.core.inference
+
+    @inference.setter
+    def inference(self, value: InferenceConfig) -> None:
+        self.core.inference = value
+
+    @property
+    def slots(self) -> SlotConfig:
+        """Deprecated: use core.slots instead."""
+        return self.core.slots
+
+    @slots.setter
+    def slots(self, value: SlotConfig) -> None:
+        self.core.slots = value
+
+    @property
+    def scheduler(self) -> SchedulerConfig:
+        """Deprecated: use core.scheduler instead."""
+        return self.core.scheduler
+
+    @scheduler.setter
+    def scheduler(self, value: SchedulerConfig) -> None:
+        self.core.scheduler = value
+
+    @property
+    def storage(self) -> StorageConfig:
+        """Deprecated: use core.storage instead."""
+        return self.core.storage
+
+    @storage.setter
+    def storage(self, value: StorageConfig) -> None:
+        self.core.storage = value
+
+    @property
+    def identity(self) -> IdentityConfig:
+        """Deprecated: use core.identity instead."""
+        return self.core.identity
+
+    @identity.setter
+    def identity(self, value: IdentityConfig) -> None:
+        self.core.identity = value
+
+    @property
+    def telegram(self) -> TelegramConfig:
+        """Deprecated: use platforms.telegram instead."""
+        return self.platforms.telegram
+
+    @telegram.setter
+    def telegram(self, value: TelegramConfig) -> None:
+        self.platforms.telegram = value
+
+    @property
+    def matrix(self) -> MatrixConfig:
+        """Deprecated: use platforms.matrix instead."""
+        return self.platforms.matrix
+
+    @matrix.setter
+    def matrix(self, value: MatrixConfig) -> None:
+        self.platforms.matrix = value
+
+    @property
+    def email(self) -> EmailConfig:
+        """Deprecated: use platforms.email instead."""
+        return self.platforms.email
+
+    @email.setter
+    def email(self, value: EmailConfig) -> None:
+        self.platforms.email = value
+
+    @property
+    def voice(self) -> VoiceConfig:
+        """Deprecated: use platforms.voice instead."""
+        return self.platforms.voice
+
+    @voice.setter
+    def voice(self, value: VoiceConfig) -> None:
+        self.platforms.voice = value
+
+    @property
+    def web_search(self) -> WebSearchConfig:
+        """Deprecated: use features.web_search instead."""
+        return self.features.web_search
+
+    @web_search.setter
+    def web_search(self, value: WebSearchConfig) -> None:
+        self.features.web_search = value
+
+    @property
+    def handoff(self) -> HandoffConfig:
+        """Deprecated: use features.handoff instead."""
+        return self.features.handoff
+
+    @handoff.setter
+    def handoff(self, value: HandoffConfig) -> None:
+        self.features.handoff = value
+
+    @property
+    def compression(self) -> CompressionConfig:
+        """Deprecated: use features.compression instead."""
+        return self.features.compression
+
+    @compression.setter
+    def compression(self, value: CompressionConfig) -> None:
+        self.features.compression = value
+
+    @property
+    def security(self) -> SecurityConfig:
+        """Deprecated: use features.security instead."""
+        return self.features.security
+
+    @security.setter
+    def security(self, value: SecurityConfig) -> None:
+        self.features.security = value
+
+    @property
+    def reflection(self) -> ReflectionConfig:
+        """Deprecated: use features.reflection instead."""
+        return self.features.reflection
+
+    @reflection.setter
+    def reflection(self, value: ReflectionConfig) -> None:
+        self.features.reflection = value
+
+    @property
+    def style(self) -> StyleConfig:
+        """Deprecated: use features.style instead."""
+        return self.features.style
+
+    @style.setter
+    def style(self, value: StyleConfig) -> None:
+        self.features.style = value
+
+    @property
+    def policy(self) -> PolicyConfig:
+        """Deprecated: use features.policy instead."""
+        return self.features.policy
+
+    @policy.setter
+    def policy(self, value: PolicyConfig) -> None:
+        self.features.policy = value
+
+    @property
+    def rate_limit(self) -> RateLimitConfig:
+        """Deprecated: use features.rate_limit instead."""
+        return self.features.rate_limit
+
+    @rate_limit.setter
+    def rate_limit(self, value: RateLimitConfig) -> None:
+        self.features.rate_limit = value
 
     @classmethod
     def from_file(cls, path: Path) -> HestiaConfig:
-        """Load config from a Python file.
-
-        The file must define a `config` variable of type HestiaConfig.
-
-        .. note::
-            The loaded module is executed with ``exec_module`` — treat config
-            files as trusted operator-authored code. See ``SECURITY.md``.
-        """
+        """Load config from a Python file (must define `config` variable)."""
         import importlib.util
 
         if not path.exists():
@@ -710,63 +729,12 @@ class HestiaConfig(_ConfigFromEnv):
                 f"got {type(config).__name__}"
             )
         validate_inference_model_name(config.inference.model_name)
-        # Guard against post-instantiation mutation
-        if config.inference.max_tokens < 0:
-            raise ValueError(
-                f"InferenceConfig.max_tokens must be non-negative, "
-                f"got {config.inference.max_tokens}"
-            )
-        if config.identity.max_tokens < 0:
-            raise ValueError(
-                f"IdentityConfig.max_tokens must be non-negative, "
-                f"got {config.identity.max_tokens}"
-            )
-        from croniter import croniter
-
-        try:
-            croniter(config.style.cron)
-        except Exception as exc:
-            raise ValueError(
-                f"StyleConfig.cron is not a valid cron expression: {config.style.cron}"
-            ) from exc
-        try:
-            croniter(config.reflection.cron)
-        except Exception as exc:
-            raise ValueError(
-                f"ReflectionConfig.cron is not a valid cron expression: "
-                f"{config.reflection.cron}"
-            ) from exc
         return config
-
-    _PRESET_ENABLE_CACHE: ClassVar[dict[tuple[Any, ...], bool]] = {}
 
     @classmethod
     def for_trust(cls, trust: TrustConfig) -> HestiaConfig:
-        """Create a config with handoff/compression implied by the trust preset.
-
-        - ``paranoid()`` → handoff=False, compression=False
-        - ``household()`` → handoff=True, compression=True
-        - ``developer()`` → handoff=True, compression=True
-
-        Example::
-
-            config = HestiaConfig.for_trust(TrustConfig.household())
-        """
-        key = (
-            tuple(trust.auto_approve_tools),
-            trust.scheduler_shell_exec,
-            trust.subagent_shell_exec,
-            trust.subagent_write_local,
-            trust.subagent_email_send,
-            trust.scheduler_email_send,
-            trust.preset,
-        )
-        if key not in cls._PRESET_ENABLE_CACHE:
-            cls._PRESET_ENABLE_CACHE[key] = trust not in (
-                TrustConfig.paranoid(),
-                TrustConfig(),
-            )
-        enable = cls._PRESET_ENABLE_CACHE[key]
+        """Create a config with handoff/compression implied by trust preset."""
+        enable = not trust.is_paranoid()
         return cls(
             trust=trust,
             handoff=HandoffConfig(enabled=enable),

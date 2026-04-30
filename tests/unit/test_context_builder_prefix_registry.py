@@ -7,7 +7,7 @@ import inspect
 import pytest
 
 from hestia.context.builder import ContextBuilder
-from hestia.core.types import Message, Session, SessionState, SessionTemperature
+from hestia.core.types import Session, SessionState, SessionTemperature
 from hestia.policy.default import DefaultPolicyEngine
 
 
@@ -49,7 +49,6 @@ async def test_layers_in_documented_order(builder, session):
     """All four prefixes appear in the documented canonical order."""
     builder.set_identity_prefix("[IDENTITY]")
     builder.set_memory_epoch_prefix("[MEMORY]")
-    builder.set_skill_index_prefix("[SKILLS]")
     builder.set_style_prefix("[STYLE] tone: casual.")
 
     result = await builder.build(
@@ -65,7 +64,6 @@ async def test_layers_in_documented_order(builder, session):
     assert lines == [
         "[IDENTITY]",
         "[MEMORY]",
-        "[SKILLS]",
         "[STYLE] tone: casual.",
         "Base prompt",
     ]
@@ -110,5 +108,4 @@ def test_build_signature_no_prefix_kwargs():
     params = sig.parameters
     assert "identity_prefix" not in params
     assert "memory_epoch_prefix" not in params
-    assert "skill_index_prefix" not in params
     assert "style_prefix" not in params

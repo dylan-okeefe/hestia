@@ -2,7 +2,7 @@
 
 import pytest
 
-from hestia.memory.store import Memory, MemoryStore
+from hestia.memory.store import Memory, MemoryStore, _sanitize_fts5_query
 from hestia.persistence.db import Database
 
 
@@ -109,13 +109,13 @@ class TestMemoryStore:
         mem = Memory(
             id="mem_test",
             content="Test content",
-            tags="tag1 tag2",
+            tags=["tag1", "tag2"],
             created_at=datetime.now(),
             session_id="sess_123",
         )
         assert mem.id == "mem_test"
         assert mem.content == "Test content"
-        assert mem.tags == "tag1 tag2"
+        assert mem.tags == ["tag1", "tag2"]
         assert mem.session_id == "sess_123"
 
     @pytest.mark.asyncio
@@ -179,3 +179,53 @@ class TestMemoryStore:
         results = await memory_store.list_memories(tag="docs")
         assert len(results) == 1
         assert "Documentation" in results[0].content
+
+
+class TestFts5Sanitization:
+    """Tests for FTS5 query sanitization."""
+
+    def test_hyphenated_query_gets_quoted(self):
+        assert _sanitize_fts5_query("western-mass-weather") == '"western-mass-weather"'
+
+    def test_colon_query_gets_quoted(self):
+        assert _sanitize_fts5_query("tag:value") == '"tag:value"'
+
+    def test_simple_query_unchanged(self):
+        assert _sanitize_fts5_query("simple query") == "simple query"
+
+    def test_already_quoted_unchanged(self):
+        assert _sanitize_fts5_query('"already quoted"') == '"already quoted"'
+
+    def test_explicit_operators_unchanged(self):
+        assert _sanitize_fts5_query("foo AND bar") == "foo AND bar"
+        assert _sanitize_fts5_query("foo OR bar") == "foo OR bar"
+        assert _sanitize_fts5_query("foo NOT bar") == "foo NOT bar"
+
+
+class TestMemoryStoreHyphenSearch:
+    @pytest.fixture
+    async def memory_store(self, tmp_path):
+        """Create a MemoryStore with a fresh in-memory database."""
+        db = Database("sqlite+aiosqlite:///:memory:")
+        await db.connect()
+        await db.create_tables()
+        store = MemoryStore(db)
+        await store.create_table()
+        yield store
+        await db.close()
+
+    @pytest.mark.asyncio
+    async def test_search_hyphenated_tag_does_not_crash(self, memory_store):
+        """Searching with hyphenated terms should not raise 'no such column'."""
+        await memory_store.save(
+            "Weather report for western mass",
+            tags=["western-mass-weather"],
+            platform="telegram",
+            platform_user="123",
+        )
+        results = await memory_store.search(
+            "western-mass-weather",
+            platform="telegram",
+            platform_user="123",
+        )
+        assert len(results) == 1

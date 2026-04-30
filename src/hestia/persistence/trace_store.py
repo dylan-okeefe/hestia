@@ -51,8 +51,8 @@ class TraceStore:
     The ``traces`` and ``egress_events`` tables are declared in
     :mod:`hestia.persistence.schema` and created by
     :meth:`Database.create_tables`. :meth:`create_table` here is kept as a
-    no-op shim for backward compatibility with callers that predate the H-10
-    DDL consolidation (2026-04-20). New code should rely on
+    no-op shim for backward compatibility with callers that predate the DDL
+    consolidation. New code should rely on
     ``Database.create_tables`` exclusively.
     """
 
@@ -65,7 +65,7 @@ class TraceStore:
         Schema creation now lives in
         :meth:`hestia.persistence.db.Database.create_tables` via the shared
         SQLAlchemy metadata. The duplicated raw DDL that lived here was the
-        source of drift flagged by the Copilot audit (H-10, 2026-04-20).
+        source of drift flagged by the Copilot audit.
         """
         return None
 
@@ -106,28 +106,30 @@ class TraceStore:
             await conn.commit()
 
     async def list_recent(
-        self, limit: int = 20, outcome: str | None = None
+        self, limit: int = 20, outcome: str | None = None, session_id: str | None = None
     ) -> list[TraceRecord]:
-        """List recent traces with optional outcome filter."""
+        """List recent traces with optional outcome and session filters."""
+        clauses: list[str] = []
+        params: dict[str, Any] = {"limit": limit}
+
         if outcome:
-            sql = sa.text(
-                "SELECT id, session_id, turn_id, started_at, ended_at, "
-                "user_input_summary, tools_called, tool_call_count, delegated, outcome, "
-                "artifact_handles, prompt_tokens, completion_tokens, reasoning_tokens, "
-                "total_duration_ms "
-                "FROM traces WHERE outcome = :outcome "
-                "ORDER BY started_at DESC LIMIT :limit"
-            )
-            params = {"outcome": outcome, "limit": limit}
-        else:
-            sql = sa.text(
-                "SELECT id, session_id, turn_id, started_at, ended_at, "
-                "user_input_summary, tools_called, tool_call_count, delegated, outcome, "
-                "artifact_handles, prompt_tokens, completion_tokens, reasoning_tokens, "
-                "total_duration_ms "
-                "FROM traces ORDER BY started_at DESC LIMIT :limit"
-            )
-            params = {"limit": limit}
+            clauses.append("outcome = :outcome")
+            params["outcome"] = outcome
+        if session_id:
+            clauses.append("session_id = :session_id")
+            params["session_id"] = session_id
+
+        base_sql = (
+            "SELECT id, session_id, turn_id, started_at, ended_at, "
+            "user_input_summary, tools_called, tool_call_count, delegated, outcome, "
+            "artifact_handles, prompt_tokens, completion_tokens, reasoning_tokens, "
+            "total_duration_ms FROM traces"
+        )
+        if clauses:
+            base_sql += " WHERE " + " AND ".join(clauses)
+        base_sql += " ORDER BY started_at DESC LIMIT :limit"
+
+        sql = sa.text(base_sql)
 
         async with self._db.engine.connect() as conn:
             result = await conn.execute(sql, params)
@@ -181,7 +183,7 @@ class TraceStore:
         """
         try:
             domain = urlparse(url).hostname or "unknown"
-        except Exception:
+        except ValueError:
             domain = "unknown"
 
         sql = sa.text(

@@ -59,11 +59,11 @@ async def test_tool_chain_unbound_error():
     )
 
     # Mock _create_turn to return our mock turn
-    with patch.object(orchestrator, '_create_turn', return_value=mock_turn):
-        # Mock _persist_turn
-        with patch.object(orchestrator, '_persist_turn', AsyncMock()):
-            # Mock _transition
-            with patch.object(orchestrator, '_transition', AsyncMock()):
+    with (
+        patch.object(orchestrator, '_create_turn', return_value=mock_turn),
+        patch.object(orchestrator, '_persist_turn', AsyncMock()),
+        patch.object(orchestrator, '_transition', AsyncMock()),
+    ):
                 # Test that the error handler doesn't crash with UnboundLocalError
                 user_message = Message(role="user", content="test message")
                 respond_callback = AsyncMock()
@@ -75,11 +75,11 @@ async def test_tool_chain_unbound_error():
                     respond_callback=respond_callback,
                 )
 
-                # Verify that respond_callback was called with the error
+                # Verify that respond_callback was called with a sanitized error
                 respond_callback.assert_called_once()
                 call_args = respond_callback.call_args[0][0]
                 assert "Error:" in call_args
-                assert "build failed" in call_args
+                assert "Something went wrong" in call_args
 
                 # Verify failure store was called with tool_chain="[]"
                 mock_failure_store.record.assert_called_once()
@@ -137,9 +137,11 @@ async def test_failure_bundle_enriched_fields_populated():
         trace_store=mock_trace_store,
     )
 
-    with patch.object(orchestrator, '_create_turn', return_value=mock_turn):
-        with patch.object(orchestrator, '_persist_turn', AsyncMock()):
-            with patch.object(orchestrator, '_transition', AsyncMock()):
+    with (
+        patch.object(orchestrator, '_create_turn', return_value=mock_turn),
+        patch.object(orchestrator, '_persist_turn', AsyncMock()),
+        patch.object(orchestrator, '_transition', AsyncMock()),
+    ):
                 long_content = "x" * 250
                 user_message = Message(role="user", content=long_content)
                 respond_callback = AsyncMock()

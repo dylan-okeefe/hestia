@@ -56,10 +56,11 @@ class TestHappyPath:
         assert extra_truncated == 0
         assert updated_included == included
 
-        # Summary message should be at index 1 (right after system)
-        assert messages[1].role == "system"
-        assert "PRIOR CONTEXT SUMMARY" in messages[1].content
-        assert "Test summary" in messages[1].content
+        # Summary is merged into the system prompt so strict templates
+        # (e.g. Qwen) never see a second system message.
+        assert messages[0].role == "system"
+        assert "PRIOR CONTEXT SUMMARY" in messages[0].content
+        assert "Test summary" in messages[0].content
 
         compressor.summarize.assert_called_once_with(dropped)
 

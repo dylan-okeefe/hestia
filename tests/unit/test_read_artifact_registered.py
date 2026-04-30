@@ -38,7 +38,7 @@ class TestReadArtifactRegistered:
             # Let's use a different approach: mock and capture.
 
     def test_tools_registered_via_context(self) -> None:
-        """Bootstrap CliAppContext and verify both tools are in the registry."""
+        """Bootstrap AppContext and verify both tools are in the registry."""
         from hestia.artifacts.store import ArtifactStore
         from hestia.config import HestiaConfig
         from hestia.memory import MemoryStore

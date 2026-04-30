@@ -168,9 +168,10 @@ class TestEmailAdapterConnectionErrors:
         mock_imap.return_value.login = MagicMock(return_value=("OK", [b"LOGIN completed"]))
 
         async def _run() -> None:
-            with patch("hestia.email.adapter.imaplib.IMAP4_SSL", mock_imap):
-                with pytest.raises(RuntimeError):
-                    await adapter.send_draft("123")
+            with patch("hestia.email.adapter.imaplib.IMAP4_SSL", mock_imap), pytest.raises(
+                RuntimeError
+            ):
+                await adapter.send_draft("123")
 
         import asyncio
 

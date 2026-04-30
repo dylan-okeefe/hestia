@@ -81,6 +81,7 @@ class TestTelegramAdapterAsync:
         mock_bot.send_message.assert_called_once_with(
             chat_id=12345,
             text="Hello, world!",
+            parse_mode="HTML",
         )
         assert result == "42"
 
@@ -98,7 +99,7 @@ class TestTelegramAdapterAsync:
         # First edit
         start_time = asyncio.get_event_loop().time()
         await adapter.edit_message("12345", "100", "First edit")
-        first_edit_time = asyncio.get_event_loop().time() - start_time
+        asyncio.get_event_loop().time() - start_time
 
         # Second edit immediately - should be rate limited
         start_time = asyncio.get_event_loop().time()
@@ -247,6 +248,7 @@ class TestTelegramAdapterAsync:
         mock_bot.send_message.assert_called_once_with(
             chat_id=12345,
             text="⚠️ Something went wrong",
+            parse_mode="HTML",
         )
 
     @pytest.mark.asyncio
@@ -264,6 +266,7 @@ class TestTelegramAdapterAsync:
         mock_bot.send_message.assert_called_once_with(
             chat_id=12345,
             text="⚠️ Context budget exceeded",
+            parse_mode="HTML",
         )
 
     @pytest.mark.asyncio
@@ -347,3 +350,107 @@ class TestTelegramAdapterAsync:
         await adapter._handle_start(mock_update, None)
 
         mock_message.reply_text.assert_called_once_with("Not authorized.")
+
+
+class TestTelegramAdapterStreaming:
+    """Tests for TelegramAdapter progressive streaming delivery."""
+
+    @pytest.mark.asyncio
+    async def test_stream_callback_sends_first_message_at_20_chars(
+        self,
+        adapter: TelegramAdapter,
+    ) -> None:
+        """First chunk is buffered until at least 20 chars accumulated."""
+        mock_app = MagicMock(spec=Application)
+        mock_bot = AsyncMock(spec=Bot)
+        mock_app.bot = mock_bot
+        adapter._app = mock_app
+
+        callback = adapter._make_stream_callback("12345")
+
+        await callback("Hello")
+        mock_bot.send_message.assert_not_called()
+
+        await callback(" world! This is long enough.")
+        mock_bot.send_message.assert_called_once_with(
+            chat_id=12345,
+            text="Hello world! This is long enough.",
+            parse_mode="HTML",
+        )
+
+    @pytest.mark.asyncio
+    async def test_stream_callback_sends_first_message_after_500ms(
+        self,
+        adapter: TelegramAdapter,
+    ) -> None:
+        """First chunk is buffered until 500 ms have elapsed."""
+        mock_app = MagicMock(spec=Application)
+        mock_bot = AsyncMock(spec=Bot)
+        mock_app.bot = mock_bot
+        adapter._app = mock_app
+
+        callback = adapter._make_stream_callback("12345")
+
+        await callback("Hi")
+        mock_bot.send_message.assert_not_called()
+
+        await asyncio.sleep(0.6)
+        await callback("!")
+        mock_bot.send_message.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_stream_callback_rate_limits_edits(
+        self,
+        adapter: TelegramAdapter,
+    ) -> None:
+        """Subsequent edits are rate-limited to 1.5 s."""
+        mock_app = MagicMock(spec=Application)
+        mock_bot = AsyncMock(spec=Bot)
+        mock_message = MagicMock(spec=Message)
+        mock_message.message_id = 42
+        mock_bot.send_message = AsyncMock(return_value=mock_message)
+        mock_app.bot = mock_bot
+        adapter._app = mock_app
+
+        callback = adapter._make_stream_callback("12345")
+
+        # First message triggers immediately (>= 20 chars)
+        await callback("This is a long first message!!")
+        assert mock_bot.send_message.call_count == 1
+
+        # Immediate edit should be skipped
+        await callback(" more")
+        mock_bot.edit_message_text.assert_not_called()
+
+        # After 1.5 s, edit should go through
+        await asyncio.sleep(1.5)
+        await callback(" text")
+        mock_bot.edit_message_text.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_stream_callback_uses_edit_for_subsequent_chunks(
+        self,
+        adapter: TelegramAdapter,
+    ) -> None:
+        """After first message, subsequent chunks trigger edit_message."""
+        mock_app = MagicMock(spec=Application)
+        mock_bot = AsyncMock(spec=Bot)
+        mock_message = MagicMock(spec=Message)
+        mock_message.message_id = 42
+        mock_bot.send_message = AsyncMock(return_value=mock_message)
+        mock_app.bot = mock_bot
+        adapter._app = mock_app
+
+        callback = adapter._make_stream_callback("12345")
+
+        await callback("First message is long enough.")
+        assert mock_bot.send_message.call_count == 1
+
+        await asyncio.sleep(1.5)
+        await callback(" Added text.")
+        mock_bot.edit_message_text.assert_called_once_with(
+            chat_id=12345,
+            message_id=42,
+            text="First message is long enough. Added text.",
+            parse_mode="HTML",
+        )

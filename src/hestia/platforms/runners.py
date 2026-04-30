@@ -113,6 +113,9 @@ async def run_platform(
     app.set_confirm_callback(confirm_callback)
     orchestrator = app.make_orchestrator()
 
+    # Eagerly warm up context builder to avoid first-turn latency
+    await app.context_builder.warm_up()
+
     # Inject voice deps into Telegram adapter when voice messages are enabled
     if isinstance(adapter, TelegramAdapter) and config.telegram.voice_messages:
         adapter.set_voice_deps(
@@ -144,7 +147,21 @@ async def run_platform(
 
             user_message = Message(role="user", content=text)
 
+            stream_callback = None
+            if getattr(config.inference, "stream", False) and hasattr(
+                adapter, "_make_stream_callback"
+            ):
+                stream_callback = adapter._make_stream_callback(platform_user)
+
             async def respond(response_text: str) -> None:
+                if stream_callback is not None:
+                    state = getattr(adapter, "_stream_states", {}).get(
+                        platform_user, {}
+                    )
+                    msg_id = state.get("message_id")
+                    if msg_id is not None:
+                        await adapter.edit_message(platform_user, msg_id, response_text)
+                        return
                 await adapter.send_message(platform_user, response_text)
 
             await orchestrator.process_turn(
@@ -154,8 +171,9 @@ async def run_platform(
                 system_prompt=config.system_prompt,
                 platform=adapter,
                 platform_user=platform_user,
+                stream_callback=stream_callback,
             )
-        except Exception as e:  # Outermost boundary — intentionally broad
+        except Exception as e:  # noqa: BLE001 — outermost boundary — intentionally broad
             logger.exception("Turn failed for %s %s", user_label, platform_user)
             await adapter.send_error(platform_user, f"Turn failed: {e}")
         finally:

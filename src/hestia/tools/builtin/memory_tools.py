@@ -1,30 +1,16 @@
 """Memory tools — search and save to long-term memory."""
 
-import contextvars
 from collections.abc import Callable, Coroutine
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any
 
 from hestia.memory.store import MemoryStore
-from hestia.runtime_context import current_platform, current_platform_user
+from hestia.runtime_context import (
+    current_platform,
+    current_platform_user,
+    current_session_id,
+)
 from hestia.tools.capabilities import MEMORY_READ, MEMORY_WRITE
 from hestia.tools.metadata import tool
-
-if TYPE_CHECKING:
-    from hestia.persistence.trace_store import TraceStore
-
-# Context variable to hold the current session ID during tool execution.
-# This is set by the orchestrator at the start of process_turn and cleared
-# in a finally block. Tools can read this to associate saves with sessions.
-current_session_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
-    "current_session_id", default=None
-)
-
-# Context variable to hold the current TraceStore during tool execution.
-# Set by the orchestrator when a turn starts so that network tools can
-# record egress events.
-current_trace_store: contextvars.ContextVar["TraceStore | None"] = contextvars.ContextVar(
-    "current_trace_store", default=None
-)
 
 
 def make_search_memory_tool(
@@ -34,7 +20,8 @@ def make_search_memory_tool(
 
     @tool(
         name="search_memory",
-        public_description="Search your long-term memory for previously saved notes.",
+        public_description="Search long-term memory. Params: query (str), limit (int, default 5).",
+
         tags=["memory", "builtin"],
         capabilities=[MEMORY_READ],
     )
@@ -55,12 +42,13 @@ def make_search_memory_tool(
 
         lines = []
         for mem in results:
-            tags = f" [{mem.tags}]" if mem.tags else ""
+            tags_str = ", ".join(mem.tags) if mem.tags else ""
+            tags = f" [{tags_str}]" if tags_str else ""
             date = mem.created_at.strftime("%Y-%m-%d %H:%M")
             lines.append(f"[{mem.id}] ({date}){tags} {mem.content}")
         return "\n".join(lines)
 
-    return cast("Callable[..., Coroutine[Any, Any, str]]", search_memory)
+    return search_memory
 
 
 def make_save_memory_tool(
@@ -70,21 +58,28 @@ def make_save_memory_tool(
 
     @tool(
         name="save_memory",
-        public_description="Save a note to long-term memory for future recall.",
+        public_description="Save a note to memory. Params: content (str), tags (str or list, default '').",
+
         tags=["memory", "builtin"],
         capabilities=[MEMORY_WRITE],
     )
-    async def save_memory(content: str, tags: str = "") -> str:
+    async def save_memory(content: str, tags: str | list[str] = "") -> str:
         """Save a note to long-term memory.
 
         Args:
             content: The text content to remember
-            tags: Space-separated tags for categorization (e.g., "project todo")
+            tags: Comma-separated tags or list of tags for categorization
+                  (e.g., "project, todo" or ["project", "todo"])
 
         Returns:
             Confirmation with the memory ID.
         """
-        tag_list = tags.split() if tags else []
+        if isinstance(tags, list):
+            tag_list = tags
+        elif tags:
+            tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+        else:
+            tag_list = []
         # Associate with current session and user identity (set by orchestrator)
         session_id = current_session_id.get()
         platform = current_platform.get()
@@ -96,7 +91,7 @@ def make_save_memory_tool(
         preview = content[:80] + ("..." if len(content) > 80 else "")
         return f"Saved memory {mem.id}: {preview}"
 
-    return cast("Callable[..., Coroutine[Any, Any, str]]", save_memory)
+    return save_memory
 
 
 def make_list_memories_tool(
@@ -106,7 +101,8 @@ def make_list_memories_tool(
 
     @tool(
         name="list_memories",
-        public_description="List recent memories, optionally filtered by tag.",
+        public_description="List recent memories. Params: tag (str, default ''), limit (int, default 20).",
+
         tags=["memory", "builtin"],
         capabilities=[MEMORY_READ],
     )
@@ -129,12 +125,13 @@ def make_list_memories_tool(
 
         lines = []
         for mem in results:
-            tags = f" [{mem.tags}]" if mem.tags else ""
+            tags_str = ", ".join(mem.tags) if mem.tags else ""
+            tags = f" [{tags_str}]" if tags_str else ""
             date = mem.created_at.strftime("%Y-%m-%d %H:%M")
             lines.append(f"[{mem.id}] ({date}){tags} {mem.content}")
         return "\n".join(lines)
 
-    return cast("Callable[..., Coroutine[Any, Any, str]]", list_memories)
+    return list_memories
 
 
 def make_delete_memory_tool(store: MemoryStore) -> Callable[..., Coroutine[Any, Any, str]]:
@@ -142,7 +139,8 @@ def make_delete_memory_tool(store: MemoryStore) -> Callable[..., Coroutine[Any, 
 
     @tool(
         name="delete_memory",
-        public_description="Delete a memory record by its id. Use list_memories to find ids.",
+        public_description="Delete a memory by id. Params: memory_id (str).",
+
         tags=["memory", "builtin"],
         capabilities=[MEMORY_WRITE],
         requires_confirmation=True,
@@ -153,4 +151,4 @@ def make_delete_memory_tool(store: MemoryStore) -> Callable[..., Coroutine[Any, 
             return f"No memory with id {memory_id}"
         return f"Deleted memory {memory_id}"
 
-    return cast("Callable[..., Coroutine[Any, Any, str]]", delete_memory)
+    return delete_memory

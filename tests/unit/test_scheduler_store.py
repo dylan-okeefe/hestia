@@ -1,6 +1,6 @@
 """Unit tests for SchedulerStore."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
@@ -44,14 +44,14 @@ class TestCalculateNextRun:
 
     def test_fire_at_future(self):
         """fire_at in future returns the fire_at time."""
-        future = datetime.now(timezone.utc) + timedelta(hours=1)
+        future = datetime.now(UTC) + timedelta(hours=1)
         result = _calculate_next_run(None, future)
         assert result == future
 
     def test_fire_at_past_returns_created_at(self):
         """fire_at in past returns created_at (run immediately)."""
-        past = datetime.now(timezone.utc) - timedelta(hours=1)
-        created = datetime.now(timezone.utc) - timedelta(minutes=5)
+        past = datetime.now(UTC) - timedelta(hours=1)
+        created = datetime.now(UTC) - timedelta(minutes=5)
         result = _calculate_next_run(None, past, created_at=created)
         assert result == created
 
@@ -217,7 +217,7 @@ class TestUpdateAfterRun:
     @pytest.mark.asyncio
     async def test_update_cron_calculates_next_run(self, scheduler_store, test_session):
         """After successful cron task run, next_run_at is recalculated."""
-        base = datetime(2024, 1, 1, 8, 0, 0)
+        datetime(2024, 1, 1, 8, 0, 0)
         task = await scheduler_store.create_task(
             session_id=test_session.id,
             prompt="Daily task",
@@ -430,7 +430,7 @@ class TestRowToTask:
 
     def test_null_enabled_defaults_to_false(self, scheduler_store):
         """A row with NULL enabled must coerce to False, not None."""
-        from datetime import datetime, timezone
+        from datetime import datetime
         from types import SimpleNamespace
 
         row = SimpleNamespace(
@@ -438,10 +438,10 @@ class TestRowToTask:
             session_id="sess_001",
             prompt="test",
             description=None,
-            cron_expression=None,
+            cron_expression="0 0 * * *",
             fire_at=None,
             enabled=None,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
             last_run_at=None,
             next_run_at=None,
             last_error=None,
@@ -451,16 +451,16 @@ class TestRowToTask:
 
     def test_null_created_at_defaults_to_now(self, scheduler_store):
         """A row with NULL created_at must default to utcnow()."""
-        from datetime import datetime, timezone
+        from datetime import datetime
         from types import SimpleNamespace
 
-        before = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
         row = SimpleNamespace(
             id="task_002",
             session_id="sess_001",
             prompt="test",
             description=None,
-            cron_expression=None,
+            cron_expression="0 0 * * *",
             fire_at=None,
             enabled=True,
             created_at=None,
@@ -469,5 +469,5 @@ class TestRowToTask:
             last_error=None,
         )
         task = scheduler_store._row_to_task(row)
-        after = datetime.now(timezone.utc)
+        after = datetime.now(UTC)
         assert before <= task.created_at <= after

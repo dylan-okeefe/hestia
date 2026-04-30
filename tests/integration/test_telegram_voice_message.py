@@ -150,6 +150,7 @@ async def test_voice_message_full_pipeline(
                 assert call_kwargs["session"] == mock_session
                 assert call_kwargs["user_message"].content == "what is the weather"
                 assert call_kwargs["system_prompt"] == "You are helpful."
+                assert call_kwargs["voice_reply"] is True
 
                 # Extract the respond callback and invoke it to exercise TTS path
                 respond_callback = call_kwargs["respond_callback"]

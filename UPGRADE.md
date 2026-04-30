@@ -1,10 +1,15 @@
-# Upgrading Hestia: v0.2.2 → v0.8.0
+# Upgrading Hestia
 
-This is a hand-checked upgrade. There is no automated migration tool yet
-(`hestia upgrade` is planned but not in v0.8.0). Read each step before running it.
+This guide covers upgrading between recent releases. Read each step before running it.
 
 If you are on a version older than v0.2.2, upgrade to v0.2.2 first
-(see the v0.2.2 release notes), then return here.
+(see the v0.2.2 release notes), then follow the sections below in order.
+
+There is no automated migration tool yet (`hestia upgrade` is planned but not in v0.10.0).
+
+---
+
+## v0.2.2 → v0.8.0
 
 ## 1. Back up
 
@@ -143,3 +148,120 @@ added a prompt-injection scanner with structured-content skip-filters, and
 introduced an experimental skills framework gated behind an env flag. The
 public-release polish in L34–L35d added README deployment guidance, a
 `hestia doctor` diagnostic command, and this upgrade checklist.
+
+---
+
+## v0.8.0 → v0.9.0
+
+**Released:** 2026-04-19  
+**Full notes:** [`docs/releases/v0.9.0.md`](docs/releases/v0.9.0.md)
+
+### 1. Back up
+
+```bash
+cp -r ~/.hestia ~/.hestia-backup-$(date +%Y%m%d)
+```
+
+### 2. Pull and sync
+
+```bash
+git fetch --tags
+git checkout v0.9.0
+uv sync --all-extras
+```
+
+### 3. Database migration (automatic)
+
+v0.9.0 introduces a **one-way FTS5 memory migration** that adds `platform` and
+`platform_user` columns to the `memory` table and backfills them from sessions.
+It runs automatically on first boot. Rows that cannot be backfilled are
+attributed to `__legacy__`; see `docs/guides/multi-user-setup.md` for the admin
+helper to reassign them.
+
+### 4. Config changes
+
+**No breaking config changes** for single-user deployments. A v0.8.x config
+boots on v0.9.0 with identical behavior.
+
+If you are adding a second user, read `docs/guides/multi-user-setup.md` before
+enabling `trust_overrides`.
+
+**New optional fields:**
+
+- `trust_overrides: dict[str, TrustConfig]` — grant different trust profiles
+  per identity, keyed `"platform:platform_user"`.
+- `TelegramConfig.voice_messages` — default **off**. Set to `True` to enable
+  Telegram voice-message support (requires `hestia[voice]` extra; see
+  `docs/guides/voice-setup.md`).
+
+### 5. Verify
+
+```bash
+hestia doctor
+```
+
+All checks should pass. If voice is enabled, `doctor` flags missing
+prerequisites (ffmpeg, Piper voice files, Whisper weights).
+
+### What changed (high level)
+
+v0.9.0 ships **multi-user safety** and **voice messages**.
+
+Every turn now propagates `current_platform` and `current_platform_user`
+`ContextVar`s so downstream code scopes behavior per caller. Memories are
+keyed by `(platform, platform_user)`; users cannot see each other's notes.
+Allow-lists support `fnmatch` wildcards and validate format per platform.
+
+Voice messages (Phase A) cover Telegram only: OGG/Opus → PCM → Whisper STT →
+orchestrator → Piper TTS → OGG/Opus reply. Discord live voice (Phase B) was
+explored and later abandoned.
+
+---
+
+## v0.9.0 → v0.10.0
+
+**Released:** 2026-04-22  
+**Full notes:** [`docs/releases/v0.10.0.md`](docs/releases/v0.10.0.md)
+
+### 1. Back up
+
+```bash
+cp -r ~/.hestia ~/.hestia-backup-$(date +%Y%m%d)
+```
+
+### 2. Pull and sync
+
+```bash
+git fetch --tags
+git checkout v0.10.0
+uv sync --all-extras
+```
+
+### 3. Required config changes
+
+**Remove Discord voice if present.** `HestiaConfig` no longer accepts a
+`discord_voice` field. If you were experimenting with the Discord live-voice
+Phase B feature, delete that key from your `config.py` before starting Hestia.
+
+No other config changes are required.
+
+### 4. Database migrations
+
+None. v0.10.0 does not touch the schema.
+
+### 5. Verify
+
+```bash
+hestia doctor
+hestia chat
+```
+
+### What changed (high level)
+
+v0.10.0 hardens Telegram voice messages (sub-word audio guard rejects
+<0.25 s accidental tap-and-release notes) and officially abandons the Discord
+live-voice experiment. The STT/TTS pipeline lives on for Telegram voice only.
+
+All architecture decisions were split from a 550-line monolith into 33
+individual ADR files (`docs/adr/ADR-001` through `ADR-033`) with consistent
+numbering and cross-links.

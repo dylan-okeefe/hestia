@@ -12,7 +12,7 @@ import httpx
 
 from hestia.core.inference import InferenceClient
 from hestia.core.types import Session, SessionTemperature
-from hestia.errors import PersistenceError
+from hestia.errors import InferenceServerError, PersistenceError
 from hestia.persistence.sessions import SessionStore
 
 logger = logging.getLogger(__name__)
@@ -98,7 +98,8 @@ class SlotManager:
                 if owner != session.id:
                     # Server restart, or another process stole it; reallocate
                     logger.info(
-                        "Session %s thinks it owns slot %d but assignment map says %r; reallocating",
+                        "Session %s thinks it owns slot %d but "
+                        "assignment map says %r; reallocating",
                         session.id,
                         session.slot_id,
                         owner,
@@ -160,10 +161,17 @@ class SlotManager:
             logger.warning("save() called on session %s with no slot_id", session.id)
             return
         saved_path = self._slot_path_for(session.id)
-        async with self._lock:
-            # llama.cpp rejects path separators in `filename`; pass basename only.
-            # Actual on-disk location is controlled by llama-server's --slot-save-path.
-            await self._inference.slot_save(session.slot_id, saved_path.name)
+        try:
+            async with self._lock:
+                await self._inference.slot_save(session.slot_id, saved_path.name)
+        except InferenceServerError as e:
+            logger.error(
+                "slot_save failed for session %s slot %d: %s",
+                session.id,
+                session.slot_id,
+                e,
+            )
+            raise
         # Note: we do NOT demote temperature here. Slot is still HOT; this is
         # just a checkpoint. slot_saved_path is updated so eviction knows where to find it.
         await self._store.update_saved_path(session.id, saved_path.name)
@@ -203,8 +211,26 @@ class SlotManager:
 
         slot_id = session.slot_id
         saved_path = self._slot_path_for(session_id)
-        await self._inference.slot_save(slot_id, saved_path.name)
-        await self._inference.slot_erase(slot_id)
+
+        # Release the lock before slow HTTP I/O so other acquire() calls
+        # are not stalled.
+        self._lock.release()
+        try:
+            await self._inference.slot_save(slot_id, saved_path.name)
+            await self._inference.slot_erase(slot_id)
+        except InferenceServerError:
+            # Re-acquire the lock before re-raising so callers can safely
+            # continue with lock held.
+            await self._lock.acquire()
+            raise
+        finally:
+            # Ensure we hold the lock on exit regardless of success/failure.
+            # If we already re-acquired in the except block, locked() is True
+            # and this acquire() is skipped. asyncio.Lock is NOT reentrant.
+            if not self._lock.locked():
+                await self._lock.acquire()
+
+        # Lock is held again — update state.
         await self._store.release_slot(
             session_id,
             demote_to=SessionTemperature.WARM,
@@ -219,12 +245,8 @@ class SlotManager:
         candidates = list(self._assignments.values())
         if not candidates:
             return None
-        # Load each candidate session, sort by last_active_at
-        session_list = []
-        for sid in candidates:
-            s = await self._store.get_session(sid)
-            if s is not None:
-                session_list.append(s)
+        # Load all candidates in a single query instead of N serial round-trips.
+        session_list = await self._store.get_sessions_batch(candidates)
         if not session_list:
             return None
         session_list.sort(key=lambda s: s.last_active_at)

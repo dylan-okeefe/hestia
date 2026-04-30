@@ -221,7 +221,6 @@ class TestAtomicInlineIndex:
         # Add more content, then make json.dump fail
         temp_store._inline["new_handle"] = b"after"
 
-        original_dump = json.dump
 
         def failing_dump(*args, **kwargs):
             raise RuntimeError("simulated crash")

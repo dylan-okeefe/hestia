@@ -14,7 +14,8 @@ from hestia.context.builder import ContextBuilder
 from hestia.core.inference import InferenceClient
 from hestia.core.types import Message, Session, SessionState, SessionTemperature
 from hestia.policy.default import DefaultPolicyEngine
-from hestia.tools.builtin import current_time, terminal
+from hestia.tools.builtin import current_time, make_terminal_tool
+terminal = make_terminal_tool()
 from hestia.tools.builtin.read_artifact import make_read_artifact_tool
 from hestia.tools.builtin.read_file import make_read_file_tool
 from hestia.tools.registry import ToolRegistry

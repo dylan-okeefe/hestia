@@ -26,6 +26,13 @@ class FakeInferenceClient:
             total += 50  # Tool schema cost
         return total
 
+    async def tokenize_batch(self, texts: list[str]) -> list[int]:
+        """Fallback batch tokenization for testing."""
+        import asyncio
+
+        results = await asyncio.gather(*(self.tokenize(t) for t in texts))
+        return [len(r) for r in results]
+
     async def chat(self, messages, tools=None, slot_id=None, **kwargs):
         """Return next canned response."""
         if self.call_count < len(self.responses):

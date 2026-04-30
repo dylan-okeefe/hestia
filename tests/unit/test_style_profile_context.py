@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from hestia.context.builder import ContextBuilder
-from hestia.core.types import Message, Session, SessionState, SessionTemperature
+from hestia.core.types import Session, SessionState, SessionTemperature
 from hestia.policy.default import DefaultPolicyEngine
 
 
@@ -43,10 +43,9 @@ def session():
 
 @pytest.mark.asyncio
 async def test_style_prefix_appended_last(builder, session):
-    """Style prefix should appear after identity, memory_epoch, and skill_index."""
+    """Style prefix should appear after identity and memory_epoch."""
     builder.set_identity_prefix("[IDENTITY]")
     builder.set_memory_epoch_prefix("[MEMORY]")
-    builder.set_skill_index_prefix("[SKILLS]")
     builder.set_style_prefix("[STYLE] tone: casual.")
     result = await builder.build(
         session=session,
@@ -61,7 +60,6 @@ async def test_style_prefix_appended_last(builder, session):
     assert lines == [
         "[IDENTITY]",
         "[MEMORY]",
-        "[SKILLS]",
         "[STYLE] tone: casual.",
         "Base prompt",
     ]

@@ -1,13 +1,18 @@
 """ContextBuilder assembles the message list for a turn under a token budget."""
 
+import asyncio
 import json
+from collections import OrderedDict
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 from hestia.context.compressed_summary_strategy import CompressedSummaryStrategy
 from hestia.context.compressor import HistoryCompressor
 from hestia.context.history_window_selector import HistoryWindowSelector
-from hestia.core.inference import InferenceClient, _message_to_dict
+from hestia.core.inference import InferenceClient
+from hestia.core.serialization import message_to_dict
 from hestia.core.types import Message, Session, ToolSchema
 from hestia.errors import ContextTooLargeError
 from hestia.policy.engine import PolicyEngine
@@ -29,6 +34,14 @@ class BuildResult:
     truncated_count: int  # how many historical messages got dropped
     kept_first_user: bool  # sanity flag for the Qwen template requirement
     memory_epoch_included: bool  # whether memory epoch was included
+
+
+@lru_cache(maxsize=8)
+def _load_calibration(path: Path) -> dict[str, Any]:
+    """Load calibration data from disk (cached by path)."""
+    with open(path) as f:
+        data: dict[str, Any] = json.load(f)
+        return data
 
 
 class ContextBuilder:
@@ -62,7 +75,6 @@ class ContextBuilder:
         meta_tool_overhead: int = 0,
         identity_prefix: str | None = None,
         memory_epoch_prefix: str | None = None,
-        skill_index_prefix: str | None = None,
         style_prefix: str | None = None,
         compressor: HistoryCompressor | None = None,
         compress_on_overflow: bool = False,
@@ -76,7 +88,6 @@ class ContextBuilder:
             meta_tool_overhead: Constant overhead when tools are present
             identity_prefix: Optional compiled identity view to prepend to system prompt
             memory_epoch_prefix: Optional compiled memory epoch to prepend to system prompt
-            skill_index_prefix: Optional skill index to prepend to system prompt
             style_prefix: Optional style profile addendum to prepend to system prompt
             compressor: Optional history compressor for overflow recovery
             compress_on_overflow: Whether to compress dropped history
@@ -87,12 +98,13 @@ class ContextBuilder:
         self._meta_tool_overhead = meta_tool_overhead
         self._identity_prefix = identity_prefix
         self._memory_epoch_prefix = memory_epoch_prefix
-        self._skill_index_prefix = skill_index_prefix
         self._style_prefix = style_prefix
         self._compressor = compressor
         self._compress_on_overflow = compress_on_overflow
-        self._tokenize_cache: dict[tuple[str, str], int] = {}
+        self._tokenize_cache: OrderedDict[tuple[str, str], int] = OrderedDict()
         self._join_overhead: int | None = None
+        self._system_token_count: int | None = None
+        self._last_system_cache_key: int | None = None
 
     def set_identity_prefix(self, identity_prefix: str | None) -> None:
         """Set the identity prefix to prepend to system prompts.
@@ -109,14 +121,6 @@ class ContextBuilder:
             memory_epoch_prefix: Compiled memory epoch, or None to clear
         """
         self._memory_epoch_prefix = memory_epoch_prefix
-
-    def set_skill_index_prefix(self, skill_index_prefix: str | None) -> None:
-        """Set the skill index prefix to prepend to system prompts.
-
-        Args:
-            skill_index_prefix: Skill index text, or None to clear
-        """
-        self._skill_index_prefix = skill_index_prefix
 
     def set_style_prefix(self, style_prefix: str | None) -> None:
         """Set the style profile prefix to prepend to system prompts.
@@ -155,22 +159,31 @@ class ContextBuilder:
         """
         path = calibration_path or Path("docs/calibration.json")
         if path.exists():
-            with open(path) as f:
-                data = json.load(f)
-                body_factor = data.get("body_factor", 1.0)
-                meta_tool_overhead = data.get("meta_tool_overhead_tokens", 0)
+            data = _load_calibration(path)
+            body_factor = data.get("body_factor", 1.0)
+            meta_tool_overhead = data.get("meta_tool_overhead_tokens", 0)
         else:
             body_factor = 1.0
             meta_tool_overhead = 0
 
         return cls(inference_client, policy, body_factor, meta_tool_overhead)
 
+    async def warm_up(self) -> None:
+        """Eagerly compute join overhead so the first turn isn't slowed down."""
+        if self._join_overhead is not None:
+            return
+        dummy_history = [
+            Message(role="user", content="warmup"),
+            Message(role="assistant", content="warmup"),
+        ]
+        overhead = await self._compute_join_overhead(dummy_history, [], [])
+        self._join_overhead = overhead
+
     def _prefix_layers(self) -> list[_PrefixLayer]:
         """Return prefix layers in canonical assembly order."""
         return [
             _PrefixLayer("identity", self._identity_prefix),
             _PrefixLayer("memory_epoch", self._memory_epoch_prefix),
-            _PrefixLayer("skill_index", self._skill_index_prefix),
             _PrefixLayer("style", self._style_prefix),
         ]
 
@@ -199,12 +212,12 @@ class ContextBuilder:
             _m1, _m2 = _combo[0], _combo[1]
         if _m1 is not None and _m2 is not None:
             _single_body = json.dumps(
-                {"model": self._inference.model_name, "messages": [_message_to_dict(_m1)]}
+                {"model": self._inference.model_name, "messages": [message_to_dict(_m1)]}
             )
             _combined_body = json.dumps(
                 {
                     "model": self._inference.model_name,
-                    "messages": [_message_to_dict(_m1), _message_to_dict(_m2)],
+                    "messages": [message_to_dict(_m1), message_to_dict(_m2)],
                 }
             )
             _single_count = len(await self._inference.tokenize(_single_body))
@@ -253,15 +266,28 @@ class ContextBuilder:
             )
 
         if self._join_overhead is None:
-            overhead = await self._compute_join_overhead(history, protected_top, protected_bottom)
+            overhead = await self._compute_join_overhead(
+                history, protected_top, protected_bottom
+            )
+            # Only cache when we had enough messages to measure, or when the
+            # overhead is non-zero (indicating a real measurement).
             if overhead != 0 or len(history) >= 2 or len(protected_top + protected_bottom) >= 2:
                 self._join_overhead = overhead
         _join_overhead = self._join_overhead or 0
 
         available_budget = raw_budget - protected_count
 
+        # Batch token counting: compute all history message counts in parallel
+        history_counts: dict[int, int] = {}
+        if history:
+            counts = await asyncio.gather(*(self._count_tokens(msg) for msg in history))
+            history_counts = {
+                id(msg): c + _join_overhead
+                for msg, c in zip(history, counts, strict=True)
+            }
+
         async def _history_token_count(msg: Message) -> int:
-            return await self._count_tokens(msg) + _join_overhead
+            return history_counts.get(id(msg), 0)
 
         selector = HistoryWindowSelector()
         included, dropped, truncated_count = await selector.select(
@@ -296,7 +322,7 @@ class ContextBuilder:
         """Render a single message to the same JSON representation used by
         :meth:`InferenceClient.count_request`.
         """
-        return json.dumps(_message_to_dict(message))
+        return json.dumps(message_to_dict(message))
 
     async def _count_tokens(self, message: Message) -> int:
         """Count tokens for a single message, with per-builder caching.
@@ -320,16 +346,20 @@ class ContextBuilder:
         """
         key = (message.role, message.content or "")
         if key in self._tokenize_cache:
+            self._tokenize_cache.move_to_end(key)
             return self._tokenize_cache[key]
         tokens = await self._inference.tokenize(self._render_message(message))
         count = len(tokens)
         self._tokenize_cache[key] = count
+        if len(self._tokenize_cache) > 4096:
+            self._tokenize_cache.popitem(last=False)
         return count
 
     async def _count_body(self, messages: list[Message]) -> int:
         """Count tokens for message body only (no tools).
 
-        Always call count_request with tools=[] for consistency.
+        Uses :meth:`InferenceClient.tokenize_batch` when available to
+        amortize HTTP round trips across uncached messages.
 
         Args:
             messages: Messages to count
@@ -337,7 +367,40 @@ class ContextBuilder:
         Returns:
             Raw token count for body only
         """
-        return await self._inference.count_request(messages, tools=[])
+        # Cache static-content counts (e.g. system prompt) that rarely change.
+        cache_key = hash(tuple((m.role, m.content) for m in messages))
+        if cache_key == self._last_system_cache_key and self._system_token_count is not None:
+            return self._system_token_count
+
+        # Collect uncached messages and batch-tokenize them.
+        uncached: list[Message] = []
+        for msg in messages:
+            key = (msg.role, msg.content or "")
+            if key not in self._tokenize_cache:
+                uncached.append(msg)
+
+        if uncached and hasattr(self._inference, "tokenize_batch"):
+            rendered = [self._render_message(m) for m in uncached]
+            counts = await self._inference.tokenize_batch(rendered)
+            for msg, count in zip(uncached, counts, strict=True):
+                key = (msg.role, msg.content or "")
+                self._tokenize_cache[key] = count
+                if len(self._tokenize_cache) > 4096:
+                    self._tokenize_cache.popitem(last=False)
+        elif uncached:
+            # Fallback for inference clients without tokenize_batch.
+            for msg in uncached:
+                await self._count_tokens(msg)
+
+        total = sum(
+            self._tokenize_cache[(m.role, m.content or "")] for m in messages
+        )
+
+        # Only cache single-message system prompts (the static prefix).
+        if len(messages) == 1 and messages[0].role == "system":
+            self._last_system_cache_key = cache_key
+            self._system_token_count = total
+        return total
 
     def _apply_correction(self, body_count: int, has_tools: bool) -> int:
         """Apply calibration correction to body count.

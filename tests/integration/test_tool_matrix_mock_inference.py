@@ -525,7 +525,8 @@ async def test_delegate_task_minimal(
     delegate_tool = make_delegate_task_tool(store, sub_orchestrator_factory)
 
     # Parent registry includes delegate_task
-    from hestia.tools.builtin import http_get, terminal
+    from hestia.tools.builtin import http_get, make_terminal_tool
+    terminal = make_terminal_tool()
     from hestia.tools.builtin.list_dir import make_list_dir_tool
     from hestia.tools.builtin.read_file import make_read_file_tool
 

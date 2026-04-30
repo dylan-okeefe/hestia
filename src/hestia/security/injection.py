@@ -45,10 +45,9 @@ class InjectionScanner:
         # Curated pattern list — ordered from most specific to least
         # specific. Each entry is ``(compiled_regex, reason, min_length)``:
         # ``min_length`` lets low-signal patterns (role-prefix in
-        # particular) opt out of short-string false positives. M-4
-        # flagged ``system:`` inside YAML / JSON strings and one-line
-        # quoted config blocks as triggering the scanner purely because
-        # of the word "system" appearing at the start of a line.
+        # particular) opt out of short-string false positives. ``system:`` inside YAML /
+        # JSON strings and one-line quoted config blocks were triggering the scanner purely
+        # because of the word "system" appearing at the start of a line.
         self._patterns: list[tuple[re.Pattern[str], str, int]] = [
             (
                 re.compile(r"ignore\s+(all\s+)?(previous|prior)\s+instructions", re.IGNORECASE),

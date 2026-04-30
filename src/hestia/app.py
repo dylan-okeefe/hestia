@@ -13,11 +13,12 @@ from typing import Any
 import click
 
 from hestia.artifacts.store import ArtifactStore
-from hestia.config import HestiaConfig, validate_inference_model_name
+from hestia.config import HestiaConfig
 from hestia.context.builder import ContextBuilder
 from hestia.context.compressor import InferenceHistoryCompressor
 from hestia.core.inference import InferenceClient
-from hestia.core.types import Session
+from hestia.core.rate_limiter import SessionRateLimiter
+from hestia.core.validators import validate_inference_model_name
 from hestia.email.adapter import EmailAdapter
 from hestia.identity import IdentityCompiler
 from hestia.inference import SlotManager
@@ -29,39 +30,43 @@ from hestia.persistence.db import Database
 from hestia.persistence.failure_store import FailureStore
 from hestia.persistence.scheduler import SchedulerStore
 from hestia.persistence.sessions import SessionStore
-from hestia.persistence.skill_store import SkillStore
 from hestia.persistence.trace_store import TraceStore
 from hestia.policy.default import DefaultPolicyEngine
 from hestia.reflection.runner import ReflectionRunner
 from hestia.reflection.scheduler import ReflectionScheduler
 from hestia.reflection.store import ProposalStore
 from hestia.security import InjectionScanner
-from hestia.skills.index import SkillIndexBuilder
 from hestia.style.builder import StyleProfileBuilder
 from hestia.style.scheduler import StyleScheduler
 from hestia.style.store import StyleProfileStore
 from hestia.tools.builtin import (
     current_time,
-    http_get,
+    make_create_scheduled_task_tool,
     make_delegate_task_tool,
     make_delete_memory_tool,
+    make_delete_scheduled_task_tool,
+    make_disable_scheduled_task_tool,
     make_email_search_and_read_tool,
     make_email_tools,
+    make_enable_scheduled_task_tool,
+    make_http_get_tool,
     make_list_dir_tool,
     make_list_memories_tool,
+    make_list_scheduled_tasks_tool,
     make_read_artifact_tool,
     make_read_file_tool,
     make_save_memory_tool,
     make_search_memory_tool,
+    make_terminal_tool,
     make_web_search_tool,
     make_write_file_tool,
-    terminal,
+    search_web,
 )
 from hestia.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_CALIBRATION_PATH = Path("docs/calibration.json")
+DEFAULT_CALIBRATION_PATH = Path(__file__).parent.parent.parent / "docs" / "calibration.json"
 
 
 def _make_policy(cfg: HestiaConfig) -> DefaultPolicyEngine:
@@ -97,259 +102,136 @@ class CliConfirmHandler:
         return click.confirm("Execute?", default=True)
 
 
-async def _compile_and_set_memory_epoch(
-    app: CliAppContext,
-    session: Session,
-) -> bool:
-    """Compile memory epoch for the session and set it in context builder.
+class AppContext:
+    """Single composition root for Hestia subsystems.
 
-    Args:
-        app: The CLI app context
-        session: The current session
-
-    Returns:
-        True if an epoch was compiled and set, False otherwise
+    Replaces the previous three-class split (CoreAppContext +
+    FeatureAppContext + CliAppContext facade).  Cheap subsystems are
+    created eagerly; expensive or connection-holding subsystems are
+    lazy via :func:`functools.cached_property`.
     """
-    if app.epoch_compiler is None:
-        return False
 
-    epoch = await app.epoch_compiler.compile(session)
-    if epoch.memory_count > 0:
-        app.context_builder.set_memory_epoch_prefix(epoch.compiled_text)
-        return True
-    return False
-
-
-async def _handle_meta_command(
-    cmd: str,
-    session: Session,
-    session_store: SessionStore,
-    app: CliAppContext | None = None,
-) -> tuple[bool, Session]:
-    """Handle a /meta command. Returns (should_exit, possibly_new_session)."""
-    cmd = cmd.strip().lower()
-
-    if cmd in ("/quit", "/exit"):
-        return True, session
-
-    if cmd == "/help":
-        click.echo("Meta-commands:")
-        click.echo("  /quit, /exit     Exit the REPL")
-        click.echo("  /reset           Start a new session")
-        click.echo("  /history         Print the current session message history")
-        click.echo("  /session         Print the current session metadata")
-        click.echo("  /refresh         Refresh the memory epoch")
-        click.echo("  /help            Show this help")
-        return False, session
-
-    if cmd == "/session":
-        click.echo(f"Session ID: {session.id}")
-        click.echo(f"Platform: {session.platform}")
-        click.echo(f"Platform User: {session.platform_user}")
-        click.echo(f"State: {session.state.value}")
-        click.echo(f"Temperature: {session.temperature.value}")
-        click.echo(f"Started: {session.started_at}")
-        return False, session
-
-    if cmd == "/history":
-        messages = await session_store.get_messages(session.id)
-        if not messages:
-            click.echo("(empty)")
-        else:
-            for m in messages:
-                role = m.role
-                content = (m.content or "")[:200]
-                click.echo(f"  [{role}] {content}")
-        return False, session
-
-    if cmd == "/reset":
-        new_session = await session_store.create_session(
-            platform=session.platform,
-            platform_user=session.platform_user,
-            archive_previous=session,
-        )
-        click.echo(f"New session: {new_session.id}")
-        # Refresh memory epoch for new session
-        if app is not None:
-            compiled = await _compile_and_set_memory_epoch(app, new_session)
-            if compiled:
-                click.echo("Memory epoch refreshed.")
-        return False, new_session
-
-    if cmd == "/refresh":
-        if app is not None:
-            compiled = await _compile_and_set_memory_epoch(app, session)
-            if compiled:
-                click.echo("Memory epoch refreshed.")
-            else:
-                click.echo("No memories to include in epoch.")
-        else:
-            click.echo("Cannot refresh: app context not available.")
-        return False, session
-
-    click.echo(f"Unknown command: {cmd}. Type /help for a list.")
-    return False, session
-
-
-def _require_scheduler_store(app: CliAppContext) -> SchedulerStore:
-    """Return the scheduler store or raise a clear error."""
-    if app.scheduler_store is None:
-        raise click.UsageError(
-            "Scheduler is not configured. Set `scheduler.enabled = True` in your config."
-        )
-    return app.scheduler_store
-
-
-class CliAppContext:
-    """Typed application context shared across CLI commands."""
-
-    def __init__(
-        self,
-        config: HestiaConfig,
-        db: Database,
-        session_store: SessionStore,
-        tool_registry: ToolRegistry,
-        policy: DefaultPolicyEngine,
-        memory_store: MemoryStore,
-        failure_store: FailureStore,
-        trace_store: TraceStore,
-        artifact_store: ArtifactStore,
-        scheduler_store: SchedulerStore | None = None,
-        skill_store: SkillStore | None = None,
-        proposal_store: ProposalStore | None = None,
-        style_store: StyleProfileStore | None = None,
-        style_builder: StyleProfileBuilder | None = None,
-        epoch_compiler: MemoryEpochCompiler | None = None,
-        skill_index_builder: SkillIndexBuilder | None = None,
-        verbose: bool = False,
-        confirm_callback: ConfirmCallback | None = None,
-        calibration_path: Path | None = None,
-        compiled_identity: str | None = None,
-    ) -> None:
+    def __init__(self, config: HestiaConfig) -> None:
         self.config = config
-        self.db = db
-        self.session_store = session_store
-        self.tool_registry = tool_registry
-        self.policy = policy
-        self.memory_store = memory_store
-        self.failure_store = failure_store
-        self.trace_store = trace_store
-        self.artifact_store = artifact_store
-        self.scheduler_store = scheduler_store
-        self.skill_store = skill_store
-        self.proposal_store = proposal_store
-        self.style_store = style_store
-        self.style_builder = style_builder
-        self.epoch_compiler = epoch_compiler
-        self.skill_index_builder = skill_index_builder
-        self.verbose = verbose
-        self.confirm_callback = confirm_callback
-        self._calibration_path = calibration_path
-        self._compiled_identity = compiled_identity
-        self._inference: InferenceClient | None = None
-        self._context_builder: ContextBuilder | None = None
-        self._slot_manager: SlotManager | None = None
-        self._reflection_scheduler: ReflectionScheduler | None = None
-        self._style_scheduler: StyleScheduler | None = None
-        self._handoff_summarizer: SessionHandoffSummarizer | None = None
+        self.verbose = config.verbose
+        self.confirm_callback: ConfirmCallback | None = None
         self._bootstrapped = False
 
-    def set_confirm_callback(self, callback: ConfirmCallback | None) -> None:
-        """Set the tool-confirmation callback used when constructing orchestrators."""
-        self.confirm_callback = callback
+        # Eager core subsystems
+        self.db = Database(config.storage.database_url)
+        self.artifact_store = ArtifactStore(config.storage.artifacts_dir)
+        self.session_store = SessionStore(self.db)
+        self.policy = _make_policy(config)
+        self.memory_store = MemoryStore(self.db)
+        self.failure_store = FailureStore(self.db)
+        self.trace_store = TraceStore(self.db)
+        self.scheduler_store = SchedulerStore(self.db)
+        self.epoch_compiler = MemoryEpochCompiler(self.memory_store, max_tokens=500)
+        self.tool_registry = ToolRegistry(self.artifact_store)
 
-    @property
+        # Eager feature subsystems (lightweight; always available for status queries)
+        self.proposal_store = ProposalStore(self.db)
+        self.style_store = StyleProfileStore(self.db)
+        self.style_builder = StyleProfileBuilder(self.db, self.style_store, config.style)
+        self.rate_limiter: SessionRateLimiter | None = None
+        if config.rate_limit.enabled:
+            self.rate_limiter = SessionRateLimiter(
+                rate=config.rate_limit.requests_per_minute / 60.0,
+                capacity=config.rate_limit.burst_size,
+                max_buckets=config.rate_limit.max_buckets,
+            )
+        self.email_adapter = EmailAdapter(config.email) if config.email.imap_host else None
+
+        # Private caches for lazy construction
+        self._calibration_path: Path | None = None
+        self._compiled_identity: str | None = None
+
+    # --- Lazy core subsystems ---
+
+    @functools.cached_property
     def inference(self) -> InferenceClient:
         """Lazy inference client — created on first access."""
-        if self._inference is None:
-            model_name = self.config.inference.model_name.strip()
-            if not model_name:
-                raise ValueError(
-                    "inference.model_name is required — set it to your llama.cpp model "
-                    "filename (e.g. 'my-model-Q4_K_M.gguf'), or for tests only set "
-                    "HESTIA_ALLOW_DUMMY_MODEL=1 and use model_name='dummy'."
-                )
-            self._inference = InferenceClient(self.config.inference.base_url, model_name)
-        return self._inference
+        model_name = self.config.inference.model_name.strip()
+        if not model_name:
+            raise ValueError(
+                "inference.model_name is required — set it to your llama.cpp model "
+                "filename (e.g. 'my-model-Q4_K_M.gguf'), or for tests only set "
+                "HESTIA_ALLOW_DUMMY_MODEL=1 and use model_name='dummy'."
+            )
+        return InferenceClient(self.config.inference.base_url, model_name)
 
-    @property
+    @functools.cached_property
     def context_builder(self) -> ContextBuilder:
         """Lazy context builder — created on first access."""
-        if self._context_builder is None:
-            path = self._calibration_path or DEFAULT_CALIBRATION_PATH
-            cb = ContextBuilder.from_calibration_file(self.inference, self.policy, path)
-            if self._compiled_identity:
-                cb.set_identity_prefix(self._compiled_identity)
-            if self.config.compression.enabled:
-                cb.enable_compression(
-                    InferenceHistoryCompressor(
-                        self.inference, max_chars=self.config.compression.max_chars
-                    )
+        path = self._calibration_path or DEFAULT_CALIBRATION_PATH
+        cb = ContextBuilder.from_calibration_file(self.inference, self.policy, path)
+        if self._compiled_identity:
+            cb.set_identity_prefix(self._compiled_identity)
+        if self.config.compression.enabled:
+            cb.enable_compression(
+                InferenceHistoryCompressor(
+                    self.inference, max_chars=self.config.compression.max_chars
                 )
-            self._context_builder = cb
-        return self._context_builder
+            )
+        return cb
 
-    @property
+    @functools.cached_property
     def slot_manager(self) -> SlotManager:
         """Lazy slot manager — created on first access."""
-        if self._slot_manager is None:
-            self._slot_manager = SlotManager(
-                inference=self.inference,
-                session_store=self.session_store,
-                slot_dir=self.config.slots.slot_dir,
-                pool_size=self.config.slots.pool_size,
-            )
-        return self._slot_manager
+        return SlotManager(
+            inference=self.inference,
+            session_store=self.session_store,
+            slot_dir=self.config.slots.slot_dir,
+            pool_size=self.config.slots.pool_size,
+        )
 
-    @property
-    def reflection_scheduler(self) -> ReflectionScheduler | None:
-        """Lazy reflection scheduler — created on first access.
-
-        Construction is unconditional so callers can read status/failure
-        history even when the scheduler is not auto-started by daemons.
-        Whether the scheduler actually ticks is governed by
-        ``config.reflection.enabled`` checks at the start sites.
-        """
-        if self._reflection_scheduler is None:
-            if self.proposal_store is None:
-                return None
-            runner = ReflectionRunner(
-                config=self.config.reflection,
-                inference=self.inference,
-                trace_store=self.trace_store,
-                proposal_store=self.proposal_store,
-            )
-            sched = ReflectionScheduler(
-                config=self.config.reflection,
-                runner=runner,
-                session_store=self.session_store,
-            )
-            sched.wire_failure_handler(runner)
-            self._reflection_scheduler = sched
-        return self._reflection_scheduler
-
-    @property
-    def style_scheduler(self) -> StyleScheduler | None:
-        """Lazy style scheduler — created on first access if builder is available."""
-        if self._style_scheduler is None and self.style_builder is not None:
-            self._style_scheduler = StyleScheduler(
-                config=self.config.style,
-                builder=self.style_builder,
-                session_store=self.session_store,
-            )
-        return self._style_scheduler
-
-    @property
+    @functools.cached_property
     def handoff_summarizer(self) -> SessionHandoffSummarizer | None:
         """Lazy handoff summarizer — created on first access if enabled."""
-        if self._handoff_summarizer is None and self.config.handoff.enabled:
-            self._handoff_summarizer = SessionHandoffSummarizer(
+        if self.config.handoff.enabled:
+            return SessionHandoffSummarizer(
                 inference=self.inference,
                 memory_store=self.memory_store,
                 max_chars=self.config.handoff.max_chars,
                 min_messages=self.config.handoff.min_messages,
             )
-        return self._handoff_summarizer
+        return None
+
+    # --- Lazy feature subsystems ---
+
+    @functools.cached_property
+    def reflection_scheduler(self) -> ReflectionScheduler | None:
+        """Lazy reflection scheduler — created on first access."""
+        runner = ReflectionRunner(
+            config=self.config.reflection,
+            inference=self.inference,
+            trace_store=self.trace_store,
+            proposal_store=self.proposal_store,
+        )
+        sched = ReflectionScheduler(
+            config=self.config.reflection,
+            runner=runner,
+            session_store=self.session_store,
+        )
+        sched.wire_failure_handler(runner)
+        return sched
+
+    @functools.cached_property
+    def style_scheduler(self) -> StyleScheduler | None:
+        """Lazy style scheduler — created on first access if builder is available."""
+        if self.style_builder is not None:
+            return StyleScheduler(
+                config=self.config.style,
+                builder=self.style_builder,
+                session_store=self.session_store,
+            )
+        return None
+
+    # --- Methods ---
+
+    def set_confirm_callback(self, callback: ConfirmCallback | None) -> None:
+        """Set the tool-confirmation callback used when constructing orchestrators."""
+        self.confirm_callback = callback
 
     async def bootstrap_db(self) -> None:
         """Connect to database and create tables. Idempotent."""
@@ -360,21 +242,24 @@ class CliAppContext:
         await self.memory_store.create_table()
         await self.failure_store.create_table()
         await self.trace_store.create_table()
-        if self.skill_store is not None:
-            await self.skill_store.create_table()
-        if self.proposal_store is not None:
-            await self.proposal_store.create_table()
-        if self.style_store is not None:
-            await self.style_store.create_table()
+        await self.proposal_store.create_table()
+        await self.style_store.create_table()
         self._bootstrapped = True
 
     def make_injection_scanner(self) -> InjectionScanner:
-        """Create an InjectionScanner from config."""
+        """Create an InjectionScanner from config (cached on instance)."""
         return InjectionScanner(
             enabled=self.config.security.injection_scanner_enabled,
             entropy_threshold=self.config.security.injection_entropy_threshold,
             skip_filters_for_structured=self.config.security.injection_skip_filters_for_structured,
         )
+
+    async def close(self) -> None:
+        """Close lazily-created resources."""
+        if 'inference' in self.__dict__:
+            await self.inference.close()
+        if self.email_adapter is not None:
+            self.email_adapter.close()
 
     def make_orchestrator(self) -> Orchestrator:
         """Create an Orchestrator with the current app context."""
@@ -386,6 +271,7 @@ class CliAppContext:
             policy=self.policy,
             confirm_callback=self.confirm_callback,
             max_iterations=self.config.max_iterations,
+            max_tool_calls_per_turn=self.config.policy.max_tool_calls_per_turn,
             slot_manager=self.slot_manager,
             failure_store=self.failure_store,
             trace_store=self.trace_store,
@@ -394,31 +280,142 @@ class CliAppContext:
             proposal_store=self.proposal_store,
             style_store=self.style_store,
             style_config=self.config.style,
+            rate_limiter=self.rate_limiter,
+            stream=self.config.inference.stream,
         )
 
+    def register_tools(self) -> None:
+        """Register built-in and conditional tools."""
+        cfg = self.config
+        reg = self.tool_registry
 
-def make_app(cfg: HestiaConfig) -> CliAppContext:
-    """Build subsystems from config and return typed app context."""
-    if not cfg.inference.model_name.strip() and os.environ.get("HESTIA_ALLOW_DUMMY_MODEL") == "1":
+        reg.register(current_time)
+        reg.register(make_http_get_tool(cfg.use_curl_cffi_fallback))
+        reg.register(make_list_dir_tool(cfg.storage))
+        reg.register(make_terminal_tool(cfg.trust.blocked_shell_patterns or None))
+        reg.register(make_read_file_tool(cfg.storage))
+        reg.register(make_write_file_tool(cfg.storage))
+        reg.register(make_search_memory_tool(self.memory_store))
+        reg.register(make_save_memory_tool(self.memory_store))
+        reg.register(make_list_memories_tool(self.memory_store))
+        reg.register(make_delete_memory_tool(self.memory_store))
+        reg.register(make_read_artifact_tool(self.artifact_store))
+
+        web_search_tool = make_web_search_tool(cfg.web_search)
+        if web_search_tool is not None:
+            reg.register(web_search_tool)
+        else:
+            reg.register(search_web)
+
+        for email_tool in make_email_tools(cfg.email, adapter=self.email_adapter):
+            reg.register(email_tool)
+
+        email_search_and_read = (
+            make_email_search_and_read_tool(self.email_adapter)
+            if self.email_adapter else None
+        )
+        if email_search_and_read is not None:
+            reg.register(email_search_and_read)
+
+        if cfg.email.password and not cfg.email.password_env:
+            click.echo(
+                click.style(
+                    "Warning: email.password is set in plaintext. Consider using "
+                    "email.password_env to load it from an environment variable.",
+                    fg="yellow",
+                ),
+                err=True,
+            )
+            logger.warning(
+                "email.password is set in plaintext. Consider using email.password_env."
+            )
+
+        # Scheduler tools (bound to scheduler and session stores)
+        if self.scheduler_store is not None:
+            reg.register(make_create_scheduled_task_tool(self.scheduler_store, self.session_store))
+            reg.register(make_list_scheduled_tasks_tool(self.scheduler_store, self.session_store))
+            reg.register(make_disable_scheduled_task_tool(self.scheduler_store, self.session_store))
+            reg.register(make_enable_scheduled_task_tool(self.scheduler_store, self.session_store))
+            reg.register(make_delete_scheduled_task_tool(self.scheduler_store, self.session_store))
+
+        # Delegate task tool (needs app for orchestrator factory)
+        reg.register(make_delegate_task_tool(self.session_store, self.make_orchestrator))
+
+
+# Backward-compatible aliases (deprecated, will be removed in a future release)
+CoreAppContext = AppContext
+FeatureAppContext = AppContext
+CliAppContext = AppContext
+
+
+def _validate_config_at_startup(cfg: HestiaConfig) -> None:
+    """Validate config before creating subsystems. Raises HestiaConfigError on failure."""
+    from hestia.errors import HestiaConfigError
+
+    # Telegram platform requires a bot token
+    if cfg.telegram.bot_token == "" and cfg.matrix.access_token == "":
+        # No platform is fully configured — this is okay for CLI-only mode,
+        # but warn if the user seems to expect a platform adapter.
+        pass
+
+    if cfg.telegram.bot_token == "" and cfg.telegram.allowed_users:
+        raise HestiaConfigError(
+            "telegram.allowed_users is set but telegram.bot_token is empty. "
+            "Set telegram.bot_token to your Telegram bot token."
+        )
+
+    # Email: if any host is configured, both should be present
+    if cfg.email.imap_host or cfg.email.smtp_host:
+        if not cfg.email.imap_host:
+            raise HestiaConfigError(
+                "email.smtp_host is set but email.imap_host is empty. "
+                "Set email.imap_host to your IMAP server hostname."
+            )
+        if not cfg.email.smtp_host:
+            raise HestiaConfigError(
+                "email.imap_host is set but email.smtp_host is empty. "
+                "Set email.smtp_host to your SMTP server hostname."
+            )
+
+    # Database URL: if it's a file path, ensure parent directory exists
+    db_url = cfg.storage.database_url
+    if db_url.startswith("sqlite") and "://" in db_url:
+        # Extract file path from sqlite URL
+        path_part = db_url.split("://", 1)[1]
+        if path_part and not path_part.startswith(":memory:"):
+            db_path = Path(path_part)
+            if db_path.parent != Path(".") and not db_path.parent.exists():
+                raise HestiaConfigError(
+                    f"Database directory does not exist: {db_path.parent}. "
+                    f"Create it or update storage.database_url."
+                )
+
+
+def _load_and_validate_config(
+    cfg: HestiaConfig | None = None, config_path: Path | None = None
+) -> HestiaConfig:
+    """Load config from file or default locations, apply env overrides, and validate."""
+    if cfg is None:
+        cfg = HestiaConfig.from_file(config_path) if config_path else HestiaConfig.default()
+
+    if (
+        not cfg.inference.model_name.strip()
+        and os.environ.get("HESTIA_ALLOW_DUMMY_MODEL") == "1"
+    ):
         cfg.inference.model_name = "dummy"
     validate_inference_model_name(cfg.inference.model_name)
+    _validate_config_at_startup(cfg)
 
-    db = Database(cfg.storage.database_url)
-    artifact_store = ArtifactStore(cfg.storage.artifacts_dir)
-    session_store = SessionStore(db)
-    policy = _make_policy(cfg)
-
-    # Honor environment overrides for personality / calibration paths
+    # Environment overrides for personality / calibration paths
     env_soul = os.environ.get("HESTIA_SOUL_PATH")
     if env_soul:
         cfg.identity.soul_path = Path(env_soul)
-    env_calibration = os.environ.get("HESTIA_CALIBRATION_PATH")
-    calibration_path = Path(env_calibration) if env_calibration else DEFAULT_CALIBRATION_PATH
 
-    # Compile identity from SOUL.md when present
-    identity_compiler = IdentityCompiler(cfg.identity)
-    compiled_identity = identity_compiler.get_compiled_text()
+    return cfg
 
+
+def _warn_on_missing_files(cfg: HestiaConfig, calibration_path: Path) -> None:
+    """Emit warnings when expected personality or calibration files are missing."""
     soul_path = cfg.identity.soul_path
     if soul_path is not None and not soul_path.exists():
         click.echo(
@@ -439,97 +436,62 @@ def make_app(cfg: HestiaConfig) -> CliAppContext:
         )
         logger.warning("Calibration file not found at %s", calibration_path)
 
-    # Memory store for long-term memory
-    memory_store = MemoryStore(db)
 
-    # Tool registry with built-in tools
-    tool_registry = ToolRegistry(artifact_store)
-    tool_registry.register(current_time)
-    tool_registry.register(http_get)
-    tool_registry.register(make_list_dir_tool(cfg.storage))
-    tool_registry.register(terminal)
 
-    # Register file tools with path sandboxing
-    tool_registry.register(make_read_file_tool(cfg.storage))
-    tool_registry.register(make_write_file_tool(cfg.storage))
+def make_app(cfg: HestiaConfig | None = None, config_path: Path | None = None) -> AppContext:
+    """Build subsystems from config and return the application context."""
+    cfg = _load_and_validate_config(cfg, config_path)
 
-    # Register memory tools (bound to the memory store instance)
-    tool_registry.register(make_search_memory_tool(memory_store))
-    tool_registry.register(make_save_memory_tool(memory_store))
-    tool_registry.register(make_list_memories_tool(memory_store))
-    tool_registry.register(make_delete_memory_tool(memory_store))
-    tool_registry.register(make_read_artifact_tool(artifact_store))
+    env_calibration = os.environ.get("HESTIA_CALIBRATION_PATH")
+    calibration_path = Path(env_calibration) if env_calibration else DEFAULT_CALIBRATION_PATH
 
-    # Register web search if configured
-    web_search_tool = make_web_search_tool(cfg.web_search)
-    if web_search_tool is not None:
-        tool_registry.register(web_search_tool)
+    app = AppContext(cfg)
+    app._calibration_path = calibration_path
 
-    # Register email tools if configured
-    for email_tool in make_email_tools(cfg.email):
-        tool_registry.register(email_tool)
+    # Compile identity from SOUL.md when present
+    identity_compiler = IdentityCompiler(cfg.identity)
+    app._compiled_identity = identity_compiler.get_compiled_text()
 
-    email_search_and_read = make_email_search_and_read_tool(
-        EmailAdapter(cfg.email)
-    )
-    if email_search_and_read is not None:
-        tool_registry.register(email_search_and_read)
-
-    # Create typed context stores first
-    failure_store = FailureStore(db)
-    scheduler_store = SchedulerStore(db)
-    trace_store = TraceStore(db)
-    skill_store = SkillStore(db)
-    proposal_store = ProposalStore(db)
-    style_store = StyleProfileStore(db)
-    style_builder = StyleProfileBuilder(db, style_store, cfg.style)
-
-    # Initialize memory epoch compiler
-    epoch_compiler = MemoryEpochCompiler(memory_store, max_tokens=500)
-
-    # Initialize skill index builder
-    skill_index_builder = SkillIndexBuilder(skill_store)
-
-    app = CliAppContext(
-        config=cfg,
-        db=db,
-        session_store=session_store,
-        tool_registry=tool_registry,
-        policy=policy,
-        memory_store=memory_store,
-        failure_store=failure_store,
-        trace_store=trace_store,
-        artifact_store=artifact_store,
-        scheduler_store=scheduler_store,
-        skill_store=skill_store,
-        proposal_store=proposal_store,
-        style_store=style_store,
-        style_builder=style_builder,
-        epoch_compiler=epoch_compiler,
-        skill_index_builder=skill_index_builder,
-        verbose=cfg.verbose,
-        confirm_callback=None,
-        calibration_path=calibration_path,
-        compiled_identity=compiled_identity,
-    )
-
-    # Register delegate task tool (needs app for orchestrator factory)
-    tool_registry.register(make_delegate_task_tool(session_store, app.make_orchestrator))
+    _warn_on_missing_files(cfg, calibration_path)
+    app.register_tools()
 
     return app
 
 
-def run_async(coro_factory: Callable[..., Awaitable[Any]]) -> Callable[..., Any]:
-    """Decorator: wrap a Click command body so the inner async function
-    receives ``app`` and is run inside ``asyncio.run``. Calls ``bootstrap_db`` once.
+def _require_scheduler_store(app: AppContext) -> SchedulerStore:
+    """Return the scheduler store or raise a clear error."""
+    if app.scheduler_store is None:
+        raise click.UsageError(
+            "Scheduler is not configured. Set `scheduler.enabled = True` in your config."
+        )
+    return app.scheduler_store
+
+
+def async_command(coro: Callable[..., Awaitable[Any]]) -> Callable[..., Any]:
+    """Decorator for async Click commands.
+
+    Must be used together with ``@click.pass_obj`` so ``app`` is injected
+    explicitly by Click rather than hidden inside the decorator.
+
+    Example::
+
+        @cli.command()
+        @click.pass_obj
+        @async_command
+        async def my_cmd(app: AppContext, flag: bool) -> None:
+            ...
     """
-    @functools.wraps(coro_factory)
-    def wrapper(*args: Any, **kwargs: Any) -> Any:
-        ctx = click.get_current_context()
-        app: CliAppContext = ctx.obj
+
+    @functools.wraps(coro)
+    def wrapper(app: AppContext, *args: Any, **kwargs: Any) -> Any:
         async def _runner() -> Any:
             await app.bootstrap_db()
-            return await coro_factory(app, *args, **kwargs)
+            return await coro(app, *args, **kwargs)
+
         return asyncio.run(_runner())
+
     return wrapper
 
+
+# Backward-compatible re-export (tests import from app.py)
+from hestia.commands.meta import _handle_meta_command  # noqa: E402, F401

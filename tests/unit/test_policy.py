@@ -2,11 +2,11 @@
 
 import pytest
 
+from hestia.config import StorageConfig
 from hestia.core.types import Session, SessionState, SessionTemperature
 from hestia.errors import InferenceServerError, InferenceTimeoutError
 from hestia.policy.default import DefaultPolicyEngine
 from hestia.policy.engine import RetryAction
-from hestia.config import StorageConfig
 
 
 @pytest.fixture
@@ -65,6 +65,14 @@ class TestRetryAfterError:
         error = InferenceServerError("500")
         decision = policy.retry_after_error(error, attempt=1)
         assert decision.action == RetryAction.RETRY_WITH_BACKOFF
+
+    def test_retry_empty_response(self, policy):
+        """Retry on empty model response."""
+        from hestia.errors import EmptyResponseError
+        error = EmptyResponseError("empty")
+        decision = policy.retry_after_error(error, attempt=1)
+        assert decision.action == RetryAction.RETRY
+        assert "empty" in decision.reason
 
     def test_no_retry_on_generic_error(self, policy):
         """Don't retry generic exceptions."""
@@ -147,7 +155,8 @@ class TestFilterTools:
         from dataclasses import replace
 
         from hestia.artifacts.store import ArtifactStore
-        from hestia.tools.builtin import current_time, make_write_file_tool, terminal
+        from hestia.tools.builtin import current_time, make_write_file_tool, make_terminal_tool
+        terminal = make_terminal_tool()
         from hestia.tools.registry import ToolRegistry
 
         reg = ToolRegistry(ArtifactStore(tmp_path / "art"))
@@ -164,7 +173,8 @@ class TestFilterTools:
     def test_scheduler_tick_blocks_shell(self, policy, sample_session, tmp_path):
         from hestia.artifacts.store import ArtifactStore
         from hestia.runtime_context import scheduler_tick_active
-        from hestia.tools.builtin import current_time, terminal
+        from hestia.tools.builtin import current_time, make_terminal_tool
+        terminal = make_terminal_tool()
         from hestia.tools.registry import ToolRegistry
 
         reg = ToolRegistry(ArtifactStore(tmp_path / "art"))
@@ -181,7 +191,8 @@ class TestFilterTools:
 
     def test_cli_allows_terminal(self, policy, sample_session, tmp_path):
         from hestia.artifacts.store import ArtifactStore
-        from hestia.tools.builtin import current_time, terminal
+        from hestia.tools.builtin import current_time, make_terminal_tool
+        terminal = make_terminal_tool()
         from hestia.tools.registry import ToolRegistry
 
         reg = ToolRegistry(ArtifactStore(tmp_path / "art"))
@@ -232,7 +243,8 @@ class TestFilterToolsTrust:
         from hestia.artifacts.store import ArtifactStore
         from hestia.config import TrustConfig
         from hestia.policy.default import DefaultPolicyEngine
-        from hestia.tools.builtin import current_time, make_write_file_tool, terminal
+        from hestia.tools.builtin import current_time, make_write_file_tool, make_terminal_tool
+        terminal = make_terminal_tool()
         from hestia.tools.registry import ToolRegistry
 
         policy = DefaultPolicyEngine(trust=TrustConfig.paranoid())
@@ -253,7 +265,8 @@ class TestFilterToolsTrust:
         from hestia.artifacts.store import ArtifactStore
         from hestia.config import TrustConfig
         from hestia.policy.default import DefaultPolicyEngine
-        from hestia.tools.builtin import current_time, make_write_file_tool, terminal
+        from hestia.tools.builtin import current_time, make_write_file_tool, make_terminal_tool
+        terminal = make_terminal_tool()
         from hestia.tools.registry import ToolRegistry
 
         policy = DefaultPolicyEngine(trust=TrustConfig.household())
@@ -274,7 +287,8 @@ class TestFilterToolsTrust:
         from hestia.artifacts.store import ArtifactStore
         from hestia.config import TrustConfig
         from hestia.policy.default import DefaultPolicyEngine
-        from hestia.tools.builtin import current_time, make_write_file_tool, terminal
+        from hestia.tools.builtin import current_time, make_write_file_tool, make_terminal_tool
+        terminal = make_terminal_tool()
         from hestia.tools.registry import ToolRegistry
 
         trust = TrustConfig(subagent_shell_exec=True, subagent_write_local=False)
@@ -294,7 +308,8 @@ class TestFilterToolsTrust:
         from hestia.artifacts.store import ArtifactStore
         from hestia.config import TrustConfig
         from hestia.policy.default import DefaultPolicyEngine
-        from hestia.tools.builtin import current_time, terminal
+        from hestia.tools.builtin import current_time, make_terminal_tool
+        terminal = make_terminal_tool()
         from hestia.tools.registry import ToolRegistry
 
         policy = DefaultPolicyEngine(trust=TrustConfig.paranoid())
@@ -312,7 +327,8 @@ class TestFilterToolsTrust:
         from hestia.artifacts.store import ArtifactStore
         from hestia.config import TrustConfig
         from hestia.policy.default import DefaultPolicyEngine
-        from hestia.tools.builtin import current_time, terminal
+        from hestia.tools.builtin import current_time, make_terminal_tool
+        terminal = make_terminal_tool()
         from hestia.tools.registry import ToolRegistry
 
         policy = DefaultPolicyEngine(trust=TrustConfig.household())

@@ -37,7 +37,7 @@ def make_read_artifact_tool(store: ArtifactStore) -> Any:
 
         ``ArtifactStore.fetch_content`` is synchronous and may touch the
         filesystem; we offload it via ``asyncio.to_thread`` so the event
-        loop stays responsive for concurrent tool dispatch (Copilot C-3).
+        loop stays responsive for concurrent tool dispatch.
         """
         try:
             content = await asyncio.to_thread(store.fetch_content, handle)

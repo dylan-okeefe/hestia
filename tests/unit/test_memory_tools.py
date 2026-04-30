@@ -4,8 +4,8 @@ import pytest
 
 from hestia.memory.store import MemoryStore
 from hestia.persistence.db import Database
+from hestia.runtime_context import current_session_id
 from hestia.tools.builtin.memory_tools import (
-    current_session_id,
     make_list_memories_tool,
     make_save_memory_tool,
     make_search_memory_tool,
@@ -54,7 +54,7 @@ class TestSearchMemoryTool:
             await store.save(f"Memory {i}")
         result = await search_tool("Memory", limit=2)
         # Should have 2 results (format: [id] (date) content)
-        lines = [l for l in result.split("\n") if l.strip()]
+        lines = [line for line in result.split("\n") if line.strip()]
         assert len(lines) == 2
 
     @pytest.mark.asyncio
@@ -120,7 +120,7 @@ class TestSearchMemoryTool:
             await store.save(f"Memory {i}")
 
         result = await list_tool(limit=3)
-        lines = [l for l in result.split("\n") if l.strip()]
+        lines = [line for line in result.split("\n") if line.strip()]
         assert len(lines) == 3
 
     @pytest.mark.asyncio

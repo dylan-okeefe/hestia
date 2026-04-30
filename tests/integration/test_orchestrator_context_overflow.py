@@ -23,6 +23,10 @@ class ExplodingInferenceClient:
     async def tokenize(self, text: str) -> list[int]:
         return [0] * (len(text) // 4 + 1)
 
+    async def tokenize_batch(self, texts: list[str]) -> list[int]:
+        # Simulate a huge count that always exceeds budget
+        return [99999] * len(texts)
+
     async def count_request(self, messages, tools):
         # Simulate a huge count that always exceeds budget
         return 99999

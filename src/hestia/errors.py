@@ -3,6 +3,16 @@
 from enum import StrEnum
 
 
+class EmailConfigError(ValueError):
+    """Raised when email configuration is invalid."""
+
+
+class HestiaConfigError(ValueError):
+    """Raised when the Hestia configuration is invalid or incomplete."""
+
+    pass
+
+
 class HestiaError(Exception):
     """Base class for all Hestia errors."""
 
@@ -81,6 +91,12 @@ class MissingExtraError(HestiaError):
     pass
 
 
+class WebSearchError(HestiaError):
+    """Raised when the configured web-search provider fails."""
+
+    pass
+
+
 class MaxIterationsError(HestiaError):
     """Orchestrator turn exceeded the configured max iteration count.
 
@@ -154,18 +170,12 @@ def classify_error(exc: Exception) -> tuple[FailureClass, str]:
         PersistenceError: (FailureClass.PERSISTENCE_ERROR, "high"),
         IllegalTransitionError: (FailureClass.ILLEGAL_TRANSITION, "high"),
         MaxIterationsError: (FailureClass.MAX_ITERATIONS, "medium"),
+        WebSearchError: (FailureClass.TOOL_ERROR, "medium"),
+        ToolExecutionError: (FailureClass.TOOL_ERROR, "medium"),
     }
 
     for exc_type, (fc, sev) in mapping.items():
         if isinstance(exc, exc_type):
             return fc, sev
-
-    # Fallback string-match for policy failures and legacy call sites that
-    # still raise bare Exception("Max iterations ... exceeded"). Any new code
-    # should raise MaxIterationsError / PolicyFailureError directly so the
-    # classifier can dispatch on type.
-    error_msg = str(exc).lower()
-    if "max iterations" in error_msg:
-        return FailureClass.MAX_ITERATIONS, "medium"
 
     return FailureClass.UNKNOWN, "medium"

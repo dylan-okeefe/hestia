@@ -139,6 +139,35 @@ class TestMemoryUserScope:
         assert mem.platform_user is None
         assert "memory.save called outside an identity context" in caplog.text
 
+    @pytest.mark.asyncio
+    async def test_save_partial_identity_context_warns_and_unscopes(self, memory_store, caplog):
+        """M2: saving with only one of platform/platform_user logs warning and writes unscoped."""
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            mem = await memory_store.save(
+                content="Partial note", platform="cli", platform_user=None
+            )
+
+        assert mem.platform is None
+        assert mem.platform_user is None
+        assert "Partial identity context" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_search_partial_identity_context_warns_and_unscopes(self, memory_store, caplog):
+        """M2: partial identity context logs warning and falls back to unscoped."""
+        import logging
+
+        await memory_store.save(content="Scoped note", platform="cli", platform_user="test")
+        await memory_store.save(content="Unscoped note")
+
+        with caplog.at_level(logging.WARNING):
+            results = await memory_store.search("note", platform="cli", platform_user=None)
+
+        # Partial scope → unscoped → finds both rows
+        assert len(results) == 2
+        assert "Partial identity context" in caplog.text
+
 
 class TestMemoryToolsUserScope:
     @pytest.fixture

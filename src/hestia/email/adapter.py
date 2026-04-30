@@ -1,11 +1,19 @@
 """Email adapter using IMAP for read/draft and SMTP for send.
 
 All blocking stdlib I/O is dispatched via asyncio.to_thread.
+
+Async boundary note:
+- IMAP operations (imaplib) are wrapped in asyncio.to_thread because the
+  EmailAdapter public API is async and imaplib is purely blocking.
+- SMTP operations (smtplib) are NOT wrapped here; they are called from
+  within the same to_thread blocks that already isolate IMAP work, so
+  adding a second layer would be unnecessary and complicate error handling.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import contextvars
 import email
 import email.utils
@@ -14,8 +22,8 @@ import imaplib
 import logging
 import re
 import smtplib
-from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+from collections.abc import AsyncGenerator, Generator
+from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime
 from email.message import EmailMessage
 from typing import Any
@@ -45,6 +53,14 @@ class EmailAdapter:
         self._imap_session_var: contextvars.ContextVar[
             imaplib.IMAP4_SSL | None
         ] = contextvars.ContextVar("_imap_session_var", default=None)
+        self._smtp: smtplib.SMTP | None = None
+
+    def close(self) -> None:
+        """Close any held SMTP connection."""
+        if self._smtp is not None:
+            with contextlib.suppress(smtplib.SMTPException, OSError):
+                self._smtp.quit()
+            self._smtp = None
 
     # ------------------------------------------------------------------
     # IMAP session management
@@ -64,9 +80,9 @@ class EmailAdapter:
             yield existing
             return
 
-        conn = self._imap_connect()
+        conn = await asyncio.to_thread(self._imap_connect)
         try:
-            conn.select(folder)
+            await asyncio.to_thread(conn.select, folder)
             self._imap_session_var.set(conn)
             yield conn
         finally:
@@ -74,12 +90,12 @@ class EmailAdapter:
             try:
                 # close() is only valid in SELECTED state; in AUTH it raises
                 if getattr(conn, "state", None) == "SELECTED":
-                    conn.close()
+                    await asyncio.to_thread(conn.close)
             except (imaplib.IMAP4.abort, imaplib.IMAP4.error, OSError) as e:
                 logger.debug("IMAP close suppressed: %s", e)
             finally:
                 try:
-                    conn.logout()
+                    await asyncio.to_thread(conn.logout)
                 except (imaplib.IMAP4.abort, imaplib.IMAP4.error, OSError) as e:
                     logger.debug("IMAP logout suppressed: %s", e)
 
@@ -102,7 +118,7 @@ class EmailAdapter:
     def _smtp_connect(self) -> smtplib.SMTP:
         """Open an authenticated SMTP connection.
 
-        Connection type is chosen by ``smtp_port`` (Copilot C-6):
+        Connection type is chosen by ``smtp_port``:
 
         * Port 465 → ``smtplib.SMTP_SSL`` (implicit TLS). This is the
           preferred path: TLS is negotiated at connect time, so every
@@ -127,6 +143,9 @@ class EmailAdapter:
             smtp = smtplib.SMTP_SSL(self.config.smtp_host, self.config.smtp_port)
         else:
             smtp = smtplib.SMTP(self.config.smtp_host, self.config.smtp_port)
+            # SMTPException raised by starttls() itself is caught by the calling
+            # _smtp_session context manager; this branch only handles a "successful
+            # but wrong code" response.
             code, _ = smtp.starttls()
             if code != 220:
                 smtp.close()
@@ -137,6 +156,21 @@ class EmailAdapter:
                 )
         smtp.login(self.config.username, pwd)
         return smtp
+
+    @contextmanager
+    def _smtp_session(self) -> Generator[smtplib.SMTP, None, None]:
+        """Context-manager-friendly SMTP session.
+
+        Ensures ``quit()`` is called even if the caller raises.
+        """
+        smtp = self._smtp_connect()
+        try:
+            yield smtp
+        finally:
+            try:
+                smtp.quit()
+            except (smtplib.SMTPException, OSError) as e:
+                logger.debug("SMTP quit suppressed: %s", e)
 
     @staticmethod
     def _decode_header_value(value: str | bytes) -> str:
@@ -275,13 +309,11 @@ class EmailAdapter:
                 if not uids:
                     return []
 
-                # M-7 (2026-04-20): IMAP SEARCH does **not** guarantee
-                # UIDs come back in arrival / INTERNALDATE order. The old
-                # ``uids[-limit:]`` + ``reversed(uids)`` trick was relying
-                # on that, which silently broke on servers that return
-                # them in another order (e.g. after expunges).
-                # Fix: fetch INTERNALDATE for every matched UID, sort
-                # newest-first on the client, then take ``limit``.
+                # IMAP SEARCH does **not** guarantee UIDs come back in arrival /
+                # INTERNALDATE order. The old ``uids[-limit:]`` + ``reversed(uids)`` trick
+                # was relying on that, which silently broke on servers that return them in
+                # another order (e.g. after expunges). Fix: fetch INTERNALDATE for every
+                # matched UID, sort newest-first on the client, then take ``limit``.
                 sortable: list[tuple[datetime, str]] = []
                 for uid in uids:
                     uid_str = uid.decode() if isinstance(uid, bytes) else str(uid)
@@ -498,11 +530,8 @@ class EmailAdapter:
                 msg = self._fetch_full(imap, draft_id, drafts)
 
                 # 2. Send via SMTP
-                smtp = self._smtp_connect()
-                try:
+                with self._smtp_session() as smtp:
                     smtp.send_message(msg)
-                finally:
-                    smtp.quit()
 
                 # 3. Copy to Sent, mark draft deleted
                 imap.select(drafts)

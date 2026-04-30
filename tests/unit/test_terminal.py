@@ -1,13 +1,15 @@
 """Unit tests for terminal tool."""
 
 import asyncio
+import contextlib
 import os
-import signal
 import tempfile
 
 import pytest
 
-from hestia.tools.builtin.terminal import terminal
+from hestia.tools.builtin.terminal import make_terminal_tool
+
+terminal = make_terminal_tool()
 
 
 class TestTerminal:
@@ -52,11 +54,10 @@ class TestTerminal:
                 assert not _is_process_alive(parent_pid), f"Parent process {parent_pid} still alive"
                 assert not _is_process_alive(child_pid), f"Child process {child_pid} still alive"
         finally:
-            for path in (script_path, "/tmp/terminal_test_parent_pid", "/tmp/terminal_test_child_pid"):
-                try:
+            paths = (script_path, "/tmp/terminal_test_parent_pid", "/tmp/terminal_test_child_pid")
+            for path in paths:
+                with contextlib.suppress(FileNotFoundError):
                     os.unlink(path)
-                except FileNotFoundError:
-                    pass
 
     @pytest.mark.asyncio
     async def test_timeout_returns_timeout_message(self):

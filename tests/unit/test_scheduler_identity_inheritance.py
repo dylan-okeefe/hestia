@@ -1,6 +1,6 @@
 """Tests for scheduler preserving creator identity through runtime context."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -67,8 +67,8 @@ class IdentityCapturingOrchestrator:
                 session_id=session.id,
                 state=TurnState.DONE,
                 user_message=user_message,
-                started_at=datetime.now(timezone.utc),
-                completed_at=datetime.now(timezone.utc),
+                started_at=datetime.now(UTC),
+                completed_at=datetime.now(UTC),
                 iterations=1,
                 tool_calls_made=0,
                 final_response="Done",
@@ -106,7 +106,7 @@ async def test_scheduler_preserves_creator_identity(
         tick_interval_seconds=5.0,
     )
 
-    run_time = datetime.now(timezone.utc)
+    run_time = datetime.now(UTC)
     await scheduler._fire_task(task, run_time)
 
     # Verify orchestrator saw the creator identity
@@ -126,7 +126,7 @@ async def test_scheduler_identity_on_failure(scheduler_store, session_store):
     task = await scheduler_store.create_task(
         session_id=session.id,
         prompt="Failing task",
-        fire_at=datetime.now(timezone.utc),
+        fire_at=datetime.now(UTC),
     )
 
     class FailingOrchestrator:
@@ -150,7 +150,7 @@ async def test_scheduler_identity_on_failure(scheduler_store, session_store):
         tick_interval_seconds=5.0,
     )
 
-    await scheduler._fire_task(task, datetime.now(timezone.utc))
+    await scheduler._fire_task(task, datetime.now(UTC))
 
     # Verify ContextVars are cleaned up after failure
     assert current_platform.get() is None

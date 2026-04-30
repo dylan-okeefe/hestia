@@ -6,14 +6,16 @@ from typing import TYPE_CHECKING
 from hestia.config import PolicyConfig, TrustConfig
 from hestia.core.types import Session
 from hestia.errors import InferenceServerError, InferenceTimeoutError
-from hestia.policy.constants import CONTEXT_PRESSURE_THRESHOLD, PLATFORM_SUBAGENT
+from hestia.policy.constants import (
+    CONTEXT_PRESSURE_THRESHOLD,
+    PLATFORM_SCHEDULER,
+    PLATFORM_SUBAGENT,
+)
 from hestia.policy.engine import (
     PolicyEngine,
     RetryAction,
     RetryDecision,
 )
-
-logger = logging.getLogger(__name__)
 from hestia.runtime_context import scheduler_tick_active
 
 if TYPE_CHECKING:
@@ -161,6 +163,15 @@ class DefaultPolicyEngine(PolicyEngine):
                 reason="transient inference error",
             )
 
+        # Empty responses are often transient (bad sample from the model)
+        from hestia.errors import EmptyResponseError
+
+        if isinstance(error, EmptyResponseError):
+            return RetryDecision(
+                action=RetryAction.RETRY,
+                reason="empty model response",
+            )
+
         # Non-transient errors (tool errors, logic errors, etc.) fail immediately
         return RetryDecision(
             action=RetryAction.FAIL,
@@ -248,7 +259,7 @@ class DefaultPolicyEngine(PolicyEngine):
                 if not (set(registry.describe(name).capabilities) & blocked)
             ]
 
-        if session.platform == "scheduler" or scheduler_tick_active.get():
+        if session.platform == PLATFORM_SCHEDULER or scheduler_tick_active.get():
             blocked = set()
             if not trust.scheduler_shell_exec:
                 blocked.add(SHELL_EXEC)

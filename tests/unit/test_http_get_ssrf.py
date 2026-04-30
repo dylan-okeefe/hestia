@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
-from hestia.tools.builtin.http_get import SSRFSafeTransport, _is_url_safe, http_get
+from hestia.tools.builtin.http_get import SSRFSafeTransport, _is_url_safe
 
 
 class TestSSRFProtection:

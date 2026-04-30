@@ -1,6 +1,7 @@
 HESTIA_KIMI_DONE=1
-LOOP=L47
-BRANCH=chore/l47-adr-normalization
-COMMIT=TBD
-TESTS=1 passed
-RUFF_SRC=25
+LOOP=L101
+BRANCH=develop
+COMMIT=7dce229
+TESTS=1062 passed, 6 skipped (unit+integration)
+RUFF_SRC=baseline (no new issues in changed files)
+MERGED=L89-L101

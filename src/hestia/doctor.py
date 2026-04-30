@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import inspect
 import os
 import sqlite3
 import sys
@@ -17,7 +18,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from hestia.app import CliAppContext
+from hestia.app import AppContext
 
 
 @dataclass(frozen=True)
@@ -33,7 +34,7 @@ class CheckResult:
 # Public API
 # ---------------------------------------------------------------------------
 
-async def run_checks(app: CliAppContext) -> list[CheckResult]:
+async def run_checks(app: AppContext) -> list[CheckResult]:
     """Run all health checks against the live app context.
 
     Order matters only insofar as later checks depend on earlier ones being
@@ -51,13 +52,14 @@ async def run_checks(app: CliAppContext) -> list[CheckResult]:
         _check_platform_prereqs,
         _check_voice_prerequisites,
         _check_trust_preset_resolves,
+        _check_trust_preset_safe_for_production,
         _check_memory_epoch,
     ]
     results: list[CheckResult] = []
     for fn in checks:
         try:
             results.append(await fn(app))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — defensive check boundary
             # Defensive: every check *should* catch its own exceptions, but if
             # one doesn't we surface it rather than aborting the whole suite.
             results.append(
@@ -92,7 +94,7 @@ def render_results(results: list[CheckResult], *, plain: bool = False) -> str:
 # Individual checks
 # ---------------------------------------------------------------------------
 
-async def _check_python_version(app: CliAppContext) -> CheckResult:
+async def _check_python_version(app: AppContext) -> CheckResult:
     """Check Python >= 3.11."""
     if sys.version_info >= (3, 11):  # noqa: UP036
         return CheckResult("python_version", True, "")
@@ -104,12 +106,12 @@ async def _check_python_version(app: CliAppContext) -> CheckResult:
     )
 
 
-async def _check_dependencies_in_sync(app: CliAppContext) -> CheckResult:
+async def _check_dependencies_in_sync(app: AppContext) -> CheckResult:
     """Run ``uv pip check`` to verify lockfile sync.
 
     Uses ``asyncio.create_subprocess_exec`` so concurrent ``doctor``
     checks don't stall the event loop for the full 10s ``uv pip check``
-    runtime (Copilot C-5).
+    runtime.
     """
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -125,7 +127,7 @@ async def _check_dependencies_in_sync(app: CliAppContext) -> CheckResult:
             False,
             "uv not found on PATH; cannot verify dependency sync",
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — defensive check boundary
         return CheckResult(
             "dependencies_in_sync",
             False,
@@ -159,7 +161,7 @@ async def _check_dependencies_in_sync(app: CliAppContext) -> CheckResult:
     )
 
 
-async def _check_config_file_loads(app: CliAppContext) -> CheckResult:
+async def _check_config_file_loads(app: AppContext) -> CheckResult:
     """Smoke-test that config loaded successfully."""
     if app.config is None:
         return CheckResult("config_file_loads", False, "app.config is None")
@@ -167,7 +169,7 @@ async def _check_config_file_loads(app: CliAppContext) -> CheckResult:
     return CheckResult("config_file_loads", True, f"loaded from {source}")
 
 
-async def _check_config_schema(app: CliAppContext) -> CheckResult:
+async def _check_config_schema(app: AppContext) -> CheckResult:
     """Validate config schema_version when present."""
     # Deferred to L39: add schema_version to HestiaConfig and compare against current.
     version = getattr(app.config, "schema_version", None)
@@ -181,8 +183,8 @@ async def _check_config_schema(app: CliAppContext) -> CheckResult:
     return CheckResult("config_schema", True, f"schema_version={version}")
 
 
-async def _check_allowed_roots_cwd(app: CliAppContext) -> CheckResult:
-    """Warn when ``allowed_roots`` is ``[\".]`` under a broad CWD (Copilot M-10)."""
+async def _check_allowed_roots_cwd(app: AppContext) -> CheckResult:
+    """Warn when ``allowed_roots`` is ``[\".]`` under a broad CWD."""
     roots = app.config.storage.allowed_roots
     if "." not in roots:
         return CheckResult("allowed_roots_cwd", True, "")
@@ -200,7 +202,7 @@ async def _check_allowed_roots_cwd(app: CliAppContext) -> CheckResult:
     return CheckResult("allowed_roots_cwd", True, "")
 
 
-async def _check_sqlite_dbs_readable(app: CliAppContext) -> CheckResult:
+async def _check_sqlite_dbs_readable(app: AppContext) -> CheckResult:
     """PRAGMA integrity_check on the SQLite database file."""
     db_url = getattr(app.db, "_url", "")
     if not db_url.startswith("sqlite"):
@@ -230,7 +232,7 @@ async def _check_sqlite_dbs_readable(app: CliAppContext) -> CheckResult:
             False,
             f"{path}: {status}",
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — defensive check boundary
         return CheckResult(
             "sqlite_dbs_readable",
             False,
@@ -238,12 +240,12 @@ async def _check_sqlite_dbs_readable(app: CliAppContext) -> CheckResult:
         )
 
 
-async def _check_llamacpp_reachable(app: CliAppContext) -> CheckResult:
+async def _check_llamacpp_reachable(app: AppContext) -> CheckResult:
     """Hit the llama.cpp /health endpoint when configured.
 
     Uses ``httpx.AsyncClient`` so the 2 s health-check timeout does not
-    block the event loop for other concurrent doctor checks (Copilot
-    C-5). Retains the same error classification as the sync version.
+    block the event loop for other concurrent doctor checks.
+    Retains the same error classification as the sync version.
     """
     base_url = app.config.inference.base_url
     if not base_url:
@@ -275,7 +277,7 @@ async def _check_llamacpp_reachable(app: CliAppContext) -> CheckResult:
             False,
             f"cannot connect to llama.cpp at {health_url}",
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — defensive check boundary
         return CheckResult(
             "llamacpp_reachable",
             False,
@@ -283,7 +285,7 @@ async def _check_llamacpp_reachable(app: CliAppContext) -> CheckResult:
         )
 
 
-async def _check_platform_prereqs(app: CliAppContext) -> CheckResult:
+async def _check_platform_prereqs(app: AppContext) -> CheckResult:
     """Validate that enabled platforms have required credentials."""
     cfg = app.config
     failures: list[str] = []
@@ -328,7 +330,7 @@ async def _check_platform_prereqs(app: CliAppContext) -> CheckResult:
     return CheckResult("platform_prereqs", True, f"enabled: {', '.join(enabled)}")
 
 
-async def _check_voice_prerequisites(app: CliAppContext) -> CheckResult:
+async def _check_voice_prerequisites(app: AppContext) -> CheckResult:
     """Verify voice dependencies are present when the extra is installed."""
     import importlib.util
 
@@ -361,7 +363,7 @@ async def _check_voice_prerequisites(app: CliAppContext) -> CheckResult:
     )
 
 
-async def _check_trust_preset_resolves(app: CliAppContext) -> CheckResult:
+async def _check_trust_preset_resolves(app: AppContext) -> CheckResult:
     """Verify trust preset matches a known name."""
     preset = app.config.trust.preset
     if preset is None:
@@ -380,7 +382,28 @@ async def _check_trust_preset_resolves(app: CliAppContext) -> CheckResult:
     )
 
 
-async def _check_memory_epoch(app: CliAppContext) -> CheckResult:
+async def _check_trust_preset_safe_for_production(app: AppContext) -> CheckResult:
+    """Fail when the dangerous 'developer' preset is used outside a dev environment."""
+    preset = app.config.trust.preset
+    if preset != "developer":
+        return CheckResult("trust_preset_safe", True, "")
+    hestia_env = os.environ.get("HESTIA_ENV", "")
+    if hestia_env == "development":
+        return CheckResult(
+            "trust_preset_safe",
+            True,
+            "trust preset 'developer' with HESTIA_ENV=development — acknowledged",
+        )
+    return CheckResult(
+        "trust_preset_safe",
+        False,
+        "Trust preset 'developer' auto-approves all tools. "
+        "This is not recommended for production. "
+        "Set HESTIA_ENV=development to acknowledge, or switch to a safer preset.",
+    )
+
+
+async def _check_memory_epoch(app: AppContext) -> CheckResult:
     """Check memory epoch file exists and is readable integer."""
     memory_cfg = getattr(app.config, "memory", None)
     if memory_cfg is None:
@@ -413,7 +436,7 @@ async def _check_memory_epoch(app: CliAppContext) -> CheckResult:
             False,
             f"{epoch_path}: contents do not parse as int",
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — defensive check boundary
         return CheckResult(
             "memory_epoch",
             False,

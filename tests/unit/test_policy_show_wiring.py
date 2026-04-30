@@ -18,46 +18,15 @@ def make_app(tmp_path):
     """Build a minimal CliAppContext for policy show tests."""
 
     def _factory(cfg=None):
-        from hestia.app import CliAppContext
-        from hestia.artifacts.store import ArtifactStore
+        from hestia.app import AppContext
         from hestia.config import HestiaConfig
-        from hestia.memory import MemoryStore
         from hestia.persistence.db import Database
-        from hestia.persistence.failure_store import FailureStore
-        from hestia.persistence.scheduler import SchedulerStore
-        from hestia.persistence.sessions import SessionStore
-        from hestia.persistence.skill_store import SkillStore
-        from hestia.persistence.trace_store import TraceStore
-        from hestia.policy.default import DefaultPolicyEngine
-        from hestia.tools.registry import ToolRegistry
-
         if cfg is None:
             cfg = HestiaConfig.default()
         cfg.storage.database_url = f"sqlite+aiosqlite:///{tmp_path}/test.db"
         cfg.storage.artifacts_dir = tmp_path / "artifacts"
-        db = Database(cfg.storage.database_url)
-        artifact_store = ArtifactStore(cfg.storage.artifacts_dir)
-        session_store = SessionStore(db)
-        tool_registry = ToolRegistry(artifact_store)
-        policy = DefaultPolicyEngine()
-        memory_store = MemoryStore(db)
-        failure_store = FailureStore(db)
-        trace_store = TraceStore(db)
-        scheduler_store = SchedulerStore(db)
-        skill_store = SkillStore(db)
-        return CliAppContext(
-            config=cfg,
-            db=db,
-            session_store=session_store,
-            tool_registry=tool_registry,
-            policy=policy,
-            memory_store=memory_store,
-            failure_store=failure_store,
-            trace_store=trace_store,
-            artifact_store=artifact_store,
-            scheduler_store=scheduler_store,
-            skill_store=skill_store,
-        )
+        app = AppContext(cfg)
+        return app
 
     return _factory
 

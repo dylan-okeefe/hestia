@@ -264,7 +264,7 @@ async def test_evict_then_reacquire_restores(store, slot_dir):
     # Refresh and save A's state
     session_a = await store.get_session(session_a.id)
     await manager.save(session_a)
-    saved_path = (await store.get_session(session_a.id)).slot_saved_path
+    _ = (await store.get_session(session_a.id)).slot_saved_path
 
     # Clear calls
     inference.calls.clear()

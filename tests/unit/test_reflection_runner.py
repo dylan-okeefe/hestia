@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import pytest
 
 from hestia.core.types import ChatResponse
 from hestia.reflection.runner import ReflectionRunner
-from hestia.reflection.store import ProposalStore
 from hestia.reflection.types import Proposal
 
 

@@ -5,6 +5,78 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-04-30
+
+Security hardening, structural consolidation, streaming inference, and
+performance optimizations. Net reduction of ~2,500 lines of dead weight.
+
+### Security
+- `allowed_roots` defaults to `[]` (deny-all) instead of `["."]`.
+- `EmailConfig.__repr__` masks `password`; `TelegramConfig.__repr__` masks `bot_token`.
+- `TrustConfig.developer()` emits a `logger.warning()` on use.
+- `hestia doctor` fails when `trust.preset == "developer"` outside a dev environment.
+- Terminal tool now blocks dangerous patterns (`rm -rf /`, disk overwrite, fork bombs) via `make_terminal_tool()`.
+- `TrustConfig.blocked_shell_patterns` allows operator customization of blocked commands.
+- Egress audit logs strip query parameters before persisting URLs, preventing API-key leakage.
+- Tool calls per turn are capped at `PolicyConfig.max_tool_calls_per_turn` (default 10).
+- `curl_cffi` fallback is opt-in via `HestiaConfig.use_curl_cffi_fallback` (default `False`).
+
+### Streaming Inference (new)
+- **`InferenceClient.chat_stream()`** — async generator that consumes SSE events from llama-server and yields `StreamDelta` objects as they arrive.
+- **`StreamDelta` type** — carries `content`, `reasoning_content`, `tool_call_chunks`, `finish_reason`, and token usage.
+- **Orchestrator streaming branch** — when `config.inference.stream = True` and a `stream_callback` is provided, the orchestrator accumulates deltas, pipes content to the adapter, and reconstructs a `ChatResponse` for downstream tool-call handling.
+- **Telegram progressive delivery** — sends the first chunk as a new message, then rate-limited edits (1.5s interval) as more content arrives. First-chunk buffering prevents flash-of-empty-content (waits for ≥20 chars or 500ms).
+- `InferenceConfig.stream` flag defaults to `False`; non-streaming path is completely unchanged.
+
+### Performance
+- **`ContextBuilder.warm_up()`** — pre-computes join overhead during startup so the first user turn doesn't pay the ~200ms cost of two `/tokenize` calls. Wired into all entry points (platform runners, CLI chat, scheduler daemon).
+- **`InferenceClient.tokenize_batch()`** — counts tokens for N messages in a single HTTP round-trip instead of N serial calls. Reduces context-building latency by ~300–400ms for 50-message histories.
+- **`_strip_historical_reasoning`** now uses conditional copy — only allocates a new `Message` when `reasoning_content` is actually set, avoiding churn on the majority of messages.
+- **`_count_body` cache key hardened** — replaced `"|".join(...)` with `hash(tuple(...))` to prevent key collisions when message content contains pipe characters.
+
+### Config & CLI
+- **`HestiaConfig` sub-groupings** — new `CoreConfig`, `PlatformConfig`, and `FeatureConfig` dataclasses organize 19 nested config objects. Old flat access paths (`config.telegram`) preserved via property aliases for backward compatibility.
+- **`cli.py` section separators** — comment headers between command groups (chat, admin, memory, audit, scheduler, etc.) make insertion points obvious.
+- **CLI auto-discovery** — `commands/__init__.py` discovers `cmd_*` functions via `pkgutil`, eliminating manual import lists.
+- **`hestia audit run --strict`** — returns exit code 1 when any check fails or warns, enabling CI gate usage. Default behavior (exit 0 on warnings) preserved for backward compatibility.
+- **Clarified `doctor` vs `audit` help text** — `doctor` = pre-flight prerequisites; `audit` = runtime health and data integrity.
+
+### Reliability
+- `SlotManager._pick_lru_victim` uses single batch query instead of N serial round-trips.
+- `_evict_session_locked` releases lock before HTTP I/O and re-acquires after.
+- Concurrent tool dispatch catches exceptions per-tool so one failure doesn't cancel siblings.
+- Memory scope resolves partial identity to `(None, None)` with warning, preventing cross-user leaks.
+- `ContextBuilder` caches static system-prompt token counts.
+- **Per-session token-bucket rate limiter** — `SessionRateLimiter` caps turns per minute per session with bounded bucket eviction (max 10,000 buckets). Configurable via `RateLimitConfig`.
+
+### Email & Voice
+- **Email adapter async safety** — all IMAP calls (`select`, `close`, `logout`, connection setup) wrapped in `asyncio.to_thread`. SMTP calls intentionally left unwrapped since email tools already dispatch at the tool level.
+- **Voice pipeline split locks** — replaced single `_init_lock` with separate `_stt_lock` and `_tts_lock` so STT and TTS models can initialize concurrently.
+
+### Structural
+- Collapsed `CoreAppContext` + `FeatureAppContext` + `CliAppContext` facade into single `AppContext` with `@functools.cached_property` for lazy subsystems. `make_app()` broken into phased helpers.
+- `InferenceClient` consolidated: single `_request()` helper replaces 7 copy-pasted try/except blocks. `__aenter__`/`__aexit__` added for proper lifecycle.
+- Meta-tool dispatch replaced open-coded type switch with `self._meta_tools` dict.
+- `message_to_dict` moved to `core/serialization.py`.
+- `_tokenize_cache` bounded to 4096 entries with LRU eviction.
+- `_last_edit_times` prunes stale entries on access.
+
+### Trust & Policy
+- **`TrustConfig.is_paranoid()`** — semantic comparison replaces fragile `__eq__` check in `HestiaConfig.for_trust()`. Adding new fields to `TrustConfig` will no longer silently break trust-level dispatch.
+- `PLATFORM_SCHEDULER` constant extracted to `policy/constants.py`.
+
+### UX
+- New `hestia history` command (`history list`, `history show`) for session/conversation retrieval.
+- Startup config validation (`_validate_config_at_startup`) catches broken config before subsystem creation.
+- `TurnFinalization.sanitize_user_error()` maps specific errors to human-friendly messages.
+
+### Cleanup
+- **Skills subsystem removed entirely** (~1,500 lines deleted). The experimental scaffolding had no working meta-tool and was dead weight.
+- **Reflection subsystem slimmed** — collapsed three-class pipeline into single `run()` method; compacted scheduler, store, and SQL. Net: -413 lines (752 → 339).
+- **Style subsystem slimmed** — compressed vocab list, inlined helpers, compacted SQL. Net: -570 lines (899 → 329).
+- `test_builtin_tools.py` and `test_builtin_tools_new.py` consolidated.
+- All unacknowledged `except Exception` catches acknowledged with `# noqa: BLE001` and context comments.
+
 ## [0.10.0] — 2026-04-22
 
 Minor release. Completes Telegram voice-message hardening, officially

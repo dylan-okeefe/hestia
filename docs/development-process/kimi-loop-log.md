@@ -9,6 +9,392 @@
 
 
 
+## 2026-04-30 — L101 Complete (Telegram Progressive Delivery)
+
+**Outcome:** Wired Telegram adapter to display streaming responses progressively with rate-limited edits.
+
+**Changes:**
+- `TelegramAdapter._make_stream_callback()` — sends first buffered chunk as new message, edits in-place with 1.5s rate limiting
+- First-chunk buffer: waits for ≥20 chars or 500ms before sending initial message
+- `respond_callback` final edit ensures complete, correctly-formatted content is displayed
+- `Orchestrator.process_turn` accepts `stream_callback` parameter
+
+**Quality gate:** 1051 passed, 6 skipped; ruff clean; mypy clean on changed files.
+
+**Branch:** `feature/l101-telegram-progressive-delivery`
+
+---
+
+## 2026-04-30 — L100 Complete (Orchestrator Streaming Plumbing)
+
+**Outcome:** Wired streaming inference into orchestrator execution loop.
+
+**Changes:**
+- `StreamCallback` type and `TurnContext.stream_callback` field in `orchestrator/types.py`
+- Conditional streaming branch in `TurnExecution.run()`: accumulates deltas, calls callback, reconstructs `ChatResponse`
+- Tool call chunk accumulation by index
+- Token usage captured from final delta
+- All platform adapters pass `stream_callback=None` (opt-in)
+
+**Quality gate:** 1043 passed, 6 skipped; ruff clean; mypy clean on changed files.
+
+**Branch:** `feature/l100-orchestrator-streaming`
+
+---
+
+## 2026-04-30 — L99 Complete (Streaming Inference)
+
+**Outcome:** Added `chat_stream()` async generator to InferenceClient.
+
+**Changes:**
+- `StreamDelta` dataclass in `core/types.py`
+- `InferenceConfig.stream: bool = False` config flag
+- `InferenceClient.chat_stream()` parses SSE events from llama-server, yields `StreamDelta` objects
+- Error translation matches non-streaming path (timeout → InferenceTimeoutError, 5xx → InferenceServerError)
+
+**Quality gate:** 965 passed; ruff clean; mypy clean on changed files.
+
+**Branch:** `feature/l99-streaming-inference`
+
+---
+
+## 2026-04-30 — L98 Complete (Token Counting Batch Optimization)
+
+**Outcome:** Reduced N HTTP round-trips for token counting to 1 via batch tokenization.
+
+**Changes:**
+- `InferenceClient.tokenize_batch(texts)` — joins texts with separator, single `/tokenize` call, splits result
+- `ContextBuilder._count_body()` uses batch path for uncached messages, falls back to per-message
+- Comparison test proves batch and per-message counts match
+
+**Quality gate:** 1039 passed, 6 skipped; ruff clean; mypy clean on changed files.
+
+**Branch:** `feature/l98-token-batch`
+
+---
+
+## 2026-04-30 — L97 Complete (Config and CLI Readability)
+
+**Outcome:** Grouped HestiaConfig sub-configs and added CLI section separators.
+
+**Changes:**
+- `CoreConfig`, `PlatformConfig`, `FeatureConfig` grouping dataclasses in `config.py`
+- Property aliases preserve backward compatibility (`config.telegram` still works)
+- `cli.py` section comment headers between command groups (chat, admin, memory, audit, etc.)
+
+**Quality gate:** 1033 passed, 6 skipped; ruff clean; mypy clean on changed files.
+
+**Branch:** `feature/l97-config-cli-readability`
+
+---
+
+## 2026-04-30 — L96 Complete (Audit Strict and Doctor Overlap)
+
+**Outcome:** Added `--strict` flag to `hestia audit run` and clarified doctor vs audit scopes.
+
+**Changes:**
+- `hestia audit run --strict` / `-s` — exits 1 if any check fails or warns
+- Backward compatible: without `--strict`, only critical findings exit 1
+- Updated help text: `doctor` = pre-flight prerequisites, `audit` = runtime health and data integrity
+
+**Quality gate:** 1033 passed, 6 skipped; ruff clean; mypy clean on changed files.
+
+**Branch:** `feature/l96-audit-strict-doctor-overlap`
+
+---
+
+## 2026-04-30 — L95 Complete (Voice Pipeline Split Locks)
+
+**Outcome:** Split single STT/TTS init lock into two independent locks.
+
+**Changes:**
+- `VoicePipeline._stt_lock` and `VoicePipeline._tts_lock` replace `_init_lock`
+- `_ensure_stt_loaded()` acquires `_stt_lock`, `_ensure_tts_loaded()` acquires `_tts_lock`
+- STT and TTS can now initialize concurrently
+
+**Quality gate:** 1033 passed, 6 skipped; ruff clean; mypy clean on changed files.
+
+**Branch:** `feature/l95-voice-split-locks`
+
+---
+
+## 2026-04-30 — L94 Complete (Email Adapter Async Safety)
+
+**Outcome:** Wrapped blocking IMAP calls in `asyncio.to_thread`.
+
+**Changes:**
+- `imap_session` context manager: `select`, `close`, `logout` all wrapped in `asyncio.to_thread`
+- `_imap_connect()` call wrapped in `asyncio.to_thread`
+- Module-level comment explaining IMAP vs SMTP async boundary (SMTP handled at tool level)
+
+**Quality gate:** 1033 passed, 6 skipped; ruff clean; mypy clean on changed files.
+
+**Branch:** `feature/l94-email-async-safety`
+
+---
+
+## 2026-04-30 — L93 Complete (Join Overhead Warm-Up)
+
+**Outcome:** Moved `_compute_join_overhead` from first turn to explicit startup warm-up.
+
+**Changes:**
+- `ContextBuilder.warm_up()` — pre-computes join overhead, idempotent
+- Called in `run_platform()`, `cmd_chat()`, `cmd_ask()`, and scheduler daemon startup
+- Updated mock fixtures in runner tests to provide `warm_up = AsyncMock()`
+
+**Quality gate:** 1035 passed, 6 skipped; ruff clean; mypy clean on changed files.
+
+**Branch:** `feature/l93-join-overhead-warmup`
+
+---
+
+## 2026-04-30 — L92 Complete (Strip Reasoning Conditional Copy)
+
+**Outcome:** Optimized `_strip_historical_reasoning` to only copy messages with reasoning.
+
+**Changes:**
+- `_strip_historical_reasoning` in `core/inference.py` uses `dataclasses.replace()` for conditional copy
+- Messages without `reasoning_content` are passed through as-is
+- Future-proof: new Message fields won't be silently dropped
+
+**Quality gate:** 1033 passed, 6 skipped; ruff clean; mypy clean on changed files.
+
+**Branch:** `feature/l92-strip-reasoning-optimization`
+
+---
+
+## 2026-04-30 — L91 Complete (For-Trust Equality Hardening)
+
+**Outcome:** Replaced fragile `__eq__` check in `for_trust` with semantic comparison.
+
+**Changes:**
+- `TrustConfig.is_paranoid()` — checks only distinguishing fields (`auto_approve_tools`, shell exec flags, etc.)
+- `HestiaConfig.for_trust()` uses `not trust.is_paranoid()` instead of whole-object equality
+- Removed redundant `TrustConfig()` from comparison tuple
+- Tests verify all four presets (`paranoid`, `household`, `developer`, `prompt_on_mobile`)
+
+**Quality gate:** 1035 passed, 6 skipped; ruff clean; mypy clean on changed files.
+
+**Branch:** `feature/l91-for-trust-equality`
+
+---
+
+## 2026-04-30 — L90 Complete (Count Body Cache Key Hardening)
+
+**Outcome:** Replaced `_count_body` string-join cache key with hash-based key.
+
+**Changes:**
+- `cache_key = hash(tuple((m.role, m.content) for m in messages))` in `_count_body`
+- Renamed `_last_system_content` → `_last_system_cache_key` (type `int | None`)
+- Test demonstrates collision under old key scheme and distinct keys under new scheme
+
+**Quality gate:** 1034 passed, 6 skipped; ruff clean; mypy clean on changed files.
+
+**Branch:** `feature/l90-count-body-cache-key`
+
+---
+
+## 2026-04-30 — L89 Complete (Correct Italic Repl Documentation)
+
+**Outcome:** Corrected `_italic_repl` dead-code mischaracterization in post-cleanup evaluation.
+
+**Changes:**
+- Updated `docs/development-process/reviews/post-cleanup-evaluation-april-26.md` at four references
+- Strikethrough correction notes explain the `<b>` guard is reachable when bold runs before italic
+- Cross-referenced `code-review-develop-april-29.md` for full reasoning
+
+**Quality gate:** 1033 passed, 6 skipped (docs-only change).
+
+**Branch:** `feature/l89-correct-italic-repl-docs`
+
+---
+
+## 2026-04-26 — L74 Complete (UX Gaps & Config Validation)
+
+**Outcome:** Added history command, startup config validation, and better error messages.
+
+**Changes:**
+- `hestia history [session_id]` — lists sessions or shows conversation; supports `--json`
+- `SessionStore.list_sessions()` for recent session retrieval
+- `HestiaConfigError` + `_validate_config_at_startup()` — catches broken config before subsystem creation
+- `sanitize_user_error()` maps common failures to actionable user-facing messages
+
+**Quality gate:** 1057 passed, 6 skipped; ruff clean; mypy clean.
+
+**Branch:** `feature/l74-ux-gaps-and-config-validation`
+
+---
+
+## 2026-04-26 — L72 Complete (Tool Call Boundaries & SSRF Defense)
+
+**Outcome:** Added tool-call cap and made curl_cffi fallback opt-in.
+
+**Changes:**
+- `PolicyConfig.max_tool_calls_per_turn` (default: 10) — truncates excess tool calls with error messages
+- `HestiaConfig.use_curl_cffi_fallback` (default: False) — curl_cffi retry only when explicitly enabled
+- `make_http_get_tool()` factory replaces direct `http_get` registration in app bootstrap
+
+**Quality gate:** 1057 passed, 6 skipped; ruff clean; mypy clean.
+
+**Branch:** `feature/l72-tool-call-boundaries-and-ssrf`
+
+---
+
+## 2026-04-26 — L71 Complete (App Context Gravity Well)
+
+**Outcome:** Collapsed three-class app-context hierarchy into single `AppContext`.
+
+**Changes:**
+- Deleted `CoreAppContext`, `FeatureAppContext`, `CliAppContext` facade.
+- Created `AppContext` with `@functools.cached_property` for lazy subsystems.
+- Broke `make_app()` into phase helpers.
+- Net −332 lines across 20 files.
+
+**Quality gate:** 1057 passed, 6 skipped; ruff clean; mypy clean.
+
+**Branch:** `feature/l71-app-context-gravity-well`
+
+---
+
+## 2026-04-26 — L70 Complete (Memory Scope & Concurrent Tool Safety)
+
+**Outcome:** Two April-22 review findings (M2, M3) fixed and tested.
+
+**Changes:**
+- `memory/store.py`: `_resolve_scope` now normalizes partial `platform`/`platform_user` to both `None` with a warning, preventing isolation leaks.
+- `orchestrator/execution.py`: `_run_one` wrapper catches exceptions during concurrent tool dispatch and returns `ToolCallResult.error(...)`, shielding sibling tools from `asyncio.gather` cancellation.
+- Tests added for both fixes.
+
+**Quality gate:** 1062 passed, 6 skipped; ruff clean; mypy clean.
+
+**Branch:** `feature/l70-memory-search-scope-and-concurrent-tool-safety`
+
+---
+
+## 2026-04-25 — L60–L62 Arc Complete (Docs & Code Overhaul)
+
+**Outcome:** All 3 loops from the April 26 review are complete on feature branches.
+
+**Scope authorization:** `docs/development-process/reviews/docs-and-code-overhaul-april-26.md`
+
+**Subagent chunks:**
+1. **L60** — README ToC, reorder, Features tightening, new docs landing pages, UPGRADE.md
+2. **L61** — Four duplicate-definition bugs, WebSearchError inline, list_dir perf fix
+3. **L62** — Wire TurnExecution/TurnFinalization into Orchestrator; engine.py 913 → 305 lines
+
+**Quality gate:**
+- L60: ruff clean, links verified
+- L61: 70 tests passed, ruff/mypy clean
+- L62: 21 orchestrator tests passed, engine.py 305 lines (<350)
+
+**Branches:**
+- `feature/l60-docs-overhaul` — pushed
+- `feature/l61-bug-fixes-and-cleanup` — pushed
+- `feature/l62-orchestrator-decomposition` — pushed
+
+## 2026-04-25 — L54–L59 Arc Complete
+
+**Outcome:** All 6 loops from the v0.10.0 pre-release evaluation arc are complete
+and merged to `develop`.
+
+**Merged to `develop`:**
+- L54 — Async safety & small bugs (merged earlier)
+- L55 — Code cleanup & release prep (merged earlier)
+- L56 — Orchestrator decomposition
+- L57 — App bootstrap cleanup
+- L58 — Config, UX & timezone polish
+- L59 — Security docs & infrastructure
+
+**Quality gate post-merge:**
+- Tests: 159 passed (targeted subset)
+- Mypy: 1 pre-existing error in `engine.py` (no new errors)
+- Ruff: 32 pre-existing issues (no new issues)
+
+## 2026-04-25 — L56: Orchestrator Decomposition
+
+**Outcome:** `engine.py` decomposed from 978 lines to 284 lines. Three phase
+classes extracted: `TurnAssembly` (126 lines), `TurnExecution` (430 lines),
+`TurnFinalization` (328 lines).
+
+**Scope authorization:** `docs/development-process/kimi-loops/L56-orchestrator-decomposition.md`
+
+**Implementation pattern:** Sequential subagent delegation, one phase per
+subagent. Each subagent extracted its phase and left thin proxy methods in
+`Orchestrator` for test compatibility.
+
+**Commits:**
+- `29389b7` — `TurnAssembly` extraction
+- `a771e87` — `TurnExecution` extraction
+- `cae1d15` — `TurnFinalization` extraction
+- `353ae95` — Thin `Orchestrator` coordinator
+
+**Quality gate:**
+- Tests: 78 passed
+- Ruff: all checks passed
+- Mypy: no issues in 7 source files
+
+**Review finding:** `execution.py` (430) and `finalization.py` (328) exceed the
+250-line target. Further decomposition deferred — the primary goal
+(`engine.py` < 300 lines) is achieved.
+
+**Branch:** `feature/l56-orchestrator-decomposition` — **do NOT merge to develop**
+until v0.11 release-prep.
+
+## 2026-04-25 — L55: Code Cleanup & Release Prep
+
+**Outcome:** All 5 sections completed and merged to `develop`.
+
+**Scope authorization:** `docs/development-process/kimi-loops/L55-code-cleanup-release-prep.md`
+
+**Implementation pattern:** Sequential subagent delegation with review between
+each chunk. Each subagent got 1 section (or 2 small related sections) to stay
+well under the 100-step limit.
+
+**Subagent chunks:**
+1. §5 — `_handle_meta_command` → `commands/meta.py` (ab6979d)
+2. §2 — `TurnContext.session` non-optional (7fb2a52)
+3. §1 — Strip 20 review-tracking comments (6d9a745)
+4. §3 — `SkillIndexBuilder` canonical formatting (a20c06d)
+5. §4 — `@tool` TypeVar + 10 `cast()` removals (d644c9b)
+
+**Quality gate:**
+- Tests: 120 passed (targeted subset)
+- Mypy: 0 new errors
+- Ruff: 0 new issues
+
+**Branch:** `feature/l55-code-cleanup-release-prep` — **merged to `develop`.**
+
+## 2026-04-25 — L54: Async Safety & Small Bugs
+
+**Outcome:** All 10 sections from the v0.10.0 pre-release evaluation fixed and
+merged to `develop`.
+
+**Scope authorization:** `docs/development-process/kimi-loops/L54-async-safety-and-small-bugs.md`
+
+**Implementation pattern:** Spec-driven with subagent delegation. The first
+subagent (coder) implemented sections 1–9 and started section 10 before hitting
+its 100-step limit. The orchestrator (Kimi) reviewed the subagent's commits,
+fixed review findings (ScheduledTask validator semantics, logger init, import
+order), ran quality gates, and committed the remainder.
+
+**Commits (9):**
+- `3167dcd` — `asyncio.to_thread` for `socket.getaddrinfo` in SSRF check
+- `2f77b32` — `asyncio.to_thread` for sync file I/O in read/write/list tools
+- `4ed2c77` — deduplicate `artifact_refs`, catch `asyncio.TimeoutError`
+- `28f9bfd` — hoist `timedelta` import to module level
+- `826d6b6` — `WebSearchError(HestiaError)`, `classify_error` maps to `TOOL_ERROR`
+- `218aab8` — `ScheduledTask.__post_init__` mutual-exclusion validator
+- `3954c44` — remove dead `**kw: Any` from file tool factories
+- `cafded6` — remove legacy string-match fallback in `classify_error`
+- `e8c7e82` — move ContextVars to `runtime_context.py`
+
+**Quality gate:**
+- Tests: 142 passed (targeted), full unit suite green
+- Mypy: 0 new errors in changed files
+- Ruff: 0 new issues introduced
+
+**Branch:** `feature/l54-async-safety-and-small-bugs` — **merged to `develop`.**
+
 ## 2026-04-21 — L52: ContextBuilder decomposition
 
 **Outcome:** `ContextBuilder.build` thinned from ~215 lines to 78 lines.

@@ -106,14 +106,12 @@ class ToolRegistry:
         if meta.handler is None:
             raise ToolError(f"Tool {name!r} has no handler")
 
-        # Copilot H-9: the prior handler catch was restricted to
-        # (TypeError, ValueError, OSError), so RuntimeError, httpx.HTTPError,
-        # application-level exceptions from third-party tools, etc. escaped
-        # the registry and aborted the whole turn. We now catch broad
-        # Exception (but NOT BaseException — CancelledError and
-        # KeyboardInterrupt must still propagate) and wrap in
-        # ToolExecutionError so the orchestrator can dispatch on type
-        # via ToolCallResult.error_type instead of string-matching.
+        # The prior handler catch was restricted to (TypeError, ValueError, OSError),
+        # so RuntimeError, httpx.HTTPError, application-level exceptions from third-party
+        # tools, etc. escaped the registry and aborted the whole turn. We now catch broad
+        # Exception (but NOT BaseException — CancelledError and KeyboardInterrupt must
+        # still propagate) and wrap in ToolExecutionError so the orchestrator can dispatch
+        # on type via ToolCallResult.error_type instead of string-matching.
         try:
             raw = await meta.handler(**arguments)
         except asyncio.CancelledError:
@@ -134,7 +132,7 @@ class ToolRegistry:
 
         ``ArtifactStore.store`` is synchronous (writes bytes + JSON metadata
         to disk); we offload it via ``asyncio.to_thread`` so the event
-        loop stays responsive during large-artifact writes (Copilot C-3).
+        loop stays responsive during large-artifact writes.
         """
         size = len(content)
 
@@ -167,14 +165,15 @@ class ToolRegistry:
     # --- Meta-tool schemas (what the model actually sees) ---
 
     def meta_tool_schemas(self) -> list[ToolSchema]:
-        """Return the two meta-tools (list_tools, call_tool) as ToolSchema."""
+        """Return the three meta-tools (list_tools, describe_tool, call_tool) as ToolSchema."""
         list_tools_schema = ToolSchema(
             type="function",
             function=FunctionSchema(
                 name="list_tools",
                 description=(
                     "List all available tools. Returns tool names and one-line descriptions. "
-                    "Call this before call_tool to discover what's available."
+                    "Call this before call_tool to discover what's available. "
+                    "Also call this when the user asks about your capabilities or what you can do."
                 ),
                 parameters={
                     "type": "object",
@@ -182,8 +181,32 @@ class ToolRegistry:
                         "tag": {
                             "type": "string",
                             "description": "Optional tag filter",
-                        }
+                        },
                     },
+                },
+            ),
+        )
+
+        describe_tool_schema = ToolSchema(
+            type="function",
+            function=FunctionSchema(
+                name="describe_tool",
+                description=(
+                    "Get the full JSON parameter schema and description for one or more tools. "
+                    "Call this after list_tools when you need to know the exact argument names, "
+                    "types, and defaults for a specific tool before calling it. "
+                    "Much cheaper than fetching all schemas at once."
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "names": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Tool name(s) to describe. Can be a single name or a list.",
+                        },
+                    },
+                    "required": ["names"],
                 },
             ),
         )
@@ -194,7 +217,7 @@ class ToolRegistry:
                 name="call_tool",
                 description=(
                     "Invoke a tool by name with arguments. Use list_tools first to "
-                    "discover what exists."
+                    "discover what exists, then describe_tool if you need exact parameter names."
                 ),
                 parameters={
                     "type": "object",
@@ -213,10 +236,12 @@ class ToolRegistry:
             ),
         )
 
-        return [list_tools_schema, call_tool_schema]
+        return [list_tools_schema, describe_tool_schema, call_tool_schema]
 
     async def meta_list_tools(
-        self, tag: str | None = None, allowed_names: list[str] | None = None
+        self,
+        tag: str | None = None,
+        allowed_names: list[str] | None = None,
     ) -> str:
         """Handler for the list_tools meta-tool.
 
@@ -232,6 +257,41 @@ class ToolRegistry:
             m = self._tools[n]
             caps = ", ".join(m.capabilities) or "none"
             lines.append(f"- {n}: {m.public_description} [caps: {caps}]")
+        return "\n".join(lines) if lines else "(no tools)"
+
+    async def meta_describe_tool(
+        self,
+        names: str | list[str],
+        allowed_names: list[str] | None = None,
+    ) -> str:
+        """Handler for the describe_tool meta-tool.
+
+        Args:
+            names: Tool name or list of names to describe
+            allowed_names: Optional list of allowed tool names (for session filtering)
+        """
+        if isinstance(names, str):
+            names = [names]
+
+        lines = []
+        for n in names:
+            if allowed_names is not None and n not in allowed_names:
+                lines.append(f"- {n}: (not available in this session)")
+                continue
+            try:
+                m = self.describe(n)
+            except ToolNotFoundError:
+                lines.append(f"- {n}: (tool not found)")
+                continue
+
+            caps = ", ".join(m.capabilities) or "none"
+            lines.append(f"- {n}: {m.public_description} [caps: {caps}]")
+            if m.parameters_schema:
+                schema_str = json.dumps(m.parameters_schema, indent=2)
+                indented = "\n".join("    " + ln for ln in schema_str.splitlines())
+                lines.append(f"  schema:\n{indented}")
+            else:
+                lines.append("  schema: (no explicit schema — infer from description)")
         return "\n".join(lines) if lines else "(no tools)"
 
     async def meta_call_tool(self, name: str, arguments: dict[str, Any]) -> ToolCallResult:

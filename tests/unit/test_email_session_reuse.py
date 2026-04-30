@@ -81,9 +81,8 @@ class TestSessionReuse:
             adapter = EmailAdapter(
                 EmailConfig(imap_host="imap.test", username="u", password="p")
             )
-            async with adapter.imap_session() as outer:
-                async with adapter.imap_session() as inner:
-                    assert outer is inner
+            async with adapter.imap_session() as outer, adapter.imap_session() as inner:
+                assert outer is inner
 
         assert mock_cls.call_count == 1
         assert mock_conn.logout.call_count == 1

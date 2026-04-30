@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from hestia.config import EmailConfig, EmailConfigError
+from hestia.config import EmailConfig
+from hestia.errors import EmailConfigError
 
 
 class TestEmailConfigPasswordEnv:
@@ -21,7 +22,7 @@ class TestEmailConfigPasswordEnv:
         monkeypatch.delenv("MISSING_EMAIL_PW", raising=False)
         cfg = EmailConfig(password_env="MISSING_EMAIL_PW")
         with pytest.raises(EmailConfigError, match="environment variable is not defined"):
-            cfg.resolved_password
+            _ = cfg.resolved_password
 
     def test_plaintext_password_still_works(self) -> None:
         """password without password_env => plaintext returned."""

@@ -14,6 +14,7 @@ from hestia.core.types import Message, ScheduledTask, SessionState
 from hestia.orchestrator import Orchestrator
 from hestia.persistence.scheduler import SchedulerStore, _calculate_next_run
 from hestia.persistence.sessions import SessionStore
+from hestia.platforms.notifier import PlatformNotifier
 from hestia.runtime_context import scheduler_tick_active
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,7 @@ class Scheduler:
         response_callback: SchedulerResponseCallback,
         tick_interval_seconds: float = 5.0,
         system_prompt: str | None = None,
+        notifier: PlatformNotifier | None = None,
     ):
         self._scheduler_store = scheduler_store
         self._session_store = session_store
@@ -41,6 +43,7 @@ class Scheduler:
         self._response_callback = response_callback
         self._tick_interval = tick_interval_seconds
         self._system_prompt = system_prompt or "You are a helpful assistant."
+        self._notifier = notifier
         self._stop_event = asyncio.Event()
         self._loop_task: asyncio.Task[Any] | None = None
 
@@ -89,9 +92,18 @@ class Scheduler:
         task = await self._scheduler_store.get_task(task_id)
         if task is None:
             raise ValueError(f"Task not found: {task_id}")
-        await self._fire_task(task, utcnow())
+        await self._fire_task(task, utcnow(), _force=True)
 
-    async def _fire_task(self, task: ScheduledTask, now: datetime) -> None:
+    async def _fire_task(
+        self, task: ScheduledTask, now: datetime, *, _force: bool = False
+    ) -> None:
+        if not _force and not task.enabled:
+            logger.warning(
+                "Skipping disabled task %s (next_run_at=%s)",
+                task.id,
+                task.next_run_at,
+            )
+            return
         logger.info("Firing scheduled task %s", task.id)
         session = await self._session_store.get_session(task.session_id)
         if session is None or session.state != SessionState.ACTIVE:
@@ -106,6 +118,16 @@ class Scheduler:
 
         async def deliver(text: str) -> None:
             await self._response_callback(task, text)
+            if task.notify and self._notifier is not None:
+                if text.strip() == "SILENT":
+                    return
+                session_for_notify = await self._session_store.get_session(task.session_id)
+                if session_for_notify is not None:
+                    await self._notifier.send(
+                        session_for_notify.platform,
+                        session_for_notify.platform_user,
+                        text,
+                    )
 
         turn_error: str | None = None
         tick_token = scheduler_tick_active.set(True)

@@ -1,5 +1,6 @@
 """Write file tool (factory)."""
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -9,13 +10,14 @@ from hestia.tools.capabilities import WRITE_LOCAL
 from hestia.tools.metadata import tool
 
 
-def make_write_file_tool(config: StorageConfig, **kw: Any) -> Any:
+def make_write_file_tool(config: StorageConfig) -> Any:
     """Create a write_file tool with path sandboxing."""
     allowed_roots = config.allowed_roots
 
     @tool(
         name="write_file",
-        public_description="Write content to a file, creating it if it doesn't exist.",
+        public_description="Write content to a file. Params: path (str), content (str).",
+
         requires_confirmation=True,
         tags=["system", "builtin"],
         capabilities=[WRITE_LOCAL],
@@ -31,8 +33,8 @@ def make_write_file_tool(config: StorageConfig, **kw: Any) -> Any:
             return error
 
         target = Path(path)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content, encoding="utf-8")
+        await asyncio.to_thread(target.parent.mkdir, parents=True, exist_ok=True)
+        await asyncio.to_thread(target.write_text, content, encoding="utf-8")
         return f"Wrote {len(content)} bytes to {path}"
 
     return write_file

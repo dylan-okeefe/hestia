@@ -4,21 +4,21 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from hestia.orchestrator.engine import Orchestrator
+from hestia.orchestrator.execution import TurnExecution
 from hestia.tools.metadata import ToolMetadata
 from hestia.tools.types import ToolCallResult
 
 
-def _make_orchestrator(*, confirm_callback=None, auto_approve=False):
+def _make_turn_execution(*, confirm_callback=None, auto_approve=False):
     mock_policy = MagicMock()
     mock_policy.auto_approve.return_value = auto_approve
 
-    return Orchestrator(
-        inference=MagicMock(),
-        session_store=MagicMock(),
-        context_builder=MagicMock(),
+    return TurnExecution(
         tool_registry=MagicMock(),
+        inference_client=MagicMock(),
         policy=mock_policy,
+        context_builder=MagicMock(),
+        session_store=MagicMock(),
         confirm_callback=confirm_callback,
     )
 
@@ -26,7 +26,7 @@ def _make_orchestrator(*, confirm_callback=None, auto_approve=False):
 @pytest.mark.asyncio
 async def test_no_confirmation_required():
     """Tool without requires_confirmation returns None immediately."""
-    orchestrator = _make_orchestrator()
+    turn_execution = _make_turn_execution()
     tool = ToolMetadata(
         name="safe_tool",
         public_description="A safe tool",
@@ -35,7 +35,7 @@ async def test_no_confirmation_required():
         requires_confirmation=False,
     )
 
-    result = await orchestrator._check_confirmation(
+    result = await turn_execution._check_confirmation(
         tool=tool, tool_name="safe_tool", arguments={}, session=MagicMock()
     )
     assert result is None
@@ -45,7 +45,7 @@ async def test_no_confirmation_required():
 async def test_confirmed_returns_none():
     """When confirm_callback approves, _check_confirmation returns None."""
     confirm_callback = AsyncMock(return_value=True)
-    orchestrator = _make_orchestrator(confirm_callback=confirm_callback)
+    turn_execution = _make_turn_execution(confirm_callback=confirm_callback)
     tool = ToolMetadata(
         name="risky_tool",
         public_description="A risky tool",
@@ -54,7 +54,7 @@ async def test_confirmed_returns_none():
         requires_confirmation=True,
     )
 
-    result = await orchestrator._check_confirmation(
+    result = await turn_execution._check_confirmation(
         tool=tool,
         tool_name="risky_tool",
         arguments={"command": "rm -rf /"},
@@ -68,7 +68,7 @@ async def test_confirmed_returns_none():
 async def test_denied_returns_error_result():
     """When confirm_callback denies, _check_confirmation returns ToolCallResult.error."""
     confirm_callback = AsyncMock(return_value=False)
-    orchestrator = _make_orchestrator(confirm_callback=confirm_callback)
+    turn_execution = _make_turn_execution(confirm_callback=confirm_callback)
     tool = ToolMetadata(
         name="risky_tool",
         public_description="A risky tool",
@@ -77,7 +77,7 @@ async def test_denied_returns_error_result():
         requires_confirmation=True,
     )
 
-    result = await orchestrator._check_confirmation(
+    result = await turn_execution._check_confirmation(
         tool=tool,
         tool_name="risky_tool",
         arguments={"command": "rm -rf /"},
@@ -94,7 +94,7 @@ async def test_denied_returns_error_result():
 @pytest.mark.asyncio
 async def test_no_callback_returns_error_result():
     """When no confirm_callback is configured, _check_confirmation returns ToolCallResult.error."""
-    orchestrator = _make_orchestrator(confirm_callback=None)
+    turn_execution = _make_turn_execution(confirm_callback=None)
     tool = ToolMetadata(
         name="risky_tool",
         public_description="A risky tool",
@@ -103,7 +103,7 @@ async def test_no_callback_returns_error_result():
         requires_confirmation=True,
     )
 
-    result = await orchestrator._check_confirmation(
+    result = await turn_execution._check_confirmation(
         tool=tool,
         tool_name="risky_tool",
         arguments={"command": "rm -rf /"},
@@ -121,7 +121,7 @@ async def test_no_callback_returns_error_result():
 async def test_auto_approve_skips_callback():
     """When policy auto-approves, callback is not consulted."""
     confirm_callback = AsyncMock(return_value=True)
-    orchestrator = _make_orchestrator(
+    turn_execution = _make_turn_execution(
         confirm_callback=confirm_callback, auto_approve=True
     )
     tool = ToolMetadata(
@@ -132,7 +132,7 @@ async def test_auto_approve_skips_callback():
         requires_confirmation=True,
     )
 
-    result = await orchestrator._check_confirmation(
+    result = await turn_execution._check_confirmation(
         tool=tool,
         tool_name="risky_tool",
         arguments={"command": "rm -rf /"},

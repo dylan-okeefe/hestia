@@ -154,7 +154,7 @@ def make_delegate_task_tool(
 
             # Get orchestrator via factory. Each delegation gets a fresh
             # orchestrator (and typically its own SlotManager) for isolation;
-            # VRAM is not shared with the parent turn (Copilot M-11).
+            # VRAM is not shared with the parent turn.
             orchestrator = orchestrator_factory()
 
             # Run the subagent with timeout (respond_callback must be async — engine awaits it)
@@ -181,7 +181,6 @@ def make_delegate_task_tool(
                 # ``turn.artifact_handles`` as each successful tool call
                 # returns an artifact handle; delegate_task surfaces them
                 # to the caller so the parent can attach / reference them.
-                artifact_refs: list[str] = list(turn.artifact_handles)
 
                 # Determine status from turn (use string comparison to avoid circular import)
                 state_value = getattr(turn.state, "value", str(turn.state))
@@ -208,7 +207,7 @@ def make_delegate_task_tool(
                     tool_calls_made=turn.tool_calls_made,
                 )
 
-            except TimeoutError:
+            except asyncio.TimeoutError:
                 duration = (utcnow() - start_time).total_seconds()
                 # On timeout we don't have a completed Turn to inspect, so
                 # artifact_refs stays empty. Any artifacts the subagent did
@@ -230,4 +229,4 @@ def make_delegate_task_tool(
             # Archive the subagent session
             await session_store.archive_session(subagent_session.id)
 
-    return cast("Callable[..., Coroutine[Any, Any, str]]", delegate_task)
+    return delegate_task

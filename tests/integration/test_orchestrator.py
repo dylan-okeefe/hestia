@@ -11,7 +11,9 @@ from hestia.orchestrator import Orchestrator, TurnState
 from hestia.persistence.db import Database
 from hestia.persistence.sessions import SessionStore
 from hestia.tools.builtin.current_time import current_time
-from hestia.tools.builtin.terminal import terminal
+from hestia.tools.builtin.terminal import make_terminal_tool
+
+terminal = make_terminal_tool()
 from hestia.tools.registry import ToolRegistry
 
 

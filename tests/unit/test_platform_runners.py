@@ -75,6 +75,9 @@ def _make_app() -> MagicMock:
         )
     )
     app.inference.close = AsyncMock()
+    context_builder = MagicMock()
+    context_builder.warm_up = AsyncMock()
+    app.context_builder = context_builder
     orchestrator = MagicMock()
     orchestrator.recover_stale_turns = AsyncMock(return_value=0)
     orchestrator.process_turn = AsyncMock()
@@ -407,3 +410,140 @@ class TestPlatformRouting:
                 await run_matrix(app, config)
             assert exc_info.value.code == 1
             mock_adapter_cls.assert_not_called()
+
+
+class TestRunPlatformStreaming:
+    """Tests for streaming integration in run_platform."""
+
+    @pytest.mark.asyncio
+    async def test_passes_stream_callback_when_streaming_enabled(self):
+        app = _make_app()
+        config = _make_config()
+        config.inference.stream = True
+        adapter = FakePlatform()
+        adapter._make_stream_callback = MagicMock(return_value=AsyncMock())
+        adapter._stream_states = {}
+
+        confirm_callback = AsyncMock(return_value=True)
+
+        async def single_message_then_stop(*args, **kwargs):
+            if adapter._on_message is not None:
+                await adapter._on_message("fake", "u1", "hello")
+            raise KeyboardInterrupt()
+
+        with patch("asyncio.sleep", side_effect=single_message_then_stop):
+            await run_platform(
+                app,
+                config,
+                adapter=adapter,
+                confirm_callback=confirm_callback,
+                platform_name="fake",
+            )
+
+        orchestrator = app.make_orchestrator.return_value
+        call_kwargs = orchestrator.process_turn.call_args.kwargs
+        assert call_kwargs.get("stream_callback") is not None
+        adapter._make_stream_callback.assert_called_once_with("u1")
+
+    @pytest.mark.asyncio
+    async def test_uses_edit_message_for_final_when_streaming(self):
+        app = _make_app()
+        config = _make_config()
+        config.inference.stream = True
+        adapter = FakePlatform()
+        adapter._make_stream_callback = MagicMock(return_value=AsyncMock())
+        adapter._stream_states = {"u1": {"message_id": "42"}}
+        adapter.edit_message = AsyncMock()
+
+        async def fake_process_turn(*args, **kwargs):
+            await kwargs["respond_callback"]("final response")
+            return MagicMock()
+
+        orchestrator = app.make_orchestrator.return_value
+        orchestrator.process_turn = AsyncMock(side_effect=fake_process_turn)
+
+        confirm_callback = AsyncMock(return_value=True)
+
+        async def single_message_then_stop(*args, **kwargs):
+            if adapter._on_message is not None:
+                await adapter._on_message("fake", "u1", "hello")
+            raise KeyboardInterrupt()
+
+        with patch("asyncio.sleep", side_effect=single_message_then_stop):
+            await run_platform(
+                app,
+                config,
+                adapter=adapter,
+                confirm_callback=confirm_callback,
+                platform_name="fake",
+            )
+
+        adapter.edit_message.assert_awaited_once_with("u1", "42", "final response")
+
+    @pytest.mark.asyncio
+    async def test_uses_send_message_for_final_when_not_streaming(self):
+        app = _make_app()
+        config = _make_config()
+        config.inference.stream = False
+        adapter = FakePlatform()
+
+        async def fake_process_turn(*args, **kwargs):
+            await kwargs["respond_callback"]("final response")
+            return MagicMock()
+
+        orchestrator = app.make_orchestrator.return_value
+        orchestrator.process_turn = AsyncMock(side_effect=fake_process_turn)
+
+        confirm_callback = AsyncMock(return_value=True)
+
+        async def single_message_then_stop(*args, **kwargs):
+            if adapter._on_message is not None:
+                await adapter._on_message("fake", "u1", "hello")
+            raise KeyboardInterrupt()
+
+        with patch("asyncio.sleep", side_effect=single_message_then_stop):
+            await run_platform(
+                app,
+                config,
+                adapter=adapter,
+                confirm_callback=confirm_callback,
+                platform_name="fake",
+            )
+
+        assert ("u1", "final response") in adapter.sent_messages
+
+    @pytest.mark.asyncio
+    async def test_uses_send_message_when_streaming_but_no_message_id(self):
+        app = _make_app()
+        config = _make_config()
+        config.inference.stream = True
+        adapter = FakePlatform()
+        adapter._make_stream_callback = MagicMock(return_value=AsyncMock())
+        adapter._stream_states = {"u1": {"message_id": None}}
+        adapter.edit_message = AsyncMock()
+
+        async def fake_process_turn(*args, **kwargs):
+            await kwargs["respond_callback"]("final response")
+            return MagicMock()
+
+        orchestrator = app.make_orchestrator.return_value
+        orchestrator.process_turn = AsyncMock(side_effect=fake_process_turn)
+
+        confirm_callback = AsyncMock(return_value=True)
+
+        async def single_message_then_stop(*args, **kwargs):
+            if adapter._on_message is not None:
+                await adapter._on_message("fake", "u1", "hello")
+            raise KeyboardInterrupt()
+
+        with patch("asyncio.sleep", side_effect=single_message_then_stop):
+            await run_platform(
+                app,
+                config,
+                adapter=adapter,
+                confirm_callback=confirm_callback,
+                platform_name="fake",
+            )
+
+        assert ("u1", "final response") in adapter.sent_messages
+        adapter.edit_message.assert_not_awaited()

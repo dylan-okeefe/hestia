@@ -1,4 +1,4 @@
-"""Shared policy tuning constants (single source of truth for Copilot M-6 / M-12)."""
+"""Shared policy tuning constants."""
 
 from typing import Final, Literal
 
@@ -9,3 +9,7 @@ CONTEXT_PRESSURE_THRESHOLD: Final[float] = 0.85
 # Reserved ``Session.platform`` value for subagent / delegate_task sessions.
 # Policy uses this to avoid recursive delegation.
 PLATFORM_SUBAGENT: Final[Literal["subagent"]] = "subagent"
+
+# Reserved ``Session.platform`` value for scheduler sessions.
+# Policy uses this for headless safety gating.
+PLATFORM_SCHEDULER: Final[Literal["scheduler"]] = "scheduler"

@@ -2,10 +2,9 @@
 
 import pytest
 
-from hestia.config import TrustConfig
+from hestia.config import StorageConfig, TrustConfig
 from hestia.core.types import Session, SessionState, SessionTemperature
 from hestia.policy.default import DefaultPolicyEngine
-from hestia.config import StorageConfig
 
 
 @pytest.fixture
@@ -137,7 +136,8 @@ class TestFilterToolsOverrides:
         """Scheduler tick resolves trust against creator's override, not default."""
         from hestia.artifacts.store import ArtifactStore
         from hestia.runtime_context import scheduler_tick_active
-        from hestia.tools.builtin import current_time, terminal
+        from hestia.tools.builtin import current_time, make_terminal_tool
+        terminal = make_terminal_tool()
         from hestia.tools.registry import ToolRegistry
 
         # Owner gets household trust (allows scheduler shell)
@@ -165,7 +165,8 @@ class TestFilterToolsOverrides:
         """Guest without override gets default paranoid trust in scheduler tick."""
         from hestia.artifacts.store import ArtifactStore
         from hestia.runtime_context import scheduler_tick_active
-        from hestia.tools.builtin import current_time, terminal
+        from hestia.tools.builtin import current_time, make_terminal_tool
+        terminal = make_terminal_tool()
         from hestia.tools.registry import ToolRegistry
 
         policy = DefaultPolicyEngine(trust=TrustConfig.paranoid())
@@ -188,7 +189,8 @@ class TestFilterToolsOverrides:
         from datetime import datetime
 
         from hestia.artifacts.store import ArtifactStore
-        from hestia.tools.builtin import current_time, make_write_file_tool, terminal
+        from hestia.tools.builtin import current_time, make_write_file_tool, make_terminal_tool
+        terminal = make_terminal_tool()
         from hestia.tools.registry import ToolRegistry
 
         sub = Session(

@@ -93,6 +93,7 @@ scheduled_tasks = sa.Table(
     sa.Column("last_run_at", sa.DateTime, nullable=True),
     sa.Column("next_run_at", sa.DateTime, nullable=True),
     sa.Column("last_error", sa.Text, nullable=True),
+    sa.Column("notify", sa.Boolean, nullable=False, default=False),
     sa.Index("idx_scheduled_tasks_session", "session_id"),
     sa.Index("idx_scheduled_tasks_due", "next_run_at", "enabled"),
 )
@@ -144,7 +145,7 @@ traces = sa.Table(
 # Egress events — outbound HTTP requests the agent makes (web_search, http_get
 # tools). Co-owned with `traces` by TraceStore because both feed the egress /
 # usage audit view, but the DDL canonically lives here so `metadata.create_all`
-# is the single authoritative creator (consolidated in H-10, 2026-04-20).
+# is the single authoritative creator.
 egress_events = sa.Table(
     "egress_events",
     metadata,
@@ -159,24 +160,6 @@ egress_events = sa.Table(
     sa.Index("idx_egress_session", "session_id", "created_at"),
     sa.Index("idx_egress_domain", "domain", "created_at"),
     sa.Index("idx_egress_created", "created_at"),
-)
-
-skills = sa.Table(
-    "skills",
-    metadata,
-    sa.Column("id", sa.String, primary_key=True),
-    sa.Column("name", sa.String, nullable=False, unique=True),
-    sa.Column("description", sa.Text, nullable=False),
-    sa.Column("file_path", sa.String, nullable=False),
-    sa.Column("state", sa.String, nullable=False),  # draft, tested, trusted, deprecated, disabled
-    sa.Column("capabilities", sa.Text, nullable=False),  # JSON list
-    sa.Column("required_tools", sa.Text, nullable=False),  # JSON list
-    sa.Column("created_at", sa.DateTime, nullable=False),
-    sa.Column("last_run_at", sa.DateTime, nullable=True),
-    sa.Column("run_count", sa.Integer, nullable=False, default=0),
-    sa.Column("failure_count", sa.Integer, nullable=False, default=0),
-    sa.Index("idx_skills_state", "state"),
-    sa.Index("idx_skills_name", "name"),
 )
 
 style_profiles = sa.Table(

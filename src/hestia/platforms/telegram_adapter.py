@@ -7,16 +7,18 @@ import contextlib
 import io
 import logging
 import os
+import re
 import tempfile
 import time
 from typing import TYPE_CHECKING, Any
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import Chat, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import TelegramError
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
 from hestia.config import TelegramConfig
 from hestia.core.types import Message as HestiaMessage
+from hestia.orchestrator.types import StreamCallback
 from hestia.platforms.allowlist import (
     match_allowlist,
     validate_telegram_user_id,
@@ -30,6 +32,50 @@ if TYPE_CHECKING:
     from hestia.config import VoiceConfig
     from hestia.orchestrator.engine import Orchestrator
     from hestia.persistence.sessions import SessionStore
+
+
+def _md_to_tg_html(text: str) -> str:
+    """Convert basic Markdown to Telegram HTML parse_mode.
+
+    Handles **bold**, *italic*, `inline code`, and ```code blocks```.
+    Escapes HTML entities to avoid parse errors.
+    """
+
+    # 1. Escape HTML special chars
+    text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    # 2. Triple backtick code blocks
+    text = re.sub(
+        r"```(\w*)\n(.*?)\n```",
+        lambda m: f"<pre><code class=\"language-{m.group(1)}\">{m.group(2)}</code></pre>",
+        text,
+        flags=re.DOTALL,
+    )
+    text = re.sub(
+        r"```(.*?)```",
+        r"<pre>\1</pre>",
+        text,
+        flags=re.DOTALL,
+    )
+
+    # 3. Inline code
+    text = re.sub(r"`([^`]+)`", r"<code>\1</code>", text)
+
+    # 4. Bold (**text**)
+    text = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", text)
+
+    # 5. Italic (*text*) — only if not already inside <b> tags and not double asterisks
+    def _italic_repl(m: re.Match[str]) -> str:
+        inner = m.group(1)
+        # Skip if it already contains bold tags (can happen with nested patterns)
+        if "<b>" in inner or "</b>" in inner:
+            return m.group(0)
+        return f"<i>{inner}</i>"
+
+    text = re.sub(r"\*([^*\n]+)\*", _italic_repl, text)
+
+    return text
+
 
 logger = logging.getLogger(__name__)
 
@@ -54,8 +100,10 @@ class TelegramAdapter(Platform):
         self._app: Application[Any, Any, Any, Any, Any, Any] | None = None
         self._on_message: IncomingMessageCallback | None = None
         self._last_edit_times: dict[str, float] = {}  # msg_id -> last edit timestamp
+        self._last_edit_max_age = 3600.0  # 1 hour TTL
         self._confirmation_store = ConfirmationStore()
         self._confirmation_timeout_seconds = 60.0
+        self._stream_states: dict[str, dict[str, Any]] = {}
 
         # Background tasks that keep the typing indicator alive (refreshed every 4s).
         self._typing_tasks: dict[str, asyncio.Task[None]] = {}
@@ -66,7 +114,7 @@ class TelegramAdapter(Platform):
         self._system_prompt: str = ""
         self._voice_config: VoiceConfig | None = None
 
-        # Validate allowed_users entries (warn, don't hard-fail, for backward compat)
+        # Validate allowed_users entries (hard-fail at startup)
         for entry in self._config.allowed_users:
             if "*" in entry or "?" in entry or "[" in entry:
                 continue  # Wildcard patterns skip strict validation
@@ -74,10 +122,9 @@ class TelegramAdapter(Platform):
                 continue
             if validate_telegram_username(entry):
                 continue
-            logger.warning(
-                "Telegram allowed_users entry %r does not look like a valid "
-                "user ID or username",
-                entry,
+            raise ValueError(
+                f"Invalid allowed_users entry {entry!r}: must be a numeric "
+                "Telegram user ID or a valid username."
             )
 
     @property
@@ -146,14 +193,24 @@ class TelegramAdapter(Platform):
         chat_id = int(user)
         msg = await self._app.bot.send_message(
             chat_id=chat_id,
-            text=text,
+            text=_md_to_tg_html(text),
+            parse_mode="HTML",
         )
         return str(msg.message_id)
+
+    def _prune_last_edit_times(self) -> None:
+        """Evict entries older than _last_edit_max_age to prevent unbounded growth."""
+        cutoff = time.monotonic() - self._last_edit_max_age
+        stale = [k for k, v in self._last_edit_times.items() if v < cutoff]
+        for k in stale:
+            del self._last_edit_times[k]
 
     async def edit_message(self, user: str, msg_id: str, text: str) -> None:
         """Edit a message in-place, rate-limited to avoid 429s."""
         if self._app is None:
             raise RuntimeError("Telegram adapter not started")
+
+        self._prune_last_edit_times()
 
         # Rate limiting: max 1 edit per rate_limit_edits_seconds per message
         now = time.monotonic()
@@ -168,7 +225,8 @@ class TelegramAdapter(Platform):
             await self._app.bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=int(msg_id),
-                text=text,
+                text=_md_to_tg_html(text),
+                parse_mode="HTML",
             )
             self._last_edit_times[msg_id] = time.monotonic()
         except TelegramError as e:
@@ -186,7 +244,8 @@ class TelegramAdapter(Platform):
         chat_id = int(user)
         await self._app.bot.send_message(
             chat_id=chat_id,
-            text=f"⚠️ {text}",
+            text=f"⚠️ {_md_to_tg_html(text)}",
+            parse_mode="HTML",
         )
 
     async def set_typing(self, user: str, typing: bool = True) -> None:
@@ -220,6 +279,44 @@ class TelegramAdapter(Platform):
                 await asyncio.sleep(4.0)
 
         self._typing_tasks[user] = asyncio.create_task(_refresh())
+
+    def _make_stream_callback(self, chat_id: str) -> StreamCallback:
+        """Create a streaming callback for progressive message delivery.
+
+        Buffers the first chunk until at least 20 characters have been
+        accumulated or 500 ms have elapsed, then sends a new message.
+        Subsequent chunks trigger rate-limited in-place edits (max one
+        edit per 1.5 s per message).
+        """
+        state: dict[str, Any] = {
+            "accumulated": "",
+            "message_id": None,
+            "last_edit": 0.0,
+            "first_chunk_time": None,
+        }
+        self._stream_states[chat_id] = state
+
+        async def callback(chunk: str) -> None:
+            state["accumulated"] += chunk
+
+            if state["message_id"] is None:
+                if state["first_chunk_time"] is None:
+                    state["first_chunk_time"] = time.monotonic()
+
+                elapsed = time.monotonic() - state["first_chunk_time"]
+                if len(state["accumulated"]) >= 20 or elapsed >= 0.5:
+                    state["message_id"] = await self.send_message(
+                        chat_id, state["accumulated"]
+                    )
+                    state["last_edit"] = time.monotonic()
+                return
+
+            now = time.monotonic()
+            if now - state["last_edit"] >= 1.5:
+                await self.edit_message(chat_id, state["message_id"], state["accumulated"])
+                state["last_edit"] = now
+
+        return callback
 
     async def request_confirmation(
         self, user: str, tool_name: str, arguments: dict[str, Any]
@@ -308,15 +405,27 @@ class TelegramAdapter(Platform):
 
         user_id = update.effective_user.id
         username = update.effective_user.username or str(user_id)
+        chat = update.effective_chat
+        in_group = chat is not None and chat.type in (Chat.GROUP, Chat.SUPERGROUP)
 
         if not self._is_allowed(user_id, username):
+            # Silently ignore non-allowed users in groups to avoid spam
+            if in_group:
+                return
             await update.effective_message.reply_text("Not authorized.")
             return
+
+        # In group chats, route replies to the group; in private chats, DM the user
+        if in_group:
+            assert chat is not None
+            platform_user = str(chat.id)
+        else:
+            platform_user = str(user_id)
 
         if self._on_message is not None:
             await self._on_message(
                 self.name,
-                str(user_id),
+                platform_user,
                 update.effective_message.text,
             )
 
@@ -334,8 +443,12 @@ class TelegramAdapter(Platform):
         user_id = update.effective_user.id
         username = update.effective_user.username or str(user_id)
         message = update.effective_message
+        chat = update.effective_chat
+        in_group = chat is not None and chat.type in (Chat.GROUP, Chat.SUPERGROUP)
 
         if not self._is_allowed(user_id, username):
+            if in_group:
+                return
             await message.reply_text("Not authorized.")
             return
 
@@ -352,7 +465,7 @@ class TelegramAdapter(Platform):
             with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as ogg:
                 await voice_file.download_to_drive(ogg.name)
                 ogg_path = ogg.name
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — voice download boundary
             logger.warning("Failed to download voice message: %s", e)
             await message.reply_text("Sorry, I couldn't download that voice message.")
             return
@@ -360,7 +473,7 @@ class TelegramAdapter(Platform):
         # 2. Convert .ogg/opus to PCM 16kHz mono via ffmpeg
         try:
             pcm_bytes = await self._ogg_to_pcm(ogg_path, sample_rate=16000)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — audio conversion boundary
             logger.warning("Failed to convert voice message to PCM: %s", e)
             await message.reply_text("Sorry, I couldn't process that audio format.")
             return
@@ -378,7 +491,7 @@ class TelegramAdapter(Platform):
         try:
             pipeline = await get_voice_pipeline(self._voice_config)
             transcript = await pipeline.transcribe(pcm_bytes, sample_rate=16000)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — STT boundary
             logger.warning("STT failed for voice message: %s", e)
             await message.reply_text("Sorry, I couldn't understand that audio.")
             return
@@ -388,7 +501,13 @@ class TelegramAdapter(Platform):
             return
 
         # 4. Feed to orchestrator as a normal text turn
-        session = await self._session_store.get_or_create_session("telegram", str(user_id))
+        # In groups, use chat ID as session key so replies stay in the group
+        if in_group:
+            assert chat is not None
+            platform_user = str(chat.id)
+        else:
+            platform_user = str(user_id)
+        session = await self._session_store.get_or_create_session("telegram", platform_user)
         user_message = HestiaMessage(role="user", content=transcript)
 
         async def respond_voice(response_text: str) -> None:
@@ -398,20 +517,20 @@ class TelegramAdapter(Platform):
             try:
                 async for chunk in pipeline.synthesize(response_text):
                     audio_chunks.append(chunk)
-            except Exception as synth_err:
+            except Exception as synth_err:  # noqa: BLE001 — TTS boundary
                 logger.warning("TTS failed for voice reply: %s", synth_err)
-                await message.reply_text(
-                    f"(Voice synthesis failed; sending text instead)\n\n{response_text}"
-                )
+                _prefix = "(Voice synthesis failed; sending text instead)"
+                _text = f"{_prefix}\n\n{_md_to_tg_html(response_text)}"
+                await message.reply_text(_text, parse_mode="HTML")
                 return
 
             try:
                 full_audio_ogg = await self._pcm_chunks_to_ogg_opus(audio_chunks)
-            except Exception as enc_err:
+            except Exception as enc_err:  # noqa: BLE001 — audio encoding boundary
                 logger.warning("OGG encoding failed for voice reply: %s", enc_err)
-                await message.reply_text(
-                    f"(Voice encoding failed; sending text instead)\n\n{response_text}"
-                )
+                _prefix = "(Voice encoding failed; sending text instead)"
+                _text = f"{_prefix}\n\n{_md_to_tg_html(response_text)}"
+                await message.reply_text(_text, parse_mode="HTML")
                 return
 
             # 6. Telegram voice note limit handling (1 MB)
@@ -422,13 +541,14 @@ class TelegramAdapter(Platform):
                     truncated_ogg = await self._truncate_ogg_to_size(
                         full_audio_ogg, 1_000_000, duration_seconds
                     )
-                except Exception as trunc_err:
+                except Exception as trunc_err:  # noqa: BLE001 — best-effort truncation
                     logger.warning("OGG truncation failed: %s", trunc_err)
                     truncated_ogg = full_audio_ogg
                 await message.reply_voice(voice=io.BytesIO(truncated_ogg))
                 await message.reply_text(
                     "(Voice reply truncated to fit Telegram's 1MB limit. "
-                    "Full text:)\n\n" + response_text
+                    "Full text:)\n\n" + _md_to_tg_html(response_text),
+                    parse_mode="HTML",
                 )
             else:
                 await message.reply_voice(voice=io.BytesIO(full_audio_ogg))
@@ -440,9 +560,10 @@ class TelegramAdapter(Platform):
                 respond_callback=respond_voice,
                 system_prompt=self._system_prompt,
                 platform=self,
-                platform_user=str(user_id),
+                platform_user=platform_user,
+                voice_reply=True,
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — turn boundary
             logger.exception("Turn failed for voice message from %s", user_id)
             await message.reply_text(f"Turn failed: {e}")
 

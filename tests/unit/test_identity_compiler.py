@@ -1,12 +1,11 @@
 """Unit tests for the IdentityCompiler."""
 
 import hashlib
-from pathlib import Path
 
 import pytest
 
 from hestia.config import IdentityConfig
-from hestia.identity.compiler import CompileResult, IdentityCompiler
+from hestia.identity.compiler import IdentityCompiler
 
 
 class TestDeterministicCompiler:
@@ -327,6 +326,15 @@ class TestContextBuilderIntegration:
 
         # Create a mock inference client
         class MockInference:
+            async def tokenize(self, text: str) -> list[int]:
+                return [0] * (len(text) // 4 + 1)
+
+            async def tokenize_batch(self, texts: list[str]) -> list[int]:
+                import asyncio
+
+                results = await asyncio.gather(*(self.tokenize(t) for t in texts))
+                return [len(r) for r in results]
+
             async def count_request(self, messages, tools):
                 return sum(len(m.content or "") // 4 for m in messages)
 

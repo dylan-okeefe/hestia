@@ -82,6 +82,13 @@ class ScheduledTask:
     last_run_at: datetime | None
     next_run_at: datetime | None
     last_error: str | None
+    notify: bool = False
+
+    def __post_init__(self) -> None:
+        if bool(self.cron_expression) and bool(self.fire_at):
+            raise ValueError("Exactly one of cron_expression or fire_at must be set")
+        if not (bool(self.cron_expression) or bool(self.fire_at)):
+            raise ValueError("Exactly one of cron_expression or fire_at must be set")
 
 
 @dataclass
@@ -95,6 +102,19 @@ class ChatResponse:
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
+
+
+@dataclass
+class StreamDelta:
+    """A single chunk from a streaming inference response."""
+
+    content: str
+    finish_reason: str | None = None
+    reasoning_content: str | None = None
+    tool_call_chunks: list[dict[str, Any]] | None = None
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
 
 
 class FunctionSchema(BaseModel):

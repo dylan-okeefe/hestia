@@ -38,7 +38,7 @@ class PolicyEngine(ABC):
     matching the llama-server ``-c`` argument) in their ``__init__``.
     ``commands.py`` and other callsites read ``policy.ctx_window``
     directly, so a subclass that does not provide it would raise
-    ``AttributeError`` at runtime (Copilot A-3).
+    ``AttributeError`` at runtime.
     """
 
     #: Per-slot context window in tokens. Concrete subclasses must

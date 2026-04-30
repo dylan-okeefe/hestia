@@ -13,14 +13,13 @@ from typing import Any
 import httpx
 
 from hestia.config import WebSearchConfig
+from hestia.errors import WebSearchError
+from hestia.runtime_context import current_session_id, current_trace_store
 from hestia.tools.builtin.http_get import SSRFSafeTransport
-from hestia.tools.builtin.memory_tools import current_session_id, current_trace_store
 from hestia.tools.capabilities import NETWORK_EGRESS
 from hestia.tools.metadata import tool
 
-
-class WebSearchError(RuntimeError):
-    """Raised when the configured provider fails."""
+logger = logging.getLogger(__name__)
 
 
 async def _tavily_search(
@@ -33,11 +32,10 @@ async def _tavily_search(
     time_range: str | None,
     timeout_seconds: int,
 ) -> list[dict[str, Any]]:
-    # Copilot H-4: send the API key as ``Authorization: Bearer ...``
-    # instead of embedding it in the request body. The body ends up in
-    # proxy/HTTP-debug logs (including httpx's own DEBUG logs) and any
-    # outbound SIEM that captures request payloads; the Authorization
-    # header is conventionally redacted. Tavily accepts both forms.
+    # Send the API key as ``Authorization: Bearer ...`` instead of embedding it in
+    # the request body. The body ends up in proxy/HTTP-debug logs (including httpx's
+    # own DEBUG logs) and any outbound SIEM that captures request payloads; the
+    # Authorization header is conventionally redacted. Tavily accepts both forms.
     payload: dict[str, Any] = {
         "query": query,
         "max_results": max_results,
@@ -176,5 +174,6 @@ async def _record_egress(url: str, status: int | None, size: int) -> None:
                 status=status,
                 size=size,
             )
-        except Exception:
+        except Exception:  # noqa: BLE001
+            # Egress audit is best-effort; never fail the tool call because of it.
             logger.debug("Failed to record egress event", exc_info=True)

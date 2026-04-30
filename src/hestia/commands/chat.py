@@ -8,19 +8,20 @@ import click
 import httpx
 
 from hestia.app import (
-    CliAppContext,
+    AppContext,
     CliConfirmHandler,
     CliResponseHandler,
-    _compile_and_set_memory_epoch,
-    _handle_meta_command,
 )
+from hestia.commands._shared import _format_token_usage
+from hestia.commands.meta import _handle_meta_command
 from hestia.core.types import Message
 from hestia.errors import HestiaError
+from hestia.persistence.memory_epochs import _compile_and_set_memory_epoch
 
 logger = logging.getLogger(__name__)
 
 
-async def _cmd_chat(app: CliAppContext) -> None:
+async def cmd_chat(app: AppContext, new_session: bool = False) -> None:
     """Start an interactive chat session."""
     if not app.config.inference.model_name:
         raise ValueError(
@@ -30,13 +31,20 @@ async def _cmd_chat(app: CliAppContext) -> None:
     app.set_confirm_callback(CliConfirmHandler())
     orchestrator = app.make_orchestrator()
 
+    # Eagerly warm up context builder to avoid first-turn latency
+    await app.context_builder.warm_up()
+
     # Recover stale turns from previous crash
     recovered = await orchestrator.recover_stale_turns()
     if recovered:
         click.echo(f"Recovered {recovered} stale turn(s) from previous crash.")
 
-    session = await app.session_store.get_or_create_session("cli", "default")
-    click.echo(f"Session: {session.id}")
+    if new_session:
+        session = await app.session_store.create_session("cli", "default")
+        click.echo(f"New session: {session.id}")
+    else:
+        session = await app.session_store.get_or_create_session("cli", "default")
+        click.echo(f"Session: {session.id}")
 
     compiled = await _compile_and_set_memory_epoch(app, session)
     if compiled:
@@ -60,11 +68,16 @@ async def _cmd_chat(app: CliAppContext) -> None:
                 continue
 
             user_message = Message(role="user", content=user_input)
-            await orchestrator.process_turn(
+            turn = await orchestrator.process_turn(
                 session=session,
                 user_message=user_message,
                 respond_callback=response_handler,
             )
+            if app.verbose:
+                trace = await app.trace_store.get_by_turn(turn.id)
+                usage = _format_token_usage(trace)
+                if usage:
+                    click.echo(usage)
         except KeyboardInterrupt:
             click.echo("\nUse /quit or /exit to end the session.")
         except (HestiaError, httpx.HTTPError, OSError) as e:
@@ -75,9 +88,10 @@ async def _cmd_chat(app: CliAppContext) -> None:
                 traceback.print_exc()
 
     click.echo("Goodbye!")
+    await app.close()
 
 
-async def _cmd_ask(app: CliAppContext, message: str) -> None:
+async def cmd_ask(app: AppContext, message: str) -> None:
     """Send a single message and get a response."""
     if not app.config.inference.model_name:
         raise ValueError(
@@ -86,6 +100,9 @@ async def _cmd_ask(app: CliAppContext, message: str) -> None:
         )
     app.set_confirm_callback(CliConfirmHandler())
     orchestrator = app.make_orchestrator()
+
+    # Eagerly warm up context builder to avoid first-turn latency
+    await app.context_builder.warm_up()
 
     recovered = await orchestrator.recover_stale_turns()
     if recovered:
@@ -98,8 +115,14 @@ async def _cmd_ask(app: CliAppContext, message: str) -> None:
 
     response_handler = CliResponseHandler(verbose=app.verbose)
 
-    await orchestrator.process_turn(
+    turn = await orchestrator.process_turn(
         session=session,
         user_message=user_message,
         respond_callback=response_handler,
     )
+    if app.verbose:
+        trace = await app.trace_store.get_by_turn(turn.id)
+        usage = _format_token_usage(trace)
+        if usage:
+            click.echo(usage)
+    await app.close()
