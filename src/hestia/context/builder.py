@@ -347,7 +347,8 @@ class ContextBuilder:
     async def _count_body(self, messages: list[Message]) -> int:
         """Count tokens for message body only (no tools).
 
-        Always call count_request with tools=[] for consistency.
+        Uses :meth:`InferenceClient.tokenize_batch` when available to
+        amortize HTTP round trips across uncached messages.
 
         Args:
             messages: Messages to count
@@ -359,12 +360,36 @@ class ContextBuilder:
         cache_key = "|".join(f"{m.role}:{m.content}" for m in messages)
         if cache_key == self._last_system_content and self._system_token_count is not None:
             return self._system_token_count
-        count = await self._inference.count_request(messages, tools=[])
+
+        # Collect uncached messages and batch-tokenize them.
+        uncached: list[Message] = []
+        for msg in messages:
+            key = (msg.role, msg.content or "")
+            if key not in self._tokenize_cache:
+                uncached.append(msg)
+
+        if uncached and hasattr(self._inference, "tokenize_batch"):
+            rendered = [self._render_message(m) for m in uncached]
+            counts = await self._inference.tokenize_batch(rendered)
+            for msg, count in zip(uncached, counts, strict=True):
+                key = (msg.role, msg.content or "")
+                self._tokenize_cache[key] = count
+                if len(self._tokenize_cache) > 4096:
+                    self._tokenize_cache.popitem(last=False)
+        elif uncached:
+            # Fallback for inference clients without tokenize_batch.
+            for msg in uncached:
+                await self._count_tokens(msg)
+
+        total = sum(
+            self._tokenize_cache[(m.role, m.content or "")] for m in messages
+        )
+
         # Only cache single-message system prompts (the static prefix).
         if len(messages) == 1 and messages[0].role == "system":
             self._last_system_content = cache_key
-            self._system_token_count = count
-        return count
+            self._system_token_count = total
+        return total
 
     def _apply_correction(self, body_count: int, has_tools: bool) -> int:
         """Apply calibration correction to body count.
