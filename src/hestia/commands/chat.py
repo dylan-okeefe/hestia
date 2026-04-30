@@ -31,6 +31,9 @@ async def cmd_chat(app: AppContext, new_session: bool = False) -> None:
     app.set_confirm_callback(CliConfirmHandler())
     orchestrator = app.make_orchestrator()
 
+    # Eagerly warm up context builder to avoid first-turn latency
+    await app.context_builder.warm_up()
+
     # Recover stale turns from previous crash
     recovered = await orchestrator.recover_stale_turns()
     if recovered:
@@ -97,6 +100,9 @@ async def cmd_ask(app: AppContext, message: str) -> None:
         )
     app.set_confirm_callback(CliConfirmHandler())
     orchestrator = app.make_orchestrator()
+
+    # Eagerly warm up context builder to avoid first-turn latency
+    await app.context_builder.warm_up()
 
     recovered = await orchestrator.recover_stale_turns()
     if recovered:
