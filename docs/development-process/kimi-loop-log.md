@@ -9,6 +9,35 @@
 
 
 
+## 2026-04-29 — L88 Complete (Minor Improvements)
+
+**Outcome:** Added max-size eviction to `SessionRateLimiter._buckets` and reformatted `style/builder.py` SQL for readability.
+
+**Changes:**
+- `SessionRateLimiter` — `max_buckets` param (default 10_000) with LRU eviction via dict ordering; wired through `RateLimitConfig` and `AppContext`
+- `style/builder.py` — multi-line triple-quoted SQL strings with aligned JOINs; blank lines between methods; zero behavior change
+
+**Quality gate:** 1032 passed, 6 skipped; ruff clean on changed files; mypy clean on changed files.
+
+**Branch:** `feature/l88-april-29-minor-improvements`
+
+---
+
+## 2026-04-29 — L87 Complete (Type Safety & Code Deduplication)
+
+**Outcome:** Deduplicated `ConfirmCallback`, tightened `ReflectionRunner._on_failure` type, extracted `PLATFORM_SCHEDULER` constant.
+
+**Changes:**
+- `ConfirmCallback` defined once in `execution.py`, re-exported from `engine.py`
+- `ReflectionRunner._on_failure`: `Any | None` → `Callable[[str, Exception], None] | None`
+- `PLATFORM_SCHEDULER = "scheduler"` constant in `policy/constants.py`, used in `default.py`
+
+**Quality gate:** 1031 passed, 6 skipped; ruff clean on changed files; mypy clean on changed files.
+
+**Branch:** `feature/l87-april-29-types-dedup`
+
+---
+
 ## 2026-04-26 — L74 Complete (UX Gaps & Config Validation)
 
 **Outcome:** Added history command, startup config validation, and better error messages.

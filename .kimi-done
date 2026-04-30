@@ -1,6 +1,6 @@
 HESTIA_KIMI_DONE=1
-LOOP=L86
-BRANCH=feature/l86-april-29-cleanup-docs
+LOOP=L89
+BRANCH=feature/l89-correct-italic-repl-docs
 COMMIT=<
-TESTS=1031 passed, 6 skipped, 15 warnings (unit+integration)
+TESTS=1033 passed, 6 skipped, 14 warnings (unit+integration)
 RUFF_SRC=baseline (no new issues in changed files)

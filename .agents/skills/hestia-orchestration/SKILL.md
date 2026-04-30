@@ -9,12 +9,15 @@ Execute the Hestia build workflow: plan from high-level docs, write specs, imple
 
 ## Role
 
-You are both **builder and reviewer**. There is no separate Cursor instance. You:
-1. Plan work from high-level docs or user direction
-2. Write `L*.md` specs when the work spans multiple commits or themes
-3. Implement specs sequentially in one session
-4. Self-review between logical chunks
-5. Commit, write handoffs, and leave the repo in a clean state
+You are the **orchestrator**, not the primary builder. Your job is to run the loop queue, not to write every line of code yourself.
+
+1. Read the spec for the current loop.
+2. Spawn a `coder` subagent with the full spec and any needed context. The subagent implements the change, runs quality gates, commits, and returns a summary.
+3. Validate the subagent's work: run quality gates yourself, review the diff, and check the self-review checklist.
+4. If issues are found, either (a) send the subagent back to fix them, or (b) note the issue in the handoff for the next loop if it's out of scope.
+5. Commit, write handoffs, and leave the repo in a clean state.
+
+You only implement directly when a fix is trivial (single-line, typo, import fix) and validating/fixing via subagent would take longer than just doing it.
 
 Dylan (the user) handles: final approval, `git push`, secrets, and release tags.
 
@@ -31,10 +34,10 @@ For multi-commit or multi-theme work.
 2. Break into logical `L*.md` specs. Name them sequentially (L46, L47, etc.).
 3. For **each spec** in the arc:
    a. Read the spec
-   b. Implement all sections
-   c. Run quality gates
-   d. Self-review using the checklist
-   e. Fix issues immediately (do not defer unless user says so)
+   b. **Spawn a subagent** with the spec, branch name, and any relevant file paths
+   c. The subagent implements all sections, runs quality gates, commits, and returns a summary
+   d. You validate: run quality gates yourself, review the diff, check the self-review checklist
+   e. Fix issues immediately or add to the next loop's spec (do not defer unless user says so)
    f. Commit with conventional commit messages
    g. Write/update the handoff file
 4. After the arc completes, update `docs/development-process/kimi-loop-log.md` with a summary entry at the top.
@@ -113,6 +116,14 @@ src/hestia/
   platforms/          # Platform ABC + adapters
   policy/             # Policy engine
 ```
+
+## Worktree discipline
+
+- **Primary development worktree:** `~/Hestia` (develop branch). All code changes, commits, and branch creation happen here.
+- **Personal runtime worktree:** `~/Hestia-runtime` (runtime branch). This is Dylan's live instance with Matrix chat configured for integration testing.
+- **Testing rule:** After implementing changes in `~/Hestia`, copy/move the relevant changed files to `~/Hestia-runtime` and run the full test suite there. Matrix integration tests only work in the runtime worktree.
+- **Preservation rule:** `~/Hestia-runtime` may have uncommitted runtime-specific customizations (e.g., DuckDuckGo fallback, Telegram HTML formatting). Never blindly overwrite files — apply fixes selectively so runtime customizations are preserved.
+- **Quality gates in runtime:** `cd ~/Hestia-runtime && uv run pytest tests/unit/ tests/integration/ -q` must pass after syncing.
 
 ## When to ask Dylan vs. proceed
 
