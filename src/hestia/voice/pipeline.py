@@ -39,7 +39,8 @@ class VoicePipeline:
     config: VoiceConfig
     _whisper_model: object | None = None
     _tts_voice: object | None = None
-    _init_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    _stt_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    _tts_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     async def transcribe(self, pcm_bytes: bytes, *, sample_rate: int = 16000) -> str:
         """Transcribe raw PCM16 mono audio to text."""
@@ -67,7 +68,7 @@ class VoicePipeline:
         return audio_bytes
 
     async def _ensure_stt_loaded(self) -> None:
-        async with self._init_lock:
+        async with self._stt_lock:
             if self._whisper_model is not None:
                 return
             if WhisperModel is None:
@@ -81,7 +82,7 @@ class VoicePipeline:
             )
 
     async def _ensure_tts_loaded(self) -> None:
-        async with self._init_lock:
+        async with self._tts_lock:
             if self._tts_voice is not None:
                 return
             if self.config.tts_engine == "piper":
