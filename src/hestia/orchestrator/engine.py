@@ -21,7 +21,14 @@ from hestia.orchestrator.execution import ConfirmCallback as ConfirmCallback
 from hestia.orchestrator.execution import TurnExecution
 from hestia.orchestrator.finalization import TurnFinalization
 from hestia.orchestrator.transitions import assert_transition
-from hestia.orchestrator.types import ResponseCallback, Turn, TurnContext, TurnState, TurnTransition
+from hestia.orchestrator.types import (
+    ResponseCallback,
+    StreamCallback,
+    Turn,
+    TurnContext,
+    TurnState,
+    TurnTransition,
+)
 from hestia.persistence.sessions import SessionStore
 from hestia.platforms.base import Platform
 from hestia.policy.engine import PolicyEngine
@@ -167,6 +174,7 @@ class Orchestrator:
         platform: Platform | None = None,
         platform_user: str | None = None,
         voice_reply: bool = False,
+        stream_callback: StreamCallback | None = None,
     ) -> Turn:
         """Process a single user turn through the state machine."""
         if self._rate_limiter is not None and not self._rate_limiter.allow(session.id):
@@ -198,7 +206,7 @@ class Orchestrator:
                 platform_user=platform_user,
                 session=session,
                 voice_reply=voice_reply,
-                stream_callback=None,
+                stream_callback=stream_callback,
             )
 
             try:
