@@ -18,6 +18,7 @@ from telegram.ext import Application, CallbackQueryHandler, CommandHandler, Mess
 
 from hestia.config import TelegramConfig
 from hestia.core.types import Message as HestiaMessage
+from hestia.orchestrator.types import StreamCallback
 from hestia.platforms.allowlist import (
     match_allowlist,
     validate_telegram_user_id,
@@ -102,6 +103,7 @@ class TelegramAdapter(Platform):
         self._last_edit_max_age = 3600.0  # 1 hour TTL
         self._confirmation_store = ConfirmationStore()
         self._confirmation_timeout_seconds = 60.0
+        self._stream_states: dict[str, dict[str, Any]] = {}
 
         # Background tasks that keep the typing indicator alive (refreshed every 4s).
         self._typing_tasks: dict[str, asyncio.Task[None]] = {}
@@ -277,6 +279,44 @@ class TelegramAdapter(Platform):
                 await asyncio.sleep(4.0)
 
         self._typing_tasks[user] = asyncio.create_task(_refresh())
+
+    def _make_stream_callback(self, chat_id: str) -> StreamCallback:
+        """Create a streaming callback for progressive message delivery.
+
+        Buffers the first chunk until at least 20 characters have been
+        accumulated or 500 ms have elapsed, then sends a new message.
+        Subsequent chunks trigger rate-limited in-place edits (max one
+        edit per 1.5 s per message).
+        """
+        state: dict[str, Any] = {
+            "accumulated": "",
+            "message_id": None,
+            "last_edit": 0.0,
+            "first_chunk_time": None,
+        }
+        self._stream_states[chat_id] = state
+
+        async def callback(chunk: str) -> None:
+            state["accumulated"] += chunk
+
+            if state["message_id"] is None:
+                if state["first_chunk_time"] is None:
+                    state["first_chunk_time"] = time.monotonic()
+
+                elapsed = time.monotonic() - state["first_chunk_time"]
+                if len(state["accumulated"]) >= 20 or elapsed >= 0.5:
+                    state["message_id"] = await self.send_message(
+                        chat_id, state["accumulated"]
+                    )
+                    state["last_edit"] = time.monotonic()
+                return
+
+            now = time.monotonic()
+            if now - state["last_edit"] >= 1.5:
+                await self.edit_message(chat_id, state["message_id"], state["accumulated"])
+                state["last_edit"] = now
+
+        return callback
 
     async def request_confirmation(
         self, user: str, tool_name: str, arguments: dict[str, Any]
