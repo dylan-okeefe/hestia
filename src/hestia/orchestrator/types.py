@@ -64,6 +64,7 @@ class Turn:
 
 # Callback types
 ResponseCallback = Callable[[str], Awaitable[None]]
+StreamCallback = Callable[[str], Awaitable[None]]
 TransitionCallback = Callable[[Turn, TurnState, str], Awaitable[None]]
 
 
@@ -94,6 +95,9 @@ class TurnContext:
 
     # Per-turn delivery hint (set by platform adapter)
     voice_reply: bool = False
+
+    # Streaming callback (called for each content chunk)
+    stream_callback: StreamCallback | None = None
 
     # Accumulated during _run_inference_loop
     tool_chain: list[str] = field(default_factory=list)
