@@ -41,6 +41,13 @@ class FakeInferenceClient:
 
         return total
 
+    async def tokenize_batch(self, texts: list[str]) -> list[int]:
+        """Fallback batch tokenization for testing."""
+        import asyncio
+
+        results = await asyncio.gather(*(self.tokenize(t) for t in texts))
+        return [len(r) for r in results]
+
 
 @pytest.fixture
 def fake_client():

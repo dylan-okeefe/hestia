@@ -1,5 +1,6 @@
 """Inference client for llama.cpp server."""
 
+import asyncio
 import dataclasses
 import json
 from typing import Any
@@ -110,6 +111,68 @@ class InferenceClient:
         data = response.json()
         tokens: list[int] = data.get("tokens", [])
         return tokens
+
+    async def tokenize_batch(self, texts: list[str]) -> list[int]:
+        """Tokenize multiple texts efficiently via the separator approach.
+
+        Joins the texts with a unique separator, makes a single POST /tokenize
+        call, then splits the returned token sequence by the separator's token
+        signature to recover per-text counts.
+
+        Falls back to individual :meth:`tokenize` calls if the separator
+        appears in any text, if the server returns an error, or if the split
+        does not yield the expected number of segments.
+
+        Args:
+            texts: List of texts to tokenize.
+
+        Returns:
+            List of token counts, one per input text.
+        """
+        if not texts:
+            return []
+        if len(texts) == 1:
+            tokens = await self.tokenize(texts[0])
+            return [len(tokens)]
+
+        separator = "\x00\x00BATCH_SEPARATOR\x00\x00"
+
+        if any(separator in t for t in texts):
+            results = await asyncio.gather(*(self.tokenize(t) for t in texts))
+            return [len(r) for r in results]
+
+        try:
+            sep_tokens = await self.tokenize(separator)
+            joined = separator.join(texts)
+            all_tokens = await self.tokenize(joined)
+        except (InferenceServerError, InferenceTimeoutError):
+            results = await asyncio.gather(*(self.tokenize(t) for t in texts))
+            return [len(r) for r in results]
+
+        if not sep_tokens:
+            results = await asyncio.gather(*(self.tokenize(t) for t in texts))
+            return [len(r) for r in results]
+
+        counts: list[int] = []
+        start = 0
+        sep_len = len(sep_tokens)
+        i = 0
+
+        while i <= len(all_tokens) - sep_len:
+            if all_tokens[i : i + sep_len] == sep_tokens:
+                counts.append(i - start)
+                start = i + sep_len
+                i = start
+            else:
+                i += 1
+
+        counts.append(len(all_tokens) - start)
+
+        if len(counts) != len(texts):
+            results = await asyncio.gather(*(self.tokenize(t) for t in texts))
+            return [len(r) for r in results]
+
+        return counts
 
     async def count_request(
         self,
