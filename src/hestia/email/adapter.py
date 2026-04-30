@@ -1,6 +1,13 @@
 """Email adapter using IMAP for read/draft and SMTP for send.
 
 All blocking stdlib I/O is dispatched via asyncio.to_thread.
+
+Async boundary note:
+- IMAP operations (imaplib) are wrapped in asyncio.to_thread because the
+  EmailAdapter public API is async and imaplib is purely blocking.
+- SMTP operations (smtplib) are NOT wrapped here; they are called from
+  within the same to_thread blocks that already isolate IMAP work, so
+  adding a second layer would be unnecessary and complicate error handling.
 """
 
 from __future__ import annotations
