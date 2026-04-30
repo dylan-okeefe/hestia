@@ -104,6 +104,14 @@ class ChatResponse:
     total_tokens: int
 
 
+@dataclass
+class StreamDelta:
+    """A single chunk from a streaming inference response."""
+
+    content: str
+    finish_reason: str | None = None
+
+
 class FunctionSchema(BaseModel):
     """JSON schema for a function."""
 
