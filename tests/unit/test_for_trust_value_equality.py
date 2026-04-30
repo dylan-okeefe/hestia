@@ -1,4 +1,4 @@
-"""Regression test: for_trust must use value equality, not identity."""
+"""Regression test: for_trust must use semantic comparison, not identity."""
 
 from hestia.config import HestiaConfig, TrustConfig
 
@@ -6,9 +6,9 @@ from hestia.config import HestiaConfig, TrustConfig
 def test_for_trust_dispatches_after_value_recreation():
     """JSON round-trips create new objects with the same values.
 
-    ``for_trust`` must rely on value equality (``==``) so that a
+    ``for_trust`` must use a semantic ``is_paranoid()`` check so that a
     ``TrustConfig`` reconstructed from JSON still dispatches to the
-    correct handoff/compression preset.
+    correct handoff/compression preset regardless of object identity.
     """
     cfg = HestiaConfig.for_trust(TrustConfig.household())
     # Simulate a JSON round-trip: same field values, different identity.
@@ -19,8 +19,18 @@ def test_for_trust_dispatches_after_value_recreation():
         subagent_write_local=True,
     )
     assert revived is not cfg.trust
-    assert revived == cfg.trust
+    assert not revived.is_paranoid()
     cfg2 = HestiaConfig.for_trust(revived)
-    assert cfg2.trust == cfg.trust
-    assert cfg2.handoff.enabled == cfg.handoff.enabled
-    assert cfg2.compression.enabled == cfg.compression.enabled
+    assert cfg2.handoff.enabled == cfg.handoff.enabled is True
+    assert cfg2.compression.enabled == cfg.compression.enabled is True
+
+
+def test_for_trust_paranoid_dispatches_after_value_recreation():
+    """Paranoid configs reconstructed from JSON must stay paranoid."""
+    cfg = HestiaConfig.for_trust(TrustConfig.paranoid())
+    revived = TrustConfig()
+    assert revived is not cfg.trust
+    assert revived.is_paranoid()
+    cfg2 = HestiaConfig.for_trust(revived)
+    assert cfg2.handoff.enabled is False
+    assert cfg2.compression.enabled is False
