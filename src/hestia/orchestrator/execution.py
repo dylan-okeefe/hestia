@@ -8,13 +8,14 @@ from typing import TYPE_CHECKING, Any
 
 from hestia.core.clock import utcnow
 from hestia.core.inference import InferenceClient
-from hestia.core.types import Message, Session, ToolCall
+from hestia.core.types import ChatResponse, Message, Session, ToolCall
 from hestia.errors import (
     EmptyResponseError,
+    InferenceServerError,
     MaxIterationsError,
     PolicyFailureError,
 )
-from hestia.orchestrator.types import TransitionCallback, TurnContext, TurnState
+from hestia.orchestrator.types import TransitionCallback, Turn, TurnContext, TurnState
 from hestia.policy.engine import PolicyEngine, RetryAction
 from hestia.security import InjectionScanner
 from hestia.tools.metadata import ToolMetadata
@@ -46,6 +47,7 @@ class TurnExecution:
         injection_scanner: InjectionScanner | None = None,
         max_iterations: int = 10,
         max_tool_calls_per_turn: int = 10,
+        stream: bool = False,
     ):
         self._tools = tool_registry
         self._inference = inference_client
@@ -56,6 +58,7 @@ class TurnExecution:
         self._injection_scanner = injection_scanner
         self._max_iterations = max_iterations
         self._max_tool_calls_per_turn = max_tool_calls_per_turn
+        self._stream = stream
 
         # Meta-tool dispatch table — adding a new meta-tool is one line.
         self._meta_tools: dict[
@@ -85,12 +88,15 @@ class TurnExecution:
 
             turn.reasoning_budget = self._policy.reasoning_budget(session, turn.iterations)
 
-            chat_response = await self._inference.chat(
-                messages=ctx.build_result.messages,
-                tools=ctx.tools,
-                slot_id=ctx.slot_id,
-                reasoning_budget=turn.reasoning_budget,
-            )
+            if ctx.stream_callback is not None and self._stream:
+                chat_response = await self._run_inference_streaming(ctx, turn)
+            else:
+                chat_response = await self._inference.chat(
+                    messages=ctx.build_result.messages,
+                    tools=ctx.tools,
+                    slot_id=ctx.slot_id,
+                    reasoning_budget=turn.reasoning_budget,
+                )
 
             ctx.total_prompt_tokens += getattr(chat_response, "prompt_tokens", 0) or 0
             ctx.total_completion_tokens += getattr(chat_response, "completion_tokens", 0) or 0
@@ -194,6 +200,95 @@ class TurnExecution:
             raise MaxIterationsError(self._max_iterations, turn.iterations)
 
         return content
+
+    async def _run_inference_streaming(
+        self, ctx: TurnContext, turn: Turn
+    ) -> ChatResponse:
+        """Stream inference and accumulate a ChatResponse equivalent."""
+        content_parts: list[str] = []
+        reasoning_parts: list[str] = []
+        tool_call_buffers: dict[int, dict[str, Any]] = {}
+        finish_reason = "unknown"
+        prompt_tokens = 0
+        completion_tokens = 0
+        total_tokens = 0
+
+        assert ctx.build_result is not None
+        assert ctx.stream_callback is not None
+
+        async for delta in self._inference.chat_stream(
+            messages=ctx.build_result.messages,
+            tools=ctx.tools,
+            slot_id=ctx.slot_id,
+            reasoning_budget=turn.reasoning_budget,
+        ):
+            if delta.content:
+                content_parts.append(delta.content)
+                await ctx.stream_callback(delta.content)
+
+            if delta.reasoning_content:
+                reasoning_parts.append(delta.reasoning_content)
+
+            if delta.tool_call_chunks:
+                for tc in delta.tool_call_chunks:
+                    idx = tc.get("index", 0)
+                    if idx not in tool_call_buffers:
+                        tool_call_buffers[idx] = {"id": "", "name": "", "arguments": ""}
+                    if tc.get("id"):
+                        tool_call_buffers[idx]["id"] = tc["id"]
+                    fn = tc.get("function", {}) or {}
+                    if fn.get("name"):
+                        tool_call_buffers[idx]["name"] = fn["name"]
+                    if fn.get("arguments"):
+                        tool_call_buffers[idx]["arguments"] += fn["arguments"]
+
+            if delta.finish_reason is not None:
+                finish_reason = delta.finish_reason
+
+            if delta.prompt_tokens or delta.completion_tokens or delta.total_tokens:
+                prompt_tokens = delta.prompt_tokens
+                completion_tokens = delta.completion_tokens
+                total_tokens = delta.total_tokens
+
+        content = "".join(content_parts)
+        reasoning_content = "".join(reasoning_parts) if reasoning_parts else None
+
+        tool_calls: list[ToolCall] = []
+        for idx in sorted(tool_call_buffers.keys()):
+            buf = tool_call_buffers[idx]
+            if not buf["name"]:
+                continue
+            try:
+                arguments = json.loads(buf["arguments"]) if buf["arguments"] else {}
+            except json.JSONDecodeError as exc:
+                raise InferenceServerError(
+                    f"tool_call arguments for {buf['name']!r} are malformed JSON: {exc}"
+                ) from exc
+            if not isinstance(arguments, dict):
+                raise InferenceServerError(
+                    f"tool_call arguments for {buf['name']!r} are not a dict: "
+                    f"{type(arguments).__name__}"
+                )
+            tool_calls.append(
+                ToolCall(
+                    id=buf["id"] or f"call_{idx}",
+                    name=buf["name"],
+                    arguments=arguments,
+                )
+            )
+
+        if finish_reason == "unknown" and tool_calls:
+            finish_reason = "tool_calls"
+
+        return ChatResponse(
+            content=content,
+            reasoning_content=reasoning_content,
+            tool_calls=tool_calls,
+            finish_reason=finish_reason,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+        )
 
     async def _execute_tool_calls(
         self, session: Session, tool_calls: list[ToolCall], allowed_tools: list[str] | None = None
