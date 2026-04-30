@@ -1,5 +1,6 @@
 """Inference client for llama.cpp server."""
 
+import dataclasses
 import json
 from typing import Any
 
@@ -15,19 +16,16 @@ def _strip_historical_reasoning(messages: list[Message]) -> list[Message]:
 
     The chat template re-injects think blocks on every request. Stripping
     historical reasoning prevents context explosion.
+
+    Uses a conditional copy: only allocates a new ``Message`` when
+    ``reasoning_content`` is actually set, avoiding churn on the
+    majority of messages that have no reasoning.
     """
-    result = []
+    result: list[Message] = []
     for msg in messages:
-        # Create a new Message without reasoning_content
-        new_msg = Message(
-            role=msg.role,
-            content=msg.content,
-            tool_calls=msg.tool_calls,
-            tool_call_id=msg.tool_call_id,
-            reasoning_content=None,  # Strip it
-            created_at=msg.created_at,
-        )
-        result.append(new_msg)
+        if msg.reasoning_content is not None:
+            msg = dataclasses.replace(msg, reasoning_content=None)
+        result.append(msg)
     return result
 
 
