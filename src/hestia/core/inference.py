@@ -1,12 +1,13 @@
 """Inference client for llama.cpp server."""
 
 import json
+from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
 
 from hestia.core.serialization import message_to_dict
-from hestia.core.types import ChatResponse, Message, ToolCall, ToolSchema
+from hestia.core.types import ChatResponse, Message, StreamDelta, ToolCall, ToolSchema
 from hestia.errors import InferenceServerError, InferenceTimeoutError
 
 
@@ -235,6 +236,84 @@ class InferenceClient:
             completion_tokens=usage.get("completion_tokens", 0),
             total_tokens=usage.get("total_tokens", 0),
         )
+
+    async def chat_stream(
+        self,
+        messages: list[Message],
+        tools: list[ToolSchema] | None = None,
+        slot_id: int | None = None,
+        reasoning_budget: int = 2048,
+        max_tokens: int = 1024,
+        temperature: float = 0.7,
+    ) -> AsyncIterator[StreamDelta]:
+        """POST /v1/chat/completions with streaming. Yields StreamDelta chunks.
+
+        Args:
+            messages: List of messages (historical reasoning is stripped automatically)
+            tools: Optional list of tools to offer
+            slot_id: Optional slot ID for slot-targeted inference
+            reasoning_budget: Max reasoning tokens (think block)
+            max_tokens: Max completion tokens
+            temperature: Sampling temperature
+        """
+        clean_messages = _strip_historical_reasoning(messages)
+
+        request_body: dict[str, Any] = {
+            "model": self.model_name,
+            "messages": [message_to_dict(m) for m in clean_messages],
+            "stream": True,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "reasoning_format": "deepseek",
+            "reasoning_budget": reasoning_budget,
+        }
+
+        if tools:
+            request_body["tools"] = [t.model_dump() for t in tools]
+
+        if slot_id is not None:
+            request_body["slot_id"] = slot_id
+
+        try:
+            async with self._client.stream(
+                "POST",
+                f"{self.base_url}/v1/chat/completions",
+                json=request_body,
+                timeout=self.timeout,
+            ) as response:
+                try:
+                    response.raise_for_status()
+                except httpx.HTTPStatusError as e:
+                    await e.response.aread()
+                    raise InferenceServerError(
+                        f"POST /v1/chat/completions returned {e.response.status_code}: "
+                        f"{e.response.text}"
+                    ) from e
+
+                async for line in response.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    data = line.removeprefix("data: ").strip()
+                    if data == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+                    choices = chunk.get("choices", [])
+                    if not choices:
+                        continue
+                    delta = choices[0].get("delta", {})
+                    finish_reason = choices[0].get("finish_reason")
+                    content = delta.get("content", "")
+                    yield StreamDelta(
+                        content=content or "",
+                        finish_reason=finish_reason,
+                    )
+        except httpx.TimeoutException as e:
+            raise InferenceTimeoutError(
+                "POST /v1/chat/completions timed out"
+            ) from e
 
     async def slot_save(self, slot_id: int, filename: str) -> None:
         """POST /slots/{id}?action=save"""
