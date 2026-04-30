@@ -144,6 +144,14 @@ class MatrixConfig(_ConfigFromEnv):
     rate_limit_edits_seconds: float = 1.5
     sync_timeout_ms: int = 30000  # Long-poll timeout for /sync
 
+    def __repr__(self) -> str:
+        fields = []
+        for k, v in self.__dict__.items():
+            if k == "access_token":
+                v = "***" if v else ""
+            fields.append(f"{k}={v!r}")
+        return f"{self.__class__.__name__}({', '.join(fields)})"
+
 
 @dataclass
 class TrustConfig(_ConfigFromEnv):
