@@ -425,35 +425,288 @@ class WebSearchConfig(_ConfigFromEnv):
     time_range: str | None = None  # Tavily: "day" | "week" | "month" | "year" | None
 
 
+# ---------------------------------------------------------------------------
+# Grouped config containers
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class CoreConfig:
+    """Core engine and infrastructure configuration."""
+
+    inference: InferenceConfig = field(default_factory=InferenceConfig)
+    slots: SlotConfig = field(default_factory=SlotConfig)
+    scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
+    storage: StorageConfig = field(default_factory=StorageConfig)
+    identity: IdentityConfig = field(default_factory=IdentityConfig)
+
+
+@dataclass
+class PlatformConfig:
+    """Platform adapter configuration."""
+
+    telegram: TelegramConfig = field(default_factory=TelegramConfig)
+    matrix: MatrixConfig = field(default_factory=MatrixConfig)
+    email: EmailConfig = field(default_factory=EmailConfig)
+    voice: VoiceConfig = field(default_factory=VoiceConfig)
+
+
+@dataclass
+class FeatureConfig:
+    """Feature subsystem configuration."""
+
+    web_search: WebSearchConfig = field(default_factory=WebSearchConfig)
+    handoff: HandoffConfig = field(default_factory=HandoffConfig)
+    compression: CompressionConfig = field(default_factory=CompressionConfig)
+    security: SecurityConfig = field(default_factory=SecurityConfig)
+    reflection: ReflectionConfig = field(default_factory=ReflectionConfig)
+    style: StyleConfig = field(default_factory=StyleConfig)
+    policy: PolicyConfig = field(default_factory=PolicyConfig)
+    rate_limit: RateLimitConfig = field(default_factory=RateLimitConfig)
+
+
+# ---------------------------------------------------------------------------
+# Top-level config
+# ---------------------------------------------------------------------------
+
+
 @dataclass
 class HestiaConfig(_ConfigFromEnv):
     """Top-level Hestia configuration."""
 
     _ENV_PREFIX = "HESTIA"
 
-    inference: InferenceConfig = field(default_factory=InferenceConfig)
-    slots: SlotConfig = field(default_factory=SlotConfig)
-    scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
-    storage: StorageConfig = field(default_factory=StorageConfig)
-    telegram: TelegramConfig = field(default_factory=TelegramConfig)
-    matrix: MatrixConfig = field(default_factory=MatrixConfig)
-    identity: IdentityConfig = field(default_factory=IdentityConfig)
+    core: CoreConfig = field(default_factory=CoreConfig)
+    platforms: PlatformConfig = field(default_factory=PlatformConfig)
+    features: FeatureConfig = field(default_factory=FeatureConfig)
     trust: TrustConfig = field(default_factory=TrustConfig)
-    web_search: WebSearchConfig = field(default_factory=WebSearchConfig)
-    handoff: HandoffConfig = field(default_factory=HandoffConfig)
-    compression: CompressionConfig = field(default_factory=CompressionConfig)
-    security: SecurityConfig = field(default_factory=SecurityConfig)
-    email: EmailConfig = field(default_factory=EmailConfig)
-    reflection: ReflectionConfig = field(default_factory=ReflectionConfig)
-    style: StyleConfig = field(default_factory=StyleConfig)
-    policy: PolicyConfig = field(default_factory=PolicyConfig)
-    rate_limit: RateLimitConfig = field(default_factory=RateLimitConfig)
-    voice: VoiceConfig = field(default_factory=VoiceConfig)
     trust_overrides: dict[str, TrustConfig] = field(default_factory=dict)
     system_prompt: str = "You are a helpful assistant."
     max_iterations: int = 10
     verbose: bool = False
     use_curl_cffi_fallback: bool = False
+
+    def __init__(
+        self,
+        *,
+        core: CoreConfig | None = None,
+        platforms: PlatformConfig | None = None,
+        features: FeatureConfig | None = None,
+        trust: TrustConfig | None = None,
+        trust_overrides: dict[str, TrustConfig] | None = None,
+        system_prompt: str = "You are a helpful assistant.",
+        max_iterations: int = 10,
+        verbose: bool = False,
+        use_curl_cffi_fallback: bool = False,
+        # Deprecated flat fields (backward compat)
+        inference: InferenceConfig | None = None,
+        slots: SlotConfig | None = None,
+        scheduler: SchedulerConfig | None = None,
+        storage: StorageConfig | None = None,
+        identity: IdentityConfig | None = None,
+        telegram: TelegramConfig | None = None,
+        matrix: MatrixConfig | None = None,
+        email: EmailConfig | None = None,
+        voice: VoiceConfig | None = None,
+        web_search: WebSearchConfig | None = None,
+        handoff: HandoffConfig | None = None,
+        compression: CompressionConfig | None = None,
+        security: SecurityConfig | None = None,
+        reflection: ReflectionConfig | None = None,
+        style: StyleConfig | None = None,
+        policy: PolicyConfig | None = None,
+        rate_limit: RateLimitConfig | None = None,
+    ) -> None:
+        if core is None:
+            core = CoreConfig(
+                inference=inference or InferenceConfig(),
+                slots=slots or SlotConfig(),
+                scheduler=scheduler or SchedulerConfig(),
+                storage=storage or StorageConfig(),
+                identity=identity or IdentityConfig(),
+            )
+        if platforms is None:
+            platforms = PlatformConfig(
+                telegram=telegram or TelegramConfig(),
+                matrix=matrix or MatrixConfig(),
+                email=email or EmailConfig(),
+                voice=voice or VoiceConfig(),
+            )
+        if features is None:
+            features = FeatureConfig(
+                web_search=web_search or WebSearchConfig(),
+                handoff=handoff or HandoffConfig(),
+                compression=compression or CompressionConfig(),
+                security=security or SecurityConfig(),
+                reflection=reflection or ReflectionConfig(),
+                style=style or StyleConfig(),
+                policy=policy or PolicyConfig(),
+                rate_limit=rate_limit or RateLimitConfig(),
+            )
+        self.core = core
+        self.platforms = platforms
+        self.features = features
+        self.trust = trust or TrustConfig()
+        self.trust_overrides = trust_overrides if trust_overrides is not None else {}
+        self.system_prompt = system_prompt
+        self.max_iterations = max_iterations
+        self.verbose = verbose
+        self.use_curl_cffi_fallback = use_curl_cffi_fallback
+
+    # -- Deprecated flat aliases (delegate to grouped versions) -----------------
+
+    @property
+    def inference(self) -> InferenceConfig:
+        """Deprecated: use core.inference instead."""
+        return self.core.inference
+
+    @inference.setter
+    def inference(self, value: InferenceConfig) -> None:
+        self.core.inference = value
+
+    @property
+    def slots(self) -> SlotConfig:
+        """Deprecated: use core.slots instead."""
+        return self.core.slots
+
+    @slots.setter
+    def slots(self, value: SlotConfig) -> None:
+        self.core.slots = value
+
+    @property
+    def scheduler(self) -> SchedulerConfig:
+        """Deprecated: use core.scheduler instead."""
+        return self.core.scheduler
+
+    @scheduler.setter
+    def scheduler(self, value: SchedulerConfig) -> None:
+        self.core.scheduler = value
+
+    @property
+    def storage(self) -> StorageConfig:
+        """Deprecated: use core.storage instead."""
+        return self.core.storage
+
+    @storage.setter
+    def storage(self, value: StorageConfig) -> None:
+        self.core.storage = value
+
+    @property
+    def identity(self) -> IdentityConfig:
+        """Deprecated: use core.identity instead."""
+        return self.core.identity
+
+    @identity.setter
+    def identity(self, value: IdentityConfig) -> None:
+        self.core.identity = value
+
+    @property
+    def telegram(self) -> TelegramConfig:
+        """Deprecated: use platforms.telegram instead."""
+        return self.platforms.telegram
+
+    @telegram.setter
+    def telegram(self, value: TelegramConfig) -> None:
+        self.platforms.telegram = value
+
+    @property
+    def matrix(self) -> MatrixConfig:
+        """Deprecated: use platforms.matrix instead."""
+        return self.platforms.matrix
+
+    @matrix.setter
+    def matrix(self, value: MatrixConfig) -> None:
+        self.platforms.matrix = value
+
+    @property
+    def email(self) -> EmailConfig:
+        """Deprecated: use platforms.email instead."""
+        return self.platforms.email
+
+    @email.setter
+    def email(self, value: EmailConfig) -> None:
+        self.platforms.email = value
+
+    @property
+    def voice(self) -> VoiceConfig:
+        """Deprecated: use platforms.voice instead."""
+        return self.platforms.voice
+
+    @voice.setter
+    def voice(self, value: VoiceConfig) -> None:
+        self.platforms.voice = value
+
+    @property
+    def web_search(self) -> WebSearchConfig:
+        """Deprecated: use features.web_search instead."""
+        return self.features.web_search
+
+    @web_search.setter
+    def web_search(self, value: WebSearchConfig) -> None:
+        self.features.web_search = value
+
+    @property
+    def handoff(self) -> HandoffConfig:
+        """Deprecated: use features.handoff instead."""
+        return self.features.handoff
+
+    @handoff.setter
+    def handoff(self, value: HandoffConfig) -> None:
+        self.features.handoff = value
+
+    @property
+    def compression(self) -> CompressionConfig:
+        """Deprecated: use features.compression instead."""
+        return self.features.compression
+
+    @compression.setter
+    def compression(self, value: CompressionConfig) -> None:
+        self.features.compression = value
+
+    @property
+    def security(self) -> SecurityConfig:
+        """Deprecated: use features.security instead."""
+        return self.features.security
+
+    @security.setter
+    def security(self, value: SecurityConfig) -> None:
+        self.features.security = value
+
+    @property
+    def reflection(self) -> ReflectionConfig:
+        """Deprecated: use features.reflection instead."""
+        return self.features.reflection
+
+    @reflection.setter
+    def reflection(self, value: ReflectionConfig) -> None:
+        self.features.reflection = value
+
+    @property
+    def style(self) -> StyleConfig:
+        """Deprecated: use features.style instead."""
+        return self.features.style
+
+    @style.setter
+    def style(self, value: StyleConfig) -> None:
+        self.features.style = value
+
+    @property
+    def policy(self) -> PolicyConfig:
+        """Deprecated: use features.policy instead."""
+        return self.features.policy
+
+    @policy.setter
+    def policy(self, value: PolicyConfig) -> None:
+        self.features.policy = value
+
+    @property
+    def rate_limit(self) -> RateLimitConfig:
+        """Deprecated: use features.rate_limit instead."""
+        return self.features.rate_limit
+
+    @rate_limit.setter
+    def rate_limit(self, value: RateLimitConfig) -> None:
+        self.features.rate_limit = value
 
     @classmethod
     def from_file(cls, path: Path) -> HestiaConfig:
