@@ -113,6 +113,9 @@ async def run_platform(
     app.set_confirm_callback(confirm_callback)
     orchestrator = app.make_orchestrator()
 
+    # Eagerly warm up context builder to avoid first-turn latency
+    await app.context_builder.warm_up()
+
     # Inject voice deps into Telegram adapter when voice messages are enabled
     if isinstance(adapter, TelegramAdapter) and config.telegram.voice_messages:
         adapter.set_voice_deps(
