@@ -302,13 +302,31 @@ class InferenceClient:
                         continue
                     choices = chunk.get("choices", [])
                     if not choices:
+                        # Some servers emit usage in a final chunk with empty choices
+                        usage = chunk.get("usage", {})
+                        if usage:
+                            yield StreamDelta(
+                                content="",
+                                finish_reason=None,
+                                reasoning_content=None,
+                                tool_call_chunks=None,
+                                prompt_tokens=usage.get("prompt_tokens", 0),
+                                completion_tokens=usage.get("completion_tokens", 0),
+                                total_tokens=usage.get("total_tokens", 0),
+                            )
                         continue
                     delta = choices[0].get("delta", {})
                     finish_reason = choices[0].get("finish_reason")
                     content = delta.get("content", "")
+                    usage = chunk.get("usage", {})
                     yield StreamDelta(
                         content=content or "",
                         finish_reason=finish_reason,
+                        reasoning_content=delta.get("reasoning_content"),
+                        tool_call_chunks=delta.get("tool_calls"),
+                        prompt_tokens=usage.get("prompt_tokens", 0),
+                        completion_tokens=usage.get("completion_tokens", 0),
+                        total_tokens=usage.get("total_tokens", 0),
                     )
         except httpx.TimeoutException as e:
             raise InferenceTimeoutError(

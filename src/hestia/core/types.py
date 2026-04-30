@@ -110,6 +110,11 @@ class StreamDelta:
 
     content: str
     finish_reason: str | None = None
+    reasoning_content: str | None = None
+    tool_call_chunks: list[dict[str, Any]] | None = None
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
 
 
 class FunctionSchema(BaseModel):
