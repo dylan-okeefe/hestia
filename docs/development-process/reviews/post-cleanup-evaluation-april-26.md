@@ -56,7 +56,7 @@ These are items that appeared in the evaluations and/or the cross-reference anal
 
 ### Bugs / correctness
 
-1. **`_italic_repl` dead code still present.** Lines 67–72 of `telegram_adapter.py` still contain the `if "*" in inner or "<b>" in inner or "</b>" in inner` check that can never trigger. L70 was repurposed for memory scope/concurrent tool safety and the Telegram markdown cleanup was dropped.
+1. ~~**`_italic_repl` dead code still present.**~~ Resolved: the `"*" in inner` clause was removed in L70. The remaining `<b>` guard is NOT dead code — it is reachable when bold conversion (`**text**` → `<b>text</b>`) runs before italic conversion, producing `<b>` tags inside the italic match group. See `code-review-develop-april-29.md` §_italic_repl for the full trace.
 
 2. **`test_builtin_tools_new.py` duplicate still exists.** Both `test_builtin_tools.py` and `test_builtin_tools_new.py` are present in `tests/unit/`. This was supposed to be consolidated in L70 §3.
 
@@ -108,7 +108,7 @@ The biggest wins from this cleanup arc, ranked by impact:
 
 The L60–L74 arc was ambitious (15 loops) and delivered solidly on the core issues — roughly 75% of the identified problems are genuinely fixed. Skills was correctly removed entirely. The areas where it fell short are:
 
-- **L70 was repurposed** for memory scope and concurrent tool safety (both good fixes), but the Telegram markdown cleanup was dropped. The dead code and duplicate test file remain.
+- **L70 was repurposed** for memory scope and concurrent tool safety (both good fixes), but the Telegram markdown cleanup was dropped. The duplicate test file remains; `_italic_repl` was mischaracterized as dead code and is now resolved (see item 1 above).
 - **L73 (feature subsystem audit) was partial.** Skills removed (good), but Reflection and Style weren't slimmed.
 - **Several cross-reference additions** (egress URL redaction, email lifecycle, cli.py boilerplate, per-session rate limiting) were recommended but not picked up.
 
@@ -116,7 +116,7 @@ The codebase is materially better than before the arc. The core loop (orchestrat
 
 ### If I were prioritizing a next arc:
 
-1. **Finish the Telegram cleanup.** Remove `_italic_repl` dead code, consolidate the duplicate test file. A 10-minute fix that was promised and dropped.
+1. **Finish the Telegram cleanup.** ~~Remove `_italic_repl` dead code~~ — resolved, the `<b>` guard is correct and reachable. Consolidate the duplicate test file. A 10-minute fix that was promised and dropped.
 2. **Strip credentials from egress URLs.** Security hygiene that should have been in L72.
 3. **Slim Reflection and Style.** L73's original targets (≤350 lines each) were right. Both work but carry disproportionate weight for opt-in features.
 4. **Inline engine.py delegates.** Pay down the remaining decomposition debt and get the engine to ~150 lines.
@@ -135,7 +135,7 @@ The core is solid. The chat loop, tool dispatch, memory, scheduler, context budg
 
 **Must-fix (tag blockers):**
 
-- [ ] Remove `_italic_repl` dead code in `telegram_adapter.py` lines 70–71 (the `if "*" in inner or "<b>" in inner` branch that can never trigger). Three-line delete.
+- [x] `_italic_repl` — resolved. The `"*" in inner` clause was removed; the `<b>` guard is correct and reachable. No further action needed.
 - [ ] Consolidate `tests/unit/test_builtin_tools.py` and `tests/unit/test_builtin_tools_new.py`. Merge or delete whichever is stale. Two test files with similar names signals an unfinished refactor.
 - [ ] Replace `CliAppContext` type annotation with `AppContext` in `cli.py` (line 16 import, line 554/631 annotations) and `commands/history.py` (lines 11, 14, 51). The aliases exist for backward compat but first-party code should use the canonical name.
 - [ ] Update CHANGELOG with an `[Unreleased]` or `[0.11.0]` section covering the L60–L74 arc. Key items: security hardening (deny-all defaults, credential redaction, developer preset guardrails), InferenceClient consolidation, app context collapse to single class, SlotManager correctness fixes, bounded caches, tool-call-per-turn cap, skills subsystem removed, startup config validation, `hestia history` command, user-facing error messages improved.
