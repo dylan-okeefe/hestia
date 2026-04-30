@@ -50,6 +50,7 @@ class InferenceConfig(_ConfigFromEnv):
     context_length: int = 8192
     default_reasoning_budget: int = 2048
     max_tokens: int = 1024
+    stream: bool = False
 
     def __post_init__(self) -> None:
         # Reject literal "dummy" at config-load (see H-5).
