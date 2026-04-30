@@ -59,6 +59,9 @@ def mock_app(sample_session):
 
     app.epoch_compiler = None
     app.close = AsyncMock()
+    context_builder = MagicMock()
+    context_builder.warm_up = AsyncMock()
+    app.context_builder = context_builder
 
     orchestrator = MagicMock()
     turn = MagicMock()

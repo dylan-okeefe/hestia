@@ -75,6 +75,9 @@ def _make_app() -> MagicMock:
         )
     )
     app.inference.close = AsyncMock()
+    context_builder = MagicMock()
+    context_builder.warm_up = AsyncMock()
+    app.context_builder = context_builder
     orchestrator = MagicMock()
     orchestrator.recover_stale_turns = AsyncMock(return_value=0)
     orchestrator.process_turn = AsyncMock()
