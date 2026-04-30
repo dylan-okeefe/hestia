@@ -325,7 +325,9 @@ class TestRunPlatformLifecycle:
                 platform_name="fake",
             )
 
-        assert any("ERROR:Turn failed" in msg for _user, msg in adapter.sent_messages)
+        assert any(
+            "ERROR:Something went wrong" in msg for _user, msg in adapter.sent_messages
+        )
 
     @pytest.mark.asyncio
     async def test_starts_scheduler_when_callback_provided(self):
