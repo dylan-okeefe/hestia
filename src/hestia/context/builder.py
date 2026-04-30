@@ -104,7 +104,7 @@ class ContextBuilder:
         self._tokenize_cache: OrderedDict[tuple[str, str], int] = OrderedDict()
         self._join_overhead: int | None = None
         self._system_token_count: int | None = None
-        self._last_system_content: str | None = None
+        self._last_system_cache_key: int | None = None
 
     def set_identity_prefix(self, identity_prefix: str | None) -> None:
         """Set the identity prefix to prepend to system prompts.
@@ -356,13 +356,13 @@ class ContextBuilder:
             Raw token count for body only
         """
         # Cache static-content counts (e.g. system prompt) that rarely change.
-        cache_key = "|".join(f"{m.role}:{m.content}" for m in messages)
-        if cache_key == self._last_system_content and self._system_token_count is not None:
+        cache_key = hash(tuple((m.role, m.content) for m in messages))
+        if cache_key == self._last_system_cache_key and self._system_token_count is not None:
             return self._system_token_count
         count = await self._inference.count_request(messages, tools=[])
         # Only cache single-message system prompts (the static prefix).
         if len(messages) == 1 and messages[0].role == "system":
-            self._last_system_content = cache_key
+            self._last_system_cache_key = cache_key
             self._system_token_count = count
         return count
 
