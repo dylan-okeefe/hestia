@@ -168,6 +168,17 @@ class ContextBuilder:
 
         return cls(inference_client, policy, body_factor, meta_tool_overhead)
 
+    async def warm_up(self) -> None:
+        """Eagerly compute join overhead so the first turn isn't slowed down."""
+        if self._join_overhead is not None:
+            return
+        dummy_history = [
+            Message(role="user", content="warmup"),
+            Message(role="assistant", content="warmup"),
+        ]
+        overhead = await self._compute_join_overhead(dummy_history, [], [])
+        self._join_overhead = overhead
+
     def _prefix_layers(self) -> list[_PrefixLayer]:
         """Return prefix layers in canonical assembly order."""
         return [
