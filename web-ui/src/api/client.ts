@@ -60,3 +60,24 @@ export async function fetchSchedulerTasks() {
 export async function runTaskNow(id: string) {
   return fetch(`${API_BASE}/scheduler/tasks/${id}/run`, { method: 'POST' });
 }
+
+export async function runDoctor() {
+  const res = await fetch(`${API_BASE}/doctor`);
+  if (!res.ok) throw new Error('Doctor check failed');
+  return res.json();
+}
+
+export async function runAudit() {
+  const res = await fetch(`${API_BASE}/audit`);
+  if (!res.ok) throw new Error('Audit failed');
+  return res.json();
+}
+
+export async function fetchEgress(domain?: string, since?: string) {
+  const params = new URLSearchParams();
+  if (domain) params.set('domain', domain);
+  if (since) params.set('since', since);
+  const res = await fetch(`${API_BASE}/egress?${params}`);
+  if (!res.ok) throw new Error('Failed to fetch egress');
+  return res.json();
+}
