@@ -58,6 +58,19 @@ test('clicking a card changes the active highlight', async ({ page }) => {
   await expect(developerCard).toHaveCSS('border-color', 'rgb(221, 221, 221)');
 });
 
+test('enum fields render as select dropdowns', async ({ page }) => {
+  await page.goto('/config');
+  // Expand the trust section
+  await page.locator('text=Trust').first().click();
+  const select = page.locator('select');
+  await expect(select).toBeVisible();
+  const options = await select.locator('option').allTextContents();
+  expect(options).toContain('paranoid');
+  expect(options).toContain('developer');
+  expect(options).toContain('household');
+  expect(options).toContain('prompt_on_mobile');
+});
+
 test('save config shows not-implemented message', async ({ page }) => {
   await page.goto('/config');
   await page.locator('button:has-text("Save")').click();

@@ -196,6 +196,34 @@ class TestAuthManager:
         # Old attempts pruned; only the newest failed attempt remains
         assert len(auth_manager._rate_limits["127.0.0.1"].attempts) == 1
 
+    def test_rate_limit_boundary_4_attempts_not_blocked(self, auth_manager: AuthManager) -> None:
+        # Exactly 4 failures should NOT trigger a block
+        for i in range(4):
+            auth_manager.validate_code(f"bad{i}", "127.0.0.1")
+        assert not auth_manager._is_rate_limited("127.0.0.1")
+
+    def test_rate_limit_boundary_9_minutes_still_blocked(self, auth_manager: AuthManager) -> None:
+        for i in range(5):
+            auth_manager.validate_code(f"bad{i}", "127.0.0.1")
+
+        # Backdate by exactly 9 minutes (still within 10-min window)
+        window = auth_manager._rate_limits["127.0.0.1"]
+        for i in range(len(window.attempts)):
+            window.attempts[i] -= timedelta(minutes=9)
+
+        assert auth_manager._is_rate_limited("127.0.0.1")
+
+    def test_rate_limit_boundary_10_minutes_unblocked(self, auth_manager: AuthManager) -> None:
+        for i in range(5):
+            auth_manager.validate_code(f"bad{i}", "127.0.0.1")
+
+        # Backdate by exactly 10 minutes (outside the window)
+        window = auth_manager._rate_limits["127.0.0.1"]
+        for i in range(len(window.attempts)):
+            window.attempts[i] -= timedelta(minutes=10)
+
+        assert not auth_manager._is_rate_limited("127.0.0.1")
+
     def test_get_session_valid(self, auth_manager: AuthManager) -> None:
         import asyncio
 
@@ -510,6 +538,26 @@ class TestAuthRoutes:
         assert response.status_code == 429
         assert "Too many code requests" in response.json()["detail"]
         assert "Retry-After" in response.headers
+
+    def test_request_code_matrix(self, client: TestClient, auth_manager: AuthManager) -> None:
+        # Set up a Matrix adapter with one allowed room
+        from unittest.mock import AsyncMock
+        matrix_adapter = AsyncMock()
+        matrix_adapter._config.allowed_rooms = ["!room:example.com"]  # type: ignore[attr-defined]
+        matrix_adapter.send_message = AsyncMock()
+        auth_manager.adapters["matrix"] = matrix_adapter
+
+        response = client.post("/api/auth/request-code", json={"platform": "matrix"})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "sent"
+        assert data["platform"] == "matrix"
+
+        # Verify send_message was called with the room ID
+        matrix_adapter.send_message.assert_called_once()
+        call_args = matrix_adapter.send_message.call_args
+        assert call_args[0][0] == "!room:example.com"
+        assert "Hestia dashboard code" in call_args[0][1]
 
     def test_verify_code(self, client: TestClient, auth_manager: AuthManager) -> None:
         import asyncio
