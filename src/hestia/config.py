@@ -175,6 +175,9 @@ class TrustConfig(_ConfigFromEnv):
     # Allow scheduler ticks to trigger email_send.
     scheduler_email_send: bool = False
 
+    # Allow self-management tools (proposal/style) for this trust profile.
+    self_management: bool = False
+
     # Shell command patterns to block in the terminal tool (regex).
     # Defense-in-depth: these are checked before execution regardless of
     # confirmation status. Empty list means no additional blocking beyond
@@ -197,6 +200,7 @@ class TrustConfig(_ConfigFromEnv):
             and not self.subagent_write_local
             and not self.subagent_email_send
             and not self.scheduler_email_send
+            and not self.self_management
             and self.blocked_shell_patterns == []
         )
 
@@ -213,6 +217,7 @@ class TrustConfig(_ConfigFromEnv):
             scheduler_shell_exec=True,
             subagent_shell_exec=True,
             subagent_write_local=True,
+            self_management=True,
         )
 
     @classmethod
@@ -235,6 +240,7 @@ class TrustConfig(_ConfigFromEnv):
             scheduler_shell_exec=True,
             subagent_shell_exec=True,
             subagent_write_local=True,
+            self_management=True,
         )
 
     @classmethod
@@ -245,6 +251,7 @@ class TrustConfig(_ConfigFromEnv):
             scheduler_shell_exec=True,
             subagent_shell_exec=True,
             subagent_write_local=True,
+            self_management=False,
         )
 
 
