@@ -62,6 +62,7 @@ def client(mock_app: MagicMock) -> TestClient:
         scheduler_store=AsyncMock(),
         trace_store=AsyncMock(),
         failure_store=AsyncMock(),
+        workflow_store=AsyncMock(),
         app=mock_app,
         auth_manager=None,
     )
@@ -529,3 +530,256 @@ class TestConfigRoute:
         response = client.put("/api/config")
         assert response.status_code == 501
         assert "not yet implemented" in response.json()["detail"]
+
+
+class TestWorkflowsRoutes:
+    """Tests for /api/workflows endpoints."""
+
+    def test_list_workflows(self, client: TestClient, mock_app: MagicMock) -> None:
+        """GET /api/workflows returns workflow list."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        wf = MagicMock()
+        wf.id = "wf1"
+        wf.name = "Test Workflow"
+        wf.description = "A test workflow"
+        wf.created_at = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        wf.updated_at = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        wf.active_version = 1
+        ctx.workflow_store.list_workflows = AsyncMock(return_value=[wf])
+
+        response = client.get("/api/workflows")
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["workflows"]) == 1
+        assert data["workflows"][0]["id"] == "wf1"
+        assert data["workflows"][0]["name"] == "Test Workflow"
+        ctx.workflow_store.list_workflows.assert_awaited_once()
+
+    def test_create_workflow(self, client: TestClient, mock_app: MagicMock) -> None:
+        """POST /api/workflows creates a workflow."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        wf = MagicMock()
+        wf.id = "wf1"
+        wf.name = "New Workflow"
+        wf.description = None
+        wf.created_at = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        wf.updated_at = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        wf.active_version = 1
+        ctx.workflow_store.create_workflow = AsyncMock(return_value=wf)
+
+        response = client.post(
+            "/api/workflows",
+            json={"name": "New Workflow", "definition": {"steps": []}},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["id"] == "wf1"
+        assert data["name"] == "New Workflow"
+        ctx.workflow_store.create_workflow.assert_awaited_once_with(
+            name="New Workflow",
+            description=None,
+            definition={"steps": []},
+        )
+
+    def test_create_workflow_missing_name(self, client: TestClient) -> None:
+        """POST /api/workflows returns 400 when name is missing."""
+        response = client.post("/api/workflows", json={"definition": {"steps": []}})
+        assert response.status_code == 400
+
+    def test_get_workflow(self, client: TestClient, mock_app: MagicMock) -> None:
+        """GET /api/workflows/{id} returns workflow with active version."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        wf = MagicMock()
+        wf.id = "wf1"
+        wf.name = "Test Workflow"
+        wf.description = "A test"
+        wf.created_at = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        wf.updated_at = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        wf.active_version = 2
+        ctx.workflow_store.get_workflow = AsyncMock(return_value=wf)
+
+        v = MagicMock()
+        v.id = "v2"
+        v.workflow_id = "wf1"
+        v.version = 2
+        v.definition = {"steps": ["step1"]}
+        v.created_at = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        v.is_active = True
+        ctx.workflow_store.get_active_version = AsyncMock(return_value=v)
+
+        response = client.get("/api/workflows/wf1")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["id"] == "wf1"
+        assert data["active_version"] == 2
+        assert data["definition"] == {"steps": ["step1"]}
+        ctx.workflow_store.get_workflow.assert_awaited_once_with("wf1")
+        ctx.workflow_store.get_active_version.assert_awaited_once_with("wf1")
+
+    def test_get_workflow_not_found(self, client: TestClient, mock_app: MagicMock) -> None:
+        """GET /api/workflows/{id} returns 404 when missing."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.workflow_store.get_workflow = AsyncMock(return_value=None)
+
+        response = client.get("/api/workflows/missing")
+        assert response.status_code == 404
+
+    def test_update_workflow(self, client: TestClient, mock_app: MagicMock) -> None:
+        """PUT /api/workflows/{id} updates workflow metadata."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        wf = MagicMock()
+        wf.id = "wf1"
+        wf.name = "Updated Name"
+        wf.description = "Updated desc"
+        wf.created_at = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        wf.updated_at = datetime(2024, 1, 2, 12, 0, 0, tzinfo=timezone.utc)
+        wf.active_version = 1
+        ctx.workflow_store.update_workflow = AsyncMock(return_value=wf)
+
+        response = client.put(
+            "/api/workflows/wf1",
+            json={"name": "Updated Name", "description": "Updated desc"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == "Updated Name"
+        assert data["description"] == "Updated desc"
+        ctx.workflow_store.update_workflow.assert_awaited_once_with(
+            "wf1", name="Updated Name", description="Updated desc"
+        )
+
+    def test_update_workflow_not_found(self, client: TestClient, mock_app: MagicMock) -> None:
+        """PUT /api/workflows/{id} returns 404 when missing."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.workflow_store.update_workflow = AsyncMock(return_value=None)
+
+        response = client.put("/api/workflows/missing", json={"name": "x"})
+        assert response.status_code == 404
+
+    def test_delete_workflow(self, client: TestClient, mock_app: MagicMock) -> None:
+        """DELETE /api/workflows/{id} deletes workflow."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.workflow_store.delete_workflow = AsyncMock(return_value=True)
+
+        response = client.delete("/api/workflows/wf1")
+        assert response.status_code == 200
+        assert response.json()["deleted"] is True
+        ctx.workflow_store.delete_workflow.assert_awaited_once_with("wf1")
+
+    def test_delete_workflow_not_found(self, client: TestClient, mock_app: MagicMock) -> None:
+        """DELETE /api/workflows/{id} returns 404 when missing."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.workflow_store.delete_workflow = AsyncMock(return_value=False)
+
+        response = client.delete("/api/workflows/missing")
+        assert response.status_code == 404
+
+    def test_list_versions(self, client: TestClient, mock_app: MagicMock) -> None:
+        """GET /api/workflows/{id}/versions returns versions."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        v1 = MagicMock()
+        v1.id = "v1"
+        v1.workflow_id = "wf1"
+        v1.version = 1
+        v1.definition = {"steps": []}
+        v1.created_at = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        v1.is_active = False
+        v2 = MagicMock()
+        v2.id = "v2"
+        v2.workflow_id = "wf1"
+        v2.version = 2
+        v2.definition = {"steps": ["a"]}
+        v2.created_at = datetime(2024, 1, 2, 12, 0, 0, tzinfo=timezone.utc)
+        v2.is_active = True
+        ctx.workflow_store.list_versions = AsyncMock(return_value=[v1, v2])
+
+        response = client.get("/api/workflows/wf1/versions")
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["versions"]) == 2
+        assert data["versions"][1]["version"] == 2
+        ctx.workflow_store.list_versions.assert_awaited_once_with("wf1")
+
+    def test_create_version(self, client: TestClient, mock_app: MagicMock) -> None:
+        """POST /api/workflows/{id}/versions saves a new version."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        v = MagicMock()
+        v.id = "v3"
+        v.workflow_id = "wf1"
+        v.version = 3
+        v.definition = {"steps": ["b"]}
+        v.created_at = datetime(2024, 1, 3, 12, 0, 0, tzinfo=timezone.utc)
+        v.is_active = False
+        ctx.workflow_store.create_version = AsyncMock(return_value=v)
+
+        response = client.post(
+            "/api/workflows/wf1/versions",
+            json={"definition": {"steps": ["b"]}},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["version"] == 3
+        ctx.workflow_store.create_version.assert_awaited_once_with(
+            "wf1", {"steps": ["b"]}
+        )
+
+    def test_create_version_missing_definition(self, client: TestClient) -> None:
+        """POST /api/workflows/{id}/versions returns 400 without definition."""
+        response = client.post("/api/workflows/wf1/versions", json={})
+        assert response.status_code == 400
+
+    def test_activate_version(self, client: TestClient, mock_app: MagicMock) -> None:
+        """POST /api/workflows/{id}/versions/{v}/activate activates version."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.workflow_store.activate_version = AsyncMock(return_value=True)
+
+        response = client.post("/api/workflows/wf1/versions/2/activate")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["activated"] is True
+        assert data["version"] == 2
+        ctx.workflow_store.activate_version.assert_awaited_once_with("wf1", 2)
+
+    def test_activate_version_not_found(self, client: TestClient, mock_app: MagicMock) -> None:
+        """POST activation returns 404 when version missing."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.workflow_store.activate_version = AsyncMock(return_value=False)
+
+        response = client.post("/api/workflows/wf1/versions/99/activate")
+        assert response.status_code == 404

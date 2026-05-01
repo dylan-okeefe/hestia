@@ -18,6 +18,7 @@ from hestia.web.routes import (
     sessions,
     style,
     traces,
+    workflows,
 )
 
 _web_static = pathlib.Path(__file__).with_name("static")
@@ -42,6 +43,7 @@ def create_web_app() -> FastAPI:
     app.include_router(audit.router, prefix="/api")
     app.include_router(egress.router, prefix="/api")
     app.include_router(config.router, prefix="/api")
+    app.include_router(workflows.router, prefix="/api")
 
     app.mount("/", StaticFiles(directory=str(_web_static), html=True), name="static")
     return app

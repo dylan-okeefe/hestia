@@ -174,3 +174,33 @@ style_profiles = sa.Table(
     sa.Index("idx_style_profiles_user", "platform", "platform_user"),
     sa.Index("idx_style_profiles_updated", "updated_at"),
 )
+
+workflows = sa.Table(
+    "workflows",
+    metadata,
+    sa.Column("id", sa.String, primary_key=True),
+    sa.Column("name", sa.String, nullable=False),
+    sa.Column("description", sa.Text, nullable=True),
+    sa.Column("created_at", sa.DateTime, nullable=False),
+    sa.Column("updated_at", sa.DateTime, nullable=False),
+    sa.Column("active_version", sa.Integer, nullable=True),
+    sa.Index("idx_workflows_created", "created_at"),
+)
+
+workflow_versions = sa.Table(
+    "workflow_versions",
+    metadata,
+    sa.Column("id", sa.String, primary_key=True),
+    sa.Column(
+        "workflow_id",
+        sa.String,
+        sa.ForeignKey("workflows.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column("version", sa.Integer, nullable=False),
+    sa.Column("definition", sa.Text, nullable=False),  # JSON
+    sa.Column("created_at", sa.DateTime, nullable=False),
+    sa.Column("is_active", sa.Boolean, nullable=False, default=False),
+    sa.Index("idx_workflow_versions_workflow", "workflow_id", "version"),
+    sa.UniqueConstraint("workflow_id", "version", name="ux_workflow_version"),
+)

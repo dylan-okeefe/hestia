@@ -9,6 +9,7 @@ from hestia.persistence.failure_store import FailureStore
 from hestia.persistence.scheduler import SchedulerStore
 from hestia.persistence.sessions import SessionStore
 from hestia.persistence.trace_store import TraceStore
+from hestia.persistence.workflows import WorkflowStore
 from hestia.reflection.store import ProposalStore
 from hestia.style.store import StyleProfileStore
 from hestia.web.auth import AuthManager
@@ -24,6 +25,7 @@ class WebContext:
     scheduler_store: SchedulerStore
     trace_store: TraceStore
     failure_store: FailureStore
+    workflow_store: WorkflowStore
     app: AppContext
     auth_manager: AuthManager | None = field(default=None)
 
