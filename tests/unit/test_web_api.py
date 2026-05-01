@@ -21,4 +21,4 @@ class TestCreateWebApp:
         client = TestClient(app)
         response = client.get("/")
         assert response.status_code == 200
-        assert "Hello Hestia" in response.text
+        assert '<div id="root"></div>' in response.text
