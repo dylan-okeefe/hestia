@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 from hestia.config import WebConfig
 from hestia.web.api import create_web_app
-from hestia.web.auth import AuthManager, AuthMiddleware, PendingCode, WebSession
+from hestia.web.auth import AuthManager, AuthMiddleware, PendingCode, RateLimitWindow, WebSession
 from hestia.web.context import WebContext, set_web_context
 
 
@@ -150,8 +150,10 @@ class TestAuthManager:
         asyncio.run(auth_manager.request_code("telegram"))
         code = list(auth_manager._pending_codes.keys())[0]
 
-        session = auth_manager.validate_code(code, "127.0.0.1")
-        assert session is not None
+        result = auth_manager.validate_code(code, "127.0.0.1")
+        assert result is not None
+        token, session = result
+        assert token
         assert session.platform == "telegram"
         assert session.platform_user == "12345"
         assert code not in auth_manager._pending_codes
@@ -189,9 +191,10 @@ class TestAuthManager:
         for i in range(len(window.attempts)):
             window.attempts[i] -= timedelta(minutes=11)
 
-        session = auth_manager.validate_code("bad5", "127.0.0.1")
-        assert session is None  # still invalid code, but not rate limited
-        assert len(window.attempts) == 1  # only the latest attempt recorded
+        result = auth_manager.validate_code("bad5", "127.0.0.1")
+        assert result is None  # still invalid code, but not rate limited
+        # Old attempts pruned; only the newest failed attempt remains
+        assert len(auth_manager._rate_limits["127.0.0.1"].attempts) == 1
 
     def test_get_session_valid(self, auth_manager: AuthManager) -> None:
         import asyncio
@@ -252,6 +255,38 @@ class TestAuthManager:
         )
         status, session = auth_manager.validate_token("expired")
         assert status == "expired"
+
+    def test_check_code_request_limit(self, auth_manager: AuthManager) -> None:
+        ip = "127.0.0.1"
+        # 3 requests allowed
+        assert auth_manager.check_code_request_limit(ip) is True
+        auth_manager._code_request_limits[ip] = [datetime.now(UTC)]
+        assert auth_manager.check_code_request_limit(ip) is True
+        auth_manager._code_request_limits[ip].append(datetime.now(UTC))
+        assert auth_manager.check_code_request_limit(ip) is True
+        auth_manager._code_request_limits[ip].append(datetime.now(UTC))
+        # 4th request blocked
+        assert auth_manager.check_code_request_limit(ip) is False
+
+    def test_cleanup_stale_entries(self, auth_manager: AuthManager) -> None:
+        now = datetime.now(UTC)
+        # Old rate limit entry
+        auth_manager._rate_limits["old"] = RateLimitWindow()
+        auth_manager._rate_limits["old"].attempts = [now - timedelta(minutes=15)]
+        # Recent rate limit entry
+        auth_manager._rate_limits["recent"] = RateLimitWindow()
+        auth_manager._rate_limits["recent"].attempts = [now - timedelta(minutes=5)]
+        # Old code request entry
+        auth_manager._code_request_limits["old"] = [now - timedelta(minutes=10)]
+        # Recent code request entry
+        auth_manager._code_request_limits["recent"] = [now - timedelta(minutes=2)]
+
+        auth_manager._cleanup_stale_entries()
+
+        assert "old" not in auth_manager._rate_limits
+        assert "recent" in auth_manager._rate_limits
+        assert "old" not in auth_manager._code_request_limits
+        assert "recent" in auth_manager._code_request_limits
 
 
 class TestAuthMiddleware:
@@ -465,6 +500,17 @@ class TestAuthRoutes:
         assert response.status_code == 400
         assert "not configured" in response.json()["detail"]
 
+    def test_request_code_rate_limit(self, client: TestClient, auth_manager: AuthManager) -> None:
+        for i in range(3):
+            response = client.post("/api/auth/request-code", json={"platform": "telegram"})
+            assert response.status_code == 200
+
+        # 4th request blocked
+        response = client.post("/api/auth/request-code", json={"platform": "telegram"})
+        assert response.status_code == 429
+        assert "Too many code requests" in response.json()["detail"]
+        assert "Retry-After" in response.headers
+
     def test_verify_code(self, client: TestClient, auth_manager: AuthManager) -> None:
         import asyncio
 
@@ -485,12 +531,16 @@ class TestAuthRoutes:
         assert "Invalid or expired code" in response.json()["detail"]
 
     def test_verify_code_rate_limit(self, client: TestClient) -> None:
-        for i in range(5):
+        for i in range(4):
             response = client.post("/api/auth/verify-code", json={"code": f"bad{i}"})
             assert response.status_code == 401
 
+        # 5th attempt triggers rate limit → 429
+        response = client.post("/api/auth/verify-code", json={"code": "bad4"})
+        assert response.status_code == 429
+
         response = client.post("/api/auth/verify-code", json={"code": "bad5"})
-        assert response.status_code == 401
+        assert response.status_code == 429
 
     def test_logout(self, client: TestClient, auth_manager: AuthManager) -> None:
         token = "test_token"
