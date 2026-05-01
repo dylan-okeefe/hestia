@@ -31,7 +31,7 @@ async def list_tasks(
                 "cron_expression": t.cron_expression,
                 "fire_at": t.fire_at.isoformat() if t.fire_at else None,
                 "enabled": t.enabled,
-                "notify": getattr(t, "notify", False),
+                "notify": t.notify,
                 "created_at": t.created_at.isoformat() if t.created_at else None,
                 "last_run_at": t.last_run_at.isoformat() if t.last_run_at else None,
                 "next_run_at": t.next_run_at.isoformat() if t.next_run_at else None,

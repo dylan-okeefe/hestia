@@ -26,6 +26,8 @@ class WebContext:
     app: AppContext
 
 
+# Global singleton — adequate for single-worker uvicorn but will break
+# with multiple workers. Use a shared external store if scaling beyond one process.
 _ctx: WebContext | None = None
 
 

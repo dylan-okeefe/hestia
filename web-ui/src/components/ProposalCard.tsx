@@ -20,28 +20,38 @@ export default function ProposalCard({ proposal, onAction }: ProposalCardProps) 
   const [rejectNote, setRejectNote] = useState('');
   const [showReject, setShowReject] = useState(false);
   const [acting, setActing] = useState(false);
+  const isPending = proposal.status === 'pending';
 
   const handleAccept = async () => {
     setActing(true);
-    await acceptProposal(proposal.id);
-    setActing(false);
-    onAction();
+    try {
+      await acceptProposal(proposal.id);
+    } finally {
+      setActing(false);
+      onAction();
+    }
   };
 
   const handleReject = async () => {
     setActing(true);
-    await rejectProposal(proposal.id, rejectNote);
-    setActing(false);
-    setShowReject(false);
-    setRejectNote('');
-    onAction();
+    try {
+      await rejectProposal(proposal.id, rejectNote);
+      setShowReject(false);
+      setRejectNote('');
+    } finally {
+      setActing(false);
+      onAction();
+    }
   };
 
   const handleDefer = async () => {
     setActing(true);
-    await deferProposal(proposal.id);
-    setActing(false);
-    onAction();
+    try {
+      await deferProposal(proposal.id);
+    } finally {
+      setActing(false);
+      onAction();
+    }
   };
 
   return (
@@ -92,30 +102,34 @@ export default function ProposalCard({ proposal, onAction }: ProposalCardProps) 
           {JSON.stringify(proposal.action, null, 2)}
         </pre>
       )}
-      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
-        <button onClick={handleAccept} disabled={acting}>
-          Accept
-        </button>
-        <button onClick={() => setShowReject((s) => !s)} disabled={acting}>
-          Reject
-        </button>
-        <button onClick={handleDefer} disabled={acting}>
-          Defer
-        </button>
-      </div>
-      {showReject && (
-        <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.5rem' }}>
-          <input
-            type="text"
-            placeholder="Reason for rejection"
-            value={rejectNote}
-            onChange={(e) => setRejectNote(e.target.value)}
-            style={{ flex: 1 }}
-          />
-          <button onClick={handleReject} disabled={acting || !rejectNote.trim()}>
-            Confirm Reject
-          </button>
-        </div>
+      {isPending && (
+        <>
+          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+            <button onClick={handleAccept} disabled={acting}>
+              Accept
+            </button>
+            <button onClick={() => setShowReject((s) => !s)} disabled={acting}>
+              Reject
+            </button>
+            <button onClick={handleDefer} disabled={acting}>
+              Defer
+            </button>
+          </div>
+          {showReject && (
+            <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.5rem' }}>
+              <input
+                type="text"
+                placeholder="Reason for rejection"
+                value={rejectNote}
+                onChange={(e) => setRejectNote(e.target.value)}
+                style={{ flex: 1 }}
+              />
+              <button onClick={handleReject} disabled={acting || !rejectNote.trim()}>
+                Confirm Reject
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

@@ -22,6 +22,7 @@ async def list_egress(
 ) -> dict[str, Any]:
     """List egress events with optional filtering."""
     events = await ctx.trace_store.list_egress(domain=domain, since=since)
+    # list_egress returns list[dict[str, Any]] (not dataclass objects)
     return {
         "events": [
             {

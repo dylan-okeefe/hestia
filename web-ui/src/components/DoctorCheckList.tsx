@@ -36,31 +36,32 @@ export default function DoctorCheckList({ checks, onRefresh }: DoctorCheckListPr
       </div>
       {checks.length === 0 && <p>No checks available.</p>}
       {checks.map((c) => (
-        <div
-          key={c.name}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem',
-            padding: '0.5rem',
-            borderBottom: '1px solid #eee',
-            cursor: 'pointer',
-          }}
-          onClick={() => setExpanded(expanded === c.name ? null : c.name)}
-        >
-          <span
+        <div key={c.name}>
+          <div
             style={{
-              width: '12px',
-              height: '12px',
-              borderRadius: '50%',
-              background: c.ok ? '#4caf50' : '#f44336',
-              display: 'inline-block',
-              flexShrink: 0,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              padding: '0.5rem',
+              borderBottom: '1px solid #eee',
+              cursor: 'pointer',
             }}
-          />
-          <span style={{ flex: 1 }}>{c.name}</span>
+            onClick={() => setExpanded(expanded === c.name ? null : c.name)}
+          >
+            <span
+              style={{
+                width: '12px',
+                height: '12px',
+                borderRadius: '50%',
+                background: c.ok ? '#4caf50' : '#f44336',
+                display: 'inline-block',
+                flexShrink: 0,
+              }}
+            />
+            <span style={{ flex: 1 }}>{c.name}</span>
+          </div>
           {expanded === c.name && c.detail && (
-            <div style={{ width: '100%', marginTop: '0.25rem', fontSize: '0.9rem', color: '#555' }}>
+            <div style={{ padding: '0.5rem', fontSize: '0.9rem', color: '#555', background: '#f9f9f9' }}>
               {c.detail}
             </div>
           )}

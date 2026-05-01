@@ -89,8 +89,7 @@ class TestStyleTools:
             assert "Reset metric 'formality'" in result
 
             metric = await store.get_metric("cli", "alice", "formality")
-            assert metric is not None
-            assert metric.value_json == "null"
+            assert metric is None
         finally:
             current_platform.reset(platform_token)
             current_platform_user.reset(user_token)

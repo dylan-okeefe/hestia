@@ -72,9 +72,10 @@ def make_reset_style_metric_tool(
         if not platform or not platform_user:
             return "No platform identity in current context."
 
-        # Setting metric to None effectively resets it
-        await style_store.set_metric(platform, platform_user, metric, None)
-        return f"Reset metric '{metric}' for {platform}:{platform_user}."
+        deleted = await style_store.delete_metric(platform, platform_user, metric)
+        if deleted:
+            return f"Reset metric '{metric}' for {platform}:{platform_user}."
+        return f"Metric '{metric}' not found for {platform}:{platform_user}."
 
     return reset_style_metric
 

@@ -37,9 +37,14 @@ export default function Scheduler() {
 
   const handleRun = async (id: string) => {
     setRunningId(id);
-    await runTaskNow(id);
-    setRunningId(null);
-    loadTasks();
+    try {
+      await runTaskNow(id);
+      loadTasks();
+    } catch (err: any) {
+      setError(err.message || 'Failed to run task');
+    } finally {
+      setRunningId(null);
+    }
   };
 
   return (

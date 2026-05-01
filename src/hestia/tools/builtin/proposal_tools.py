@@ -78,8 +78,8 @@ def make_show_proposal_tool(
             f"Summary: {p.summary}",
             f"Confidence: {p.confidence}",
             f"Status: {p.status}",
-            f"Created: {p.created_at.strftime('%Y-%m-%d %H:%M')}",
-            f"Expires: {p.expires_at.strftime('%Y-%m-%d %H:%M')}",
+            f"Created: {p.created_at.strftime('%Y-%m-%d %H:%M') if p.created_at else 'N/A'}",
+            f"Expires: {p.expires_at.strftime('%Y-%m-%d %H:%M') if p.expires_at else 'N/A'}",
         ]
         if p.evidence:
             lines.append(f"Evidence: {', '.join(p.evidence)}")
@@ -138,6 +138,7 @@ def make_reject_proposal_tool(
         ),
         tags=["proposal", "builtin"],
         capabilities=[SELF_MANAGEMENT],
+        requires_confirmation=True,
     )
     async def reject_proposal(proposal_id: str, note: str | None = None) -> str:
         """Reject a reflection proposal.

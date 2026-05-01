@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { fetchSessions, fetchTurns } from '../api/client';
 
 interface Session {
@@ -77,9 +77,8 @@ export default function Dashboard() {
           </thead>
           <tbody>
             {sessions.map((s) => (
-              <>
+              <React.Fragment key={s.id}>
                 <tr
-                  key={s.id}
                   onClick={() => toggleExpand(s.id)}
                   style={{ cursor: 'pointer', borderBottom: '1px solid #eee' }}
                   data-testid="session-row"
@@ -102,7 +101,7 @@ export default function Dashboard() {
                     </td>
                   </tr>
                 )}
-              </>
+              </React.Fragment>
             ))}
           </tbody>
         </table>

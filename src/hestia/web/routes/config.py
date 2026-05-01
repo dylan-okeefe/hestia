@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any, cast
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from hestia.web.context import WebContext, get_web_context
 
@@ -43,4 +43,4 @@ async def put_config(
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """Update configuration — not yet implemented."""
-    return {"detail": "Config updates are not yet implemented"}
+    raise HTTPException(status_code=501, detail="Config updates are not yet implemented")

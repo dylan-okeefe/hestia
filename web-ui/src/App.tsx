@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import Proposals from './pages/Proposals';
 import StyleProfile from './pages/StyleProfile';
@@ -6,42 +6,41 @@ import Scheduler from './pages/Scheduler';
 import Security from './pages/Security';
 import Config from './pages/Config';
 
-type Page = 'dashboard' | 'proposals' | 'style' | 'scheduler' | 'security' | 'config';
-
 export default function App() {
-  const [page, setPage] = useState<Page>('dashboard');
-
-  const navButton = (label: string, target: Page) => (
-    <button
-      onClick={() => setPage(target)}
-      style={{
-        fontWeight: page === target ? 'bold' : 'normal',
+  const navLink = (label: string, to: string) => (
+    <NavLink
+      to={to}
+      style={({ isActive }) => ({
+        fontWeight: isActive ? 'bold' : 'normal',
         background: 'none',
         border: 'none',
         cursor: 'pointer',
-        textDecoration: page === target ? 'underline' : 'none',
-      }}
+        textDecoration: isActive ? 'underline' : 'none',
+        color: 'inherit',
+      })}
     >
       {label}
-    </button>
+    </NavLink>
   );
 
   return (
-    <div>
+    <BrowserRouter>
       <nav style={{ padding: '0.75rem 1rem', borderBottom: '1px solid #ddd', display: 'flex', gap: '1rem' }}>
-        {navButton('Dashboard', 'dashboard')}
-        {navButton('Proposals', 'proposals')}
-        {navButton('Style', 'style')}
-        {navButton('Scheduler', 'scheduler')}
-        {navButton('Security', 'security')}
-        {navButton('Config', 'config')}
+        {navLink('Dashboard', '/')}
+        {navLink('Proposals', '/proposals')}
+        {navLink('Style', '/style')}
+        {navLink('Scheduler', '/scheduler')}
+        {navLink('Security', '/security')}
+        {navLink('Config', '/config')}
       </nav>
-      {page === 'dashboard' && <Dashboard />}
-      {page === 'proposals' && <Proposals />}
-      {page === 'style' && <StyleProfile />}
-      {page === 'scheduler' && <Scheduler />}
-      {page === 'security' && <Security />}
-      {page === 'config' && <Config />}
-    </div>
+      <Routes>
+        <Route path="/" element={<Dashboard />} />
+        <Route path="/proposals" element={<Proposals />} />
+        <Route path="/style" element={<StyleProfile />} />
+        <Route path="/scheduler" element={<Scheduler />} />
+        <Route path="/security" element={<Security />} />
+        <Route path="/config" element={<Config />} />
+      </Routes>
+    </BrowserRouter>
   );
 }

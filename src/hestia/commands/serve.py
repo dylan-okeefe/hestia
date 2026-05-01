@@ -11,11 +11,12 @@ import click
 import uvicorn
 
 from hestia.app import AppContext
+from hestia.config import HestiaConfig
 
 logger = logging.getLogger(__name__)
 
 
-async def cmd_serve(app: AppContext, config: Any) -> None:
+async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
     """Run Hestia with all configured platform adapters and the web dashboard."""
     tasks: list[asyncio.Task[Any]] = []
     original_close = app.inference.close

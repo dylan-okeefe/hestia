@@ -514,7 +514,7 @@ class TestConfigRoute:
         assert data["matrix"]["access_token"] == "***"
 
     def test_put_config_stub(self, client: TestClient, mock_app: MagicMock) -> None:
-        """PUT /api/config returns not-yet-implemented message."""
+        """PUT /api/config returns 501 Not Implemented."""
         response = client.put("/api/config")
-        assert response.status_code == 200
+        assert response.status_code == 501
         assert "not yet implemented" in response.json()["detail"]

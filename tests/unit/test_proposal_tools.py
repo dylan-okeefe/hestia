@@ -1,6 +1,7 @@
 """Unit tests for proposal tools."""
 
 from __future__ import annotations
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -100,6 +101,33 @@ class TestProposalTools:
         assert "No proposal with id nonexistent" in result
 
     @pytest.mark.asyncio
+    async def test_show_proposal_none_dates(self, tools):
+        """show_proposal handles None created_at and expires_at gracefully."""
+        store, _, show_tool, _, _, _ = tools
+        proposal = Proposal(
+            id="prop_none_dates",
+            type="identity_update",
+            summary="No dates",
+            evidence=[],
+            action={},
+            confidence=0.8,
+            status="pending",
+            created_at=None,
+            expires_at=None,
+        )
+        # Patch store.get to return the proposal without DB round-trip
+        # (schema enforces NOT NULL on dates, so we test the tool directly)
+        original_get = store.get
+        store.get = AsyncMock(return_value=proposal)
+        try:
+            result = await show_tool("prop_none_dates")
+            assert "prop_none_dates" in result
+            assert "Created: N/A" in result
+            assert "Expires: N/A" in result
+        finally:
+            store.get = original_get
+
+    @pytest.mark.asyncio
     async def test_accept_proposal(self, tools, sample_proposal):
         """accept_proposal updates status to accepted."""
         _, _, _, accept_tool, _, _ = tools
@@ -166,11 +194,11 @@ class TestProposalTools:
         assert accept_tool.__hestia_tool__.requires_confirmation is True
 
     @pytest.mark.asyncio
-    async def test_reject_does_not_require_confirmation(self, tools):
-        """reject_proposal does not require confirmation."""
+    async def test_reject_requires_confirmation(self, tools):
+        """reject_proposal requires confirmation."""
         _, _, _, _, reject_tool, _ = tools
         assert hasattr(reject_tool, "__hestia_tool__")
-        assert reject_tool.__hestia_tool__.requires_confirmation is False
+        assert reject_tool.__hestia_tool__.requires_confirmation is True
 
     @pytest.mark.asyncio
     async def test_defer_does_not_require_confirmation(self, tools):

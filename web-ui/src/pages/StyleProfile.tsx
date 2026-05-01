@@ -29,9 +29,15 @@ export default function StyleProfile() {
   }, [platform, user, refreshKey]);
 
   const handleReset = async (metric: string) => {
-    const res = await deleteStyleMetric(platform, user, metric);
-    if (res.ok) {
-      setRefreshKey((k) => k + 1);
+    try {
+      const res = await deleteStyleMetric(platform, user, metric);
+      if (res.ok) {
+        setRefreshKey((k) => k + 1);
+      } else {
+        setError(`Failed to reset ${metric}`);
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to reset metric');
     }
   };
 
