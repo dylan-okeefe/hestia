@@ -2,15 +2,15 @@
 
 **Orchestrator:** Kimi (self-orchestrating via subagents)
 
-**Last set by:** Kimi — 2026-04-30 (L102–L112 arc complete)
+**Last set by:** Kimi — 2026-05-01 (L118–L121 arc complete)
 
 ---
 
 ## Current task
 
-**Status:** **IDLE — All queued work complete up to L112.**
+**Status:** **IDLE — All queued work complete up to L121.**
 
-L102–L103 merged to `develop`. L104–L112 complete on `feature/web-dashboard`.
+L102–L103 and L118–L121 merged to `develop`. L104–L112 complete on `feature/web-dashboard`.
 
 ---
 
@@ -34,6 +34,14 @@ L102–L103 merged to `develop`. L104–L112 complete on `feature/web-dashboard`
 | L110 | `feature/web-dashboard` | **Complete, pushed** |
 | L111 | `feature/web-dashboard` | **Complete, pushed** |
 | L112 | `feature/web-dashboard` | **Complete, pushed** |
+
+### L118–L121 (web hardening, merged to develop)
+| Loop | Branch | Status |
+|------|--------|--------|
+| L118 | `feature/l118-web-auth-chat-2fa` | **Merged to `develop`** |
+| L119 | `feature/l119-config-dropdowns` | **Merged to `develop`** |
+| L120 | `feature/l120-auto-run-doctor-audit` | **Merged to `develop`** |
+| L121 | `feature/l121-trust-preset-cards` | **Merged to `develop`** |
 
 ---
 
