@@ -40,50 +40,97 @@ function getInputType(_key: string, value: unknown): 'text' | 'number' | 'boolea
   return 'text';
 }
 
-const trustPresets: Record<string, Record<string, unknown>> = {
+interface TrustPreset {
+  name: string;
+  description: string;
+  bullets: string[];
+  values: Record<string, unknown>;
+}
+
+const trustPresets: Record<string, TrustPreset> = {
   paranoid: {
-    auto_approve_tools: [],
-    scheduler_shell_exec: false,
-    subagent_shell_exec: false,
-    subagent_write_local: false,
-    subagent_email_send: false,
-    scheduler_email_send: false,
-    self_management: false,
-    blocked_shell_patterns: [],
-    preset: 'paranoid',
+    name: 'Paranoid',
+    description: 'Maximum safety. Every tool requires explicit confirmation.',
+    bullets: [
+      'No tools auto-approved',
+      'Scheduler and subagent shell access disabled',
+      'Self-management tools disabled',
+      'No email sending from autonomous agents',
+    ],
+    values: {
+      auto_approve_tools: [],
+      scheduler_shell_exec: false,
+      subagent_shell_exec: false,
+      subagent_write_local: false,
+      subagent_email_send: false,
+      scheduler_email_send: false,
+      self_management: false,
+      blocked_shell_patterns: [],
+      preset: 'paranoid',
+    },
   },
   prompt_on_mobile: {
-    auto_approve_tools: [],
-    scheduler_shell_exec: false,
-    subagent_shell_exec: false,
-    subagent_write_local: false,
-    subagent_email_send: false,
-    scheduler_email_send: false,
-    self_management: false,
-    blocked_shell_patterns: ['rm -rf /'],
-    preset: 'prompt_on_mobile',
+    name: 'Prompt on Mobile',
+    description: 'Safe for phone use. Destructive tools show ✅/❌ buttons on Telegram.',
+    bullets: [
+      'No tools auto-approved',
+      'Scheduler and subagent shell access disabled',
+      'Self-management tools disabled',
+      'Blocks dangerous patterns like rm -rf /',
+    ],
+    values: {
+      auto_approve_tools: [],
+      scheduler_shell_exec: false,
+      subagent_shell_exec: false,
+      subagent_write_local: false,
+      subagent_email_send: false,
+      scheduler_email_send: false,
+      self_management: false,
+      blocked_shell_patterns: ['rm -rf /'],
+      preset: 'prompt_on_mobile',
+    },
   },
   household: {
-    auto_approve_tools: ['terminal', 'write_file'],
-    scheduler_shell_exec: false,
-    subagent_shell_exec: false,
-    subagent_write_local: true,
-    subagent_email_send: false,
-    scheduler_email_send: false,
-    self_management: true,
-    blocked_shell_patterns: ['rm -rf /', 'dd if=/dev/zero'],
-    preset: 'household',
+    name: 'Household',
+    description: 'Balanced for daily use. Common file tools work without prompts.',
+    bullets: [
+      'Terminal and write_file auto-approved',
+      'Subagent local file writes enabled',
+      'Self-management tools enabled (proposals, style)',
+      'Blocks dangerous shell patterns',
+    ],
+    values: {
+      auto_approve_tools: ['terminal', 'write_file'],
+      scheduler_shell_exec: false,
+      subagent_shell_exec: false,
+      subagent_write_local: true,
+      subagent_email_send: false,
+      scheduler_email_send: false,
+      self_management: true,
+      blocked_shell_patterns: ['rm -rf /', 'dd if=/dev/zero'],
+      preset: 'household',
+    },
   },
   developer: {
-    auto_approve_tools: ['terminal', 'write_file', 'read_file', 'shell'],
-    scheduler_shell_exec: true,
-    subagent_shell_exec: true,
-    subagent_write_local: true,
-    subagent_email_send: true,
-    scheduler_email_send: true,
-    self_management: true,
-    blocked_shell_patterns: [],
-    preset: 'developer',
+    name: 'Developer',
+    description: 'Full access. All tools auto-approved, autonomous agents can send email.',
+    bullets: [
+      'All common tools auto-approved',
+      'Scheduler and subagent shell access enabled',
+      'Self-management tools enabled',
+      'Email sending from autonomous agents enabled',
+    ],
+    values: {
+      auto_approve_tools: ['terminal', 'write_file', 'read_file', 'shell'],
+      scheduler_shell_exec: true,
+      subagent_shell_exec: true,
+      subagent_write_local: true,
+      subagent_email_send: true,
+      scheduler_email_send: true,
+      self_management: true,
+      blocked_shell_patterns: [],
+      preset: 'developer',
+    },
   },
 };
 
@@ -159,12 +206,17 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
     }
   };
 
-  const applyTrustPreset = (preset: string) => {
-    const values = trustPresets[preset];
-    if (!values) return;
+  const currentPreset =
+    typeof config.trust === 'object' && config.trust !== null
+      ? String((config.trust as Record<string, unknown>).preset || '')
+      : '';
+
+  const applyTrustPreset = (presetKey: string) => {
+    const preset = trustPresets[presetKey];
+    if (!preset) return;
     setConfig((prev) => ({
       ...prev,
-      trust: { ...(prev.trust as Record<string, unknown> || {}), ...values },
+      trust: { ...(prev.trust as Record<string, unknown> || {}), ...preset.values },
     }));
   };
 
@@ -306,13 +358,38 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
   return (
     <div>
       {typeof config.trust === 'object' && config.trust !== null && (
-        <div style={{ marginBottom: '1rem', padding: '0.75rem', background: '#f5f5f5', borderRadius: '6px' }}>
+        <div style={{ marginBottom: '1rem' }}>
           <strong>Trust Preset</strong>
-          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
-            {Object.keys(trustPresets).map((preset) => (
-              <button key={preset} onClick={() => applyTrustPreset(preset)}>
-                {preset}
-              </button>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+              gap: '1rem',
+              marginTop: '0.5rem',
+            }}
+          >
+            {Object.entries(trustPresets).map(([key, preset]) => (
+              <div
+                key={key}
+                onClick={() => applyTrustPreset(key)}
+                style={{
+                  border: `2px solid ${currentPreset === key ? '#1976d2' : '#ddd'}`,
+                  borderRadius: '8px',
+                  padding: '1rem',
+                  cursor: 'pointer',
+                  background: currentPreset === key ? '#e3f2fd' : '#fff',
+                }}
+              >
+                <h3 style={{ margin: '0 0 0.5rem' }}>{preset.name}</h3>
+                <p style={{ margin: '0 0 0.75rem', fontSize: '0.9rem', color: '#555' }}>
+                  {preset.description}
+                </p>
+                <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.85rem', color: '#444' }}>
+                  {preset.bullets.map((b, i) => (
+                    <li key={i}>{b}</li>
+                  ))}
+                </ul>
+              </div>
             ))}
           </div>
         </div>

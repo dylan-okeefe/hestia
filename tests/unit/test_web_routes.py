@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from hestia.web.api import create_web_app
-from hestia.web.context import WebContext, get_web_context
+from hestia.web.context import WebContext, get_web_context, set_web_context
 
 
 @pytest.fixture(autouse=True)
