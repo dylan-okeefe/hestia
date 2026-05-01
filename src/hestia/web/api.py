@@ -23,7 +23,13 @@ _web_static = pathlib.Path(__file__).with_name("static")
 
 
 def create_web_app() -> FastAPI:
-    """Create and return the FastAPI application."""
+    """Create and return the FastAPI application.
+
+    Security note: the dashboard currently has no authentication. It binds to
+    127.0.0.1 by default to mitigate remote access, but any local process can
+    reach these endpoints. An auth loop should be queued before exposing the
+    dashboard to a broader network.
+    """
     app = FastAPI(title="Hestia Dashboard", docs_url=None, redoc_url=None)
 
     app.include_router(sessions.router, prefix="/api/sessions")
