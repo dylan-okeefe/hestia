@@ -428,6 +428,17 @@ class VoiceConfig(_ConfigFromEnv):
 
 
 @dataclass
+class WebConfig(_ConfigFromEnv):
+    """Configuration for the web dashboard."""
+
+    _ENV_PREFIX = "WEB"
+
+    enabled: bool = False
+    host: str = "127.0.0.1"
+    port: int = 8765
+
+
+@dataclass
 class WebSearchConfig(_ConfigFromEnv):
     """web_search tool configuration (provider=\"\" disables)."""
 
@@ -479,6 +490,7 @@ class FeatureConfig:
     style: StyleConfig = field(default_factory=StyleConfig)
     policy: PolicyConfig = field(default_factory=PolicyConfig)
     rate_limit: RateLimitConfig = field(default_factory=RateLimitConfig)
+    web: WebConfig = field(default_factory=WebConfig)
 
 
 # ---------------------------------------------------------------------------
@@ -532,6 +544,7 @@ class HestiaConfig(_ConfigFromEnv):
         style: StyleConfig | None = None,
         policy: PolicyConfig | None = None,
         rate_limit: RateLimitConfig | None = None,
+        web: WebConfig | None = None,
     ) -> None:
         if core is None:
             core = CoreConfig(
@@ -558,6 +571,7 @@ class HestiaConfig(_ConfigFromEnv):
                 style=style or StyleConfig(),
                 policy=policy or PolicyConfig(),
                 rate_limit=rate_limit or RateLimitConfig(),
+                web=web or WebConfig(),
             )
         self.core = core
         self.platforms = platforms
@@ -723,6 +737,15 @@ class HestiaConfig(_ConfigFromEnv):
     @rate_limit.setter
     def rate_limit(self, value: RateLimitConfig) -> None:
         self.features.rate_limit = value
+
+    @property
+    def web(self) -> WebConfig:
+        """Deprecated: use features.web instead."""
+        return self.features.web
+
+    @web.setter
+    def web(self, value: WebConfig) -> None:
+        self.features.web = value
 
     @classmethod
     def from_file(cls, path: Path) -> HestiaConfig:
