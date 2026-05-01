@@ -121,6 +121,42 @@ export const mockConfigSchema = {
   },
 };
 
+export const mockWorkflows = {
+  workflows: [
+    {
+      id: 'wf_001',
+      name: 'Morning Greeting',
+      trigger_type: 'cron',
+      last_edited_at: '2024-01-15T08:00:00Z',
+      active_version_id: 'v_001',
+    },
+    {
+      id: 'wf_002',
+      name: 'Daily Summary',
+      trigger_type: 'manual',
+      last_edited_at: '2024-01-14T10:00:00Z',
+      active_version_id: null,
+    },
+  ],
+};
+
+export const mockWorkflowVersions = {
+  versions: [
+    {
+      id: 'v_001',
+      workflow_id: 'wf_001',
+      version_number: 1,
+      nodes: [
+        { id: 'n1', type: 'default', position: { x: 100, y: 100 }, data: { label: 'Start' } },
+        { id: 'n2', type: 'default', position: { x: 250, y: 100 }, data: { label: 'End' } },
+      ],
+      edges: [{ id: 'e1', source: 'n1', target: 'n2' }],
+      created_at: '2024-01-15T08:00:00Z',
+      activated_at: '2024-01-15T08:05:00Z',
+    },
+  ],
+};
+
 export async function mockApis(page: Page) {
   await page.route('/api/sessions**', async (route) => {
     const url = route.request().url();
@@ -184,6 +220,33 @@ export async function mockApis(page: Page) {
       await route.fulfill({ status: 501, json: { detail: 'Not implemented' } });
     } else {
       await route.fulfill({ json: mockConfig });
+    }
+  });
+
+  await page.route('/api/workflows', async (route) => {
+    const method = route.request().method();
+    if (method === 'POST') {
+      await route.fulfill({ json: { id: 'wf_003', name: 'New Workflow', trigger_type: 'manual', last_edited_at: new Date().toISOString(), active_version_id: null } });
+    } else {
+      await route.fulfill({ json: mockWorkflows });
+    }
+  });
+
+  await page.route('/api/workflows/**', async (route) => {
+    const url = route.request().url();
+    const method = route.request().method();
+    if (url.includes('/versions')) {
+      if (method === 'POST') {
+        await route.fulfill({ json: { id: 'v_002', workflow_id: 'wf_001', version_number: 2, nodes: [], edges: [], created_at: new Date().toISOString(), activated_at: null } });
+      } else if (url.includes('/activate')) {
+        await route.fulfill({ json: { activated: true } });
+      } else {
+        await route.fulfill({ json: mockWorkflowVersions });
+      }
+    } else if (url.includes('/test-run')) {
+      await route.fulfill({ json: { result: 'ok' } });
+    } else {
+      await route.fulfill({ json: mockWorkflows.workflows[0] });
     }
   });
 }
