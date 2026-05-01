@@ -14,6 +14,7 @@ import click
 from hestia.config import HestiaConfig
 from hestia.core.types import Message, ScheduledTask, Session
 from hestia.orchestrator.engine import ConfirmCallback
+from hestia.orchestrator.finalization import sanitize_user_error
 from hestia.persistence.scheduler import SchedulerStore
 from hestia.persistence.sessions import SessionStore
 from hestia.platforms.base import Platform
@@ -175,7 +176,7 @@ async def run_platform(
             )
         except Exception as e:  # noqa: BLE001 — outermost boundary — intentionally broad
             logger.exception("Turn failed for %s %s", user_label, platform_user)
-            await adapter.send_error(platform_user, f"Turn failed: {e}")
+            await adapter.send_error(platform_user, sanitize_user_error(e))
         finally:
             if token is not None:
                 user_context_var.reset(token)  # type: ignore[union-attr]

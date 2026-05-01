@@ -18,6 +18,7 @@ from telegram.ext import Application, CallbackQueryHandler, CommandHandler, Mess
 
 from hestia.config import TelegramConfig
 from hestia.core.types import Message as HestiaMessage
+from hestia.orchestrator.finalization import sanitize_user_error
 from hestia.orchestrator.types import StreamCallback
 from hestia.platforms.allowlist import (
     match_allowlist,
@@ -565,7 +566,7 @@ class TelegramAdapter(Platform):
             )
         except Exception as e:  # noqa: BLE001 — turn boundary
             logger.exception("Turn failed for voice message from %s", user_id)
-            await message.reply_text(f"Turn failed: {e}")
+            await message.reply_text(sanitize_user_error(e))
 
     async def _handle_callback_query(self, update: Update, context: Any) -> None:
         """Handle inline-keyboard button presses for confirmations."""

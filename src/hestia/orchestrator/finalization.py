@@ -106,6 +106,8 @@ class TurnFinalization:
             try:
                 from hestia.persistence.trace_store import TraceRecord
 
+                # user_input_summary may contain PII (user messages are intentionally
+                # stored in the trace store for debugging and session analysis).
                 raw_summary = ctx.user_message.content or ""
                 if len(raw_summary) > 200:
                     user_input_summary = raw_summary[:200] + "..."
@@ -346,3 +348,7 @@ class TurnFinalization:
             await self._handoff_summarizer.summarize_and_store(session, history)
         except Exception:  # noqa: BLE001
             logger.warning("Handoff summarizer failed for %s", session.id, exc_info=True)
+
+
+# Module-level alias for convenient import by callers that don't need the class.
+sanitize_user_error = TurnFinalization.sanitize_user_error

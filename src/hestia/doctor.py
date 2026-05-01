@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import inspect
 import os
 import sqlite3
 import sys

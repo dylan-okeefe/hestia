@@ -29,7 +29,7 @@ except ImportError:  # pragma: no cover
 try:
     from piper import PiperVoice
 except ImportError:  # pragma: no cover
-    PiperVoice = None
+    PiperVoice = None  # type: ignore[misc,assignment]
 
 
 @dataclass

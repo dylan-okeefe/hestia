@@ -9,9 +9,8 @@ from __future__ import annotations
 import html as html_module
 import re
 import urllib.parse
-from typing import Any
 
-from hestia.tools.builtin.http_get import SSRFSafeTransport, http_get
+from hestia.tools.builtin.http_get import http_get
 from hestia.tools.capabilities import NETWORK_EGRESS
 from hestia.tools.metadata import tool
 
@@ -86,16 +85,17 @@ async def search_web(query: str, max_results: int = 5) -> str:
 
     lines: list[str] = []
     seen_urls: set[str] = set()
-    for raw_redirect, raw_title, raw_url, raw_snippet in matches:
+    for raw_redirect, raw_title, _raw_url, raw_snippet in matches:
         if len(lines) >= max_results:
             break
 
         # DuckDuckGo redirects through their own URL; extract the real destination
         redirect_match = re.search(r"uddg=([^&]+)", raw_redirect)
-        if redirect_match:
-            real_url = urllib.parse.unquote(redirect_match.group(1))
-        else:
-            real_url = raw_redirect
+        real_url = (
+            urllib.parse.unquote(redirect_match.group(1))
+            if redirect_match
+            else raw_redirect
+        )
 
         # Skip ads (DuckDuckGo ad redirects point to y.js with ad_domain)
         if "/y.js?" in real_url and "ad_domain" in real_url:
