@@ -89,10 +89,9 @@ class AuthManager:
         else:
             raise ValueError(f"Unsupported platform {platform!r}")
 
-        if len(users) != 1:
+        if len(users) == 0:
             raise ValueError(
-                f"Platform {platform!r} must have exactly one configured user, "
-                f"found {len(users)}"
+                f"Platform {platform!r} has no configured users"
             )
 
         user: str = users[0]

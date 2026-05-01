@@ -136,10 +136,13 @@ class TestAuthManager:
 
     def test_request_code_multiple_users(self, auth_manager: AuthManager) -> None:
         auth_manager.adapters["telegram"]._config.allowed_users = ["123", "456"]
-        with pytest.raises(ValueError, match="exactly one configured user"):
-            import asyncio
+        import asyncio
 
-            asyncio.run(auth_manager.request_code("telegram"))
+        result = asyncio.run(auth_manager.request_code("telegram"))
+        assert result["platform"] == "telegram"
+        assert len(auth_manager._pending_codes) == 1
+        code = list(auth_manager._pending_codes.keys())[0]
+        assert auth_manager._pending_codes[code].platform_user == "123"
 
     def test_validate_code_success(self, auth_manager: AuthManager) -> None:
         import asyncio
