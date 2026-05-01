@@ -41,7 +41,9 @@ from hestia.style.scheduler import StyleScheduler
 from hestia.style.store import StyleProfileStore
 from hestia.tools.builtin import (
     current_time,
+    make_accept_proposal_tool,
     make_create_scheduled_task_tool,
+    make_defer_proposal_tool,
     make_delegate_task_tool,
     make_delete_memory_tool,
     make_delete_scheduled_task_tool,
@@ -52,11 +54,17 @@ from hestia.tools.builtin import (
     make_http_get_tool,
     make_list_dir_tool,
     make_list_memories_tool,
+    make_list_proposals_tool,
     make_list_scheduled_tasks_tool,
     make_read_artifact_tool,
     make_read_file_tool,
+    make_reject_proposal_tool,
+    make_reset_style_metric_tool,
+    make_reset_style_profile_tool,
     make_save_memory_tool,
     make_search_memory_tool,
+    make_show_proposal_tool,
+    make_show_style_profile_tool,
     make_terminal_tool,
     make_web_search_tool,
     make_write_file_tool,
@@ -300,6 +308,18 @@ class AppContext:
         reg.register(make_list_memories_tool(self.memory_store))
         reg.register(make_delete_memory_tool(self.memory_store))
         reg.register(make_read_artifact_tool(self.artifact_store))
+
+        # Proposal tools (bound to proposal store)
+        reg.register(make_list_proposals_tool(self.proposal_store))
+        reg.register(make_show_proposal_tool(self.proposal_store))
+        reg.register(make_accept_proposal_tool(self.proposal_store))
+        reg.register(make_reject_proposal_tool(self.proposal_store))
+        reg.register(make_defer_proposal_tool(self.proposal_store))
+
+        # Style tools (bound to style store)
+        reg.register(make_show_style_profile_tool(self.style_store))
+        reg.register(make_reset_style_metric_tool(self.style_store))
+        reg.register(make_reset_style_profile_tool(self.style_store))
 
         web_search_tool = make_web_search_tool(cfg.web_search)
         if web_search_tool is not None:
