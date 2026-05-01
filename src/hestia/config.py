@@ -369,7 +369,7 @@ class StyleConfig(_ConfigFromEnv):
 
     _ENV_PREFIX = "STYLE"
 
-    enabled: bool = False
+    enabled: bool = True
     min_turns_to_activate: int = 20
     lookback_days: int = 30
     cron: str = "15 3 * * *"
@@ -391,7 +391,7 @@ class ReflectionConfig(_ConfigFromEnv):
 
     _ENV_PREFIX = "REFLECTION"
 
-    enabled: bool = False
+    enabled: bool = True
     cron: str = "0 3 * * *"
     idle_minutes: int = 15
     lookback_turns: int = 100
