@@ -53,3 +53,4 @@ CLAUDE.md
 migrations/__pycache__/
 migrations/versions/__pycache__/
 *.pid
+node_modules/
