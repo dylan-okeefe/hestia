@@ -25,7 +25,7 @@ export default function Proposals() {
 
   useEffect(() => {
     setLoading(true);
-    const status = tab === 'pending' ? 'pending' : '';
+    const status = tab === 'pending' ? 'pending' : undefined;
     fetchProposals(status)
       .then((data) => {
         let list: Proposal[] = data.proposals || [];

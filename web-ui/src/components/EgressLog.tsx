@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { fetchEgress } from '../api/client';
 
 interface EgressEvent {
@@ -38,6 +38,10 @@ export default function EgressLog() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    handleSearch();
+  }, []);
 
   return (
     <div>

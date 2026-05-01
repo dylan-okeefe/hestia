@@ -87,7 +87,11 @@ function stripSecrets(obj: unknown): unknown {
   if (typeof obj === 'object') {
     const result: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
-      result[k] = stripSecrets(v);
+      if (credentialKeys.has(k) && v) {
+        result[k] = '***';
+      } else {
+        result[k] = stripSecrets(v);
+      }
     }
     return result;
   }
@@ -307,7 +311,7 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
                   resetSection(sectionKey);
                 }}
               >
-                Reset to defaults
+                Reset to initial
               </button>
               <span>{collapsed[sectionKey] ? '▶' : '▼'}</span>
             </div>
