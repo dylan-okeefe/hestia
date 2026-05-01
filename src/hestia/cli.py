@@ -290,6 +290,19 @@ def run_matrix(ctx: click.Context) -> None:
         click.echo("\nShutting down.")
 
 
+@cli.command(name="serve")
+@click.pass_context
+def serve(ctx: click.Context) -> None:
+    """Run Hestia with all configured platform adapters and web dashboard."""
+    app: AppContext = ctx.obj
+    from hestia.commands.serve import cmd_serve
+
+    try:
+        asyncio.run(cmd_serve(app, app.config))
+    except KeyboardInterrupt:
+        click.echo("\nShutting down.")
+
+
 # ---------------------------------------------------------------------------
 # Memory
 # ---------------------------------------------------------------------------
