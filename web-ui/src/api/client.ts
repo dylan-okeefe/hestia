@@ -81,3 +81,17 @@ export async function fetchEgress(domain?: string, since?: string) {
   if (!res.ok) throw new Error('Failed to fetch egress');
   return res.json();
 }
+
+export async function fetchConfig() {
+  const res = await fetch(`${API_BASE}/config`);
+  if (!res.ok) throw new Error('Failed to fetch config');
+  return res.json();
+}
+
+export async function saveConfig(config: object) {
+  return fetch(`${API_BASE}/config`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+}

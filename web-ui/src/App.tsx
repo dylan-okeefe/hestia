@@ -4,8 +4,9 @@ import Proposals from './pages/Proposals';
 import StyleProfile from './pages/StyleProfile';
 import Scheduler from './pages/Scheduler';
 import Security from './pages/Security';
+import Config from './pages/Config';
 
-type Page = 'dashboard' | 'proposals' | 'style' | 'scheduler' | 'security';
+type Page = 'dashboard' | 'proposals' | 'style' | 'scheduler' | 'security' | 'config';
 
 export default function App() {
   const [page, setPage] = useState<Page>('dashboard');
@@ -33,12 +34,14 @@ export default function App() {
         {navButton('Style', 'style')}
         {navButton('Scheduler', 'scheduler')}
         {navButton('Security', 'security')}
+        {navButton('Config', 'config')}
       </nav>
       {page === 'dashboard' && <Dashboard />}
       {page === 'proposals' && <Proposals />}
       {page === 'style' && <StyleProfile />}
       {page === 'scheduler' && <Scheduler />}
       {page === 'security' && <Security />}
+      {page === 'config' && <Config />}
     </div>
   );
 }
