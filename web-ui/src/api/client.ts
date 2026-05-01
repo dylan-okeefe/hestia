@@ -88,6 +88,12 @@ export async function fetchConfig() {
   return res.json();
 }
 
+export async function fetchConfigSchema() {
+  const res = await fetch(`${API_BASE}/config/schema`);
+  if (!res.ok) throw new Error('Failed to fetch config schema');
+  return res.json();
+}
+
 export async function saveConfig(config: object) {
   return fetch(`${API_BASE}/config`, {
     method: 'PUT',
