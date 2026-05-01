@@ -1,12 +1,28 @@
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import Dashboard from './pages/Dashboard';
 import Proposals from './pages/Proposals';
 import StyleProfile from './pages/StyleProfile';
 import Scheduler from './pages/Scheduler';
 import Security from './pages/Security';
 import Config from './pages/Config';
+import Login from './pages/Login';
 
-export default function App() {
+function AppContent() {
+  const { auth, loading, logout } = useAuth();
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+        <p>Loading…</p>
+      </div>
+    );
+  }
+
+  if (auth.authEnabled && !auth.authenticated) {
+    return <Login />;
+  }
+
   const navLink = (label: string, to: string) => (
     <NavLink
       to={to}
@@ -25,13 +41,21 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <nav style={{ padding: '0.75rem 1rem', borderBottom: '1px solid #ddd', display: 'flex', gap: '1rem' }}>
+      <nav style={{ padding: '0.75rem 1rem', borderBottom: '1px solid #ddd', display: 'flex', gap: '1rem', alignItems: 'center' }}>
         {navLink('Dashboard', '/')}
         {navLink('Proposals', '/proposals')}
         {navLink('Style', '/style')}
         {navLink('Scheduler', '/scheduler')}
         {navLink('Security', '/security')}
         {navLink('Config', '/config')}
+        {auth.authEnabled && (
+          <button
+            onClick={logout}
+            style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: '#666' }}
+          >
+            Log out
+          </button>
+        )}
       </nav>
       <Routes>
         <Route path="/" element={<Dashboard />} />
@@ -42,5 +66,13 @@ export default function App() {
         <Route path="/config" element={<Config />} />
       </Routes>
     </BrowserRouter>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }

@@ -210,7 +210,7 @@ async def run_platform(
         await app.inference.close()
 
 
-async def run_telegram(app: Any, config: HestiaConfig) -> None:
+async def run_telegram(app: Any, config: HestiaConfig, adapter: TelegramAdapter | None = None) -> None:
     """Run Hestia as a Telegram bot (blocks until Ctrl-C)."""
     if not config.inference.model_name:
         raise ValueError(
@@ -223,7 +223,8 @@ async def run_telegram(app: Any, config: HestiaConfig) -> None:
         click.echo("Set it in your config file or via environment.", err=True)
         sys.exit(1)
 
-    adapter = TelegramAdapter(config.telegram)
+    if adapter is None:
+        adapter = TelegramAdapter(config.telegram)
     current_telegram_user: ContextVar[str] = ContextVar("current_telegram_user", default="")
     confirm_callback = make_telegram_confirm_callback(adapter, current_telegram_user)
     scheduler_callback = make_telegram_scheduler_callback(adapter, app.session_store)
@@ -240,7 +241,7 @@ async def run_telegram(app: Any, config: HestiaConfig) -> None:
     )
 
 
-async def run_matrix(app: Any, config: HestiaConfig) -> None:
+async def run_matrix(app: Any, config: HestiaConfig, adapter: MatrixAdapter | None = None) -> None:
     """Run Hestia as a Matrix bot (blocks until Ctrl-C)."""
     if not config.inference.model_name:
         raise ValueError(
@@ -257,7 +258,8 @@ async def run_matrix(app: Any, config: HestiaConfig) -> None:
         click.echo("Error: matrix.user_id is required in config.", err=True)
         sys.exit(1)
 
-    adapter = MatrixAdapter(config.matrix)
+    if adapter is None:
+        adapter = MatrixAdapter(config.matrix)
     current_matrix_room: ContextVar[str] = ContextVar("current_matrix_room", default="")
     confirm_callback = make_matrix_confirm_callback(adapter, current_matrix_room)
     scheduler_callback = make_matrix_scheduler_callback(adapter, app.session_store)

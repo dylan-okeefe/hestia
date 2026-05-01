@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from hestia.web.routes import (
     audit,
+    auth,
     config,
     doctor,
     egress,
@@ -32,6 +33,7 @@ def create_web_app() -> FastAPI:
     """
     app = FastAPI(title="Hestia Dashboard", docs_url=None, redoc_url=None)
 
+    app.include_router(auth.router, prefix="/api/auth")
     app.include_router(sessions.router, prefix="/api/sessions")
     app.include_router(proposals.router, prefix="/api/proposals")
     app.include_router(style.router, prefix="/api/style")

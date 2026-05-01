@@ -38,7 +38,7 @@ def mock_app() -> MagicMock:
     mock.config.trust = MagicMock(preset=None)
     mock.config.rate_limit = MagicMock()
     mock.config.features = MagicMock()
-    mock.config.features.web = MagicMock(enabled=True, host="127.0.0.1", port=8080)
+    mock.config.features.web = MagicMock(enabled=True, host="127.0.0.1", port=8080, auth_enabled=False, session_lifetime_hours=72, code_expiry_seconds=300, code_length=6)
     mock.config.features.rate_limit = MagicMock()
     mock.config.features.policy = MagicMock()
     mock.config.features.style = MagicMock()
@@ -63,6 +63,7 @@ def client(mock_app: MagicMock) -> TestClient:
         trace_store=AsyncMock(),
         failure_store=AsyncMock(),
         app=mock_app,
+        auth_manager=None,
     )
     set_web_context(ctx)
     app = create_web_app()
