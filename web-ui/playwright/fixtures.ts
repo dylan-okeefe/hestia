@@ -111,6 +111,16 @@ export const mockConfig = {
   web: { enabled: true, host: '127.0.0.1', port: 8765 },
 };
 
+export const mockConfigSchema = {
+  schema: {
+    'trust.preset': {
+      type: 'enum',
+      values: ['paranoid', 'prompt_on_mobile', 'household', 'developer'],
+      default: 'developer',
+    },
+  },
+};
+
 export async function mockApis(page: Page) {
   await page.route('/api/sessions**', async (route) => {
     const url = route.request().url();
@@ -167,5 +177,9 @@ export async function mockApis(page: Page) {
     } else {
       await route.fulfill({ json: mockConfig });
     }
+  });
+
+  await page.route('/api/config/schema', async (route) => {
+    await route.fulfill({ json: mockConfigSchema });
   });
 }
