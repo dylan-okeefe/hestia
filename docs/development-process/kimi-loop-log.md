@@ -9,6 +9,27 @@
 
 
 
+## 2026-04-30 — L106 Complete (React/Vite Frontend Scaffolding)
+
+**Outcome:** Set up the frontend build toolchain and Playwright E2E testing infrastructure. No pages yet — verified the build pipeline works and FastAPI can serve the generated bundle.
+
+**Changes:**
+- Created `web-ui/` at repo root with React 18 + Vite 6 + TypeScript toolchain
+  - `package.json`, `vite.config.ts`, `tsconfig.json`, `index.html`
+  - `src/main.tsx`, `src/App.tsx`, `src/index.css`
+- Configured Vite to build into `src/hestia/web/static/` with `emptyOutDir: true`
+- Built and committed the generated static bundle (JS, CSS, HTML)
+- Added `web-ui/playwright.config.ts` and `web-ui/playwright/dashboard.spec.ts`
+- Updated `.github/workflows/ci.yml` to install Node 22 and build SPA (`npm ci && npm run build`) before pytest
+- Fixed `tests/unit/test_web_api.py` to assert on SPA mount point instead of old placeholder text
+- Added `node_modules/` to `.gitignore`
+
+**Quality gate:** 1124 passed, 6 skipped; `npm run build` succeeds; Playwright `dashboard.spec.ts` passes against running uvicorn.
+
+**Branch:** `feature/web-dashboard`
+
+---
+
 ## 2026-04-30 — L105 Complete (Dashboard API Routes)
 
 **Outcome:** Built the complete REST API surface for the Hestia dashboard. All endpoints read from existing stores (no new persistence).

@@ -2,15 +2,15 @@
 
 **Orchestrator:** Kimi (self-orchestrating via subagents)
 
-**Last set by:** Kimi — 2026-04-30 (L104 complete)
+**Last set by:** Kimi — 2026-04-30 (L106 complete)
 
 ---
 
 ## Current task
 
-**Status:** **IDLE — L104 complete on `feature/web-dashboard`.**
+**Status:** **IDLE — L106 complete on `feature/web-dashboard`.**
 
-The FastAPI skeleton and web server integration (L104) is complete on the `feature/web-dashboard` branch.
+The React/Vite frontend scaffolding (L106) is complete on the `feature/web-dashboard` branch.
 
 ---
 
@@ -33,17 +33,19 @@ The FastAPI skeleton and web server integration (L104) is complete on the `featu
 | L100 | `feature/l100-orchestrator-streaming` | **Complete, pushed** |
 | L101 | `feature/l101-telegram-progressive-delivery` | **Complete, pushed** |
 
-### L104 (Web dashboard skeleton)
+### L104–L106 (Web dashboard)
 | Loop | Branch | Status |
 |------|--------|--------|
 | L104 | `feature/web-dashboard` | **Complete, committed** |
+| L105 | `feature/web-dashboard` | **Complete, committed** |
+| L106 | `feature/web-dashboard` | **Complete, committed** |
 
 ---
 
 ## What's queued (not authorized yet)
 
-### L105 — API routes
-- Next loop for the web dashboard: add API routes to the FastAPI app.
+### L107 — Session timeline page
+- Next loop for the web dashboard: build the first React page (session timeline).
 
 ### Merge L89–L101 to develop
 - Sequential merge: L89 → L90 → ... → L101
