@@ -1,13 +1,23 @@
 const API_BASE = '/api';
 
-let _authToken: string | null = null;
+let _authToken: string | null = sessionStorage.getItem('hestia_auth_token');
 
 export function setAuthToken(token: string | null) {
   _authToken = token;
+  if (token) {
+    sessionStorage.setItem('hestia_auth_token', token);
+  } else {
+    sessionStorage.removeItem('hestia_auth_token');
+  }
 }
 
 export function getAuthToken(): string | null {
   return _authToken;
+}
+
+export function clearAuthToken() {
+  _authToken = null;
+  sessionStorage.removeItem('hestia_auth_token');
 }
 
 function getHeaders(extra: Record<string, string> = {}): Record<string, string> {
@@ -24,7 +34,7 @@ async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
     headers: getHeaders((init?.headers as Record<string, string>) || {}),
   });
   if (res.status === 401) {
-    setAuthToken(null);
+    clearAuthToken();
     window.dispatchEvent(new CustomEvent('auth:unauthorized'));
   }
   return res;
