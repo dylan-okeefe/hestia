@@ -11,6 +11,7 @@ from typing import Any
 
 from hestia.core.clock import utcnow
 from hestia.core.types import Message, ScheduledTask, SessionState
+from hestia.events.bus import EventBus
 from hestia.orchestrator import Orchestrator
 from hestia.persistence.scheduler import SchedulerStore, _calculate_next_run
 from hestia.persistence.sessions import SessionStore
@@ -36,6 +37,7 @@ class Scheduler:
         tick_interval_seconds: float = 5.0,
         system_prompt: str | None = None,
         notifier: PlatformNotifier | None = None,
+        event_bus: EventBus | None = None,
     ):
         self._scheduler_store = scheduler_store
         self._session_store = session_store
@@ -44,6 +46,7 @@ class Scheduler:
         self._tick_interval = tick_interval_seconds
         self._system_prompt = system_prompt or "You are a helpful assistant."
         self._notifier = notifier
+        self._event_bus = event_bus
         self._stop_event = asyncio.Event()
         self._loop_task: asyncio.Task[Any] | None = None
 
@@ -105,6 +108,18 @@ class Scheduler:
             )
             return
         logger.info("Firing scheduled task %s", task.id)
+
+        if self._event_bus is not None:
+            self._event_bus.publish(
+                "schedule_fired",
+                {
+                    "task_id": task.id,
+                    "session_id": task.session_id,
+                    "prompt": task.prompt,
+                    "description": task.description,
+                },
+            )
+
         session = await self._session_store.get_session(task.session_id)
         if session is None or session.state != SessionState.ACTIVE:
             error = f"Session {task.session_id} no longer exists"
