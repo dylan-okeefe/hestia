@@ -288,6 +288,23 @@ class SchedulerStore:
                 last_error=error,
             )
 
+    async def run_now(self, task_id: str) -> bool:
+        """Mark a task to run on the next scheduler tick.
+
+        Sets next_run_at to now and ensures the task is enabled.
+
+        Returns True if the task was found, False otherwise.
+        """
+        update = (
+            sa.update(scheduled_tasks)
+            .where(scheduled_tasks.c.id == task_id)
+            .values(enabled=True, next_run_at=utcnow())
+        )
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(update)
+            await conn.commit()
+            return result.rowcount > 0
+
     async def set_enabled(self, task_id: str, enabled: bool) -> bool:
         """Enable or disable a scheduled task.
 

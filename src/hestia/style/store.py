@@ -53,6 +53,21 @@ class StyleProfileStore:
             result = await conn.execute(sql, {"platform": platform, "platform_user": platform_user})
             await conn.commit()
             return result.rowcount or 0
+
+    async def delete_metric(self, platform: str, platform_user: str, metric: str) -> bool:
+        """Delete a single style metric.
+
+        Returns True if a row was deleted, False otherwise.
+        """
+        sql = sa.text(
+            "DELETE FROM style_profiles WHERE platform = :platform AND platform_user = :platform_user AND metric = :metric"  # noqa: E501
+        )
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(
+                sql, {"platform": platform, "platform_user": platform_user, "metric": metric}
+            )
+            await conn.commit()
+            return (result.rowcount or 0) > 0
     async def count_turns_in_window(self, platform: str, platform_user: str, since: datetime) -> int:  # noqa: E501
         sql = sa.text("SELECT COUNT(*) FROM turns t JOIN sessions s ON t.session_id = s.id WHERE s.platform = :platform AND s.platform_user = :platform_user AND t.started_at >= :since")  # noqa: E501
         async with self._db.engine.connect() as conn:
