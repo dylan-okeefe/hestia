@@ -1,9 +1,15 @@
-import { useState, useCallback } from 'react';
-import { saveConfig } from '../api/client';
+import { useState, useCallback, useEffect } from 'react';
+import { saveConfig, fetchConfigSchema } from '../api/client';
 
 interface ConfigFormProps {
   initialConfig: Record<string, unknown>;
   onSave?: () => void;
+}
+
+interface SchemaEntry {
+  type: string;
+  values?: string[];
+  default?: string;
 }
 
 const credentialKeys = new Set(['bot_token', 'access_token', 'password', 'password_env', 'api_key']);
@@ -104,6 +110,21 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [schema, setSchema] = useState<Record<string, SchemaEntry>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchConfigSchema()
+      .then((data: { schema?: Record<string, SchemaEntry> }) => {
+        if (!cancelled && data?.schema) {
+          setSchema(data.schema);
+        }
+      })
+      .catch(() => {
+        // Schema fetch is best-effort; fall back to text inputs.
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   const updateValue = useCallback((path: string, value: unknown) => {
     setConfig((prev) => {
@@ -197,7 +218,22 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
     };
 
     let input: React.ReactNode;
-    if (inputType === 'boolean') {
+    if (schema[fullPath]?.type === 'enum') {
+      input = (
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <span>{key}</span>
+          <select
+            value={String(value)}
+            onChange={(e) => updateValue(fullPath, e.target.value)}
+            style={baseStyle}
+          >
+            {schema[fullPath].values?.map((v: string) => (
+              <option key={v} value={v}>{v}</option>
+            ))}
+          </select>
+        </label>
+      );
+    } else if (inputType === 'boolean') {
       input = (
         <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
           <input
