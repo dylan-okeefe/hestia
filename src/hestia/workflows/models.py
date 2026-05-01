@@ -16,6 +16,7 @@ class WorkflowNode:
     label: str
     config: dict[str, Any] = field(default_factory=dict)
     position: dict[str, float] = field(default_factory=dict)
+    capabilities: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -51,5 +52,7 @@ class Workflow:
     description: str = ""
     trigger_type: str = "manual"
     trigger_config: dict[str, Any] = field(default_factory=dict)
+    owner_id: str = ""
+    trust_level: str = "paranoid"
     created_at: datetime | None = None
     updated_at: datetime | None = None

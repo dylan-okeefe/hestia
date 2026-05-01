@@ -183,6 +183,8 @@ workflows = sa.Table(
     sa.Column("description", sa.String, nullable=False, default=""),
     sa.Column("trigger_type", sa.String, nullable=False, default="manual"),
     sa.Column("trigger_config", sa.Text, nullable=False, default="{}"),
+    sa.Column("owner_id", sa.String, nullable=False, default=""),
+    sa.Column("trust_level", sa.String, nullable=False, default="paranoid"),
     sa.Column("created_at", sa.DateTime, nullable=False),
     sa.Column("updated_at", sa.DateTime, nullable=False),
 )

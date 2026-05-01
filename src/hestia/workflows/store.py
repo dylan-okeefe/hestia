@@ -45,6 +45,8 @@ class WorkflowStore:
             "description": workflow.description,
             "trigger_type": workflow.trigger_type,
             "trigger_config": json.dumps(workflow.trigger_config),
+            "owner_id": workflow.owner_id,
+            "trust_level": workflow.trust_level,
             "created_at": workflow.created_at,
             "updated_at": workflow.updated_at,
         }
@@ -63,6 +65,8 @@ class WorkflowStore:
                         "description": values["description"],
                         "trigger_type": values["trigger_type"],
                         "trigger_config": values["trigger_config"],
+                        "owner_id": values["owner_id"],
+                        "trust_level": values["trust_level"],
                         "updated_at": values["updated_at"],
                     },
                 )
@@ -77,6 +81,8 @@ class WorkflowStore:
                         "description": values["description"],
                         "trigger_type": values["trigger_type"],
                         "trigger_config": values["trigger_config"],
+                        "owner_id": values["owner_id"],
+                        "trust_level": values["trust_level"],
                         "updated_at": values["updated_at"],
                     },
                 )
@@ -148,6 +154,7 @@ class WorkflowStore:
                     "label": n.label,
                     "config": n.config,
                     "position": n.position,
+                    "capabilities": n.capabilities,
                 }
                 for n in version.nodes
             ]
@@ -320,6 +327,8 @@ class WorkflowStore:
             description=row.description or "",
             trigger_type=row.trigger_type or "manual",
             trigger_config=trigger_config,
+            owner_id=getattr(row, "owner_id", "") or "",
+            trust_level=getattr(row, "trust_level", "paranoid") or "paranoid",
             created_at=row.created_at,
             updated_at=row.updated_at,
         )
@@ -336,6 +345,7 @@ class WorkflowStore:
                         label=n["label"],
                         config=n.get("config", {}),
                         position=n.get("position", {}),
+                        capabilities=n.get("capabilities", []),
                     )
                     for n in json.loads(row.nodes)
                 ]
