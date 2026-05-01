@@ -1,8 +1,8 @@
 HESTIA_KIMI_DONE=1
-LOOP=L106
+LOOP=L112
 BRANCH=feature/web-dashboard
-COMMIT=31606f1
+COMMIT=1a6e22f
 TESTS=1124 passed, 6 skipped (unit+integration)
 RUFF_SRC=clean on src/hestia/web/
 MYPY_SRC=clean on src/hestia/web/
-MERGED=L89-L101,L104-L106
+MERGED=L89-L101,L102-L103

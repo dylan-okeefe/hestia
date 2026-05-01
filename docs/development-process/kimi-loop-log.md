@@ -9,6 +9,133 @@
 
 
 
+## 2026-04-30 — L103 Complete (Chat-Based Proposal and Style Management Tools)
+
+**Outcome:** Added 8 new tools for conversational proposal and style management.
+
+**Changes:**
+- `src/hestia/tools/builtin/proposal_tools.py` — `list_proposals`, `show_proposal`, `accept_proposal`, `reject_proposal`, `defer_proposal`
+- `src/hestia/tools/builtin/style_tools.py` — `show_style_profile`, `reset_style_metric`, `reset_style_profile`
+- `src/hestia/tools/capabilities.py` — `SELF_MANAGEMENT` capability
+- `src/hestia/policy/default.py` — trust gating (paranoid/prompt_on_mobile disabled; household/developer enabled)
+- `src/hestia/config.py` — `TrustConfig.self_management` field, updated `is_paranoid()`
+- `tests/unit/test_proposal_tools.py` (16 tests), `test_style_tools.py` (11 tests), `test_self_management_policy.py` (12 tests)
+
+**Quality gate:** 1100 passed, 6 skipped.
+
+**Branch:** `feature/l103-chat-proposal-style-tools` → merged to `develop`
+
+---
+
+## 2026-04-30 — L102 Complete (PII and Credential Hardening)
+
+**Outcome:** Closed all identified PII/credential leak gaps.
+
+**Changes:**
+- `src/hestia/platforms/runners.py` and `telegram_adapter.py` — sanitized user-facing error messages via `sanitize_user_error()`
+- `src/hestia/tools/builtin/web_search.py` — stripped query params from egress URLs; redacted Tavily error body from exception message
+- `src/hestia/config.py` — `MatrixConfig.__repr__` masks `access_token`
+- `src/hestia/orchestrator/finalization.py` — documented `user_input_summary` PII design decision
+
+**Quality gate:** 1062 passed, 6 skipped.
+
+**Branch:** `feature/l102-pii-credential-hardening` → merged to `develop`
+
+---
+
+## 2026-04-30 — L112 Complete (Flip Reflection and Style to Opt-Out)
+
+**Outcome:** Changed `ReflectionConfig.enabled` and `StyleConfig.enabled` defaults from `False` to `True`. With web approval UI (L108) and chat-based proposal tools (L103) in place, reflection and style now work out of the box.
+
+**Changes:**
+- `src/hestia/config.py` — `ReflectionConfig.enabled = True`, `StyleConfig.enabled = True`
+- `docs/guides/reflection-tuning.md` — updated to reflect enabled-by-default status, added disabling section
+
+**Quality gate:** 1124 passed, 6 skipped.
+
+**Branch:** `feature/web-dashboard`
+
+---
+
+## 2026-04-30 — L111 Complete (Config Editor Page)
+
+**Outcome:** Built form-based config editor with collapsible panels, typed inputs, masked credentials, trust preset quick-select, validation, and "requires restart" badges.
+
+**Changes:**
+- `web-ui/src/components/ConfigForm.tsx` — full config form with all features
+- `web-ui/src/pages/Config.tsx` — page wrapper
+- `web-ui/src/api/client.ts` — `fetchConfig`, `saveConfig`
+- `web-ui/playwright/config.spec.ts` — E2E test
+
+**Quality gate:** 1124 passed, 6 skipped; `npm run build` succeeds.
+
+**Branch:** `feature/web-dashboard`
+
+---
+
+## 2026-04-30 — L110 Complete (Security & Health Page)
+
+**Outcome:** Built security and health dashboard with doctor checks (traffic-light indicators), audit findings table, and egress log.
+
+**Changes:**
+- `web-ui/src/components/DoctorCheckList.tsx`, `AuditFindings.tsx`, `EgressLog.tsx`
+- `web-ui/src/pages/Security.tsx`
+- `web-ui/src/api/client.ts` — `runDoctor`, `runAudit`, `fetchEgress`
+- `web-ui/playwright/security.spec.ts` — E2E test
+
+**Quality gate:** 1124 passed, 6 skipped; `npm run build` succeeds.
+
+**Branch:** `feature/web-dashboard`
+
+---
+
+## 2026-04-30 — L109 Complete (Style Profile + Scheduler Status Pages)
+
+**Outcome:** Built style profile viewer with metric reset and scheduler status table with "Run now" buttons.
+
+**Changes:**
+- `web-ui/src/pages/StyleProfile.tsx` — profile card with reset buttons
+- `web-ui/src/pages/Scheduler.tsx` — task table with run-now
+- `web-ui/src/api/client.ts` — `fetchStyleProfile`, `deleteStyleMetric`, `fetchSchedulerTasks`, `runTaskNow`
+- `web-ui/playwright/style.spec.ts`, `scheduler.spec.ts` — E2E tests
+
+**Quality gate:** 1124 passed, 6 skipped; `npm run build` succeeds.
+
+**Branch:** `feature/web-dashboard`
+
+---
+
+## 2026-04-30 — L108 Complete (Proposal Approval Page)
+
+**Outcome:** Built proposal approval UI with card-based layout, Accept/Reject/Defer buttons, Pending/History tabs, and badge count.
+
+**Changes:**
+- `web-ui/src/components/ProposalCard.tsx` — accept/reject/defer with note input
+- `web-ui/src/pages/Proposals.tsx` — tabs and list management
+- `web-ui/src/api/client.ts` — `fetchProposals`, `acceptProposal`, `rejectProposal`, `deferProposal`
+- `web-ui/playwright/proposals.spec.ts` — E2E test
+
+**Quality gate:** 1124 passed, 6 skipped; `npm run build` succeeds.
+
+**Branch:** `feature/web-dashboard`
+
+---
+
+## 2026-04-30 — L107 Complete (Session Timeline Page)
+
+**Outcome:** Built dashboard landing page with session list and expandable turns.
+
+**Changes:**
+- `web-ui/src/pages/Dashboard.tsx` — session table with expandable turn details
+- `web-ui/src/api/client.ts` — `fetchSessions`, `fetchTurns`
+- `web-ui/playwright/sessions.spec.ts` — E2E test
+
+**Quality gate:** 1124 passed, 6 skipped; `npm run build` succeeds.
+
+**Branch:** `feature/web-dashboard`
+
+---
+
 ## 2026-04-30 — L106 Complete (React/Vite Frontend Scaffolding)
 
 **Outcome:** Set up the frontend build toolchain and Playwright E2E testing infrastructure. No pages yet — verified the build pipeline works and FastAPI can serve the generated bundle.
