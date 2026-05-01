@@ -24,3 +24,6 @@ EMAIL_SEND = "email_send"
 
 # Orchestration
 ORCHESTRATION = "orchestration"
+
+# Self-management (proposal/style tools)
+SELF_MANAGEMENT = "self_management"
