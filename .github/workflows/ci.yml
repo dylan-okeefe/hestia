@@ -13,12 +13,18 @@ jobs:
         python-version: ["3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - name: Install uv
         uses: astral-sh/setup-uv@v4
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
       - name: Install dependencies
         run: uv sync
+      - name: Build SPA
+        run: cd web-ui && npm ci && npm run build
       - name: Lint
         run: uv run ruff check src/
       - name: Type check
