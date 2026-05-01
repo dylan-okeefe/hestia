@@ -40,6 +40,21 @@ async def request_code(
             detail="Field 'platform' is required",
         )
 
+    client_ip = request.client.host if request.client else "unknown"
+    if not auth_manager.check_code_request_limit(client_ip):
+        retry_after = auth_manager.code_request_retry_after(client_ip)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many code requests. Try again later.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    # Record this request
+    from datetime import datetime, UTC
+    if client_ip not in auth_manager._code_request_limits:
+        auth_manager._code_request_limits[client_ip] = []
+    auth_manager._code_request_limits[client_ip].append(datetime.now(UTC))
+
     try:
         result = await auth_manager.request_code(platform)
     except ValueError as exc:
@@ -66,26 +81,22 @@ async def verify_code(
         )
 
     client_ip = request.client.host if request.client else "unknown"
-    session = auth_manager.validate_code(code, client_ip)
+    result = auth_manager.validate_code(code, client_ip)
 
-    if session is None:
+    if result is None:
+        # Distinguish rate-limit from invalid code
+        if auth_manager._is_rate_limited(client_ip):
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many failed attempts. Try again later.",
+                headers={"Retry-After": str(600)},
+            )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired code",
         )
 
-    # Find the token by looking up the session we just created
-    token: str | None = None
-    for t, s in auth_manager._sessions.items():
-        if s is session:
-            token = t
-            break
-
-    if token is None:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Session creation failed",
-        )
+    token, session = result
 
     return {
         "token": token,

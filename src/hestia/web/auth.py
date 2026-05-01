@@ -65,6 +65,7 @@ class AuthManager:
         self._pending_codes: dict[str, PendingCode] = {}
         self._sessions: dict[str, WebSession] = {}
         self._rate_limits: dict[str, RateLimitWindow] = {}
+        self._code_request_limits: dict[str, list[datetime]] = {}
 
     def generate_code(self) -> str:
         """Generate a cryptographically random numeric code."""
@@ -97,11 +98,49 @@ class AuthManager:
         user: str = users[0]
         return user
 
+    def _cleanup_stale_entries(self) -> None:
+        """Remove old entries from rate limit tracking dicts."""
+        now = datetime.now(UTC)
+        # Clean up verification rate limits
+        for ip, window in list(self._rate_limits.items()):
+            window.prune()
+            if not window.attempts:
+                del self._rate_limits[ip]
+        # Clean up code request limits (5-minute window)
+        for ip, timestamps in list(self._code_request_limits.items()):
+            self._code_request_limits[ip] = [
+                t for t in timestamps if now - t < timedelta(minutes=5)
+            ]
+            if not self._code_request_limits[ip]:
+                del self._code_request_limits[ip]
+
+    def check_code_request_limit(self, ip: str) -> bool:
+        """Check whether the IP has exceeded code request rate limit.
+
+        Returns False if blocked (≥3 requests in 5 minutes), True otherwise.
+        """
+        now = datetime.now(UTC)
+        timestamps = self._code_request_limits.get(ip, [])
+        timestamps = [t for t in timestamps if now - t < timedelta(minutes=5)]
+        return len(timestamps) < 3
+
+    def code_request_retry_after(self, ip: str) -> int:
+        """Return seconds until the IP can request another code."""
+        now = datetime.now(UTC)
+        timestamps = self._code_request_limits.get(ip, [])
+        if not timestamps:
+            return 0
+        oldest = min(timestamps)
+        retry = int((oldest + timedelta(minutes=5) - now).total_seconds())
+        return max(0, retry)
+
     async def request_code(self, platform: str) -> dict[str, Any]:
         """Generate and send a one-time code via the requested platform.
 
         Returns a dict with status information.
         """
+        self._cleanup_stale_entries()
+
         platform_user = self._get_configured_user(platform)
         adapter = self.adapters[platform]
 
@@ -139,12 +178,14 @@ class AuthManager:
             self._rate_limits[ip] = RateLimitWindow()
         self._rate_limits[ip].record()
 
-    def validate_code(self, code: str, ip: str) -> WebSession | None:
+    def validate_code(self, code: str, ip: str) -> tuple[str, WebSession] | None:
         """Validate a one-time code and create a session if valid.
 
-        Returns the new WebSession on success, or None if the code is invalid,
+        Returns (token, WebSession) on success, or None if the code is invalid,
         expired, or the IP is rate-limited.
         """
+        self._cleanup_stale_entries()
+
         if self._is_rate_limited(ip):
             return None
 
@@ -168,7 +209,7 @@ class AuthManager:
             expires_at=expires_at,
         )
         self._sessions[token] = session
-        return session
+        return (token, session)
 
     def get_session(self, token: str) -> WebSession | None:
         """Return a session by token, or None if not found or expired."""
