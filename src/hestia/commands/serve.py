@@ -28,22 +28,32 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
     # we will close it centrally after everything stops.
     app.inference.close = _noop_close  # type: ignore[method-assign]
 
+    adapters: dict[str, Any] = {}
+
     try:
         if config.telegram.bot_token:
             from hestia.platforms.runners import run_telegram
+            from hestia.platforms.telegram_adapter import TelegramAdapter
 
-            tasks.append(asyncio.create_task(run_telegram(app, config)))
+            telegram_adapter = TelegramAdapter(config.telegram)
+            adapters["telegram"] = telegram_adapter
+            tasks.append(asyncio.create_task(run_telegram(app, config, adapter=telegram_adapter)))
 
         if config.matrix.access_token:
             from hestia.platforms.runners import run_matrix
+            from hestia.platforms.matrix_adapter import MatrixAdapter
 
-            tasks.append(asyncio.create_task(run_matrix(app, config)))
+            matrix_adapter = MatrixAdapter(config.matrix)
+            adapters["matrix"] = matrix_adapter
+            tasks.append(asyncio.create_task(run_matrix(app, config, adapter=matrix_adapter)))
 
         if config.web.enabled:
             from hestia.web.api import create_web_app
+            from hestia.web.auth import AuthManager, add_auth_middleware
             from hestia.web.context import WebContext, set_web_context
 
             web_app = create_web_app()
+            auth_manager = AuthManager(adapters=adapters, config=config.web)
             set_web_context(
                 WebContext(
                     session_store=app.session_store,
@@ -53,8 +63,10 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
                     trace_store=app.trace_store,
                     failure_store=app.failure_store,
                     app=app,
+                    auth_manager=auth_manager,
                 )
             )
+            add_auth_middleware(web_app, auth_manager, config.web)
             uvicorn_config = uvicorn.Config(
                 web_app,
                 host=config.web.host,

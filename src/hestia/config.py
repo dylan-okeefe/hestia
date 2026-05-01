@@ -440,6 +440,10 @@ class WebConfig(_ConfigFromEnv):
     session_lifetime_hours: int = 72
     code_expiry_seconds: int = 300
     code_length: int = 6
+    auth_enabled: bool = True
+    session_lifetime_hours: int = 72
+    code_expiry_seconds: int = 300
+    code_length: int = 6
 
 
 @dataclass
