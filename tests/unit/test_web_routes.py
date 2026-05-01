@@ -513,6 +513,15 @@ class TestConfigRoute:
         assert data["telegram"]["bot_token"] == "***"
         assert data["matrix"]["access_token"] == "***"
 
+    def test_get_config_schema(self, client: TestClient) -> None:
+        """GET /api/config/schema returns enum metadata."""
+        response = client.get("/api/config/schema")
+        assert response.status_code == 200
+        data = response.json()
+        assert "schema" in data
+        assert data["schema"]["trust.preset"]["type"] == "enum"
+        assert "paranoid" in data["schema"]["trust.preset"]["values"]
+
     def test_put_config_stub(self, client: TestClient, mock_app: MagicMock) -> None:
         """PUT /api/config returns 501 Not Implemented."""
         response = client.put("/api/config")
