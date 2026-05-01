@@ -174,3 +174,34 @@ style_profiles = sa.Table(
     sa.Index("idx_style_profiles_user", "platform", "platform_user"),
     sa.Index("idx_style_profiles_updated", "updated_at"),
 )
+
+workflows = sa.Table(
+    "workflows",
+    metadata,
+    sa.Column("id", sa.String, primary_key=True),
+    sa.Column("name", sa.String, nullable=False),
+    sa.Column("description", sa.String, nullable=False, default=""),
+    sa.Column("trigger_type", sa.String, nullable=False, default="manual"),
+    sa.Column("trigger_config", sa.Text, nullable=False, default="{}"),
+    sa.Column("created_at", sa.DateTime, nullable=False),
+    sa.Column("updated_at", sa.DateTime, nullable=False),
+)
+
+workflow_versions = sa.Table(
+    "workflow_versions",
+    metadata,
+    sa.Column("workflow_id", sa.String, sa.ForeignKey("workflows.id"), nullable=False),
+    sa.Column("version", sa.Integer, nullable=False),
+    sa.Column("nodes", sa.Text, nullable=False, default="[]"),
+    sa.Column("edges", sa.Text, nullable=False, default="[]"),
+    sa.Column("created_at", sa.DateTime, nullable=False),
+    sa.Column("is_active", sa.Boolean, nullable=False, default=False),
+    sa.PrimaryKeyConstraint("workflow_id", "version"),
+    sa.Index(
+        "ux_workflow_versions_active",
+        "workflow_id",
+        unique=True,
+        sqlite_where=sa.text("is_active = 1"),
+        postgresql_where=sa.text("is_active = 1"),
+    ),
+)
