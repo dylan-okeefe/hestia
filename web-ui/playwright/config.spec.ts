@@ -7,7 +7,7 @@ test.beforeEach(async ({ page }) => {
 
 test('config editor renders', async ({ page }) => {
   await page.goto('/config');
-  await expect(page.locator('text=Configuration')).toBeVisible();
+  await expect(page.locator('h1:has-text("Configuration")')).toBeVisible();
   await expect(page.locator('text=Trust Preset')).toBeVisible();
 });
 

@@ -160,6 +160,10 @@ export async function mockApis(page: Page) {
     await route.fulfill({ json: mockEgress });
   });
 
+  await page.route('/api/auth/status', async (route) => {
+    await route.fulfill({ json: { auth_enabled: false, authenticated: false } });
+  });
+
   await page.route('/api/config', async (route) => {
     const method = route.request().method();
     if (method === 'PUT') {
