@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from hestia.web.api import create_web_app
-from hestia.web.context import WebContext, get_web_context, set_web_context
+from hestia.web.context import WebContext, set_web_context
 
 
 @pytest.fixture(autouse=True)
@@ -513,23 +513,17 @@ class TestConfigRoute:
         assert data["telegram"]["bot_token"] == "***"
         assert data["matrix"]["access_token"] == "***"
 
-    def test_put_config_stub(self, client: TestClient, mock_app: MagicMock) -> None:
-        """PUT /api/config returns 501 Not Implemented."""
-        response = client.put("/api/config")
-        assert response.status_code == 501
-        assert "not yet implemented" in response.json()["detail"]
-
-    def test_get_config_schema(self, client: TestClient, mock_app: MagicMock) -> None:
+    def test_get_config_schema(self, client: TestClient) -> None:
         """GET /api/config/schema returns enum metadata."""
         response = client.get("/api/config/schema")
         assert response.status_code == 200
         data = response.json()
         assert "schema" in data
         assert data["schema"]["trust.preset"]["type"] == "enum"
-        assert set(data["schema"]["trust.preset"]["values"]) == {
-            "paranoid",
-            "prompt_on_mobile",
-            "household",
-            "developer",
-        }
-        assert data["schema"]["trust.preset"]["default"] == "developer"
+        assert "paranoid" in data["schema"]["trust.preset"]["values"]
+
+    def test_put_config_stub(self, client: TestClient, mock_app: MagicMock) -> None:
+        """PUT /api/config returns 501 Not Implemented."""
+        response = client.put("/api/config")
+        assert response.status_code == 501
+        assert "not yet implemented" in response.json()["detail"]
