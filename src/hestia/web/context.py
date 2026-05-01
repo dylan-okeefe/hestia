@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from hestia.app import AppContext
 from hestia.persistence.failure_store import FailureStore
@@ -11,6 +11,7 @@ from hestia.persistence.sessions import SessionStore
 from hestia.persistence.trace_store import TraceStore
 from hestia.reflection.store import ProposalStore
 from hestia.style.store import StyleProfileStore
+from hestia.web.auth import AuthManager
 
 
 @dataclass
@@ -24,6 +25,7 @@ class WebContext:
     trace_store: TraceStore
     failure_store: FailureStore
     app: AppContext
+    auth_manager: AuthManager | None = field(default=None)
 
 
 # Global singleton — adequate for single-worker uvicorn but will break

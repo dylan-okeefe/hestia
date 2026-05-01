@@ -13,6 +13,16 @@ router = APIRouter()
 
 _CTX_DEP = Depends(get_web_context)
 
+# Hard-coded schema metadata for config fields with closed value sets.
+# This can be derived from dataclass metadata in the future.
+_CONFIG_SCHEMA: dict[str, dict[str, Any]] = {
+    "trust.preset": {
+        "type": "enum",
+        "values": ["paranoid", "prompt_on_mobile", "household", "developer"],
+        "default": "developer",
+    },
+}
+
 
 def _mask_secrets(obj: Any) -> Any:
     """Recursively mask sensitive fields in config dicts."""
@@ -36,6 +46,12 @@ async def get_config(
     """Return running configuration with secrets masked."""
     raw = asdict(ctx.app.config)
     return cast(dict[str, Any], _mask_secrets(raw))
+
+
+@router.get("/config/schema")
+async def get_config_schema() -> dict[str, Any]:
+    """Return config field metadata for UI rendering."""
+    return {"schema": _CONFIG_SCHEMA}
 
 
 @router.put("/config")

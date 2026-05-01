@@ -436,6 +436,14 @@ class WebConfig(_ConfigFromEnv):
     enabled: bool = False
     host: str = "127.0.0.1"
     port: int = 8765
+    auth_enabled: bool = True
+    session_lifetime_hours: int = 72
+    code_expiry_seconds: int = 300
+    code_length: int = 6
+    auth_enabled: bool = True
+    session_lifetime_hours: int = 72
+    code_expiry_seconds: int = 300
+    code_length: int = 6
 
 
 @dataclass
