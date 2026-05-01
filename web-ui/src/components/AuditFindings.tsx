@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { runAudit } from '../api/client';
 
 interface Finding {
@@ -18,16 +18,24 @@ const severityOrder: Record<string, number> = { critical: 0, warning: 1, info: 2
 export default function AuditFindings({ findings, onRefresh }: AuditFindingsProps) {
   const [expanded, setExpanded] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+  const [cachedAt, setCachedAt] = useState<string | null>(null);
 
   const handleRun = async () => {
     setLoading(true);
     try {
       const data = await runAudit();
       onRefresh(data.findings || []);
+      if (data.cached_at) setCachedAt(data.cached_at);
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (findings.length === 0 && !loading) {
+      handleRun();
+    }
+  }, []);
 
   const sorted = [...findings].sort(
     (a, b) => (severityOrder[a.severity] ?? 99) - (severityOrder[b.severity] ?? 99)
@@ -52,6 +60,11 @@ export default function AuditFindings({ findings, onRefresh }: AuditFindingsProp
           {loading ? 'Running…' : 'Run audit'}
         </button>
       </div>
+      {cachedAt && (
+        <p style={{ fontSize: '0.8rem', color: '#888', marginTop: '-0.25rem', marginBottom: '0.5rem' }}>
+          Last checked: {cachedAt}
+        </p>
+      )}
       {sorted.length === 0 && <p>No findings.</p>}
       {sorted.map((f, idx) => (
         <div

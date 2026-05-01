@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { runDoctor } from '../api/client';
 
 interface Check {
@@ -15,16 +15,24 @@ interface DoctorCheckListProps {
 export default function DoctorCheckList({ checks, onRefresh }: DoctorCheckListProps) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [cachedAt, setCachedAt] = useState<string | null>(null);
 
   const handleRerun = async () => {
     setLoading(true);
     try {
       const data = await runDoctor();
       onRefresh(data.checks || []);
+      if (data.cached_at) setCachedAt(data.cached_at);
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (checks.length === 0 && !loading) {
+      handleRerun();
+    }
+  }, []);
 
   return (
     <div>
@@ -34,6 +42,11 @@ export default function DoctorCheckList({ checks, onRefresh }: DoctorCheckListPr
           {loading ? 'Running…' : 'Re-run checks'}
         </button>
       </div>
+      {cachedAt && (
+        <p style={{ fontSize: '0.8rem', color: '#888', marginTop: '-0.25rem', marginBottom: '0.5rem' }}>
+          Last checked: {cachedAt}
+        </p>
+      )}
       {checks.length === 0 && <p>No checks available.</p>}
       {checks.map((c) => (
         <div key={c.name}>

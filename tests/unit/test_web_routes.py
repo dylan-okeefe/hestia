@@ -435,7 +435,8 @@ class TestAuditRoute:
             instance.run_audit = AsyncMock(return_value=mock_report)
             response = client.get("/api/audit")
             assert response.status_code == 200
-            assert response.json() == {"findings": []}
+            assert response.json()["findings"] == []
+            assert response.json()["cached"] is False
             MockAuditor.assert_called_once_with(
                 config=mock_app.config,
                 tool_registry=mock_app.tool_registry,
