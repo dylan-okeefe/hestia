@@ -275,6 +275,13 @@ class WorkflowExecutor:
         Raises:
             ValueError: If the node type is not supported.
         """
+        from hestia.workflows.nodes import NODE_TYPES
+
+        executor_cls = NODE_TYPES.get(node.type)
+        if executor_cls is not None:
+            executor = executor_cls()
+            return await executor.execute(self._app, node, inputs)
+
         if node.type == "inference":
             prompt = inputs.get("prompt", str(inputs))
             response = await self._app.inference.chat(
