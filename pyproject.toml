@@ -32,6 +32,10 @@ voice = [
 browser = [
     "curl-cffi>=0.15.0",
 ]
+web = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.34.0",
+]
 
 [project.scripts]
 hestia = "hestia.cli:main"
