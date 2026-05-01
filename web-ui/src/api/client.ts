@@ -38,3 +38,25 @@ export async function rejectProposal(id: string, note: string) {
 export async function deferProposal(id: string) {
   return fetch(`${API_BASE}/proposals/${id}/defer`, { method: 'POST' });
 }
+
+export async function fetchStyleProfile(platform: string, user: string) {
+  const res = await fetch(`${API_BASE}/style/${encodeURIComponent(platform)}/${encodeURIComponent(user)}`);
+  if (!res.ok) throw new Error('Failed to fetch style');
+  return res.json();
+}
+
+export async function deleteStyleMetric(platform: string, user: string, metric: string) {
+  return fetch(`${API_BASE}/style/${encodeURIComponent(platform)}/${encodeURIComponent(user)}/${encodeURIComponent(metric)}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function fetchSchedulerTasks() {
+  const res = await fetch(`${API_BASE}/scheduler/tasks`);
+  if (!res.ok) throw new Error('Failed to fetch tasks');
+  return res.json();
+}
+
+export async function runTaskNow(id: string) {
+  return fetch(`${API_BASE}/scheduler/tasks/${id}/run`, { method: 'POST' });
+}
