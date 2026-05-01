@@ -9,6 +9,25 @@
 
 
 
+## 2026-04-30 — L105 Complete (Dashboard API Routes)
+
+**Outcome:** Built the complete REST API surface for the Hestia dashboard. All endpoints read from existing stores (no new persistence).
+
+**Changes:**
+- Created `src/hestia/web/context.py` with `WebContext` dataclass and `get_web_context()` dependency injection pattern
+- Created `src/hestia/web/routes/` with 9 route modules: sessions, proposals, style, scheduler, traces, doctor, audit, egress, config
+- Each module defines `router = APIRouter()` with appropriate GET/POST/DELETE handlers
+- Wired all routers into `src/hestia/web/api.py` with correct `/api/*` prefixes
+- Added store helper methods: `StyleProfileStore.delete_metric()`, `TraceStore.list_egress()`, `SchedulerStore.run_now()`
+- Set `WebContext` during `hestia serve` startup after stores are initialized
+- Added `tests/unit/test_web_routes.py` with 20 unit tests using `fastapi.testclient.TestClient` and mocked stores
+
+**Quality gate:** 1124 passed, 6 skipped; ruff clean on `src/hestia/web/`; mypy clean on `src/hestia/web/`.
+
+**Branch:** `feature/web-dashboard`
+
+---
+
 ## 2026-04-30 — L104 Complete (FastAPI Skeleton and Web Server Integration)
 
 **Outcome:** Added foundational web server infrastructure for the Hestia dashboard.
