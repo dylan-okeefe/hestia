@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
-import { fetchAuthStatus, setAuthToken } from '../api/client';
+import { fetchAuthStatus, setAuthToken, clearAuthToken } from '../api/client';
 
 interface AuthState {
   authenticated: boolean;
@@ -76,7 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   const logout = useCallback(() => {
-    setAuthToken(null);
+    clearAuthToken();
     setAuth({
       authenticated: false,
       authEnabled: true,
@@ -85,6 +85,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       availablePlatforms: auth.availablePlatforms,
     });
   }, [auth.availablePlatforms]);
+
+  useEffect(() => {
+    const handler = () => logout();
+    window.addEventListener('auth:unauthorized', handler);
+    return () => window.removeEventListener('auth:unauthorized', handler);
+  }, [logout]);
 
   return (
     <AuthContext.Provider value={{ auth, loading, login, logout, refresh }}>

@@ -7,6 +7,7 @@ import Scheduler from './pages/Scheduler';
 import Security from './pages/Security';
 import Config from './pages/Config';
 import Login from './pages/Login';
+import NotFound from './pages/NotFound';
 
 function AppContent() {
   const { auth, loading, logout } = useAuth();
@@ -17,10 +18,6 @@ function AppContent() {
         <p>Loading…</p>
       </div>
     );
-  }
-
-  if (auth.authEnabled && !auth.authenticated) {
-    return <Login />;
   }
 
   const navLink = (label: string, to: string) => (
@@ -40,39 +37,48 @@ function AppContent() {
   );
 
   return (
-    <BrowserRouter>
-      <nav style={{ padding: '0.75rem 1rem', borderBottom: '1px solid #ddd', display: 'flex', gap: '1rem', alignItems: 'center' }}>
-        {navLink('Dashboard', '/')}
-        {navLink('Proposals', '/proposals')}
-        {navLink('Style', '/style')}
-        {navLink('Scheduler', '/scheduler')}
-        {navLink('Security', '/security')}
-        {navLink('Config', '/config')}
-        {auth.authEnabled && (
-          <button
-            onClick={logout}
-            style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: '#666' }}
-          >
-            Log out
-          </button>
-        )}
-      </nav>
-      <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/proposals" element={<Proposals />} />
-        <Route path="/style" element={<StyleProfile />} />
-        <Route path="/scheduler" element={<Scheduler />} />
-        <Route path="/security" element={<Security />} />
-        <Route path="/config" element={<Config />} />
-      </Routes>
-    </BrowserRouter>
+    <>
+      {auth.authEnabled && !auth.authenticated ? (
+        <Login />
+      ) : (
+        <>
+          <nav style={{ padding: '0.75rem 1rem', borderBottom: '1px solid #ddd', display: 'flex', gap: '1rem', alignItems: 'center' }}>
+            {navLink('Dashboard', '/')}
+            {navLink('Proposals', '/proposals')}
+            {navLink('Style', '/style')}
+            {navLink('Scheduler', '/scheduler')}
+            {navLink('Security', '/security')}
+            {navLink('Config', '/config')}
+            {auth.authEnabled && (
+              <button
+                onClick={logout}
+                style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: '#666' }}
+              >
+                Log out
+              </button>
+            )}
+          </nav>
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/proposals" element={<Proposals />} />
+            <Route path="/style" element={<StyleProfile />} />
+            <Route path="/scheduler" element={<Scheduler />} />
+            <Route path="/security" element={<Security />} />
+            <Route path="/config" element={<Config />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </>
+      )}
+    </>
   );
 }
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <BrowserRouter>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </BrowserRouter>
   );
 }
