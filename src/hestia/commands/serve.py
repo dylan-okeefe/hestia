@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from typing import Any
 
@@ -39,8 +40,20 @@ async def cmd_serve(app: AppContext, config: Any) -> None:
 
         if config.web.enabled:
             from hestia.web.api import create_web_app
+            from hestia.web.context import WebContext, set_web_context
 
             web_app = create_web_app()
+            set_web_context(
+                WebContext(
+                    session_store=app.session_store,
+                    proposal_store=app.proposal_store,
+                    style_store=app.style_store,
+                    scheduler_store=app.scheduler_store,
+                    trace_store=app.trace_store,
+                    failure_store=app.failure_store,
+                    app=app,
+                )
+            )
             uvicorn_config = uvicorn.Config(
                 web_app,
                 host=config.web.host,
@@ -57,10 +70,8 @@ async def cmd_serve(app: AppContext, config: Any) -> None:
             click.echo("No platforms or web server configured. Exiting.")
             return
 
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await asyncio.gather(*tasks)
-        except asyncio.CancelledError:
-            pass
     finally:
         for task in tasks:
             if not task.done():
