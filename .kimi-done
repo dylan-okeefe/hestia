@@ -1,7 +1,7 @@
 HESTIA_KIMI_DONE=1
-LOOP=L101
-BRANCH=develop
-COMMIT=7dce229
-TESTS=1062 passed, 6 skipped (unit+integration)
+LOOP=L104
+BRANCH=feature/web-dashboard
+COMMIT=4d87b92
+TESTS=1104 passed, 6 skipped (unit+integration)
 RUFF_SRC=baseline (no new issues in changed files)
-MERGED=L89-L101
+MERGED=L89-L101,L104

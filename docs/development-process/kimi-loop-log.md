@@ -9,6 +9,24 @@
 
 
 
+## 2026-04-30 — L104 Complete (FastAPI Skeleton and Web Server Integration)
+
+**Outcome:** Added foundational web server infrastructure for the Hestia dashboard.
+
+**Changes:**
+- `pyproject.toml`: added `fastapi>=0.115.0` and `uvicorn>=0.34.0` to `[project.optional-dependencies]` under `web`
+- Created `src/hestia/web/` module: `__init__.py`, `api.py` (FastAPI app factory), `static/index.html` placeholder
+- Added `WebConfig` to `src/hestia/config.py` with `enabled`, `host`, `port` fields
+- Created `src/hestia/commands/serve.py` and wired `hestia serve` into `cli.py`
+- `serve` starts Telegram/Matrix adapters alongside uvicorn when `config.web.enabled=True`
+- Centralized inference client cleanup to avoid double-close when running multiple adapters
+
+**Quality gate:** 1104 passed, 6 skipped; ruff clean on changed files; mypy clean on changed files.
+
+**Branch:** `feature/web-dashboard`
+
+---
+
 ## 2026-04-30 — L101 Complete (Telegram Progressive Delivery)
 
 **Outcome:** Wired Telegram adapter to display streaming responses progressively with rate-limited edits.

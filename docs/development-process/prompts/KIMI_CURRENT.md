@@ -2,15 +2,15 @@
 
 **Orchestrator:** Kimi (self-orchestrating via subagents)
 
-**Last set by:** Kimi — 2026-04-30 (L89–L101 arc complete)
+**Last set by:** Kimi — 2026-04-30 (L104 complete)
 
 ---
 
 ## Current task
 
-**Status:** **IDLE — All queued work complete.**
+**Status:** **IDLE — L104 complete on `feature/web-dashboard`.**
 
-The April 29 review arc (L89–L101) is fully complete on feature branches. All 13 loops have been implemented, tested, and pushed to origin.
+The FastAPI skeleton and web server integration (L104) is complete on the `feature/web-dashboard` branch.
 
 ---
 
@@ -33,9 +33,17 @@ The April 29 review arc (L89–L101) is fully complete on feature branches. All 
 | L100 | `feature/l100-orchestrator-streaming` | **Complete, pushed** |
 | L101 | `feature/l101-telegram-progressive-delivery` | **Complete, pushed** |
 
+### L104 (Web dashboard skeleton)
+| Loop | Branch | Status |
+|------|--------|--------|
+| L104 | `feature/web-dashboard` | **Complete, committed** |
+
 ---
 
 ## What's queued (not authorized yet)
+
+### L105 — API routes
+- Next loop for the web dashboard: add API routes to the FastAPI app.
 
 ### Merge L89–L101 to develop
 - Sequential merge: L89 → L90 → ... → L101
