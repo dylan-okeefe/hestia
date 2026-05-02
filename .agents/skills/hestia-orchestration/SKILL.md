@@ -121,9 +121,10 @@ src/hestia/
 
 - **Primary development worktree:** `~/Hestia` (develop branch). All code changes, commits, and branch creation happen here.
 - **Personal runtime worktree:** `~/Hestia-runtime` (runtime branch). This is Dylan's live instance with Matrix chat configured for integration testing.
-- **Testing rule:** After implementing changes in `~/Hestia`, copy/move the relevant changed files to `~/Hestia-runtime` and run the full test suite there. Matrix integration tests only work in the runtime worktree.
-- **Preservation rule:** `~/Hestia-runtime` may have uncommitted runtime-specific customizations (e.g., DuckDuckGo fallback, Telegram HTML formatting). Never blindly overwrite files — apply fixes selectively so runtime customizations are preserved.
+- **Deployment rule:** When Dylan asks to "deploy to runtime" or "set up on Hestia-runtime", merge the development branch into a runtime-specific branch (e.g. `feature/<name>-runtime`) and check it out in `~/Hestia-runtime`. Do NOT cherry-pick or copy individual files unless explicitly instructed. The runtime should run the exact same code as the development branch.
+- **Preservation rule:** `~/Hestia-runtime` may have untracked runtime-specific files (e.g., `config.runtime.py`, `.env`, `hestia.db`, logs). These should be preserved. Only tracked files from the branch should be updated. Stash any local modifications before switching branches, then restore them if still relevant.
 - **Quality gates in runtime:** `cd ~/Hestia-runtime && uv run pytest tests/unit/ tests/integration/ -q` must pass after syncing.
+- **Restart rule:** After deploying to runtime, restart the services so the new code is loaded. Dylan typically runs: `nohup uv run --env-file .env hestia --config config.runtime.py serve > runtime-data/logs/hestia-serve.log 2>&1 &`
 
 ## When to ask Dylan vs. proceed
 
