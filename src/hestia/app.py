@@ -31,7 +31,7 @@ from hestia.persistence.failure_store import FailureStore
 from hestia.persistence.scheduler import SchedulerStore
 from hestia.persistence.sessions import SessionStore
 from hestia.persistence.trace_store import TraceStore
-from hestia.persistence.workflows import WorkflowStore
+from hestia.workflows.store import WorkflowStore
 from hestia.policy.default import DefaultPolicyEngine
 from hestia.reflection.runner import ReflectionRunner
 from hestia.reflection.scheduler import ReflectionScheduler
@@ -254,7 +254,7 @@ class AppContext:
         await self.trace_store.create_table()
         await self.proposal_store.create_table()
         await self.style_store.create_table()
-        await self.workflow_store.create_table()
+        await self.workflow_store.create_tables()
         self._bootstrapped = True
 
     def make_injection_scanner(self) -> InjectionScanner:
