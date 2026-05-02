@@ -80,7 +80,9 @@ async def list_workflows(
     """List all workflows."""
     workflows = await ctx.workflow_store.list_workflows()
     active_map = await ctx.workflow_store.get_active_versions_batch([wf.id for wf in workflows])
-    last_exec_map = await ctx.execution_store.get_last_execution_per_workflow([wf.id for wf in workflows])
+    last_exec_map = await ctx.execution_store.get_last_execution_per_workflow(
+        [wf.id for wf in workflows]
+    )
     result = []
     for wf in workflows:
         api_wf = _workflow_to_api(wf)
@@ -243,9 +245,7 @@ async def create_version(
             ),
             position=n.get("position", {"x": 0, "y": 0}),
             capabilities=(
-                n.get("capabilities", [])
-                if isinstance(n.get("capabilities"), list)
-                else []
+                n.get("capabilities", []) if isinstance(n.get("capabilities"), list) else []
             ),
         )
         for n in nodes_raw
