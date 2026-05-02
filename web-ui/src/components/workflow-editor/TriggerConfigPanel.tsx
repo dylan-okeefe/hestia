@@ -209,6 +209,7 @@ export default function TriggerConfigPanel({
       )}
       {triggerType === 'webhook' && workflowId && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.875rem' }}>
+          <span>Send POST requests to this URL</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <span>URL: {webhookUrl || `${window.location.origin}/api/webhooks/${workflowId}`}</span>
             <button

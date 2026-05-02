@@ -44,6 +44,9 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('test run shows results panel with status and node results', async ({ page }) => {
+  page.on('dialog', (dialog) => {
+    if (dialog.type() === 'confirm') dialog.accept().catch(() => {});
+  });
   await page.route('/api/workflows/**', async (route) => {
     const url = route.request().url();
     const method = route.request().method();
@@ -91,6 +94,9 @@ test('test run shows results panel with status and node results', async ({ page 
 });
 
 test('test run shows error on failure', async ({ page }) => {
+  page.on('dialog', (dialog) => {
+    if (dialog.type() === 'confirm') dialog.accept().catch(() => {});
+  });
   await page.route('/api/workflows/**', async (route) => {
     const url = route.request().url();
     const method = route.request().method();

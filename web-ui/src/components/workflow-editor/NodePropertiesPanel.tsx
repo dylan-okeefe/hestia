@@ -1,8 +1,11 @@
-import type { Node } from 'reactflow';
+import { useState } from 'react';
+import type { Node, Edge } from 'reactflow';
 import { EDITOR_NODE_TYPES } from './constants';
 
 interface NodePropertiesPanelProps {
   selectedNode: Node;
+  nodes: Node[];
+  edges: Edge[];
   onDeleteNode: (nodeId: string) => void;
   onUpdateNodeData: (key: string, value: unknown) => void;
   onChangeNodeType: (type: string) => void;
@@ -10,8 +13,138 @@ interface NodePropertiesPanelProps {
   platforms: string[];
 }
 
+function SyntaxHelp() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ marginTop: '0.5rem' }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        style={{ fontSize: '0.75rem', background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: '#2563eb' }}
+      >
+        {open ? 'Hide' : 'Show'} Syntax Help
+      </button>
+      {open && (
+        <div style={{ fontSize: '0.75rem', color: '#444', marginTop: '0.25rem', padding: '0.5rem', background: '#f9fafb', borderRadius: 4 }}>
+          <p style={{ margin: '0 0 0.25rem' }}><strong>Variables:</strong> input.field_name</p>
+          <p style={{ margin: '0 0 0.25rem' }}><strong>Comparisons:</strong> ==, !=, &lt;, &gt;, &lt;=, &gt;=</p>
+          <p style={{ margin: '0 0 0.25rem' }}><strong>Logic:</strong> and, or, not</p>
+          <p style={{ margin: '0 0 0.25rem' }}><strong>Arithmetic:</strong> +, -, *, / (no power)</p>
+          <p style={{ margin: '0 0 0.25rem' }}><strong>Literals:</strong> strings in quotes, numbers, True, False, None</p>
+          <p style={{ margin: 0 }}><strong>Examples:</strong> input.status == &quot;error&quot;, input.count &gt; 10 and input.retry, not input.skipped</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function UpstreamVariables({ nodeId, nodes, edges }: { nodeId: string; nodes: Node[]; edges: Edge[] }) {
+  const upstream = edges
+    .filter((e) => e.target === nodeId)
+    .map((e) => nodes.find((n) => n.id === e.source))
+    .filter(Boolean) as Node[];
+
+  if (upstream.length === 0) return null;
+
+  return (
+    <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.25rem' }}>
+      Available:{' '}
+      {upstream.map((n) => (
+        <code key={n.id} style={{ background: '#f3f4f6', padding: '0.125rem 0.25rem', borderRadius: 4 }}>
+          {n.id}.output
+        </code>
+      ))}
+    </div>
+  );
+}
+
+function TemplatePreview({ message }: { message: string }) {
+  const parts = message.split(/(\{\{[^}]+\}\})/g);
+  const count = message.length;
+  return (
+    <div style={{ marginTop: '0.5rem' }}>
+      <div style={{ fontSize: '0.875rem', marginBottom: '0.25rem' }}>Preview</div>
+      <div style={{ fontSize: '0.875rem', padding: '0.5rem', background: '#f9fafb', borderRadius: 4, minHeight: '1.5rem' }}>
+        {parts.map((part, i) =>
+          part.match(/\{\{[^}]+\}\}/) ? (
+            <span key={i} style={{ background: '#dbeafe', color: '#1e40af', padding: '0.125rem 0.25rem', borderRadius: 4, fontSize: '0.75rem' }}>
+              {part}
+            </span>
+          ) : (
+            <span key={i}>{part}</span>
+          )
+        )}
+      </div>
+      <div style={{ fontSize: '0.75rem', marginTop: '0.25rem', color: count > 4096 ? '#dc2626' : count > 4000 ? '#ca8a04' : '#666' }}>
+        {count} characters
+        {count > 4096 && ' — Exceeds Telegram limit'}
+        {count > 4000 && count <= 4096 && ' — May exceed Telegram limit'}
+      </div>
+    </div>
+  );
+}
+
+function JsonTextarea({
+  value,
+  onChange,
+  rows,
+  label,
+  validate,
+}: {
+  value: object;
+  onChange: (v: object) => void;
+  rows: number;
+  label: string;
+  validate?: boolean;
+}) {
+  const [text, setText] = useState(() => JSON.stringify(value, null, 2));
+  const [error, setError] = useState<string | null>(null);
+
+  const handleBlur = () => {
+    if (!validate) {
+      try {
+        onChange(JSON.parse(text));
+        setError(null);
+      } catch {
+        // ignore invalid JSON
+      }
+      return;
+    }
+    try {
+      const parsed = JSON.parse(text);
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        setError('Headers must be a JSON object, not an array or primitive.');
+        return;
+      }
+      onChange(parsed);
+      setError(null);
+    } catch {
+      setError('Invalid JSON — headers must be a JSON object like {"Authorization": "Bearer ..."}');
+    }
+  };
+
+  return (
+    <div style={{ marginBottom: '0.75rem' }}>
+      <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>{label}</label>
+      <textarea
+        rows={rows}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={handleBlur}
+        style={{
+          width: '100%',
+          border: error ? '2px solid #dc2626' : '1px solid #ccc',
+        }}
+        aria-invalid={error ? 'true' : 'false'}
+      />
+      {error && <span style={{ color: '#dc2626', fontSize: '0.75rem' }}>{error}</span>}
+    </div>
+  );
+}
+
 export default function NodePropertiesPanel({
   selectedNode,
+  nodes,
+  edges,
   onDeleteNode,
   onUpdateNodeData,
   onChangeNodeType,
@@ -84,34 +217,31 @@ export default function NodePropertiesPanel({
               ))}
             </select>
           </div>
-          <div style={{ marginBottom: '0.75rem' }}>
-            <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Args (JSON)</label>
-            <textarea
-              rows={4}
-              defaultValue={JSON.stringify((selectedNode.data.args as object) || {}, null, 2)}
-              onBlur={(e) => {
-                try {
-                  onUpdateNodeData('args', JSON.parse(e.target.value));
-                } catch {
-                  // ignore invalid JSON
-                }
-              }}
-              style={{ width: '100%' }}
-            />
-          </div>
+          <JsonTextarea
+            label="Args (JSON)"
+            value={(selectedNode.data.args as object) || {}}
+            onChange={(v) => onUpdateNodeData('args', v)}
+            rows={4}
+          />
         </>
       )}
 
       {selectedNode.type === 'llm_decision' && (
         <>
           <div style={{ marginBottom: '0.75rem' }}>
-            <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Prompt</label>
+            <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>
+              Prompt{' '}
+              <span style={{ fontSize: '0.75rem', color: '#666', fontWeight: 'normal' }}>
+                Use {'{{node_id.field}}'} to reference upstream outputs
+              </span>
+            </label>
             <textarea
               rows={4}
               value={(selectedNode.data.prompt as string) || ''}
               onChange={(e) => onUpdateNodeData('prompt', e.target.value)}
               style={{ width: '100%' }}
             />
+            <UpstreamVariables nodeId={selectedNode.id} nodes={nodes} edges={edges} />
           </div>
           <div style={{ marginBottom: '0.75rem' }}>
             <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Branches</label>
@@ -204,6 +334,7 @@ export default function NodePropertiesPanel({
               onChange={(e) => onUpdateNodeData('message', e.target.value)}
               style={{ width: '100%' }}
             />
+            <TemplatePreview message={(selectedNode.data.message as string) || ''} />
           </div>
           <div style={{ marginBottom: '0.75rem' }}>
             <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Target User</label>
@@ -225,7 +356,7 @@ export default function NodePropertiesPanel({
               onChange={(e) => onUpdateNodeData('method', e.target.value)}
               style={{ width: '100%' }}
             >
-              {['GET', 'POST', 'PUT', 'DELETE'].map((m: string) => (
+              {['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'].map((m: string) => (
                 <option key={m} value={m}>
                   {m}
                 </option>
@@ -240,21 +371,13 @@ export default function NodePropertiesPanel({
               style={{ width: '100%' }}
             />
           </div>
-          <div style={{ marginBottom: '0.75rem' }}>
-            <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Headers (JSON)</label>
-            <textarea
-              rows={3}
-              defaultValue={JSON.stringify((selectedNode.data.headers as object) || {}, null, 2)}
-              onBlur={(e) => {
-                try {
-                  onUpdateNodeData('headers', JSON.parse(e.target.value));
-                } catch {
-                  // ignore invalid JSON
-                }
-              }}
-              style={{ width: '100%' }}
-            />
-          </div>
+          <JsonTextarea
+            label="Headers (JSON)"
+            value={(selectedNode.data.headers as object) || {}}
+            onChange={(v) => onUpdateNodeData('headers', v)}
+            rows={3}
+            validate
+          />
           <div style={{ marginBottom: '0.75rem' }}>
             <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Body</label>
             <textarea
@@ -277,9 +400,7 @@ export default function NodePropertiesPanel({
             style={{ width: '100%' }}
             aria-label="Expression"
           />
-          <span style={{ fontSize: '0.75rem', color: '#666' }}>
-            Supported: comparisons (==, !=, &lt;, &gt;, &lt;=, &gt;=), logic (and, or, not), arithmetic (+, -, *, /). No function calls or power operator.
-          </span>
+          <SyntaxHelp />
         </div>
       )}
 

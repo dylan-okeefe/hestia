@@ -227,7 +227,6 @@ export default function WorkflowEditor() {
       }
       if ((e.key === 's' || e.key === 'S') && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
-        console.log('CTRL_S_HANDLER', typeof handleSaveRef.current);
         handleSaveRef.current();
         return;
       }
@@ -532,6 +531,7 @@ export default function WorkflowEditor() {
         onSelectExecution={setSelectedExecution}
         testResult={testResult}
         testError={testError}
+        nodes={nodes}
       />
       <TriggerConfigPanel
         triggerType={triggerType}
@@ -570,6 +570,8 @@ export default function WorkflowEditor() {
         {selectedNode && (
           <NodePropertiesPanel
             selectedNode={selectedNode}
+            nodes={nodes}
+            edges={edges}
             onDeleteNode={handleDeleteNode}
             onUpdateNodeData={updateSelectedNodeData}
             onChangeNodeType={handleChangeNodeType}

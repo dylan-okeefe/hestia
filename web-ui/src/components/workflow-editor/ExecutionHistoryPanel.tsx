@@ -1,4 +1,5 @@
 import { Fragment } from 'react';
+import type { Node } from 'reactflow';
 import type { ExecutionRecord, ExecutionResult } from '../../api/client';
 
 interface ExecutionHistoryPanelProps {
@@ -10,6 +11,16 @@ interface ExecutionHistoryPanelProps {
   onSelectExecution: (id: string | null) => void;
   testResult: ExecutionResult | null;
   testError: string | null;
+  nodes?: Node[];
+}
+
+function formatNodeLabel(nodeId: string, nodes?: Node[]) {
+  const node = nodes?.find((n) => n.id === nodeId);
+  if (node) {
+    const label = (node.data?.label as string) || nodeId;
+    return `"${label}" (${node.type || 'default'})`;
+  }
+  return `${nodeId} (deleted node)`;
 }
 
 export default function ExecutionHistoryPanel({
@@ -21,6 +32,7 @@ export default function ExecutionHistoryPanel({
   onSelectExecution,
   testResult,
   testError,
+  nodes,
 }: ExecutionHistoryPanelProps) {
   if (!show && !testResult && !testError) return null;
 
@@ -81,7 +93,9 @@ export default function ExecutionHistoryPanel({
                             <tbody>
                               {ex.node_results.map((nr) => (
                                 <tr key={nr.node_id} style={{ borderBottom: '1px solid #eee' }}>
-                                  <td style={{ padding: '0.25rem' }}>{nr.node_id}</td>
+                                  <td style={{ padding: '0.25rem' }}>
+                                    {formatNodeLabel(nr.node_id, nodes)}
+                                  </td>
                                   <td style={{ padding: '0.25rem', color: nr.status === 'ok' ? 'green' : 'red' }}>
                                     {nr.status}
                                   </td>
@@ -133,7 +147,9 @@ export default function ExecutionHistoryPanel({
                 <tbody>
                   {testResult.node_results.map((nr) => (
                     <tr key={nr.node_id} style={{ borderBottom: '1px solid #eee' }}>
-                      <td style={{ padding: '0.25rem' }}>{nr.node_id}</td>
+                      <td style={{ padding: '0.25rem' }}>
+                        {formatNodeLabel(nr.node_id, nodes)}
+                      </td>
                       <td style={{ padding: '0.25rem', color: nr.status === 'ok' ? 'green' : 'red' }}>{nr.status}</td>
                       <td style={{ padding: '0.25rem' }}>{nr.elapsed_ms}</td>
                       <td style={{ padding: '0.25rem' }}>{nr.prompt_tokens}</td>
