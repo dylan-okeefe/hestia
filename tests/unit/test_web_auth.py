@@ -502,6 +502,7 @@ class TestAuthRoutes:
             scheduler_store=AsyncMock(),
             trace_store=AsyncMock(),
             failure_store=AsyncMock(),
+            workflow_store=AsyncMock(),
             app=mock_app,
             auth_manager=auth_manager,
         )

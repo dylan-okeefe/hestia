@@ -187,12 +187,13 @@ workflows = sa.Table(
     sa.Column("trust_level", sa.String, nullable=False, default="paranoid"),
     sa.Column("created_at", sa.DateTime, nullable=False),
     sa.Column("updated_at", sa.DateTime, nullable=False),
+    sa.Index("idx_workflows_created", "created_at"),
 )
 
 workflow_versions = sa.Table(
     "workflow_versions",
     metadata,
-    sa.Column("workflow_id", sa.String, sa.ForeignKey("workflows.id"), nullable=False),
+    sa.Column("workflow_id", sa.String, sa.ForeignKey("workflows.id", ondelete="CASCADE"), nullable=False),
     sa.Column("version", sa.Integer, nullable=False),
     sa.Column("nodes", sa.Text, nullable=False, default="[]"),
     sa.Column("edges", sa.Text, nullable=False, default="[]"),
@@ -206,4 +207,5 @@ workflow_versions = sa.Table(
         sqlite_where=sa.text("is_active = 1"),
         postgresql_where=sa.text("is_active = 1"),
     ),
+    sa.Index("idx_workflow_versions_workflow", "workflow_id", "version"),
 )
