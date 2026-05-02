@@ -29,11 +29,12 @@ class SendMessageNode:
             Dict with send status and metadata.
 
         Raises:
-            ValueError: If ``platform``, ``user``, or ``text`` is missing.
+            ValueError: If ``platform``, ``target_user``/``user``,
+            or ``message``/``text`` is missing.
         """
         platform = _resolve("platform", node, inputs)
-        user = _resolve("user", node, inputs)
-        text = _resolve("text", node, inputs)
+        user = _resolve("target_user", node, inputs, fallback_key="user")
+        text = _resolve("message", node, inputs, fallback_key="text")
 
         if not platform:
             raise ValueError(
@@ -41,11 +42,11 @@ class SendMessageNode:
             )
         if not user:
             raise ValueError(
-                "SendMessageNode requires 'user' in config or inputs"
+                "SendMessageNode requires 'target_user' (or 'user') in config or inputs"
             )
         if not text:
             raise ValueError(
-                "SendMessageNode requires 'text' in config or inputs"
+                "SendMessageNode requires 'message' (or 'text') in config or inputs"
             )
 
         notifier = PlatformNotifier(app.config)
@@ -59,6 +60,23 @@ class SendMessageNode:
         }
 
 
-def _resolve(key: str, node: WorkflowNode, inputs: dict[str, Any]) -> Any:
-    """Resolve a value from ``inputs`` or ``node.config``."""
-    return inputs.get(key, node.config.get(key))
+def _resolve(
+    key: str, node: WorkflowNode, inputs: dict[str, Any], fallback_key: str | None = None
+) -> Any:
+    """Resolve a value from ``inputs`` or ``node.config``.
+
+    If ``fallback_key`` is provided, it is tried after ``key``.
+    """
+    value = inputs.get(key)
+    if value is not None:
+        return value
+    if fallback_key is not None:
+        value = inputs.get(fallback_key)
+        if value is not None:
+            return value
+    value = node.config.get(key)
+    if value is not None:
+        return value
+    if fallback_key is not None:
+        return node.config.get(fallback_key)
+    return None
