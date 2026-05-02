@@ -23,6 +23,9 @@ from hestia.tools.registry import ToolNotFoundError, ToolRegistry
 from hestia.tools.types import ToolCallResult
 
 if TYPE_CHECKING:
+    from hestia.events.bus import EventBus
+
+if TYPE_CHECKING:
     from hestia.context.builder import ContextBuilder
     from hestia.persistence.sessions import SessionStore
 
@@ -48,7 +51,8 @@ class TurnExecution:
         max_iterations: int = 10,
         max_tool_calls_per_turn: int = 10,
         stream: bool = False,
-    ):
+        event_bus: "EventBus | None" = None,
+    ) -> None:
         self._tools = tool_registry
         self._inference = inference_client
         self._policy = policy
@@ -59,6 +63,7 @@ class TurnExecution:
         self._max_iterations = max_iterations
         self._max_tool_calls_per_turn = max_tool_calls_per_turn
         self._stream = stream
+        self._event_bus = event_bus
 
         # Meta-tool dispatch table — adding a new meta-tool is one line.
         self._meta_tools: dict[
@@ -350,6 +355,16 @@ class TurnExecution:
                     result = ToolCallResult.error(
                         f"Tool {tc.name} failed: {exc}", error_type=type(exc).__name__
                     )
+                    if self._event_bus is not None:
+                        await self._event_bus.publish(
+                            "tool_error",
+                            {
+                                "tool_name": tc.name,
+                                "error": str(exc),
+                                "error_type": type(exc).__name__,
+                                "platform": "orchestrator",
+                            },
+                        )
                 return idx, result
 
             for idx, result in await asyncio.gather(

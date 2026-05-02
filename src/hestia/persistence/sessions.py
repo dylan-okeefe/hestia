@@ -25,6 +25,7 @@ from hestia.persistence.db import Database
 from hestia.persistence.schema import messages, sessions
 
 if TYPE_CHECKING:
+    from hestia.events.bus import EventBus
     from hestia.orchestrator.types import Turn, TurnTransition
 
 logger = logging.getLogger(__name__)
@@ -45,9 +46,10 @@ def _generate_session_id(platform: str, platform_user: str) -> str:
 class SessionStore:
     """Typed CRUD wrapper for session persistence."""
 
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, event_bus: EventBus | None = None) -> None:
         """Initialize with a Database instance."""
         self._db = db
+        self._event_bus = event_bus
 
     async def get_or_create_session(self, platform: str, platform_user: str) -> Session:
         """Get the user's active session, or create one atomically.
@@ -109,6 +111,15 @@ class SessionStore:
                 # We won the race (or there was no race): the row we just
                 # inserted IS the active session. Commit and return it.
                 await conn.commit()
+                if self._event_bus is not None:
+                    await self._event_bus.publish(
+                        "session_started",
+                        {
+                            "session_id": new_session.id,
+                            "platform": platform,
+                            "platform_user": platform_user,
+                        },
+                    )
                 return new_session
 
             # ON CONFLICT DO NOTHING swallowed the insert — another concurrent
@@ -246,6 +257,16 @@ class SessionStore:
                 )
             await conn.execute(insert)
             await conn.commit()
+
+        if self._event_bus is not None:
+            await self._event_bus.publish(
+                "session_started",
+                {
+                    "session_id": new_session.id,
+                    "platform": platform,
+                    "platform_user": platform_user,
+                },
+            )
 
         return new_session
 

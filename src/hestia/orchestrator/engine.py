@@ -44,6 +44,7 @@ from hestia.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
     from hestia.config import StyleConfig
+    from hestia.events.bus import EventBus
     from hestia.persistence.failure_store import FailureStore
     from hestia.persistence.trace_store import TraceStore
     from hestia.style.store import StyleProfileStore
@@ -74,6 +75,7 @@ class Orchestrator:
         style_config: "StyleConfig | None" = None,
         rate_limiter: SessionRateLimiter | None = None,
         stream: bool = False,
+        event_bus: "EventBus | None" = None,
     ):
         """Initialize the orchestrator."""
         self._inference = inference
@@ -94,6 +96,7 @@ class Orchestrator:
         self._style_config = style_config
         self._rate_limiter = rate_limiter
         self._stream = stream
+        self._event_bus = event_bus
 
         self._assembly = TurnAssembly(
             context_builder=context_builder,
@@ -117,6 +120,7 @@ class Orchestrator:
             max_iterations=max_iterations,
             max_tool_calls_per_turn=max_tool_calls_per_turn,
             stream=stream,
+            event_bus=event_bus,
         )
 
         self._finalization = TurnFinalization(

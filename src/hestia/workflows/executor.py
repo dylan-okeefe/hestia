@@ -330,6 +330,16 @@ class WorkflowExecutor:
             await self._execution_store.save_execution(
                 result, workflow_id, version.version, trigger_payload
             )
+        if self._app.event_bus is not None:
+            await self._app.event_bus.publish(
+                "workflow_completed",
+                {
+                    "workflow_id": workflow_id,
+                    "source_workflow_id": workflow_id,
+                    "status": result.status,
+                    "platform": "workflow",
+                },
+            )
         return result
 
     async def _run_node(self, node: WorkflowNode, inputs: dict[str, Any]) -> _NodeOutput:

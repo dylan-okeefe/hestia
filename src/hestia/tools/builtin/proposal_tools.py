@@ -8,6 +8,9 @@ from hestia.reflection.types import ProposalStatus
 from hestia.tools.capabilities import SELF_MANAGEMENT
 from hestia.tools.metadata import tool
 
+if __import__("typing").TYPE_CHECKING:
+    from hestia.events.bus import EventBus
+
 
 def make_list_proposals_tool(
     proposal_store: ProposalStore,
@@ -96,6 +99,7 @@ def make_show_proposal_tool(
 
 def make_accept_proposal_tool(
     proposal_store: ProposalStore,
+    event_bus: "EventBus | None" = None,
 ) -> Callable[..., Coroutine[Any, Any, str]]:
     """Create an accept_proposal tool bound to a ProposalStore instance."""
 
@@ -118,9 +122,19 @@ def make_accept_proposal_tool(
         Returns:
             Confirmation or error message.
         """
+        proposal = await proposal_store.get(proposal_id)
         ok = await proposal_store.update_status(proposal_id, "accepted", review_note=note)
         if not ok:
             return f"No proposal with id {proposal_id}"
+        if event_bus is not None:
+            await event_bus.publish(
+                "proposal_approved",
+                {
+                    "proposal_id": proposal_id,
+                    "proposal_type": proposal.type if proposal is not None else None,
+                    "platform": "tool",
+                },
+            )
         return f"Accepted proposal {proposal_id}"
 
     return accept_proposal
@@ -128,6 +142,7 @@ def make_accept_proposal_tool(
 
 def make_reject_proposal_tool(
     proposal_store: ProposalStore,
+    event_bus: "EventBus | None" = None,
 ) -> Callable[..., Coroutine[Any, Any, str]]:
     """Create a reject_proposal tool bound to a ProposalStore instance."""
 
@@ -150,9 +165,19 @@ def make_reject_proposal_tool(
         Returns:
             Confirmation or error message.
         """
+        proposal = await proposal_store.get(proposal_id)
         ok = await proposal_store.update_status(proposal_id, "rejected", review_note=note)
         if not ok:
             return f"No proposal with id {proposal_id}"
+        if event_bus is not None:
+            await event_bus.publish(
+                "proposal_rejected",
+                {
+                    "proposal_id": proposal_id,
+                    "proposal_type": proposal.type if proposal is not None else None,
+                    "platform": "tool",
+                },
+            )
         return f"Rejected proposal {proposal_id}"
 
     return reject_proposal
