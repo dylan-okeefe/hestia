@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
+import secrets
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -10,10 +13,9 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.responses import JSONResponse
 
+from hestia.web.context import WebContext, get_web_context
 from hestia.workflows.executor import WorkflowExecutor
 from hestia.workflows.models import Workflow, WorkflowEdge, WorkflowNode, WorkflowVersion
-from hestia.workflows.store import WorkflowStore
-from hestia.web.context import WebContext, get_web_context
 
 router = APIRouter()
 
@@ -91,12 +93,17 @@ async def create_workflow(
     if not name or not isinstance(name, str):
         raise HTTPException(status_code=400, detail="name is required and must be a string")
 
+    trigger_type = payload.get("trigger_type", "manual")
+    trigger_config = payload.get("trigger_config", {})
+    if trigger_type == "webhook" and "secret" not in trigger_config:
+        trigger_config = {**trigger_config, "secret": secrets.token_urlsafe(32)}
+
     wf = Workflow(
         id=str(uuid.uuid4()),
         name=name,
         description=payload.get("description", ""),
-        trigger_type=payload.get("trigger_type", "manual"),
-        trigger_config=payload.get("trigger_config", {}),
+        trigger_type=trigger_type,
+        trigger_config=trigger_config,
     )
     await ctx.workflow_store.save_workflow(wf)
     return _workflow_to_api(wf)
@@ -105,6 +112,7 @@ async def create_workflow(
 @router.get("/workflows/{workflow_id}")
 async def get_workflow(
     workflow_id: str,
+    request: Request,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """Get a workflow by ID."""
@@ -116,6 +124,10 @@ async def get_workflow(
     active = await ctx.workflow_store.get_active_version(workflow_id)
     if active is not None:
         api_wf["active_version_id"] = f"{active.workflow_id}:{active.version}"
+    if api_wf["trigger_type"] == "webhook":
+        endpoint = api_wf["trigger_config"].get("endpoint") or workflow_id
+        api_wf["webhook_url"] = f"{request.base_url}api/webhooks/{endpoint}"
+        api_wf["secret"] = api_wf["trigger_config"].get("secret", "")
     return api_wf
 
 
@@ -190,7 +202,11 @@ async def create_version(
             id=n.get("id", str(uuid.uuid4())),
             type=n.get("type", "default"),
             label=n.get("data", {}).get("label", "") if isinstance(n.get("data"), dict) else "",
-            config={k: v for k, v in n.get("data", {}).items() if k != "label"} if isinstance(n.get("data"), dict) else {},
+            config=(
+                {k: v for k, v in n.get("data", {}).items() if k != "label"}
+                if isinstance(n.get("data"), dict)
+                else {}
+            ),
             position=n.get("position", {"x": 0, "y": 0}),
         )
         for n in nodes_raw
@@ -233,8 +249,8 @@ async def activate_version(
         version_str = version_id
     try:
         version_num = int(version_str)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid version ID")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid version ID") from exc
 
     ok = await ctx.workflow_store.activate_version(workflow_id, version_num)
     if not ok:
@@ -249,11 +265,42 @@ async def receive_webhook(
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """Receive a webhook payload and publish a webhook_received event."""
+    body_bytes = await request.body()
+
+    workflows = await ctx.workflow_store.list_workflows()
+    matching = [
+        wf
+        for wf in workflows
+        if wf.trigger_type == "webhook"
+        and (
+            wf.trigger_config.get("endpoint") == endpoint
+            or wf.trigger_config.get("endpoint") is None
+        )
+    ]
+    if not matching:
+        raise HTTPException(status_code=404, detail="Webhook endpoint not found")
+
+    secrets_list = [wf.trigger_config.get("secret", "") for wf in matching]
+    secrets_list = [s for s in secrets_list if s]
+
+    signature = request.headers.get("X-Webhook-Signature", "")
+    if not signature:
+        raise HTTPException(status_code=401, detail="Missing X-Webhook-Signature header")
+
+    valid = False
+    for secret in secrets_list:
+        expected = hmac.new(secret.encode(), body_bytes, hashlib.sha256).hexdigest()
+        if hmac.compare_digest(expected, signature):
+            valid = True
+            break
+
+    if not valid:
+        raise HTTPException(status_code=401, detail="Invalid webhook signature")
+
     try:
-        body = await request.json()
+        body = json.loads(body_bytes)
     except Exception:
-        raw = await request.body()
-        body = raw.decode("utf-8")
+        body = body_bytes.decode("utf-8")
 
     event_bus = ctx.app.event_bus
     if event_bus is None:
