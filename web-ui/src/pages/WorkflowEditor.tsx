@@ -27,6 +27,7 @@ import {
   SendMessageNode,
   HttpRequestNode,
   ConditionNode,
+  InvestigateNode,
 } from '../components/workflow-nodes';
 
 const EDITOR_NODE_TYPES = [
@@ -36,6 +37,7 @@ const EDITOR_NODE_TYPES = [
   'send_message',
   'http_request',
   'condition',
+  'investigate',
 ] as const;
 
 const nodeTypesMap = {
@@ -44,6 +46,7 @@ const nodeTypesMap = {
   send_message: SendMessageNode,
   http_request: HttpRequestNode,
   condition: ConditionNode,
+  investigate: InvestigateNode,
 };
 
 export default function WorkflowEditor() {
@@ -113,6 +116,8 @@ export default function WorkflowEditor() {
             return { label: 'HTTP Request', url: '', method: 'GET', headers: {}, body: '' };
           case 'condition':
             return { label: 'Condition', expression: '' };
+          case 'investigate':
+            return { label: 'Investigate', topic: '', depth: 'shallow', tools: '' };
           default:
             return { label: 'New Node' };
         }
@@ -494,6 +499,39 @@ export default function WorkflowEditor() {
                   style={{ width: '100%' }}
                 />
               </div>
+            )}
+
+            {selectedNode.type === 'investigate' && (
+              <>
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Topic</label>
+                  <textarea
+                    rows={4}
+                    value={(selectedNode.data.topic as string) || ''}
+                    onChange={(e) => updateSelectedNodeData('topic', e.target.value)}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Depth</label>
+                  <select
+                    value={(selectedNode.data.depth as string) || 'shallow'}
+                    onChange={(e) => updateSelectedNodeData('depth', e.target.value)}
+                    style={{ width: '100%' }}
+                  >
+                    <option value="shallow">shallow</option>
+                    <option value="deep">deep</option>
+                  </select>
+                </div>
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Tools (comma-separated)</label>
+                  <input
+                    value={(selectedNode.data.tools as string) || ''}
+                    onChange={(e) => updateSelectedNodeData('tools', e.target.value)}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+              </>
             )}
           </div>
         )}
