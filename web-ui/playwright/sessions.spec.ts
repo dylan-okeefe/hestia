@@ -7,6 +7,6 @@ test.beforeEach(async ({ page }) => {
 
 test('session timeline renders', async ({ page }) => {
   await page.goto('/');
-  await expect(page.locator('text=Sessions')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Sessions' })).toBeVisible();
   await expect(page.locator('[data-testid="session-row"]')).toHaveCount(1);
 });

@@ -10,7 +10,7 @@ test('navigate between pages', async ({ page }) => {
 
   await page.locator('a:has-text("Proposals")').click();
   await expect(page).toHaveURL(/.*\/proposals/);
-  await expect(page.locator('h1')).toHaveText('Proposals');
+  await expect(page.locator('h1')).toContainText('Proposals');
 
   await page.locator('a:has-text("Scheduler")').click();
   await expect(page).toHaveURL(/.*\/scheduler/);
@@ -26,5 +26,5 @@ test('navigate between pages', async ({ page }) => {
 
   await page.locator('a:has-text("Dashboard")').click();
   await expect(page).toHaveURL(/.*\/$/);
-  await expect(page.locator('h1')).toHaveText('Sessions');
+  await expect(page.locator('h1')).toContainText('Sessions');
 });

@@ -21,6 +21,7 @@ import {
   fetchExecutions,
   type WorkflowNode,
   type WorkflowEdge,
+  type WorkflowVersion,
   type ExecutionResult,
   type ExecutionRecord,
 } from '../api/client';
@@ -55,8 +56,9 @@ const nodeTypesMap = {
 export default function WorkflowEditor() {
   const { id } = useParams<{ id: string }>();
   const [workflowName, setWorkflowName] = useState('');
-  const [, setVersions] = useState<{ id: string; version_number: number; activated_at: string | null }[]>([]);
+  const [versions, setVersions] = useState<WorkflowVersion[]>([]);
   const [activeVersionId, setActiveVersionId] = useState<string | null>(null);
+  const [showVersions, setShowVersions] = useState(false);
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
@@ -134,6 +136,27 @@ export default function WorkflowEditor() {
     setSelectedNode(null);
   }, []);
 
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent) => {
+      if ((event.key === 'Delete' || event.key === 'Backspace') && selectedNode) {
+        event.preventDefault();
+        setNodes((nds) => nds.filter((n) => n.id !== selectedNode.id));
+        setEdges((eds) => eds.filter((e) => e.source !== selectedNode.id && e.target !== selectedNode.id));
+        setSelectedNode(null);
+      }
+    },
+    [selectedNode, setNodes, setEdges]
+  );
+
+  const onNodesDelete = useCallback(
+    (deletedNodes: Node[]) => {
+      if (selectedNode && deletedNodes.find((n) => n.id === selectedNode.id)) {
+        setSelectedNode(null);
+      }
+    },
+    [selectedNode]
+  );
+
   const handleAddNode = () => {
     const newNode: Node = {
       id: `node_${Date.now()}`,
@@ -181,7 +204,39 @@ export default function WorkflowEditor() {
       }));
       const version = await saveWorkflowVersion(id, serialNodes, serialEdges);
       setVersions((vs) => [...vs, version]);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSaveAndActivate = async () => {
+    if (!id) return;
+    setSaving(true);
+    try {
+      const serialNodes: WorkflowNode[] = nodes.map((n) => ({
+        id: n.id,
+        type: n.type || 'default',
+        position: n.position,
+        data: n.data,
+      }));
+      const serialEdges: WorkflowEdge[] = edges.map((e) => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        type: e.type,
+      }));
+      const version = await saveWorkflowVersion(id, serialNodes, serialEdges);
+      setVersions((vs) => [...vs, version]);
+      await activateWorkflowVersion(id, version.id);
       setActiveVersionId(version.id);
+      setVersions((vs) =>
+        vs.map((v) =>
+          v.id === version.id ? { ...v, activated_at: new Date().toISOString() } : { ...v, activated_at: null }
+        )
+      );
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed');
@@ -260,7 +315,26 @@ export default function WorkflowEditor() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 60px)' }}>
       <div style={{ padding: '0.5rem 1rem', borderBottom: '1px solid #ddd', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-        <h2 style={{ margin: 0 }}>{workflowName}</h2>
+        <input
+          value={workflowName}
+          onChange={(e) => setWorkflowName(e.target.value)}
+          onBlur={async () => {
+            if (!id) return;
+            try {
+              await updateWorkflow(id, { name: workflowName });
+              setError(null);
+            } catch (err) {
+              setError(err instanceof Error ? err.message : 'Failed to rename workflow');
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.currentTarget.blur();
+            }
+          }}
+          style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold', border: 'none', borderBottom: '1px solid transparent', background: 'transparent', minWidth: 120 }}
+          aria-label="Workflow name"
+        />
         <button onClick={handleAddNode}>Add Node</button>
         <select
           value={addNodeType}
@@ -277,6 +351,9 @@ export default function WorkflowEditor() {
         <button onClick={handleSave} disabled={saving}>
           {saving ? 'Saving…' : 'Save Version'}
         </button>
+        <button onClick={handleSaveAndActivate} disabled={saving}>
+          {saving ? 'Saving…' : 'Save & Activate'}
+        </button>
         <button onClick={handleActivate} disabled={!activeVersionId}>
           Activate Version
         </button>
@@ -286,8 +363,87 @@ export default function WorkflowEditor() {
         <button onClick={() => setShowHistory((s) => !s)}>
           {showHistory ? 'Hide History' : 'Execution History'}
         </button>
+        <button onClick={() => setShowVersions((s) => !s)}>
+          {showVersions ? 'Hide Versions' : 'Versions'}
+        </button>
         {error && !testError && <span style={{ color: 'red', marginLeft: 'auto' }}>{error}</span>}
       </div>
+      {showVersions && (
+        <div
+          style={{
+            borderTop: '1px solid #ddd',
+            padding: '1rem',
+            maxHeight: '40vh',
+            overflowY: 'auto',
+            background: '#fafafa',
+          }}
+        >
+          <strong>Versions</strong>
+          {versions.length === 0 && <p>No versions yet.</p>}
+          {versions.length > 0 && (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem', marginTop: '0.5rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid #ccc' }}>
+                  <th style={{ textAlign: 'left', padding: '0.25rem' }}>Number</th>
+                  <th style={{ textAlign: 'left', padding: '0.25rem' }}>Date</th>
+                  <th style={{ textAlign: 'left', padding: '0.25rem' }}>Status</th>
+                  <th style={{ textAlign: 'left', padding: '0.25rem' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {versions.map((v) => (
+                  <tr key={v.id} style={{ borderBottom: '1px solid #eee' }}>
+                    <td style={{ padding: '0.25rem' }}>{v.version_number}</td>
+                    <td style={{ padding: '0.25rem' }}>{new Date(v.created_at).toLocaleString()}</td>
+                    <td style={{ padding: '0.25rem' }}>
+                      {v.id === activeVersionId && (
+                        <span style={{ display: 'inline-block', padding: '0.125rem 0.5rem', borderRadius: '9999px', background: '#dcfce7', color: '#166534', fontSize: '0.75rem', fontWeight: 600 }}>
+                          Active
+                        </span>
+                      )}
+                    </td>
+                    <td style={{ padding: '0.25rem' }}>
+                      <button
+                        onClick={() => {
+                          const version = versions.find((ver) => ver.id === v.id);
+                          if (version) {
+                            setNodes(version.nodes.map((n) => ({ ...n, data: n.data || {} })));
+                            setEdges(version.edges.map((e) => ({ ...e })));
+                          }
+                        }}
+                        style={{ padding: '0.125rem 0.5rem', fontSize: '0.75rem', marginRight: '0.5rem' }}
+                      >
+                        View
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (!id) return;
+                          try {
+                            await activateWorkflowVersion(id, v.id);
+                            setActiveVersionId(v.id);
+                            setVersions((vs) =>
+                              vs.map((ver) =>
+                                ver.id === v.id ? { ...ver, activated_at: new Date().toISOString() } : { ...ver, activated_at: null }
+                              )
+                            );
+                            setError(null);
+                          } catch (err) {
+                            setError(err instanceof Error ? err.message : 'Activation failed');
+                          }
+                        }}
+                        disabled={v.id === activeVersionId}
+                        style={{ padding: '0.125rem 0.5rem', fontSize: '0.75rem' }}
+                      >
+                        Activate
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
       {showHistory && (
         <div
           style={{
@@ -519,7 +675,7 @@ export default function WorkflowEditor() {
         </button>
       </div>
       <div style={{ display: 'flex', flex: 1 }}>
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1 }} onKeyDown={handleKeyDown} tabIndex={0} data-testid="reactflow-wrapper">
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -528,6 +684,7 @@ export default function WorkflowEditor() {
             onConnect={onConnect}
             onNodeClick={onNodeClick}
             onPaneClick={onPaneClick}
+            onNodesDelete={onNodesDelete}
             nodeTypes={nodeTypesMap}
             fitView
           >
@@ -547,6 +704,18 @@ export default function WorkflowEditor() {
             }}
           >
             <h3>Properties</h3>
+            <div style={{ marginBottom: '0.75rem' }}>
+              <button
+                onClick={() => {
+                  setNodes((nds) => nds.filter((n) => n.id !== selectedNode.id));
+                  setEdges((eds) => eds.filter((e) => e.source !== selectedNode.id && e.target !== selectedNode.id));
+                  setSelectedNode(null);
+                }}
+                style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', color: 'red', marginBottom: '0.5rem' }}
+              >
+                Delete Node
+              </button>
+            </div>
             <div style={{ marginBottom: '0.75rem' }}>
               <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>ID</label>
               <input value={selectedNode.id} readOnly style={{ width: '100%' }} />

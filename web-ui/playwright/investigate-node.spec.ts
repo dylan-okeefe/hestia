@@ -7,7 +7,7 @@ test.beforeEach(async ({ page }) => {
 
 test('adds an investigate node and shows its properties', async ({ page }) => {
   await page.goto('/workflows/wf_001');
-  await expect(page.locator('text=Morning Greeting')).toBeVisible();
+  await expect(page.locator('[aria-label="Workflow name"]')).toHaveValue('Morning Greeting');
 
   await page.locator('select[aria-label="Node type to add"]').selectOption('investigate');
   await page.locator('button:has-text("Add Node")').click();
