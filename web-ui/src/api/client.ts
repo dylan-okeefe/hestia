@@ -43,7 +43,7 @@ async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
 export async function fetchAuthStatus() {
   const res = await apiFetch(`${API_BASE}/auth/status`);
   if (!res.ok) throw new Error('Failed to fetch auth status');
-  return res.json();
+  return res.json() as Promise<{ auth_enabled: boolean; authenticated: boolean; platform?: string; platform_user?: string; available_platforms?: string[] }>;
 }
 
 export async function requestCode(platform: string) {
@@ -319,4 +319,10 @@ export async function fetchExecutions(workflowId: string, limit = 50) {
   const res = await apiFetch(`${API_BASE}/workflows/${workflowId}/executions?limit=${limit}`);
   if (!res.ok) throw new Error('Failed to fetch executions');
   return res.json() as Promise<{ executions: ExecutionRecord[] }>;
+}
+
+export async function fetchTools() {
+  const res = await apiFetch(`${API_BASE}/tools`);
+  if (!res.ok) throw new Error('Failed to fetch tools');
+  return res.json() as Promise<{ tools: string[] }>;
 }
