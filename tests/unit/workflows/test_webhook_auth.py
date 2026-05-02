@@ -91,7 +91,7 @@ class TestWebhookHMAC:
 
         ctx = ctx_mod._ctx
         assert ctx is not None
-        mock_event_bus = MagicMock()
+        mock_event_bus = AsyncMock()
         mock_app.event_bus = mock_event_bus
         wf = Workflow(
             id="wf1",

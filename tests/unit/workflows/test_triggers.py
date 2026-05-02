@@ -559,3 +559,356 @@ class TestReload:
         await reg.reload_one("wf_1")
 
         assert reg._workflows == []
+
+
+class TestEmailReceived:
+    """Tests for email_received events."""
+
+    @pytest.mark.asyncio
+    async def test_email_matches_from_address(
+        self,
+        workflow_store: WorkflowStore,
+        event_bus: EventBus,
+        executed: list[tuple[Workflow, Any]],
+    ) -> None:
+        """Workflow runs when the from_address matches."""
+        wf = Workflow(
+            id="wf_1",
+            name="Email Alert",
+            trigger_type="email",
+            trigger_config={"from_address": "alert@example.com"},
+        )
+        await workflow_store.save_workflow(wf)
+
+        async def executor(workflow: Workflow, payload: Any) -> None:
+            executed.append((workflow, payload))
+
+        reg = TriggerRegistry(event_bus, workflow_store, executor)
+        await reg.start()
+
+        await event_bus.publish(
+            "email_received",
+            {"from": "alert@example.com", "subject": "Test", "body": "Hello"},
+        )
+        await asyncio.sleep(0.01)
+
+        assert len(executed) == 1
+
+    @pytest.mark.asyncio
+    async def test_email_matches_subject(
+        self,
+        workflow_store: WorkflowStore,
+        event_bus: EventBus,
+        executed: list[tuple[Workflow, Any]],
+    ) -> None:
+        """Workflow runs when the subject_contains matches."""
+        wf = Workflow(
+            id="wf_1",
+            name="Email Alert",
+            trigger_type="email",
+            trigger_config={"subject_contains": "URGENT"},
+        )
+        await workflow_store.save_workflow(wf)
+
+        async def executor(workflow: Workflow, payload: Any) -> None:
+            executed.append((workflow, payload))
+
+        reg = TriggerRegistry(event_bus, workflow_store, executor)
+        await reg.start()
+
+        await event_bus.publish(
+            "email_received",
+            {"from": "foo@bar.com", "subject": "URGENT: Action needed", "body": "Hello"},
+        )
+        await asyncio.sleep(0.01)
+
+        assert len(executed) == 1
+
+    @pytest.mark.asyncio
+    async def test_email_no_match(
+        self,
+        workflow_store: WorkflowStore,
+        event_bus: EventBus,
+        executed: list[tuple[Workflow, Any]],
+    ) -> None:
+        """Workflow is skipped when the email does not match."""
+        wf = Workflow(
+            id="wf_1",
+            name="Email Alert",
+            trigger_type="email",
+            trigger_config={"from_address": "alert@example.com"},
+        )
+        await workflow_store.save_workflow(wf)
+
+        async def executor(workflow: Workflow, payload: Any) -> None:
+            executed.append((workflow, payload))
+
+        reg = TriggerRegistry(event_bus, workflow_store, executor)
+        await reg.start()
+
+        await event_bus.publish(
+            "email_received",
+            {"from": "other@example.com", "subject": "Test", "body": "Hello"},
+        )
+        await asyncio.sleep(0.01)
+
+        assert executed == []
+
+    @pytest.mark.asyncio
+    async def test_email_no_config_matches_any(
+        self,
+        workflow_store: WorkflowStore,
+        event_bus: EventBus,
+        executed: list[tuple[Workflow, Any]],
+    ) -> None:
+        """Workflow with no email config matches any email."""
+        wf = Workflow(
+            id="wf_1",
+            name="Catch All",
+            trigger_type="email",
+            trigger_config={},
+        )
+        await workflow_store.save_workflow(wf)
+
+        async def executor(workflow: Workflow, payload: Any) -> None:
+            executed.append((workflow, payload))
+
+        reg = TriggerRegistry(event_bus, workflow_store, executor)
+        await reg.start()
+
+        await event_bus.publish(
+            "email_received",
+            {"from": "anyone@example.com", "subject": "Test", "body": "Hello"},
+        )
+        await asyncio.sleep(0.01)
+
+        assert len(executed) == 1
+
+
+class TestWorkflowCompleted:
+    """Tests for workflow_completed events (chaining)."""
+
+    @pytest.mark.asyncio
+    async def test_workflow_chain(
+        self,
+        workflow_store: WorkflowStore,
+        event_bus: EventBus,
+        executed: list[tuple[Workflow, Any]],
+    ) -> None:
+        """Workflow B fires when workflow A completes."""
+        wf_a = Workflow(id="wf_a", name="A", trigger_type="manual")
+        wf_b = Workflow(
+            id="wf_b",
+            name="B",
+            trigger_type="workflow_completed",
+            trigger_config={"source_workflow_id": "wf_a"},
+        )
+        await workflow_store.save_workflow(wf_a)
+        await workflow_store.save_workflow(wf_b)
+
+        async def executor(workflow: Workflow, payload: Any) -> None:
+            executed.append((workflow, payload))
+
+        reg = TriggerRegistry(event_bus, workflow_store, executor)
+        await reg.start()
+
+        await event_bus.publish(
+            "workflow_completed",
+            {"workflow_id": "wf_a", "source_workflow_id": "wf_a", "status": "ok"},
+        )
+        await asyncio.sleep(0.01)
+
+        assert len(executed) == 1
+        assert executed[0][0].id == "wf_b"
+
+    @pytest.mark.asyncio
+    async def test_workflow_chain_mismatch(
+        self,
+        workflow_store: WorkflowStore,
+        event_bus: EventBus,
+        executed: list[tuple[Workflow, Any]],
+    ) -> None:
+        """Workflow B is skipped when source workflow does not match."""
+        wf_b = Workflow(
+            id="wf_b",
+            name="B",
+            trigger_type="workflow_completed",
+            trigger_config={"source_workflow_id": "wf_a"},
+        )
+        await workflow_store.save_workflow(wf_b)
+
+        async def executor(workflow: Workflow, payload: Any) -> None:
+            executed.append((workflow, payload))
+
+        reg = TriggerRegistry(event_bus, workflow_store, executor)
+        await reg.start()
+
+        await event_bus.publish(
+            "workflow_completed",
+            {"workflow_id": "wf_c", "source_workflow_id": "wf_c", "status": "ok"},
+        )
+        await asyncio.sleep(0.01)
+
+        assert executed == []
+
+
+class TestToolError:
+    """Tests for tool_error events."""
+
+    @pytest.mark.asyncio
+    async def test_tool_error_matches(
+        self,
+        workflow_store: WorkflowStore,
+        event_bus: EventBus,
+        executed: list[tuple[Workflow, Any]],
+    ) -> None:
+        """Workflow runs when the tool_name matches."""
+        wf = Workflow(
+            id="wf_1",
+            name="Error Handler",
+            trigger_type="tool_error",
+            trigger_config={"tool_name": "web_search"},
+        )
+        await workflow_store.save_workflow(wf)
+
+        async def executor(workflow: Workflow, payload: Any) -> None:
+            executed.append((workflow, payload))
+
+        reg = TriggerRegistry(event_bus, workflow_store, executor)
+        await reg.start()
+
+        await event_bus.publish(
+            "tool_error",
+            {"tool_name": "web_search", "error": "Timeout", "platform": "orchestrator"},
+        )
+        await asyncio.sleep(0.01)
+
+        assert len(executed) == 1
+
+    @pytest.mark.asyncio
+    async def test_tool_error_mismatch(
+        self,
+        workflow_store: WorkflowStore,
+        event_bus: EventBus,
+        executed: list[tuple[Workflow, Any]],
+    ) -> None:
+        """Workflow is skipped when the tool_name does not match."""
+        wf = Workflow(
+            id="wf_1",
+            name="Error Handler",
+            trigger_type="tool_error",
+            trigger_config={"tool_name": "web_search"},
+        )
+        await workflow_store.save_workflow(wf)
+
+        async def executor(workflow: Workflow, payload: Any) -> None:
+            executed.append((workflow, payload))
+
+        reg = TriggerRegistry(event_bus, workflow_store, executor)
+        await reg.start()
+
+        await event_bus.publish(
+            "tool_error",
+            {"tool_name": "terminal", "error": "Timeout", "platform": "orchestrator"},
+        )
+        await asyncio.sleep(0.01)
+
+        assert executed == []
+
+
+class TestSessionStarted:
+    """Tests for session_started events."""
+
+    @pytest.mark.asyncio
+    async def test_session_started_always_matches(
+        self,
+        workflow_store: WorkflowStore,
+        event_bus: EventBus,
+        executed: list[tuple[Workflow, Any]],
+    ) -> None:
+        """Workflow runs on any session_started event."""
+        wf = Workflow(
+            id="wf_1",
+            name="Welcome",
+            trigger_type="session_started",
+        )
+        await workflow_store.save_workflow(wf)
+
+        async def executor(workflow: Workflow, payload: Any) -> None:
+            executed.append((workflow, payload))
+
+        reg = TriggerRegistry(event_bus, workflow_store, executor)
+        await reg.start()
+
+        await event_bus.publish(
+            "session_started",
+            {"session_id": "sess_1", "platform": "telegram", "platform_user": "u1"},
+        )
+        await asyncio.sleep(0.01)
+
+        assert len(executed) == 1
+        assert executed[0][0].id == "wf_1"
+
+
+class TestProposalEvents:
+    """Tests for proposal_approved and proposal_rejected events."""
+
+    @pytest.mark.asyncio
+    async def test_proposal_approved_matches_type(
+        self,
+        workflow_store: WorkflowStore,
+        event_bus: EventBus,
+        executed: list[tuple[Workflow, Any]],
+    ) -> None:
+        """Workflow runs when the proposal_type matches."""
+        wf = Workflow(
+            id="wf_1",
+            name="Policy Handler",
+            trigger_type="proposal_approved",
+            trigger_config={"proposal_type": "policy_tweak"},
+        )
+        await workflow_store.save_workflow(wf)
+
+        async def executor(workflow: Workflow, payload: Any) -> None:
+            executed.append((workflow, payload))
+
+        reg = TriggerRegistry(event_bus, workflow_store, executor)
+        await reg.start()
+
+        await event_bus.publish(
+            "proposal_approved",
+            {"proposal_id": "p1", "proposal_type": "policy_tweak", "platform": "web"},
+        )
+        await asyncio.sleep(0.01)
+
+        assert len(executed) == 1
+
+    @pytest.mark.asyncio
+    async def test_proposal_rejected_mismatch(
+        self,
+        workflow_store: WorkflowStore,
+        event_bus: EventBus,
+        executed: list[tuple[Workflow, Any]],
+    ) -> None:
+        """Workflow is skipped when the proposal_type does not match."""
+        wf = Workflow(
+            id="wf_1",
+            name="Policy Handler",
+            trigger_type="proposal_rejected",
+            trigger_config={"proposal_type": "policy_tweak"},
+        )
+        await workflow_store.save_workflow(wf)
+
+        async def executor(workflow: Workflow, payload: Any) -> None:
+            executed.append((workflow, payload))
+
+        reg = TriggerRegistry(event_bus, workflow_store, executor)
+        await reg.start()
+
+        await event_bus.publish(
+            "proposal_rejected",
+            {"proposal_id": "p1", "proposal_type": "tool_fix", "platform": "web"},
+        )
+        await asyncio.sleep(0.01)
+
+        assert executed == []
