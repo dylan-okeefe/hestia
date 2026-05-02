@@ -91,7 +91,7 @@ class TestWebhookHMAC:
 
         ctx = ctx_mod._ctx
         assert ctx is not None
-        mock_event_bus = MagicMock()
+        mock_event_bus = AsyncMock()
         mock_app.event_bus = mock_event_bus
         wf = Workflow(
             id="wf1",
@@ -112,7 +112,7 @@ class TestWebhookHMAC:
         )
         assert response.status_code == 202
         assert response.json()["received"] is True
-        mock_event_bus.publish.assert_called_once()
+        mock_event_bus.publish.assert_awaited_once()
 
     def test_missing_header_returns_401(self, client: TestClient, mock_app: MagicMock) -> None:
         """A request without the X-Webhook-Signature header is rejected."""
