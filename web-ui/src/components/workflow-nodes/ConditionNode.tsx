@@ -22,7 +22,42 @@ export default function ConditionNode({ data }: NodeProps) {
       <Handle type="target" position={Position.Top} style={{ background: '#555' }} />
       <div style={{ fontWeight: 600, marginBottom: 4 }}>{label}</div>
       <div style={{ fontSize: '0.75rem' }}>🔀 {snippet || '—'}</div>
-      <Handle type="source" position={Position.Bottom} style={{ background: '#555' }} />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        id="true"
+        style={{ background: '#22c55e', left: '30%' }}
+      />
+      <span
+        style={{
+          position: 'absolute',
+          bottom: -16,
+          left: '30%',
+          transform: 'translateX(-50%)',
+          fontSize: '0.65rem',
+          color: '#713f12',
+        }}
+      >
+        true
+      </span>
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        id="false"
+        style={{ background: '#ef4444', left: '70%' }}
+      />
+      <span
+        style={{
+          position: 'absolute',
+          bottom: -16,
+          left: '70%',
+          transform: 'translateX(-50%)',
+          fontSize: '0.65rem',
+          color: '#713f12',
+        }}
+      >
+        false
+      </span>
     </div>
   );
 }
