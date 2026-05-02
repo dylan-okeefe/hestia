@@ -19,6 +19,7 @@ import {
   testRunWorkflow,
   type WorkflowNode,
   type WorkflowEdge,
+  type ExecutionResult,
 } from '../api/client';
 import {
   ToolCallNode,
@@ -57,6 +58,8 @@ export default function WorkflowEditor() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<ExecutionResult | null>(null);
+  const [testError, setTestError] = useState<string | null>(null);
   const [addNodeType, setAddNodeType] = useState<string>('default');
 
   useEffect(() => {
@@ -162,10 +165,14 @@ export default function WorkflowEditor() {
   const handleTestRun = async () => {
     if (!id) return;
     setTesting(true);
+    setTestResult(null);
+    setTestError(null);
     try {
-      await testRunWorkflow(id);
+      const result = await testRunWorkflow(id);
+      setTestResult(result);
       setError(null);
     } catch (err) {
+      setTestError(err instanceof Error ? err.message : 'Test run failed');
       setError(err instanceof Error ? err.message : 'Test run failed');
     } finally {
       setTesting(false);
@@ -216,8 +223,72 @@ export default function WorkflowEditor() {
         <button onClick={handleTestRun} disabled={testing}>
           {testing ? 'Running…' : 'Test Run'}
         </button>
-        {error && <span style={{ color: 'red', marginLeft: 'auto' }}>{error}</span>}
+        {error && !testError && <span style={{ color: 'red', marginLeft: 'auto' }}>{error}</span>}
       </div>
+      {(testResult || testError) && (
+        <div
+          style={{
+            borderTop: '1px solid #ddd',
+            padding: '1rem',
+            maxHeight: '40vh',
+            overflowY: 'auto',
+            background: '#fafafa',
+          }}
+        >
+          {testResult && (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.5rem' }}>
+                <strong>Status:</strong>
+                <span
+                  style={{
+                    color: testResult.status === 'ok' ? 'green' : 'red',
+                    fontWeight: 'bold',
+                  }}
+                >
+                  {testResult.status}
+                </span>
+                <span>
+                  <strong>Total time:</strong> {testResult.total_elapsed_ms}ms
+                </span>
+                <span>
+                  <strong>Tokens:</strong> {testResult.total_prompt_tokens} prompt + {testResult.total_completion_tokens} completion
+                </span>
+              </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #ccc' }}>
+                    <th style={{ textAlign: 'left', padding: '0.25rem' }}>Node</th>
+                    <th style={{ textAlign: 'left', padding: '0.25rem' }}>Status</th>
+                    <th style={{ textAlign: 'left', padding: '0.25rem' }}>Time (ms)</th>
+                    <th style={{ textAlign: 'left', padding: '0.25rem' }}>Prompt</th>
+                    <th style={{ textAlign: 'left', padding: '0.25rem' }}>Completion</th>
+                    <th style={{ textAlign: 'left', padding: '0.25rem' }}>Output</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {testResult.node_results.map((nr) => (
+                    <tr key={nr.node_id} style={{ borderBottom: '1px solid #eee' }}>
+                      <td style={{ padding: '0.25rem' }}>{nr.node_id}</td>
+                      <td style={{ padding: '0.25rem', color: nr.status === 'ok' ? 'green' : 'red' }}>{nr.status}</td>
+                      <td style={{ padding: '0.25rem' }}>{nr.elapsed_ms}</td>
+                      <td style={{ padding: '0.25rem' }}>{nr.prompt_tokens}</td>
+                      <td style={{ padding: '0.25rem' }}>{nr.completion_tokens}</td>
+                      <td style={{ padding: '0.25rem' }}>
+                        {typeof nr.output === 'string' ? nr.output : JSON.stringify(nr.output)?.slice(0, 100)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+          {testError && (
+            <div style={{ color: 'red' }}>
+              <strong>Test Run Failed:</strong> {testError}
+            </div>
+          )}
+        </div>
+      )}
       <div style={{ display: 'flex', flex: 1 }}>
         <div style={{ flex: 1 }}>
           <ReactFlow

@@ -42,7 +42,7 @@ async def test_selects_branch(app: AppContext) -> None:
     executor = LLMDecisionNode()
     result = await executor.execute(app, node, {"value": 42})
 
-    assert result == "a"
+    assert result.content == "a"
     app.inference.chat.assert_awaited_once()
 
 
@@ -69,4 +69,4 @@ async def test_returns_raw_when_no_branches(app: AppContext) -> None:
     executor = LLMDecisionNode()
     result = await executor.execute(app, node, {})
 
-    assert result == "yes"
+    assert result.content == "yes"

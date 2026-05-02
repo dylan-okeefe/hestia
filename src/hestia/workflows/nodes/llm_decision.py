@@ -66,4 +66,4 @@ class LLMDecisionNode:
                 branches,
             )
 
-        return branch
+        return response

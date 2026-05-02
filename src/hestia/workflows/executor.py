@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
 from hestia.app import AppContext
-from hestia.core.types import Message
+from hestia.core.types import ChatResponse, Message
 from hestia.tools.capabilities import (
     EMAIL_SEND,
     MEMORY_READ,
@@ -108,6 +109,15 @@ def _resolve_inputs(
 
 
 @dataclass
+class _NodeOutput:
+    """Internal wrapper for node execution output with token usage."""
+
+    value: Any
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+
+
+@dataclass
 class NodeResult:
     """Result of executing a single workflow node."""
 
@@ -115,6 +125,9 @@ class NodeResult:
     status: str  # "ok" | "failed"
     output: Any = None
     error: str | None = None
+    elapsed_ms: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
 
 
 @dataclass
@@ -125,6 +138,9 @@ class ExecutionResult:
     status: str  # "ok" | "failed"
     node_results: list[NodeResult] = field(default_factory=list)
     outputs: dict[str, Any] = field(default_factory=dict)
+    total_elapsed_ms: int = 0
+    total_prompt_tokens: int = 0
+    total_completion_tokens: int = 0
 
 
 class WorkflowExecutor:
@@ -151,6 +167,7 @@ class WorkflowExecutor:
         Returns:
             ExecutionResult containing the status and results of all nodes.
         """
+        started_at = time.perf_counter()
         store = WorkflowStore(self._app.db)
         workflow = await store.get_workflow(workflow_id)
         if workflow is None:
@@ -182,6 +199,8 @@ class WorkflowExecutor:
 
         node_results: list[NodeResult] = []
         outputs: dict[str, Any] = {"trigger": trigger_payload}
+        total_prompt_tokens = 0
+        total_completion_tokens = 0
 
         try:
             order = _topological_sort(version.nodes, version.edges)
@@ -230,14 +249,17 @@ class WorkflowExecutor:
                 else:
                     inputs["trigger"] = trigger_payload
 
+            node_start = time.perf_counter()
             try:
-                output = await self._run_node(node, inputs)
+                node_output = await self._run_node(node, inputs)
             except Exception as exc:
                 logger.exception("Node %s failed in workflow %s", node.id, workflow_id)
+                elapsed_ms = int((time.perf_counter() - node_start) * 1000)
                 result = NodeResult(
                     node_id=node.id,
                     status="failed",
                     error=str(exc),
+                    elapsed_ms=elapsed_ms,
                 )
                 node_results.append(result)
                 return ExecutionResult(
@@ -247,22 +269,32 @@ class WorkflowExecutor:
                     outputs=outputs,
                 )
 
+            elapsed_ms = int((time.perf_counter() - node_start) * 1000)
             result = NodeResult(
                 node_id=node.id,
                 status="ok",
-                output=output,
+                output=node_output.value,
+                elapsed_ms=elapsed_ms,
+                prompt_tokens=node_output.prompt_tokens,
+                completion_tokens=node_output.completion_tokens,
             )
             node_results.append(result)
-            outputs[node.id] = output
+            outputs[node.id] = node_output.value
+            total_prompt_tokens += node_output.prompt_tokens
+            total_completion_tokens += node_output.completion_tokens
 
+        total_elapsed_ms = int((time.perf_counter() - started_at) * 1000)
         return ExecutionResult(
             workflow_id=workflow_id,
             status="ok",
             node_results=node_results,
             outputs=outputs,
+            total_elapsed_ms=total_elapsed_ms,
+            total_prompt_tokens=total_prompt_tokens,
+            total_completion_tokens=total_completion_tokens,
         )
 
-    async def _run_node(self, node: WorkflowNode, inputs: dict[str, Any]) -> Any:
+    async def _run_node(self, node: WorkflowNode, inputs: dict[str, Any]) -> _NodeOutput:
         """Execute a single node by delegating to the app context.
 
         Args:
@@ -270,7 +302,7 @@ class WorkflowExecutor:
             inputs: Resolved inputs for this node.
 
         Returns:
-            The node's output.
+            A ``_NodeOutput`` wrapping the node's output and any token usage.
 
         Raises:
             ValueError: If the node type is not supported.
@@ -280,7 +312,14 @@ class WorkflowExecutor:
         executor_cls = NODE_TYPES.get(node.type)
         if executor_cls is not None:
             executor = executor_cls()
-            return await executor.execute(self._app, node, inputs)
+            raw = await executor.execute(self._app, node, inputs)
+            if isinstance(raw, ChatResponse):
+                return _NodeOutput(
+                    value=raw.content,
+                    prompt_tokens=raw.prompt_tokens,
+                    completion_tokens=raw.completion_tokens,
+                )
+            return _NodeOutput(value=raw)
 
         if node.type == "inference":
             prompt = inputs.get("prompt", str(inputs))
@@ -288,8 +327,12 @@ class WorkflowExecutor:
                 messages=[Message(role="user", content=prompt)],
                 tools=None,
             )
-            return response.content
+            return _NodeOutput(
+                value=response.content,
+                prompt_tokens=response.prompt_tokens,
+                completion_tokens=response.completion_tokens,
+            )
 
         # Treat node type as a tool name by default
         result = await self._app.tool_registry.call(node.type, inputs)
-        return result.content
+        return _NodeOutput(value=result.content)

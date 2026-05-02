@@ -244,7 +244,7 @@ export async function mockApis(page: Page) {
         await route.fulfill({ json: mockWorkflowVersions });
       }
     } else if (url.includes('/test-run')) {
-      await route.fulfill({ json: { result: 'ok' } });
+      await route.fulfill({ json: { status: 'ok', total_elapsed_ms: 0, total_prompt_tokens: 0, total_completion_tokens: 0, node_results: [], outputs: {} } });
     } else {
       await route.fulfill({ json: mockWorkflows.workflows[0] });
     }

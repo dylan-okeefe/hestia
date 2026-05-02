@@ -8,6 +8,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from hestia.workflows.executor import WorkflowExecutor
 from hestia.workflows.models import Workflow, WorkflowEdge, WorkflowNode, WorkflowVersion
 from hestia.workflows.store import WorkflowStore
 from hestia.web.context import WebContext, get_web_context
@@ -236,3 +237,42 @@ async def activate_version(
     if not ok:
         raise HTTPException(status_code=404, detail="Workflow or version not found")
     return {"activated": True, "version": version_num}
+
+
+@router.post("/workflows/{workflow_id}/test-run")
+async def test_run_workflow(
+    workflow_id: str,
+    payload: dict[str, Any] | None = None,
+    ctx: WebContext = _CTX_DEP,
+) -> dict[str, Any]:
+    """Execute a test run of a workflow and return the execution result."""
+    workflow = await ctx.workflow_store.get_workflow(workflow_id)
+    if workflow is None:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    version = await ctx.workflow_store.get_active_version(workflow_id)
+    if version is None:
+        raise HTTPException(status_code=400, detail="No active version")
+
+    executor = WorkflowExecutor(ctx.app)
+    result = await executor.execute(workflow_id, trigger_payload=payload or {})
+
+    return {
+        "status": result.status,
+        "total_elapsed_ms": result.total_elapsed_ms,
+        "total_prompt_tokens": result.total_prompt_tokens,
+        "total_completion_tokens": result.total_completion_tokens,
+        "node_results": [
+            {
+                "node_id": nr.node_id,
+                "status": nr.status,
+                "elapsed_ms": nr.elapsed_ms,
+                "prompt_tokens": nr.prompt_tokens,
+                "completion_tokens": nr.completion_tokens,
+                "output": nr.output,
+                "error": nr.error,
+            }
+            for nr in result.node_results
+        ],
+        "outputs": result.outputs,
+    }

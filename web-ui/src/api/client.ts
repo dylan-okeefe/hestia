@@ -252,10 +252,29 @@ export async function activateWorkflowVersion(workflowId: string, versionId: str
   return res.json() as Promise<{ activated: boolean }>;
 }
 
+export interface NodeResult {
+  node_id: string;
+  status: string;
+  elapsed_ms: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  output: unknown;
+  error?: string;
+}
+
+export interface ExecutionResult {
+  status: string;
+  total_elapsed_ms: number;
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  node_results: NodeResult[];
+  outputs: Record<string, unknown>;
+}
+
 export async function testRunWorkflow(id: string) {
   const res = await apiFetch(`${API_BASE}/workflows/${id}/test-run`, {
     method: 'POST',
   });
   if (!res.ok) throw new Error('Failed to test run workflow');
-  return res.json() as Promise<{ result: unknown }>;
+  return res.json() as Promise<ExecutionResult>;
 }

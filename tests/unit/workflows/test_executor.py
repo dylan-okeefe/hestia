@@ -342,6 +342,171 @@ class TestFailFast:
         assert "n2" not in result.outputs
 
 
+class TestCostTracking:
+    """Tests for execution cost and timing tracking."""
+
+    @pytest.mark.asyncio
+    async def test_inference_node_tracks_tokens(
+        self,
+        workflow_store: WorkflowStore,
+        executor: WorkflowExecutor,
+        app: AppContext,
+    ) -> None:
+        """An inference node records prompt and completion tokens."""
+        wf = Workflow(id="wf_1", name="Inference", trust_level="developer")
+        await workflow_store.save_workflow(wf)
+
+        node = WorkflowNode(id="n1", type="inference", label="Ask")
+        version = WorkflowVersion(
+            workflow_id="wf_1",
+            version=1,
+            nodes=[node],
+            edges=[],
+            is_active=True,
+        )
+        await workflow_store.save_version(version)
+
+        app.inference.chat = AsyncMock(return_value=ChatResponse(
+            content="42",
+            reasoning_content=None,
+            tool_calls=[],
+            finish_reason="stop",
+            prompt_tokens=100,
+            completion_tokens=50,
+            total_tokens=150,
+        ))
+
+        result = await executor.execute("wf_1", {"question": "meaning of life"})
+
+        assert result.status == "ok"
+        assert result.total_prompt_tokens == 100
+        assert result.total_completion_tokens == 50
+        assert result.total_elapsed_ms >= 0
+        nr = result.node_results[0]
+        assert nr.prompt_tokens == 100
+        assert nr.completion_tokens == 50
+        assert nr.elapsed_ms >= 0
+
+    @pytest.mark.asyncio
+    async def test_llm_decision_node_tracks_tokens(
+        self,
+        workflow_store: WorkflowStore,
+        executor: WorkflowExecutor,
+        app: AppContext,
+    ) -> None:
+        """An llm_decision node records prompt and completion tokens."""
+        wf = Workflow(id="wf_1", name="Decision", trust_level="developer")
+        await workflow_store.save_workflow(wf)
+
+        node = WorkflowNode(id="n1", type="llm_decision", label="Decide", config={"branches": ["a", "b"]})
+        version = WorkflowVersion(
+            workflow_id="wf_1",
+            version=1,
+            nodes=[node],
+            edges=[],
+            is_active=True,
+        )
+        await workflow_store.save_version(version)
+
+        app.inference.chat = AsyncMock(return_value=ChatResponse(
+            content="a",
+            reasoning_content=None,
+            tool_calls=[],
+            finish_reason="stop",
+            prompt_tokens=80,
+            completion_tokens=20,
+            total_tokens=100,
+        ))
+
+        result = await executor.execute("wf_1", {})
+
+        assert result.status == "ok"
+        assert result.total_prompt_tokens == 80
+        assert result.total_completion_tokens == 20
+        nr = result.node_results[0]
+        assert nr.prompt_tokens == 80
+        assert nr.completion_tokens == 20
+        assert nr.output == "a"
+
+    @pytest.mark.asyncio
+    async def test_multiple_nodes_aggregate_tokens(
+        self,
+        workflow_store: WorkflowStore,
+        executor: WorkflowExecutor,
+        app: AppContext,
+    ) -> None:
+        """Token usage is summed across multiple inference nodes."""
+        wf = Workflow(id="wf_1", name="Multi", trust_level="developer")
+        await workflow_store.save_workflow(wf)
+
+        node1 = WorkflowNode(id="n1", type="inference", label="First")
+        node2 = WorkflowNode(id="n2", type="inference", label="Second")
+        version = WorkflowVersion(
+            workflow_id="wf_1",
+            version=1,
+            nodes=[node1, node2],
+            edges=[],
+            is_active=True,
+        )
+        await workflow_store.save_version(version)
+
+        app.inference.chat = AsyncMock(side_effect=[
+            ChatResponse(
+                content="one",
+                reasoning_content=None,
+                tool_calls=[],
+                finish_reason="stop",
+                prompt_tokens=10,
+                completion_tokens=5,
+                total_tokens=15,
+            ),
+            ChatResponse(
+                content="two",
+                reasoning_content=None,
+                tool_calls=[],
+                finish_reason="stop",
+                prompt_tokens=20,
+                completion_tokens=10,
+                total_tokens=30,
+            ),
+        ])
+
+        result = await executor.execute("wf_1", {})
+
+        assert result.status == "ok"
+        assert result.total_prompt_tokens == 30
+        assert result.total_completion_tokens == 15
+
+    @pytest.mark.asyncio
+    async def test_failed_node_records_elapsed_ms(
+        self,
+        workflow_store: WorkflowStore,
+        executor: WorkflowExecutor,
+        app: AppContext,
+    ) -> None:
+        """A failed node still records elapsed time."""
+        wf = Workflow(id="wf_1", name="Fail", trust_level="developer")
+        await workflow_store.save_workflow(wf)
+
+        node = WorkflowNode(id="n1", type="bad", label="Bad")
+        version = WorkflowVersion(
+            workflow_id="wf_1",
+            version=1,
+            nodes=[node],
+            edges=[],
+            is_active=True,
+        )
+        await workflow_store.save_version(version)
+
+        app.tool_registry.call = AsyncMock(side_effect=RuntimeError("boom"))
+
+        result = await executor.execute("wf_1", {})
+
+        assert result.status == "failed"
+        assert result.node_results[0].elapsed_ms >= 0
+        assert result.total_elapsed_ms >= 0
+
+
 class TestEdgeCases:
     """Tests for edge cases and errors."""
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -777,3 +777,67 @@ class TestWorkflowsRoutes:
 
         response = client.post("/api/workflows/wf1/versions/99/activate")
         assert response.status_code == 404
+
+    def test_test_run_workflow(self, client: TestClient, mock_app: MagicMock) -> None:
+        """POST /workflows/{id}/test-run returns execution result."""
+        from hestia.web import context as ctx_mod
+        from hestia.workflows.models import Workflow
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        wf = Workflow(id="wf1", name="Test", trust_level="developer")
+        ctx.workflow_store.get_workflow = AsyncMock(return_value=wf)
+        ctx.workflow_store.get_active_version = AsyncMock(
+            return_value=MagicMock(
+                workflow_id="wf1",
+                version=1,
+                nodes=[],
+                edges=[],
+                is_active=True,
+            )
+        )
+
+        with patch("hestia.web.routes.workflows.WorkflowExecutor") as MockExecutor:
+            instance = MockExecutor.return_value
+            instance.execute = AsyncMock(return_value=MagicMock(
+                workflow_id="wf1",
+                status="ok",
+                node_results=[],
+                outputs={"trigger": {}},
+                total_elapsed_ms=100,
+                total_prompt_tokens=50,
+                total_completion_tokens=25,
+            ))
+            response = client.post("/api/workflows/wf1/test-run", json={"key": "value"})
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "ok"
+            assert data["total_elapsed_ms"] == 100
+            assert data["total_prompt_tokens"] == 50
+            assert data["total_completion_tokens"] == 25
+            instance.execute.assert_awaited_once_with("wf1", trigger_payload={"key": "value"})
+
+    def test_test_run_workflow_not_found(self, client: TestClient, mock_app: MagicMock) -> None:
+        """POST test-run returns 404 when workflow missing."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.workflow_store.get_workflow = AsyncMock(return_value=None)
+
+        response = client.post("/api/workflows/missing/test-run")
+        assert response.status_code == 404
+
+    def test_test_run_workflow_no_active_version(self, client: TestClient, mock_app: MagicMock) -> None:
+        """POST test-run returns 400 when no active version."""
+        from hestia.web import context as ctx_mod
+        from hestia.workflows.models import Workflow
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        wf = Workflow(id="wf1", name="Test", trust_level="developer")
+        ctx.workflow_store.get_workflow = AsyncMock(return_value=wf)
+        ctx.workflow_store.get_active_version = AsyncMock(return_value=None)
+
+        response = client.post("/api/workflows/wf1/test-run")
+        assert response.status_code == 400
