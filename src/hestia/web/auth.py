@@ -256,7 +256,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         path = request.url.path
 
         # Skip non-API routes and auth routes
-        if not path.startswith("/api/") or path.startswith("/api/auth/"):
+        if not path.startswith("/api/") or path.startswith("/api/auth/") or path.startswith("/api/webhooks/"):
             return await call_next(request)
 
         # Skip if auth disabled

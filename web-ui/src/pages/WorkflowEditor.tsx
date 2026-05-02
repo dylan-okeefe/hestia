@@ -371,6 +371,22 @@ export default function WorkflowEditor() {
             aria-label="Endpoint"
           />
         )}
+        {triggerType === 'webhook' && id && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem' }}>
+            <span>URL: {`${window.location.origin}/api/webhooks/${id}`}</span>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(`${window.location.origin}/api/webhooks/${id}`);
+              }}
+              style={{ padding: '0.125rem 0.5rem', fontSize: '0.75rem' }}
+            >
+              Copy URL
+            </button>
+            <span style={{ color: '#666', fontSize: '0.75rem' }}>
+              Send POST requests to this URL to trigger this workflow
+            </span>
+          </div>
+        )}
         <button onClick={handleTriggerSave} disabled={triggerSaving}>
           {triggerSaving ? 'Saving…' : 'Save Trigger'}
         </button>

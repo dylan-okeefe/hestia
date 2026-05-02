@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from starlette.responses import JSONResponse
 
 from hestia.workflows.executor import WorkflowExecutor
 from hestia.workflows.models import Workflow, WorkflowEdge, WorkflowNode, WorkflowVersion
@@ -238,6 +240,39 @@ async def activate_version(
     if not ok:
         raise HTTPException(status_code=404, detail="Workflow or version not found")
     return {"activated": True, "version": version_num}
+
+
+@router.post("/webhooks/{endpoint}", status_code=202)
+async def receive_webhook(
+    endpoint: str,
+    request: Request,
+    ctx: WebContext = _CTX_DEP,
+) -> dict[str, Any]:
+    """Receive a webhook payload and publish a webhook_received event."""
+    try:
+        body = await request.json()
+    except Exception:
+        raw = await request.body()
+        body = raw.decode("utf-8")
+
+    event_bus = ctx.app.event_bus
+    if event_bus is None:
+        return JSONResponse(
+            {"detail": "Event bus unavailable"},
+            status_code=503,
+        )
+
+    event_bus.publish(
+        "webhook_received",
+        {
+            "endpoint": endpoint,
+            "body": body,
+            "headers": dict(request.headers),
+            "timestamp": datetime.now(UTC).isoformat(),
+        },
+    )
+
+    return {"received": True, "endpoint": endpoint}
 
 
 @router.post("/workflows/{workflow_id}/test-run")

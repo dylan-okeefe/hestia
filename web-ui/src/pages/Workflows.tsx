@@ -71,6 +71,18 @@ export default function Workflows() {
                   >
                     {wf.trigger_type}
                   </span>
+                  {wf.trigger_type === 'webhook' && (
+                    <a
+                      href={`${window.location.origin}/api/webhooks/${wf.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Open webhook URL"
+                      onClick={(e) => e.stopPropagation()}
+                      style={{ marginLeft: '0.5rem', textDecoration: 'none' }}
+                    >
+                      🔗
+                    </a>
+                  )}
                 </td>
                 <td style={{ padding: '0.5rem' }}>{new Date(wf.last_edited_at).toLocaleString()}</td>
                 <td style={{ padding: '0.5rem' }}>{wf.active_version_id ?? '—'}</td>

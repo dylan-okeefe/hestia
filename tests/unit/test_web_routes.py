@@ -842,6 +842,63 @@ class TestWorkflowsRoutes:
         response = client.post("/api/workflows/wf1/test-run")
         assert response.status_code == 400
 
+    def test_webhook_trigger(self, client: TestClient, mock_app: MagicMock) -> None:
+        """POST /api/webhooks/{endpoint} publishes webhook_received event."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        mock_event_bus = MagicMock()
+        mock_app.event_bus = mock_event_bus
+
+        response = client.post("/api/webhooks/deploy", json={"key": "value"})
+        assert response.status_code == 202
+        data = response.json()
+        assert data["received"] is True
+        assert data["endpoint"] == "deploy"
+        mock_event_bus.publish.assert_called_once()
+        call_args = mock_event_bus.publish.call_args
+        assert call_args[0][0] == "webhook_received"
+        assert call_args[0][1]["endpoint"] == "deploy"
+        assert call_args[0][1]["body"] == {"key": "value"}
+        assert "headers" in call_args[0][1]
+        assert "timestamp" in call_args[0][1]
+
+    def test_webhook_no_auth(self, mock_app: MagicMock) -> None:
+        """POST /api/webhooks/{endpoint} works without auth even when auth is enabled."""
+        from hestia.web.api import create_web_app
+        from hestia.web.auth import AuthManager, AuthMiddleware
+        from hestia.web.context import WebContext, set_web_context
+        from hestia.config import WebConfig
+        from fastapi.testclient import TestClient
+
+        web_config = WebConfig(auth_enabled=True)
+        auth_manager = AuthManager(adapters={}, config=web_config)
+        mock_app.event_bus = MagicMock()
+
+        set_web_context(
+            WebContext(
+                session_store=AsyncMock(),
+                proposal_store=AsyncMock(),
+                style_store=AsyncMock(),
+                scheduler_store=AsyncMock(),
+                trace_store=AsyncMock(),
+                failure_store=AsyncMock(),
+                workflow_store=AsyncMock(),
+                app=mock_app,
+                auth_manager=auth_manager,
+            )
+        )
+
+        app = create_web_app()
+        app.add_middleware(AuthMiddleware, auth_manager=auth_manager, web_config=web_config)
+        client = TestClient(app)
+
+        response = client.post("/api/webhooks/deploy", json={"key": "value"})
+        assert response.status_code == 202
+        data = response.json()
+        assert data["received"] is True
+
     def test_update_workflow_trigger_config(self, client: TestClient, mock_app: MagicMock) -> None:
         """PUT /api/workflows/{id} updates trigger_type and trigger_config."""
         from hestia.web import context as ctx_mod
