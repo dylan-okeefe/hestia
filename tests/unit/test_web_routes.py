@@ -67,6 +67,7 @@ def client(mock_app: MagicMock) -> TestClient:
         app=mock_app,
         auth_manager=None,
     )
+    ctx.execution_store.get_last_execution_per_workflow = AsyncMock(return_value={})
     set_web_context(ctx)
     app = create_web_app()
     return TestClient(app)

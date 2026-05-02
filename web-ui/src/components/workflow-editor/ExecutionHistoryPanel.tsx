@@ -81,6 +81,12 @@ export default function ExecutionHistoryPanel({
                     {selectedExecution === ex.id && (
                       <tr>
                         <td colSpan={5} style={{ padding: '0.5rem', background: '#f0f0f0' }}>
+                          <button
+                            onClick={() => onSelectExecution(null)}
+                            style={{ marginBottom: '0.5rem', fontSize: '0.75rem', padding: '0.125rem 0.5rem' }}
+                          >
+                            ← Back to history
+                          </button>
                           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
                             <thead>
                               <tr style={{ borderBottom: '1px solid #ccc' }}>
@@ -94,7 +100,7 @@ export default function ExecutionHistoryPanel({
                               {ex.node_results.map((nr) => (
                                 <tr key={nr.node_id} style={{ borderBottom: '1px solid #eee' }}>
                                   <td style={{ padding: '0.25rem' }}>
-                                    {formatNodeLabel(nr.node_id, nodes)}
+                                    {nr.node_id}
                                   </td>
                                   <td style={{ padding: '0.25rem', color: nr.status === 'ok' ? 'green' : 'red' }}>
                                     {nr.status}

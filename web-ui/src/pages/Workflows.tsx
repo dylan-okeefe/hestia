@@ -2,6 +2,32 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchWorkflows, createWorkflow, deleteWorkflow, type Workflow } from '../api/client';
 
+const TRIGGER_ICONS: Record<string, string> = {
+  manual: '🖱️',
+  schedule: '📅',
+  chat_command: '💬',
+  message: '💬',
+  webhook: '🔗',
+  email: '✉️',
+  proposal_approved: '✅',
+  proposal_rejected: '❌',
+  tool_error: '⚠️',
+  workflow_completed: '🔄',
+  session_started: '🚀',
+};
+
+function relativeTime(iso: string | null): string {
+  if (!iso) return 'never';
+  const then = new Date(iso).getTime();
+  const now = Date.now();
+  const diff = Math.floor((now - then) / 1000);
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
 export default function Workflows() {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,6 +55,23 @@ export default function Workflows() {
     }
   };
 
+  const executionDot = (status?: string) => {
+    const color = status === 'ok' ? '#22c55e' : status === 'error' ? '#ef4444' : '#9ca3af';
+    return (
+      <span
+        style={{
+          display: 'inline-block',
+          width: 8,
+          height: 8,
+          borderRadius: '50%',
+          background: color,
+          marginRight: '0.5rem',
+        }}
+        title={status || 'never run'}
+      />
+    );
+  };
+
   return (
     <div style={{ padding: '1rem' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
@@ -38,13 +81,13 @@ export default function Workflows() {
       {loading && <p>Loading workflows…</p>}
       {error && <p style={{ color: 'red' }}>{error}</p>}
       {!loading && workflows.length === 0 && <p>No workflows yet.</p>}
-      {workflows.length > 0 && (
+      {!loading && workflows.length > 0 && (
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid #ddd', textAlign: 'left' }}>
               <th style={{ padding: '0.5rem' }}>Name</th>
               <th style={{ padding: '0.5rem' }}>Trigger</th>
-              <th style={{ padding: '0.5rem' }}>Last Edited</th>
+              <th style={{ padding: '0.5rem' }}>Last Run</th>
               <th style={{ padding: '0.5rem' }}>Active Version</th>
               <th style={{ padding: '0.5rem' }}>Actions</th>
             </tr>
@@ -61,7 +104,9 @@ export default function Workflows() {
                 <td style={{ padding: '0.5rem' }}>
                   <span
                     style={{
-                      display: 'inline-block',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.25rem',
                       padding: '0.125rem 0.5rem',
                       borderRadius: '9999px',
                       background: '#e5e7eb',
@@ -70,6 +115,7 @@ export default function Workflows() {
                       textTransform: 'uppercase',
                     }}
                   >
+                    <span>{TRIGGER_ICONS[wf.trigger_type] || '•'}</span>
                     {wf.trigger_type}
                   </span>
                   {wf.trigger_type === 'webhook' && (
@@ -85,7 +131,12 @@ export default function Workflows() {
                     </a>
                   )}
                 </td>
-                <td style={{ padding: '0.5rem' }}>{new Date(wf.last_edited_at).toLocaleString()}</td>
+                <td style={{ padding: '0.5rem' }}>
+                  <span style={{ display: 'flex', alignItems: 'center' }}>
+                    {executionDot(wf.last_execution_status)}
+                    {relativeTime(wf.last_execution_at ?? null)}
+                  </span>
+                </td>
                 <td style={{ padding: '0.5rem' }}>{wf.active_version_id ?? '—'}</td>
                 <td style={{ padding: '0.5rem' }}>
                   <button

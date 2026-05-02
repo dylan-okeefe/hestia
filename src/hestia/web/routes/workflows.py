@@ -80,12 +80,17 @@ async def list_workflows(
     """List all workflows."""
     workflows = await ctx.workflow_store.list_workflows()
     active_map = await ctx.workflow_store.get_active_versions_batch([wf.id for wf in workflows])
+    last_exec_map = await ctx.execution_store.get_last_execution_per_workflow([wf.id for wf in workflows])
     result = []
     for wf in workflows:
         api_wf = _workflow_to_api(wf)
         active = active_map.get(wf.id)
         if active is not None:
             api_wf["active_version_id"] = f"{active.workflow_id}:{active.version}"
+        last = last_exec_map.get(wf.id)
+        if last:
+            api_wf["last_execution_status"] = last["status"]
+            api_wf["last_execution_at"] = last["created_at"]
         result.append(api_wf)
     return {"workflows": result}
 
@@ -407,4 +412,26 @@ async def test_run_workflow(
             for nr in result.node_results
         ],
         "outputs": result.outputs,
+    }
+
+
+@router.get("/dashboard")
+async def dashboard(ctx: WebContext = _CTX_DEP) -> dict[str, Any]:
+    """Return aggregated dashboard data."""
+    workflows = await ctx.workflow_store.list_workflows()
+    active_count = sum(1 for wf in workflows if wf.trigger_type != "manual")
+    recent_executions = await ctx.execution_store.list_recent(limit=5)
+    proposal_counts = await ctx.proposal_store.count_by_status()
+    pending_proposals = proposal_counts.get("pending", 0)
+    auth_status = {
+        "telegram": bool(ctx.app.config.telegram.bot_token),
+        "matrix": bool(ctx.app.config.matrix.access_token),
+        "email": bool(ctx.app.config.email.imap_host),
+    }
+    platforms_connected = [k for k, v in auth_status.items() if v]
+    return {
+        "active_workflow_count": active_count,
+        "recent_executions": recent_executions,
+        "pending_proposal_count": pending_proposals,
+        "platforms_connected": platforms_connected,
     }

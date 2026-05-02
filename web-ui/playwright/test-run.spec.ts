@@ -90,7 +90,7 @@ test('test run shows results panel with status and node results', async ({ page 
   await expect(page.locator('span', { hasText: /^ok$/ })).toBeVisible();
   await expect(page.locator('text=1234ms')).toBeVisible();
   await expect(page.locator('text=150 prompt + 80 completion')).toBeVisible();
-  await expect(page.locator('text=n1')).toBeVisible();
+  await expect(page.locator('text="Start" (default)')).toBeVisible();
 });
 
 test('test run shows error on failure', async ({ page }) => {

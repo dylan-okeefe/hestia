@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import ReactFlow, {
   Background,
   Controls,
@@ -488,6 +488,11 @@ export default function WorkflowEditor() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 60px)' }}>
+      <div style={{ padding: '0.25rem 1rem', fontSize: '0.875rem', color: '#666', borderBottom: '1px solid #eee' }}>
+        <Link to="/workflows" style={{ color: '#2563eb', textDecoration: 'none' }}>Workflows</Link>
+        {' > '}
+        <span>{workflowName}</span>
+      </div>
       <EditorToolbar
         workflowName={workflowName}
         isDirty={isDirty}

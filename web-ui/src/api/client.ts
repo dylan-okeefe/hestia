@@ -183,6 +183,8 @@ export interface Workflow {
   active_version_id: string | null;
   webhook_url?: string;
   secret?: string;
+  last_execution_status?: string;
+  last_execution_at?: string;
 }
 
 export interface WorkflowVersion {
@@ -327,4 +329,16 @@ export async function fetchTools() {
   const res = await apiFetch(`${API_BASE}/tools`);
   if (!res.ok) throw new Error('Failed to fetch tools');
   return res.json() as Promise<{ tools: string[] }>;
+}
+
+
+export async function fetchDashboard() {
+  const res = await apiFetch(`${API_BASE}/dashboard`);
+  if (!res.ok) throw new Error('Failed to fetch dashboard');
+  return res.json() as Promise<{
+    active_workflow_count: number;
+    recent_executions: ExecutionRecord[];
+    pending_proposal_count: number;
+    platforms_connected: string[];
+  }>;
 }
