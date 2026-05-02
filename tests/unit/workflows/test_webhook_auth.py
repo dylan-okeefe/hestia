@@ -112,7 +112,7 @@ class TestWebhookHMAC:
         )
         assert response.status_code == 202
         assert response.json()["received"] is True
-        mock_event_bus.publish.assert_called_once()
+        mock_event_bus.publish.assert_awaited_once()
 
     def test_missing_header_returns_401(self, client: TestClient, mock_app: MagicMock) -> None:
         """A request without the X-Webhook-Signature header is rejected."""
