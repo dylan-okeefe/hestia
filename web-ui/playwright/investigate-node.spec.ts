@@ -19,10 +19,21 @@ test('adds an investigate node and shows its properties', async ({ page }) => {
   await node.click();
   await expect(page.locator('label:has-text("Topic")')).toBeVisible();
   await expect(page.locator('label:has-text("Depth")')).toBeVisible();
-  await expect(page.locator('label:has-text("Tools (comma-separated)")')).toBeVisible();
+  await expect(page.locator('label:has-text("Tools")')).toBeVisible();
 
   await page.locator('label:has-text("Topic") + textarea').fill('best Python frameworks');
   await page.locator('.react-flow__pane').click();
   await node.click();
   await expect(page.locator('label:has-text("Topic") + textarea')).toHaveValue('best Python frameworks');
+
+  // Multi-select checkboxes
+  const searchWebCheckbox = page.locator('input[aria-label="Tool search_web"]');
+  const readEmailCheckbox = page.locator('input[aria-label="Tool read_email"]');
+  await expect(searchWebCheckbox).toBeVisible();
+  await searchWebCheckbox.check();
+  await readEmailCheckbox.check();
+  await page.locator('.react-flow__pane').click();
+  await node.click();
+  await expect(searchWebCheckbox).toBeChecked();
+  await expect(readEmailCheckbox).toBeChecked();
 });
