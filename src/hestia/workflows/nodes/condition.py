@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import json
 import operator
 from typing import Any
 
@@ -36,6 +37,7 @@ class ConditionNode:
         if expression is None:
             raise ValueError("ConditionNode requires 'expression' in config")
 
+        inputs = json.loads(json.dumps(inputs, default=str))
         return _safe_eval(expression, inputs)
 
 
@@ -69,7 +71,6 @@ _BIN_OPS: dict[type[ast.operator], Any] = {
     ast.Div: operator.truediv,
     ast.FloorDiv: operator.floordiv,
     ast.Mod: operator.mod,
-    ast.Pow: operator.pow,
 }
 
 
@@ -135,6 +136,8 @@ def _eval_node(node: ast.AST, variables: dict[str, Any]) -> Any:
         return op(left, right)
     if isinstance(node, ast.Attribute):
         obj = _eval_node(node.value, variables)
+        if node.attr.startswith("_"):
+            raise ValueError(f"Access to private attribute {node.attr!r} is not allowed")
         return getattr(obj, node.attr)
     if isinstance(node, ast.Subscript):
         obj = _eval_node(node.value, variables)
