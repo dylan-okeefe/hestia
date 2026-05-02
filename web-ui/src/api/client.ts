@@ -181,6 +181,8 @@ export interface Workflow {
   trigger_config: Record<string, unknown>;
   last_edited_at: string;
   active_version_id: string | null;
+  webhook_url?: string;
+  secret?: string;
 }
 
 export interface WorkflowVersion {

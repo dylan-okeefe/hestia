@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -87,8 +86,8 @@ class TestSessionsRoutes:
                     id="s1",
                     platform="cli",
                     platform_user="u1",
-                    started_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
-                    last_active_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+                    started_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+                    last_active_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
                     state=MagicMock(value="ACTIVE"),
                     temperature=MagicMock(value="COLD"),
                 )
@@ -114,7 +113,7 @@ class TestSessionsRoutes:
                     id="t1",
                     session_id="s1",
                     state=MagicMock(value="done"),
-                    started_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+                    started_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
                     iterations=1,
                     error=None,
                 )
@@ -148,8 +147,8 @@ class TestProposalsRoutes:
                     action={"a": 1},
                     confidence=0.9,
                     status="pending",
-                    created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
-                    expires_at=datetime(2024, 1, 2, 12, 0, 0, tzinfo=timezone.utc),
+                    created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+                    expires_at=datetime(2024, 1, 2, 12, 0, 0, tzinfo=UTC),
                     reviewed_at=None,
                     review_note=None,
                 )
@@ -277,7 +276,7 @@ class TestSchedulerRoutes:
                     fire_at=None,
                     enabled=True,
                     notify=False,
-                    created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+                    created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
                     last_run_at=None,
                     next_run_at=None,
                     last_error=None,
@@ -337,7 +336,7 @@ class TestTracesRoutes:
                     id="tr1",
                     session_id="s1",
                     turn_id="t1",
-                    started_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+                    started_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
                     ended_at=None,
                     user_input_summary="hi",
                     tools_called=["terminal"],
@@ -375,7 +374,7 @@ class TestTracesRoutes:
                     severity="warning",
                     error_message="timed out",
                     tool_chain='["terminal"]',
-                    created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+                    created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
                 )
             ]
         )
@@ -548,8 +547,8 @@ class TestWorkflowsRoutes:
             name="Test Workflow",
             description="A test workflow",
             trigger_type="manual",
-            created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
-            updated_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+            created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+            updated_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
         )
         ctx.workflow_store.list_workflows = AsyncMock(return_value=[wf])
         ctx.workflow_store.get_active_version = AsyncMock(return_value=None)
@@ -598,8 +597,8 @@ class TestWorkflowsRoutes:
             name="Test Workflow",
             description="A test",
             trigger_type="manual",
-            created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
-            updated_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+            created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+            updated_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
         )
         ctx.workflow_store.get_workflow = AsyncMock(return_value=wf)
         ctx.workflow_store.get_active_version = AsyncMock(return_value=None)
@@ -634,8 +633,8 @@ class TestWorkflowsRoutes:
             name="Old Name",
             description="Old desc",
             trigger_type="manual",
-            created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
-            updated_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+            created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+            updated_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
         )
         ctx.workflow_store.get_workflow = AsyncMock(return_value=wf)
         ctx.workflow_store.save_workflow = AsyncMock(return_value=None)
@@ -697,7 +696,7 @@ class TestWorkflowsRoutes:
             version=1,
             nodes=[],
             edges=[],
-            created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+            created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
             is_active=False,
         )
         v2 = WorkflowVersion(
@@ -705,7 +704,7 @@ class TestWorkflowsRoutes:
             version=2,
             nodes=[],
             edges=[],
-            created_at=datetime(2024, 1, 2, 12, 0, 0, tzinfo=timezone.utc),
+            created_at=datetime(2024, 1, 2, 12, 0, 0, tzinfo=UTC),
             is_active=True,
         )
         ctx.workflow_store.list_versions = AsyncMock(return_value=[v1, v2])
@@ -721,11 +720,11 @@ class TestWorkflowsRoutes:
     def test_create_version(self, client: TestClient, mock_app: MagicMock) -> None:
         """POST /api/workflows/{id}/versions saves a new version."""
         from hestia.web import context as ctx_mod
-        from hestia.workflows.models import Workflow, WorkflowVersion
+        from hestia.workflows.models import Workflow
 
         ctx = ctx_mod._ctx
         assert ctx is not None
-        wf = Workflow(id="wf1", name="Test", created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc))
+        wf = Workflow(id="wf1", name="Test", created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC))
         ctx.workflow_store.get_workflow = AsyncMock(return_value=wf)
         ctx.workflow_store.list_versions = AsyncMock(return_value=[])
         ctx.workflow_store.save_version = AsyncMock(return_value=None)
@@ -850,7 +849,7 @@ class TestWorkflowsRoutes:
 
         ctx = ctx_mod._ctx
         assert ctx is not None
-        wf = Workflow(id="wf1", name="Test", created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc))
+        wf = Workflow(id="wf1", name="Test", created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC))
         ctx.workflow_store.get_workflow = AsyncMock(return_value=wf)
         ctx.execution_store.list_executions = AsyncMock(
             return_value=[
@@ -890,14 +889,34 @@ class TestWorkflowsRoutes:
 
     def test_webhook_trigger(self, client: TestClient, mock_app: MagicMock) -> None:
         """POST /api/webhooks/{endpoint} publishes webhook_received event."""
+        import hashlib
+        import hmac
+        import json
+
         from hestia.web import context as ctx_mod
+        from hestia.workflows.models import Workflow
 
         ctx = ctx_mod._ctx
         assert ctx is not None
         mock_event_bus = MagicMock()
         mock_app.event_bus = mock_event_bus
+        wf = Workflow(
+            id="wf1",
+            name="Hook",
+            trigger_type="webhook",
+            trigger_config={"endpoint": "deploy", "secret": "super-secret"},
+        )
+        ctx.workflow_store.list_workflows = AsyncMock(return_value=[wf])
 
-        response = client.post("/api/webhooks/deploy", json={"key": "value"})
+        payload = {"key": "value"}
+        body_bytes = json.dumps(payload).encode()
+        signature = hmac.new(b"super-secret", body_bytes, hashlib.sha256).hexdigest()
+
+        response = client.post(
+            "/api/webhooks/deploy",
+            content=body_bytes,
+            headers={"X-Webhook-Signature": signature, "Content-Type": "application/json"},
+        )
         assert response.status_code == 202
         data = response.json()
         assert data["received"] is True
@@ -912,15 +931,30 @@ class TestWorkflowsRoutes:
 
     def test_webhook_no_auth(self, mock_app: MagicMock) -> None:
         """POST /api/webhooks/{endpoint} works without auth even when auth is enabled."""
+        import hashlib
+        import hmac
+        import json
+
+        from fastapi.testclient import TestClient
+
+        from hestia.config import WebConfig
         from hestia.web.api import create_web_app
         from hestia.web.auth import AuthManager, AuthMiddleware
         from hestia.web.context import WebContext, set_web_context
-        from hestia.config import WebConfig
-        from fastapi.testclient import TestClient
+        from hestia.workflows.models import Workflow
 
         web_config = WebConfig(auth_enabled=True)
         auth_manager = AuthManager(adapters={}, config=web_config)
         mock_app.event_bus = MagicMock()
+
+        wf = Workflow(
+            id="wf1",
+            name="Hook",
+            trigger_type="webhook",
+            trigger_config={"endpoint": "deploy", "secret": "super-secret"},
+        )
+        workflow_store = AsyncMock()
+        workflow_store.list_workflows = AsyncMock(return_value=[wf])
 
         set_web_context(
             WebContext(
@@ -930,7 +964,7 @@ class TestWorkflowsRoutes:
                 scheduler_store=AsyncMock(),
                 trace_store=AsyncMock(),
                 failure_store=AsyncMock(),
-                workflow_store=AsyncMock(),
+                workflow_store=workflow_store,
                 execution_store=AsyncMock(),
                 app=mock_app,
                 auth_manager=auth_manager,
@@ -941,7 +975,15 @@ class TestWorkflowsRoutes:
         app.add_middleware(AuthMiddleware, auth_manager=auth_manager, web_config=web_config)
         client = TestClient(app)
 
-        response = client.post("/api/webhooks/deploy", json={"key": "value"})
+        payload = {"key": "value"}
+        body_bytes = json.dumps(payload).encode()
+        signature = hmac.new(b"super-secret", body_bytes, hashlib.sha256).hexdigest()
+
+        response = client.post(
+            "/api/webhooks/deploy",
+            content=body_bytes,
+            headers={"X-Webhook-Signature": signature, "Content-Type": "application/json"},
+        )
         assert response.status_code == 202
         data = response.json()
         assert data["received"] is True
@@ -959,8 +1001,8 @@ class TestWorkflowsRoutes:
             description="Old desc",
             trigger_type="manual",
             trigger_config={},
-            created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
-            updated_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+            created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+            updated_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
         )
         ctx.workflow_store.get_workflow = AsyncMock(return_value=wf)
         ctx.workflow_store.save_workflow = AsyncMock(return_value=None)
