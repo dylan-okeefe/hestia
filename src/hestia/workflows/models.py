@@ -56,3 +56,29 @@ class Workflow:
     trust_level: str = "paranoid"
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+
+@dataclass
+class NodeResult:
+    """Result of executing a single workflow node."""
+
+    node_id: str
+    status: str  # "ok" | "failed"
+    output: Any = None
+    error: str | None = None
+    elapsed_ms: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+
+
+@dataclass
+class ExecutionResult:
+    """Result of executing a workflow."""
+
+    workflow_id: str
+    status: str  # "ok" | "failed"
+    node_results: list[NodeResult] = field(default_factory=list)
+    outputs: dict[str, Any] = field(default_factory=dict)
+    total_elapsed_ms: int = 0
+    total_prompt_tokens: int = 0
+    total_completion_tokens: int = 0

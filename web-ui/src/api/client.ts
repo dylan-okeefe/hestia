@@ -273,6 +273,19 @@ export interface NodeResult {
   error?: string;
 }
 
+export interface ExecutionRecord {
+  id: string;
+  workflow_id: string;
+  version: number;
+  status: string;
+  trigger_payload: Record<string, unknown>;
+  node_results: NodeResult[];
+  total_elapsed_ms: number;
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  created_at: string;
+}
+
 export interface ExecutionResult {
   status: string;
   total_elapsed_ms: number;
@@ -288,4 +301,10 @@ export async function testRunWorkflow(id: string) {
   });
   if (!res.ok) throw new Error('Failed to test run workflow');
   return res.json() as Promise<ExecutionResult>;
+}
+
+export async function fetchExecutions(workflowId: string, limit = 50) {
+  const res = await apiFetch(`${API_BASE}/workflows/${workflowId}/executions?limit=${limit}`);
+  if (!res.ok) throw new Error('Failed to fetch executions');
+  return res.json() as Promise<{ executions: ExecutionRecord[] }>;
 }

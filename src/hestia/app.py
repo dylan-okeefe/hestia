@@ -32,6 +32,7 @@ from hestia.persistence.failure_store import FailureStore
 from hestia.persistence.scheduler import SchedulerStore
 from hestia.persistence.sessions import SessionStore
 from hestia.persistence.trace_store import TraceStore
+from hestia.workflows.execution_store import ExecutionStore
 from hestia.workflows.store import WorkflowStore
 from hestia.policy.default import DefaultPolicyEngine
 from hestia.reflection.runner import ReflectionRunner
@@ -137,6 +138,7 @@ class AppContext:
         self.trace_store = TraceStore(self.db)
         self.scheduler_store = SchedulerStore(self.db)
         self.workflow_store = WorkflowStore(self.db)
+        self.execution_store = ExecutionStore(self.db)
         self.event_bus = EventBus()
         self.trigger_registry: Any = None
         self.epoch_compiler = MemoryEpochCompiler(self.memory_store, max_tokens=500)
@@ -258,6 +260,7 @@ class AppContext:
         await self.proposal_store.create_table()
         await self.style_store.create_table()
         await self.workflow_store.create_tables()
+        await self.execution_store.create_tables()
         self._bootstrapped = True
 
     def make_injection_scanner(self) -> InjectionScanner:
@@ -274,7 +277,7 @@ class AppContext:
         from hestia.workflows.triggers import TriggerRegistry
 
         async def _execute_workflow(workflow: Any, payload: Any) -> None:
-            executor = WorkflowExecutor(self)
+            executor = WorkflowExecutor(self, execution_store=self.execution_store)
             result = await executor.execute(workflow.id, payload)
             logger.info("Workflow %s executed: %s", workflow.id, result.status)
 

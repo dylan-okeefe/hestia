@@ -209,3 +209,19 @@ workflow_versions = sa.Table(
     ),
     sa.Index("idx_workflow_versions_workflow", "workflow_id", "version"),
 )
+
+workflow_executions = sa.Table(
+    "workflow_executions",
+    metadata,
+    sa.Column("id", sa.String, primary_key=True),
+    sa.Column("workflow_id", sa.String, sa.ForeignKey("workflows.id", ondelete="CASCADE"), nullable=False),
+    sa.Column("version", sa.Integer, nullable=False),
+    sa.Column("status", sa.String, nullable=False),
+    sa.Column("trigger_payload", sa.Text, nullable=False, default="{}"),
+    sa.Column("node_results", sa.Text, nullable=False, default="[]"),
+    sa.Column("total_elapsed_ms", sa.Integer, nullable=False, default=0),
+    sa.Column("total_prompt_tokens", sa.Integer, nullable=False, default=0),
+    sa.Column("total_completion_tokens", sa.Integer, nullable=False, default=0),
+    sa.Column("created_at", sa.DateTime, nullable=False),
+    sa.Index("idx_executions_workflow", "workflow_id", "created_at"),
+)

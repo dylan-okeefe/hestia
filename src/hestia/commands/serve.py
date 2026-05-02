@@ -65,6 +65,7 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
                     trace_store=app.trace_store,
                     failure_store=app.failure_store,
                     workflow_store=app.workflow_store,
+                    execution_store=app.execution_store,
                     app=app,
                     auth_manager=auth_manager,
                 )

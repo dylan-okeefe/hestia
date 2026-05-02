@@ -16,6 +16,7 @@ from hestia.tools.capabilities import SHELL_EXEC, WRITE_LOCAL
 from hestia.tools.registry import ToolRegistry
 from hestia.tools.types import ToolCallResult
 from hestia.workflows.executor import ExecutionResult, WorkflowExecutor
+from hestia.workflows.execution_store import ExecutionStore
 from hestia.workflows.models import Workflow, WorkflowEdge, WorkflowNode, WorkflowVersion
 from hestia.workflows.store import WorkflowStore
 
@@ -604,3 +605,82 @@ class TestEdgeCases:
         # Verify outputs were set in dependency order
         ids = [nr.node_id for nr in result.node_results]
         assert ids == ["a", "b", "c"]
+
+
+class TestExecutionPersistence:
+    """Tests that execution results are persisted when store is provided."""
+
+    @pytest.mark.asyncio
+    async def test_execution_is_persisted_on_success(
+        self,
+        workflow_store: WorkflowStore,
+        app: AppContext,
+        db: Database,
+    ) -> None:
+        """When execution_store is provided, successful executions are saved."""
+        execution_store = ExecutionStore(db)
+        await execution_store.create_tables()
+
+        wf = Workflow(id="wf_1", name="Persist", trust_level="developer")
+        await workflow_store.save_workflow(wf)
+
+        node = WorkflowNode(id="n1", type="echo", label="Echo")
+        version = WorkflowVersion(
+            workflow_id="wf_1",
+            version=1,
+            nodes=[node],
+            edges=[],
+            is_active=True,
+        )
+        await workflow_store.save_version(version)
+
+        app.tool_registry.call = AsyncMock(return_value=ToolCallResult(
+            status="ok",
+            content="hello",
+            artifact_handle=None,
+            truncated=False,
+        ))
+
+        executor = WorkflowExecutor(app, execution_store=execution_store)
+        result = await executor.execute("wf_1", {"text": "hi"})
+
+        assert result.status == "ok"
+        executions = await execution_store.list_executions("wf_1")
+        assert len(executions) == 1
+        assert executions[0]["status"] == "ok"
+        assert executions[0]["version"] == 1
+        assert executions[0]["trigger_payload"] == {"text": "hi"}
+
+    @pytest.mark.asyncio
+    async def test_execution_is_persisted_on_failure(
+        self,
+        workflow_store: WorkflowStore,
+        app: AppContext,
+        db: Database,
+    ) -> None:
+        """When execution_store is provided, failed executions are also saved."""
+        execution_store = ExecutionStore(db)
+        await execution_store.create_tables()
+
+        wf = Workflow(id="wf_1", name="Fail", trust_level="developer")
+        await workflow_store.save_workflow(wf)
+
+        node = WorkflowNode(id="n1", type="bad", label="Bad")
+        version = WorkflowVersion(
+            workflow_id="wf_1",
+            version=1,
+            nodes=[node],
+            edges=[],
+            is_active=True,
+        )
+        await workflow_store.save_version(version)
+
+        app.tool_registry.call = AsyncMock(side_effect=RuntimeError("boom"))
+
+        executor = WorkflowExecutor(app, execution_store=execution_store)
+        result = await executor.execute("wf_1", {})
+
+        assert result.status == "failed"
+        executions = await execution_store.list_executions("wf_1")
+        assert len(executions) == 1
+        assert executions[0]["status"] == "failed"

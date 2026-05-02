@@ -157,6 +157,55 @@ export const mockWorkflowVersions = {
   ],
 };
 
+export const mockExecutions = {
+  executions: [
+    {
+      id: 'ex_001',
+      workflow_id: 'wf_001',
+      version: 1,
+      status: 'ok',
+      trigger_payload: {},
+      node_results: [
+        {
+          node_id: 'n1',
+          status: 'ok',
+          elapsed_ms: 500,
+          prompt_tokens: 100,
+          completion_tokens: 50,
+          output: 'hello',
+          error: null,
+        },
+      ],
+      total_elapsed_ms: 1234,
+      total_prompt_tokens: 150,
+      total_completion_tokens: 80,
+      created_at: '2024-01-15T08:00:00Z',
+    },
+    {
+      id: 'ex_002',
+      workflow_id: 'wf_001',
+      version: 1,
+      status: 'failed',
+      trigger_payload: {},
+      node_results: [
+        {
+          node_id: 'n1',
+          status: 'failed',
+          elapsed_ms: 100,
+          prompt_tokens: 0,
+          completion_tokens: 0,
+          output: null,
+          error: 'Node failed',
+        },
+      ],
+      total_elapsed_ms: 100,
+      total_prompt_tokens: 0,
+      total_completion_tokens: 0,
+      created_at: '2024-01-15T07:00:00Z',
+    },
+  ],
+};
+
 export async function mockApis(page: Page) {
   await page.route('/api/sessions**', async (route) => {
     const url = route.request().url();
@@ -243,6 +292,8 @@ export async function mockApis(page: Page) {
       } else {
         await route.fulfill({ json: mockWorkflowVersions });
       }
+    } else if (url.includes('/executions')) {
+      await route.fulfill({ json: mockExecutions });
     } else if (url.includes('/test-run')) {
       await route.fulfill({ json: { status: 'ok', total_elapsed_ms: 0, total_prompt_tokens: 0, total_completion_tokens: 0, node_results: [], outputs: {} } });
     } else {

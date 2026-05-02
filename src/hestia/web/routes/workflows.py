@@ -275,6 +275,21 @@ async def receive_webhook(
     return {"received": True, "endpoint": endpoint}
 
 
+@router.get("/workflows/{workflow_id}/executions")
+async def list_executions(
+    workflow_id: str,
+    limit: int = 50,
+    ctx: WebContext = _CTX_DEP,
+) -> dict[str, Any]:
+    """List recent executions for a workflow."""
+    workflow = await ctx.workflow_store.get_workflow(workflow_id)
+    if workflow is None:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    executions = await ctx.execution_store.list_executions(workflow_id, limit=limit)
+    return {"executions": executions}
+
+
 @router.post("/workflows/{workflow_id}/test-run")
 async def test_run_workflow(
     workflow_id: str,
@@ -290,7 +305,7 @@ async def test_run_workflow(
     if version is None:
         raise HTTPException(status_code=400, detail="No active version")
 
-    executor = WorkflowExecutor(ctx.app)
+    executor = WorkflowExecutor(ctx.app, execution_store=ctx.execution_store)
     result = await executor.execute(workflow_id, trigger_payload=payload or {})
 
     return {

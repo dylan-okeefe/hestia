@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, Fragment } from 'react';
 import { useParams } from 'react-router-dom';
 import ReactFlow, {
   Background,
@@ -18,9 +18,11 @@ import {
   activateWorkflowVersion,
   testRunWorkflow,
   updateWorkflow,
+  fetchExecutions,
   type WorkflowNode,
   type WorkflowEdge,
   type ExecutionResult,
+  type ExecutionRecord,
 } from '../api/client';
 import {
   ToolCallNode,
@@ -64,10 +66,29 @@ export default function WorkflowEditor() {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<ExecutionResult | null>(null);
   const [testError, setTestError] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [executions, setExecutions] = useState<ExecutionRecord[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [selectedExecution, setSelectedExecution] = useState<string | null>(null);
   const [addNodeType, setAddNodeType] = useState<string>('default');
   const [triggerType, setTriggerType] = useState<string>('manual');
   const [triggerConfig, setTriggerConfig] = useState<Record<string, string>>({});
   const [triggerSaving, setTriggerSaving] = useState(false);
+
+  const loadExecutions = useCallback(async () => {
+    if (!id) return;
+    setHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      const data = await fetchExecutions(id);
+      setExecutions(data.executions);
+    } catch (err) {
+      setHistoryError(err instanceof Error ? err.message : 'Failed to load history');
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [id]);
 
   useEffect(() => {
     if (!id) return;
@@ -90,7 +111,9 @@ export default function WorkflowEditor() {
         setError(err.message);
         setLoading(false);
       });
-  }, [id, setNodes, setEdges]);
+
+    loadExecutions();
+  }, [id, setNodes, setEdges, loadExecutions]);
 
   const onConnect = useCallback(
     (connection: Connection) => setEdges((eds) => addEdge(connection, eds)),
@@ -182,6 +205,7 @@ export default function WorkflowEditor() {
       const result = await testRunWorkflow(id);
       setTestResult(result);
       setError(null);
+      await loadExecutions();
     } catch (err) {
       setTestError(err instanceof Error ? err.message : 'Test run failed');
       setError(err instanceof Error ? err.message : 'Test run failed');
@@ -251,8 +275,88 @@ export default function WorkflowEditor() {
         <button onClick={handleTestRun} disabled={testing}>
           {testing ? 'Running…' : 'Test Run'}
         </button>
+        <button onClick={() => setShowHistory((s) => !s)}>
+          {showHistory ? 'Hide History' : 'Execution History'}
+        </button>
         {error && !testError && <span style={{ color: 'red', marginLeft: 'auto' }}>{error}</span>}
       </div>
+      {showHistory && (
+        <div
+          style={{
+            borderTop: '1px solid #ddd',
+            padding: '1rem',
+            maxHeight: '40vh',
+            overflowY: 'auto',
+            background: '#fafafa',
+          }}
+        >
+          <strong>Execution History</strong>
+          {historyLoading && <p>Loading…</p>}
+          {historyError && <p style={{ color: 'red' }}>{historyError}</p>}
+          {!historyLoading && !historyError && executions.length === 0 && <p>No executions yet.</p>}
+          {!historyLoading && executions.length > 0 && (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem', marginTop: '0.5rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid #ccc' }}>
+                  <th style={{ textAlign: 'left', padding: '0.25rem' }}>Time</th>
+                  <th style={{ textAlign: 'left', padding: '0.25rem' }}>Status</th>
+                  <th style={{ textAlign: 'left', padding: '0.25rem' }}>Elapsed</th>
+                  <th style={{ textAlign: 'left', padding: '0.25rem' }}>Tokens</th>
+                  <th style={{ textAlign: 'left', padding: '0.25rem' }}>Nodes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {executions.map((ex) => (
+                  <Fragment key={ex.id}>
+                    <tr
+                      style={{ borderBottom: '1px solid #eee', cursor: 'pointer' }}
+                      onClick={() => setSelectedExecution((sel) => (sel === ex.id ? null : ex.id))}
+                    >
+                      <td style={{ padding: '0.25rem' }}>{new Date(ex.created_at).toLocaleString()}</td>
+                      <td style={{ padding: '0.25rem', color: ex.status === 'ok' ? 'green' : 'red' }}>{ex.status}</td>
+                      <td style={{ padding: '0.25rem' }}>{ex.total_elapsed_ms}ms</td>
+                      <td style={{ padding: '0.25rem' }}>
+                        {ex.total_prompt_tokens} prompt + {ex.total_completion_tokens} completion
+                      </td>
+                      <td style={{ padding: '0.25rem' }}>{ex.node_results.length}</td>
+                    </tr>
+                    {selectedExecution === ex.id && (
+                      <tr>
+                        <td colSpan={5} style={{ padding: '0.5rem', background: '#f0f0f0' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                            <thead>
+                              <tr style={{ borderBottom: '1px solid #ccc' }}>
+                                <th style={{ textAlign: 'left', padding: '0.25rem' }}>Node</th>
+                                <th style={{ textAlign: 'left', padding: '0.25rem' }}>Status</th>
+                                <th style={{ textAlign: 'left', padding: '0.25rem' }}>Time</th>
+                                <th style={{ textAlign: 'left', padding: '0.25rem' }}>Output</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {ex.node_results.map((nr) => (
+                                <tr key={nr.node_id} style={{ borderBottom: '1px solid #eee' }}>
+                                  <td style={{ padding: '0.25rem' }}>{nr.node_id}</td>
+                                  <td style={{ padding: '0.25rem', color: nr.status === 'ok' ? 'green' : 'red' }}>
+                                    {nr.status}
+                                  </td>
+                                  <td style={{ padding: '0.25rem' }}>{nr.elapsed_ms}ms</td>
+                                  <td style={{ padding: '0.25rem' }}>
+                                    {typeof nr.output === 'string' ? nr.output : JSON.stringify(nr.output)?.slice(0, 100)}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
       {(testResult || testError) && (
         <div
           style={{

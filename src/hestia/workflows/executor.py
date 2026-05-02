@@ -18,8 +18,13 @@ from hestia.tools.capabilities import (
     SHELL_EXEC,
     WRITE_LOCAL,
 )
-from hestia.workflows.models import WorkflowEdge, WorkflowNode
+from hestia.workflows.models import ExecutionResult, NodeResult, WorkflowEdge, WorkflowNode
 from hestia.workflows.store import WorkflowStore
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from hestia.workflows.execution_store import ExecutionStore
 
 logger = logging.getLogger(__name__)
 
@@ -117,32 +122,6 @@ class _NodeOutput:
     completion_tokens: int = 0
 
 
-@dataclass
-class NodeResult:
-    """Result of executing a single workflow node."""
-
-    node_id: str
-    status: str  # "ok" | "failed"
-    output: Any = None
-    error: str | None = None
-    elapsed_ms: int = 0
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
-
-
-@dataclass
-class ExecutionResult:
-    """Result of executing a workflow."""
-
-    workflow_id: str
-    status: str  # "ok" | "failed"
-    node_results: list[NodeResult] = field(default_factory=list)
-    outputs: dict[str, Any] = field(default_factory=dict)
-    total_elapsed_ms: int = 0
-    total_prompt_tokens: int = 0
-    total_completion_tokens: int = 0
-
-
 class WorkflowExecutor:
     """Executes workflow DAGs with topological ordering and trust enforcement.
 
@@ -150,8 +129,9 @@ class WorkflowExecutor:
         app: The application context providing inference, tool registry, and adapters.
     """
 
-    def __init__(self, app: AppContext) -> None:
+    def __init__(self, app: AppContext, execution_store: "ExecutionStore | None" = None) -> None:
         self._app = app
+        self._execution_store = execution_store
 
     async def execute(self, workflow_id: str, trigger_payload: Any) -> ExecutionResult:
         """Execute a workflow by its ID.
@@ -171,7 +151,7 @@ class WorkflowExecutor:
         store = WorkflowStore(self._app.db)
         workflow = await store.get_workflow(workflow_id)
         if workflow is None:
-            return ExecutionResult(
+            result = ExecutionResult(
                 workflow_id=workflow_id,
                 status="failed",
                 node_results=[
@@ -182,10 +162,15 @@ class WorkflowExecutor:
                     )
                 ],
             )
+            if self._execution_store is not None:
+                await self._execution_store.save_execution(
+                    result, workflow_id, 0, trigger_payload
+                )
+            return result
 
         version = await store.get_active_version(workflow_id)
         if version is None:
-            return ExecutionResult(
+            result = ExecutionResult(
                 workflow_id=workflow_id,
                 status="failed",
                 node_results=[
@@ -196,6 +181,11 @@ class WorkflowExecutor:
                     )
                 ],
             )
+            if self._execution_store is not None:
+                await self._execution_store.save_execution(
+                    result, workflow_id, 0, trigger_payload
+                )
+            return result
 
         node_results: list[NodeResult] = []
         outputs: dict[str, Any] = {"trigger": trigger_payload}
@@ -205,7 +195,7 @@ class WorkflowExecutor:
         try:
             order = _topological_sort(version.nodes, version.edges)
         except ValueError as exc:
-            return ExecutionResult(
+            result = ExecutionResult(
                 workflow_id=workflow_id,
                 status="failed",
                 node_results=[
@@ -216,6 +206,11 @@ class WorkflowExecutor:
                     )
                 ],
             )
+            if self._execution_store is not None:
+                await self._execution_store.save_execution(
+                    result, workflow_id, version.version, trigger_payload
+                )
+            return result
 
         blocked = _blocked_capabilities(workflow.trust_level)
 
@@ -223,7 +218,7 @@ class WorkflowExecutor:
             node_caps = set(node.capabilities)
             denied = node_caps & blocked
             if denied:
-                result = NodeResult(
+                nr = NodeResult(
                     node_id=node.id,
                     status="failed",
                     error=(
@@ -231,13 +226,18 @@ class WorkflowExecutor:
                         f"capabilities: {', '.join(sorted(denied))}"
                     ),
                 )
-                node_results.append(result)
-                return ExecutionResult(
+                node_results.append(nr)
+                result = ExecutionResult(
                     workflow_id=workflow_id,
                     status="failed",
                     node_results=node_results,
                     outputs=outputs,
                 )
+                if self._execution_store is not None:
+                    await self._execution_store.save_execution(
+                        result, workflow_id, version.version, trigger_payload
+                    )
+                return result
 
             inputs = _resolve_inputs(node, version.edges, outputs)
 
@@ -255,22 +255,27 @@ class WorkflowExecutor:
             except Exception as exc:
                 logger.exception("Node %s failed in workflow %s", node.id, workflow_id)
                 elapsed_ms = int((time.perf_counter() - node_start) * 1000)
-                result = NodeResult(
+                nr = NodeResult(
                     node_id=node.id,
                     status="failed",
                     error=str(exc),
                     elapsed_ms=elapsed_ms,
                 )
-                node_results.append(result)
-                return ExecutionResult(
+                node_results.append(nr)
+                result = ExecutionResult(
                     workflow_id=workflow_id,
                     status="failed",
                     node_results=node_results,
                     outputs=outputs,
                 )
+                if self._execution_store is not None:
+                    await self._execution_store.save_execution(
+                        result, workflow_id, version.version, trigger_payload
+                    )
+                return result
 
             elapsed_ms = int((time.perf_counter() - node_start) * 1000)
-            result = NodeResult(
+            nr = NodeResult(
                 node_id=node.id,
                 status="ok",
                 output=node_output.value,
@@ -278,13 +283,13 @@ class WorkflowExecutor:
                 prompt_tokens=node_output.prompt_tokens,
                 completion_tokens=node_output.completion_tokens,
             )
-            node_results.append(result)
+            node_results.append(nr)
             outputs[node.id] = node_output.value
             total_prompt_tokens += node_output.prompt_tokens
             total_completion_tokens += node_output.completion_tokens
 
         total_elapsed_ms = int((time.perf_counter() - started_at) * 1000)
-        return ExecutionResult(
+        result = ExecutionResult(
             workflow_id=workflow_id,
             status="ok",
             node_results=node_results,
@@ -293,6 +298,11 @@ class WorkflowExecutor:
             total_prompt_tokens=total_prompt_tokens,
             total_completion_tokens=total_completion_tokens,
         )
+        if self._execution_store is not None:
+            await self._execution_store.save_execution(
+                result, workflow_id, version.version, trigger_payload
+            )
+        return result
 
     async def _run_node(self, node: WorkflowNode, inputs: dict[str, Any]) -> _NodeOutput:
         """Execute a single node by delegating to the app context.

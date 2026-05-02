@@ -63,6 +63,7 @@ def client(mock_app: MagicMock) -> TestClient:
         trace_store=AsyncMock(),
         failure_store=AsyncMock(),
         workflow_store=AsyncMock(),
+        execution_store=AsyncMock(),
         app=mock_app,
         auth_manager=None,
     )
@@ -842,6 +843,51 @@ class TestWorkflowsRoutes:
         response = client.post("/api/workflows/wf1/test-run")
         assert response.status_code == 400
 
+    def test_list_executions(self, client: TestClient, mock_app: MagicMock) -> None:
+        """GET /api/workflows/{id}/executions returns execution list."""
+        from hestia.web import context as ctx_mod
+        from hestia.workflows.models import Workflow
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        wf = Workflow(id="wf1", name="Test", created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc))
+        ctx.workflow_store.get_workflow = AsyncMock(return_value=wf)
+        ctx.execution_store.list_executions = AsyncMock(
+            return_value=[
+                {
+                    "id": "ex1",
+                    "workflow_id": "wf1",
+                    "version": 1,
+                    "status": "ok",
+                    "trigger_payload": {},
+                    "node_results": [],
+                    "total_elapsed_ms": 100,
+                    "total_prompt_tokens": 10,
+                    "total_completion_tokens": 5,
+                    "created_at": "2024-01-01T12:00:00Z",
+                }
+            ]
+        )
+
+        response = client.get("/api/workflows/wf1/executions?limit=10")
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["executions"]) == 1
+        assert data["executions"][0]["id"] == "ex1"
+        assert data["executions"][0]["status"] == "ok"
+        ctx.execution_store.list_executions.assert_awaited_once_with("wf1", limit=10)
+
+    def test_list_executions_workflow_not_found(self, client: TestClient, mock_app: MagicMock) -> None:
+        """GET /api/workflows/{id}/executions returns 404 when workflow missing."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.workflow_store.get_workflow = AsyncMock(return_value=None)
+
+        response = client.get("/api/workflows/missing/executions")
+        assert response.status_code == 404
+
     def test_webhook_trigger(self, client: TestClient, mock_app: MagicMock) -> None:
         """POST /api/webhooks/{endpoint} publishes webhook_received event."""
         from hestia.web import context as ctx_mod
@@ -885,6 +931,7 @@ class TestWorkflowsRoutes:
                 trace_store=AsyncMock(),
                 failure_store=AsyncMock(),
                 workflow_store=AsyncMock(),
+                execution_store=AsyncMock(),
                 app=mock_app,
                 auth_manager=auth_manager,
             )
