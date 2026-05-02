@@ -317,17 +317,20 @@ class TestFailFast:
         executor: WorkflowExecutor,
         app: AppContext,
     ) -> None:
-        """If a node fails, subsequent nodes are not executed."""
+        """If a node fails, downstream nodes are not executed."""
         wf = Workflow(id="wf_1", name="Fail Fast", trust_level="developer")
         await workflow_store.save_workflow(wf)
 
         node1 = WorkflowNode(id="n1", type="bad", label="Bad")
         node2 = WorkflowNode(id="n2", type="good", label="Good")
+        node3 = WorkflowNode(id="n3", type="good", label="Good2")
+        edge1 = WorkflowEdge(id="e1", source_node_id="n1", target_node_id="n2")
+        edge2 = WorkflowEdge(id="e2", source_node_id="n2", target_node_id="n3")
         version = WorkflowVersion(
             workflow_id="wf_1",
             version=1,
-            nodes=[node1, node2],
-            edges=[],
+            nodes=[node1, node2, node3],
+            edges=[edge1, edge2],
             is_active=True,
         )
         await workflow_store.save_version(version)
@@ -341,6 +344,7 @@ class TestFailFast:
         assert result.node_results[0].node_id == "n1"
         assert "boom" in result.node_results[0].error
         assert "n2" not in result.outputs
+        assert "n3" not in result.outputs
 
 
 class TestCostTracking:
@@ -773,6 +777,188 @@ class TestBranchingExecution:
         assert "beta_node" not in result.outputs
         assert result.outputs["dec"] == "alpha"
         assert result.outputs["alpha_node"] == "done"
+
+
+    @pytest.mark.asyncio
+    async def test_nested_branching(
+        self,
+        workflow_store: WorkflowStore,
+        executor: WorkflowExecutor,
+        app: AppContext,
+    ) -> None:
+        """Nested conditions: outer=true, inner=false executes only inner-false branch."""
+        wf = Workflow(id="wf_1", name="Nested", trust_level="developer")
+        await workflow_store.save_workflow(wf)
+
+        outer = WorkflowNode(id="outer", type="condition", label="Outer", config={"expression": "True"})
+        inner = WorkflowNode(id="inner", type="condition", label="Inner", config={"expression": "False"})
+        node_a = WorkflowNode(id="a", type="echo", label="A")
+        node_b = WorkflowNode(id="b", type="echo", label="B")
+        node_c = WorkflowNode(id="c", type="echo", label="C")
+        edges = [
+            WorkflowEdge(id="e1", source_node_id="outer", target_node_id="inner", source_handle="true"),
+            WorkflowEdge(id="e2", source_node_id="outer", target_node_id="c", source_handle="false"),
+            WorkflowEdge(id="e3", source_node_id="inner", target_node_id="a", source_handle="true"),
+            WorkflowEdge(id="e4", source_node_id="inner", target_node_id="b", source_handle="false"),
+        ]
+        version = WorkflowVersion(
+            workflow_id="wf_1", version=1,
+            nodes=[outer, inner, node_a, node_b, node_c],
+            edges=edges, is_active=True,
+        )
+        await workflow_store.save_version(version)
+        app.tool_registry.call = AsyncMock(return_value=ToolCallResult(status="ok", content="done", artifact_handle=None, truncated=False))
+
+        result = await executor.execute("wf_1", {})
+
+        assert result.status == "ok"
+        executed_ids = {nr.node_id for nr in result.node_results}
+        assert executed_ids == {"outer", "inner", "b"}
+        assert "a" not in result.outputs
+        assert "c" not in result.outputs
+
+    @pytest.mark.asyncio
+    async def test_converging_branches(
+        self,
+        workflow_store: WorkflowStore,
+        executor: WorkflowExecutor,
+        app: AppContext,
+    ) -> None:
+        """Both branches lead to same merge node; merge executes if at least one incoming edge is active."""
+        wf = Workflow(id="wf_1", name="Converge", trust_level="developer")
+        await workflow_store.save_workflow(wf)
+
+        cond = WorkflowNode(id="cond", type="condition", label="Cond", config={"expression": "True"})
+        node_a = WorkflowNode(id="a", type="echo", label="A")
+        node_b = WorkflowNode(id="b", type="echo", label="B")
+        merge = WorkflowNode(id="merge", type="echo", label="Merge")
+        edges = [
+            WorkflowEdge(id="e1", source_node_id="cond", target_node_id="a", source_handle="true"),
+            WorkflowEdge(id="e2", source_node_id="cond", target_node_id="b", source_handle="false"),
+            WorkflowEdge(id="e3", source_node_id="a", target_node_id="merge"),
+            WorkflowEdge(id="e4", source_node_id="b", target_node_id="merge"),
+        ]
+        version = WorkflowVersion(
+            workflow_id="wf_1", version=1,
+            nodes=[cond, node_a, node_b, merge],
+            edges=edges, is_active=True,
+        )
+        await workflow_store.save_version(version)
+        app.tool_registry.call = AsyncMock(return_value=ToolCallResult(status="ok", content="done", artifact_handle=None, truncated=False))
+
+        result = await executor.execute("wf_1", {})
+
+        assert result.status == "ok"
+        executed_ids = {nr.node_id for nr in result.node_results}
+        assert executed_ids == {"cond", "a", "merge"}
+        assert "b" not in result.outputs
+
+    @pytest.mark.asyncio
+    async def test_dead_branch_propagation(
+        self,
+        workflow_store: WorkflowStore,
+        executor: WorkflowExecutor,
+        app: AppContext,
+    ) -> None:
+        """Inactivity propagates through a chain of nodes, not just one hop."""
+        wf = Workflow(id="wf_1", name="Dead", trust_level="developer")
+        await workflow_store.save_workflow(wf)
+
+        cond = WorkflowNode(id="cond", type="condition", label="Cond", config={"expression": "False"})
+        node_a = WorkflowNode(id="a", type="echo", label="A")
+        node_b = WorkflowNode(id="b", type="echo", label="B")
+        node_c = WorkflowNode(id="c", type="echo", label="C")
+        edges = [
+            WorkflowEdge(id="e1", source_node_id="cond", target_node_id="a", source_handle="true"),
+            WorkflowEdge(id="e2", source_node_id="a", target_node_id="b"),
+            WorkflowEdge(id="e3", source_node_id="b", target_node_id="c"),
+        ]
+        version = WorkflowVersion(
+            workflow_id="wf_1", version=1,
+            nodes=[cond, node_a, node_b, node_c],
+            edges=edges, is_active=True,
+        )
+        await workflow_store.save_version(version)
+        app.tool_registry.call = AsyncMock(return_value=ToolCallResult(status="ok", content="done", artifact_handle=None, truncated=False))
+
+        result = await executor.execute("wf_1", {})
+
+        assert result.status == "ok"
+        executed_ids = {nr.node_id for nr in result.node_results}
+        assert executed_ids == {"cond"}
+        assert "a" not in result.outputs
+        assert "b" not in result.outputs
+        assert "c" not in result.outputs
+
+    @pytest.mark.asyncio
+    async def test_llm_decision_unknown_branch(
+        self,
+        workflow_store: WorkflowStore,
+        executor: WorkflowExecutor,
+        app: AppContext,
+    ) -> None:
+        """LLM returns unknown branch name — no downstream nodes execute gracefully."""
+        wf = Workflow(id="wf_1", name="Unknown", trust_level="developer")
+        await workflow_store.save_workflow(wf)
+
+        decision = WorkflowNode(id="dec", type="llm_decision", label="Decide", config={"branches": ["a", "b"]})
+        node_a = WorkflowNode(id="a", type="echo", label="A")
+        node_b = WorkflowNode(id="b", type="echo", label="B")
+        edges = [
+            WorkflowEdge(id="e1", source_node_id="dec", target_node_id="a", source_handle="a"),
+            WorkflowEdge(id="e2", source_node_id="dec", target_node_id="b", source_handle="b"),
+        ]
+        version = WorkflowVersion(
+            workflow_id="wf_1", version=1,
+            nodes=[decision, node_a, node_b],
+            edges=edges, is_active=True,
+        )
+        await workflow_store.save_version(version)
+        app.inference.chat = AsyncMock(return_value=ChatResponse(
+            content="unknown_x", reasoning_content=None, tool_calls=[], finish_reason="stop",
+            prompt_tokens=10, completion_tokens=5, total_tokens=15,
+        ))
+
+        result = await executor.execute("wf_1", {})
+
+        assert result.status == "ok"
+        executed_ids = {nr.node_id for nr in result.node_results}
+        assert executed_ids == {"dec"}
+        assert "a" not in result.outputs
+        assert "b" not in result.outputs
+
+    @pytest.mark.asyncio
+    async def test_multiple_roots(
+        self,
+        workflow_store: WorkflowStore,
+        executor: WorkflowExecutor,
+        app: AppContext,
+    ) -> None:
+        """DAG with two independent entry points executes both regardless of branching."""
+        wf = Workflow(id="wf_1", name="Multi Root", trust_level="developer")
+        await workflow_store.save_workflow(wf)
+
+        root1 = WorkflowNode(id="r1", type="echo", label="R1")
+        root2 = WorkflowNode(id="r2", type="echo", label="R2")
+        cond = WorkflowNode(id="cond", type="condition", label="Cond", config={"expression": "False"})
+        node_a = WorkflowNode(id="a", type="echo", label="A")
+        edges = [
+            WorkflowEdge(id="e1", source_node_id="cond", target_node_id="a", source_handle="true"),
+        ]
+        version = WorkflowVersion(
+            workflow_id="wf_1", version=1,
+            nodes=[root1, root2, cond, node_a],
+            edges=edges, is_active=True,
+        )
+        await workflow_store.save_version(version)
+        app.tool_registry.call = AsyncMock(return_value=ToolCallResult(status="ok", content="done", artifact_handle=None, truncated=False))
+
+        result = await executor.execute("wf_1", {})
+
+        assert result.status == "ok"
+        executed_ids = {nr.node_id for nr in result.node_results}
+        assert executed_ids == {"r1", "r2", "cond"}
+        assert "a" not in result.outputs
 
 
 class TestExecutionPersistence:

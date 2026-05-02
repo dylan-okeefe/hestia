@@ -165,6 +165,81 @@ class TestWebhookHMAC:
         response = client.post("/api/webhooks/unknown", json={"key": "value"})
         assert response.status_code == 404
 
+    def test_empty_body_with_valid_hmac(self, client: TestClient, mock_app: MagicMock) -> None:
+        """Webhook with empty body and valid HMAC of empty string returns 202."""
+        from hestia.web import context as ctx_mod
+        from hestia.workflows.models import Workflow
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        mock_event_bus = AsyncMock()
+        mock_app.event_bus = mock_event_bus
+        wf = Workflow(
+            id="wf1", name="Hook", trigger_type="webhook",
+            trigger_config={"endpoint": "deploy", "secret": "super-secret"},
+        )
+        ctx.workflow_store.list_workflows = AsyncMock(return_value=[wf])
+
+        body_bytes = b""
+        signature = hmac.new(b"super-secret", body_bytes, hashlib.sha256).hexdigest()
+        response = client.post(
+            "/api/webhooks/deploy",
+            content=body_bytes,
+            headers={"X-Webhook-Signature": signature},
+        )
+        assert response.status_code == 202
+
+    def test_non_json_body_with_valid_hmac(self, client: TestClient, mock_app: MagicMock) -> None:
+        """Webhook with plain text body and valid HMAC returns 202."""
+        from hestia.web import context as ctx_mod
+        from hestia.workflows.models import Workflow
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        mock_event_bus = AsyncMock()
+        mock_app.event_bus = mock_event_bus
+        wf = Workflow(
+            id="wf1", name="Hook", trigger_type="webhook",
+            trigger_config={"endpoint": "deploy", "secret": "super-secret"},
+        )
+        ctx.workflow_store.list_workflows = AsyncMock(return_value=[wf])
+
+        body_bytes = b"plain text payload"
+        signature = hmac.new(b"super-secret", body_bytes, hashlib.sha256).hexdigest()
+        response = client.post(
+            "/api/webhooks/deploy",
+            content=body_bytes,
+            headers={"X-Webhook-Signature": signature, "Content-Type": "text/plain"},
+        )
+        assert response.status_code == 202
+
+    def test_replay_attack_same_signature_twice(self, client: TestClient, mock_app: MagicMock) -> None:
+        """Same valid signature sent twice — both succeed (no nonce in v1)."""
+        from hestia.web import context as ctx_mod
+        from hestia.workflows.models import Workflow
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        mock_event_bus = AsyncMock()
+        mock_app.event_bus = mock_event_bus
+        wf = Workflow(
+            id="wf1", name="Hook", trigger_type="webhook",
+            trigger_config={"endpoint": "deploy", "secret": "super-secret"},
+        )
+        ctx.workflow_store.list_workflows = AsyncMock(return_value=[wf])
+
+        payload = {"key": "value"}
+        body_bytes = json.dumps(payload).encode()
+        signature = hmac.new(b"super-secret", body_bytes, hashlib.sha256).hexdigest()
+
+        for _ in range(2):
+            response = client.post(
+                "/api/webhooks/deploy",
+                content=body_bytes,
+                headers={"X-Webhook-Signature": signature, "Content-Type": "application/json"},
+            )
+            assert response.status_code == 202
+
 
 class TestAutoGenerateSecret:
     """Tests for auto-generating webhook secrets on workflow creation."""

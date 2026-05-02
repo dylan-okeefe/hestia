@@ -303,10 +303,16 @@ export default function WorkflowEditor() {
   const handleAddNode = () => {
     pushCurrent();
     setIsDirty(true);
+    const lastNode = nodes.length > 0
+      ? nodes.reduce((prev, curr) => (curr.position.y > prev.position.y ? curr : prev), nodes[0])
+      : null;
     const newNode: Node = {
       id: `node_${Date.now()}`,
       type: addNodeType,
-      position: { x: Math.random() * 200 + 50, y: Math.random() * 200 + 50 },
+      position: {
+        x: lastNode ? lastNode.position.x : 250,
+        y: lastNode ? lastNode.position.y + 100 : 100,
+      },
       data: (() => {
         switch (addNodeType) {
           case 'tool_call':

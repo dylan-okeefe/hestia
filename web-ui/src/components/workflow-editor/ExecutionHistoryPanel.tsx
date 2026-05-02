@@ -100,7 +100,7 @@ export default function ExecutionHistoryPanel({
                               {ex.node_results.map((nr) => (
                                 <tr key={nr.node_id} style={{ borderBottom: '1px solid #eee' }}>
                                   <td style={{ padding: '0.25rem' }}>
-                                    {nr.node_id}
+                                    {formatNodeLabel(nr.node_id, nodes)}
                                   </td>
                                   <td style={{ padding: '0.25rem', color: nr.status === 'ok' ? 'green' : 'red' }}>
                                     {nr.status}
