@@ -256,7 +256,11 @@ export async function mockApis(page: Page) {
   });
 
   await page.route('/api/auth/status', async (route) => {
-    await route.fulfill({ json: { auth_enabled: false, authenticated: false } });
+    await route.fulfill({ json: { auth_enabled: false, authenticated: false, available_platforms: ['cli', 'discord', 'telegram', 'matrix'] } });
+  });
+
+  await page.route('/api/tools', async (route) => {
+    await route.fulfill({ json: { tools: ['search_web', 'read_email', 'send_message', 'weather_lookup'] } });
   });
 
   await page.route('/api/config/schema', async (route) => {

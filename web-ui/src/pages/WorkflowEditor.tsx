@@ -11,6 +11,8 @@ import ReactFlow, {
   type Node,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
+import { CronExpressionParser } from 'cron-parser';
+import cronstrue from 'cronstrue';
 import {
   fetchWorkflow,
   fetchWorkflowVersions,
@@ -19,6 +21,8 @@ import {
   testRunWorkflow,
   updateWorkflow,
   fetchExecutions,
+  fetchTools,
+  fetchAuthStatus,
   type WorkflowNode,
   type WorkflowEdge,
   type WorkflowVersion,
@@ -33,6 +37,72 @@ import {
   ConditionNode,
   InvestigateNode,
 } from '../components/workflow-nodes';
+
+function CronInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<string>('');
+
+  const validate = (v: string) => {
+    if (!v.trim()) {
+      setError(null);
+      setPreview('');
+      return;
+    }
+    try {
+      CronExpressionParser.parse(v);
+      setError(null);
+      setPreview(cronstrue.toString(v));
+    } catch {
+      setError('Invalid cron expression');
+      setPreview('');
+    }
+  };
+
+  useEffect(() => {
+    validate(value);
+  }, [value]);
+
+  const presets = [
+    { label: 'Every hour', value: '0 * * * *' },
+    { label: 'Every day at 8am', value: '0 8 * * *' },
+    { label: 'Every Monday', value: '0 0 * * 1' },
+    { label: 'Every 5 minutes', value: '*/5 * * * *' },
+  ];
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <input
+          placeholder="Cron expression"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onBlur={(e) => validate(e.target.value)}
+          style={{
+            padding: '0.25rem 0.5rem',
+            minWidth: 180,
+            border: error ? '2px solid red' : '1px solid #ccc',
+          }}
+          aria-label="Cron expression"
+          aria-invalid={error ? 'true' : 'false'}
+        />
+        <div style={{ display: 'flex', gap: '0.25rem' }}>
+          {presets.map((p) => (
+            <button
+              key={p.value}
+              onClick={() => onChange(p.value)}
+              style={{ padding: '0.125rem 0.375rem', fontSize: '0.75rem' }}
+              title={p.value}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {error && <span style={{ color: 'red', fontSize: '0.75rem' }}>{error}</span>}
+      {preview && !error && <span style={{ color: '#666', fontSize: '0.75rem' }}>{preview}</span>}
+    </div>
+  );
+}
 
 const EDITOR_NODE_TYPES = [
   'default',
@@ -79,6 +149,8 @@ export default function WorkflowEditor() {
   const [triggerSaving, setTriggerSaving] = useState(false);
   const [webhookUrl, setWebhookUrl] = useState('');
   const [webhookSecret, setWebhookSecret] = useState('');
+  const [tools, setTools] = useState<string[]>([]);
+  const [platforms, setPlatforms] = useState<string[]>([]);
 
   const loadExecutions = useCallback(async () => {
     if (!id) return;
@@ -119,6 +191,14 @@ export default function WorkflowEditor() {
         setError(err.message);
         setLoading(false);
       });
+
+    fetchTools()
+      .then((data) => setTools(data.tools || []))
+      .catch(() => setTools([]));
+
+    fetchAuthStatus()
+      .then((data) => setPlatforms(data.available_platforms || []))
+      .catch(() => setPlatforms([]));
 
     loadExecutions();
   }, [id, setNodes, setEdges, loadExecutions]);
@@ -175,7 +255,7 @@ export default function WorkflowEditor() {
           case 'condition':
             return { label: 'Condition', expression: '' };
           case 'investigate':
-            return { label: 'Investigate', topic: '', depth: 'shallow', tools: '' };
+            return { label: 'Investigate', topic: '', depth: 'shallow', tools: [] };
           default:
             return { label: 'New Node' };
         }
@@ -604,12 +684,9 @@ export default function WorkflowEditor() {
           ))}
         </select>
         {triggerType === 'schedule' && (
-          <input
-            placeholder="Cron expression"
+          <CronInput
             value={triggerConfig.cron || ''}
-            onChange={(e) => updateTriggerConfig('cron', e.target.value)}
-            style={{ padding: '0.25rem 0.5rem', minWidth: 180 }}
-            aria-label="Cron expression"
+            onChange={(value) => updateTriggerConfig('cron', value)}
           />
         )}
         {triggerType === 'chat_command' && (
@@ -751,11 +828,21 @@ export default function WorkflowEditor() {
               <>
                 <div style={{ marginBottom: '0.75rem' }}>
                   <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Tool Name</label>
-                  <input
+                  <select
                     value={(selectedNode.data.tool_name as string) || ''}
                     onChange={(e) => updateSelectedNodeData('tool_name', e.target.value)}
                     style={{ width: '100%' }}
-                  />
+                    aria-label="Tool name"
+                  >
+                    <option value="" disabled>
+                      Select a tool…
+                    </option>
+                    {tools.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div style={{ marginBottom: '0.75rem' }}>
                   <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Args (JSON)</label>
@@ -787,16 +874,63 @@ export default function WorkflowEditor() {
                   />
                 </div>
                 <div style={{ marginBottom: '0.75rem' }}>
-                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Branches (comma-separated)</label>
+                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Branches</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginBottom: '0.25rem' }}>
+                    {((selectedNode.data.branches as string[]) || []).map((branch) => (
+                      <span
+                        key={branch}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.25rem',
+                          background: '#e9d5ff',
+                          color: '#581c87',
+                          padding: '0.125rem 0.5rem',
+                          borderRadius: '9999px',
+                          fontSize: '0.75rem',
+                        }}
+                      >
+                        {branch}
+                        <button
+                          onClick={() => {
+                            const current = (selectedNode.data.branches as string[]) || [];
+                            updateSelectedNodeData(
+                              'branches',
+                              current.filter((b) => b !== branch)
+                            );
+                          }}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            cursor: 'pointer',
+                            padding: 0,
+                            fontSize: '0.75rem',
+                            color: '#581c87',
+                            lineHeight: 1,
+                          }}
+                          aria-label={`Remove branch ${branch}`}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
                   <input
-                    value={((selectedNode.data.branches as string[]) || []).join(', ')}
-                    onChange={(e) =>
-                      updateSelectedNodeData(
-                        'branches',
-                        e.target.value.split(',').map((s) => s.trim()).filter(Boolean)
-                      )
-                    }
+                    placeholder="Add branch…"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ',') {
+                        e.preventDefault();
+                        const value = (e.target as HTMLInputElement).value.trim();
+                        if (!value) return;
+                        const current = (selectedNode.data.branches as string[]) || [];
+                        if (!current.includes(value)) {
+                          updateSelectedNodeData('branches', [...current, value]);
+                        }
+                        (e.target as HTMLInputElement).value = '';
+                      }
+                    }}
                     style={{ width: '100%' }}
+                    aria-label="Add branch"
                   />
                 </div>
               </>
@@ -806,11 +940,21 @@ export default function WorkflowEditor() {
               <>
                 <div style={{ marginBottom: '0.75rem' }}>
                   <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Platform</label>
-                  <input
+                  <select
                     value={(selectedNode.data.platform as string) || ''}
                     onChange={(e) => updateSelectedNodeData('platform', e.target.value)}
                     style={{ width: '100%' }}
-                  />
+                    aria-label="Platform"
+                  >
+                    <option value="" disabled>
+                      Select a platform…
+                    </option>
+                    {platforms.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div style={{ marginBottom: '0.75rem' }}>
                   <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Message</label>
@@ -886,11 +1030,16 @@ export default function WorkflowEditor() {
             {selectedNode.type === 'condition' && (
               <div style={{ marginBottom: '0.75rem' }}>
                 <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Expression</label>
-                <input
+                <textarea
+                  rows={3}
                   value={(selectedNode.data.expression as string) || ''}
                   onChange={(e) => updateSelectedNodeData('expression', e.target.value)}
                   style={{ width: '100%' }}
+                  aria-label="Expression"
                 />
+                <span style={{ fontSize: '0.75rem', color: '#666' }}>
+                  Supported: comparisons (==, !=, &lt;, &gt;, &lt;=, &gt;=), logic (and, or, not), arithmetic (+, -, *, /). No function calls or power operator.
+                </span>
               </div>
             )}
 
@@ -917,12 +1066,30 @@ export default function WorkflowEditor() {
                   </select>
                 </div>
                 <div style={{ marginBottom: '0.75rem' }}>
-                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Tools (comma-separated)</label>
-                  <input
-                    value={(selectedNode.data.tools as string) || ''}
-                    onChange={(e) => updateSelectedNodeData('tools', e.target.value)}
-                    style={{ width: '100%' }}
-                  />
+                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Tools</label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                    {tools.map((t) => {
+                      const selected = ((selectedNode.data.tools as string[]) || []);
+                      return (
+                        <label key={t} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.875rem', cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={selected.includes(t)}
+                            onChange={(e) => {
+                              const current = (selectedNode.data.tools as string[]) || [];
+                              if (e.target.checked) {
+                                updateSelectedNodeData('tools', [...current, t]);
+                              } else {
+                                updateSelectedNodeData('tools', current.filter((x) => x !== t));
+                              }
+                            }}
+                            aria-label={`Tool ${t}`}
+                          />
+                          {t}
+                        </label>
+                      );
+                    })}
+                  </div>
                 </div>
               </>
             )}
