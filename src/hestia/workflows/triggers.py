@@ -69,6 +69,33 @@ class TriggerRegistry:
             len(TRIGGER_MAP),
         )
 
+    async def reload(self) -> None:
+        """Re-query all workflows from the store and replace the local cache."""
+        self._workflows = await self._workflow_store.list_workflows()
+        logger.info("TriggerRegistry reloaded: %d workflows", len(self._workflows))
+
+    async def reload_one(self, workflow_id: str) -> None:
+        """Fetch a single workflow and update or remove it from the local cache.
+
+        Args:
+            workflow_id: The ID of the workflow to refresh.
+        """
+        updated = await self._workflow_store.get_workflow(workflow_id)
+        existing_ids = {w.id for w in self._workflows}
+
+        if updated is not None:
+            if workflow_id in existing_ids:
+                self._workflows = [
+                    updated if w.id == workflow_id else w for w in self._workflows
+                ]
+            else:
+                self._workflows.append(updated)
+            logger.debug("TriggerRegistry updated workflow %s", workflow_id)
+        else:
+            if workflow_id in existing_ids:
+                self._workflows = [w for w in self._workflows if w.id != workflow_id]
+                logger.debug("TriggerRegistry removed workflow %s", workflow_id)
+
     async def _on_event(self, event_type: str, payload: Any) -> None:
         """Handle an incoming event by matching and executing workflows."""
         trigger_type = TRIGGER_MAP.get(event_type)
@@ -144,6 +171,7 @@ class TriggerRegistry:
         from datetime import datetime
 
         from croniter import croniter
+
         from hestia.core.clock import utcnow
 
         current_time = payload.get("current_time")

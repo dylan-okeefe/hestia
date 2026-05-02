@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC
 from typing import Any
 
 import pytest
@@ -102,7 +103,7 @@ class TestScheduleFired:
         reg = TriggerRegistry(event_bus, workflow_store, executor)
         await reg.start()
 
-        event_bus.publish("schedule_fired", {"task_id": "t1"})
+        await event_bus.publish("schedule_fired", {"task_id": "t1"})
         await asyncio.sleep(0.01)
 
         assert len(executed) == 1
@@ -125,7 +126,7 @@ class TestScheduleFired:
         reg = TriggerRegistry(event_bus, workflow_store, executor)
         await reg.start()
 
-        event_bus.publish("schedule_fired", {"task_id": "t1"})
+        await event_bus.publish("schedule_fired", {"task_id": "t1"})
         await asyncio.sleep(0.01)
 
         assert executed == []
@@ -156,7 +157,7 @@ class TestChatCommand:
         reg = TriggerRegistry(event_bus, workflow_store, executor)
         await reg.start()
 
-        event_bus.publish("chat_command", {"command": "status"})
+        await event_bus.publish("chat_command", {"command": "status"})
         await asyncio.sleep(0.01)
 
         assert len(executed) == 1
@@ -183,7 +184,7 @@ class TestChatCommand:
         reg = TriggerRegistry(event_bus, workflow_store, executor)
         await reg.start()
 
-        event_bus.publish("chat_command", {"command": "help"})
+        await event_bus.publish("chat_command", {"command": "help"})
         await asyncio.sleep(0.01)
 
         assert executed == []
@@ -210,7 +211,7 @@ class TestChatCommand:
         reg = TriggerRegistry(event_bus, workflow_store, executor)
         await reg.start()
 
-        event_bus.publish("chat_command", {"command": "anything"})
+        await event_bus.publish("chat_command", {"command": "anything"})
         await asyncio.sleep(0.01)
 
         assert len(executed) == 1
@@ -241,7 +242,7 @@ class TestWebhookReceived:
         reg = TriggerRegistry(event_bus, workflow_store, executor)
         await reg.start()
 
-        event_bus.publish("webhook_received", {"endpoint": "/deploy"})
+        await event_bus.publish("webhook_received", {"endpoint": "/deploy"})
         await asyncio.sleep(0.01)
 
         assert len(executed) == 1
@@ -268,7 +269,7 @@ class TestWebhookReceived:
         reg = TriggerRegistry(event_bus, workflow_store, executor)
         await reg.start()
 
-        event_bus.publish("webhook_received", {"endpoint": "/other"})
+        await event_bus.publish("webhook_received", {"endpoint": "/other"})
         await asyncio.sleep(0.01)
 
         assert executed == []
@@ -299,7 +300,7 @@ class TestMessageMatched:
         reg = TriggerRegistry(event_bus, workflow_store, executor)
         await reg.start()
 
-        event_bus.publish("message_matched", {"text": "System ERROR detected"})
+        await event_bus.publish("message_matched", {"text": "System ERROR detected"})
         await asyncio.sleep(0.01)
 
         assert len(executed) == 1
@@ -326,7 +327,7 @@ class TestMessageMatched:
         reg = TriggerRegistry(event_bus, workflow_store, executor)
         await reg.start()
 
-        event_bus.publish("message_matched", {"text": "All clear"})
+        await event_bus.publish("message_matched", {"text": "All clear"})
         await asyncio.sleep(0.01)
 
         assert executed == []
@@ -352,7 +353,7 @@ class TestScheduleMatching:
         reg = TriggerRegistry(event_bus, workflow_store, executor)
         await reg.start()
 
-        event_bus.publish("schedule_fired", {"task_id": "t1"})
+        await event_bus.publish("schedule_fired", {"task_id": "t1"})
         await asyncio.sleep(0.01)
 
         assert len(executed) == 1
@@ -379,11 +380,11 @@ class TestScheduleMatching:
         reg = TriggerRegistry(event_bus, workflow_store, executor)
         await reg.start()
 
-        from datetime import datetime, timezone
+        from datetime import datetime
 
-        event_bus.publish(
+        await event_bus.publish(
             "schedule_fired",
-            {"task_id": "t1", "current_time": datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)},
+            {"task_id": "t1", "current_time": datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)},
         )
         await asyncio.sleep(0.01)
 
@@ -411,11 +412,11 @@ class TestScheduleMatching:
         reg = TriggerRegistry(event_bus, workflow_store, executor)
         await reg.start()
 
-        from datetime import datetime, timezone
+        from datetime import datetime
 
-        event_bus.publish(
+        await event_bus.publish(
             "schedule_fired",
-            {"task_id": "t1", "current_time": datetime(2024, 1, 1, 12, 30, 0, tzinfo=timezone.utc)},
+            {"task_id": "t1", "current_time": datetime(2024, 1, 1, 12, 30, 0, tzinfo=UTC)},
         )
         await asyncio.sleep(0.01)
 
@@ -444,9 +445,117 @@ class TestMultipleWorkflows:
         reg = TriggerRegistry(event_bus, workflow_store, executor)
         await reg.start()
 
-        event_bus.publish("schedule_fired", {"task_id": "t1"})
+        await event_bus.publish("schedule_fired", {"task_id": "t1"})
         await asyncio.sleep(0.01)
 
         assert len(executed) == 2
         ids = {w.id for w, _p in executed}
         assert ids == {"wf_1", "wf_2"}
+
+
+class TestReload:
+    """Tests for reload and reload_one methods."""
+
+    @pytest.mark.asyncio
+    async def test_reload_updates_workflows(
+        self,
+        workflow_store: WorkflowStore,
+        event_bus: EventBus,
+        executed: list[tuple[Workflow, Any]],
+    ) -> None:
+        """reload refreshes the workflow list from the store."""
+        wf1 = Workflow(id="wf_1", name="A", trigger_type="schedule")
+        await workflow_store.save_workflow(wf1)
+
+        async def executor(workflow: Workflow, payload: Any) -> None:
+            executed.append((workflow, payload))
+
+        reg = TriggerRegistry(event_bus, workflow_store, executor)
+        await reg.start()
+
+        # Add a new workflow after start
+        wf2 = Workflow(id="wf_2", name="B", trigger_type="schedule")
+        await workflow_store.save_workflow(wf2)
+
+        # Before reload, only wf1 is known
+        await event_bus.publish("schedule_fired", {"task_id": "t1"})
+        await asyncio.sleep(0.01)
+        assert len(executed) == 1
+
+        # After reload, wf2 is also known
+        await reg.reload()
+        await event_bus.publish("schedule_fired", {"task_id": "t2"})
+        await asyncio.sleep(0.01)
+        assert len(executed) == 3
+        ids = {w.id for w, _p in executed}
+        assert ids == {"wf_1", "wf_2"}
+
+    @pytest.mark.asyncio
+    async def test_reload_one_updates_single_workflow(
+        self,
+        workflow_store: WorkflowStore,
+        event_bus: EventBus,
+        executed: list[tuple[Workflow, Any]],
+    ) -> None:
+        """reload_one updates a single workflow without full reload."""
+        wf = Workflow(id="wf_1", name="Old", trigger_type="schedule")
+        await workflow_store.save_workflow(wf)
+
+        async def executor(workflow: Workflow, payload: Any) -> None:
+            executed.append((workflow, payload))
+
+        reg = TriggerRegistry(event_bus, workflow_store, executor)
+        await reg.start()
+
+        # Update the workflow in the store
+        wf.name = "New"
+        await workflow_store.save_workflow(wf)
+
+        await reg.reload_one("wf_1")
+
+        assert len(reg._workflows) == 1
+        assert reg._workflows[0].name == "New"
+
+    @pytest.mark.asyncio
+    async def test_reload_one_adds_new_workflow(
+        self,
+        workflow_store: WorkflowStore,
+        event_bus: EventBus,
+        executed: list[tuple[Workflow, Any]],
+    ) -> None:
+        """reload_one adds a workflow that was not previously cached."""
+        async def executor(workflow: Workflow, payload: Any) -> None:
+            executed.append((workflow, payload))
+
+        reg = TriggerRegistry(event_bus, workflow_store, executor)
+        await reg.start()
+
+        wf = Workflow(id="wf_1", name="A", trigger_type="schedule")
+        await workflow_store.save_workflow(wf)
+
+        await reg.reload_one("wf_1")
+
+        assert len(reg._workflows) == 1
+        assert reg._workflows[0].id == "wf_1"
+
+    @pytest.mark.asyncio
+    async def test_reload_one_removes_deleted_workflow(
+        self,
+        workflow_store: WorkflowStore,
+        event_bus: EventBus,
+        executed: list[tuple[Workflow, Any]],
+    ) -> None:
+        """reload_one removes a workflow that no longer exists in the store."""
+        wf = Workflow(id="wf_1", name="A", trigger_type="schedule")
+        await workflow_store.save_workflow(wf)
+
+        async def executor(workflow: Workflow, payload: Any) -> None:
+            executed.append((workflow, payload))
+
+        reg = TriggerRegistry(event_bus, workflow_store, executor)
+        await reg.start()
+
+        await workflow_store.delete_workflow("wf_1")
+        await reg.reload_one("wf_1")
+
+        assert reg._workflows == []
