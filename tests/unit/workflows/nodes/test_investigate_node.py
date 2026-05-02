@@ -207,3 +207,114 @@ async def test_tool_failure_gracefully_handled(app: AppContext) -> None:
 
     assert result["findings"] == ["Tool failed"]
     app.tool_registry.call.assert_awaited_once_with("stock_api", {})
+
+
+@pytest.mark.asyncio
+async def test_input_keys_scopes_tool_inputs(app: AppContext) -> None:
+    """Only specified input_keys are passed to tools."""
+    node = WorkflowNode(
+        id="n1",
+        type="investigate",
+        label="Scoped Inputs",
+        config={"topic": "weather", "tools": ["weather_lookup"], "input_keys": ["location"]},
+    )
+    app.tool_registry.call = AsyncMock(
+        return_value=ToolCallResult(
+            status="ok",
+            content="Sunny",
+            artifact_handle=None,
+            truncated=False,
+        )
+    )
+    app.inference.chat = AsyncMock(
+        return_value=ChatResponse(
+            content='{"findings": ["Sunny"], "recommendations": [], "sources": []}',
+            reasoning_content=None,
+            tool_calls=[],
+            finish_reason="stop",
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+        )
+    )
+
+    executor = InvestigateNode()
+    inputs = {"location": "NYC", "extra": "ignored"}
+    result = await executor.execute(app, node, inputs)
+
+    assert result["findings"] == ["Sunny"]
+    app.tool_registry.call.assert_awaited_once_with("weather_lookup", {"location": "NYC"})
+
+
+@pytest.mark.asyncio
+async def test_empty_input_keys_passes_first_predecessor(app: AppContext) -> None:
+    """Empty input_keys passes only the first predecessor's output."""
+    node = WorkflowNode(
+        id="n1",
+        type="investigate",
+        label="First Only",
+        config={"topic": "summary", "tools": ["summarizer"]},
+    )
+    app.tool_registry.call = AsyncMock(
+        return_value=ToolCallResult(
+            status="ok",
+            content="Short",
+            artifact_handle=None,
+            truncated=False,
+        )
+    )
+    app.inference.chat = AsyncMock(
+        return_value=ChatResponse(
+            content='{"findings": ["Short"], "recommendations": [], "sources": []}',
+            reasoning_content=None,
+            tool_calls=[],
+            finish_reason="stop",
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+        )
+    )
+
+    executor = InvestigateNode()
+    inputs = {"first": "data", "second": "more"}
+    await executor.execute(app, node, inputs)
+
+    app.tool_registry.call.assert_awaited_once_with("summarizer", {"first": "data"})
+
+
+@pytest.mark.asyncio
+async def test_input_keys_missing_key_logs_warning(
+    app: AppContext, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Missing input_keys reference logs a warning."""
+    node = WorkflowNode(
+        id="n1",
+        type="investigate",
+        label="Missing Key",
+        config={"topic": "test", "tools": ["tool1"], "input_keys": ["missing"]},
+    )
+    app.tool_registry.call = AsyncMock(
+        return_value=ToolCallResult(
+            status="ok",
+            content="ok",
+            artifact_handle=None,
+            truncated=False,
+        )
+    )
+    app.inference.chat = AsyncMock(
+        return_value=ChatResponse(
+            content='{"findings": ["ok"], "recommendations": [], "sources": []}',
+            reasoning_content=None,
+            tool_calls=[],
+            finish_reason="stop",
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+        )
+    )
+
+    executor = InvestigateNode()
+    with caplog.at_level("WARNING"):
+        await executor.execute(app, node, {})
+
+    assert "missing key" in caplog.text.lower()
