@@ -95,7 +95,9 @@ class ExecutionStore:
             rows = result.fetchall()
             return [self._row_to_dict(row) for row in rows]
 
-    async def get_last_execution_per_workflow(self, workflow_ids: list[str]) -> dict[str, dict[str, Any]]:
+    async def get_last_execution_per_workflow(
+        self, workflow_ids: list[str]
+    ) -> dict[str, dict[str, Any]]:
         """Return the most recent execution for each workflow in the given list."""
         if not workflow_ids:
             return {}
@@ -110,13 +112,10 @@ class ExecutionStore:
             .group_by(workflow_executions.c.workflow_id)
             .subquery()
         )
-        query = (
-            sa.select(workflow_executions)
-            .join(
-                subquery,
-                (workflow_executions.c.workflow_id == subquery.c.workflow_id)
-                & (workflow_executions.c.created_at == subquery.c.max_created_at),
-            )
+        query = sa.select(workflow_executions).join(
+            subquery,
+            (workflow_executions.c.workflow_id == subquery.c.workflow_id)
+            & (workflow_executions.c.created_at == subquery.c.max_created_at),
         )
         async with self._db.engine.connect() as conn:
             result = await conn.execute(query)

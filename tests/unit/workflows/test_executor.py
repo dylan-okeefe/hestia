@@ -82,12 +82,14 @@ class TestExecuteHappyPath:
         )
         await workflow_store.save_version(version)
 
-        app.tool_registry.call = AsyncMock(return_value=ToolCallResult(
-            status="ok",
-            content="hello",
-            artifact_handle=None,
-            truncated=False,
-        ))
+        app.tool_registry.call = AsyncMock(
+            return_value=ToolCallResult(
+                status="ok",
+                content="hello",
+                artifact_handle=None,
+                truncated=False,
+            )
+        )
 
         result = await executor.execute("wf_1", {"text": "hi"})
 
@@ -175,15 +177,17 @@ class TestExecuteHappyPath:
         )
         await workflow_store.save_version(version)
 
-        app.inference.chat = AsyncMock(return_value=ChatResponse(
-            content="42",
-            reasoning_content=None,
-            tool_calls=[],
-            finish_reason="stop",
-            prompt_tokens=0,
-            completion_tokens=0,
-            total_tokens=0,
-        ))
+        app.inference.chat = AsyncMock(
+            return_value=ChatResponse(
+                content="42",
+                reasoning_content=None,
+                tool_calls=[],
+                finish_reason="stop",
+                prompt_tokens=0,
+                completion_tokens=0,
+                total_tokens=0,
+            )
+        )
 
         result = await executor.execute("wf_1", {"question": "meaning of life"})
 
@@ -257,12 +261,14 @@ class TestTrustEnforcement:
         )
         await workflow_store.save_version(version)
 
-        app.tool_registry.call = AsyncMock(return_value=ToolCallResult(
-            status="ok",
-            content="done",
-            artifact_handle=None,
-            truncated=False,
-        ))
+        app.tool_registry.call = AsyncMock(
+            return_value=ToolCallResult(
+                status="ok",
+                content="done",
+                artifact_handle=None,
+                truncated=False,
+            )
+        )
 
         result = await executor.execute("wf_1", {})
 
@@ -295,12 +301,14 @@ class TestTrustEnforcement:
         )
         await workflow_store.save_version(version)
 
-        app.tool_registry.call = AsyncMock(return_value=ToolCallResult(
-            status="ok",
-            content="ok",
-            artifact_handle=None,
-            truncated=False,
-        ))
+        app.tool_registry.call = AsyncMock(
+            return_value=ToolCallResult(
+                status="ok",
+                content="ok",
+                artifact_handle=None,
+                truncated=False,
+            )
+        )
 
         result = await executor.execute("wf_1", {})
 
@@ -371,15 +379,17 @@ class TestCostTracking:
         )
         await workflow_store.save_version(version)
 
-        app.inference.chat = AsyncMock(return_value=ChatResponse(
-            content="42",
-            reasoning_content=None,
-            tool_calls=[],
-            finish_reason="stop",
-            prompt_tokens=100,
-            completion_tokens=50,
-            total_tokens=150,
-        ))
+        app.inference.chat = AsyncMock(
+            return_value=ChatResponse(
+                content="42",
+                reasoning_content=None,
+                tool_calls=[],
+                finish_reason="stop",
+                prompt_tokens=100,
+                completion_tokens=50,
+                total_tokens=150,
+            )
+        )
 
         result = await executor.execute("wf_1", {"question": "meaning of life"})
 
@@ -418,15 +428,17 @@ class TestCostTracking:
         )
         await workflow_store.save_version(version)
 
-        app.inference.chat = AsyncMock(return_value=ChatResponse(
-            content="a",
-            reasoning_content=None,
-            tool_calls=[],
-            finish_reason="stop",
-            prompt_tokens=80,
-            completion_tokens=20,
-            total_tokens=100,
-        ))
+        app.inference.chat = AsyncMock(
+            return_value=ChatResponse(
+                content="a",
+                reasoning_content=None,
+                tool_calls=[],
+                finish_reason="stop",
+                prompt_tokens=80,
+                completion_tokens=20,
+                total_tokens=100,
+            )
+        )
 
         result = await executor.execute("wf_1", {})
 
@@ -460,26 +472,28 @@ class TestCostTracking:
         )
         await workflow_store.save_version(version)
 
-        app.inference.chat = AsyncMock(side_effect=[
-            ChatResponse(
-                content="one",
-                reasoning_content=None,
-                tool_calls=[],
-                finish_reason="stop",
-                prompt_tokens=10,
-                completion_tokens=5,
-                total_tokens=15,
-            ),
-            ChatResponse(
-                content="two",
-                reasoning_content=None,
-                tool_calls=[],
-                finish_reason="stop",
-                prompt_tokens=20,
-                completion_tokens=10,
-                total_tokens=30,
-            ),
-        ])
+        app.inference.chat = AsyncMock(
+            side_effect=[
+                ChatResponse(
+                    content="one",
+                    reasoning_content=None,
+                    tool_calls=[],
+                    finish_reason="stop",
+                    prompt_tokens=10,
+                    completion_tokens=5,
+                    total_tokens=15,
+                ),
+                ChatResponse(
+                    content="two",
+                    reasoning_content=None,
+                    tool_calls=[],
+                    finish_reason="stop",
+                    prompt_tokens=20,
+                    completion_tokens=10,
+                    total_tokens=30,
+                ),
+            ]
+        )
 
         result = await executor.execute("wf_1", {})
 
@@ -653,12 +667,14 @@ class TestBranchingExecution:
         )
         await workflow_store.save_version(version)
 
-        app.tool_registry.call = AsyncMock(return_value=ToolCallResult(
-            status="ok",
-            content="done",
-            artifact_handle=None,
-            truncated=False,
-        ))
+        app.tool_registry.call = AsyncMock(
+            return_value=ToolCallResult(
+                status="ok",
+                content="done",
+                artifact_handle=None,
+                truncated=False,
+            )
+        )
 
         result = await executor.execute("wf_1", {"value": 15})
 
@@ -703,12 +719,14 @@ class TestBranchingExecution:
         )
         await workflow_store.save_version(version)
 
-        app.tool_registry.call = AsyncMock(return_value=ToolCallResult(
-            status="ok",
-            content="done",
-            artifact_handle=None,
-            truncated=False,
-        ))
+        app.tool_registry.call = AsyncMock(
+            return_value=ToolCallResult(
+                status="ok",
+                content="done",
+                artifact_handle=None,
+                truncated=False,
+            )
+        )
 
         result = await executor.execute("wf_1", {"value": 5})
 
@@ -753,21 +771,25 @@ class TestBranchingExecution:
         )
         await workflow_store.save_version(version)
 
-        app.inference.chat = AsyncMock(return_value=ChatResponse(
-            content="alpha",
-            reasoning_content=None,
-            tool_calls=[],
-            finish_reason="stop",
-            prompt_tokens=10,
-            completion_tokens=5,
-            total_tokens=15,
-        ))
-        app.tool_registry.call = AsyncMock(return_value=ToolCallResult(
-            status="ok",
-            content="done",
-            artifact_handle=None,
-            truncated=False,
-        ))
+        app.inference.chat = AsyncMock(
+            return_value=ChatResponse(
+                content="alpha",
+                reasoning_content=None,
+                tool_calls=[],
+                finish_reason="stop",
+                prompt_tokens=10,
+                completion_tokens=5,
+                total_tokens=15,
+            )
+        )
+        app.tool_registry.call = AsyncMock(
+            return_value=ToolCallResult(
+                status="ok",
+                content="done",
+                artifact_handle=None,
+                truncated=False,
+            )
+        )
 
         result = await executor.execute("wf_1", {})
 
@@ -777,7 +799,6 @@ class TestBranchingExecution:
         assert "beta_node" not in result.outputs
         assert result.outputs["dec"] == "alpha"
         assert result.outputs["alpha_node"] == "done"
-
 
     @pytest.mark.asyncio
     async def test_nested_branching(
@@ -790,24 +811,40 @@ class TestBranchingExecution:
         wf = Workflow(id="wf_1", name="Nested", trust_level="developer")
         await workflow_store.save_workflow(wf)
 
-        outer = WorkflowNode(id="outer", type="condition", label="Outer", config={"expression": "True"})
-        inner = WorkflowNode(id="inner", type="condition", label="Inner", config={"expression": "False"})
+        outer = WorkflowNode(
+            id="outer", type="condition", label="Outer", config={"expression": "True"}
+        )
+        inner = WorkflowNode(
+            id="inner", type="condition", label="Inner", config={"expression": "False"}
+        )
         node_a = WorkflowNode(id="a", type="echo", label="A")
         node_b = WorkflowNode(id="b", type="echo", label="B")
         node_c = WorkflowNode(id="c", type="echo", label="C")
         edges = [
-            WorkflowEdge(id="e1", source_node_id="outer", target_node_id="inner", source_handle="true"),
-            WorkflowEdge(id="e2", source_node_id="outer", target_node_id="c", source_handle="false"),
+            WorkflowEdge(
+                id="e1", source_node_id="outer", target_node_id="inner", source_handle="true"
+            ),
+            WorkflowEdge(
+                id="e2", source_node_id="outer", target_node_id="c", source_handle="false"
+            ),
             WorkflowEdge(id="e3", source_node_id="inner", target_node_id="a", source_handle="true"),
-            WorkflowEdge(id="e4", source_node_id="inner", target_node_id="b", source_handle="false"),
+            WorkflowEdge(
+                id="e4", source_node_id="inner", target_node_id="b", source_handle="false"
+            ),
         ]
         version = WorkflowVersion(
-            workflow_id="wf_1", version=1,
+            workflow_id="wf_1",
+            version=1,
             nodes=[outer, inner, node_a, node_b, node_c],
-            edges=edges, is_active=True,
+            edges=edges,
+            is_active=True,
         )
         await workflow_store.save_version(version)
-        app.tool_registry.call = AsyncMock(return_value=ToolCallResult(status="ok", content="done", artifact_handle=None, truncated=False))
+        app.tool_registry.call = AsyncMock(
+            return_value=ToolCallResult(
+                status="ok", content="done", artifact_handle=None, truncated=False
+            )
+        )
 
         result = await executor.execute("wf_1", {})
 
@@ -824,11 +861,13 @@ class TestBranchingExecution:
         executor: WorkflowExecutor,
         app: AppContext,
     ) -> None:
-        """Both branches lead to same merge node; merge executes if at least one incoming edge is active."""
+        """Both branches lead to same merge node; merge executes if one incoming edge is active."""
         wf = Workflow(id="wf_1", name="Converge", trust_level="developer")
         await workflow_store.save_workflow(wf)
 
-        cond = WorkflowNode(id="cond", type="condition", label="Cond", config={"expression": "True"})
+        cond = WorkflowNode(
+            id="cond", type="condition", label="Cond", config={"expression": "True"}
+        )
         node_a = WorkflowNode(id="a", type="echo", label="A")
         node_b = WorkflowNode(id="b", type="echo", label="B")
         merge = WorkflowNode(id="merge", type="echo", label="Merge")
@@ -839,12 +878,18 @@ class TestBranchingExecution:
             WorkflowEdge(id="e4", source_node_id="b", target_node_id="merge"),
         ]
         version = WorkflowVersion(
-            workflow_id="wf_1", version=1,
+            workflow_id="wf_1",
+            version=1,
             nodes=[cond, node_a, node_b, merge],
-            edges=edges, is_active=True,
+            edges=edges,
+            is_active=True,
         )
         await workflow_store.save_version(version)
-        app.tool_registry.call = AsyncMock(return_value=ToolCallResult(status="ok", content="done", artifact_handle=None, truncated=False))
+        app.tool_registry.call = AsyncMock(
+            return_value=ToolCallResult(
+                status="ok", content="done", artifact_handle=None, truncated=False
+            )
+        )
 
         result = await executor.execute("wf_1", {})
 
@@ -864,7 +909,9 @@ class TestBranchingExecution:
         wf = Workflow(id="wf_1", name="Dead", trust_level="developer")
         await workflow_store.save_workflow(wf)
 
-        cond = WorkflowNode(id="cond", type="condition", label="Cond", config={"expression": "False"})
+        cond = WorkflowNode(
+            id="cond", type="condition", label="Cond", config={"expression": "False"}
+        )
         node_a = WorkflowNode(id="a", type="echo", label="A")
         node_b = WorkflowNode(id="b", type="echo", label="B")
         node_c = WorkflowNode(id="c", type="echo", label="C")
@@ -874,12 +921,18 @@ class TestBranchingExecution:
             WorkflowEdge(id="e3", source_node_id="b", target_node_id="c"),
         ]
         version = WorkflowVersion(
-            workflow_id="wf_1", version=1,
+            workflow_id="wf_1",
+            version=1,
             nodes=[cond, node_a, node_b, node_c],
-            edges=edges, is_active=True,
+            edges=edges,
+            is_active=True,
         )
         await workflow_store.save_version(version)
-        app.tool_registry.call = AsyncMock(return_value=ToolCallResult(status="ok", content="done", artifact_handle=None, truncated=False))
+        app.tool_registry.call = AsyncMock(
+            return_value=ToolCallResult(
+                status="ok", content="done", artifact_handle=None, truncated=False
+            )
+        )
 
         result = await executor.execute("wf_1", {})
 
@@ -901,7 +954,9 @@ class TestBranchingExecution:
         wf = Workflow(id="wf_1", name="Unknown", trust_level="developer")
         await workflow_store.save_workflow(wf)
 
-        decision = WorkflowNode(id="dec", type="llm_decision", label="Decide", config={"branches": ["a", "b"]})
+        decision = WorkflowNode(
+            id="dec", type="llm_decision", label="Decide", config={"branches": ["a", "b"]}
+        )
         node_a = WorkflowNode(id="a", type="echo", label="A")
         node_b = WorkflowNode(id="b", type="echo", label="B")
         edges = [
@@ -909,15 +964,24 @@ class TestBranchingExecution:
             WorkflowEdge(id="e2", source_node_id="dec", target_node_id="b", source_handle="b"),
         ]
         version = WorkflowVersion(
-            workflow_id="wf_1", version=1,
+            workflow_id="wf_1",
+            version=1,
             nodes=[decision, node_a, node_b],
-            edges=edges, is_active=True,
+            edges=edges,
+            is_active=True,
         )
         await workflow_store.save_version(version)
-        app.inference.chat = AsyncMock(return_value=ChatResponse(
-            content="unknown_x", reasoning_content=None, tool_calls=[], finish_reason="stop",
-            prompt_tokens=10, completion_tokens=5, total_tokens=15,
-        ))
+        app.inference.chat = AsyncMock(
+            return_value=ChatResponse(
+                content="unknown_x",
+                reasoning_content=None,
+                tool_calls=[],
+                finish_reason="stop",
+                prompt_tokens=10,
+                completion_tokens=5,
+                total_tokens=15,
+            )
+        )
 
         result = await executor.execute("wf_1", {})
 
@@ -940,18 +1004,26 @@ class TestBranchingExecution:
 
         root1 = WorkflowNode(id="r1", type="echo", label="R1")
         root2 = WorkflowNode(id="r2", type="echo", label="R2")
-        cond = WorkflowNode(id="cond", type="condition", label="Cond", config={"expression": "False"})
+        cond = WorkflowNode(
+            id="cond", type="condition", label="Cond", config={"expression": "False"}
+        )
         node_a = WorkflowNode(id="a", type="echo", label="A")
         edges = [
             WorkflowEdge(id="e1", source_node_id="cond", target_node_id="a", source_handle="true"),
         ]
         version = WorkflowVersion(
-            workflow_id="wf_1", version=1,
+            workflow_id="wf_1",
+            version=1,
             nodes=[root1, root2, cond, node_a],
-            edges=edges, is_active=True,
+            edges=edges,
+            is_active=True,
         )
         await workflow_store.save_version(version)
-        app.tool_registry.call = AsyncMock(return_value=ToolCallResult(status="ok", content="done", artifact_handle=None, truncated=False))
+        app.tool_registry.call = AsyncMock(
+            return_value=ToolCallResult(
+                status="ok", content="done", artifact_handle=None, truncated=False
+            )
+        )
 
         result = await executor.execute("wf_1", {})
 
@@ -988,12 +1060,14 @@ class TestExecutionPersistence:
         )
         await workflow_store.save_version(version)
 
-        app.tool_registry.call = AsyncMock(return_value=ToolCallResult(
-            status="ok",
-            content="hello",
-            artifact_handle=None,
-            truncated=False,
-        ))
+        app.tool_registry.call = AsyncMock(
+            return_value=ToolCallResult(
+                status="ok",
+                content="hello",
+                artifact_handle=None,
+                truncated=False,
+            )
+        )
 
         executor = WorkflowExecutor(app, execution_store=execution_store)
         result = await executor.execute("wf_1", {"text": "hi"})

@@ -29,9 +29,7 @@ def mock_app() -> MagicMock:
     mock = MagicMock()
     mock.config = MagicMock()
     mock.config.telegram = MagicMock(bot_token="", allowed_users=[])
-    mock.config.matrix = MagicMock(
-        homeserver="", user_id="", access_token="", allowed_rooms=[]
-    )
+    mock.config.matrix = MagicMock(homeserver="", user_id="", access_token="", allowed_rooms=[])
     mock.config.email = MagicMock(imap_host="", username="", password="", password_env="")
     mock.config.storage = MagicMock(allowed_roots=["."])
     mock.config.inference = MagicMock(base_url="")
@@ -175,7 +173,9 @@ class TestWebhookHMAC:
         mock_event_bus = AsyncMock()
         mock_app.event_bus = mock_event_bus
         wf = Workflow(
-            id="wf1", name="Hook", trigger_type="webhook",
+            id="wf1",
+            name="Hook",
+            trigger_type="webhook",
             trigger_config={"endpoint": "deploy", "secret": "super-secret"},
         )
         ctx.workflow_store.list_workflows = AsyncMock(return_value=[wf])
@@ -199,7 +199,9 @@ class TestWebhookHMAC:
         mock_event_bus = AsyncMock()
         mock_app.event_bus = mock_event_bus
         wf = Workflow(
-            id="wf1", name="Hook", trigger_type="webhook",
+            id="wf1",
+            name="Hook",
+            trigger_type="webhook",
             trigger_config={"endpoint": "deploy", "secret": "super-secret"},
         )
         ctx.workflow_store.list_workflows = AsyncMock(return_value=[wf])
@@ -213,7 +215,9 @@ class TestWebhookHMAC:
         )
         assert response.status_code == 202
 
-    def test_replay_attack_same_signature_twice(self, client: TestClient, mock_app: MagicMock) -> None:
+    def test_replay_attack_same_signature_twice(
+        self, client: TestClient, mock_app: MagicMock
+    ) -> None:
         """Same valid signature sent twice — both succeed (no nonce in v1)."""
         from hestia.web import context as ctx_mod
         from hestia.workflows.models import Workflow
@@ -223,7 +227,9 @@ class TestWebhookHMAC:
         mock_event_bus = AsyncMock()
         mock_app.event_bus = mock_event_bus
         wf = Workflow(
-            id="wf1", name="Hook", trigger_type="webhook",
+            id="wf1",
+            name="Hook",
+            trigger_type="webhook",
             trigger_config={"endpoint": "deploy", "secret": "super-secret"},
         )
         ctx.workflow_store.list_workflows = AsyncMock(return_value=[wf])
