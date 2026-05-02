@@ -10,7 +10,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from starlette.responses import JSONResponse
 
 from hestia.web.context import WebContext, get_web_context
@@ -22,6 +22,9 @@ router = APIRouter()
 _CTX_DEP = Depends(get_web_context)
 
 
+_TRUST_LEVELS = {"paranoid", "prompt_on_mobile", "household", "developer"}
+
+
 def _workflow_to_api(wf: Workflow) -> dict[str, Any]:
     """Serialize a Workflow to the API response shape expected by the frontend."""
     return {
@@ -29,6 +32,8 @@ def _workflow_to_api(wf: Workflow) -> dict[str, Any]:
         "name": wf.name,
         "trigger_type": wf.trigger_type,
         "trigger_config": wf.trigger_config,
+        "owner_id": wf.owner_id,
+        "trust_level": wf.trust_level,
         "last_edited_at": wf.updated_at.isoformat() if wf.updated_at else None,
         "active_version_id": None,  # populated by list/get where versions are loaded
     }
@@ -45,6 +50,7 @@ def _version_to_api(v: WorkflowVersion) -> dict[str, Any]:
                 "id": n.id,
                 "type": n.type,
                 "position": n.position,
+                "capabilities": n.capabilities,
                 "data": {
                     "label": n.label,
                     **n.config,
@@ -73,10 +79,11 @@ async def list_workflows(
 ) -> dict[str, Any]:
     """List all workflows."""
     workflows = await ctx.workflow_store.list_workflows()
+    active_map = await ctx.workflow_store.get_active_versions_batch([wf.id for wf in workflows])
     result = []
     for wf in workflows:
         api_wf = _workflow_to_api(wf)
-        active = await ctx.workflow_store.get_active_version(wf.id)
+        active = active_map.get(wf.id)
         if active is not None:
             api_wf["active_version_id"] = f"{active.workflow_id}:{active.version}"
         result.append(api_wf)
@@ -86,6 +93,7 @@ async def list_workflows(
 @router.post("/workflows")
 async def create_workflow(
     payload: dict[str, Any],
+    request: Request,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """Create a new workflow."""
@@ -98,12 +106,17 @@ async def create_workflow(
     if trigger_type == "webhook" and "secret" not in trigger_config:
         trigger_config = {**trigger_config, "secret": secrets.token_urlsafe(32)}
 
+    owner_id = payload.get("owner_id") or getattr(request.state, "platform_user", "")
+    trust_level = payload.get("trust_level", "paranoid")
+
     wf = Workflow(
         id=str(uuid.uuid4()),
         name=name,
         description=payload.get("description", ""),
         trigger_type=trigger_type,
         trigger_config=trigger_config,
+        owner_id=owner_id or "",
+        trust_level=trust_level,
     )
     await ctx.workflow_store.save_workflow(wf)
     if ctx.trigger_registry is not None:
@@ -155,6 +168,16 @@ async def update_workflow(
         workflow.trigger_type = payload["trigger_type"]
     if "trigger_config" in payload:
         workflow.trigger_config = payload["trigger_config"]
+    if "owner_id" in payload:
+        workflow.owner_id = payload["owner_id"]
+    if "trust_level" in payload:
+        trust_level = payload["trust_level"]
+        if trust_level not in _TRUST_LEVELS:
+            raise HTTPException(
+                status_code=422,
+                detail=f"trust_level must be one of: {', '.join(sorted(_TRUST_LEVELS))}",
+            )
+        workflow.trust_level = trust_level
 
     await ctx.workflow_store.save_workflow(workflow)
     if ctx.trigger_registry is not None:
@@ -214,6 +237,11 @@ async def create_version(
                 else {}
             ),
             position=n.get("position", {"x": 0, "y": 0}),
+            capabilities=(
+                n.get("capabilities", [])
+                if isinstance(n.get("capabilities"), list)
+                else []
+            ),
         )
         for n in nodes_raw
     ]
@@ -331,7 +359,7 @@ async def receive_webhook(
 @router.get("/workflows/{workflow_id}/executions")
 async def list_executions(
     workflow_id: str,
-    limit: int = 50,
+    limit: int = Query(50, ge=1, le=200),
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """List recent executions for a workflow."""

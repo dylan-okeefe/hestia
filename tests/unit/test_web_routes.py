@@ -551,7 +551,7 @@ class TestWorkflowsRoutes:
             updated_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
         )
         ctx.workflow_store.list_workflows = AsyncMock(return_value=[wf])
-        ctx.workflow_store.get_active_version = AsyncMock(return_value=None)
+        ctx.workflow_store.get_active_versions_batch = AsyncMock(return_value={"wf1": None})
 
         response = client.get("/api/workflows")
         assert response.status_code == 200
@@ -561,6 +561,7 @@ class TestWorkflowsRoutes:
         assert data["workflows"][0]["name"] == "Test Workflow"
         assert data["workflows"][0]["trigger_type"] == "manual"
         ctx.workflow_store.list_workflows.assert_awaited_once()
+        ctx.workflow_store.get_active_versions_batch.assert_awaited_once_with(["wf1"])
 
     def test_create_workflow(self, client: TestClient, mock_app: MagicMock) -> None:
         """POST /api/workflows creates a workflow."""
@@ -898,7 +899,7 @@ class TestWorkflowsRoutes:
 
         ctx = ctx_mod._ctx
         assert ctx is not None
-        mock_event_bus = MagicMock()
+        mock_event_bus = AsyncMock()
         mock_app.event_bus = mock_event_bus
         wf = Workflow(
             id="wf1",
@@ -945,7 +946,7 @@ class TestWorkflowsRoutes:
 
         web_config = WebConfig(auth_enabled=True)
         auth_manager = AuthManager(adapters={}, config=web_config)
-        mock_app.event_bus = MagicMock()
+        mock_app.event_bus = AsyncMock()
 
         wf = Workflow(
             id="wf1",
@@ -1020,3 +1021,192 @@ class TestWorkflowsRoutes:
         assert data["trigger_config"] == {"cron": "0 9 * * *"}
         ctx.workflow_store.get_workflow.assert_awaited_once_with("wf1")
         ctx.workflow_store.save_workflow.assert_awaited_once()
+
+    def test_create_workflow_defaults_owner_and_trust(
+        self, client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """POST /api/workflows defaults owner_id to platform_user and trust_level to paranoid."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        saved_wf = None
+
+        async def _capture_save(wf):
+            nonlocal saved_wf
+            saved_wf = wf
+            return wf
+
+        ctx.workflow_store.save_workflow = _capture_save
+
+        response = client.post(
+            "/api/workflows",
+            json={"name": "Default Owner"},
+        )
+        assert response.status_code == 200
+        assert saved_wf is not None
+        assert saved_wf.owner_id == ""
+        assert saved_wf.trust_level == "paranoid"
+
+    def test_create_workflow_with_owner_and_trust(
+        self, client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """POST /api/workflows accepts explicit owner_id and trust_level."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        saved_wf = None
+
+        async def _capture_save(wf):
+            nonlocal saved_wf
+            saved_wf = wf
+            return wf
+
+        ctx.workflow_store.save_workflow = _capture_save
+
+        response = client.post(
+            "/api/workflows",
+            json={"name": "Explicit", "owner_id": "alice", "trust_level": "household"},
+        )
+        assert response.status_code == 200
+        assert saved_wf is not None
+        assert saved_wf.owner_id == "alice"
+        assert saved_wf.trust_level == "household"
+
+    def test_update_workflow_trust_level_validation(
+        self, client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """PUT /api/workflows/{id} returns 422 for invalid trust_level."""
+        from hestia.web import context as ctx_mod
+        from hestia.workflows.models import Workflow
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        wf = Workflow(
+            id="wf1",
+            name="Test",
+            trigger_type="manual",
+            created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+            updated_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+        )
+        ctx.workflow_store.get_workflow = AsyncMock(return_value=wf)
+
+        response = client.put(
+            "/api/workflows/wf1",
+            json={"trust_level": "invalid"},
+        )
+        assert response.status_code == 422
+
+    def test_update_workflow_valid_trust_levels(
+        self, client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """PUT /api/workflows/{id} accepts all valid trust levels."""
+        from hestia.web import context as ctx_mod
+        from hestia.workflows.models import Workflow
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        for level in ["paranoid", "prompt_on_mobile", "household", "developer"]:
+            wf = Workflow(
+                id="wf1",
+                name="Test",
+                trigger_type="manual",
+                created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+                updated_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+            )
+            ctx.workflow_store.get_workflow = AsyncMock(return_value=wf)
+            ctx.workflow_store.save_workflow = AsyncMock(return_value=None)
+
+            response = client.put(
+                "/api/workflows/wf1",
+                json={"trust_level": level},
+            )
+            assert response.status_code == 200, f"Failed for {level}"
+            assert response.json()["trust_level"] == level
+
+    def test_list_workflows_uses_batch_query(
+        self, client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """GET /api/workflows uses get_active_versions_batch instead of per-row queries."""
+        from hestia.web import context as ctx_mod
+        from hestia.workflows.models import Workflow
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        wfs = [
+            Workflow(id="wf1", name="A", created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)),
+            Workflow(id="wf2", name="B", created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)),
+        ]
+        ctx.workflow_store.list_workflows = AsyncMock(return_value=wfs)
+        ctx.workflow_store.get_active_versions_batch = AsyncMock(
+            return_value={"wf1": None, "wf2": None}
+        )
+
+        response = client.get("/api/workflows")
+        assert response.status_code == 200
+        ctx.workflow_store.get_active_versions_batch.assert_awaited_once_with(["wf1", "wf2"])
+
+    def test_create_version_round_trips_capabilities(
+        self, client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """POST /api/workflows/{id}/versions includes capabilities in saved nodes."""
+        from hestia.web import context as ctx_mod
+        from hestia.workflows.models import Workflow
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        wf = Workflow(id="wf1", name="Test", created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC))
+        ctx.workflow_store.get_workflow = AsyncMock(return_value=wf)
+        ctx.workflow_store.list_versions = AsyncMock(return_value=[])
+        saved_version = None
+
+        async def _capture_version(v):
+            nonlocal saved_version
+            saved_version = v
+            return v
+
+        ctx.workflow_store.save_version = _capture_version
+
+        response = client.post(
+            "/api/workflows/wf1/versions",
+            json={
+                "nodes": [
+                    {
+                        "id": "n1",
+                        "type": "tool_call",
+                        "position": {"x": 0, "y": 0},
+                        "capabilities": ["memory_read", "network_egress"],
+                        "data": {"label": "Test"},
+                    }
+                ],
+                "edges": [],
+            },
+        )
+        assert response.status_code == 200
+        assert saved_version is not None
+        assert len(saved_version.nodes) == 1
+        assert saved_version.nodes[0].capabilities == ["memory_read", "network_egress"]
+
+    def test_list_executions_limit_capped(self, client: TestClient, mock_app: MagicMock) -> None:
+        """GET /api/workflows/{id}/executions rejects limit outside 1-200."""
+        from hestia.web import context as ctx_mod
+        from hestia.workflows.models import Workflow
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        wf = Workflow(id="wf1", name="Test", created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC))
+        ctx.workflow_store.get_workflow = AsyncMock(return_value=wf)
+        ctx.execution_store.list_executions = AsyncMock(return_value=[])
+
+        response = client.get("/api/workflows/wf1/executions?limit=0")
+        assert response.status_code == 422
+
+        response = client.get("/api/workflows/wf1/executions?limit=201")
+        assert response.status_code == 422
+
+        response = client.get("/api/workflows/wf1/executions?limit=200")
+        assert response.status_code == 200
+
+        response = client.get("/api/workflows/wf1/executions?limit=1")
+        assert response.status_code == 200
