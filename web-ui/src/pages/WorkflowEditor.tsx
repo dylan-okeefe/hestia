@@ -1,18 +1,19 @@
-import { useCallback, useEffect, useState, Fragment } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import ReactFlow, {
   Background,
   Controls,
   MiniMap,
   addEdge,
-  useNodesState,
-  useEdgesState,
+  applyNodeChanges,
+  applyEdgeChanges,
   type Connection,
   type Node,
+  type Edge,
+  type NodeChange,
+  type EdgeChange,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { CronExpressionParser } from 'cron-parser';
-import cronstrue from 'cronstrue';
 import {
   fetchWorkflow,
   fetchWorkflowVersions,
@@ -23,105 +24,19 @@ import {
   fetchExecutions,
   fetchTools,
   fetchAuthStatus,
+  type WorkflowVersion,
   type WorkflowNode,
   type WorkflowEdge,
-  type WorkflowVersion,
   type ExecutionResult,
   type ExecutionRecord,
 } from '../api/client';
-import {
-  ToolCallNode,
-  LLMDecisionNode,
-  SendMessageNode,
-  HttpRequestNode,
-  ConditionNode,
-  InvestigateNode,
-} from '../components/workflow-nodes';
-
-function CronInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const [error, setError] = useState<string | null>(null);
-  const [preview, setPreview] = useState<string>('');
-
-  const validate = (v: string) => {
-    if (!v.trim()) {
-      setError(null);
-      setPreview('');
-      return;
-    }
-    try {
-      CronExpressionParser.parse(v);
-      setError(null);
-      setPreview(cronstrue.toString(v));
-    } catch {
-      setError('Invalid cron expression');
-      setPreview('');
-    }
-  };
-
-  useEffect(() => {
-    validate(value);
-  }, [value]);
-
-  const presets = [
-    { label: 'Every hour', value: '0 * * * *' },
-    { label: 'Every day at 8am', value: '0 8 * * *' },
-    { label: 'Every Monday', value: '0 0 * * 1' },
-    { label: 'Every 5 minutes', value: '*/5 * * * *' },
-  ];
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-        <input
-          placeholder="Cron expression"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onBlur={(e) => validate(e.target.value)}
-          style={{
-            padding: '0.25rem 0.5rem',
-            minWidth: 180,
-            border: error ? '2px solid red' : '1px solid #ccc',
-          }}
-          aria-label="Cron expression"
-          aria-invalid={error ? 'true' : 'false'}
-        />
-        <div style={{ display: 'flex', gap: '0.25rem' }}>
-          {presets.map((p) => (
-            <button
-              key={p.value}
-              onClick={() => onChange(p.value)}
-              style={{ padding: '0.125rem 0.375rem', fontSize: '0.75rem' }}
-              title={p.value}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-      </div>
-      {error && <span style={{ color: 'red', fontSize: '0.75rem' }}>{error}</span>}
-      {preview && !error && <span style={{ color: '#666', fontSize: '0.75rem' }}>{preview}</span>}
-    </div>
-  );
-}
-
-const EDITOR_NODE_TYPES = [
-  'default',
-  'tool_call',
-  'llm_decision',
-  'send_message',
-  'http_request',
-  'condition',
-  'investigate',
-] as const;
-
-const nodeTypesMap = {
-  tool_call: ToolCallNode,
-  llm_decision: LLMDecisionNode,
-  send_message: SendMessageNode,
-  http_request: HttpRequestNode,
-  condition: ConditionNode,
-  investigate: InvestigateNode,
-};
+import { nodeTypesMap } from '../components/workflow-editor/constants';
+import EditorToolbar from '../components/workflow-editor/EditorToolbar';
+import NodePropertiesPanel from '../components/workflow-editor/NodePropertiesPanel';
+import TriggerConfigPanel from '../components/workflow-editor/TriggerConfigPanel';
+import ExecutionHistoryPanel from '../components/workflow-editor/ExecutionHistoryPanel';
+import VersionPanel from '../components/workflow-editor/VersionPanel';
+import { useUndoRedo } from '../hooks/useUndoRedo';
 
 export default function WorkflowEditor() {
   const { id } = useParams<{ id: string }>();
@@ -129,8 +44,8 @@ export default function WorkflowEditor() {
   const [versions, setVersions] = useState<WorkflowVersion[]>([]);
   const [activeVersionId, setActiveVersionId] = useState<string | null>(null);
   const [showVersions, setShowVersions] = useState(false);
-  const [nodes, setNodes, onNodesChange] = useNodesState([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [nodes, setNodes] = useState<Node[]>([]);
+  const [edges, setEdges] = useState<Edge[]>([]);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -151,6 +66,47 @@ export default function WorkflowEditor() {
   const [webhookSecret, setWebhookSecret] = useState('');
   const [tools, setTools] = useState<string[]>([]);
   const [platforms, setPlatforms] = useState<string[]>([]);
+  const [isDirty, setIsDirty] = useState(false);
+
+  const nodesRef = useRef(nodes);
+  const edgesRef = useRef(edges);
+  const selectedNodeRef = useRef(selectedNode);
+
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
+  useEffect(() => {
+    edgesRef.current = edges;
+  }, [edges]);
+  useEffect(() => {
+    selectedNodeRef.current = selectedNode;
+  }, [selectedNode]);
+
+  const getCurrentGraph = useCallback(() => ({ nodes: nodesRef.current, edges: edgesRef.current }), []);
+  const { push, undo, redo, canUndo, canRedo } = useUndoRedo(getCurrentGraph);
+
+  const pushCurrent = useCallback(() => {
+    push();
+    setIsDirty(true);
+  }, [push]);
+
+  const handleUndo = useCallback(() => {
+    const state = undo();
+    if (state) {
+      setNodes(state.nodes);
+      setEdges(state.edges);
+      setSelectedNode(null);
+    }
+  }, [undo]);
+
+  const handleRedo = useCallback(() => {
+    const state = redo();
+    if (state) {
+      setNodes(state.nodes);
+      setEdges(state.edges);
+      setSelectedNode(null);
+    }
+  }, [redo]);
 
   const loadExecutions = useCallback(async () => {
     if (!id) return;
@@ -179,15 +135,15 @@ export default function WorkflowEditor() {
           setWebhookSecret(wf.secret || '');
         }
         setVersions(vs.versions);
-        const active = vs.versions.find((v) => v.activated_at !== null);
+        const active = vs.versions.find((v: WorkflowVersion) => v.activated_at !== null);
         if (active) {
           setActiveVersionId(active.id);
-          setNodes(active.nodes.map((n) => ({ ...n, data: n.data || {} })));
-          setEdges(active.edges.map((e) => ({ ...e })));
+          setNodes(active.nodes.map((n: WorkflowNode) => ({ ...n, data: n.data || {} })));
+          setEdges(active.edges.map((e: WorkflowEdge) => ({ ...e })));
         }
         setLoading(false);
       })
-      .catch((err) => {
+      .catch((err: Error) => {
         setError(err.message);
         setLoading(false);
       });
@@ -201,11 +157,127 @@ export default function WorkflowEditor() {
       .catch(() => setPlatforms([]));
 
     loadExecutions();
-  }, [id, setNodes, setEdges, loadExecutions]);
+  }, [id, loadExecutions]);
+
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty]);
+
+  const handleSaveRef = useRef<() => Promise<void>>(async () => {});
+
+  const handleSave = async () => {
+    if (!id) return;
+    setSaving(true);
+    try {
+      const serialNodes: WorkflowNode[] = nodes.map((n) => ({
+        id: n.id,
+        type: n.type || 'default',
+        position: n.position,
+        data: n.data,
+      }));
+      const serialEdges: WorkflowEdge[] = edges.map((e) => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        type: e.type,
+        sourceHandle: e.sourceHandle ?? undefined,
+        targetHandle: e.targetHandle ?? undefined,
+      }));
+      const version = await saveWorkflowVersion(id, serialNodes, serialEdges);
+      setVersions((vs) => [...vs, version]);
+      setIsDirty(false);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  handleSaveRef.current = handleSave;
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return;
+      }
+
+      if ((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey) && e.shiftKey) {
+        e.preventDefault();
+        handleRedo();
+        return;
+      }
+      if ((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        handleUndo();
+        return;
+      }
+      if ((e.key === 'y' || e.key === 'Y') && e.ctrlKey) {
+        e.preventDefault();
+        handleRedo();
+        return;
+      }
+      if ((e.key === 's' || e.key === 'S') && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        console.log('CTRL_S_HANDLER', typeof handleSaveRef.current);
+        handleSaveRef.current();
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setSelectedNode(null);
+        return;
+      }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedNodeRef.current) {
+        e.preventDefault();
+        const nodeId = selectedNodeRef.current.id;
+        pushCurrent();
+        setNodes((nds: Node[]) => nds.filter((n) => n.id !== nodeId));
+        setEdges((eds: Edge[]) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId));
+        setSelectedNode(null);
+      }
+    };
+
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [handleUndo, handleRedo, pushCurrent]);
+
+  const onNodesChange = useCallback(
+    (changes: NodeChange[]) => {
+      const hasStructural = changes.some((c: NodeChange) => c.type === 'remove' || c.type === 'add');
+      if (hasStructural) {
+        pushCurrent();
+      }
+      setNodes((nds: Node[]) => applyNodeChanges(changes, nds));
+    },
+    [pushCurrent]
+  );
+
+  const onEdgesChange = useCallback(
+    (changes: EdgeChange[]) => {
+      const hasStructural = changes.some((c: EdgeChange) => c.type === 'remove' || c.type === 'add');
+      if (hasStructural) {
+        pushCurrent();
+      }
+      setEdges((eds: Edge[]) => applyEdgeChanges(changes, eds));
+    },
+    [pushCurrent]
+  );
 
   const onConnect = useCallback(
-    (connection: Connection) => setEdges((eds) => addEdge(connection, eds)),
-    [setEdges]
+    (connection: Connection) => {
+      pushCurrent();
+      setEdges((eds: Edge[]) => addEdge(connection, eds));
+    },
+    [pushCurrent]
   );
 
   const onNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
@@ -216,28 +288,22 @@ export default function WorkflowEditor() {
     setSelectedNode(null);
   }, []);
 
-  const handleKeyDown = useCallback(
-    (event: React.KeyboardEvent) => {
-      if ((event.key === 'Delete' || event.key === 'Backspace') && selectedNode) {
-        event.preventDefault();
-        setNodes((nds) => nds.filter((n) => n.id !== selectedNode.id));
-        setEdges((eds) => eds.filter((e) => e.source !== selectedNode.id && e.target !== selectedNode.id));
-        setSelectedNode(null);
-      }
-    },
-    [selectedNode, setNodes, setEdges]
-  );
-
   const onNodesDelete = useCallback(
     (deletedNodes: Node[]) => {
-      if (selectedNode && deletedNodes.find((n) => n.id === selectedNode.id)) {
+      if (selectedNodeRef.current && deletedNodes.find((n: Node) => n.id === selectedNodeRef.current?.id)) {
         setSelectedNode(null);
       }
     },
-    [selectedNode]
+    []
   );
 
+  const onNodeDragStop = useCallback(() => {
+    pushCurrent();
+  }, [pushCurrent]);
+
   const handleAddNode = () => {
+    pushCurrent();
+    setIsDirty(true);
     const newNode: Node = {
       id: `node_${Date.now()}`,
       type: addNodeType,
@@ -261,35 +327,8 @@ export default function WorkflowEditor() {
         }
       })(),
     };
-    setNodes((nds) => [...nds, newNode]);
-  };
-
-  const handleSave = async () => {
-    if (!id) return;
-    setSaving(true);
-    try {
-      const serialNodes: WorkflowNode[] = nodes.map((n) => ({
-        id: n.id,
-        type: n.type || 'default',
-        position: n.position,
-        data: n.data,
-      }));
-      const serialEdges: WorkflowEdge[] = edges.map((e) => ({
-        id: e.id,
-        source: e.source,
-        target: e.target,
-        type: e.type,
-        sourceHandle: e.sourceHandle ?? undefined,
-        targetHandle: e.targetHandle ?? undefined,
-      }));
-      const version = await saveWorkflowVersion(id, serialNodes, serialEdges);
-      setVersions((vs) => [...vs, version]);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Save failed');
-    } finally {
-      setSaving(false);
-    }
+    pushCurrent();
+    setNodes((nds: Node[]) => [...nds, newNode]);
   };
 
   const handleSaveAndActivate = async () => {
@@ -317,6 +356,7 @@ export default function WorkflowEditor() {
           v.id === version.id ? { ...v, activated_at: new Date().toISOString() } : { ...v, activated_at: null }
         )
       );
+      setIsDirty(false);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed');
@@ -327,6 +367,9 @@ export default function WorkflowEditor() {
 
   const handleActivate = async () => {
     if (!id || !activeVersionId) return;
+    if (!window.confirm('Activate this version? It will become the live version used by triggers.')) {
+      return;
+    }
     try {
       await activateWorkflowVersion(id, activeVersionId);
       setVersions((vs) =>
@@ -341,6 +384,9 @@ export default function WorkflowEditor() {
 
   const handleTestRun = async () => {
     if (!id) return;
+    if (!window.confirm('Run this workflow now? LLM nodes will make real API calls and send_message nodes will deliver messages.')) {
+      return;
+    }
     setTesting(true);
     setTestResult(null);
     setTestError(null);
@@ -376,12 +422,61 @@ export default function WorkflowEditor() {
 
   const updateSelectedNodeData = (key: string, value: unknown) => {
     if (!selectedNode) return;
-    setNodes((nds) =>
-      nds.map((n) =>
-        n.id === selectedNode.id ? { ...n, data: { ...n.data, [key]: value } } : n
-      )
+    pushCurrent();
+    setNodes((nds: Node[]) =>
+      nds.map((n) => (n.id === selectedNode.id ? { ...n, data: { ...n.data, [key]: value } } : n))
     );
     setSelectedNode((prev) => (prev ? { ...prev, data: { ...prev.data, [key]: value } } : prev));
+  };
+
+  const handleChangeNodeType = (type: string) => {
+    if (!selectedNode) return;
+    pushCurrent();
+    setNodes((nds: Node[]) => nds.map((n) => (n.id === selectedNode.id ? { ...n, type } : n)));
+    setSelectedNode((prev) => (prev ? { ...prev, type } : prev));
+  };
+
+  const handleDeleteNode = (nodeId: string) => {
+    pushCurrent();
+    setNodes((nds: Node[]) => nds.filter((n) => n.id !== nodeId));
+    setEdges((eds: Edge[]) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId));
+    setSelectedNode(null);
+  };
+
+  const handleViewVersion = (version: WorkflowVersion) => {
+    pushCurrent();
+    setNodes(version.nodes.map((n: WorkflowNode) => ({ ...n, data: n.data || {} })));
+    setEdges(version.edges.map((e: WorkflowEdge) => ({ ...e })));
+    setIsDirty(true);
+  };
+
+  const handleActivateVersion = async (versionId: string) => {
+    if (!id) return;
+    if (!window.confirm('Activate this version? It will become the live version used by triggers.')) {
+      return;
+    }
+    try {
+      await activateWorkflowVersion(id, versionId);
+      setActiveVersionId(versionId);
+      setVersions((vs) =>
+        vs.map((v) =>
+          v.id === versionId ? { ...v, activated_at: new Date().toISOString() } : { ...v, activated_at: null }
+        )
+      );
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Activation failed');
+    }
+  };
+
+  const handleNameBlur = async () => {
+    if (!id) return;
+    try {
+      await updateWorkflow(id, { name: workflowName });
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to rename workflow');
+    }
   };
 
   if (loading) {
@@ -394,431 +489,66 @@ export default function WorkflowEditor() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 60px)' }}>
-      <div style={{ padding: '0.5rem 1rem', borderBottom: '1px solid #ddd', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-        <input
-          value={workflowName}
-          onChange={(e) => setWorkflowName(e.target.value)}
-          onBlur={async () => {
-            if (!id) return;
-            try {
-              await updateWorkflow(id, { name: workflowName });
-              setError(null);
-            } catch (err) {
-              setError(err instanceof Error ? err.message : 'Failed to rename workflow');
-            }
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.currentTarget.blur();
-            }
-          }}
-          style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold', border: 'none', borderBottom: '1px solid transparent', background: 'transparent', minWidth: 120 }}
-          aria-label="Workflow name"
-        />
-        <button onClick={handleAddNode}>Add Node</button>
-        <select
-          value={addNodeType}
-          onChange={(e) => setAddNodeType(e.target.value)}
-          style={{ padding: '0.25rem 0.5rem' }}
-          aria-label="Node type to add"
-        >
-          {EDITOR_NODE_TYPES.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
-        </select>
-        <button onClick={handleSave} disabled={saving}>
-          {saving ? 'Saving…' : 'Save Version'}
-        </button>
-        <button onClick={handleSaveAndActivate} disabled={saving}>
-          {saving ? 'Saving…' : 'Save & Activate'}
-        </button>
-        <button onClick={handleActivate} disabled={!activeVersionId}>
-          Activate Version
-        </button>
-        <button onClick={handleTestRun} disabled={testing}>
-          {testing ? 'Running…' : 'Test Run'}
-        </button>
-        <button onClick={() => setShowHistory((s) => !s)}>
-          {showHistory ? 'Hide History' : 'Execution History'}
-        </button>
-        <button onClick={() => setShowVersions((s) => !s)}>
-          {showVersions ? 'Hide Versions' : 'Versions'}
-        </button>
-        {error && !testError && <span style={{ color: 'red', marginLeft: 'auto' }}>{error}</span>}
-      </div>
+      <EditorToolbar
+        workflowName={workflowName}
+        isDirty={isDirty}
+        onNameChange={setWorkflowName}
+        onNameBlur={handleNameBlur}
+        addNodeType={addNodeType}
+        onAddNodeTypeChange={setAddNodeType}
+        onAddNode={handleAddNode}
+        onSave={handleSave}
+        onSaveAndActivate={handleSaveAndActivate}
+        onActivate={handleActivate}
+        onTestRun={handleTestRun}
+        onToggleHistory={() => setShowHistory((s) => !s)}
+        onToggleVersions={() => setShowVersions((s) => !s)}
+        showHistory={showHistory}
+        showVersions={showVersions}
+        saving={saving}
+        testing={testing}
+        activeVersionId={activeVersionId}
+        error={error}
+        testError={testError}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
+      />
       {showVersions && (
-        <div
-          style={{
-            borderTop: '1px solid #ddd',
-            padding: '1rem',
-            maxHeight: '40vh',
-            overflowY: 'auto',
-            background: '#fafafa',
-          }}
-        >
-          <strong>Versions</strong>
-          {versions.length === 0 && <p>No versions yet.</p>}
-          {versions.length > 0 && (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem', marginTop: '0.5rem' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid #ccc' }}>
-                  <th style={{ textAlign: 'left', padding: '0.25rem' }}>Number</th>
-                  <th style={{ textAlign: 'left', padding: '0.25rem' }}>Date</th>
-                  <th style={{ textAlign: 'left', padding: '0.25rem' }}>Status</th>
-                  <th style={{ textAlign: 'left', padding: '0.25rem' }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {versions.map((v) => (
-                  <tr key={v.id} style={{ borderBottom: '1px solid #eee' }}>
-                    <td style={{ padding: '0.25rem' }}>{v.version_number}</td>
-                    <td style={{ padding: '0.25rem' }}>{new Date(v.created_at).toLocaleString()}</td>
-                    <td style={{ padding: '0.25rem' }}>
-                      {v.id === activeVersionId && (
-                        <span style={{ display: 'inline-block', padding: '0.125rem 0.5rem', borderRadius: '9999px', background: '#dcfce7', color: '#166534', fontSize: '0.75rem', fontWeight: 600 }}>
-                          Active
-                        </span>
-                      )}
-                    </td>
-                    <td style={{ padding: '0.25rem' }}>
-                      <button
-                        onClick={() => {
-                          const version = versions.find((ver) => ver.id === v.id);
-                          if (version) {
-                            setNodes(version.nodes.map((n) => ({ ...n, data: n.data || {} })));
-                            setEdges(version.edges.map((e) => ({ ...e })));
-                          }
-                        }}
-                        style={{ padding: '0.125rem 0.5rem', fontSize: '0.75rem', marginRight: '0.5rem' }}
-                      >
-                        View
-                      </button>
-                      <button
-                        onClick={async () => {
-                          if (!id) return;
-                          try {
-                            await activateWorkflowVersion(id, v.id);
-                            setActiveVersionId(v.id);
-                            setVersions((vs) =>
-                              vs.map((ver) =>
-                                ver.id === v.id ? { ...ver, activated_at: new Date().toISOString() } : { ...ver, activated_at: null }
-                              )
-                            );
-                            setError(null);
-                          } catch (err) {
-                            setError(err instanceof Error ? err.message : 'Activation failed');
-                          }
-                        }}
-                        disabled={v.id === activeVersionId}
-                        style={{ padding: '0.125rem 0.5rem', fontSize: '0.75rem' }}
-                      >
-                        Activate
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
+        <VersionPanel
+          versions={versions}
+          activeVersionId={activeVersionId}
+          onView={handleViewVersion}
+          onActivate={handleActivateVersion}
+        />
       )}
-      {showHistory && (
-        <div
-          style={{
-            borderTop: '1px solid #ddd',
-            padding: '1rem',
-            maxHeight: '40vh',
-            overflowY: 'auto',
-            background: '#fafafa',
-          }}
-        >
-          <strong>Execution History</strong>
-          {historyLoading && <p>Loading…</p>}
-          {historyError && <p style={{ color: 'red' }}>{historyError}</p>}
-          {!historyLoading && !historyError && executions.length === 0 && <p>No executions yet.</p>}
-          {!historyLoading && executions.length > 0 && (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem', marginTop: '0.5rem' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid #ccc' }}>
-                  <th style={{ textAlign: 'left', padding: '0.25rem' }}>Time</th>
-                  <th style={{ textAlign: 'left', padding: '0.25rem' }}>Status</th>
-                  <th style={{ textAlign: 'left', padding: '0.25rem' }}>Elapsed</th>
-                  <th style={{ textAlign: 'left', padding: '0.25rem' }}>Tokens</th>
-                  <th style={{ textAlign: 'left', padding: '0.25rem' }}>Nodes</th>
-                </tr>
-              </thead>
-              <tbody>
-                {executions.map((ex) => (
-                  <Fragment key={ex.id}>
-                    <tr
-                      style={{ borderBottom: '1px solid #eee', cursor: 'pointer' }}
-                      onClick={() => setSelectedExecution((sel) => (sel === ex.id ? null : ex.id))}
-                    >
-                      <td style={{ padding: '0.25rem' }}>{new Date(ex.created_at).toLocaleString()}</td>
-                      <td style={{ padding: '0.25rem', color: ex.status === 'ok' ? 'green' : 'red' }}>{ex.status}</td>
-                      <td style={{ padding: '0.25rem' }}>{ex.total_elapsed_ms}ms</td>
-                      <td style={{ padding: '0.25rem' }}>
-                        {ex.total_prompt_tokens} prompt + {ex.total_completion_tokens} completion
-                      </td>
-                      <td style={{ padding: '0.25rem' }}>{ex.node_results.length}</td>
-                    </tr>
-                    {selectedExecution === ex.id && (
-                      <tr>
-                        <td colSpan={5} style={{ padding: '0.5rem', background: '#f0f0f0' }}>
-                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
-                            <thead>
-                              <tr style={{ borderBottom: '1px solid #ccc' }}>
-                                <th style={{ textAlign: 'left', padding: '0.25rem' }}>Node</th>
-                                <th style={{ textAlign: 'left', padding: '0.25rem' }}>Status</th>
-                                <th style={{ textAlign: 'left', padding: '0.25rem' }}>Time</th>
-                                <th style={{ textAlign: 'left', padding: '0.25rem' }}>Output</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {ex.node_results.map((nr) => (
-                                <tr key={nr.node_id} style={{ borderBottom: '1px solid #eee' }}>
-                                  <td style={{ padding: '0.25rem' }}>{nr.node_id}</td>
-                                  <td style={{ padding: '0.25rem', color: nr.status === 'ok' ? 'green' : 'red' }}>
-                                    {nr.status}
-                                  </td>
-                                  <td style={{ padding: '0.25rem' }}>{nr.elapsed_ms}ms</td>
-                                  <td style={{ padding: '0.25rem' }}>
-                                    {typeof nr.output === 'string' ? nr.output : JSON.stringify(nr.output)?.slice(0, 100)}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      )}
-      {(testResult || testError) && (
-        <div
-          style={{
-            borderTop: '1px solid #ddd',
-            padding: '1rem',
-            maxHeight: '40vh',
-            overflowY: 'auto',
-            background: '#fafafa',
-          }}
-        >
-          {testResult && (
-            <>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.5rem' }}>
-                <strong>Status:</strong>
-                <span
-                  style={{
-                    color: testResult.status === 'ok' ? 'green' : 'red',
-                    fontWeight: 'bold',
-                  }}
-                >
-                  {testResult.status}
-                </span>
-                <span>
-                  <strong>Total time:</strong> {testResult.total_elapsed_ms}ms
-                </span>
-                <span>
-                  <strong>Tokens:</strong> {testResult.total_prompt_tokens} prompt + {testResult.total_completion_tokens} completion
-                </span>
-              </div>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid #ccc' }}>
-                    <th style={{ textAlign: 'left', padding: '0.25rem' }}>Node</th>
-                    <th style={{ textAlign: 'left', padding: '0.25rem' }}>Status</th>
-                    <th style={{ textAlign: 'left', padding: '0.25rem' }}>Time (ms)</th>
-                    <th style={{ textAlign: 'left', padding: '0.25rem' }}>Prompt</th>
-                    <th style={{ textAlign: 'left', padding: '0.25rem' }}>Completion</th>
-                    <th style={{ textAlign: 'left', padding: '0.25rem' }}>Output</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {testResult.node_results.map((nr) => (
-                    <tr key={nr.node_id} style={{ borderBottom: '1px solid #eee' }}>
-                      <td style={{ padding: '0.25rem' }}>{nr.node_id}</td>
-                      <td style={{ padding: '0.25rem', color: nr.status === 'ok' ? 'green' : 'red' }}>{nr.status}</td>
-                      <td style={{ padding: '0.25rem' }}>{nr.elapsed_ms}</td>
-                      <td style={{ padding: '0.25rem' }}>{nr.prompt_tokens}</td>
-                      <td style={{ padding: '0.25rem' }}>{nr.completion_tokens}</td>
-                      <td style={{ padding: '0.25rem' }}>
-                        {typeof nr.output === 'string' ? nr.output : JSON.stringify(nr.output)?.slice(0, 100)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </>
-          )}
-          {testError && (
-            <div style={{ color: 'red' }}>
-              <strong>Test Run Failed:</strong> {testError}
-            </div>
-          )}
-        </div>
-      )}
-      <div style={{ padding: '0.5rem 1rem', borderBottom: '1px solid #ddd', display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-        <label style={{ fontSize: '0.875rem', fontWeight: 600 }}>Trigger</label>
-        <select
-          value={triggerType}
-          onChange={(e) => {
-            const type = e.target.value;
-            setTriggerType(type);
-            setTriggerConfig({});
-          }}
-          style={{ padding: '0.25rem 0.5rem' }}
-          aria-label="Trigger type"
-        >
-          {[
-          'manual',
-          'schedule',
-          'chat_command',
-          'message',
-          'webhook',
-          'email',
-          'proposal_approved',
-          'proposal_rejected',
-          'tool_error',
-          'workflow_completed',
-          'session_started',
-        ].map((t) => (
-          <option key={t} value={t}>
-            {t}
-          </option>
-        ))}
-        </select>
-        {triggerType === 'schedule' && (
-          <CronInput
-            value={triggerConfig.cron || ''}
-            onChange={(value) => updateTriggerConfig('cron', value)}
-          />
-        )}
-        {triggerType === 'chat_command' && (
-          <input
-            placeholder="Command"
-            value={triggerConfig.command || ''}
-            onChange={(e) => updateTriggerConfig('command', e.target.value)}
-            style={{ padding: '0.25rem 0.5rem', minWidth: 120 }}
-            aria-label="Command"
-          />
-        )}
-        {triggerType === 'message' && (
-          <input
-            placeholder="Pattern"
-            value={triggerConfig.pattern || ''}
-            onChange={(e) => updateTriggerConfig('pattern', e.target.value)}
-            style={{ padding: '0.25rem 0.5rem', minWidth: 180 }}
-            aria-label="Pattern"
-          />
-        )}
-        {triggerType === 'webhook' && (
-          <input
-            placeholder="Endpoint"
-            value={triggerConfig.endpoint || ''}
-            onChange={(e) => updateTriggerConfig('endpoint', e.target.value)}
-            style={{ padding: '0.25rem 0.5rem', minWidth: 180 }}
-            aria-label="Endpoint"
-          />
-        )}
-        {triggerType === 'email' && (
-          <>
-            <input
-              placeholder="From address (contains)"
-              value={triggerConfig.from_address || ''}
-              onChange={(e) => updateTriggerConfig('from_address', e.target.value)}
-              style={{ padding: '0.25rem 0.5rem', minWidth: 180 }}
-              aria-label="From address contains"
-            />
-            <input
-              placeholder="Subject (contains)"
-              value={triggerConfig.subject_contains || ''}
-              onChange={(e) => updateTriggerConfig('subject_contains', e.target.value)}
-              style={{ padding: '0.25rem 0.5rem', minWidth: 180 }}
-              aria-label="Subject contains"
-            />
-          </>
-        )}
-        {triggerType === 'proposal_approved' && (
-          <input
-            placeholder="Proposal type (optional)"
-            value={triggerConfig.proposal_type || ''}
-            onChange={(e) => updateTriggerConfig('proposal_type', e.target.value)}
-            style={{ padding: '0.25rem 0.5rem', minWidth: 180 }}
-            aria-label="Proposal type"
-          />
-        )}
-        {triggerType === 'proposal_rejected' && (
-          <input
-            placeholder="Proposal type (optional)"
-            value={triggerConfig.proposal_type || ''}
-            onChange={(e) => updateTriggerConfig('proposal_type', e.target.value)}
-            style={{ padding: '0.25rem 0.5rem', minWidth: 180 }}
-            aria-label="Proposal type"
-          />
-        )}
-        {triggerType === 'tool_error' && (
-          <input
-            placeholder="Tool name (optional)"
-            value={triggerConfig.tool_name || ''}
-            onChange={(e) => updateTriggerConfig('tool_name', e.target.value)}
-            style={{ padding: '0.25rem 0.5rem', minWidth: 180 }}
-            aria-label="Tool name"
-          />
-        )}
-        {triggerType === 'workflow_completed' && (
-          <input
-            placeholder="Source workflow ID (optional)"
-            value={triggerConfig.source_workflow_id || ''}
-            onChange={(e) => updateTriggerConfig('source_workflow_id', e.target.value)}
-            style={{ padding: '0.25rem 0.5rem', minWidth: 180 }}
-            aria-label="Source workflow ID"
-          />
-        )}
-        {triggerType === 'webhook' && id && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.875rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span>
-                URL: {webhookUrl || `${window.location.origin}/api/webhooks/${id}`}
-              </span>
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(webhookUrl || `${window.location.origin}/api/webhooks/${id}`);
-                }}
-                style={{ padding: '0.125rem 0.5rem', fontSize: '0.75rem' }}
-              >
-                Copy URL
-              </button>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span>Secret: {webhookSecret}</span>
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(webhookSecret);
-                }}
-                style={{ padding: '0.125rem 0.5rem', fontSize: '0.75rem' }}
-              >
-                Copy Secret
-              </button>
-            </div>
-            <span style={{ color: '#666', fontSize: '0.75rem' }}>
-              Include the header <code>X-Webhook-Signature: {'<hex_hmac_sha256>'}</code> with every request
-            </span>
-          </div>
-        )}
-        <button onClick={handleTriggerSave} disabled={triggerSaving}>
-          {triggerSaving ? 'Saving…' : 'Save Trigger'}
-        </button>
-      </div>
+      <ExecutionHistoryPanel
+        show={showHistory}
+        executions={executions}
+        loading={historyLoading}
+        error={historyError}
+        selectedExecution={selectedExecution}
+        onSelectExecution={setSelectedExecution}
+        testResult={testResult}
+        testError={testError}
+      />
+      <TriggerConfigPanel
+        triggerType={triggerType}
+        onTriggerTypeChange={(type: string) => {
+          setTriggerType(type);
+          setTriggerConfig({});
+        }}
+        triggerConfig={triggerConfig}
+        onTriggerConfigChange={updateTriggerConfig}
+        onSaveTrigger={handleTriggerSave}
+        triggerSaving={triggerSaving}
+        workflowId={id}
+        webhookUrl={webhookUrl}
+        webhookSecret={webhookSecret}
+      />
       <div style={{ display: 'flex', flex: 1 }}>
-        <div style={{ flex: 1 }} onKeyDown={handleKeyDown} tabIndex={0} data-testid="reactflow-wrapper">
+        <div style={{ flex: 1 }} tabIndex={0} data-testid="reactflow-wrapper">
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -828,6 +558,7 @@ export default function WorkflowEditor() {
             onNodeClick={onNodeClick}
             onPaneClick={onPaneClick}
             onNodesDelete={onNodesDelete}
+            onNodeDragStop={onNodeDragStop}
             nodeTypes={nodeTypesMap}
             fitView
           >
@@ -837,329 +568,14 @@ export default function WorkflowEditor() {
           </ReactFlow>
         </div>
         {selectedNode && (
-          <div
-            key={selectedNode.id}
-            style={{
-              width: 260,
-              borderLeft: '1px solid #ddd',
-              padding: '1rem',
-              overflowY: 'auto',
-            }}
-          >
-            <h3>Properties</h3>
-            <div style={{ marginBottom: '0.75rem' }}>
-              <button
-                onClick={() => {
-                  setNodes((nds) => nds.filter((n) => n.id !== selectedNode.id));
-                  setEdges((eds) => eds.filter((e) => e.source !== selectedNode.id && e.target !== selectedNode.id));
-                  setSelectedNode(null);
-                }}
-                style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', color: 'red', marginBottom: '0.5rem' }}
-              >
-                Delete Node
-              </button>
-            </div>
-            <div style={{ marginBottom: '0.75rem' }}>
-              <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>ID</label>
-              <input value={selectedNode.id} readOnly style={{ width: '100%' }} />
-            </div>
-            <div style={{ marginBottom: '0.75rem' }}>
-              <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Type</label>
-              <select
-                value={selectedNode.type || 'default'}
-                onChange={(e) => {
-                  const type = e.target.value;
-                  setNodes((nds) => nds.map((n) => (n.id === selectedNode.id ? { ...n, type } : n)));
-                  setSelectedNode((prev) => (prev ? { ...prev, type } : prev));
-                }}
-                style={{ width: '100%' }}
-              >
-                {EDITOR_NODE_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div style={{ marginBottom: '0.75rem' }}>
-              <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Label</label>
-              <input
-                value={(selectedNode.data.label as string) || ''}
-                onChange={(e) => updateSelectedNodeData('label', e.target.value)}
-                style={{ width: '100%' }}
-              />
-            </div>
-
-            {selectedNode.type === 'tool_call' && (
-              <>
-                <div style={{ marginBottom: '0.75rem' }}>
-                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Tool Name</label>
-                  <select
-                    value={(selectedNode.data.tool_name as string) || ''}
-                    onChange={(e) => updateSelectedNodeData('tool_name', e.target.value)}
-                    style={{ width: '100%' }}
-                    aria-label="Tool name"
-                  >
-                    <option value="" disabled>
-                      Select a tool…
-                    </option>
-                    {tools.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div style={{ marginBottom: '0.75rem' }}>
-                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Args (JSON)</label>
-                  <textarea
-                    rows={4}
-                    defaultValue={JSON.stringify((selectedNode.data.args as object) || {}, null, 2)}
-                    onBlur={(e) => {
-                      try {
-                        updateSelectedNodeData('args', JSON.parse(e.target.value));
-                      } catch {
-                        // ignore invalid JSON
-                      }
-                    }}
-                    style={{ width: '100%' }}
-                  />
-                </div>
-              </>
-            )}
-
-            {selectedNode.type === 'llm_decision' && (
-              <>
-                <div style={{ marginBottom: '0.75rem' }}>
-                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Prompt</label>
-                  <textarea
-                    rows={4}
-                    value={(selectedNode.data.prompt as string) || ''}
-                    onChange={(e) => updateSelectedNodeData('prompt', e.target.value)}
-                    style={{ width: '100%' }}
-                  />
-                </div>
-                <div style={{ marginBottom: '0.75rem' }}>
-                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Branches</label>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginBottom: '0.25rem' }}>
-                    {((selectedNode.data.branches as string[]) || []).map((branch) => (
-                      <span
-                        key={branch}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '0.25rem',
-                          background: '#e9d5ff',
-                          color: '#581c87',
-                          padding: '0.125rem 0.5rem',
-                          borderRadius: '9999px',
-                          fontSize: '0.75rem',
-                        }}
-                      >
-                        {branch}
-                        <button
-                          onClick={() => {
-                            const current = (selectedNode.data.branches as string[]) || [];
-                            updateSelectedNodeData(
-                              'branches',
-                              current.filter((b) => b !== branch)
-                            );
-                          }}
-                          style={{
-                            background: 'transparent',
-                            border: 'none',
-                            cursor: 'pointer',
-                            padding: 0,
-                            fontSize: '0.75rem',
-                            color: '#581c87',
-                            lineHeight: 1,
-                          }}
-                          aria-label={`Remove branch ${branch}`}
-                        >
-                          ×
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                  <input
-                    placeholder="Add branch…"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ',') {
-                        e.preventDefault();
-                        const value = (e.target as HTMLInputElement).value.trim();
-                        if (!value) return;
-                        const current = (selectedNode.data.branches as string[]) || [];
-                        if (!current.includes(value)) {
-                          updateSelectedNodeData('branches', [...current, value]);
-                        }
-                        (e.target as HTMLInputElement).value = '';
-                      }
-                    }}
-                    style={{ width: '100%' }}
-                    aria-label="Add branch"
-                  />
-                </div>
-              </>
-            )}
-
-            {selectedNode.type === 'send_message' && (
-              <>
-                <div style={{ marginBottom: '0.75rem' }}>
-                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Platform</label>
-                  <select
-                    value={(selectedNode.data.platform as string) || ''}
-                    onChange={(e) => updateSelectedNodeData('platform', e.target.value)}
-                    style={{ width: '100%' }}
-                    aria-label="Platform"
-                  >
-                    <option value="" disabled>
-                      Select a platform…
-                    </option>
-                    {platforms.map((p) => (
-                      <option key={p} value={p}>
-                        {p}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div style={{ marginBottom: '0.75rem' }}>
-                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Message</label>
-                  <textarea
-                    rows={4}
-                    value={(selectedNode.data.message as string) || ''}
-                    onChange={(e) => updateSelectedNodeData('message', e.target.value)}
-                    style={{ width: '100%' }}
-                  />
-                </div>
-                <div style={{ marginBottom: '0.75rem' }}>
-                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Target User</label>
-                  <input
-                    value={(selectedNode.data.target_user as string) || ''}
-                    onChange={(e) => updateSelectedNodeData('target_user', e.target.value)}
-                    style={{ width: '100%' }}
-                  />
-                </div>
-              </>
-            )}
-
-            {selectedNode.type === 'http_request' && (
-              <>
-                <div style={{ marginBottom: '0.75rem' }}>
-                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Method</label>
-                  <select
-                    value={(selectedNode.data.method as string) || 'GET'}
-                    onChange={(e) => updateSelectedNodeData('method', e.target.value)}
-                    style={{ width: '100%' }}
-                  >
-                    {['GET', 'POST', 'PUT', 'DELETE'].map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div style={{ marginBottom: '0.75rem' }}>
-                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>URL</label>
-                  <input
-                    value={(selectedNode.data.url as string) || ''}
-                    onChange={(e) => updateSelectedNodeData('url', e.target.value)}
-                    style={{ width: '100%' }}
-                  />
-                </div>
-                <div style={{ marginBottom: '0.75rem' }}>
-                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Headers (JSON)</label>
-                  <textarea
-                    rows={3}
-                    defaultValue={JSON.stringify((selectedNode.data.headers as object) || {}, null, 2)}
-                    onBlur={(e) => {
-                      try {
-                        updateSelectedNodeData('headers', JSON.parse(e.target.value));
-                      } catch {
-                        // ignore invalid JSON
-                      }
-                    }}
-                    style={{ width: '100%' }}
-                  />
-                </div>
-                <div style={{ marginBottom: '0.75rem' }}>
-                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Body</label>
-                  <textarea
-                    rows={3}
-                    value={(selectedNode.data.body as string) || ''}
-                    onChange={(e) => updateSelectedNodeData('body', e.target.value)}
-                    style={{ width: '100%' }}
-                  />
-                </div>
-              </>
-            )}
-
-            {selectedNode.type === 'condition' && (
-              <div style={{ marginBottom: '0.75rem' }}>
-                <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Expression</label>
-                <textarea
-                  rows={3}
-                  value={(selectedNode.data.expression as string) || ''}
-                  onChange={(e) => updateSelectedNodeData('expression', e.target.value)}
-                  style={{ width: '100%' }}
-                  aria-label="Expression"
-                />
-                <span style={{ fontSize: '0.75rem', color: '#666' }}>
-                  Supported: comparisons (==, !=, &lt;, &gt;, &lt;=, &gt;=), logic (and, or, not), arithmetic (+, -, *, /). No function calls or power operator.
-                </span>
-              </div>
-            )}
-
-            {selectedNode.type === 'investigate' && (
-              <>
-                <div style={{ marginBottom: '0.75rem' }}>
-                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Topic</label>
-                  <textarea
-                    rows={4}
-                    value={(selectedNode.data.topic as string) || ''}
-                    onChange={(e) => updateSelectedNodeData('topic', e.target.value)}
-                    style={{ width: '100%' }}
-                  />
-                </div>
-                <div style={{ marginBottom: '0.75rem' }}>
-                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Depth</label>
-                  <select
-                    value={(selectedNode.data.depth as string) || 'shallow'}
-                    onChange={(e) => updateSelectedNodeData('depth', e.target.value)}
-                    style={{ width: '100%' }}
-                  >
-                    <option value="shallow">shallow</option>
-                    <option value="deep">deep</option>
-                  </select>
-                </div>
-                <div style={{ marginBottom: '0.75rem' }}>
-                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Tools</label>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                    {tools.map((t) => {
-                      const selected = ((selectedNode.data.tools as string[]) || []);
-                      return (
-                        <label key={t} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.875rem', cursor: 'pointer' }}>
-                          <input
-                            type="checkbox"
-                            checked={selected.includes(t)}
-                            onChange={(e) => {
-                              const current = (selectedNode.data.tools as string[]) || [];
-                              if (e.target.checked) {
-                                updateSelectedNodeData('tools', [...current, t]);
-                              } else {
-                                updateSelectedNodeData('tools', current.filter((x) => x !== t));
-                              }
-                            }}
-                            aria-label={`Tool ${t}`}
-                          />
-                          {t}
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
+          <NodePropertiesPanel
+            selectedNode={selectedNode}
+            onDeleteNode={handleDeleteNode}
+            onUpdateNodeData={updateSelectedNodeData}
+            onChangeNodeType={handleChangeNodeType}
+            tools={tools}
+            platforms={platforms}
+          />
         )}
       </div>
     </div>
