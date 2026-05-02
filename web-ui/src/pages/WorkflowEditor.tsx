@@ -597,11 +597,23 @@ export default function WorkflowEditor() {
           style={{ padding: '0.25rem 0.5rem' }}
           aria-label="Trigger type"
         >
-          {['manual', 'schedule', 'chat_command', 'message', 'webhook'].map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
+          {[
+          'manual',
+          'schedule',
+          'chat_command',
+          'message',
+          'webhook',
+          'email',
+          'proposal_approved',
+          'proposal_rejected',
+          'tool_error',
+          'workflow_completed',
+          'session_started',
+        ].map((t) => (
+          <option key={t} value={t}>
+            {t}
+          </option>
+        ))}
         </select>
         {triggerType === 'schedule' && (
           <input
@@ -637,6 +649,60 @@ export default function WorkflowEditor() {
             onChange={(e) => updateTriggerConfig('endpoint', e.target.value)}
             style={{ padding: '0.25rem 0.5rem', minWidth: 180 }}
             aria-label="Endpoint"
+          />
+        )}
+        {triggerType === 'email' && (
+          <>
+            <input
+              placeholder="From address (contains)"
+              value={triggerConfig.from_address || ''}
+              onChange={(e) => updateTriggerConfig('from_address', e.target.value)}
+              style={{ padding: '0.25rem 0.5rem', minWidth: 180 }}
+              aria-label="From address contains"
+            />
+            <input
+              placeholder="Subject (contains)"
+              value={triggerConfig.subject_contains || ''}
+              onChange={(e) => updateTriggerConfig('subject_contains', e.target.value)}
+              style={{ padding: '0.25rem 0.5rem', minWidth: 180 }}
+              aria-label="Subject contains"
+            />
+          </>
+        )}
+        {triggerType === 'proposal_approved' && (
+          <input
+            placeholder="Proposal type (optional)"
+            value={triggerConfig.proposal_type || ''}
+            onChange={(e) => updateTriggerConfig('proposal_type', e.target.value)}
+            style={{ padding: '0.25rem 0.5rem', minWidth: 180 }}
+            aria-label="Proposal type"
+          />
+        )}
+        {triggerType === 'proposal_rejected' && (
+          <input
+            placeholder="Proposal type (optional)"
+            value={triggerConfig.proposal_type || ''}
+            onChange={(e) => updateTriggerConfig('proposal_type', e.target.value)}
+            style={{ padding: '0.25rem 0.5rem', minWidth: 180 }}
+            aria-label="Proposal type"
+          />
+        )}
+        {triggerType === 'tool_error' && (
+          <input
+            placeholder="Tool name (optional)"
+            value={triggerConfig.tool_name || ''}
+            onChange={(e) => updateTriggerConfig('tool_name', e.target.value)}
+            style={{ padding: '0.25rem 0.5rem', minWidth: 180 }}
+            aria-label="Tool name"
+          />
+        )}
+        {triggerType === 'workflow_completed' && (
+          <input
+            placeholder="Source workflow ID (optional)"
+            value={triggerConfig.source_workflow_id || ''}
+            onChange={(e) => updateTriggerConfig('source_workflow_id', e.target.value)}
+            style={{ padding: '0.25rem 0.5rem', minWidth: 180 }}
+            aria-label="Source workflow ID"
           />
         )}
         {triggerType === 'webhook' && id && (

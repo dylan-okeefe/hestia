@@ -19,6 +19,12 @@ TRIGGER_MAP: dict[str, str] = {
     "chat_command": "chat_command",
     "webhook_received": "webhook",
     "message_matched": "message",
+    "email_received": "email",
+    "proposal_approved": "proposal_approved",
+    "proposal_rejected": "proposal_rejected",
+    "tool_error": "tool_error",
+    "workflow_completed": "workflow_completed",
+    "session_started": "session_started",
 }
 
 
@@ -137,6 +143,30 @@ class TriggerRegistry:
                 workflow, payload
             ):
                 continue
+            if trigger_type == "email" and not self._email_matches(
+                workflow, payload
+            ):
+                continue
+            if trigger_type == "proposal_approved" and not self._proposal_matches(
+                workflow, payload
+            ):
+                continue
+            if trigger_type == "proposal_rejected" and not self._proposal_matches(
+                workflow, payload
+            ):
+                continue
+            if trigger_type == "tool_error" and not self._tool_error_matches(
+                workflow, payload
+            ):
+                continue
+            if trigger_type == "workflow_completed" and not self._workflow_completed_matches(
+                workflow, payload
+            ):
+                continue
+            if trigger_type == "session_started" and not self._session_started_matches(
+                workflow, payload
+            ):
+                continue
 
             matched.append(workflow)
         return matched
@@ -192,3 +222,55 @@ class TriggerRegistry:
         if not isinstance(payload_text, str):
             return False
         return bool(pattern in payload_text)
+
+    def _email_matches(self, workflow: Workflow, payload: Any) -> bool:
+        """Check if an email payload matches the workflow trigger config."""
+        from_address = workflow.trigger_config.get("from_address")
+        subject_contains = workflow.trigger_config.get("subject_contains")
+        if from_address is None and subject_contains is None:
+            return True
+        if not isinstance(payload, dict):
+            return False
+        if from_address is not None:
+            payload_from = payload.get("from")
+            if not isinstance(payload_from, str) or from_address not in payload_from:
+                return False
+        if subject_contains is not None:
+            payload_subject = payload.get("subject")
+            if not isinstance(payload_subject, str) or subject_contains not in payload_subject:
+                return False
+        return True
+
+    def _proposal_matches(self, workflow: Workflow, payload: Any) -> bool:
+        """Check if a proposal payload matches the workflow trigger config."""
+        proposal_type = workflow.trigger_config.get("proposal_type")
+        if proposal_type is None:
+            return True
+        if not isinstance(payload, dict):
+            return False
+        payload_type = payload.get("proposal_type")
+        return bool(payload_type == proposal_type)
+
+    def _tool_error_matches(self, workflow: Workflow, payload: Any) -> bool:
+        """Check if a tool_error payload matches the workflow trigger config."""
+        tool_name = workflow.trigger_config.get("tool_name")
+        if tool_name is None:
+            return True
+        if not isinstance(payload, dict):
+            return False
+        payload_tool_name = payload.get("tool_name")
+        return bool(payload_tool_name == tool_name)
+
+    def _workflow_completed_matches(self, workflow: Workflow, payload: Any) -> bool:
+        """Check if a workflow_completed payload matches the workflow trigger config."""
+        source_workflow_id = workflow.trigger_config.get("source_workflow_id")
+        if source_workflow_id is None:
+            return True
+        if not isinstance(payload, dict):
+            return False
+        payload_source = payload.get("source_workflow_id")
+        return bool(payload_source == source_workflow_id)
+
+    def _session_started_matches(self, workflow: Workflow, payload: Any) -> bool:
+        """Always matches for session_started triggers."""
+        return True
