@@ -110,7 +110,7 @@ class Scheduler:
         logger.info("Firing scheduled task %s", task.id)
 
         if self._event_bus is not None:
-            self._event_bus.publish(
+            await self._event_bus.publish(
                 "schedule_fired",
                 {
                     "task_id": task.id,

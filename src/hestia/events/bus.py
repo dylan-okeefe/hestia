@@ -22,6 +22,7 @@ class EventBus:
     def __init__(self) -> None:
         """Initialize an empty event bus."""
         self._handlers: dict[str, list[EventHandler]] = {}
+        self._tasks: set[asyncio.Task[None]] = set()
 
     def subscribe(self, event_type: str, handler: EventHandler) -> None:
         """Register an async handler for an event type.
@@ -33,7 +34,7 @@ class EventBus:
         self._handlers.setdefault(event_type, [])
         self._handlers[event_type].append(handler)
 
-    def publish(self, event_type: str, payload: Any) -> None:
+    async def publish(self, event_type: str, payload: Any) -> None:
         """Publish an event to all subscribers (fire-and-forget).
 
         Args:
@@ -46,10 +47,17 @@ class EventBus:
             return
 
         for handler in handlers:
-            asyncio.create_task(
+            task = asyncio.create_task(
                 self._invoke_handler(handler, event_type, payload),
                 name=f"eventbus-{event_type}",
             )
+            self._tasks.add(task)
+            task.add_done_callback(self._tasks.discard)
+
+    async def drain(self) -> None:
+        """Await all pending publish tasks."""
+        if self._tasks:
+            await asyncio.gather(*self._tasks, return_exceptions=True)
 
     async def _invoke_handler(
         self, handler: EventHandler, event_type: str, payload: Any

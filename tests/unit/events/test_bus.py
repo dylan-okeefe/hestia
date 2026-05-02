@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 import pytest
@@ -28,10 +27,8 @@ class TestSubscribe:
             received.append((event_type, payload))
 
         bus.subscribe("test_event", handler)
-        bus.publish("test_event", {"key": "value"})
-
-        # Allow the created task to run
-        await asyncio.sleep(0.01)
+        await bus.publish("test_event", {"key": "value"})
+        await bus.drain()
 
         assert len(received) == 1
         assert received[0] == ("test_event", {"key": "value"})
@@ -50,9 +47,8 @@ class TestSubscribe:
 
         bus.subscribe("test_event", handler1)
         bus.subscribe("test_event", handler2)
-        bus.publish("test_event", "payload")
-
-        await asyncio.sleep(0.01)
+        await bus.publish("test_event", "payload")
+        await bus.drain()
 
         assert len(received1) == 1
         assert len(received2) == 1
@@ -68,9 +64,8 @@ class TestSubscribe:
             received.append(payload)
 
         bus.subscribe("event_a", handler)
-        bus.publish("event_b", "should not arrive")
-
-        await asyncio.sleep(0.01)
+        await bus.publish("event_b", "should not arrive")
+        await bus.drain()
 
         assert received == []
 
@@ -81,8 +76,8 @@ class TestPublish:
     @pytest.mark.asyncio
     async def test_no_subscribers_no_crash(self, bus: EventBus) -> None:
         """Publishing with no subscribers is a no-op."""
-        bus.publish("unknown_event", None)
-        await asyncio.sleep(0.01)
+        await bus.publish("unknown_event", None)
+        await bus.drain()
         # No exception means success
 
     @pytest.mark.asyncio
@@ -98,11 +93,48 @@ class TestPublish:
 
         bus.subscribe("test_event", bad_handler)
         bus.subscribe("test_event", good_handler)
-        bus.publish("test_event", "safe")
-
-        await asyncio.sleep(0.01)
+        await bus.publish("test_event", "safe")
+        await bus.drain()
 
         assert received == ["safe"]
+
+
+class TestDrain:
+    """Tests for drain method."""
+
+    @pytest.mark.asyncio
+    async def test_awaits_pending_tasks(self, bus: EventBus) -> None:
+        """Drain awaits all pending publish tasks."""
+        received: list[Any] = []
+
+        async def handler(_event_type: str, payload: Any) -> None:
+            received.append(payload)
+
+        bus.subscribe("test_event", handler)
+        await bus.publish("test_event", "hello")
+        await bus.drain()
+
+        assert received == ["hello"]
+
+    @pytest.mark.asyncio
+    async def test_task_retention_and_cleanup(self, bus: EventBus) -> None:
+        """Tasks are retained while running and removed after drain."""
+        handler_called = False
+
+        async def handler(_event_type: str, _payload: Any) -> None:
+            nonlocal handler_called
+            handler_called = True
+
+        bus.subscribe("test_event", handler)
+        await bus.publish("test_event", "x")
+
+        # Task should be in the set before drain completes
+        assert len(bus._tasks) > 0
+
+        await bus.drain()
+
+        assert handler_called
+        assert len(bus._tasks) == 0
 
 
 class TestEventTypes:
@@ -117,9 +149,8 @@ class TestEventTypes:
             received.append(payload)
 
         bus.subscribe("schedule_fired", handler)
-        bus.publish("schedule_fired", {"task_id": "t1"})
-
-        await asyncio.sleep(0.01)
+        await bus.publish("schedule_fired", {"task_id": "t1"})
+        await bus.drain()
 
         assert len(received) == 1
         assert received[0] == {"task_id": "t1"}
@@ -133,9 +164,8 @@ class TestEventTypes:
             received.append(payload)
 
         bus.subscribe("chat_command", handler)
-        bus.publish("chat_command", {"command": "status"})
-
-        await asyncio.sleep(0.01)
+        await bus.publish("chat_command", {"command": "status"})
+        await bus.drain()
 
         assert len(received) == 1
 
@@ -148,9 +178,8 @@ class TestEventTypes:
             received.append(payload)
 
         bus.subscribe("webhook_received", handler)
-        bus.publish("webhook_received", {"endpoint": "/hook"})
-
-        await asyncio.sleep(0.01)
+        await bus.publish("webhook_received", {"endpoint": "/hook"})
+        await bus.drain()
 
         assert len(received) == 1
 
@@ -163,8 +192,7 @@ class TestEventTypes:
             received.append(payload)
 
         bus.subscribe("message_matched", handler)
-        bus.publish("message_matched", {"text": "hello"})
-
-        await asyncio.sleep(0.01)
+        await bus.publish("message_matched", {"text": "hello"})
+        await bus.drain()
 
         assert len(received) == 1
