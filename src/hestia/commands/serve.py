@@ -42,8 +42,8 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
             tasks.append(asyncio.create_task(run_telegram(app, config, adapter=telegram_adapter)))
 
         if config.matrix.access_token:
-            from hestia.platforms.runners import run_matrix
             from hestia.platforms.matrix_adapter import MatrixAdapter
+            from hestia.platforms.runners import run_matrix
 
             matrix_adapter = MatrixAdapter(config.matrix)
             adapters["matrix"] = matrix_adapter
@@ -68,6 +68,7 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
                     execution_store=app.execution_store,
                     app=app,
                     auth_manager=auth_manager,
+                    trigger_registry=app.trigger_registry,
                 )
             )
             add_auth_middleware(web_app, auth_manager, config.web)

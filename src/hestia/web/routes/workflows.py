@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -10,10 +9,9 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.responses import JSONResponse
 
+from hestia.web.context import WebContext, get_web_context
 from hestia.workflows.executor import WorkflowExecutor
 from hestia.workflows.models import Workflow, WorkflowEdge, WorkflowNode, WorkflowVersion
-from hestia.workflows.store import WorkflowStore
-from hestia.web.context import WebContext, get_web_context
 
 router = APIRouter()
 
@@ -99,6 +97,8 @@ async def create_workflow(
         trigger_config=payload.get("trigger_config", {}),
     )
     await ctx.workflow_store.save_workflow(wf)
+    if ctx.trigger_registry is not None:
+        await ctx.trigger_registry.reload_one(wf.id)
     return _workflow_to_api(wf)
 
 
@@ -143,6 +143,8 @@ async def update_workflow(
         workflow.trigger_config = payload["trigger_config"]
 
     await ctx.workflow_store.save_workflow(workflow)
+    if ctx.trigger_registry is not None:
+        await ctx.trigger_registry.reload_one(workflow_id)
     return _workflow_to_api(workflow)
 
 
@@ -155,6 +157,8 @@ async def delete_workflow(
     deleted = await ctx.workflow_store.delete_workflow(workflow_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Workflow not found")
+    if ctx.trigger_registry is not None:
+        await ctx.trigger_registry.reload_one(workflow_id)
     return {"deleted": True}
 
 
@@ -262,7 +266,7 @@ async def receive_webhook(
             status_code=503,
         )
 
-    event_bus.publish(
+    await event_bus.publish(
         "webhook_received",
         {
             "endpoint": endpoint,
