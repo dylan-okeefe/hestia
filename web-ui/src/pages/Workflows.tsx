@@ -57,7 +57,21 @@ export default function Workflows() {
                 data-testid="workflow-row"
               >
                 <td style={{ padding: '0.5rem' }}>{wf.name}</td>
-                <td style={{ padding: '0.5rem' }}>{wf.trigger_type}</td>
+                <td style={{ padding: '0.5rem' }}>
+                  <span
+                    style={{
+                      display: 'inline-block',
+                      padding: '0.125rem 0.5rem',
+                      borderRadius: '9999px',
+                      background: '#e5e7eb',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    {wf.trigger_type}
+                  </span>
+                </td>
                 <td style={{ padding: '0.5rem' }}>{new Date(wf.last_edited_at).toLocaleString()}</td>
                 <td style={{ padding: '0.5rem' }}>{wf.active_version_id ?? '—'}</td>
               </tr>

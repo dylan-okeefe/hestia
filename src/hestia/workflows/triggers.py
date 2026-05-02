@@ -94,6 +94,10 @@ class TriggerRegistry:
             if workflow.trigger_type != trigger_type:
                 continue
 
+            if trigger_type == "schedule" and not self._schedule_matches(
+                workflow, payload
+            ):
+                continue
             if trigger_type == "chat_command" and not self._command_matches(
                 workflow, payload
             ):
@@ -129,6 +133,25 @@ class TriggerRegistry:
             return False
         payload_endpoint = payload.get("endpoint")
         return bool(payload_endpoint == endpoint)
+
+    def _schedule_matches(self, workflow: Workflow, payload: Any) -> bool:
+        """Check if a schedule payload matches the workflow trigger config."""
+        cron = workflow.trigger_config.get("cron")
+        if cron is None:
+            return True
+        if not isinstance(payload, dict):
+            return False
+        from datetime import datetime
+
+        from croniter import croniter
+        from hestia.core.clock import utcnow
+
+        current_time = payload.get("current_time")
+        if isinstance(current_time, str):
+            current_time = datetime.fromisoformat(current_time)
+        if current_time is None:
+            current_time = utcnow()
+        return bool(croniter.match(str(cron), current_time))
 
     def _message_matches(self, workflow: Workflow, payload: Any) -> bool:
         """Check if a message payload matches the workflow trigger config."""

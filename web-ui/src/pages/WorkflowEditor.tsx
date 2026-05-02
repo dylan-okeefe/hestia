@@ -17,6 +17,7 @@ import {
   saveWorkflowVersion,
   activateWorkflowVersion,
   testRunWorkflow,
+  updateWorkflow,
   type WorkflowNode,
   type WorkflowEdge,
   type ExecutionResult,
@@ -64,6 +65,9 @@ export default function WorkflowEditor() {
   const [testResult, setTestResult] = useState<ExecutionResult | null>(null);
   const [testError, setTestError] = useState<string | null>(null);
   const [addNodeType, setAddNodeType] = useState<string>('default');
+  const [triggerType, setTriggerType] = useState<string>('manual');
+  const [triggerConfig, setTriggerConfig] = useState<Record<string, string>>({});
+  const [triggerSaving, setTriggerSaving] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -71,6 +75,8 @@ export default function WorkflowEditor() {
     Promise.all([fetchWorkflow(id), fetchWorkflowVersions(id)])
       .then(([wf, vs]) => {
         setWorkflowName(wf.name);
+        setTriggerType(wf.trigger_type || 'manual');
+        setTriggerConfig((wf.trigger_config || {}) as Record<string, string>);
         setVersions(vs.versions);
         const active = vs.versions.find((v) => v.activated_at !== null);
         if (active) {
@@ -184,6 +190,23 @@ export default function WorkflowEditor() {
     }
   };
 
+  const handleTriggerSave = async () => {
+    if (!id) return;
+    setTriggerSaving(true);
+    try {
+      await updateWorkflow(id, { trigger_type: triggerType, trigger_config: triggerConfig });
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save trigger');
+    } finally {
+      setTriggerSaving(false);
+    }
+  };
+
+  const updateTriggerConfig = (key: string, value: string) => {
+    setTriggerConfig((prev) => ({ ...prev, [key]: value }));
+  };
+
   const updateSelectedNodeData = (key: string, value: unknown) => {
     if (!selectedNode) return;
     setNodes((nds) =>
@@ -294,6 +317,64 @@ export default function WorkflowEditor() {
           )}
         </div>
       )}
+      <div style={{ padding: '0.5rem 1rem', borderBottom: '1px solid #ddd', display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+        <label style={{ fontSize: '0.875rem', fontWeight: 600 }}>Trigger</label>
+        <select
+          value={triggerType}
+          onChange={(e) => {
+            const type = e.target.value;
+            setTriggerType(type);
+            setTriggerConfig({});
+          }}
+          style={{ padding: '0.25rem 0.5rem' }}
+          aria-label="Trigger type"
+        >
+          {['manual', 'schedule', 'chat_command', 'message', 'webhook'].map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+        {triggerType === 'schedule' && (
+          <input
+            placeholder="Cron expression"
+            value={triggerConfig.cron || ''}
+            onChange={(e) => updateTriggerConfig('cron', e.target.value)}
+            style={{ padding: '0.25rem 0.5rem', minWidth: 180 }}
+            aria-label="Cron expression"
+          />
+        )}
+        {triggerType === 'chat_command' && (
+          <input
+            placeholder="Command"
+            value={triggerConfig.command || ''}
+            onChange={(e) => updateTriggerConfig('command', e.target.value)}
+            style={{ padding: '0.25rem 0.5rem', minWidth: 120 }}
+            aria-label="Command"
+          />
+        )}
+        {triggerType === 'message' && (
+          <input
+            placeholder="Pattern"
+            value={triggerConfig.pattern || ''}
+            onChange={(e) => updateTriggerConfig('pattern', e.target.value)}
+            style={{ padding: '0.25rem 0.5rem', minWidth: 180 }}
+            aria-label="Pattern"
+          />
+        )}
+        {triggerType === 'webhook' && (
+          <input
+            placeholder="Endpoint"
+            value={triggerConfig.endpoint || ''}
+            onChange={(e) => updateTriggerConfig('endpoint', e.target.value)}
+            style={{ padding: '0.25rem 0.5rem', minWidth: 180 }}
+            aria-label="Endpoint"
+          />
+        )}
+        <button onClick={handleTriggerSave} disabled={triggerSaving}>
+          {triggerSaving ? 'Saving…' : 'Save Trigger'}
+        </button>
+      </div>
       <div style={{ display: 'flex', flex: 1 }}>
         <div style={{ flex: 1 }}>
           <ReactFlow

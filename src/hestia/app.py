@@ -15,6 +15,7 @@ import click
 from hestia.artifacts.store import ArtifactStore
 from hestia.config import HestiaConfig
 from hestia.context.builder import ContextBuilder
+from hestia.events.bus import EventBus
 from hestia.context.compressor import InferenceHistoryCompressor
 from hestia.core.inference import InferenceClient
 from hestia.core.rate_limiter import SessionRateLimiter
@@ -136,6 +137,8 @@ class AppContext:
         self.trace_store = TraceStore(self.db)
         self.scheduler_store = SchedulerStore(self.db)
         self.workflow_store = WorkflowStore(self.db)
+        self.event_bus = EventBus()
+        self.trigger_registry: Any = None
         self.epoch_compiler = MemoryEpochCompiler(self.memory_store, max_tokens=500)
         self.tool_registry = ToolRegistry(self.artifact_store)
 
@@ -264,6 +267,20 @@ class AppContext:
             entropy_threshold=self.config.security.injection_entropy_threshold,
             skip_filters_for_structured=self.config.security.injection_skip_filters_for_structured,
         )
+
+    async def start_trigger_registry(self) -> None:
+        """Create and start the trigger registry."""
+        from hestia.workflows.executor import WorkflowExecutor
+        from hestia.workflows.triggers import TriggerRegistry
+
+        async def _execute_workflow(workflow: Any, payload: Any) -> None:
+            executor = WorkflowExecutor(self)
+            result = await executor.execute(workflow.id, payload)
+            logger.info("Workflow %s executed: %s", workflow.id, result.status)
+
+        registry = TriggerRegistry(self.event_bus, self.workflow_store, _execute_workflow)
+        await registry.start()
+        self.trigger_registry = registry
 
     async def close(self) -> None:
         """Close lazily-created resources."""

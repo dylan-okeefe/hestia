@@ -24,6 +24,7 @@ def _workflow_to_api(wf: Workflow) -> dict[str, Any]:
         "id": wf.id,
         "name": wf.name,
         "trigger_type": wf.trigger_type,
+        "trigger_config": wf.trigger_config,
         "last_edited_at": wf.updated_at.isoformat() if wf.updated_at else None,
         "active_version_id": None,  # populated by list/get where versions are loaded
     }

@@ -332,6 +332,96 @@ class TestMessageMatched:
         assert executed == []
 
 
+class TestScheduleMatching:
+    """Tests for schedule trigger cron matching."""
+
+    @pytest.mark.asyncio
+    async def test_schedule_no_cron_matches_any(
+        self,
+        workflow_store: WorkflowStore,
+        event_bus: EventBus,
+        executed: list[tuple[Workflow, Any]],
+    ) -> None:
+        """A schedule workflow without a cron expression matches any schedule event."""
+        wf = Workflow(id="wf_1", name="Any Time", trigger_type="schedule")
+        await workflow_store.save_workflow(wf)
+
+        async def executor(workflow: Workflow, payload: Any) -> None:
+            executed.append((workflow, payload))
+
+        reg = TriggerRegistry(event_bus, workflow_store, executor)
+        await reg.start()
+
+        event_bus.publish("schedule_fired", {"task_id": "t1"})
+        await asyncio.sleep(0.01)
+
+        assert len(executed) == 1
+
+    @pytest.mark.asyncio
+    async def test_schedule_cron_matches(
+        self,
+        workflow_store: WorkflowStore,
+        event_bus: EventBus,
+        executed: list[tuple[Workflow, Any]],
+    ) -> None:
+        """A schedule workflow with a matching cron expression runs."""
+        wf = Workflow(
+            id="wf_1",
+            name="Hourly",
+            trigger_type="schedule",
+            trigger_config={"cron": "0 * * * *"},
+        )
+        await workflow_store.save_workflow(wf)
+
+        async def executor(workflow: Workflow, payload: Any) -> None:
+            executed.append((workflow, payload))
+
+        reg = TriggerRegistry(event_bus, workflow_store, executor)
+        await reg.start()
+
+        from datetime import datetime, timezone
+
+        event_bus.publish(
+            "schedule_fired",
+            {"task_id": "t1", "current_time": datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)},
+        )
+        await asyncio.sleep(0.01)
+
+        assert len(executed) == 1
+
+    @pytest.mark.asyncio
+    async def test_schedule_cron_mismatch(
+        self,
+        workflow_store: WorkflowStore,
+        event_bus: EventBus,
+        executed: list[tuple[Workflow, Any]],
+    ) -> None:
+        """A schedule workflow with a non-matching cron expression is skipped."""
+        wf = Workflow(
+            id="wf_1",
+            name="Midnight Only",
+            trigger_type="schedule",
+            trigger_config={"cron": "0 0 * * *"},
+        )
+        await workflow_store.save_workflow(wf)
+
+        async def executor(workflow: Workflow, payload: Any) -> None:
+            executed.append((workflow, payload))
+
+        reg = TriggerRegistry(event_bus, workflow_store, executor)
+        await reg.start()
+
+        from datetime import datetime, timezone
+
+        event_bus.publish(
+            "schedule_fired",
+            {"task_id": "t1", "current_time": datetime(2024, 1, 1, 12, 30, 0, tzinfo=timezone.utc)},
+        )
+        await asyncio.sleep(0.01)
+
+        assert executed == []
+
+
 class TestMultipleWorkflows:
     """Tests for multiple workflows matching."""
 

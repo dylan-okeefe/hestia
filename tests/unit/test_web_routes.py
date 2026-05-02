@@ -841,3 +841,36 @@ class TestWorkflowsRoutes:
 
         response = client.post("/api/workflows/wf1/test-run")
         assert response.status_code == 400
+
+    def test_update_workflow_trigger_config(self, client: TestClient, mock_app: MagicMock) -> None:
+        """PUT /api/workflows/{id} updates trigger_type and trigger_config."""
+        from hestia.web import context as ctx_mod
+        from hestia.workflows.models import Workflow
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        wf = Workflow(
+            id="wf1",
+            name="Old Name",
+            description="Old desc",
+            trigger_type="manual",
+            trigger_config={},
+            created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+            updated_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+        )
+        ctx.workflow_store.get_workflow = AsyncMock(return_value=wf)
+        ctx.workflow_store.save_workflow = AsyncMock(return_value=None)
+
+        response = client.put(
+            "/api/workflows/wf1",
+            json={
+                "trigger_type": "schedule",
+                "trigger_config": {"cron": "0 9 * * *"},
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["trigger_type"] == "schedule"
+        assert data["trigger_config"] == {"cron": "0 9 * * *"}
+        ctx.workflow_store.get_workflow.assert_awaited_once_with("wf1")
+        ctx.workflow_store.save_workflow.assert_awaited_once()

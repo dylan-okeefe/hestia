@@ -178,6 +178,7 @@ export interface Workflow {
   id: string;
   name: string;
   trigger_type: string;
+  trigger_config: Record<string, unknown>;
   last_edited_at: string;
   active_version_id: string | null;
 }
@@ -225,6 +226,16 @@ export async function createWorkflow(name: string, triggerType = 'manual') {
 export async function fetchWorkflow(id: string) {
   const res = await apiFetch(`${API_BASE}/workflows/${id}`);
   if (!res.ok) throw new Error('Failed to fetch workflow');
+  return res.json() as Promise<Workflow>;
+}
+
+export async function updateWorkflow(id: string, updates: Partial<Workflow>) {
+  const res = await apiFetch(`${API_BASE}/workflows/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) throw new Error('Failed to update workflow');
   return res.json() as Promise<Workflow>;
 }
 
