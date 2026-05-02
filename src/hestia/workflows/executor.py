@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, field
-from typing import Any
+from collections import deque
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
 from hestia.app import AppContext
 from hestia.core.types import ChatResponse, Message
@@ -20,8 +21,6 @@ from hestia.tools.capabilities import (
 )
 from hestia.workflows.models import ExecutionResult, NodeResult, WorkflowEdge, WorkflowNode
 from hestia.workflows.store import WorkflowStore
-
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from hestia.workflows.execution_store import ExecutionStore
@@ -75,11 +74,11 @@ def _topological_sort(
             adj[edge.source_node_id].append(edge.target_node_id)
             in_degree[edge.target_node_id] += 1
 
-    queue = [n_id for n_id, deg in in_degree.items() if deg == 0]
+    queue = deque(n_id for n_id, deg in in_degree.items() if deg == 0)
     result: list[WorkflowNode] = []
 
     while queue:
-        n_id = queue.pop(0)
+        n_id = queue.popleft()
         result.append(node_map[n_id])
         for target_id in adj[n_id]:
             in_degree[target_id] -= 1
@@ -129,8 +128,14 @@ class WorkflowExecutor:
         app: The application context providing inference, tool registry, and adapters.
     """
 
-    def __init__(self, app: AppContext, execution_store: "ExecutionStore | None" = None) -> None:
+    def __init__(
+        self,
+        app: AppContext,
+        workflow_store: WorkflowStore | None = None,
+        execution_store: ExecutionStore | None = None,
+    ) -> None:
         self._app = app
+        self._workflow_store = workflow_store
         self._execution_store = execution_store
 
     async def execute(self, workflow_id: str, trigger_payload: Any) -> ExecutionResult:
@@ -148,7 +153,7 @@ class WorkflowExecutor:
             ExecutionResult containing the status and results of all nodes.
         """
         started_at = time.perf_counter()
-        store = WorkflowStore(self._app.db)
+        store = self._workflow_store or WorkflowStore(self._app.db)
         workflow = await store.get_workflow(workflow_id)
         if workflow is None:
             result = ExecutionResult(
@@ -213,8 +218,13 @@ class WorkflowExecutor:
             return result
 
         blocked = _blocked_capabilities(workflow.trust_level)
+        active_edges: set[str] = set()
 
         for node in order:
+            incoming = [e for e in version.edges if e.target_node_id == node.id]
+            if incoming and not any(e.id in active_edges for e in incoming):
+                continue
+
             node_caps = set(node.capabilities)
             denied = node_caps & blocked
             if denied:
@@ -287,6 +297,24 @@ class WorkflowExecutor:
             outputs[node.id] = node_output.value
             total_prompt_tokens += node_output.prompt_tokens
             total_completion_tokens += node_output.completion_tokens
+
+            for edge in version.edges:
+                if edge.source_node_id != node.id:
+                    continue
+                if node.type == "condition":
+                    if (
+                        node_output.value
+                        and edge.source_handle == "true"
+                    ) or (
+                        not node_output.value
+                        and edge.source_handle == "false"
+                    ):
+                        active_edges.add(edge.id)
+                elif node.type == "llm_decision":
+                    if edge.source_handle == str(node_output.value):
+                        active_edges.add(edge.id)
+                else:
+                    active_edges.add(edge.id)
 
         total_elapsed_ms = int((time.perf_counter() - started_at) * 1000)
         result = ExecutionResult(

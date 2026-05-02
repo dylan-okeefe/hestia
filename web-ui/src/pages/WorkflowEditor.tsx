@@ -170,6 +170,8 @@ export default function WorkflowEditor() {
         source: e.source,
         target: e.target,
         type: e.type,
+        sourceHandle: e.sourceHandle ?? undefined,
+        targetHandle: e.targetHandle ?? undefined,
       }));
       const version = await saveWorkflowVersion(id, serialNodes, serialEdges);
       setVersions((vs) => [...vs, version]);

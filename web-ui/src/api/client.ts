@@ -205,6 +205,8 @@ export interface WorkflowEdge {
   source: string;
   target: string;
   type?: string;
+  sourceHandle?: string;
+  targetHandle?: string;
 }
 
 export async function fetchWorkflows() {
