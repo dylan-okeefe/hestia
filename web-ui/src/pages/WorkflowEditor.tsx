@@ -20,8 +20,30 @@ import {
   type WorkflowNode,
   type WorkflowEdge,
 } from '../api/client';
+import {
+  ToolCallNode,
+  LLMDecisionNode,
+  SendMessageNode,
+  HttpRequestNode,
+  ConditionNode,
+} from '../components/workflow-nodes';
 
-const nodeTypes = ['default', 'input', 'output'] as const;
+const EDITOR_NODE_TYPES = [
+  'default',
+  'tool_call',
+  'llm_decision',
+  'send_message',
+  'http_request',
+  'condition',
+] as const;
+
+const nodeTypesMap = {
+  tool_call: ToolCallNode,
+  llm_decision: LLMDecisionNode,
+  send_message: SendMessageNode,
+  http_request: HttpRequestNode,
+  condition: ConditionNode,
+};
 
 export default function WorkflowEditor() {
   const { id } = useParams<{ id: string }>();
@@ -35,6 +57,7 @@ export default function WorkflowEditor() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [addNodeType, setAddNodeType] = useState<string>('default');
 
   useEffect(() => {
     if (!id) return;
@@ -73,9 +96,24 @@ export default function WorkflowEditor() {
   const handleAddNode = () => {
     const newNode: Node = {
       id: `node_${Date.now()}`,
-      type: 'default',
+      type: addNodeType,
       position: { x: Math.random() * 200 + 50, y: Math.random() * 200 + 50 },
-      data: { label: 'New Node' },
+      data: (() => {
+        switch (addNodeType) {
+          case 'tool_call':
+            return { label: 'Tool Call', tool_name: '', args: {} };
+          case 'llm_decision':
+            return { label: 'LLM Decision', prompt: '', branches: [] };
+          case 'send_message':
+            return { label: 'Send Message', platform: '', message: '', target_user: '' };
+          case 'http_request':
+            return { label: 'HTTP Request', url: '', method: 'GET', headers: {}, body: '' };
+          case 'condition':
+            return { label: 'Condition', expression: '' };
+          default:
+            return { label: 'New Node' };
+        }
+      })(),
     };
     setNodes((nds) => [...nds, newNode]);
   };
@@ -134,7 +172,7 @@ export default function WorkflowEditor() {
     }
   };
 
-  const updateSelectedNodeData = (key: string, value: string) => {
+  const updateSelectedNodeData = (key: string, value: unknown) => {
     if (!selectedNode) return;
     setNodes((nds) =>
       nds.map((n) =>
@@ -157,6 +195,18 @@ export default function WorkflowEditor() {
       <div style={{ padding: '0.5rem 1rem', borderBottom: '1px solid #ddd', display: 'flex', alignItems: 'center', gap: '1rem' }}>
         <h2 style={{ margin: 0 }}>{workflowName}</h2>
         <button onClick={handleAddNode}>Add Node</button>
+        <select
+          value={addNodeType}
+          onChange={(e) => setAddNodeType(e.target.value)}
+          style={{ padding: '0.25rem 0.5rem' }}
+          aria-label="Node type to add"
+        >
+          {EDITOR_NODE_TYPES.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
         <button onClick={handleSave} disabled={saving}>
           {saving ? 'Saving…' : 'Save Version'}
         </button>
@@ -178,6 +228,7 @@ export default function WorkflowEditor() {
             onConnect={onConnect}
             onNodeClick={onNodeClick}
             onPaneClick={onPaneClick}
+            nodeTypes={nodeTypesMap}
             fitView
           >
             <Background />
@@ -187,6 +238,7 @@ export default function WorkflowEditor() {
         </div>
         {selectedNode && (
           <div
+            key={selectedNode.id}
             style={{
               width: 260,
               borderLeft: '1px solid #ddd',
@@ -210,7 +262,7 @@ export default function WorkflowEditor() {
                 }}
                 style={{ width: '100%' }}
               >
-                {nodeTypes.map((t) => (
+                {EDITOR_NODE_TYPES.map((t) => (
                   <option key={t} value={t}>
                     {t}
                   </option>
@@ -225,6 +277,153 @@ export default function WorkflowEditor() {
                 style={{ width: '100%' }}
               />
             </div>
+
+            {selectedNode.type === 'tool_call' && (
+              <>
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Tool Name</label>
+                  <input
+                    value={(selectedNode.data.tool_name as string) || ''}
+                    onChange={(e) => updateSelectedNodeData('tool_name', e.target.value)}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Args (JSON)</label>
+                  <textarea
+                    rows={4}
+                    defaultValue={JSON.stringify((selectedNode.data.args as object) || {}, null, 2)}
+                    onBlur={(e) => {
+                      try {
+                        updateSelectedNodeData('args', JSON.parse(e.target.value));
+                      } catch {
+                        // ignore invalid JSON
+                      }
+                    }}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+              </>
+            )}
+
+            {selectedNode.type === 'llm_decision' && (
+              <>
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Prompt</label>
+                  <textarea
+                    rows={4}
+                    value={(selectedNode.data.prompt as string) || ''}
+                    onChange={(e) => updateSelectedNodeData('prompt', e.target.value)}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Branches (comma-separated)</label>
+                  <input
+                    value={((selectedNode.data.branches as string[]) || []).join(', ')}
+                    onChange={(e) =>
+                      updateSelectedNodeData(
+                        'branches',
+                        e.target.value.split(',').map((s) => s.trim()).filter(Boolean)
+                      )
+                    }
+                    style={{ width: '100%' }}
+                  />
+                </div>
+              </>
+            )}
+
+            {selectedNode.type === 'send_message' && (
+              <>
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Platform</label>
+                  <input
+                    value={(selectedNode.data.platform as string) || ''}
+                    onChange={(e) => updateSelectedNodeData('platform', e.target.value)}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Message</label>
+                  <textarea
+                    rows={4}
+                    value={(selectedNode.data.message as string) || ''}
+                    onChange={(e) => updateSelectedNodeData('message', e.target.value)}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Target User</label>
+                  <input
+                    value={(selectedNode.data.target_user as string) || ''}
+                    onChange={(e) => updateSelectedNodeData('target_user', e.target.value)}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+              </>
+            )}
+
+            {selectedNode.type === 'http_request' && (
+              <>
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Method</label>
+                  <select
+                    value={(selectedNode.data.method as string) || 'GET'}
+                    onChange={(e) => updateSelectedNodeData('method', e.target.value)}
+                    style={{ width: '100%' }}
+                  >
+                    {['GET', 'POST', 'PUT', 'DELETE'].map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>URL</label>
+                  <input
+                    value={(selectedNode.data.url as string) || ''}
+                    onChange={(e) => updateSelectedNodeData('url', e.target.value)}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Headers (JSON)</label>
+                  <textarea
+                    rows={3}
+                    defaultValue={JSON.stringify((selectedNode.data.headers as object) || {}, null, 2)}
+                    onBlur={(e) => {
+                      try {
+                        updateSelectedNodeData('headers', JSON.parse(e.target.value));
+                      } catch {
+                        // ignore invalid JSON
+                      }
+                    }}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Body</label>
+                  <textarea
+                    rows={3}
+                    value={(selectedNode.data.body as string) || ''}
+                    onChange={(e) => updateSelectedNodeData('body', e.target.value)}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+              </>
+            )}
+
+            {selectedNode.type === 'condition' && (
+              <div style={{ marginBottom: '0.75rem' }}>
+                <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Expression</label>
+                <input
+                  value={(selectedNode.data.expression as string) || ''}
+                  onChange={(e) => updateSelectedNodeData('expression', e.target.value)}
+                  style={{ width: '100%' }}
+                />
+              </div>
+            )}
           </div>
         )}
       </div>
