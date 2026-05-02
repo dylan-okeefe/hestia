@@ -307,9 +307,11 @@ export interface ExecutionResult {
   outputs: Record<string, unknown>;
 }
 
-export async function testRunWorkflow(id: string) {
+export async function testRunWorkflow(id: string, payload?: Record<string, unknown>) {
   const res = await apiFetch(`${API_BASE}/workflows/${id}/test-run`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: payload ? JSON.stringify(payload) : undefined,
   });
   if (!res.ok) throw new Error('Failed to test run workflow');
   return res.json() as Promise<ExecutionResult>;
