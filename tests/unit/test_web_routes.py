@@ -48,6 +48,7 @@ def mock_app() -> MagicMock:
     mock.config.features.web_search = MagicMock()
     mock.tool_registry = MagicMock()
     mock.tool_registry.list_names.return_value = []
+    mock.event_bus = AsyncMock()
     return mock
 
 
