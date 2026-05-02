@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { fetchWorkflows, createWorkflow, type Workflow } from '../api/client';
+import { fetchWorkflows, createWorkflow, deleteWorkflow, type Workflow } from '../api/client';
 
 export default function Workflows() {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
@@ -46,6 +46,7 @@ export default function Workflows() {
               <th style={{ padding: '0.5rem' }}>Trigger</th>
               <th style={{ padding: '0.5rem' }}>Last Edited</th>
               <th style={{ padding: '0.5rem' }}>Active Version</th>
+              <th style={{ padding: '0.5rem' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -86,6 +87,20 @@ export default function Workflows() {
                 </td>
                 <td style={{ padding: '0.5rem' }}>{new Date(wf.last_edited_at).toLocaleString()}</td>
                 <td style={{ padding: '0.5rem' }}>{wf.active_version_id ?? '—'}</td>
+                <td style={{ padding: '0.5rem' }}>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!window.confirm(`Delete workflow "${wf.name}"?`)) return;
+                      deleteWorkflow(wf.id)
+                        .then(() => setWorkflows((prev) => prev.filter((w) => w.id !== wf.id)))
+                        .catch((err) => setError(err instanceof Error ? err.message : 'Failed to delete workflow'));
+                    }}
+                    style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', color: 'red' }}
+                  >
+                    Delete
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>

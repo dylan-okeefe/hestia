@@ -7,7 +7,7 @@ test.beforeEach(async ({ page }) => {
 
 test('adds a tool_call node and shows its properties', async ({ page }) => {
   await page.goto('/workflows/wf_001');
-  await expect(page.locator('text=Morning Greeting')).toBeVisible();
+  await expect(page.locator('[aria-label="Workflow name"]')).toHaveValue('Morning Greeting');
 
   await page.locator('select[aria-label="Node type to add"]').selectOption('tool_call');
   await page.locator('button:has-text("Add Node")').click();
@@ -28,7 +28,7 @@ test('adds a tool_call node and shows its properties', async ({ page }) => {
 
 test('adds a send_message node and shows its properties', async ({ page }) => {
   await page.goto('/workflows/wf_001');
-  await expect(page.locator('text=Morning Greeting')).toBeVisible();
+  await expect(page.locator('[aria-label="Workflow name"]')).toHaveValue('Morning Greeting');
 
   await page.locator('select[aria-label="Node type to add"]').selectOption('send_message');
   await page.locator('button:has-text("Add Node")').click();
@@ -50,7 +50,7 @@ test('adds a send_message node and shows its properties', async ({ page }) => {
 
 test('adds an http_request node and shows its properties', async ({ page }) => {
   await page.goto('/workflows/wf_001');
-  await expect(page.locator('text=Morning Greeting')).toBeVisible();
+  await expect(page.locator('[aria-label="Workflow name"]')).toHaveValue('Morning Greeting');
 
   await page.locator('select[aria-label="Node type to add"]').selectOption('http_request');
   await page.locator('button:has-text("Add Node")').click();
@@ -73,7 +73,7 @@ test('adds an http_request node and shows its properties', async ({ page }) => {
 
 test('adds an llm_decision node and shows its properties', async ({ page }) => {
   await page.goto('/workflows/wf_001');
-  await expect(page.locator('text=Morning Greeting')).toBeVisible();
+  await expect(page.locator('[aria-label="Workflow name"]')).toHaveValue('Morning Greeting');
 
   await page.locator('select[aria-label="Node type to add"]').selectOption('llm_decision');
   await page.locator('button:has-text("Add Node")').click();
@@ -94,7 +94,7 @@ test('adds an llm_decision node and shows its properties', async ({ page }) => {
 
 test('adds a condition node and shows its properties', async ({ page }) => {
   await page.goto('/workflows/wf_001');
-  await expect(page.locator('text=Morning Greeting')).toBeVisible();
+  await expect(page.locator('[aria-label="Workflow name"]')).toHaveValue('Morning Greeting');
 
   await page.locator('select[aria-label="Node type to add"]').selectOption('condition');
   await page.locator('button:has-text("Add Node")').click();

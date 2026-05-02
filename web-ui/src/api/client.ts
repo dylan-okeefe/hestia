@@ -239,6 +239,14 @@ export async function updateWorkflow(id: string, updates: Partial<Workflow>) {
   return res.json() as Promise<Workflow>;
 }
 
+export async function deleteWorkflow(id: string) {
+  const res = await apiFetch(`${API_BASE}/workflows/${id}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error('Failed to delete workflow');
+  return res.json() as Promise<{ deleted: boolean }>;
+}
+
 export async function fetchWorkflowVersions(id: string) {
   const res = await apiFetch(`${API_BASE}/workflows/${id}/versions`);
   if (!res.ok) throw new Error('Failed to fetch workflow versions');

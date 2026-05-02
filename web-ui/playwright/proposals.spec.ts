@@ -6,6 +6,33 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('accept a proposal', async ({ page }) => {
+  await page.route('/api/proposals**', async (route) => {
+    const method = route.request().method();
+    if (method === 'POST') {
+      await route.fulfill({ json: { id: 'prop_001', status: 'accepted' } });
+    } else {
+      await route.fulfill({
+        json: {
+          proposals: [
+            {
+              id: 'prop_001',
+              type: 'identity_update',
+              summary: 'Add greeting preference',
+              confidence: 0.9,
+              evidence: ['turn_1'],
+              action: { file: 'SOUL.md', append: '- Greeting: casual' },
+              status: 'accepted',
+              created_at: '2024-01-15T10:00:00Z',
+              expires_at: '2024-01-29T10:00:00Z',
+              reviewed_at: null,
+              review_note: null,
+            },
+          ],
+        },
+      });
+    }
+  });
+
   await page.goto('/proposals');
   const card = page.locator('[data-testid="proposal-card"]').first();
   await expect(card).toBeVisible();
