@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 
 async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
     """Run Hestia with all configured platform adapters and the web dashboard."""
+    await app.bootstrap_db()
+    await app.start_trigger_registry()
     tasks: list[asyncio.Task[Any]] = []
     original_close = app.inference.close
 
@@ -62,6 +64,8 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
                     scheduler_store=app.scheduler_store,
                     trace_store=app.trace_store,
                     failure_store=app.failure_store,
+                    workflow_store=app.workflow_store,
+                    execution_store=app.execution_store,
                     app=app,
                     auth_manager=auth_manager,
                 )

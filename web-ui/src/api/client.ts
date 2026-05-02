@@ -1,13 +1,23 @@
 const API_BASE = '/api';
 
-let _authToken: string | null = null;
+let _authToken: string | null = sessionStorage.getItem('hestia_auth_token');
 
 export function setAuthToken(token: string | null) {
   _authToken = token;
+  if (token) {
+    sessionStorage.setItem('hestia_auth_token', token);
+  } else {
+    sessionStorage.removeItem('hestia_auth_token');
+  }
 }
 
 export function getAuthToken(): string | null {
   return _authToken;
+}
+
+export function clearAuthToken() {
+  _authToken = null;
+  sessionStorage.removeItem('hestia_auth_token');
 }
 
 function getHeaders(extra: Record<string, string> = {}): Record<string, string> {
@@ -24,7 +34,7 @@ async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
     headers: getHeaders((init?.headers as Record<string, string>) || {}),
   });
   if (res.status === 401) {
-    setAuthToken(null);
+    clearAuthToken();
     window.dispatchEvent(new CustomEvent('auth:unauthorized'));
   }
   return res;
@@ -162,4 +172,139 @@ export async function saveConfig(config: object) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(config),
   });
+}
+
+export interface Workflow {
+  id: string;
+  name: string;
+  trigger_type: string;
+  trigger_config: Record<string, unknown>;
+  last_edited_at: string;
+  active_version_id: string | null;
+}
+
+export interface WorkflowVersion {
+  id: string;
+  workflow_id: string;
+  version_number: number;
+  nodes: WorkflowNode[];
+  edges: WorkflowEdge[];
+  created_at: string;
+  activated_at: string | null;
+}
+
+export interface WorkflowNode {
+  id: string;
+  type: string;
+  position: { x: number; y: number };
+  data: Record<string, unknown>;
+}
+
+export interface WorkflowEdge {
+  id: string;
+  source: string;
+  target: string;
+  type?: string;
+}
+
+export async function fetchWorkflows() {
+  const res = await apiFetch(`${API_BASE}/workflows`);
+  if (!res.ok) throw new Error('Failed to fetch workflows');
+  return res.json() as Promise<{ workflows: Workflow[] }>;
+}
+
+export async function createWorkflow(name: string, triggerType = 'manual') {
+  const res = await apiFetch(`${API_BASE}/workflows`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, trigger_type: triggerType }),
+  });
+  if (!res.ok) throw new Error('Failed to create workflow');
+  return res.json() as Promise<Workflow>;
+}
+
+export async function fetchWorkflow(id: string) {
+  const res = await apiFetch(`${API_BASE}/workflows/${id}`);
+  if (!res.ok) throw new Error('Failed to fetch workflow');
+  return res.json() as Promise<Workflow>;
+}
+
+export async function updateWorkflow(id: string, updates: Partial<Workflow>) {
+  const res = await apiFetch(`${API_BASE}/workflows/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) throw new Error('Failed to update workflow');
+  return res.json() as Promise<Workflow>;
+}
+
+export async function fetchWorkflowVersions(id: string) {
+  const res = await apiFetch(`${API_BASE}/workflows/${id}/versions`);
+  if (!res.ok) throw new Error('Failed to fetch workflow versions');
+  return res.json() as Promise<{ versions: WorkflowVersion[] }>;
+}
+
+export async function saveWorkflowVersion(id: string, nodes: WorkflowNode[], edges: WorkflowEdge[]) {
+  const res = await apiFetch(`${API_BASE}/workflows/${id}/versions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nodes, edges }),
+  });
+  if (!res.ok) throw new Error('Failed to save workflow version');
+  return res.json() as Promise<WorkflowVersion>;
+}
+
+export async function activateWorkflowVersion(workflowId: string, versionId: string) {
+  const res = await apiFetch(`${API_BASE}/workflows/${workflowId}/versions/${versionId}/activate`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error('Failed to activate workflow version');
+  return res.json() as Promise<{ activated: boolean }>;
+}
+
+export interface NodeResult {
+  node_id: string;
+  status: string;
+  elapsed_ms: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  output: unknown;
+  error?: string;
+}
+
+export interface ExecutionRecord {
+  id: string;
+  workflow_id: string;
+  version: number;
+  status: string;
+  trigger_payload: Record<string, unknown>;
+  node_results: NodeResult[];
+  total_elapsed_ms: number;
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  created_at: string;
+}
+
+export interface ExecutionResult {
+  status: string;
+  total_elapsed_ms: number;
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  node_results: NodeResult[];
+  outputs: Record<string, unknown>;
+}
+
+export async function testRunWorkflow(id: string) {
+  const res = await apiFetch(`${API_BASE}/workflows/${id}/test-run`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error('Failed to test run workflow');
+  return res.json() as Promise<ExecutionResult>;
+}
+
+export async function fetchExecutions(workflowId: string, limit = 50) {
+  const res = await apiFetch(`${API_BASE}/workflows/${workflowId}/executions?limit=${limit}`);
+  if (!res.ok) throw new Error('Failed to fetch executions');
+  return res.json() as Promise<{ executions: ExecutionRecord[] }>;
 }

@@ -174,6 +174,28 @@ async def run_platform(
                 platform_user=platform_user,
                 stream_callback=stream_callback,
             )
+
+            # Check for command prefix (e.g., "/workflow ")
+            if text.startswith("/"):
+                parts = text[1:].split(None, 1)
+                command = parts[0] if parts else ""
+                args = parts[1] if len(parts) > 1 else ""
+                if app.event_bus is not None:
+                    await app.event_bus.publish("chat_command", {
+                        "command": command,
+                        "args": args,
+                        "platform": platform_name,
+                        "platform_user": platform_user,
+                        "text": text,
+                    })
+
+            # Always publish message_matched for pattern matching
+            if app.event_bus is not None:
+                await app.event_bus.publish("message_matched", {
+                    "text": text,
+                    "platform": platform_name,
+                    "platform_user": platform_user,
+                })
         except Exception as e:  # noqa: BLE001 — outermost boundary — intentionally broad
             logger.exception("Turn failed for %s %s", user_label, platform_user)
             await adapter.send_error(platform_user, sanitize_user_error(e))
@@ -195,6 +217,7 @@ async def run_platform(
             response_callback=scheduler_response_callback,
             tick_interval_seconds=config.scheduler.tick_interval_seconds,
             system_prompt=config.system_prompt,
+            event_bus=app.event_bus,
         )
         await scheduler.start()
 

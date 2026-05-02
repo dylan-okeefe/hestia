@@ -9,6 +9,74 @@
 
 
 
+## 2026-05-01 — L121 Complete (Trust Preset Cards with Descriptions)
+
+**Outcome:** Replaced plain trust preset buttons with rich cards showing title, description, and bullet list. Active preset is visually highlighted.
+
+**Changes:**
+- `web-ui/src/components/ConfigForm.tsx` — expanded `TrustPreset` interface with `name`, `description`, `bullets`; card grid rendering with active highlight
+
+**Quality gate:** `npm run build` succeeds.
+
+**Branch:** `feature/l121-trust-preset-cards` → merged to `develop`
+
+---
+
+## 2026-05-01 — L120 Complete (Auto-Run Doctor and Audit on Security Page Load)
+
+**Outcome:** Security page now auto-runs health checks and audit on mount. Results are cached with TTL to avoid hammering the backend.
+
+**Changes:**
+- `src/hestia/web/cache.py` — `InMemoryCache` with `get(key, max_age_seconds)` and `set(key, data)`
+- `src/hestia/web/routes/doctor.py` — accepts `max_age_seconds` query param (default 60s), returns `cached: bool`
+- `src/hestia/web/routes/audit.py` — accepts `max_age_seconds` query param (default 300s), returns `cached: bool`
+- `web-ui/src/components/DoctorCheckList.tsx`, `AuditFindings.tsx` — auto-run on mount via `useEffect`, display cache timestamp
+- `tests/unit/test_web_cache.py` — cache TTL and expiration tests
+
+**Quality gate:** 60 passed.
+
+**Branch:** `feature/l120-auto-run-doctor-audit` → merged to `develop`
+
+---
+
+## 2026-05-01 — L119 Complete (Config Dropdowns via Schema Endpoint)
+
+**Outcome:** Config editor renders `<select>` dropdowns for enumerated fields instead of free-text inputs.
+
+**Changes:**
+- `src/hestia/web/routes/config.py` — `GET /api/config/schema` returns enum metadata
+- `web-ui/src/api/client.ts` — `fetchConfigSchema()`
+- `web-ui/src/components/ConfigForm.tsx` — fetches schema on mount, renders `<select>` for `type: 'enum'` fields
+- `tests/unit/test_web_routes.py` — schema endpoint test
+
+**Quality gate:** `npm run build` succeeds.
+
+**Branch:** `feature/l119-config-dropdowns` → merged to `develop`
+
+---
+
+## 2026-05-01 — L118 Complete (Web Dashboard Authentication via Chat 2FA)
+
+**Outcome:** Web dashboard now requires authentication via one-time codes sent through Telegram or Matrix. No user database needed — sessions inherit the chat platform identity.
+
+**Changes:**
+- `src/hestia/config.py` — `WebConfig` adds `auth_enabled`, `session_lifetime_hours`, `code_expiry_seconds`, `code_length`
+- `src/hestia/web/auth.py` — `AuthManager` with cryptographically random codes, in-memory sessions, rate limiting (5 failures / 10 min)
+- `src/hestia/web/routes/auth.py` — `POST /api/auth/request-code`, `POST /api/auth/verify-code`, `POST /api/auth/logout`, `GET /api/auth/status`
+- `src/hestia/web/api.py` — auth middleware registered on all `/api/*` except `/api/auth/*`
+- `src/hestia/commands/serve.py` — wires `AuthManager` into `WebContext` and registers middleware
+- `web-ui/src/context/AuthContext.tsx` — React context managing token in memory (not localStorage)
+- `web-ui/src/pages/Login.tsx` — platform selection → code input with countdown → verify
+- `web-ui/src/api/client.ts` — `apiFetch` wrapper attaching `Authorization: Bearer` header; auth API functions
+- `web-ui/src/App.tsx` — conditionally renders `<Login>` or dashboard based on auth state; logout button in nav
+- `tests/unit/test_web_auth.py` (32 tests), `tests/integration/test_web_auth.py` (3 tests) — AuthManager, middleware, routes, full flow
+
+**Quality gate:** 60 passed.
+
+**Branch:** `feature/l118-web-auth-chat-2fa` → merged to `develop`
+
+---
+
 ## 2026-04-30 — L103 Complete (Chat-Based Proposal and Style Management Tools)
 
 **Outcome:** Added 8 new tools for conversational proposal and style management.
