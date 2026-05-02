@@ -4,6 +4,7 @@ export default function LLMDecisionNode({ data }: NodeProps) {
   const label = (data.label as string) || 'LLM Decision';
   const prompt = (data.prompt as string) || '';
   const snippet = prompt.length > 24 ? prompt.slice(0, 24) + '…' : prompt;
+  const branches = ((data.branches as string[]) || []);
 
   return (
     <div
@@ -17,12 +18,37 @@ export default function LLMDecisionNode({ data }: NodeProps) {
         minWidth: 140,
         fontSize: '0.875rem',
         color: '#581c87',
+        position: 'relative',
       }}
     >
       <Handle type="target" position={Position.Top} style={{ background: '#555' }} />
       <div style={{ fontWeight: 600, marginBottom: 4 }}>{label}</div>
       <div style={{ fontSize: '0.75rem' }}>🧠 {snippet || '—'}</div>
-      <Handle type="source" position={Position.Bottom} style={{ background: '#555' }} />
+      {branches.map((branch, index) => {
+        const left = branches.length === 1 ? '50%' : `${((index + 1) / (branches.length + 1)) * 100}%`;
+        return (
+          <div key={branch} style={{ position: 'absolute', bottom: 0, left, transform: 'translateX(-50%)' }}>
+            <Handle
+              type="source"
+              position={Position.Bottom}
+              id={branch}
+              style={{ background: '#555', position: 'relative' }}
+            />
+            <span
+              style={{
+                display: 'block',
+                textAlign: 'center',
+                fontSize: '0.65rem',
+                color: '#581c87',
+                marginTop: 2,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {branch}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }

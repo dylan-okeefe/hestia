@@ -43,7 +43,7 @@ async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
 export async function fetchAuthStatus() {
   const res = await apiFetch(`${API_BASE}/auth/status`);
   if (!res.ok) throw new Error('Failed to fetch auth status');
-  return res.json();
+  return res.json() as Promise<{ auth_enabled: boolean; authenticated: boolean; platform?: string; platform_user?: string; available_platforms?: string[] }>;
 }
 
 export async function requestCode(platform: string) {
@@ -181,6 +181,10 @@ export interface Workflow {
   trigger_config: Record<string, unknown>;
   last_edited_at: string;
   active_version_id: string | null;
+  webhook_url?: string;
+  secret?: string;
+  last_execution_status?: string;
+  last_execution_at?: string;
 }
 
 export interface WorkflowVersion {
@@ -205,6 +209,8 @@ export interface WorkflowEdge {
   source: string;
   target: string;
   type?: string;
+  sourceHandle?: string;
+  targetHandle?: string;
 }
 
 export async function fetchWorkflows() {
@@ -237,6 +243,14 @@ export async function updateWorkflow(id: string, updates: Partial<Workflow>) {
   });
   if (!res.ok) throw new Error('Failed to update workflow');
   return res.json() as Promise<Workflow>;
+}
+
+export async function deleteWorkflow(id: string) {
+  const res = await apiFetch(`${API_BASE}/workflows/${id}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error('Failed to delete workflow');
+  return res.json() as Promise<{ deleted: boolean }>;
 }
 
 export async function fetchWorkflowVersions(id: string) {
@@ -295,9 +309,11 @@ export interface ExecutionResult {
   outputs: Record<string, unknown>;
 }
 
-export async function testRunWorkflow(id: string) {
+export async function testRunWorkflow(id: string, payload?: Record<string, unknown>) {
   const res = await apiFetch(`${API_BASE}/workflows/${id}/test-run`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: payload ? JSON.stringify(payload) : undefined,
   });
   if (!res.ok) throw new Error('Failed to test run workflow');
   return res.json() as Promise<ExecutionResult>;
@@ -307,4 +323,22 @@ export async function fetchExecutions(workflowId: string, limit = 50) {
   const res = await apiFetch(`${API_BASE}/workflows/${workflowId}/executions?limit=${limit}`);
   if (!res.ok) throw new Error('Failed to fetch executions');
   return res.json() as Promise<{ executions: ExecutionRecord[] }>;
+}
+
+export async function fetchTools() {
+  const res = await apiFetch(`${API_BASE}/tools`);
+  if (!res.ok) throw new Error('Failed to fetch tools');
+  return res.json() as Promise<{ tools: string[] }>;
+}
+
+
+export async function fetchDashboard() {
+  const res = await apiFetch(`${API_BASE}/dashboard`);
+  if (!res.ok) throw new Error('Failed to fetch dashboard');
+  return res.json() as Promise<{
+    active_workflow_count: number;
+    recent_executions: ExecutionRecord[];
+    pending_proposal_count: number;
+    platforms_connected: string[];
+  }>;
 }

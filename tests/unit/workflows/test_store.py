@@ -6,6 +6,7 @@ import pytest
 import pytest_asyncio
 
 from hestia.persistence.db import Database
+from hestia.persistence.schema import workflows
 from hestia.workflows.models import Workflow, WorkflowEdge, WorkflowNode, WorkflowVersion
 from hestia.workflows.store import WorkflowStore
 
@@ -386,6 +387,103 @@ class TestActivateVersion:
         """Returns False for missing workflow."""
         result = await store.activate_version("nonexistent", 1)
         assert result is False
+
+
+class TestGetActiveVersionsBatch:
+    """Tests for get_active_versions_batch."""
+
+    @pytest.mark.asyncio
+    async def test_batch_returns_active_versions(self, store):
+        """Fetches active versions for multiple workflows in one query."""
+        wf1 = Workflow(id="wf_1", name="A")
+        wf2 = Workflow(id="wf_2", name="B")
+        await store.save_workflow(wf1)
+        await store.save_workflow(wf2)
+
+        v1 = WorkflowVersion(
+            workflow_id="wf_1",
+            version=1,
+            nodes=[WorkflowNode(id="n1", type="start", label="V1")],
+            is_active=True,
+        )
+        v2 = WorkflowVersion(
+            workflow_id="wf_2",
+            version=1,
+            nodes=[WorkflowNode(id="n2", type="start", label="V2")],
+            is_active=True,
+        )
+        await store.save_version(v1)
+        await store.save_version(v2)
+
+        result = await store.get_active_versions_batch(["wf_1", "wf_2"])
+        assert result["wf_1"] is not None
+        assert result["wf_1"].version == 1
+        assert result["wf_2"] is not None
+        assert result["wf_2"].version == 1
+
+    @pytest.mark.asyncio
+    async def test_batch_returns_none_for_inactive(self, store):
+        """Returns None for workflows with no active version."""
+        wf = Workflow(id="wf_1", name="A")
+        await store.save_workflow(wf)
+
+        v1 = WorkflowVersion(
+            workflow_id="wf_1",
+            version=1,
+            nodes=[WorkflowNode(id="n1", type="start", label="V1")],
+            is_active=False,
+        )
+        await store.save_version(v1)
+
+        result = await store.get_active_versions_batch(["wf_1"])
+        assert result["wf_1"] is None
+
+    @pytest.mark.asyncio
+    async def test_batch_empty_input(self, store):
+        """Empty list returns empty dict."""
+        result = await store.get_active_versions_batch([])
+        assert result == {}
+
+
+class TestUpsertHelper:
+    """Tests for the internal _upsert helper."""
+
+    @pytest.mark.asyncio
+    async def test_upsert_insert_and_update(self, store):
+        """_upsert inserts new rows and updates existing ones."""
+        wf = Workflow(id="wf_upsert", name="Original")
+        await store.save_workflow(wf)
+
+        # Update via upsert
+        values = {
+            "id": "wf_upsert",
+            "name": "Updated",
+            "description": "",
+            "trigger_type": "manual",
+            "trigger_config": "{}",
+            "owner_id": "",
+            "trust_level": "paranoid",
+            "created_at": wf.created_at,
+            "updated_at": wf.updated_at,
+        }
+        await store._upsert(
+            workflows,
+            values,
+            conflict_keys=["id"],
+            update_keys=[
+                "name",
+                "description",
+                "trigger_type",
+                "trigger_config",
+                "owner_id",
+                "trust_level",
+                "updated_at",
+            ],
+        )
+
+        fetched = await store.get_workflow("wf_upsert")
+        assert fetched is not None
+        assert fetched.name == "Updated"
 
 
 class TestRowConverters:

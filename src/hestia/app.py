@@ -15,12 +15,12 @@ import click
 from hestia.artifacts.store import ArtifactStore
 from hestia.config import HestiaConfig
 from hestia.context.builder import ContextBuilder
-from hestia.events.bus import EventBus
 from hestia.context.compressor import InferenceHistoryCompressor
 from hestia.core.inference import InferenceClient
 from hestia.core.rate_limiter import SessionRateLimiter
 from hestia.core.validators import validate_inference_model_name
 from hestia.email.adapter import EmailAdapter
+from hestia.events.bus import EventBus
 from hestia.identity import IdentityCompiler
 from hestia.inference import SlotManager
 from hestia.memory import MemoryEpochCompiler, MemoryStore
@@ -32,8 +32,6 @@ from hestia.persistence.failure_store import FailureStore
 from hestia.persistence.scheduler import SchedulerStore
 from hestia.persistence.sessions import SessionStore
 from hestia.persistence.trace_store import TraceStore
-from hestia.workflows.execution_store import ExecutionStore
-from hestia.workflows.store import WorkflowStore
 from hestia.policy.default import DefaultPolicyEngine
 from hestia.reflection.runner import ReflectionRunner
 from hestia.reflection.scheduler import ReflectionScheduler
@@ -74,6 +72,8 @@ from hestia.tools.builtin import (
     search_web,
 )
 from hestia.tools.registry import ToolRegistry
+from hestia.workflows.execution_store import ExecutionStore
+from hestia.workflows.store import WorkflowStore
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +131,8 @@ class AppContext:
         # Eager core subsystems
         self.db = Database(config.storage.database_url)
         self.artifact_store = ArtifactStore(config.storage.artifacts_dir)
-        self.session_store = SessionStore(self.db)
+        self.event_bus = EventBus()
+        self.session_store = SessionStore(self.db, event_bus=self.event_bus)
         self.policy = _make_policy(config)
         self.memory_store = MemoryStore(self.db)
         self.failure_store = FailureStore(self.db)
@@ -139,7 +140,6 @@ class AppContext:
         self.scheduler_store = SchedulerStore(self.db)
         self.workflow_store = WorkflowStore(self.db)
         self.execution_store = ExecutionStore(self.db)
-        self.event_bus = EventBus()
         self.trigger_registry: Any = None
         self.epoch_compiler = MemoryEpochCompiler(self.memory_store, max_tokens=500)
         self.tool_registry = ToolRegistry(self.artifact_store)
@@ -313,6 +313,7 @@ class AppContext:
             style_config=self.config.style,
             rate_limiter=self.rate_limiter,
             stream=self.config.inference.stream,
+            event_bus=self.event_bus,
         )
 
     def register_tools(self) -> None:
@@ -335,8 +336,8 @@ class AppContext:
         # Proposal tools (bound to proposal store)
         reg.register(make_list_proposals_tool(self.proposal_store))
         reg.register(make_show_proposal_tool(self.proposal_store))
-        reg.register(make_accept_proposal_tool(self.proposal_store))
-        reg.register(make_reject_proposal_tool(self.proposal_store))
+        reg.register(make_accept_proposal_tool(self.proposal_store, event_bus=self.event_bus))
+        reg.register(make_reject_proposal_tool(self.proposal_store, event_bus=self.event_bus))
         reg.register(make_defer_proposal_tool(self.proposal_store))
 
         # Style tools (bound to style store)

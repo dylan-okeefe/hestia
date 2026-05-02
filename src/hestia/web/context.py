@@ -9,11 +9,12 @@ from hestia.persistence.failure_store import FailureStore
 from hestia.persistence.scheduler import SchedulerStore
 from hestia.persistence.sessions import SessionStore
 from hestia.persistence.trace_store import TraceStore
-from hestia.workflows.execution_store import ExecutionStore
-from hestia.workflows.store import WorkflowStore
 from hestia.reflection.store import ProposalStore
 from hestia.style.store import StyleProfileStore
 from hestia.web.auth import AuthManager
+from hestia.workflows.execution_store import ExecutionStore
+from hestia.workflows.store import WorkflowStore
+from hestia.workflows.triggers import TriggerRegistry
 
 
 @dataclass
@@ -30,6 +31,7 @@ class WebContext:
     execution_store: ExecutionStore
     app: AppContext
     auth_manager: AuthManager | None = field(default=None)
+    trigger_registry: TriggerRegistry | None = field(default=None)
 
 
 # Global singleton — adequate for single-worker uvicorn but will break

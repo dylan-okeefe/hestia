@@ -47,10 +47,27 @@ class InvestigateNode:
         if isinstance(tools, str):
             tools = [t.strip() for t in tools.split(",") if t.strip()]
 
+        input_keys = node.config.get("input_keys", [])
+        if input_keys:
+            scoped_inputs = {}
+            for key in input_keys:
+                if key in inputs:
+                    scoped_inputs[key] = inputs[key]
+                else:
+                    logger.warning(
+                        "InvestigateNode input_keys references missing key: %s", key
+                    )
+        elif inputs:
+            # If empty, pass only first predecessor's output
+            first_key = next(iter(inputs), None)
+            scoped_inputs = {first_key: inputs[first_key]} if first_key is not None else {}
+        else:
+            scoped_inputs = {}
+
         tool_results: list[dict[str, Any]] = []
         for tool_name in tools:
             try:
-                result = await app.tool_registry.call(tool_name, inputs)
+                result = await app.tool_registry.call(tool_name, scoped_inputs)
                 tool_results.append(
                     {
                         "tool": tool_name,
@@ -150,10 +167,11 @@ def _build_prompt(
 ) -> str:
     """Construct the investigation prompt for the LLM."""
     lines: list[str] = [
-        f"You are an investigative researcher. Investigate the following topic thoroughly.",
-        f"",
+        "You are an investigative researcher. "
+        "Investigate the following topic thoroughly.",
+        "",
         f"Topic: {topic}",
-        f"",
+        "",
     ]
 
     if tool_results:
@@ -176,7 +194,9 @@ def _build_prompt(
 
     lines.append(
         "Respond with a JSON object containing exactly these keys: "
-        '"findings" (list of strings), "recommendations" (list of strings), "sources" (list of strings). '
+        '"findings" (list of strings), '
+        '"recommendations" (list of strings), '
+        '"sources" (list of strings). '
         "Do not include markdown formatting or explanation outside the JSON."
     )
 
@@ -193,7 +213,9 @@ def _parse_report(topic: str, content: str) -> dict[str, Any]:
     try:
         data = json.loads(cleaned)
     except json.JSONDecodeError:
-        logger.warning("Failed to parse investigation JSON, returning raw content as single finding")
+        logger.warning(
+            "Failed to parse investigation JSON, returning raw content as single finding"
+        )
         return {
             "topic": topic,
             "findings": [cleaned],

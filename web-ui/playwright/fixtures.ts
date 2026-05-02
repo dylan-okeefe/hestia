@@ -256,7 +256,11 @@ export async function mockApis(page: Page) {
   });
 
   await page.route('/api/auth/status', async (route) => {
-    await route.fulfill({ json: { auth_enabled: false, authenticated: false } });
+    await route.fulfill({ json: { auth_enabled: false, authenticated: false, available_platforms: ['cli', 'discord', 'telegram', 'matrix'] } });
+  });
+
+  await page.route('/api/tools', async (route) => {
+    await route.fulfill({ json: { tools: ['search_web', 'read_email', 'send_message', 'weather_lookup'] } });
   });
 
   await page.route('/api/config/schema', async (route) => {
@@ -296,6 +300,11 @@ export async function mockApis(page: Page) {
       await route.fulfill({ json: mockExecutions });
     } else if (url.includes('/test-run')) {
       await route.fulfill({ json: { status: 'ok', total_elapsed_ms: 0, total_prompt_tokens: 0, total_completion_tokens: 0, node_results: [], outputs: {} } });
+    } else if (method === 'DELETE') {
+      await route.fulfill({ json: { deleted: true } });
+    } else if (method === 'PUT') {
+      const body = await route.request().postDataJSON();
+      await route.fulfill({ json: { ...mockWorkflows.workflows[0], ...body } });
     } else {
       await route.fulfill({ json: mockWorkflows.workflows[0] });
     }

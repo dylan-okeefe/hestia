@@ -24,6 +24,6 @@ test('clicking execution row expands node results', async ({ page }) => {
   await rows.first().click();
 
   // Expanded node details should be visible - scope to nested table
-  await expect(page.locator('table table').locator('text=n1').first()).toBeVisible();
+  await expect(page.locator('table table').locator('text="Start" (default)').first()).toBeVisible();
   await expect(page.locator('table table').locator('text=hello').first()).toBeVisible();
 });

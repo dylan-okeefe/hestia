@@ -54,9 +54,19 @@ async def accept_proposal(
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """Accept a proposal."""
+    proposal = await ctx.proposal_store.get(proposal_id)
     ok = await ctx.proposal_store.update_status(proposal_id, "accepted")
     if not ok:
         raise HTTPException(status_code=404, detail="Proposal not found")
+    if ctx.app.event_bus is not None:
+        await ctx.app.event_bus.publish(
+            "proposal_approved",
+            {
+                "proposal_id": proposal_id,
+                "proposal_type": proposal.type if proposal is not None else None,
+                "platform": "web",
+            },
+        )
     return {"id": proposal_id, "status": "accepted"}
 
 
@@ -67,9 +77,19 @@ async def reject_proposal(
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """Reject a proposal."""
+    proposal = await ctx.proposal_store.get(proposal_id)
     ok = await ctx.proposal_store.update_status(proposal_id, "rejected", review_note=body.note)
     if not ok:
         raise HTTPException(status_code=404, detail="Proposal not found")
+    if ctx.app.event_bus is not None:
+        await ctx.app.event_bus.publish(
+            "proposal_rejected",
+            {
+                "proposal_id": proposal_id,
+                "proposal_type": proposal.type if proposal is not None else None,
+                "platform": "web",
+            },
+        )
     return {"id": proposal_id, "status": "rejected"}
 
 

@@ -70,3 +70,33 @@ async def test_returns_raw_when_no_branches(app: AppContext) -> None:
     result = await executor.execute(app, node, {})
 
     assert result.content == "yes"
+
+
+@pytest.mark.asyncio
+async def test_returns_chat_response_with_tokens(app: AppContext) -> None:
+    node = WorkflowNode(
+        id="n1",
+        type="llm_decision",
+        label="Decide",
+        config={"branches": ["a", "b"]},
+    )
+    app.inference.chat = AsyncMock(
+        return_value=ChatResponse(
+            content="a",
+            reasoning_content=None,
+            tool_calls=[],
+            finish_reason="stop",
+            prompt_tokens=42,
+            completion_tokens=7,
+            total_tokens=49,
+        )
+    )
+
+    executor = LLMDecisionNode()
+    result = await executor.execute(app, node, {"value": 42})
+
+    assert isinstance(result, ChatResponse)
+    assert result.content == "a"
+    assert result.prompt_tokens == 42
+    assert result.completion_tokens == 7
+    assert result.total_tokens == 49

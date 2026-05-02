@@ -83,6 +83,46 @@ class ExecutionStore:
             rows = result.fetchall()
             return [self._row_to_dict(row) for row in rows]
 
+    async def list_recent(self, limit: int = 5) -> list[dict[str, Any]]:
+        """Return recent executions across all workflows, newest first."""
+        query = (
+            sa.select(workflow_executions)
+            .order_by(workflow_executions.c.created_at.desc())
+            .limit(limit)
+        )
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(query)
+            rows = result.fetchall()
+            return [self._row_to_dict(row) for row in rows]
+
+    async def get_last_execution_per_workflow(self, workflow_ids: list[str]) -> dict[str, dict[str, Any]]:
+        """Return the most recent execution for each workflow in the given list."""
+        if not workflow_ids:
+            return {}
+        # Use a window function or subquery to get the latest per workflow
+        # For SQLite compatibility, use a correlated subquery approach
+        subquery = (
+            sa.select(
+                workflow_executions.c.workflow_id,
+                sa.func.max(workflow_executions.c.created_at).label("max_created_at"),
+            )
+            .where(workflow_executions.c.workflow_id.in_(workflow_ids))
+            .group_by(workflow_executions.c.workflow_id)
+            .subquery()
+        )
+        query = (
+            sa.select(workflow_executions)
+            .join(
+                subquery,
+                (workflow_executions.c.workflow_id == subquery.c.workflow_id)
+                & (workflow_executions.c.created_at == subquery.c.max_created_at),
+            )
+        )
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(query)
+            rows = result.fetchall()
+            return {row.workflow_id: self._row_to_dict(row) for row in rows}
+
     async def get_execution(self, execution_id: str) -> dict[str, Any] | None:
         """Return a single execution by ID, or None if not found."""
         query = sa.select(workflow_executions).where(workflow_executions.c.id == execution_id)

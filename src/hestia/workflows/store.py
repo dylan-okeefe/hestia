@@ -24,13 +24,60 @@ class WorkflowStore:
 
     async def create_tables(self) -> None:
         """Create workflow tables if they do not already exist."""
-        if self._db._engine is None:
+        if self._db.engine is None:
             raise PersistenceError("Database not connected. Call connect() first.")
         async with self._db.engine.begin() as conn:
             await conn.run_sync(workflows.create, checkfirst=True)
             await conn.run_sync(workflow_versions.create, checkfirst=True)
 
     # --- Workflow CRUD ---
+
+    async def _upsert(
+        self,
+        table: Any,
+        values: dict[str, Any],
+        conflict_keys: list[str],
+        update_keys: list[str],
+    ) -> None:
+        """Dialect-aware upsert helper.
+
+        Supports SQLite and PostgreSQL via ON CONFLICT. Falls back to
+        select-then-insert/update for other dialects.
+        """
+        async with self._db.engine.connect() as conn:
+            stmt: Any
+            if conn.dialect.name == "sqlite":
+                from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+                sqlite_stmt = sqlite_insert(table).values(**values)
+                stmt = sqlite_stmt.on_conflict_do_update(
+                    index_elements=conflict_keys,
+                    set_={k: values[k] for k in update_keys},
+                )
+            elif conn.dialect.name == "postgresql":
+                from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+                pg_stmt = pg_insert(table).values(**values)
+                stmt = pg_stmt.on_conflict_do_update(
+                    index_elements=conflict_keys,
+                    set_={k: values[k] for k in update_keys},
+                )
+            else:
+                where_clause = sa.and_(
+                    *(table.c[k] == values[k] for k in conflict_keys)
+                )
+                result = await conn.execute(sa.select(table).where(where_clause))
+                if result.fetchone() is not None:
+                    await conn.execute(
+                        sa.update(table).where(where_clause).values(**values)
+                    )
+                else:
+                    await conn.execute(sa.insert(table).values(**values))
+                await conn.commit()
+                return
+
+            await conn.execute(stmt)
+            await conn.commit()
 
     async def save_workflow(self, workflow: Workflow) -> Workflow:
         """Insert or update a workflow."""
@@ -51,60 +98,21 @@ class WorkflowStore:
             "updated_at": workflow.updated_at,
         }
 
-        async with self._db.engine.connect() as conn:
-            # Upsert via dialect-specific ON CONFLICT
-            stmt: Any
-            if conn.dialect.name == "sqlite":
-                from sqlalchemy.dialects.sqlite import insert as sqlite_insert
-
-                sqlite_stmt = sqlite_insert(workflows).values(**values)
-                stmt = sqlite_stmt.on_conflict_do_update(
-                    index_elements=["id"],
-                    set_={
-                        "name": values["name"],
-                        "description": values["description"],
-                        "trigger_type": values["trigger_type"],
-                        "trigger_config": values["trigger_config"],
-                        "owner_id": values["owner_id"],
-                        "trust_level": values["trust_level"],
-                        "updated_at": values["updated_at"],
-                    },
-                )
-            elif conn.dialect.name == "postgresql":
-                from sqlalchemy.dialects.postgresql import insert as pg_insert
-
-                pg_stmt = pg_insert(workflows).values(**values)
-                stmt = pg_stmt.on_conflict_do_update(
-                    index_elements=["id"],
-                    set_={
-                        "name": values["name"],
-                        "description": values["description"],
-                        "trigger_type": values["trigger_type"],
-                        "trigger_config": values["trigger_config"],
-                        "owner_id": values["owner_id"],
-                        "trust_level": values["trust_level"],
-                        "updated_at": values["updated_at"],
-                    },
-                )
-            else:
-                # Fallback: select-then-insert/update
-                result = await conn.execute(
-                    sa.select(workflows).where(workflows.c.id == workflow.id)
-                )
-                if result.fetchone() is not None:
-                    await conn.execute(
-                        sa.update(workflows)
-                        .where(workflows.c.id == workflow.id)
-                        .values(**values)
-                    )
-                else:
-                    await conn.execute(sa.insert(workflows).values(**values))
-                await conn.commit()
-                return workflow
-
-            await conn.execute(stmt)
-            await conn.commit()
-            return workflow
+        await self._upsert(
+            workflows,
+            values,
+            conflict_keys=["id"],
+            update_keys=[
+                "name",
+                "description",
+                "trigger_type",
+                "trigger_config",
+                "owner_id",
+                "trust_level",
+                "updated_at",
+            ],
+        )
+        return workflow
 
     async def get_workflow(self, workflow_id: str) -> Workflow | None:
         """Get a workflow by ID."""
@@ -182,61 +190,13 @@ class WorkflowStore:
             "is_active": version.is_active,
         }
 
-        async with self._db.engine.connect() as conn:
-            stmt: Any
-            if conn.dialect.name == "sqlite":
-                from sqlalchemy.dialects.sqlite import insert as sqlite_insert
-
-                sqlite_stmt = sqlite_insert(workflow_versions).values(**values)
-                stmt = sqlite_stmt.on_conflict_do_update(
-                    index_elements=["workflow_id", "version"],
-                    set_={
-                        "nodes": values["nodes"],
-                        "edges": values["edges"],
-                        "is_active": values["is_active"],
-                    },
-                )
-            elif conn.dialect.name == "postgresql":
-                from sqlalchemy.dialects.postgresql import insert as pg_insert
-
-                pg_stmt = pg_insert(workflow_versions).values(**values)
-                stmt = pg_stmt.on_conflict_do_update(
-                    index_elements=["workflow_id", "version"],
-                    set_={
-                        "nodes": values["nodes"],
-                        "edges": values["edges"],
-                        "is_active": values["is_active"],
-                    },
-                )
-            else:
-                result = await conn.execute(
-                    sa.select(workflow_versions)
-                    .where(
-                        sa.and_(
-                            workflow_versions.c.workflow_id == version.workflow_id,
-                            workflow_versions.c.version == version.version,
-                        )
-                    )
-                )
-                if result.fetchone() is not None:
-                    await conn.execute(
-                        sa.update(workflow_versions)
-                        .where(
-                            sa.and_(
-                                workflow_versions.c.workflow_id == version.workflow_id,
-                                workflow_versions.c.version == version.version,
-                            )
-                        )
-                        .values(**values)
-                    )
-                else:
-                    await conn.execute(sa.insert(workflow_versions).values(**values))
-                await conn.commit()
-                return version
-
-            await conn.execute(stmt)
-            await conn.commit()
-            return version
+        await self._upsert(
+            workflow_versions,
+            values,
+            conflict_keys=["workflow_id", "version"],
+            update_keys=["nodes", "edges", "is_active"],
+        )
+        return version
 
     async def get_active_version(self, workflow_id: str) -> WorkflowVersion | None:
         """Get the active version for a workflow."""
@@ -257,6 +217,46 @@ class WorkflowStore:
             if row is None:
                 return None
             return self._row_to_version(row)
+
+    async def get_active_versions_batch(
+        self, workflow_ids: list[str]
+    ) -> dict[str, WorkflowVersion | None]:
+        """Fetch the active version for multiple workflows in a single query."""
+        if not workflow_ids:
+            return {}
+
+        # Use a subquery to pick the highest active version per workflow
+        subq = (
+            sa.select(
+                workflow_versions.c.workflow_id,
+                sa.func.max(workflow_versions.c.version).label("max_version"),
+            )
+            .where(
+                sa.and_(
+                    workflow_versions.c.workflow_id.in_(workflow_ids),
+                    workflow_versions.c.is_active.is_(True),
+                )
+            )
+            .group_by(workflow_versions.c.workflow_id)
+            .subquery()
+        )
+
+        query = sa.select(workflow_versions).join(
+            subq,
+            sa.and_(
+                workflow_versions.c.workflow_id == subq.c.workflow_id,
+                workflow_versions.c.version == subq.c.max_version,
+            ),
+        )
+
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(query)
+            rows = result.fetchall()
+
+        version_map: dict[str, WorkflowVersion | None] = dict.fromkeys(workflow_ids, None)
+        for row in rows:
+            version_map[row.workflow_id] = self._row_to_version(row)
+        return version_map
 
     async def list_versions(self, workflow_id: str) -> list[WorkflowVersion]:
         """List all versions for a workflow, newest first."""

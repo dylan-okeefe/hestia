@@ -2,22 +2,27 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
+import secrets
 import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from starlette.responses import JSONResponse
 
+from hestia.web.context import WebContext, get_web_context
 from hestia.workflows.executor import WorkflowExecutor
 from hestia.workflows.models import Workflow, WorkflowEdge, WorkflowNode, WorkflowVersion
-from hestia.workflows.store import WorkflowStore
-from hestia.web.context import WebContext, get_web_context
 
 router = APIRouter()
 
 _CTX_DEP = Depends(get_web_context)
+
+
+_TRUST_LEVELS = {"paranoid", "prompt_on_mobile", "household", "developer"}
 
 
 def _workflow_to_api(wf: Workflow) -> dict[str, Any]:
@@ -27,6 +32,8 @@ def _workflow_to_api(wf: Workflow) -> dict[str, Any]:
         "name": wf.name,
         "trigger_type": wf.trigger_type,
         "trigger_config": wf.trigger_config,
+        "owner_id": wf.owner_id,
+        "trust_level": wf.trust_level,
         "last_edited_at": wf.updated_at.isoformat() if wf.updated_at else None,
         "active_version_id": None,  # populated by list/get where versions are loaded
     }
@@ -43,6 +50,7 @@ def _version_to_api(v: WorkflowVersion) -> dict[str, Any]:
                 "id": n.id,
                 "type": n.type,
                 "position": n.position,
+                "capabilities": n.capabilities,
                 "data": {
                     "label": n.label,
                     **n.config,
@@ -71,12 +79,18 @@ async def list_workflows(
 ) -> dict[str, Any]:
     """List all workflows."""
     workflows = await ctx.workflow_store.list_workflows()
+    active_map = await ctx.workflow_store.get_active_versions_batch([wf.id for wf in workflows])
+    last_exec_map = await ctx.execution_store.get_last_execution_per_workflow([wf.id for wf in workflows])
     result = []
     for wf in workflows:
         api_wf = _workflow_to_api(wf)
-        active = await ctx.workflow_store.get_active_version(wf.id)
+        active = active_map.get(wf.id)
         if active is not None:
             api_wf["active_version_id"] = f"{active.workflow_id}:{active.version}"
+        last = last_exec_map.get(wf.id)
+        if last:
+            api_wf["last_execution_status"] = last["status"]
+            api_wf["last_execution_at"] = last["created_at"]
         result.append(api_wf)
     return {"workflows": result}
 
@@ -84,6 +98,7 @@ async def list_workflows(
 @router.post("/workflows")
 async def create_workflow(
     payload: dict[str, Any],
+    request: Request,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """Create a new workflow."""
@@ -91,20 +106,33 @@ async def create_workflow(
     if not name or not isinstance(name, str):
         raise HTTPException(status_code=400, detail="name is required and must be a string")
 
+    trigger_type = payload.get("trigger_type", "manual")
+    trigger_config = payload.get("trigger_config", {})
+    if trigger_type == "webhook" and "secret" not in trigger_config:
+        trigger_config = {**trigger_config, "secret": secrets.token_urlsafe(32)}
+
+    owner_id = payload.get("owner_id") or getattr(request.state, "platform_user", "")
+    trust_level = payload.get("trust_level", "paranoid")
+
     wf = Workflow(
         id=str(uuid.uuid4()),
         name=name,
         description=payload.get("description", ""),
-        trigger_type=payload.get("trigger_type", "manual"),
-        trigger_config=payload.get("trigger_config", {}),
+        trigger_type=trigger_type,
+        trigger_config=trigger_config,
+        owner_id=owner_id or "",
+        trust_level=trust_level,
     )
     await ctx.workflow_store.save_workflow(wf)
+    if ctx.trigger_registry is not None:
+        await ctx.trigger_registry.reload_one(wf.id)
     return _workflow_to_api(wf)
 
 
 @router.get("/workflows/{workflow_id}")
 async def get_workflow(
     workflow_id: str,
+    request: Request,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """Get a workflow by ID."""
@@ -116,6 +144,10 @@ async def get_workflow(
     active = await ctx.workflow_store.get_active_version(workflow_id)
     if active is not None:
         api_wf["active_version_id"] = f"{active.workflow_id}:{active.version}"
+    if api_wf["trigger_type"] == "webhook":
+        endpoint = api_wf["trigger_config"].get("endpoint") or workflow_id
+        api_wf["webhook_url"] = f"{request.base_url}api/webhooks/{endpoint}"
+        api_wf["secret"] = api_wf["trigger_config"].get("secret", "")
     return api_wf
 
 
@@ -141,8 +173,20 @@ async def update_workflow(
         workflow.trigger_type = payload["trigger_type"]
     if "trigger_config" in payload:
         workflow.trigger_config = payload["trigger_config"]
+    if "owner_id" in payload:
+        workflow.owner_id = payload["owner_id"]
+    if "trust_level" in payload:
+        trust_level = payload["trust_level"]
+        if trust_level not in _TRUST_LEVELS:
+            raise HTTPException(
+                status_code=422,
+                detail=f"trust_level must be one of: {', '.join(sorted(_TRUST_LEVELS))}",
+            )
+        workflow.trust_level = trust_level
 
     await ctx.workflow_store.save_workflow(workflow)
+    if ctx.trigger_registry is not None:
+        await ctx.trigger_registry.reload_one(workflow_id)
     return _workflow_to_api(workflow)
 
 
@@ -155,6 +199,8 @@ async def delete_workflow(
     deleted = await ctx.workflow_store.delete_workflow(workflow_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Workflow not found")
+    if ctx.trigger_registry is not None:
+        await ctx.trigger_registry.reload_one(workflow_id)
     return {"deleted": True}
 
 
@@ -190,8 +236,17 @@ async def create_version(
             id=n.get("id", str(uuid.uuid4())),
             type=n.get("type", "default"),
             label=n.get("data", {}).get("label", "") if isinstance(n.get("data"), dict) else "",
-            config={k: v for k, v in n.get("data", {}).items() if k != "label"} if isinstance(n.get("data"), dict) else {},
+            config=(
+                {k: v for k, v in n.get("data", {}).items() if k != "label"}
+                if isinstance(n.get("data"), dict)
+                else {}
+            ),
             position=n.get("position", {"x": 0, "y": 0}),
+            capabilities=(
+                n.get("capabilities", [])
+                if isinstance(n.get("capabilities"), list)
+                else []
+            ),
         )
         for n in nodes_raw
     ]
@@ -233,8 +288,8 @@ async def activate_version(
         version_str = version_id
     try:
         version_num = int(version_str)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid version ID")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid version ID") from exc
 
     ok = await ctx.workflow_store.activate_version(workflow_id, version_num)
     if not ok:
@@ -249,11 +304,42 @@ async def receive_webhook(
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """Receive a webhook payload and publish a webhook_received event."""
+    body_bytes = await request.body()
+
+    workflows = await ctx.workflow_store.list_workflows()
+    matching = [
+        wf
+        for wf in workflows
+        if wf.trigger_type == "webhook"
+        and (
+            wf.trigger_config.get("endpoint") == endpoint
+            or wf.trigger_config.get("endpoint") is None
+        )
+    ]
+    if not matching:
+        raise HTTPException(status_code=404, detail="Webhook endpoint not found")
+
+    secrets_list = [wf.trigger_config.get("secret", "") for wf in matching]
+    secrets_list = [s for s in secrets_list if s]
+
+    signature = request.headers.get("X-Webhook-Signature", "")
+    if not signature:
+        raise HTTPException(status_code=401, detail="Missing X-Webhook-Signature header")
+
+    valid = False
+    for secret in secrets_list:
+        expected = hmac.new(secret.encode(), body_bytes, hashlib.sha256).hexdigest()
+        if hmac.compare_digest(expected, signature):
+            valid = True
+            break
+
+    if not valid:
+        raise HTTPException(status_code=401, detail="Invalid webhook signature")
+
     try:
-        body = await request.json()
+        body = json.loads(body_bytes)
     except Exception:
-        raw = await request.body()
-        body = raw.decode("utf-8")
+        body = body_bytes.decode("utf-8")
 
     event_bus = ctx.app.event_bus
     if event_bus is None:
@@ -262,7 +348,7 @@ async def receive_webhook(
             status_code=503,
         )
 
-    event_bus.publish(
+    await event_bus.publish(
         "webhook_received",
         {
             "endpoint": endpoint,
@@ -278,7 +364,7 @@ async def receive_webhook(
 @router.get("/workflows/{workflow_id}/executions")
 async def list_executions(
     workflow_id: str,
-    limit: int = 50,
+    limit: int = Query(50, ge=1, le=200),
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """List recent executions for a workflow."""
@@ -326,4 +412,26 @@ async def test_run_workflow(
             for nr in result.node_results
         ],
         "outputs": result.outputs,
+    }
+
+
+@router.get("/dashboard")
+async def dashboard(ctx: WebContext = _CTX_DEP) -> dict[str, Any]:
+    """Return aggregated dashboard data."""
+    workflows = await ctx.workflow_store.list_workflows()
+    active_count = sum(1 for wf in workflows if wf.trigger_type != "manual")
+    recent_executions = await ctx.execution_store.list_recent(limit=5)
+    proposal_counts = await ctx.proposal_store.count_by_status()
+    pending_proposals = proposal_counts.get("pending", 0)
+    auth_status = {
+        "telegram": bool(ctx.app.config.telegram.bot_token),
+        "matrix": bool(ctx.app.config.matrix.access_token),
+        "email": bool(ctx.app.config.email.imap_host),
+    }
+    platforms_connected = [k for k, v in auth_status.items() if v]
+    return {
+        "active_workflow_count": active_count,
+        "recent_executions": recent_executions,
+        "pending_proposal_count": pending_proposals,
+        "platforms_connected": platforms_connected,
     }
