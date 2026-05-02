@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from unittest.mock import MagicMock
 
 import pytest
@@ -102,3 +103,43 @@ async def test_unsafe_expression_blocked(app: AppContext) -> None:
     executor = ConditionNode()
     with pytest.raises(ValueError, match="Unsupported"):
         await executor.execute(app, node, {})
+
+
+@pytest.mark.asyncio
+async def test_private_attribute_access_blocked(app: AppContext) -> None:
+    node = WorkflowNode(
+        id="n1",
+        type="condition",
+        label="Check",
+        config={"expression": "x.__class__"},
+    )
+    executor = ConditionNode()
+    with pytest.raises(ValueError, match="private attribute"):
+        await executor.execute(app, node, {"x": 42})
+
+
+@pytest.mark.asyncio
+async def test_pow_operator_blocked(app: AppContext) -> None:
+    node = WorkflowNode(
+        id="n1",
+        type="condition",
+        label="Check",
+        config={"expression": "2 ** 100"},
+    )
+    executor = ConditionNode()
+    with pytest.raises(ValueError, match="Unsupported binary operator"):
+        await executor.execute(app, node, {})
+
+
+@pytest.mark.asyncio
+async def test_datetime_input_json_normalized(app: AppContext) -> None:
+    node = WorkflowNode(
+        id="n1",
+        type="condition",
+        label="Check",
+        config={"expression": "ts == '2024-01-01 12:00:00'"},
+    )
+    executor = ConditionNode()
+    dt = datetime(2024, 1, 1, 12, 0, 0)
+    result = await executor.execute(app, node, {"ts": dt})
+    assert result is True

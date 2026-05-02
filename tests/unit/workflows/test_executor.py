@@ -15,8 +15,8 @@ from hestia.persistence.db import Database
 from hestia.tools.capabilities import SHELL_EXEC, WRITE_LOCAL
 from hestia.tools.registry import ToolRegistry
 from hestia.tools.types import ToolCallResult
-from hestia.workflows.executor import ExecutionResult, WorkflowExecutor
 from hestia.workflows.execution_store import ExecutionStore
+from hestia.workflows.executor import ExecutionResult, WorkflowExecutor
 from hestia.workflows.models import Workflow, WorkflowEdge, WorkflowNode, WorkflowVersion
 from hestia.workflows.store import WorkflowStore
 
@@ -399,7 +399,12 @@ class TestCostTracking:
         wf = Workflow(id="wf_1", name="Decision", trust_level="developer")
         await workflow_store.save_workflow(wf)
 
-        node = WorkflowNode(id="n1", type="llm_decision", label="Decide", config={"branches": ["a", "b"]})
+        node = WorkflowNode(
+            id="n1",
+            type="llm_decision",
+            label="Decide",
+            config={"branches": ["a", "b"]},
+        )
         version = WorkflowVersion(
             workflow_id="wf_1",
             version=1,
@@ -605,6 +610,169 @@ class TestEdgeCases:
         # Verify outputs were set in dependency order
         ids = [nr.node_id for nr in result.node_results]
         assert ids == ["a", "b", "c"]
+
+
+class TestBranchingExecution:
+    """Tests for branch-aware execution with condition and llm_decision nodes."""
+
+    @pytest.mark.asyncio
+    async def test_condition_branching_gates_execution(
+        self,
+        workflow_store: WorkflowStore,
+        executor: WorkflowExecutor,
+        app: AppContext,
+    ) -> None:
+        """Only nodes on the matching condition branch execute."""
+        wf = Workflow(id="wf_1", name="Branch", trust_level="developer")
+        await workflow_store.save_workflow(wf)
+
+        condition = WorkflowNode(
+            id="cond",
+            type="condition",
+            label="Check",
+            config={"expression": "value > 10"},
+        )
+        node_a = WorkflowNode(id="a", type="echo", label="A")
+        node_b = WorkflowNode(id="b", type="echo", label="B")
+        edge_true = WorkflowEdge(
+            id="e_true", source_node_id="cond", target_node_id="a", source_handle="true"
+        )
+        edge_false = WorkflowEdge(
+            id="e_false", source_node_id="cond", target_node_id="b", source_handle="false"
+        )
+        version = WorkflowVersion(
+            workflow_id="wf_1",
+            version=1,
+            nodes=[condition, node_a, node_b],
+            edges=[edge_true, edge_false],
+            is_active=True,
+        )
+        await workflow_store.save_version(version)
+
+        app.tool_registry.call = AsyncMock(return_value=ToolCallResult(
+            status="ok",
+            content="done",
+            artifact_handle=None,
+            truncated=False,
+        ))
+
+        result = await executor.execute("wf_1", {"value": 15})
+
+        assert result.status == "ok"
+        executed_ids = {nr.node_id for nr in result.node_results}
+        assert executed_ids == {"cond", "a"}
+        assert "b" not in result.outputs
+        assert result.outputs["cond"] is True
+        assert result.outputs["a"] == "done"
+
+    @pytest.mark.asyncio
+    async def test_condition_false_branch(
+        self,
+        workflow_store: WorkflowStore,
+        executor: WorkflowExecutor,
+        app: AppContext,
+    ) -> None:
+        """Only nodes on the false branch execute when condition is falsy."""
+        wf = Workflow(id="wf_1", name="Branch", trust_level="developer")
+        await workflow_store.save_workflow(wf)
+
+        condition = WorkflowNode(
+            id="cond",
+            type="condition",
+            label="Check",
+            config={"expression": "value > 10"},
+        )
+        node_a = WorkflowNode(id="a", type="echo", label="A")
+        node_b = WorkflowNode(id="b", type="echo", label="B")
+        edge_true = WorkflowEdge(
+            id="e_true", source_node_id="cond", target_node_id="a", source_handle="true"
+        )
+        edge_false = WorkflowEdge(
+            id="e_false", source_node_id="cond", target_node_id="b", source_handle="false"
+        )
+        version = WorkflowVersion(
+            workflow_id="wf_1",
+            version=1,
+            nodes=[condition, node_a, node_b],
+            edges=[edge_true, edge_false],
+            is_active=True,
+        )
+        await workflow_store.save_version(version)
+
+        app.tool_registry.call = AsyncMock(return_value=ToolCallResult(
+            status="ok",
+            content="done",
+            artifact_handle=None,
+            truncated=False,
+        ))
+
+        result = await executor.execute("wf_1", {"value": 5})
+
+        assert result.status == "ok"
+        executed_ids = {nr.node_id for nr in result.node_results}
+        assert executed_ids == {"cond", "b"}
+        assert "a" not in result.outputs
+        assert result.outputs["cond"] is False
+        assert result.outputs["b"] == "done"
+
+    @pytest.mark.asyncio
+    async def test_llm_decision_branching_gates_execution(
+        self,
+        workflow_store: WorkflowStore,
+        executor: WorkflowExecutor,
+        app: AppContext,
+    ) -> None:
+        """Only nodes on the matching LLM decision branch execute."""
+        wf = Workflow(id="wf_1", name="LLM Branch", trust_level="developer")
+        await workflow_store.save_workflow(wf)
+
+        decision = WorkflowNode(
+            id="dec",
+            type="llm_decision",
+            label="Decide",
+            config={"branches": ["alpha", "beta"]},
+        )
+        node_alpha = WorkflowNode(id="alpha_node", type="echo", label="Alpha")
+        node_beta = WorkflowNode(id="beta_node", type="echo", label="Beta")
+        edge_alpha = WorkflowEdge(
+            id="e_alpha", source_node_id="dec", target_node_id="alpha_node", source_handle="alpha"
+        )
+        edge_beta = WorkflowEdge(
+            id="e_beta", source_node_id="dec", target_node_id="beta_node", source_handle="beta"
+        )
+        version = WorkflowVersion(
+            workflow_id="wf_1",
+            version=1,
+            nodes=[decision, node_alpha, node_beta],
+            edges=[edge_alpha, edge_beta],
+            is_active=True,
+        )
+        await workflow_store.save_version(version)
+
+        app.inference.chat = AsyncMock(return_value=ChatResponse(
+            content="alpha",
+            reasoning_content=None,
+            tool_calls=[],
+            finish_reason="stop",
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+        ))
+        app.tool_registry.call = AsyncMock(return_value=ToolCallResult(
+            status="ok",
+            content="done",
+            artifact_handle=None,
+            truncated=False,
+        ))
+
+        result = await executor.execute("wf_1", {})
+
+        assert result.status == "ok"
+        executed_ids = {nr.node_id for nr in result.node_results}
+        assert executed_ids == {"dec", "alpha_node"}
+        assert "beta_node" not in result.outputs
+        assert result.outputs["dec"] == "alpha"
+        assert result.outputs["alpha_node"] == "done"
 
 
 class TestExecutionPersistence:
