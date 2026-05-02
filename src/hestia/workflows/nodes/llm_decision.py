@@ -7,7 +7,7 @@ import logging
 from typing import Any
 
 from hestia.app import AppContext
-from hestia.core.types import Message
+from hestia.core.types import ChatResponse, Message
 from hestia.workflows.models import WorkflowNode
 
 logger = logging.getLogger(__name__)
@@ -66,4 +66,12 @@ class LLMDecisionNode:
                 branches,
             )
 
-        return response
+        return ChatResponse(
+            content=branch,
+            prompt_tokens=response.prompt_tokens,
+            completion_tokens=response.completion_tokens,
+            total_tokens=response.total_tokens,
+            finish_reason=response.finish_reason,
+            reasoning_content=response.reasoning_content,
+            tool_calls=response.tool_calls,
+        )
