@@ -75,6 +75,8 @@ export default function WorkflowEditor() {
   const [triggerType, setTriggerType] = useState<string>('manual');
   const [triggerConfig, setTriggerConfig] = useState<Record<string, string>>({});
   const [triggerSaving, setTriggerSaving] = useState(false);
+  const [webhookUrl, setWebhookUrl] = useState('');
+  const [webhookSecret, setWebhookSecret] = useState('');
 
   const loadExecutions = useCallback(async () => {
     if (!id) return;
@@ -98,6 +100,10 @@ export default function WorkflowEditor() {
         setWorkflowName(wf.name);
         setTriggerType(wf.trigger_type || 'manual');
         setTriggerConfig((wf.trigger_config || {}) as Record<string, string>);
+        if (wf.trigger_type === 'webhook') {
+          setWebhookUrl(wf.webhook_url || '');
+          setWebhookSecret(wf.secret || '');
+        }
         setVersions(vs.versions);
         const active = vs.versions.find((v) => v.activated_at !== null);
         if (active) {
@@ -476,18 +482,33 @@ export default function WorkflowEditor() {
           />
         )}
         {triggerType === 'webhook' && id && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem' }}>
-            <span>URL: {`${window.location.origin}/api/webhooks/${id}`}</span>
-            <button
-              onClick={() => {
-                navigator.clipboard.writeText(`${window.location.origin}/api/webhooks/${id}`);
-              }}
-              style={{ padding: '0.125rem 0.5rem', fontSize: '0.75rem' }}
-            >
-              Copy URL
-            </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.875rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span>
+                URL: {webhookUrl || `${window.location.origin}/api/webhooks/${id}`}
+              </span>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(webhookUrl || `${window.location.origin}/api/webhooks/${id}`);
+                }}
+                style={{ padding: '0.125rem 0.5rem', fontSize: '0.75rem' }}
+              >
+                Copy URL
+              </button>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span>Secret: {webhookSecret}</span>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(webhookSecret);
+                }}
+                style={{ padding: '0.125rem 0.5rem', fontSize: '0.75rem' }}
+              >
+                Copy Secret
+              </button>
+            </div>
             <span style={{ color: '#666', fontSize: '0.75rem' }}>
-              Send POST requests to this URL to trigger this workflow
+              Include the header <code>X-Webhook-Signature: {'<hex_hmac_sha256>'}</code> with every request
             </span>
           </div>
         )}
