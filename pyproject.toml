@@ -89,6 +89,8 @@ module = [
     "faster_whisper",
     "piper",
     "curl_cffi",
+    "playwright",
+    "playwright.async_api",
 ]
 ignore_missing_imports = true
 
