@@ -9,6 +9,26 @@
 
 
 
+## 2026-05-06 — L157 Complete (Browser Session Persistence with Playwright)
+
+**Outcome:** Added Playwright-based browser automation so Hestia can scrape JavaScript-heavy authenticated sites by reusing logged-in browser sessions.
+
+**Changes:**
+- `src/hestia/tools/browser/session_store.py` — `BrowserSessionStore` for persistent cookie/storage state per-domain
+- `src/hestia/tools/builtin/browser_login.py` — visible browser login tool
+- `src/hestia/tools/builtin/browser_get.py` — headless browser fetch with session reuse
+- `src/hestia/config.py` — `BrowserConfig` with `enabled`, `session_dir`, `headless`, `default_timeout_seconds`
+- `src/hestia/app.py` — conditional registration of browser tools
+- `pyproject.toml` — `playwright>=1.40.0` in `browser` extra; mypy ignore for playwright
+- `tests/unit/tools/test_browser_session_store.py` — session store unit tests
+- `tests/unit/tools/test_browser_tools.py` — browser tool unit tests with mocked Playwright
+
+**Quality gate:** 1194 passed, 6 skipped. mypy clean. ruff clean on changed files.
+
+**Branch:** `feature/l157-browser-session-persistence`
+
+---
+
 ## 2026-05-01 — L121 Complete (Trust Preset Cards with Descriptions)
 
 **Outcome:** Replaced plain trust preset buttons with rich cards showing title, description, and bullet list. Active preset is visually highlighted.

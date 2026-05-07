@@ -41,6 +41,8 @@ from hestia.style.builder import StyleProfileBuilder
 from hestia.style.scheduler import StyleScheduler
 from hestia.style.store import StyleProfileStore
 from hestia.tools.builtin import (
+    browser_get,
+    browser_login,
     current_time,
     make_accept_proposal_tool,
     make_create_scheduled_task_tool,
@@ -78,6 +80,16 @@ from hestia.workflows.store import WorkflowStore
 logger = logging.getLogger(__name__)
 
 DEFAULT_CALIBRATION_PATH = Path(__file__).parent.parent.parent / "docs" / "calibration.json"
+
+
+def _playwright_available() -> bool:
+    """Check if Playwright is installed."""
+    try:
+        import playwright  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
 
 
 def _make_policy(cfg: HestiaConfig) -> DefaultPolicyEngine:
@@ -384,6 +396,11 @@ class AppContext:
 
         # Delegate task tool (needs app for orchestrator factory)
         reg.register(make_delegate_task_tool(self.session_store, self.make_orchestrator))
+
+        # Browser tools (only when enabled or Playwright is available)
+        if cfg.browser.enabled or _playwright_available():
+            reg.register(browser_login)
+            reg.register(browser_get)
 
 
 # Backward-compatible aliases (deprecated, will be removed in a future release)
