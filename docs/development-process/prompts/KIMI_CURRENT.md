@@ -8,9 +8,9 @@
 
 ## Current task
 
-**Status:** **IDLE — All queued work complete up to L121.**
+**Status:** **IDLE — L157 complete on branch.**
 
-L102–L103 and L118–L121 merged to `develop`. L104–L112 complete on `feature/web-dashboard`.
+L102–L103 and L118–L121 merged to `develop`. L104–L112 complete on `feature/web-dashboard`. L157 complete on `feature/l157-browser-session-persistence`.
 
 ---
 

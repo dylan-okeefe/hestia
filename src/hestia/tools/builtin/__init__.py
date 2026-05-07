@@ -15,6 +15,8 @@ that is not importable at module load time.
 """
 
 from hestia.runtime_context import current_session_id, current_trace_store
+from hestia.tools.builtin.browser_get import browser_get
+from hestia.tools.builtin.browser_login import browser_login
 from hestia.tools.builtin.current_time import current_time
 from hestia.tools.builtin.delegate_task import SubagentResult, make_delegate_task_tool
 from hestia.tools.builtin.email_tools import make_email_search_and_read_tool, make_email_tools
@@ -64,6 +66,8 @@ from hestia.tools.capabilities import (
 )
 
 __all__ = [
+    "browser_get",
+    "browser_login",
     "current_session_id",
     "current_trace_store",
     "current_time",

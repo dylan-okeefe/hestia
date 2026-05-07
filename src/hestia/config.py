@@ -443,6 +443,20 @@ class WebConfig(_ConfigFromEnv):
 
 
 @dataclass
+class BrowserConfig(_ConfigFromEnv):
+    """Configuration for browser automation tools."""
+
+    _ENV_PREFIX = "BROWSER"
+
+    enabled: bool = False
+    session_dir: Path = field(
+        default_factory=lambda: Path.home() / ".hestia" / "browser-sessions"
+    )
+    headless: bool = True
+    default_timeout_seconds: int = 30
+
+
+@dataclass
 class WebSearchConfig(_ConfigFromEnv):
     """web_search tool configuration (provider=\"\" disables)."""
 
@@ -511,6 +525,7 @@ class HestiaConfig(_ConfigFromEnv):
     core: CoreConfig = field(default_factory=CoreConfig)
     platforms: PlatformConfig = field(default_factory=PlatformConfig)
     features: FeatureConfig = field(default_factory=FeatureConfig)
+    browser: BrowserConfig = field(default_factory=BrowserConfig)
     trust: TrustConfig = field(default_factory=TrustConfig)
     trust_overrides: dict[str, TrustConfig] = field(default_factory=dict)
     system_prompt: str = "You are a helpful assistant."
@@ -524,6 +539,7 @@ class HestiaConfig(_ConfigFromEnv):
         core: CoreConfig | None = None,
         platforms: PlatformConfig | None = None,
         features: FeatureConfig | None = None,
+        browser: BrowserConfig | None = None,
         trust: TrustConfig | None = None,
         trust_overrides: dict[str, TrustConfig] | None = None,
         system_prompt: str = "You are a helpful assistant.",
@@ -580,6 +596,7 @@ class HestiaConfig(_ConfigFromEnv):
         self.core = core
         self.platforms = platforms
         self.features = features
+        self.browser = browser or BrowserConfig()
         self.trust = trust or TrustConfig()
         self.trust_overrides = trust_overrides if trust_overrides is not None else {}
         self.system_prompt = system_prompt

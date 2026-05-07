@@ -1,8 +1,8 @@
 HESTIA_KIMI_DONE=1
-LOOP=L112,L152
-BRANCH=feature/web-dashboard
-COMMIT=1a6e22f
-TESTS=1124 passed, 6 skipped (unit+integration)
-RUFF_SRC=clean on src/hestia/web/
-MYPY_SRC=clean on src/hestia/web/
-MERGED=L89-L101,L102-L103
+LOOP=L112,L152,L157
+BRANCH=feature/workflow-builder
+COMMIT=b7a23e3
+TESTS=1194 passed, 6 skipped (unit+integration)
+RUFF_SRC=clean on changed files
+MYPY_SRC=clean
+MERGED=L89-L101,L102-L103,L157
