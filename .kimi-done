@@ -1,5 +1,5 @@
 HESTIA_KIMI_DONE=1
-LOOP=L112
+LOOP=L112,L152
 BRANCH=feature/web-dashboard
 COMMIT=1a6e22f
 TESTS=1124 passed, 6 skipped (unit+integration)
