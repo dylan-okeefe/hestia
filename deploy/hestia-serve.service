@@ -1,0 +1,19 @@
+[Unit]
+Description=Hestia Unified Server (Telegram + Matrix + Web Dashboard)
+After=network.target hermes-llama.service
+Wants=hermes-llama.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Hestia-runtime
+EnvironmentFile=%h/Hestia-runtime/.env
+ExecStart=%h/.local/bin/uv run --quiet hestia --config config.runtime.py serve
+Restart=on-failure
+RestartSec=10
+KillMode=mixed
+TimeoutStopSec=30
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

@@ -16,25 +16,23 @@ Systemd service templates for running Hestia as a persistent service on Linux.
 | File | Purpose |
 |------|---------|
 | `hestia-llama.service` | llama.cpp inference server with KV-cache slots |
-| `hestia-agent.service` | Hestia agent (Telegram bot + scheduler daemon) |
-| `hestia-web.service` | FastAPI web dashboard (user-level) |
+| `hestia-agent.service` | Unified Hestia server (Telegram + Matrix + Web + scheduler) |
+| `hestia-serve.service` | Same as agent, but user-level (for `~/Hestia-runtime`) |
 | `gpu-watchdog.service` + `.timer` | Reboots if NVIDIA driver fails after crash |
 | `install.sh` | Copies services to systemd and reloads |
 | `example_config.py` | Configuration template — copy and customize |
 
 ## Architecture
 
-Four systemd units work together:
+Two systemd units work together:
 
 ```
-hermes-llama.service   →  llama-server on :8001 (inference)
+hermes-llama.service  →  llama-server on :8001 (inference)
        ↑
-hestia-telegram.service →  Telegram bot
-hestia-matrix.service   →  Matrix bot
-hestia-web.service      →  FastAPI dashboard on :8765
+hestia-serve.service  →  Telegram + Matrix + FastAPI dashboard on :8765
 ```
 
-`hestia-*` services depend on `hermes-llama` — systemd starts them in the right
+`hestia-serve` depends on `hermes-llama` — systemd starts them in the right
 order and restarts on failure.
 
 A `gpu-watchdog.timer` runs every 2 minutes and reboots the machine if the
@@ -160,13 +158,13 @@ sudo systemctl enable hestia-llama@$USER
 sudo systemctl enable hestia-agent@$USER
 ```
 
-### User-level services (web dashboard + GPU watchdog)
+### User-level services (unified server + GPU watchdog)
 
 If you run the runtime from `~/Hestia-runtime` with user-level systemd:
 
 ```bash
-# Web dashboard
-systemctl --user enable --now hestia-web.service
+# Unified server (Telegram + Matrix + Web)
+systemctl --user enable --now hestia-serve.service
 
 # GPU crash recovery watchdog
 systemctl --user enable --now gpu-watchdog.timer
@@ -230,10 +228,9 @@ The `hestia-llama.service` template uses these flags:
 
 - All services run as the specified user (template `@` syntax for system-level)
 - `hestia-llama` restarts after 5 seconds on failure
-- `hestia-agent` restarts after 10 seconds on failure
-- `hestia-web` restarts after 10 seconds on failure
-- `hestia-*` services won't start until `hermes-llama` is running
-- Agent logs go to journald with `PYTHONUNBUFFERED=1` for real-time output
+- `hestia-agent` / `hestia-serve` restart after 10 seconds on failure
+- `hestia-serve` won't start until `hermes-llama` is running
+- Logs go to journald with `PYTHONUNBUFFERED=1` for real-time output
 - GPU watchdog runs every 2 minutes; reboots after 3 consecutive `nvidia-smi` failures
 
 ---
