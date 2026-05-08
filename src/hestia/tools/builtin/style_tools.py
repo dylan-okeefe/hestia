@@ -17,6 +17,11 @@ def make_show_style_profile_tool(
     @tool(
         name="show_style_profile",
         public_description="Show the current user's style profile.",
+        parameters_schema={
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
         tags=["style", "builtin"],
         capabilities=[SELF_MANAGEMENT],
     )
@@ -54,6 +59,13 @@ def make_reset_style_metric_tool(
     @tool(
         name="reset_style_metric",
         public_description="Reset a single style metric. Params: metric (str).",
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "metric": {"type": "string", "description": "Metric name to reset (e.g. 'formality', 'preferred_length')."},
+            },
+            "required": ["metric"],
+        },
         tags=["style", "builtin"],
         capabilities=[SELF_MANAGEMENT],
         requires_confirmation=True,
@@ -88,6 +100,11 @@ def make_reset_style_profile_tool(
     @tool(
         name="reset_style_profile",
         public_description="Reset the entire style profile for the current user.",
+        parameters_schema={
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
         tags=["style", "builtin"],
         capabilities=[SELF_MANAGEMENT],
         requires_confirmation=True,

@@ -17,7 +17,14 @@ def make_write_file_tool(config: StorageConfig) -> Any:
     @tool(
         name="write_file",
         public_description="Write content to a file. Params: path (str), content (str).",
-
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Absolute or relative file path. Must be within allowed roots."},
+                "content": {"type": "string", "description": "Text content to write."},
+            },
+            "required": ["path", "content"],
+        },
         requires_confirmation=True,
         tags=["system", "builtin"],
         capabilities=[WRITE_LOCAL],

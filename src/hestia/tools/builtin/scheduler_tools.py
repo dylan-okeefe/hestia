@@ -48,7 +48,16 @@ def make_create_scheduled_task_tool(
     @tool(
         name="create_scheduled_task",
         public_description="Create a recurring scheduled task. Params: prompt (str), cron_expression (str), description (str, default ''), notify (bool, default False).",
-
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "prompt": {"type": "string", "description": "The instruction to execute on each run."},
+                "cron_expression": {"type": "string", "description": "Cron expression for schedule, e.g. '0 9 * * *' for daily at 9 AM."},
+                "description": {"type": "string", "description": "Optional human-readable description."},
+                "notify": {"type": "boolean", "description": "If True, push output to the user on each run (default False)."},
+            },
+            "required": ["prompt", "cron_expression"],
+        },
         tags=["scheduler", "builtin"],
         capabilities=[ORCHESTRATION],
     )
@@ -110,6 +119,13 @@ def make_list_scheduled_tasks_tool(
     @tool(
         name="list_scheduled_tasks",
         public_description="List scheduled tasks for the current user. Params: include_disabled (bool, default False).",
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "include_disabled": {"type": "boolean", "description": "If True, also show disabled tasks (default False)."},
+            },
+            "required": [],
+        },
         tags=["scheduler", "builtin"],
         capabilities=[ORCHESTRATION],
     )
@@ -156,6 +172,13 @@ def make_disable_scheduled_task_tool(
     @tool(
         name="disable_scheduled_task",
         public_description="Disable a scheduled task by ID. Params: task_id (str).",
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string", "description": "The ID of the task to disable."},
+            },
+            "required": ["task_id"],
+        },
         tags=["scheduler", "builtin"],
         capabilities=[ORCHESTRATION],
         requires_confirmation=True,
@@ -194,6 +217,13 @@ def make_enable_scheduled_task_tool(
     @tool(
         name="enable_scheduled_task",
         public_description="Re-enable a disabled scheduled task by ID. Params: task_id (str).",
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string", "description": "The ID of the task to enable."},
+            },
+            "required": ["task_id"],
+        },
         tags=["scheduler", "builtin"],
         capabilities=[ORCHESTRATION],
     )
@@ -231,6 +261,13 @@ def make_delete_scheduled_task_tool(
     @tool(
         name="delete_scheduled_task",
         public_description="Permanently delete a scheduled task by ID. Params: task_id (str).",
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string", "description": "The ID of the task to delete."},
+            },
+            "required": ["task_id"],
+        },
         tags=["scheduler", "builtin"],
         capabilities=[ORCHESTRATION],
         requires_confirmation=True,
