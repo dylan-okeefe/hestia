@@ -156,6 +156,7 @@ class TelegramAdapter(Platform):
 
         # Register handlers
         self._app.add_handler(CommandHandler("start", self._handle_start))
+        self._app.add_handler(CommandHandler("reset", self._handle_reset))
         self._app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message))
         if self._config.voice_messages:
             self._app.add_handler(MessageHandler(filters.VOICE, self._handle_voice_message))
@@ -396,6 +397,26 @@ class TelegramAdapter(Platform):
         await update.effective_message.reply_text(
             "Hestia is running. Send me a message to start a conversation."
         )
+
+    async def _handle_reset(self, update: Update, context: Any) -> None:
+        """Handle /reset command — pass through to on_message for platform-agnostic handling."""
+        if update.effective_user is None or update.effective_message is None:
+            return
+
+        if not self._is_allowed(update.effective_user.id, update.effective_user.username):
+            await update.effective_message.reply_text("Not authorized.")
+            return
+
+        chat = update.effective_chat
+        in_group = chat is not None and chat.type in (Chat.GROUP, Chat.SUPERGROUP)
+        if in_group:
+            assert chat is not None
+            platform_user = str(chat.id)
+        else:
+            platform_user = str(update.effective_user.id)
+
+        if self._on_message is not None:
+            await self._on_message(self.name, platform_user, "/reset")
 
     async def _handle_message(self, update: Update, context: Any) -> None:
         """Handle incoming text messages."""

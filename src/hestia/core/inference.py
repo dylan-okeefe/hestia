@@ -225,6 +225,13 @@ class InferenceClient:
         # Strip historical reasoning before building request
         clean_messages = _strip_historical_reasoning(messages)
 
+        # Assistant prefills are incompatible with thinking/reasoning mode.
+        # The server may have --reasoning-budget set globally, or we send
+        # reasoning_format explicitly. Either way, strip trailing assistant
+        # messages to avoid 400 errors.
+        while clean_messages and clean_messages[-1].role == "assistant":
+            clean_messages = clean_messages[:-1]
+
         request_body: dict[str, Any] = {
             "model": self.model_name,
             "messages": [message_to_dict(m) for m in clean_messages],
@@ -318,6 +325,10 @@ class InferenceClient:
             temperature: Sampling temperature
         """
         clean_messages = _strip_historical_reasoning(messages)
+
+        # Assistant prefills are incompatible with thinking/reasoning mode.
+        while clean_messages and clean_messages[-1].role == "assistant":
+            clean_messages = clean_messages[:-1]
 
         request_body: dict[str, Any] = {
             "model": self.model_name,
