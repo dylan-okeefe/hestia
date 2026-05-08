@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -16,6 +17,7 @@ from hestia.core.clock import utcnow
 from hestia.core.types import (
     Message,
     Session,
+    SessionHandoff,
     SessionState,
     SessionTemperature,
     ToolCall,
@@ -36,6 +38,9 @@ logger = logging.getLogger(__name__)
 # append_transition. With n concurrent writers the probability of
 # surviving n retries is > 99.99% for n=5.
 _APPEND_IDX_MAX_ATTEMPTS = 5
+
+# Regex for artifact handles embedded in message content (art_ + 10 hex chars).
+_ARTIFACT_HANDLE_RE = re.compile(r"art_[a-f0-9]{10}")
 
 
 def _generate_session_id(platform: str, platform_user: str) -> str:
@@ -241,8 +246,17 @@ class SessionStore:
         except Exception:
             logger.exception("Auto-save memory failed for session %s", session_id)
 
-    async def archive_session(self, session_id: str) -> None:
-        """Mark a session as ARCHIVED. Used when /reset creates a successor."""
+    async def archive_session(
+        self, session_id: str, summary: str | None = None
+    ) -> None:
+        """Mark a session as ARCHIVED and generate a handoff record.
+
+        Args:
+            session_id: The session to archive.
+            summary: Optional summary text from the handoff summarizer (L158).
+        """
+        session = await self.get_session(session_id)
+
         update = (
             sa.update(sessions)
             .where(sessions.c.id == session_id)
@@ -257,13 +271,21 @@ class SessionStore:
 
         await self._auto_save_session(session_id)
 
+        if session is not None:
+            try:
+                await self._generate_and_save_handoff(session, summary)
+            except Exception:  # noqa: BLE001 — best-effort handoff
+                logger.warning(
+                    "Failed to generate handoff for %s", session_id, exc_info=True
+                )
+
     async def create_session(
         self,
         platform: str,
         platform_user: str,
         archive_previous: Session | None = None,
     ) -> Session:
-        """Create a new session row. Optionally archives a previous session atomically.
+        """Create a new session row. Optionally archives a previous session.
 
         Used by /reset and similar flows where the caller explicitly wants a
         fresh session for an existing user.
@@ -271,9 +293,14 @@ class SessionStore:
         Args:
             platform: Platform identifier (e.g., "cli", "matrix")
             platform_user: User identifier on that platform
-            archive_previous: If provided, archive this session in the same transaction
-                so we never end up with two ACTIVE sessions for the same user.
+            archive_previous: If provided, archive this session before creating
+                the new one so we never end up with two ACTIVE sessions for the
+                same user. The partial unique index ``ux_sessions_active_user``
+                guards against races.
         """
+        if archive_previous is not None:
+            await self.archive_session(archive_previous.id)
+
         session_id = _generate_session_id(platform, platform_user)
         now = utcnow()
         new_session = Session(
@@ -301,12 +328,6 @@ class SessionStore:
         )
 
         async with self._db.engine.connect() as conn:
-            if archive_previous is not None:
-                await conn.execute(
-                    sa.update(sessions)
-                    .where(sessions.c.id == archive_previous.id)
-                    .values(state=SessionState.ARCHIVED.value, last_active_at=utcnow())
-                )
             await conn.execute(insert)
             await conn.commit()
 
@@ -324,6 +345,128 @@ class SessionStore:
             )
 
         return new_session
+
+    async def get_or_create_session_with_handoff(
+        self, platform: str, platform_user: str
+    ) -> Session:
+        """Get or create a session, injecting a handoff if the session is new.
+
+        After ``get_or_create_session`` returns, we check whether the session
+        already has messages. If it does not, we look for the most recent
+        handoff for this user and prepend a synthetic system message so the
+        new session retains continuity context.
+        """
+        session = await self.get_or_create_session(platform, platform_user)
+        existing = await self.get_messages(session.id)
+        if not existing:
+            handoff = await self.get_latest_handoff(platform, platform_user)
+            if handoff is not None:
+                synthetic = Message(
+                    role="system",
+                    content=self._format_handoff_message(handoff),
+                )
+                await self.append_message(session.id, synthetic)
+        return session
+
+    def _format_handoff_message(self, handoff: SessionHandoff) -> str:
+        """Build a synthetic system message from a handoff record."""
+        parts: list[str] = ["[Session handoff from previous conversation]"]
+        if handoff.summary:
+            parts.append(f"Summary: {handoff.summary}")
+        if handoff.key_messages:
+            parts.append("Recent messages:")
+            for msg in handoff.key_messages:
+                content = msg.get("content", "")
+                # Truncate very long messages to keep the handoff compact
+                if len(content) > 500:
+                    content = content[:500].rstrip() + "…"
+                parts.append(f"  {msg.get('role', 'unknown')}: {content}")
+        if handoff.artifacts:
+            parts.append(f"Artifacts: {', '.join(handoff.artifacts)}")
+        return "\n".join(parts)
+
+    # --- Handoff persistence ---
+
+    async def save_handoff(self, session_id: str, handoff: SessionHandoff) -> None:
+        """Persist a SessionHandoff record."""
+        from hestia.persistence.schema import session_handoffs
+
+        insert = sa.insert(session_handoffs).values(
+            id=str(uuid.uuid4()),
+            previous_session_id=handoff.previous_session_id,
+            platform=handoff.platform,
+            platform_user=handoff.platform_user,
+            summary=handoff.summary,
+            key_messages=json.dumps(handoff.key_messages),
+            artifacts=json.dumps(handoff.artifacts),
+            created_at=handoff.created_at,
+        )
+        async with self._db.engine.connect() as conn:
+            await conn.execute(insert)
+            await conn.commit()
+
+    async def get_latest_handoff(
+        self, platform: str, platform_user: str
+    ) -> SessionHandoff | None:
+        """Return the most recent handoff for a user, or None."""
+        from hestia.persistence.schema import session_handoffs
+
+        query = (
+            sa.select(session_handoffs)
+            .where(
+                sa.and_(
+                    session_handoffs.c.platform == platform,
+                    session_handoffs.c.platform_user == platform_user,
+                )
+            )
+            .order_by(session_handoffs.c.created_at.desc())
+            .limit(1)
+        )
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(query)
+            row = result.fetchone()
+            if row is None:
+                return None
+            return SessionHandoff(
+                previous_session_id=row.previous_session_id,
+                platform=row.platform,
+                platform_user=row.platform_user,
+                summary=row.summary or "",
+                key_messages=json.loads(row.key_messages) if row.key_messages else [],
+                artifacts=json.loads(row.artifacts) if row.artifacts else [],
+                created_at=row.created_at,
+            )
+
+    def _extract_artifact_handles(self, messages: list[Message]) -> list[str]:
+        """Scan message content for artifact handle references."""
+        handles: set[str] = set()
+        for msg in messages:
+            if msg.content:
+                handles.update(_ARTIFACT_HANDLE_RE.findall(msg.content))
+        return sorted(handles)
+
+    async def _generate_and_save_handoff(
+        self, session: Session, summary: str | None = None
+    ) -> None:
+        """Capture the final state of a session and persist a handoff."""
+        messages = await self.get_messages(session.id)
+        key_messages = [
+            {"role": m.role, "content": m.content}
+            for m in messages
+            if m.role in ("user", "assistant")
+        ][-8:]
+        artifacts = self._extract_artifact_handles(messages)
+
+        handoff = SessionHandoff(
+            previous_session_id=session.id,
+            platform=session.platform,
+            platform_user=session.platform_user,
+            summary=summary or "",
+            key_messages=key_messages,
+            artifacts=artifacts,
+            created_at=utcnow(),
+        )
+        await self.save_handoff(session.id, handoff)
 
     async def get_session(self, session_id: str) -> Session | None:
         """Get a session by ID."""

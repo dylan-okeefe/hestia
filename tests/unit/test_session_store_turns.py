@@ -4,7 +4,7 @@ from datetime import datetime
 
 import pytest
 
-from hestia.core.types import SessionState
+from hestia.core.types import Message, SessionState
 from hestia.orchestrator.types import Turn, TurnState, TurnTransition
 from hestia.persistence.db import Database
 from hestia.persistence.sessions import SessionStore
@@ -277,3 +277,136 @@ class TestArchiveSession:
 
         fetched = await store.get_session(session.id)
         assert fetched.state == SessionState.ARCHIVED
+
+
+class TestSessionHandoff:
+    """Tests for session handoff persistence and retrieval."""
+
+    @pytest.mark.asyncio
+    async def test_archive_session_creates_handoff(self, store):
+        """archive_session generates a handoff record."""
+        session = await store.get_or_create_session("cli", "testuser")
+        await store.append_message(session.id, Message(role="user", content="Hello"))
+        await store.append_message(session.id, Message(role="assistant", content="Hi"))
+
+        await store.archive_session(session.id, summary="Test summary")
+
+        handoff = await store.get_latest_handoff("cli", "testuser")
+        assert handoff is not None
+        assert handoff.previous_session_id == session.id
+        assert handoff.summary == "Test summary"
+        assert handoff.platform == "cli"
+        assert handoff.platform_user == "testuser"
+        assert len(handoff.key_messages) == 2
+
+    @pytest.mark.asyncio
+    async def test_archive_session_captures_last_eight_messages(self, store):
+        """archive_session only captures the last 8 user/assistant messages."""
+        session = await store.get_or_create_session("cli", "testuser")
+        for i in range(10):
+            await store.append_message(
+                session.id, Message(role="user", content=f"Message {i}")
+            )
+            await store.append_message(
+                session.id, Message(role="assistant", content=f"Reply {i}")
+            )
+
+        await store.archive_session(session.id)
+
+        handoff = await store.get_latest_handoff("cli", "testuser")
+        assert len(handoff.key_messages) == 8
+        assert handoff.key_messages[0]["content"] == "Message 6"
+        assert handoff.key_messages[-1]["content"] == "Reply 9"
+
+    @pytest.mark.asyncio
+    async def test_archive_session_extracts_artifact_handles(self, store):
+        """archive_session scans message content for artifact handles."""
+        session = await store.get_or_create_session("cli", "testuser")
+        await store.append_message(
+            session.id,
+            Message(
+                role="assistant",
+                content="Result stored as artifact art_a1b2c3d4e5",
+            ),
+        )
+
+        await store.archive_session(session.id)
+
+        handoff = await store.get_latest_handoff("cli", "testuser")
+        assert "art_a1b2c3d4e5" in handoff.artifacts
+
+    @pytest.mark.asyncio
+    async def test_get_latest_handoff_returns_none_when_empty(self, store):
+        """get_latest_handoff returns None if no handoffs exist."""
+        handoff = await store.get_latest_handoff("cli", "unknown")
+        assert handoff is None
+
+    @pytest.mark.asyncio
+    async def test_get_latest_handoff_most_recent(self, store):
+        """get_latest_handoff returns the most recent handoff."""
+        session1 = await store.get_or_create_session("cli", "testuser")
+        await store.archive_session(session1.id, summary="First")
+
+        session2 = await store.get_or_create_session("cli", "testuser")
+        await store.archive_session(session2.id, summary="Second")
+
+        handoff = await store.get_latest_handoff("cli", "testuser")
+        assert handoff is not None
+        assert handoff.summary == "Second"
+        assert handoff.previous_session_id == session2.id
+
+    @pytest.mark.asyncio
+    async def test_get_or_create_session_with_handoff_injects_message(self, store):
+        """get_or_create_session_with_handoff prepends a synthetic system message."""
+        # Archive a session with a handoff
+        old_session = await store.get_or_create_session("cli", "testuser")
+        await store.append_message(old_session.id, Message(role="user", content="Hello"))
+        await store.archive_session(old_session.id, summary="Prior context")
+
+        # Create a new session via the handoff-aware path
+        new_session = await store.get_or_create_session_with_handoff("cli", "testuser")
+        messages = await store.get_messages(new_session.id)
+
+        assert len(messages) == 1
+        assert messages[0].role == "system"
+        assert "Prior context" in messages[0].content
+        assert "Hello" in messages[0].content
+
+    @pytest.mark.asyncio
+    async def test_get_or_create_session_with_handoff_skips_existing(self, store):
+        """get_or_create_session_with_handoff does not inject if session already has messages."""
+        # Create and archive an old session with a handoff
+        old = await store.get_or_create_session("cli", "testuser")
+        await store.append_message(old.id, Message(role="user", content="Old msg"))
+        await store.archive_session(old.id, summary="Old")
+
+        # Create a new session and add a message to it
+        new_session = await store.get_or_create_session("cli", "testuser")
+        await store.append_message(new_session.id, Message(role="user", content="First"))
+
+        # Calling get_or_create_session_with_handoff again should return the same
+        # active session (it already has messages), so no handoff injection.
+        result = await store.get_or_create_session_with_handoff("cli", "testuser")
+        messages = await store.get_messages(result.id)
+        assert len(messages) == 1
+        assert messages[0].content == "First"
+
+    @pytest.mark.asyncio
+    async def test_create_session_with_archive_generates_handoff(self, store):
+        """create_session with archive_previous now calls archive_session and generates handoff."""
+        session1 = await store.get_or_create_session("cli", "testuser")
+        await store.append_message(session1.id, Message(role="user", content="Hi"))
+
+        session2 = await store.create_session("cli", "testuser", archive_previous=session1)
+
+        # Old session archived
+        fetched1 = await store.get_session(session1.id)
+        assert fetched1.state == SessionState.ARCHIVED
+
+        # Handoff generated
+        handoff = await store.get_latest_handoff("cli", "testuser")
+        assert handoff is not None
+        assert handoff.previous_session_id == session1.id
+
+        # New session active
+        assert session2.state == SessionState.ACTIVE

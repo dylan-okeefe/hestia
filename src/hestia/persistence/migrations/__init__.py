@@ -53,8 +53,37 @@ async def m001_sessions_active_unique(conn: AsyncConnection) -> None:
     )
 
 
+async def m002_session_handoffs(conn: AsyncConnection) -> None:
+    """Add session_handoffs table for cross-session continuity.
+
+    Idempotent: ``CREATE TABLE IF NOT EXISTS`` is supported by both
+    SQLite (>= 3.3.0) and PostgreSQL (>= 9.1).
+    """
+    await conn.execute(
+        sa.text(
+            "CREATE TABLE IF NOT EXISTS session_handoffs ("
+            "id TEXT PRIMARY KEY,"
+            "previous_session_id TEXT NOT NULL,"
+            "platform TEXT NOT NULL,"
+            "platform_user TEXT NOT NULL,"
+            "summary TEXT,"
+            "key_messages TEXT,"
+            "artifacts TEXT,"
+            "created_at DATETIME NOT NULL"
+            ")"
+        )
+    )
+    await conn.execute(
+        sa.text(
+            "CREATE INDEX IF NOT EXISTS idx_handoffs_platform_user "
+            "ON session_handoffs (platform, platform_user, created_at)"
+        )
+    )
+
+
 MIGRATIONS: list[Migration] = [
     m001_sessions_active_unique,
+    m002_session_handoffs,
 ]
 
 

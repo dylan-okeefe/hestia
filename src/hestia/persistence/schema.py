@@ -210,6 +210,20 @@ workflow_versions = sa.Table(
     sa.Index("idx_workflow_versions_workflow", "workflow_id", "version"),
 )
 
+session_handoffs = sa.Table(
+    "session_handoffs",
+    metadata,
+    sa.Column("id", sa.String, primary_key=True),
+    sa.Column("previous_session_id", sa.String, sa.ForeignKey("sessions.id"), nullable=False),
+    sa.Column("platform", sa.String, nullable=False),
+    sa.Column("platform_user", sa.String, nullable=False),
+    sa.Column("summary", sa.Text, nullable=True),
+    sa.Column("key_messages", sa.Text, nullable=False),  # JSON
+    sa.Column("artifacts", sa.Text, nullable=False),  # JSON
+    sa.Column("created_at", sa.DateTime, nullable=False),
+    sa.Index("idx_handoffs_platform_user", "platform", "platform_user", "created_at"),
+)
+
 workflow_executions = sa.Table(
     "workflow_executions",
     metadata,

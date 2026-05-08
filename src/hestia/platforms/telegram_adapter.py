@@ -508,7 +508,9 @@ class TelegramAdapter(Platform):
             platform_user = str(chat.id)
         else:
             platform_user = str(user_id)
-        session = await self._session_store.get_or_create_session("telegram", platform_user)
+        session = await self._session_store.get_or_create_session_with_handoff(
+            "telegram", platform_user
+        )
         user_message = HestiaMessage(role="user", content=transcript)
 
         async def respond_voice(response_text: str) -> None:

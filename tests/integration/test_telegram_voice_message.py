@@ -101,7 +101,9 @@ async def test_voice_message_full_pipeline(
     mock_orchestrator = AsyncMock()
     mock_session_store = AsyncMock()
     mock_session = MagicMock()
-    mock_session_store.get_or_create_session = AsyncMock(return_value=mock_session)
+    mock_session_store.get_or_create_session_with_handoff = AsyncMock(
+        return_value=mock_session
+    )
 
     adapter.set_voice_deps(
         orchestrator=mock_orchestrator,
@@ -142,7 +144,9 @@ async def test_voice_message_full_pipeline(
                 await adapter._handle_voice_message(mock_update, None)
 
                 # Assert session was retrieved
-                mock_session_store.get_or_create_session.assert_called_once_with("telegram", "12345")
+                mock_session_store.get_or_create_session_with_handoff.assert_called_once_with(
+                    "telegram", "12345"
+                )
 
                 # Assert orchestrator was called with the transcript
                 assert mock_orchestrator.process_turn.call_count == 1
@@ -178,7 +182,9 @@ async def test_voice_message_truncation_when_over_1mb(
     mock_orchestrator = AsyncMock()
     mock_session_store = AsyncMock()
     mock_session = MagicMock()
-    mock_session_store.get_or_create_session = AsyncMock(return_value=mock_session)
+    mock_session_store.get_or_create_session_with_handoff = AsyncMock(
+        return_value=mock_session
+    )
 
     adapter.set_voice_deps(
         orchestrator=mock_orchestrator,
