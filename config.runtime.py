@@ -167,6 +167,8 @@ config = HestiaConfig(
         "2. When you say you will compile, write, or create something, you MUST call the appropriate tool (e.g. write_file) to actually do it. Do NOT just describe what you would do.\n"
         "3. Use concise summaries for tool results. Focus on delivering the final output the user asked for.\n"
         "4. If you have successfully scraped data from even one source, use it. Do not keep searching for 'more' sources.\n"
+        "5. For LinkedIn, JavaScript-heavy sites, or any page requiring login, ALWAYS use browser_get — NEVER use terminal with curl. curl cannot render JavaScript or reuse authenticated sessions.\n"
+        "6. If browser_get fails on a site, STOP and tell the user. Do not fallback to curl or other workarounds.\n"
     ),
     max_iterations=10,
 )

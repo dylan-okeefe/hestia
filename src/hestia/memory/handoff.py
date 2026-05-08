@@ -70,9 +70,14 @@ class SessionHandoffSummarizer:
         if user_msgs < self._min_messages:
             return None
 
+        filtered = [m for m in history if m.role in ("user", "assistant") and m.content]
+        # Strip trailing assistant — assistant prefills are incompatible with
+        # thinking mode (server may have --reasoning-budget set globally).
+        while filtered and filtered[-1].role == "assistant":
+            filtered = filtered[:-1]
         request_msgs: list[Message] = [
             Message(role="system", content=HANDOFF_PROMPT),
-            *(m for m in history if m.role in ("user", "assistant") and m.content),
+            *filtered,
         ]
         response = await self._inference.chat(
             messages=request_msgs,
