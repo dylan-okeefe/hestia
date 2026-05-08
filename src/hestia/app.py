@@ -16,6 +16,7 @@ from hestia.artifacts.store import ArtifactStore
 from hestia.config import HestiaConfig
 from hestia.context.builder import ContextBuilder
 from hestia.context.compressor import InferenceHistoryCompressor
+from hestia.context.memory_epoch import MemoryEpochBuilder
 from hestia.core.inference import InferenceClient
 from hestia.core.rate_limiter import SessionRateLimiter
 from hestia.core.validators import validate_inference_model_name
@@ -206,6 +207,11 @@ class AppContext:
         return cb
 
     @functools.cached_property
+    def memory_epoch_builder(self) -> MemoryEpochBuilder:
+        """Lazy memory epoch builder — created on first access."""
+        return MemoryEpochBuilder(self.memory_store)
+
+    @functools.cached_property
     def slot_manager(self) -> SlotManager:
         """Lazy slot manager — created on first access."""
         return SlotManager(
@@ -331,6 +337,7 @@ class AppContext:
             failure_store=self.failure_store,
             trace_store=self.trace_store,
             handoff_summarizer=self.handoff_summarizer,
+            memory_epoch_builder=self.memory_epoch_builder,
             injection_scanner=self.make_injection_scanner(),
             proposal_store=self.proposal_store,
             style_store=self.style_store,
