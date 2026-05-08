@@ -156,14 +156,19 @@ class Orchestrator:
             logger.warning("close_session called for unknown session %s", session_id)
             return
 
+        summary: str | None = None
         if self._handoff_summarizer is not None:
             try:
                 history = await self._store.get_messages(session_id)
-                await self._handoff_summarizer.summarize_and_store(session, history)
+                result = await self._handoff_summarizer.summarize_and_store(
+                    session, history
+                )
+                if result is not None:
+                    summary = result.summary
             except Exception:  # noqa: BLE001
                 logger.warning("Handoff summarizer failed for %s", session_id, exc_info=True)
 
-        await self._store.archive_session(session_id)
+        await self._store.archive_session(session_id, summary=summary)
 
     async def _set_typing(
         self, platform: Platform | None, platform_user: str | None, typing: bool

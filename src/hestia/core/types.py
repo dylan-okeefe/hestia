@@ -68,6 +68,19 @@ class Session:
 
 
 @dataclass
+class SessionHandoff:
+    """Handoff data captured when a session is archived."""
+
+    previous_session_id: str
+    platform: str
+    platform_user: str
+    summary: str
+    key_messages: list[dict[str, str]]
+    artifacts: list[str]
+    created_at: datetime
+
+
+@dataclass
 class ScheduledTask:
     """A scheduled task for autonomous execution."""
 

@@ -61,18 +61,20 @@ def _make_app() -> MagicMock:
     app.set_confirm_callback = MagicMock()
     app.make_orchestrator = MagicMock()
     app.session_store = MagicMock()
-    app.session_store.get_or_create_session = AsyncMock(
-        return_value=Session(
-            id="sess-1",
-            platform="fake",
-            platform_user="u1",
-            started_at=MagicMock(),
-            last_active_at=MagicMock(),
-            slot_id=None,
-            slot_saved_path=None,
-            state=MagicMock(),
-            temperature=MagicMock(),
-        )
+    _session = Session(
+        id="sess-1",
+        platform="fake",
+        platform_user="u1",
+        started_at=MagicMock(),
+        last_active_at=MagicMock(),
+        slot_id=None,
+        slot_saved_path=None,
+        state=MagicMock(),
+        temperature=MagicMock(),
+    )
+    app.session_store.get_or_create_session = AsyncMock(return_value=_session)
+    app.session_store.get_or_create_session_with_handoff = AsyncMock(
+        return_value=_session
     )
     app.inference.close = AsyncMock()
     context_builder = MagicMock()
