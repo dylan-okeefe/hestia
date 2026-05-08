@@ -141,11 +141,8 @@ async def _make_orchestrator(approve: bool):
             tool_calls=[
                 ToolCall(
                     id="c1",
-                    name="call_tool",
-                    arguments={
-                        "name": "write_file",
-                        "arguments": {"path": "/tmp/sandbox_matrix_confirm/test.txt", "content": "hello"},
-                    },
+                    name="write_file",
+                    arguments={"path": "/tmp/sandbox_matrix_confirm/test.txt", "content": "hello"},
                 )
             ],
             finish_reason="tool_calls",

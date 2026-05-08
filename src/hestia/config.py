@@ -528,7 +528,11 @@ class HestiaConfig(_ConfigFromEnv):
     browser: BrowserConfig = field(default_factory=BrowserConfig)
     trust: TrustConfig = field(default_factory=TrustConfig)
     trust_overrides: dict[str, TrustConfig] = field(default_factory=dict)
-    system_prompt: str = "You are a helpful assistant."
+    system_prompt: str = (
+        "You are a helpful assistant.\n\n"
+        "When you need to use a tool, call it directly by name (e.g. write_file, browser_get). "
+        "Do not use call_tool."
+    )
     max_iterations: int = 10
     verbose: bool = False
     use_curl_cffi_fallback: bool = False

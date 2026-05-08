@@ -148,7 +148,7 @@ async def browser_get(
 
 async def _extract_text(page: Any) -> str:
     """Extract readable text from the page, stripping scripts/styles/modals."""
-    return await page.evaluate(
+    result = await page.evaluate(
         """() => {
             document.querySelectorAll(
                 "script, style, nav, footer, iframe, noscript, aside, " +
@@ -157,3 +157,4 @@ async def _extract_text(page: Any) -> str:
             return document.body.innerText || "";
         }"""
     )
+    return str(result)

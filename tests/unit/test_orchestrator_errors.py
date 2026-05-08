@@ -216,7 +216,7 @@ async def test_post_done_respond_callback_error_no_illegal_transition() -> None:
     mock_policy.filter_tools.return_value = None
     mock_policy.turn_token_budget.return_value = 4000
 
-    mock_tool_registry.meta_tool_schemas.return_value = []
+    mock_tool_registry.direct_tool_schemas.return_value = []
     mock_tool_registry.list_names.return_value = []
 
     mock_session = MagicMock()

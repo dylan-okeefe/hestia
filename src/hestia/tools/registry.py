@@ -36,6 +36,7 @@ class ToolRegistry:
         # Insertion-ordered (Python 3.7+); tests rely on registration order for list_names().
         self._tools: dict[str, ToolMetadata] = {}
         self._artifact_store = artifact_store
+        self._register_builtin_tools()
 
     def register(self, func: Any) -> None:
         """Register a function decorated with @tool.
@@ -203,7 +204,10 @@ class ToolRegistry:
                         "names": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "Tool name(s) to describe. Can be a single name or a list.",
+                            "description": (
+                                "Tool name(s) to describe. "
+                                "Can be a single name or a list."
+                            ),
                         },
                     },
                     "required": ["names"],
@@ -297,6 +301,75 @@ class ToolRegistry:
     async def meta_call_tool(self, name: str, arguments: dict[str, Any]) -> ToolCallResult:
         """Handler for the call_tool meta-tool."""
         return await self.call(name, arguments)
+
+    # --- Direct tool schemas ---
+
+    def direct_tool_schemas(self) -> list[ToolSchema]:
+        """Return a ToolSchema for every registered tool."""
+        return [
+            ToolSchema(
+                type="function",
+                function=FunctionSchema(
+                    name=meta.name,
+                    description=meta.public_description,
+                    parameters=meta.parameters_schema,
+                ),
+            )
+            for meta in self._tools.values()
+        ]
+
+    def _register_builtin_tools(self) -> None:
+        """Register built-in list_tools and describe_tool as regular tools."""
+
+        async def _list_tools(tag: str | None = None) -> str:
+            return await self.meta_list_tools(tag=tag)
+
+        _list_tools.__hestia_tool__ = ToolMetadata(  # type: ignore[attr-defined]
+            name="list_tools",
+            public_description=(
+                "List all available tools. Returns tool names and one-line descriptions. "
+                "Call this when you need to discover what's available. "
+                "Also call this when the user asks about your capabilities or what you can do."
+            ),
+            internal_description="Built-in list_tools",
+            parameters_schema={
+                "type": "object",
+                "properties": {
+                    "tag": {
+                        "type": "string",
+                        "description": "Optional tag filter",
+                    },
+                },
+            },
+            handler=_list_tools,
+        )
+        self.register(_list_tools)
+
+        async def _describe_tool(names: str | list[str]) -> str:
+            return await self.meta_describe_tool(names)
+
+        _describe_tool.__hestia_tool__ = ToolMetadata(  # type: ignore[attr-defined]
+            name="describe_tool",
+            public_description=(
+                "Get the full JSON parameter schema and description for one or more tools. "
+                "Call this when you need to know the exact argument names, "
+                "types, and defaults for a specific tool before calling it."
+            ),
+            internal_description="Built-in describe_tool",
+            parameters_schema={
+                "type": "object",
+                "properties": {
+                    "names": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Tool name(s) to describe. Can be a single name or a list.",
+                    },
+                },
+                "required": ["names"],
+            },
+            handler=_describe_tool,
+        )
+        self.register(_describe_tool)
 
 
 # Re-export for convenience

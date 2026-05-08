@@ -94,7 +94,7 @@ class TestRegistration:
 
         assert "greet" in registry.list_names()
         assert "add" in registry.list_names()
-        assert len(registry.list_names()) == 2
+        assert len(registry.list_names()) == 4  # greet, add, list_tools, describe_tool
 
 
 class TestListAndDescribe:
@@ -106,7 +106,9 @@ class TestListAndDescribe:
         registry.register(greet)
 
         names = registry.list_names()
-        assert names == ["add", "greet"]  # Alphabetical
+        assert names == sorted(names)
+        assert "add" in names
+        assert "greet" in names
 
     def test_list_names_with_tag(self, registry):
         """list_names filters by tag."""
@@ -233,9 +235,10 @@ class TestMetaTools:
 
     @pytest.mark.asyncio
     async def test_meta_list_tools_empty(self, registry):
-        """meta_list_tools handles empty registry."""
+        """meta_list_tools lists built-in tools even with no user-registered tools."""
         output = await registry.meta_list_tools()
-        assert output == "(no tools)"
+        assert "list_tools" in output
+        assert "describe_tool" in output
 
     @pytest.mark.asyncio
     async def test_meta_list_tools_with_tag(self, registry):
