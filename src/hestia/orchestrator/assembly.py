@@ -11,6 +11,7 @@ from hestia.style.context import format_style_prefix_from_data
 if TYPE_CHECKING:
     from hestia.config import StyleConfig
     from hestia.context.builder import ContextBuilder
+    from hestia.context.memory_epoch import MemoryEpochBuilder
     from hestia.core.types import Session
     from hestia.inference.slot_manager import SlotManager
     from hestia.persistence.sessions import SessionStore
@@ -36,6 +37,7 @@ class TurnAssembly:
         style_store: "StyleProfileStore | None" = None,
         style_config: "StyleConfig | None" = None,
         slot_manager: "SlotManager | None" = None,
+        memory_epoch_builder: "MemoryEpochBuilder | None" = None,
     ):
         self._builder = context_builder
         self._tools = tool_registry
@@ -45,6 +47,7 @@ class TurnAssembly:
         self._style_store = style_store
         self._style_config = style_config
         self._slot_manager = slot_manager
+        self._memory_epoch_builder = memory_epoch_builder
 
     async def prepare(
         self,
@@ -74,6 +77,13 @@ class TurnAssembly:
                     "Do not apply any proposal without an explicit "
                     f"accept.\n\n{ctx.system_prompt}"
                 )
+
+        memory_epoch_prefix: str | None = None
+        if self._memory_epoch_builder is not None:
+            memory_epoch_prefix = await self._memory_epoch_builder.build_prefix(
+                session.platform, session.platform_user
+            )
+        self._builder.set_memory_epoch_prefix(memory_epoch_prefix)
 
         style_prefix: str | None = None
         if (
