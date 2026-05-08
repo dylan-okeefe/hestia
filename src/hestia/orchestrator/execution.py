@@ -170,7 +170,64 @@ class TurnExecution:
 
             elif chat_response.finish_reason in ("stop", "length"):
                 content = chat_response.content or ""
-                if not content.strip() and not chat_response.tool_calls:
+
+                # Some models occasionally emit finish_reason="stop" alongside
+                # tool_calls. If tool_calls are present, execute them and continue
+                # the loop rather than treating the turn as done.
+                if chat_response.tool_calls:
+                    logger.debug(
+                        "finish_reason=%s but tool_calls present (%d); routing to tool execution",
+                        chat_response.finish_reason,
+                        len(chat_response.tool_calls),
+                    )
+                    # Re-use the tool_calls branch logic inline to avoid refactor
+                    await transition(turn, TurnState.EXECUTING_TOOLS, "")
+                    tool_names = [tc.name for tc in chat_response.tool_calls]
+                    ctx.tool_chain.extend(tool_names)
+                    logger.debug("Executing tools: %s", ", ".join(tool_names))
+                    await set_typing(True)
+
+                    task_desc = (ctx.user_message.content or "").strip()
+                    use_policy_delegation = (
+                        "delegate_task" in self._tools.list_names()
+                        and self._policy.should_delegate(
+                            session, task_desc, turn.tool_calls_made, len(chat_response.tool_calls)
+                        )
+                    )
+                    ctx.delegated = use_policy_delegation
+
+                    if use_policy_delegation:
+                        await transition(turn, TurnState.AWAITING_SUBAGENT, "")
+                        tool_results, handles = await self._execute_policy_delegation(
+                            ctx.user_message, chat_response.tool_calls
+                        )
+                        ctx.artifact_handles.extend(handles)
+                        await transition(turn, TurnState.EXECUTING_TOOLS, "")
+                    else:
+                        tool_results, handles = await self._execute_tool_calls(
+                            session, chat_response.tool_calls, ctx.allowed_tools
+                        )
+                        ctx.artifact_handles.extend(handles)
+
+                    for result_msg in tool_results:
+                        await self._store.append_message(session.id, result_msg)
+
+                    await transition(turn, TurnState.BUILDING_CONTEXT, "")
+                    ctx.running_history.append(assistant_msg)
+                    ctx.running_history.extend(tool_results)
+                    self._builder.set_style_prefix(ctx.style_prefix)
+                    ctx.build_result = await self._builder.build(
+                        session=session,
+                        history=ctx.running_history,
+                        system_prompt=ctx.system_prompt,
+                        tools=ctx.tools,
+                        new_user_message=None,
+                    )
+                    turn.tool_calls_made += len(chat_response.tool_calls)
+                    turn.iterations += 1
+                    continue
+
+                if not content.strip():
                     # Empty response — retry via policy instead of failing immediately
                     decision = self._policy.retry_after_error(
                         EmptyResponseError(
@@ -266,9 +323,12 @@ class TurnExecution:
             try:
                 arguments = json.loads(buf["arguments"]) if buf["arguments"] else {}
             except json.JSONDecodeError as exc:
-                raise InferenceServerError(
-                    f"tool_call arguments for {buf['name']!r} are malformed JSON: {exc}"
-                ) from exc
+                logger.warning(
+                    "tool_call arguments for %r are malformed JSON (%s); treating as empty",
+                    buf["name"],
+                    exc,
+                )
+                arguments = {}
             if not isinstance(arguments, dict):
                 raise InferenceServerError(
                     f"tool_call arguments for {buf['name']!r} are not a dict: "

@@ -153,6 +153,7 @@ class TestBrowserGet:
         mock_context = AsyncMock()
         mock_context.new_page = AsyncMock(return_value=mock_page)
         mock_context.cookies = AsyncMock(return_value=mock_cookies)
+        mock_context.storage_state = AsyncMock(return_value=mock_storage)
 
         mock_browser = AsyncMock()
         mock_browser.new_context = AsyncMock(return_value=mock_context)
@@ -170,10 +171,18 @@ class TestBrowserGet:
         ) as mock_store_cls:
             mock_store = mock_store_cls.return_value
             mock_store.load_storage = MagicMock(return_value=mock_storage)
+            mock_store.load_cookies = MagicMock(return_value=[])
             result = await browser_get("https://example.com/page")
 
         assert result == mock_text
-        mock_browser.new_context.assert_called_once_with(storage_state=mock_storage)
+        mock_browser.new_context.assert_called_once_with(
+            viewport={"width": 1920, "height": 1080},
+            user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
+            locale="en-US",
+            timezone_id="America/New_York",
+            storage_state=mock_storage,
+        )
+        mock_store.save_storage.assert_called_once_with("example.com", mock_storage)
         mock_store.save_cookies.assert_called_once_with("example.com", mock_cookies)
 
     @pytest.mark.asyncio
@@ -189,6 +198,7 @@ class TestBrowserGet:
         mock_context = AsyncMock()
         mock_context.new_page = AsyncMock(return_value=mock_page)
         mock_context.cookies = AsyncMock(return_value=mock_cookies)
+        mock_context.storage_state = AsyncMock(return_value={"cookies": [], "origins": []})
 
         mock_browser = AsyncMock()
         mock_browser.new_context = AsyncMock(return_value=mock_context)
@@ -206,10 +216,16 @@ class TestBrowserGet:
         ) as mock_store_cls:
             mock_store = mock_store_cls.return_value
             mock_store.load_storage = MagicMock(return_value=None)
+            mock_store.load_cookies = MagicMock(return_value=[])
             result = await browser_get("https://example.com/page")
 
         assert result == mock_text
-        mock_browser.new_context.assert_called_once_with()
+        mock_browser.new_context.assert_called_once_with(
+            viewport={"width": 1920, "height": 1080},
+            user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
+            locale="en-US",
+            timezone_id="America/New_York",
+        )
 
     @pytest.mark.asyncio
     async def test_fetch_with_wait_for_selector(self, mock_playwright, tmp_path):
@@ -256,9 +272,11 @@ class TestBrowserGet:
         """Errors during fetch return error message."""
         mock_page = AsyncMock()
         mock_page.goto = AsyncMock(side_effect=Exception("Network error"))
+        mock_page.evaluate = AsyncMock(return_value="")
 
         mock_context = AsyncMock()
         mock_context.new_page = AsyncMock(return_value=mock_page)
+        mock_context.storage_state = AsyncMock(return_value={"cookies": [], "origins": []})
 
         mock_browser = AsyncMock()
         mock_browser.new_context = AsyncMock(return_value=mock_context)
@@ -276,6 +294,7 @@ class TestBrowserGet:
         ) as mock_store_cls:
             mock_store = mock_store_cls.return_value
             mock_store.load_storage = MagicMock(return_value=None)
+            mock_store.load_cookies = MagicMock(return_value=[])
             result = await browser_get("https://example.com/page")
 
         assert "Error fetching" in result
