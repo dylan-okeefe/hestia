@@ -196,6 +196,14 @@ async def _http_get_impl(url: str, timeout_seconds: int, use_curl_cffi: bool) ->
         "For general web searches, use the search_web tool instead. "
         "Params: url (str), timeout_seconds (int, default 30)."
     ),
+    parameters_schema={
+        "type": "object",
+        "properties": {
+            "url": {"type": "string", "description": "Full URL to fetch (e.g. https://example.com)."},
+            "timeout_seconds": {"type": "integer", "description": "Request timeout in seconds (default 30)."},
+        },
+        "required": ["url"],
+    },
     max_inline_chars=6000,
     tags=["network", "builtin"],
     capabilities=[NETWORK_EGRESS],
@@ -226,6 +234,14 @@ def make_http_get_tool(use_curl_cffi_fallback: bool = False) -> Callable[..., An
             "For general web searches, use the search_web tool instead. "
             "Params: url (str), timeout_seconds (int, default 30)."
         ),
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "Full URL to fetch (e.g. https://example.com)."},
+                "timeout_seconds": {"type": "integer", "description": "Request timeout in seconds (default 30)."},
+            },
+            "required": ["url"],
+        },
         max_inline_chars=6000,
         tags=["network", "builtin"],
         capabilities=[NETWORK_EGRESS],

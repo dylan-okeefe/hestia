@@ -52,6 +52,16 @@ def _load_session(store: BrowserSessionStore, domain: str) -> dict[str, Any] | N
         "wait_seconds (int, default 3) — extra time to let JS hydrate. "
         "timeout_seconds (int, default 30)."
     ),
+    parameters_schema={
+        "type": "object",
+        "properties": {
+            "url": {"type": "string", "description": "Full URL to fetch (e.g. https://example.com)."},
+            "wait_for_selector": {"type": "string", "description": "Optional CSS selector to wait for before returning."},
+            "wait_seconds": {"type": "integer", "description": "Extra seconds to wait for JS hydration (default 3)."},
+            "timeout_seconds": {"type": "integer", "description": "Page load timeout in seconds (default 30)."},
+        },
+        "required": ["url"],
+    },
     max_inline_chars=6000,
     tags=["network", "browser", "builtin"],
     capabilities=[NETWORK_EGRESS],
@@ -148,7 +158,7 @@ async def browser_get(
 
 async def _extract_text(page: Any) -> str:
     """Extract readable text from the page, stripping scripts/styles/modals."""
-    result = await page.evaluate(
+    return await page.evaluate(
         """() => {
             document.querySelectorAll(
                 "script, style, nav, footer, iframe, noscript, aside, " +
@@ -157,4 +167,3 @@ async def _extract_text(page: Any) -> str:
             return document.body.innerText || "";
         }"""
     )
-    return str(result)
