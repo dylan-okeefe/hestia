@@ -139,7 +139,7 @@ async def run_platform(
         token = user_context_var.set(platform_user) if user_context_var is not None else None
         try:
             if platform_user not in user_sessions:
-                session = await app.session_store.get_or_create_session(
+                session = await app.session_store.get_or_create_session_with_handoff(
                     platform_name, platform_user
                 )
                 user_sessions[platform_user] = session
