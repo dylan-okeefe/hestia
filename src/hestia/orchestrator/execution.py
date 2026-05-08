@@ -129,7 +129,7 @@ class TurnExecution:
                 if use_policy_delegation:
                     await transition(turn, TurnState.AWAITING_SUBAGENT, "")
                     tool_results, handles = await self._execute_policy_delegation(
-                        ctx.user_message, chat_response.tool_calls
+                        ctx, chat_response.tool_calls
                     )
                     ctx.artifact_handles.extend(handles)
                     await transition(turn, TurnState.EXECUTING_TOOLS, "")
@@ -190,7 +190,7 @@ class TurnExecution:
                     if use_policy_delegation:
                         await transition(turn, TurnState.AWAITING_SUBAGENT, "")
                         tool_results, handles = await self._execute_policy_delegation(
-                            ctx.user_message, chat_response.tool_calls
+                            ctx, chat_response.tool_calls
                         )
                         ctx.artifact_handles.extend(handles)
                         await transition(turn, TurnState.EXECUTING_TOOLS, "")
@@ -449,19 +449,61 @@ class TurnExecution:
 
         return result_messages, artifact_handles
 
+    def _build_parent_context(
+        self,
+        history: list[Message],
+        max_messages: int = 10,
+        max_content_length: int = 500,
+    ) -> str:
+        """Serialize the last *max_messages* from *history* into a context string.
+
+        Tool results longer than *max_content_length* are truncated to keep
+        the parent context bounded.
+        """
+        if not history:
+            return ""
+
+        recent = history[-max_messages:]
+        lines: list[str] = []
+        for msg in recent:
+            role = msg.role
+            if role == "assistant":
+                prefix = "Assistant"
+                content = msg.content or ""
+                if msg.tool_calls:
+                    tc_lines = [
+                        f"  → {tc.name}({json.dumps(tc.arguments or {})})"
+                        for tc in msg.tool_calls
+                    ]
+                    content = (content + "\n" + "\n".join(tc_lines)).strip()
+            elif role == "tool":
+                prefix = f"Tool ({msg.tool_call_id or 'unknown'})"
+                content = msg.content or ""
+            else:
+                prefix = role.capitalize()
+                content = msg.content or ""
+
+            if len(content) > max_content_length:
+                content = content[:max_content_length] + "\n...[truncated]"
+
+            lines.append(f"{prefix}: {content}")
+
+        return "\n\n".join(lines)
+
     async def _execute_policy_delegation(
         self,
-        user_message: Message,
+        ctx: TurnContext,
         tool_calls: list[ToolCall],
     ) -> tuple[list[Message], list[str]]:
         """Run delegate_task once; map output to one message per model tool_call_id."""
-        task = (user_message.content or "").strip() or "(no user text)"
+        task = (ctx.user_message.content or "").strip() or "(no user text)"
         lines = [f"{tc.name} {json.dumps(tc.arguments or {})}" for tc in tool_calls]
         context = "\n".join(lines)
+        parent_context = self._build_parent_context(ctx.running_history)
 
         result = await self._tools.call(
             "delegate_task",
-            {"task": task, "context": context},
+            {"task": task, "context": context, "parent_context": parent_context},
         )
         result = self._scan_tool_result(result)
         body = result.content
