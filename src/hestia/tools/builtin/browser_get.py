@@ -10,6 +10,34 @@ from hestia.tools.metadata import tool
 
 logger = logging.getLogger(__name__)
 
+# Realistic viewport and UA to reduce headless-detection flags
+_VIEWPORT = {"width": 1920, "height": 1080}
+_USER_AGENT = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
+)
+
+
+def _normalize_domain(hostname: str) -> str:
+    """Return canonical domain, stripping www. prefix if present."""
+    if hostname.startswith("www."):
+        return hostname[4:]
+    return hostname
+
+
+def _load_session(store: BrowserSessionStore, domain: str) -> dict[str, Any] | None:
+    """Load storage_state for domain, falling back to cookies.json."""
+    storage = store.load_storage(domain)
+    if storage is not None:
+        return storage
+
+    cookies = store.load_cookies(domain)
+    if cookies:
+        logger.debug("No storage_state for %s; falling back to cookies.json", domain)
+        return {"cookies": cookies, "origins": []}
+
+    return None
+
 
 @tool(
     name="browser_get",
@@ -21,6 +49,7 @@ logger = logging.getLogger(__name__)
         "session is reused automatically. "
         "Params: url (str), wait_for_selector (str, optional) — "
         "CSS selector to wait for before returning. "
+        "wait_seconds (int, default 3) — extra time to let JS hydrate. "
         "timeout_seconds (int, default 30)."
     ),
     max_inline_chars=6000,
@@ -28,7 +57,10 @@ logger = logging.getLogger(__name__)
     capabilities=[NETWORK_EGRESS],
 )
 async def browser_get(
-    url: str, wait_for_selector: str = "", timeout_seconds: int = 30
+    url: str,
+    wait_for_selector: str = "",
+    wait_seconds: int = 3,
+    timeout_seconds: int = 30,
 ) -> str:
     """Fetch a URL using Playwright with session persistence."""
     try:
@@ -43,14 +75,19 @@ async def browser_get(
     if not parsed.scheme or not parsed.hostname:
         return f"Invalid URL: {url}"
 
-    domain = parsed.hostname
+    domain = _normalize_domain(parsed.hostname)
     store = BrowserSessionStore()
-    storage_state = store.load_storage(domain)
+    storage_state = _load_session(store, domain)
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
 
-        context_kwargs: dict[str, Any] = {}
+        context_kwargs: dict[str, Any] = {
+            "viewport": _VIEWPORT,
+            "user_agent": _USER_AGENT,
+            "locale": "en-US",
+            "timezone_id": "America/New_York",
+        }
         if storage_state is not None:
             context_kwargs["storage_state"] = storage_state
             logger.debug("Loaded stored session for %s", domain)
@@ -58,32 +95,66 @@ async def browser_get(
         context = await browser.new_context(**context_kwargs)
         page = await context.new_page()
 
+        # Mask navigator.webdriver to reduce bot detection
+        await page.add_init_script(
+            "() => { Object.defineProperty(navigator, 'webdriver', {get: () => undefined}); }"
+        )
+
+        text = ""
         try:
-            await page.goto(url, timeout=timeout_seconds * 1000, wait_until="networkidle")
+            await page.goto(
+                url,
+                timeout=timeout_seconds * 1000,
+                wait_until="domcontentloaded",
+            )
 
             if wait_for_selector:
                 await page.wait_for_selector(
                     wait_for_selector, timeout=timeout_seconds * 1000
                 )
+            else:
+                # Give JS-heavy apps (LinkedIn, etc.) time to hydrate
+                await page.wait_for_timeout(wait_seconds * 1000)
 
-            # Extract text content (skip scripts/styles)
-            text = await page.evaluate(
-                """() => {
-                    const scripts = document.querySelectorAll('script, style, nav, footer');
-                    scripts.forEach(el => el.remove());
-                    return document.body.innerText;
-                }"""
-            )
+            text = await _extract_text(page)
 
-            # Update stored cookies in case they refreshed
-            cookies = await context.cookies()
-            store.save_cookies(domain, cookies)
-
-            return text or ""
+            # Persist refreshed session state so subsequent calls stay authenticated.
+            # Save both storage_state (cookies + localStorage) and cookies for
+            # backward compatibility.
+            try:
+                refreshed_storage = await context.storage_state()
+                store.save_storage(domain, refreshed_storage)
+                refreshed_cookies = await context.cookies()
+                store.save_cookies(domain, refreshed_cookies)
+            except Exception as exc:
+                logger.warning("Failed to persist session for %s: %s", domain, exc)
 
         except Exception as exc:
-            logger.exception("browser_get failed for %s", url)
-            return f"Error fetching {url}: {exc}"
+            logger.warning("browser_get partial failure for %s: %s", url, exc)
+            # Try to salvage whatever content loaded before the error
+            try:
+                text = await _extract_text(page)
+            except Exception:
+                pass
+            if not text:
+                return f"Error fetching {url}: {exc}"
+
         finally:
             await context.close()
             await browser.close()
+
+        return text or ""
+
+
+async def _extract_text(page: Any) -> str:
+    """Extract readable text from the page, stripping scripts/styles/modals."""
+    result = await page.evaluate(
+        """() => {
+            document.querySelectorAll(
+                "script, style, nav, footer, iframe, noscript, aside, " +
+                "[aria-modal='true'], [role='dialog'], .artdeco-modal, .artdeco-modal-overlay"
+            ).forEach(el => el.remove());
+            return document.body.innerText || "";
+        }"""
+    )
+    return str(result)

@@ -65,15 +65,6 @@ class TurnExecution:
         self._stream = stream
         self._event_bus = event_bus
 
-        # Meta-tool dispatch table — adding a new meta-tool is one line.
-        self._meta_tools: dict[
-            str, Callable[[Session, ToolCall, list[str] | None], Awaitable[ToolCallResult]]
-        ] = {
-            "list_tools": self._meta_list_tools,
-            "describe_tool": self._meta_describe_tool,
-            "call_tool": self._meta_call_tool,
-        }
-
     async def run(
         self,
         ctx: TurnContext,
@@ -170,7 +161,64 @@ class TurnExecution:
 
             elif chat_response.finish_reason in ("stop", "length"):
                 content = chat_response.content or ""
-                if not content.strip() and not chat_response.tool_calls:
+
+                # Some models occasionally emit finish_reason="stop" alongside
+                # tool_calls. If tool_calls are present, execute them and continue
+                # the loop rather than treating the turn as done.
+                if chat_response.tool_calls:
+                    logger.debug(
+                        "finish_reason=%s but tool_calls present (%d); routing to tool execution",
+                        chat_response.finish_reason,
+                        len(chat_response.tool_calls),
+                    )
+                    # Re-use the tool_calls branch logic inline to avoid refactor
+                    await transition(turn, TurnState.EXECUTING_TOOLS, "")
+                    tool_names = [tc.name for tc in chat_response.tool_calls]
+                    ctx.tool_chain.extend(tool_names)
+                    logger.debug("Executing tools: %s", ", ".join(tool_names))
+                    await set_typing(True)
+
+                    task_desc = (ctx.user_message.content or "").strip()
+                    use_policy_delegation = (
+                        "delegate_task" in self._tools.list_names()
+                        and self._policy.should_delegate(
+                            session, task_desc, turn.tool_calls_made, len(chat_response.tool_calls)
+                        )
+                    )
+                    ctx.delegated = use_policy_delegation
+
+                    if use_policy_delegation:
+                        await transition(turn, TurnState.AWAITING_SUBAGENT, "")
+                        tool_results, handles = await self._execute_policy_delegation(
+                            ctx.user_message, chat_response.tool_calls
+                        )
+                        ctx.artifact_handles.extend(handles)
+                        await transition(turn, TurnState.EXECUTING_TOOLS, "")
+                    else:
+                        tool_results, handles = await self._execute_tool_calls(
+                            session, chat_response.tool_calls, ctx.allowed_tools
+                        )
+                        ctx.artifact_handles.extend(handles)
+
+                    for result_msg in tool_results:
+                        await self._store.append_message(session.id, result_msg)
+
+                    await transition(turn, TurnState.BUILDING_CONTEXT, "")
+                    ctx.running_history.append(assistant_msg)
+                    ctx.running_history.extend(tool_results)
+                    self._builder.set_style_prefix(ctx.style_prefix)
+                    ctx.build_result = await self._builder.build(
+                        session=session,
+                        history=ctx.running_history,
+                        system_prompt=ctx.system_prompt,
+                        tools=ctx.tools,
+                        new_user_message=None,
+                    )
+                    turn.tool_calls_made += len(chat_response.tool_calls)
+                    turn.iterations += 1
+                    continue
+
+                if not content.strip():
                     # Empty response — retry via policy instead of failing immediately
                     decision = self._policy.retry_after_error(
                         EmptyResponseError(
@@ -266,9 +314,12 @@ class TurnExecution:
             try:
                 arguments = json.loads(buf["arguments"]) if buf["arguments"] else {}
             except json.JSONDecodeError as exc:
-                raise InferenceServerError(
-                    f"tool_call arguments for {buf['name']!r} are malformed JSON: {exc}"
-                ) from exc
+                logger.warning(
+                    "tool_call arguments for %r are malformed JSON (%s); treating as empty",
+                    buf["name"],
+                    exc,
+                )
+                arguments = {}
             if not isinstance(arguments, dict):
                 raise InferenceServerError(
                     f"tool_call arguments for {buf['name']!r} are not a dict: "
@@ -473,93 +524,20 @@ class TurnExecution:
 
         return None
 
-    async def _meta_list_tools(
-        self, _session: Session, tc: ToolCall, allowed_tools: list[str] | None
-    ) -> ToolCallResult:
-        tag = tc.arguments.get("tag") if tc.arguments else None
-        content = await self._tools.meta_list_tools(tag, allowed_names=allowed_tools)
-        return ToolCallResult(
-            status="ok",
-            content=content,
-            artifact_handle=None,
-            truncated=False,
-        )
-
-    async def _meta_describe_tool(
-        self, _session: Session, tc: ToolCall, allowed_tools: list[str] | None
-    ) -> ToolCallResult:
-        raw_names = tc.arguments.get("names") if tc.arguments else []
-        names: str | list[str] = raw_names if isinstance(raw_names, (str, list)) else []
-        content = await self._tools.meta_describe_tool(names, allowed_names=allowed_tools)
-        return ToolCallResult(
-            status="ok",
-            content=content,
-            artifact_handle=None,
-            truncated=False,
-        )
-
-    async def _meta_call_tool(
-        self, session: Session, tc: ToolCall, allowed_tools: list[str] | None
-    ) -> ToolCallResult:
-        name = tc.arguments.get("name") if tc.arguments else None
-        arguments = tc.arguments.get("arguments") if tc.arguments else {}
-        if not isinstance(arguments, dict):
-            return ToolCallResult.error(
-                f"Malformed arguments for tool '{tc.name}'.",
-            )
-        if not name:
-            return ToolCallResult.error(
-                "Missing 'name' argument for call_tool",
-            )
-
-        # Check if inner tool is allowed
-        if allowed_tools is not None and name not in allowed_tools:
-            return ToolCallResult.error(
-                f"Tool '{name}' is not available in this session context.",
-            )
-
-        # Confirmation enforcement: check the INNER tool's metadata before dispatch
-        try:
-            inner_meta = self._tools.describe(name)
-        except ToolNotFoundError:
-            return ToolCallResult.error(
-                f"Tool not found: {name}",
-            )
-
-        confirm_result = await self._check_confirmation(
-            tool=inner_meta, tool_name=name, arguments=arguments, session=session
-        )
-        if confirm_result is not None:
-            return confirm_result
-
-        return await self._tools.meta_call_tool(name, arguments)
-
     async def _dispatch_tool_call(
         self, session: Session, tc: ToolCall, allowed_tools: list[str] | None = None
     ) -> ToolCallResult:
-        """Dispatch a single tool call, handling meta-tools and direct tool calls.
+        """Dispatch a single tool call.
 
         Args:
             tc: The tool call to dispatch
             allowed_tools: Optional list of allowed tool names for filtering
         """
-        # Check if tool is allowed (meta-tools are always available)
-        if (
-            allowed_tools is not None
-            and tc.name not in self._meta_tools
-            and tc.name not in allowed_tools
-        ):
+        if allowed_tools is not None and tc.name not in allowed_tools:
             return ToolCallResult.error(
                 f"Tool '{tc.name}' is not available in this session context.",
             )
 
-        # Handle meta-tools via dispatch table
-        handler = self._meta_tools.get(tc.name)
-        if handler is not None:
-            return await handler(session, tc, allowed_tools)
-
-        # Direct tool call (non-meta-tool)
-        # Check if tool exists and handle confirmation
         try:
             meta = self._tools.describe(tc.name)
         except ToolNotFoundError:

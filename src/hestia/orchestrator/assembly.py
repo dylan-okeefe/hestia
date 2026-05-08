@@ -100,7 +100,7 @@ class TurnAssembly:
                 + effective_system_prompt
             )
 
-        ctx.tools = self._tools.meta_tool_schemas()
+        ctx.tools = self._tools.direct_tool_schemas()
         self._builder.set_style_prefix(style_prefix)
         ctx.build_result = await self._builder.build(
             session=session,

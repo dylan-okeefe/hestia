@@ -46,14 +46,11 @@ async def test_save_memory(store, fake_policy, tool_registry, respond_callback):
             tool_calls=[
                 ToolCall(
                     id="c1",
-                    name="call_tool",
+                    name="save_memory",
                     arguments={
-                        "name": "save_memory",
-                        "arguments": {
                             "content": "Buy oat milk",
                             "tags": "e2e_hestia_l11 shopping",
                         },
-                    },
                 )
             ],
             finish_reason="tool_calls",
@@ -107,8 +104,8 @@ async def test_list_memories_all(
             tool_calls=[
                 ToolCall(
                     id="c1",
-                    name="call_tool",
-                    arguments={"name": "list_memories", "arguments": {}},
+                    name="list_memories",
+                    arguments={},
                 )
             ],
             finish_reason="tool_calls",
@@ -163,11 +160,8 @@ async def test_list_memories_by_tag(
             tool_calls=[
                 ToolCall(
                     id="c1",
-                    name="call_tool",
-                    arguments={
-                        "name": "list_memories",
-                        "arguments": {"tag": "e2e_hestia_l11"},
-                    },
+                    name="list_memories",
+                    arguments={"tag": "e2e_hestia_l11"},
                 )
             ],
             finish_reason="tool_calls",
@@ -222,11 +216,8 @@ async def test_search_memory(
             tool_calls=[
                 ToolCall(
                     id="c1",
-                    name="call_tool",
-                    arguments={
-                        "name": "search_memory",
-                        "arguments": {"query": "Phoenix", "limit": 5},
-                    },
+                    name="search_memory",
+                    arguments={"query": "Phoenix", "limit": 5},
                 )
             ],
             finish_reason="tool_calls",
@@ -278,11 +269,8 @@ async def test_search_memory_no_results(
             tool_calls=[
                 ToolCall(
                     id="c1",
-                    name="call_tool",
-                    arguments={
-                        "name": "search_memory",
-                        "arguments": {"query": "xyznonexistent"},
-                    },
+                    name="search_memory",
+                    arguments={"query": "xyznonexistent"},
                 )
             ],
             finish_reason="tool_calls",

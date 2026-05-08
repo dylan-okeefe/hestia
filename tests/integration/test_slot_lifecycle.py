@@ -114,8 +114,8 @@ async def test_full_slot_lifecycle_through_orchestrator(
             tool_calls=[
                 ToolCall(
                     id="call_1",
-                    name="call_tool",
-                    arguments={"name": "current_time", "arguments": {"timezone": "UTC"}},
+                    name="current_time",
+                    arguments={"timezone": "UTC"},
                 )
             ],
             finish_reason="tool_calls",

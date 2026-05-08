@@ -23,7 +23,7 @@ async def test_orchestrator_delegates_to_turn_execution():
     mock_policy.turn_token_budget.return_value = 4000
 
     mock_context_builder.build = AsyncMock(return_value=MagicMock(messages=[]))
-    mock_tool_registry.meta_tool_schemas.return_value = []
+    mock_tool_registry.direct_tool_schemas.return_value = []
     mock_tool_registry.list_names.return_value = []
 
     mock_session_store.insert_turn = AsyncMock()
@@ -80,7 +80,7 @@ async def test_orchestrator_delegates_to_turn_finalization():
     mock_policy.turn_token_budget.return_value = 4000
 
     mock_context_builder.build = AsyncMock(return_value=MagicMock(messages=[]))
-    mock_tool_registry.meta_tool_schemas.return_value = []
+    mock_tool_registry.direct_tool_schemas.return_value = []
     mock_tool_registry.list_names.return_value = []
 
     mock_inference.chat = AsyncMock(
