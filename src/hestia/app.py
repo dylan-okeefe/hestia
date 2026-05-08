@@ -25,6 +25,7 @@ from hestia.identity import IdentityCompiler
 from hestia.inference import SlotManager
 from hestia.memory import MemoryEpochCompiler, MemoryStore
 from hestia.memory.handoff import SessionHandoffSummarizer
+from hestia.memory.session_summarizer import SessionSummarizer
 from hestia.orchestrator import Orchestrator
 from hestia.orchestrator.engine import ConfirmCallback
 from hestia.persistence.db import Database
@@ -144,9 +145,11 @@ class AppContext:
         self.db = Database(config.storage.database_url)
         self.artifact_store = ArtifactStore(config.storage.artifacts_dir)
         self.event_bus = EventBus()
-        self.session_store = SessionStore(self.db, event_bus=self.event_bus)
-        self.policy = _make_policy(config)
         self.memory_store = MemoryStore(self.db)
+        self.session_store = SessionStore(
+            self.db, event_bus=self.event_bus, memory_store=self.memory_store
+        )
+        self.policy = _make_policy(config)
         self.failure_store = FailureStore(self.db)
         self.trace_store = TraceStore(self.db)
         self.scheduler_store = SchedulerStore(self.db)
@@ -211,6 +214,13 @@ class AppContext:
             slot_dir=self.config.slots.slot_dir,
             pool_size=self.config.slots.pool_size,
         )
+
+    @functools.cached_property
+    def session_summarizer(self) -> SessionSummarizer:
+        """Lazy session summarizer — created on first access."""
+        summarizer = SessionSummarizer(inference=self.inference)
+        self.session_store.session_summarizer = summarizer
+        return summarizer
 
     @functools.cached_property
     def handoff_summarizer(self) -> SessionHandoffSummarizer | None:
@@ -306,6 +316,8 @@ class AppContext:
 
     def make_orchestrator(self) -> Orchestrator:
         """Create an Orchestrator with the current app context."""
+        # Ensure lazy subsystems are wired before use
+        _ = self.session_summarizer
         return Orchestrator(
             inference=self.inference,
             session_store=self.session_store,

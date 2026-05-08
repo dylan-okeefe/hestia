@@ -21,6 +21,8 @@ from hestia.core.types import (
     ToolCall,
 )
 from hestia.errors import PersistenceError
+from hestia.memory.session_summarizer import SessionSummarizer
+from hestia.memory.store import MemoryStore
 from hestia.persistence.db import Database
 from hestia.persistence.schema import messages, sessions
 
@@ -46,10 +48,18 @@ def _generate_session_id(platform: str, platform_user: str) -> str:
 class SessionStore:
     """Typed CRUD wrapper for session persistence."""
 
-    def __init__(self, db: Database, event_bus: EventBus | None = None) -> None:
+    def __init__(
+        self,
+        db: Database,
+        event_bus: EventBus | None = None,
+        memory_store: MemoryStore | None = None,
+        session_summarizer: SessionSummarizer | None = None,
+    ) -> None:
         """Initialize with a Database instance."""
         self._db = db
         self._event_bus = event_bus
+        self.memory_store = memory_store
+        self.session_summarizer = session_summarizer
 
     async def get_or_create_session(self, platform: str, platform_user: str) -> Session:
         """Get the user's active session, or create one atomically.
@@ -191,6 +201,46 @@ class SessionStore:
             "Hestia ships dialect-aware upserts only for sqlite and postgresql."
         )
 
+    @staticmethod
+    def _infer_tags(text: str) -> list[str]:
+        """Infer memory tags from summary text based on keywords."""
+        lower = text.lower()
+        if any(kw in lower for kw in ("job", "resume", "hiring", "role")):
+            return ["job-search"]
+        if "weather" in lower:
+            return ["weather"]
+        if any(kw in lower for kw in ("memory", "remember")):
+            return ["memory-config"]
+        return ["general"]
+
+    async def _auto_save_session(self, session_id: str) -> None:
+        """Best-effort auto-save of session summary to memory store."""
+        if self.memory_store is None or self.session_summarizer is None:
+            return
+
+        try:
+            messages = await self.get_messages(session_id)
+            summary = await self.session_summarizer.summarize(messages)
+            if not summary:
+                return
+
+            tags = self._infer_tags(summary)
+
+            session = await self.get_session(session_id)
+            if session is None:
+                logger.warning("Auto-save: session %s not found after archive", session_id)
+                return
+
+            await self.memory_store.save(
+                content=summary,
+                tags=tags,
+                session_id=session_id,
+                platform=session.platform,
+                platform_user=session.platform_user,
+            )
+        except Exception:
+            logger.exception("Auto-save memory failed for session %s", session_id)
+
     async def archive_session(self, session_id: str) -> None:
         """Mark a session as ARCHIVED. Used when /reset creates a successor."""
         update = (
@@ -204,6 +254,8 @@ class SessionStore:
         async with self._db.engine.connect() as conn:
             await conn.execute(update)
             await conn.commit()
+
+        await self._auto_save_session(session_id)
 
     async def create_session(
         self,
@@ -257,6 +309,9 @@ class SessionStore:
                 )
             await conn.execute(insert)
             await conn.commit()
+
+        if archive_previous is not None:
+            await self._auto_save_session(archive_previous.id)
 
         if self._event_bus is not None:
             await self._event_bus.publish(
@@ -372,18 +427,7 @@ class SessionStore:
 
     async def end_session(self, session_id: str, reason: str) -> None:
         """Mark a session as archived."""
-        update = (
-            sa.update(sessions)
-            .where(sessions.c.id == session_id)
-            .values(
-                state=SessionState.ARCHIVED.value,
-                last_active_at=utcnow(),
-            )
-        )
-
-        async with self._db.engine.connect() as conn:
-            await conn.execute(update)
-            await conn.commit()
+        await self.archive_session(session_id)
 
     async def assign_slot(
         self,
