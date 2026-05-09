@@ -239,6 +239,12 @@ class ContextBuilder:
         raw_budget = self._policy.turn_token_budget(session)
         truncated_count = 0
 
+        # Filter out any system messages from history — the builder creates its
+        # own system message and strict chat templates (e.g. Qwen) raise errors
+        # when they see a second system message mid-conversation. Session handoff
+        # (L162) may store a system message in the DB; we must drop it here.
+        history = [msg for msg in history if msg.role != "system"]
+
         parts = [layer.value for layer in self._prefix_layers() if layer.value]
         parts.append(system_prompt)
         effective_prompt = "\n\n".join(parts)
