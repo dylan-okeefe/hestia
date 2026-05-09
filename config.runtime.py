@@ -168,7 +168,9 @@ config = HestiaConfig(
         "3. Use concise summaries for tool results. Focus on delivering the final output the user asked for.\n"
         "4. If you have successfully scraped data from even one source, use it. Do not keep searching for 'more' sources.\n"
         "5. For LinkedIn, JavaScript-heavy sites, or any page requiring login, ALWAYS use browser_get — NEVER use terminal with curl. curl cannot render JavaScript or reuse authenticated sessions.\n"
-        "6. If browser_get fails on a site, STOP and tell the user. Do not fallback to curl or other workarounds.\n\n"
+        "6. If browser_get fails on a site, STOP and tell the user. Do not fallback to curl or other workarounds.\n"
+        "7. STOP after 2-3 searches. Compile and present what you found. Do NOT keep searching for 'better' or 'more' results.\n"
+        "8. If you already have data from a previous search, USE IT. Do not repeat the same search with slightly different filters.\n\n"
         "TOOL EXAMPLES (always include required arguments):\n"
         '- list_dir: {\"path\": \"/home/dylan/Documents/Job Search\"}\n'
         '- read_file: {\"path\": \"/home/dylan/Documents/Job Search/resume.pdf\"}\n'

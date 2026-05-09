@@ -72,6 +72,12 @@ def _extract_tool_calls_from_text(text: str) -> list[ToolCall]:
                 )
             )
 
+    def _is_valid_url(url: str) -> bool:
+        """Reject URLs that contain newlines, XML remnants, or are obviously truncated."""
+        if not url or "\n" in url or "</" in url or "<parameter" in url:
+            return False
+        return url.startswith(("http://", "https://"))
+
     # --- Format 2: ad-hoc <function=name> <parameter=key> value ---
     # Only run if Format 1 found nothing.
     if not tool_calls:
@@ -93,6 +99,12 @@ def _extract_tool_calls_from_text(text: str) -> list[ToolCall]:
                 except json.JSONDecodeError:
                     val_parsed = val
                 args[key] = val_parsed
+
+            # Validate extracted args before creating ToolCall
+            if name == "browser_get" and not _is_valid_url(args.get("url", "")):
+                continue
+            if name == "write_file" and (not args.get("path") or not args.get("content")):
+                continue
 
             if name:
                 tool_calls.append(
