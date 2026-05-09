@@ -3,6 +3,8 @@
 import asyncio
 import dataclasses
 import json
+import re
+import secrets
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -29,6 +31,79 @@ def _strip_historical_reasoning(messages: list[Message]) -> list[Message]:
             msg = dataclasses.replace(msg, reasoning_content=None)
         result.append(msg)
     return result
+
+
+def _extract_tool_calls_from_text(text: str) -> list[ToolCall]:
+    """Parse XML-style <tool_call> blocks from model text/reasoning.
+
+    Qwen3.5 in reasoning mode occasionally emits tool calls inside its
+    <think> block (which lands in ``reasoning_content``) but fails to
+    output the structured ``tool_calls`` JSON. This fallback extracts
+    them so the turn can continue instead of appearing to hang.
+
+    Supports two formats:
+    1. JSON object: ``<tool_call>{"name": "...", "arguments": {...}}</tool_call>``
+    2. Ad-hoc XML: ``<tool_call>\n<function=name>\n<parameter=key>\nvalue\n...``
+    """
+    if "<tool_call>" not in text:
+        return []
+
+    tool_calls: list[ToolCall] = []
+
+    # --- Format 1: JSON inside <tool_call> ... </tool_call> ---
+    # Use DOTALL so . matches newlines.
+    for match in re.finditer(r"<tool_call>(.+?)</tool_call>", text, re.DOTALL):
+        payload = match.group(1).strip()
+        # Some models wrap the JSON in ```json blocks inside the tag
+        payload = re.sub(r"^```json\s*|\s*```$", "", payload).strip()
+        try:
+            data = json.loads(payload)
+        except json.JSONDecodeError:
+            continue
+
+        name = data.get("name") or data.get("function", {}).get("name")
+        arguments = data.get("arguments") or data.get("function", {}).get("arguments")
+        if name and isinstance(arguments, dict):
+            tool_calls.append(
+                ToolCall(
+                    id="tc_xml_" + secrets.token_hex(8),
+                    name=name,
+                    arguments=arguments,
+                )
+            )
+
+    # --- Format 2: ad-hoc <function=name> <parameter=key> value ---
+    # Only run if Format 1 found nothing.
+    if not tool_calls:
+        for block_match in re.finditer(r"<tool_call>\s*(.+?)(?:</tool_call>|(?=<tool_call>)|$)", text, re.DOTALL):
+            block = block_match.group(1).strip()
+            fn_match = re.search(r"<function[=:]\s*([^>\s]+)>", block)
+            if not fn_match:
+                continue
+            name = fn_match.group(1).strip()
+
+            args: dict[str, Any] = {}
+            # Match <parameter=key> or <parameter key> followed by value on next line(s)
+            for param_match in re.finditer(r"<parameter[=:]\s*([^>\s]+)>\s*(.+?)(?=<parameter[=:]|</tool_call>|$)", block, re.DOTALL):
+                key = param_match.group(1).strip()
+                val = param_match.group(2).strip()
+                # Try to coerce numbers/booleans, else keep as string
+                try:
+                    val_parsed = json.loads(val)
+                except json.JSONDecodeError:
+                    val_parsed = val
+                args[key] = val_parsed
+
+            if name:
+                tool_calls.append(
+                    ToolCall(
+                        id="tc_xml_" + secrets.token_hex(8),
+                        name=name,
+                        arguments=args,
+                    )
+                )
+
+    return tool_calls
 
 
 class InferenceClient:
@@ -225,13 +300,6 @@ class InferenceClient:
         # Strip historical reasoning before building request
         clean_messages = _strip_historical_reasoning(messages)
 
-        # Assistant prefills are incompatible with thinking/reasoning mode.
-        # The server may have --reasoning-budget set globally, or we send
-        # reasoning_format explicitly. Either way, strip trailing assistant
-        # messages to avoid 400 errors.
-        while clean_messages and clean_messages[-1].role == "assistant":
-            clean_messages = clean_messages[:-1]
-
         request_body: dict[str, Any] = {
             "model": self.model_name,
             "messages": [message_to_dict(m) for m in clean_messages],
@@ -291,6 +359,21 @@ class InferenceClient:
                         arguments=arguments,
                     )
                 )
+        else:
+            # Fallback: Qwen3.5 in reasoning mode sometimes emits tool calls inside
+            # <think> blocks (which land in reasoning_content) but omits the structured
+            # tool_calls JSON. Parse XML-style <tool_call> tags as a safety net.
+            combined = ""
+            reasoning = message.get("reasoning_content")
+            if reasoning:
+                combined += reasoning + "\n"
+            content = message.get("content")
+            if content:
+                combined += content + "\n"
+            if combined:
+                fallback = _extract_tool_calls_from_text(combined)
+                if fallback:
+                    tool_calls = fallback
 
         # Get usage stats
         usage = data.get("usage", {})
@@ -325,10 +408,6 @@ class InferenceClient:
             temperature: Sampling temperature
         """
         clean_messages = _strip_historical_reasoning(messages)
-
-        # Assistant prefills are incompatible with thinking/reasoning mode.
-        while clean_messages and clean_messages[-1].role == "assistant":
-            clean_messages = clean_messages[:-1]
 
         request_body: dict[str, Any] = {
             "model": self.model_name,
