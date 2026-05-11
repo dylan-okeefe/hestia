@@ -27,7 +27,7 @@ SYSTEM_PROMPT = """You are a helpful personal assistant. You have access to tool
 - terminal: Run shell commands
 - read_artifact: Read artifact content by handle
 
-Use list_tools to discover tools, then call tools directly by name.
+Use list_tools to discover tools, then call_tool to invoke them.
 When asked to list files, use the terminal tool with 'ls'.
 Be concise."""
 
@@ -76,7 +76,7 @@ async def test_proto_orchestrator_uses_terminal_tool(tmp_path):
         role="user",
         content="List the files in /tmp and tell me how many there are.",
     )
-    tools = registry.direct_tool_schemas()
+    tools = registry.meta_tool_schemas()
 
     # Build initial context using ContextBuilder
     built = await builder.build(
@@ -111,20 +111,39 @@ async def test_proto_orchestrator_uses_terminal_tool(tmp_path):
                 )
             )
 
-            # Dispatch each tool call directly
+            # Dispatch each tool call
             for tc in response.tool_calls:
-                result = await registry.call(tc.name, tc.arguments or {})
-                history.append(
-                    Message(
-                        role="tool",
-                        content=result.content,
-                        tool_call_id=tc.id,
+                if tc.name == "list_tools":
+                    result_content = await registry.meta_list_tools(**tc.arguments)
+                    history.append(
+                        Message(
+                            role="tool",
+                            content=result_content,
+                            tool_call_id=tc.id,
+                        )
                     )
-                )
+                elif tc.name == "call_tool":
+                    result = await registry.meta_call_tool(**tc.arguments)
+                    history.append(
+                        Message(
+                            role="tool",
+                            content=result.content,
+                            tool_call_id=tc.id,
+                        )
+                    )
 
-                # Track if terminal was called
-                if tc.name == "terminal":
-                    terminal_was_called = True
+                    # Track if terminal was called
+                    if tc.arguments.get("name") == "terminal":
+                        terminal_was_called = True
+                else:
+                    # Unknown meta-tool
+                    history.append(
+                        Message(
+                            role="tool",
+                            content=f"Unknown tool: {tc.name}",
+                            tool_call_id=tc.id,
+                        )
+                    )
 
             # For subsequent iterations, use system + first user + history
             # We must include the first user message for the chat template

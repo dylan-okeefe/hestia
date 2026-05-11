@@ -76,7 +76,7 @@ async def test_refuses_without_auto_approve_and_no_callback():
     mock_context_builder.build = AsyncMock(return_value=MagicMock(messages=[]))
 
     mock_tool_registry.list_names.return_value = ["terminal"]
-    mock_tool_registry.direct_tool_schemas.return_value = []
+    mock_tool_registry.meta_tool_schemas.return_value = []
     mock_tool_registry.describe.return_value = MagicMock(
         requires_confirmation=True, capabilities=["shell_exec"]
     )
@@ -159,7 +159,7 @@ async def test_auto_approves_without_callback():
     mock_context_builder.build = AsyncMock(return_value=MagicMock(messages=[]))
 
     mock_tool_registry.list_names.return_value = ["terminal"]
-    mock_tool_registry.direct_tool_schemas.return_value = []
+    mock_tool_registry.meta_tool_schemas.return_value = []
     mock_tool_registry.describe.return_value = MagicMock(
         requires_confirmation=True, capabilities=["shell_exec"]
     )
@@ -240,7 +240,7 @@ async def test_uses_callback_when_present():
     mock_context_builder.build = AsyncMock(return_value=MagicMock(messages=[]))
 
     mock_tool_registry.list_names.return_value = ["terminal"]
-    mock_tool_registry.direct_tool_schemas.return_value = []
+    mock_tool_registry.meta_tool_schemas.return_value = []
     mock_tool_registry.describe.return_value = MagicMock(
         requires_confirmation=True, capabilities=["shell_exec"]
     )

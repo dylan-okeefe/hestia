@@ -54,7 +54,7 @@ async def test_artifact_handle_accumulated_in_trace():
     mock_context_builder.build = AsyncMock(return_value=MagicMock(messages=[]))
 
     mock_tool_registry.list_names.return_value = ["generate_image"]
-    mock_tool_registry.direct_tool_schemas.return_value = []
+    mock_tool_registry.meta_tool_schemas.return_value = []
     mock_tool_registry.describe.return_value = MagicMock(
         requires_confirmation=False, capabilities=[]
     )
