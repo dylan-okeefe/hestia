@@ -438,8 +438,8 @@ async def test_matrix_e2e_tool_call_clean_conversation(tmp_path, e2e_setup):
             tool_calls=[
                 ToolCall(
                     id="call_time_1",
-                    name="current_time",
-                    arguments={"timezone": "UTC"},
+                    name="call_tool",
+                    arguments={"name": "current_time", "arguments": {"timezone": "UTC"}},
                 ),
             ],
             finish_reason="tool_calls",
@@ -519,11 +519,14 @@ async def test_matrix_e2e_memory_save(tmp_path, e2e_setup):
             tool_calls=[
                 ToolCall(
                     id="c_save",
-                    name="save_memory",
+                    name="call_tool",
                     arguments={
+                        "name": "save_memory",
+                        "arguments": {
                             "content": "Dylan's favorite color is blue",
                             "tags": f"{E2E_MEMORY_TAG} preference",
                         },
+                    },
                 ),
             ],
             finish_reason="tool_calls",
@@ -598,11 +601,14 @@ async def test_matrix_e2e_memory_save_then_recall(tmp_path, e2e_setup):
             tool_calls=[
                 ToolCall(
                     id="c_save",
-                    name="save_memory",
+                    name="call_tool",
                     arguments={
+                        "name": "save_memory",
+                        "arguments": {
                             "content": "Project Hestia milestone: typing indicators shipped",
                             "tags": f"{E2E_MEMORY_TAG} project",
                         },
+                    },
                 ),
             ],
             finish_reason="tool_calls",
@@ -628,8 +634,11 @@ async def test_matrix_e2e_memory_save_then_recall(tmp_path, e2e_setup):
             tool_calls=[
                 ToolCall(
                     id="c_search",
-                    name="search_memory",
-                    arguments={"query": "Hestia milestone"},
+                    name="call_tool",
+                    arguments={
+                        "name": "search_memory",
+                        "arguments": {"query": "Hestia milestone"},
+                    },
                 ),
             ],
             finish_reason="tool_calls",
@@ -748,8 +757,8 @@ async def test_matrix_e2e_no_thinking_message(tmp_path, e2e_setup):
             tool_calls=[
                 ToolCall(
                     id="c_time",
-                    name="current_time",
-                    arguments={"timezone": "UTC"},
+                    name="call_tool",
+                    arguments={"name": "current_time", "arguments": {"timezone": "UTC"}},
                 ),
             ],
             finish_reason="tool_calls",
@@ -828,8 +837,11 @@ async def test_matrix_e2e_memory_search_no_results(tmp_path, e2e_setup):
             tool_calls=[
                 ToolCall(
                     id="c_search",
-                    name="search_memory",
-                    arguments={"query": "xyznonexistent_e2e_test"},
+                    name="call_tool",
+                    arguments={
+                        "name": "search_memory",
+                        "arguments": {"query": "xyznonexistent_e2e_test"},
+                    },
                 ),
             ],
             finish_reason="tool_calls",

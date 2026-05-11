@@ -99,8 +99,8 @@ async def test_meta_call_tool_current_time(
             tool_calls=[
                 ToolCall(
                     id="c1",
-                    name="current_time",
-                    arguments={"timezone": "UTC"},
+                    name="call_tool",
+                    arguments={"name": "current_time", "arguments": {"timezone": "UTC"}},
                 )
             ],
             finish_reason="tool_calls",
@@ -154,8 +154,11 @@ async def test_read_file_and_list_dir(
             tool_calls=[
                 ToolCall(
                     id="c1",
-                    name="read_file",
-                    arguments={"path": str(sandbox / "hello.txt")},
+                    name="call_tool",
+                    arguments={
+                        "name": "read_file",
+                        "arguments": {"path": str(sandbox / "hello.txt")},
+                    },
                 )
             ],
             finish_reason="tool_calls",
@@ -169,8 +172,11 @@ async def test_read_file_and_list_dir(
             tool_calls=[
                 ToolCall(
                     id="c2",
-                    name="list_dir",
-                    arguments={"path": str(sandbox)},
+                    name="call_tool",
+                    arguments={
+                        "name": "list_dir",
+                        "arguments": {"path": str(sandbox)},
+                    },
                 )
             ],
             finish_reason="tool_calls",
@@ -222,8 +228,11 @@ async def test_denied_write_file_without_confirm_callback(
             tool_calls=[
                 ToolCall(
                     id="c1",
-                    name="write_file",
-                    arguments={"path": str(Path(file_sandbox) / "out.txt"), "content": "x"},
+                    name="call_tool",
+                    arguments={
+                        "name": "write_file",
+                        "arguments": {"path": str(Path(file_sandbox) / "out.txt"), "content": "x"},
+                    },
                 )
             ],
             finish_reason="tool_calls",
@@ -275,8 +284,11 @@ async def test_denied_terminal_without_confirm_callback(
             tool_calls=[
                 ToolCall(
                     id="c1",
-                    name="terminal",
-                    arguments={"command": "echo hello"},
+                    name="call_tool",
+                    arguments={
+                        "name": "terminal",
+                        "arguments": {"command": "echo hello"},
+                    },
                 )
             ],
             finish_reason="tool_calls",
@@ -337,8 +349,11 @@ async def test_http_get_public_url(
             tool_calls=[
                 ToolCall(
                     id="c1",
-                    name="http_get",
-                    arguments={"url": "http://1.1.1.1/test"},
+                    name="call_tool",
+                    arguments={
+                        "name": "http_get",
+                        "arguments": {"url": "http://1.1.1.1/test"},
+                    },
                 )
             ],
             finish_reason="tool_calls",
@@ -403,8 +418,11 @@ async def test_artifact_overflow_and_read_artifact(
             tool_calls=[
                 ToolCall(
                     id="c1",
-                    name="read_file",
-                    arguments={"path": str(target)},
+                    name="call_tool",
+                    arguments={
+                        "name": "read_file",
+                        "arguments": {"path": str(target)},
+                    },
                 )
             ],
             finish_reason="tool_calls",
@@ -418,8 +436,11 @@ async def test_artifact_overflow_and_read_artifact(
             tool_calls=[
                 ToolCall(
                     id="c2",
-                    name="read_artifact",
-                    arguments={"handle": known_handle},
+                    name="call_tool",
+                    arguments={
+                        "name": "read_artifact",
+                        "arguments": {"handle": known_handle},
+                    },
                 )
             ],
             finish_reason="tool_calls",
@@ -524,8 +545,11 @@ async def test_delegate_task_minimal(
             tool_calls=[
                 ToolCall(
                     id="c1",
-                    name="delegate_task",
-                    arguments={"task": "Say hello", "context": "minimal test"},
+                    name="call_tool",
+                    arguments={
+                        "name": "delegate_task",
+                        "arguments": {"task": "Say hello", "context": "minimal test"},
+                    },
                 )
             ],
             finish_reason="tool_calls",

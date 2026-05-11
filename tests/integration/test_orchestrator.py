@@ -362,8 +362,11 @@ async def test_two_tool_chain_time_and_file_count(
             tool_calls=[
                 ToolCall(
                     id="call_1",
-                    name="current_time",
-                    arguments={"timezone": "Asia/Tokyo"},
+                    name="call_tool",
+                    arguments={
+                        "name": "current_time",
+                        "arguments": {"timezone": "Asia/Tokyo"},
+                    },
                 )
             ],
             finish_reason="tool_calls",
@@ -378,8 +381,11 @@ async def test_two_tool_chain_time_and_file_count(
             tool_calls=[
                 ToolCall(
                     id="call_2",
-                    name="terminal",
-                    arguments={"command": "ls /tmp | wc -l"},
+                    name="call_tool",
+                    arguments={
+                        "name": "terminal",
+                        "arguments": {"command": "ls /tmp | wc -l"},
+                    },
                 )
             ],
             finish_reason="tool_calls",
@@ -504,8 +510,8 @@ async def test_turn_fetches_message_history_at_most_once(
             tool_calls=[
                 ToolCall(
                     id="tc1",
-                    name="current_time",
-                    arguments={"timezone": "UTC"},
+                    name="call_tool",
+                    arguments={"name": "current_time", "arguments": {"timezone": "UTC"}},
                 )
             ],
             finish_reason="tool_calls",
@@ -519,8 +525,11 @@ async def test_turn_fetches_message_history_at_most_once(
             tool_calls=[
                 ToolCall(
                     id="tc2",
-                    name="terminal",
-                    arguments={"command": "echo ok"},
+                    name="call_tool",
+                    arguments={
+                        "name": "terminal",
+                        "arguments": {"command": "echo ok"},
+                    },
                 )
             ],
             finish_reason="tool_calls",
