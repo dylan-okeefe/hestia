@@ -1,7 +1,7 @@
 [Unit]
 Description=Hestia Unified Server (Telegram + Matrix + Web Dashboard)
-After=network.target hermes-llama.service
-Wants=hermes-llama.service
+After=network.target hestia-llama.service
+Wants=hestia-llama.service
 
 [Service]
 Type=simple

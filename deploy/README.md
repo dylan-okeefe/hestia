@@ -27,12 +27,12 @@ Systemd service templates for running Hestia as a persistent service on Linux.
 Two systemd units work together:
 
 ```
-hermes-llama.service  →  llama-server on :8001 (inference)
+hestia-llama.service  →  llama-server on :8001 (inference)
        ↑
 hestia-serve.service  →  Telegram + Matrix + FastAPI dashboard on :8765
 ```
 
-`hestia-serve` depends on `hermes-llama` — systemd starts them in the right
+`hestia-serve` depends on `hestia-llama` — systemd starts them in the right
 order and restarts on failure.
 
 A `gpu-watchdog.timer` runs every 2 minutes and reboots the machine if the
@@ -229,7 +229,7 @@ The `hestia-llama.service` template uses these flags:
 - All services run as the specified user (template `@` syntax for system-level)
 - `hestia-llama` restarts after 5 seconds on failure
 - `hestia-agent` / `hestia-serve` restart after 10 seconds on failure
-- `hestia-serve` won't start until `hermes-llama` is running
+- `hestia-serve` won't start until `hestia-llama` is running
 - Logs go to journald with `PYTHONUNBUFFERED=1` for real-time output
 - GPU watchdog runs every 2 minutes; reboots after 3 consecutive `nvidia-smi` failures
 
