@@ -41,14 +41,21 @@ def _extract_tool_calls_from_text(text: str) -> list[ToolCall]:
     output the structured ``tool_calls`` JSON. This fallback extracts
     them so the turn can continue instead of appearing to hang.
 
-    Supports two formats:
+    Supports three formats:
     1. JSON object: ``<tool_call>{"name": "...", "arguments": {...}}</tool_call>``
     2. Ad-hoc XML: ``<tool_call>\n<function=name>\n<parameter=key>\nvalue\n...``
+    3. GLM XML: ``<tool_call>func_name\n<arg_key>k</arg_key>\n<arg_value>v</arg_value>\n...``
     """
     if "<tool_call>" not in text:
         return []
 
     tool_calls: list[ToolCall] = []
+
+    def _is_valid_url(url: str) -> bool:
+        """Reject URLs that contain newlines, XML remnants, or are obviously truncated."""
+        if not url or "\n" in url or "</" in url or "<parameter" in url:
+            return False
+        return url.startswith(("http://", "https://"))
 
     # --- Format 1: JSON inside <tool_call> ... </tool_call> ---
     # Use DOTALL so . matches newlines.
@@ -72,12 +79,6 @@ def _extract_tool_calls_from_text(text: str) -> list[ToolCall]:
                 )
             )
 
-    def _is_valid_url(url: str) -> bool:
-        """Reject URLs that contain newlines, XML remnants, or are obviously truncated."""
-        if not url or "\n" in url or "</" in url or "<parameter" in url:
-            return False
-        return url.startswith(("http://", "https://"))
-
     # --- Format 2: ad-hoc <function=name> <parameter=key> value ---
     # Only run if Format 1 found nothing.
     if not tool_calls:
@@ -100,6 +101,27 @@ def _extract_tool_calls_from_text(text: str) -> list[ToolCall]:
                     val_parsed = val
                 args[key] = val_parsed
 
+            # --- NSC-ACE-SABER wrapper unwrap ---
+            # Some agentic-tuned models emit <function=call_tool> with inner
+            # <parameter=name>TOOL_NAME</parameter> and <parameter=arguments>{...}</parameter>.
+            # Unwrap to the real tool name and arguments.
+            if name == "call_tool" and "name" in args and "arguments" in args:
+                inner_name = args["name"]
+                inner_args = args["arguments"]
+                if isinstance(inner_name, str) and isinstance(inner_args, dict):
+                    name = inner_name
+                    args = inner_args
+            # Also handle the case where the model puts a single JSON object
+            # inside <parameter=arguments> that contains both name and arguments.
+            elif name == "call_tool" and "arguments" in args:
+                inner = args["arguments"]
+                if isinstance(inner, dict) and "name" in inner and "arguments" in inner:
+                    inner_name = inner["name"]
+                    inner_args = inner["arguments"]
+                    if isinstance(inner_name, str) and isinstance(inner_args, dict):
+                        name = inner_name
+                        args = inner_args
+
             # Validate extracted args before creating ToolCall
             if name == "browser_get" and not _is_valid_url(args.get("url", "")):
                 continue
@@ -107,6 +129,48 @@ def _extract_tool_calls_from_text(text: str) -> list[ToolCall]:
                 continue
 
             if name:
+                tool_calls.append(
+                    ToolCall(
+                        id="tc_xml_" + secrets.token_hex(8),
+                        name=name,
+                        arguments=args,
+                    )
+                )
+
+    # --- Format 3: GLM-4.6V XML ---
+    # <tool_call>function_name
+    # <arg_key>key1</arg_key>
+    # <arg_value>value1</arg_value>
+    # ...
+    # </tool_call>
+    if not tool_calls:
+        for match in re.finditer(r"<tool_call>(.+?)</tool_call>", text, re.DOTALL):
+            block = match.group(1).strip()
+            lines = block.splitlines()
+            if not lines:
+                continue
+            name = lines[0].strip()
+            args: dict[str, Any] = {}
+            # Extract <arg_key>/<arg_value> pairs
+            keys = re.findall(r"<arg_key>(.+?)</arg_key>", block)
+            vals = re.findall(r"<arg_value>(.+?)</arg_value>", block)
+            for k, v in zip(keys, vals):
+                k = k.strip()
+                v = v.strip()
+                # GLM uses tojson for values, so try JSON parse first
+                try:
+                    v_parsed = json.loads(v)
+                except json.JSONDecodeError:
+                    v_parsed = v
+                args[k] = v_parsed
+
+            # Validate extracted args before creating ToolCall
+            if name == "browser_get" and not _is_valid_url(args.get("url", "")):
+                continue
+            if name == "write_file" and (not args.get("path") or not args.get("content")):
+                continue
+
+            if name and args:
                 tool_calls.append(
                     ToolCall(
                         id="tc_xml_" + secrets.token_hex(8),

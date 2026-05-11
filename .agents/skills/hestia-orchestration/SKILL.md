@@ -157,3 +157,16 @@ After completing a spec arc, write or update:
 - `docs/handoffs/L<NN>-<slug>-handoff.md` — technical summary
 - `docs/development-process/kimi-loop-log.md` — narrative entry at top
 - `docs/development-process/prompts/KIMI_CURRENT.md` — advance pointer or set idle
+
+## Operational Notes
+
+### Downloading models from Hugging Face
+The Hugging Face CLI tool is available as `hf` (not `huggingface-cli`):
+
+```bash
+# Download a specific file
+hf download <repo_id> <filename> --local-dir <path>
+
+# Example: download a GGUF quant
+hf download GestaltLabs/Qwen3.5-9B-NSC-ACE-SABER-GGUF Qwen3.5-9B-NSC-ACE-SABER.Q5_K_M.gguf --local-dir /home/dylan/models/qwen35-nsc-ace-saber
+```
