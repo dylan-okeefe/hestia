@@ -62,6 +62,7 @@ from hestia.tools.builtin import (
     make_read_artifact_tool,
     make_read_file_tool,
     make_reject_proposal_tool,
+    make_append_to_file_tool,
     make_reset_style_metric_tool,
     make_reset_style_profile_tool,
     make_save_memory_tool,
@@ -339,6 +340,7 @@ class AppContext:
         reg.register(make_terminal_tool(cfg.trust.blocked_shell_patterns or None))
         reg.register(make_read_file_tool(cfg.storage))
         reg.register(make_write_file_tool(cfg.storage))
+        reg.register(make_append_to_file_tool(cfg.storage))
         reg.register(make_search_memory_tool(self.memory_store))
         reg.register(make_save_memory_tool(self.memory_store))
         reg.register(make_list_memories_tool(self.memory_store))

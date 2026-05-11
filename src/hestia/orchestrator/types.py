@@ -106,3 +106,5 @@ class TurnContext:
     total_completion_tokens: int = 0
     total_reasoning_tokens: int = 0
     delegated: bool = False
+    # Circuit-breaker: count consecutive empty-arg failures per tool name
+    empty_tool_failure_counts: dict[str, int] = field(default_factory=dict)

@@ -122,8 +122,10 @@ class DefaultPolicyEngine(PolicyEngine):
             return True
 
         # Long tool chain - offload to subagent to keep parent context clean
-        if tool_chain_length > 5:
-            return True
+        # DISABLED: auto-delegation is causing subagent loops with the 9B model.
+        # Re-enable when subagent context handoff is more robust.
+        # if tool_chain_length > 5:
+        #     return True
 
         # Complex research tasks that might involve many steps
         research = (
@@ -134,8 +136,9 @@ class DefaultPolicyEngine(PolicyEngine):
         if research and any(kw in task_lower for kw in research):
             return True
 
-        # High projected tool usage
-        return projected_tool_calls > 3
+        # High projected tool usage - DISABLED alongside auto-delegation
+        # return projected_tool_calls > 3
+        return False
 
     def should_compress(self, session: Session, tokens_used: int, tokens_budget: int) -> bool:
         """Compress when we're over the context-pressure fraction of budget."""
