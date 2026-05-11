@@ -16,7 +16,6 @@ from hestia.artifacts.store import ArtifactStore
 from hestia.config import HestiaConfig
 from hestia.context.builder import ContextBuilder
 from hestia.context.compressor import InferenceHistoryCompressor
-from hestia.context.memory_epoch import MemoryEpochBuilder
 from hestia.core.inference import InferenceClient
 from hestia.core.rate_limiter import SessionRateLimiter
 from hestia.core.validators import validate_inference_model_name
@@ -26,7 +25,6 @@ from hestia.identity import IdentityCompiler
 from hestia.inference import SlotManager
 from hestia.memory import MemoryEpochCompiler, MemoryStore
 from hestia.memory.handoff import SessionHandoffSummarizer
-from hestia.memory.session_summarizer import SessionSummarizer
 from hestia.orchestrator import Orchestrator
 from hestia.orchestrator.engine import ConfirmCallback
 from hestia.persistence.db import Database
@@ -64,6 +62,7 @@ from hestia.tools.builtin import (
     make_read_artifact_tool,
     make_read_file_tool,
     make_reject_proposal_tool,
+    make_append_to_file_tool,
     make_reset_style_metric_tool,
     make_reset_style_profile_tool,
     make_save_memory_tool,
@@ -146,11 +145,9 @@ class AppContext:
         self.db = Database(config.storage.database_url)
         self.artifact_store = ArtifactStore(config.storage.artifacts_dir)
         self.event_bus = EventBus()
-        self.memory_store = MemoryStore(self.db)
-        self.session_store = SessionStore(
-            self.db, event_bus=self.event_bus, memory_store=self.memory_store
-        )
+        self.session_store = SessionStore(self.db, event_bus=self.event_bus)
         self.policy = _make_policy(config)
+        self.memory_store = MemoryStore(self.db)
         self.failure_store = FailureStore(self.db)
         self.trace_store = TraceStore(self.db)
         self.scheduler_store = SchedulerStore(self.db)
@@ -207,11 +204,6 @@ class AppContext:
         return cb
 
     @functools.cached_property
-    def memory_epoch_builder(self) -> MemoryEpochBuilder:
-        """Lazy memory epoch builder — created on first access."""
-        return MemoryEpochBuilder(self.memory_store)
-
-    @functools.cached_property
     def slot_manager(self) -> SlotManager:
         """Lazy slot manager — created on first access."""
         return SlotManager(
@@ -220,13 +212,6 @@ class AppContext:
             slot_dir=self.config.slots.slot_dir,
             pool_size=self.config.slots.pool_size,
         )
-
-    @functools.cached_property
-    def session_summarizer(self) -> SessionSummarizer:
-        """Lazy session summarizer — created on first access."""
-        summarizer = SessionSummarizer(inference=self.inference)
-        self.session_store.session_summarizer = summarizer
-        return summarizer
 
     @functools.cached_property
     def handoff_summarizer(self) -> SessionHandoffSummarizer | None:
@@ -322,8 +307,6 @@ class AppContext:
 
     def make_orchestrator(self) -> Orchestrator:
         """Create an Orchestrator with the current app context."""
-        # Ensure lazy subsystems are wired before use
-        _ = self.session_summarizer
         return Orchestrator(
             inference=self.inference,
             session_store=self.session_store,
@@ -337,7 +320,6 @@ class AppContext:
             failure_store=self.failure_store,
             trace_store=self.trace_store,
             handoff_summarizer=self.handoff_summarizer,
-            memory_epoch_builder=self.memory_epoch_builder,
             injection_scanner=self.make_injection_scanner(),
             proposal_store=self.proposal_store,
             style_store=self.style_store,
@@ -358,6 +340,7 @@ class AppContext:
         reg.register(make_terminal_tool(cfg.trust.blocked_shell_patterns or None))
         reg.register(make_read_file_tool(cfg.storage))
         reg.register(make_write_file_tool(cfg.storage))
+        reg.register(make_append_to_file_tool(cfg.storage))
         reg.register(make_search_memory_tool(self.memory_store))
         reg.register(make_save_memory_tool(self.memory_store))
         reg.register(make_list_memories_tool(self.memory_store))

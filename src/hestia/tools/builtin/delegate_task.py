@@ -88,10 +88,7 @@ def make_delegate_task_tool(
 
     @tool(
         name="delegate_task",
-        public_description=(
-            "Spawn a subagent to handle a task in a separate session "
-            "with its own slot."
-        ),
+        public_description="Spawn a subagent to handle a task in a separate session with its own slot.",
         tags=["orchestration", "builtin"],
         capabilities=[ORCHESTRATION],
         parameters_schema={
@@ -105,13 +102,6 @@ def make_delegate_task_tool(
                     "type": "string",
                     "description": "Relevant context to pass to the subagent",
                 },
-                "parent_context": {
-                    "type": "string",
-                    "description": (
-                        "Recent message history from the parent session, "
-                        "serialized as context for the subagent"
-                    ),
-                },
                 "timeout_seconds": {
                     "type": "number",
                     "description": f"Max seconds to run (default {default_timeout})",
@@ -123,7 +113,6 @@ def make_delegate_task_tool(
     async def delegate_task(
         task: str,
         context: str = "",
-        parent_context: str = "",
         timeout_seconds: float | None = None,
     ) -> str:
         """Delegate a task to a subagent running in a separate session.
@@ -151,13 +140,7 @@ def make_delegate_task_tool(
 
         try:
             # Build the prompt for the subagent
-            prompt_parts: list[str] = []
-            if parent_context:
-                prompt_parts.append(
-                    "Here is the recent conversation history from the parent session:\n"
-                    f"{parent_context}"
-                )
-            prompt_parts.append(f"Task: {task}")
+            prompt_parts = [f"Task: {task}"]
             if context:
                 prompt_parts.append(f"\nContext: {context}")
             prompt_parts.append(
