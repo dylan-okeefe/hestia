@@ -146,19 +146,6 @@ async def run_platform(
             else:
                 session = user_sessions[platform_user]
 
-            # Handle meta-commands before sending to model
-            if text.strip().lower() == "/reset":
-                new_session = await app.session_store.create_session(
-                    platform=platform_name,
-                    platform_user=platform_user,
-                    archive_previous=session,
-                )
-                user_sessions[platform_user] = new_session
-                await adapter.send_message(
-                    platform_user, f"Session reset. New session: {new_session.id[:8]}..."
-                )
-                return
-
             user_message = Message(role="user", content=text)
 
             stream_callback = None
