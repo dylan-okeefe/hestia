@@ -18,8 +18,16 @@ def make_list_dir_tool(config: StorageConfig) -> Any:
         name="list_dir",
         public_description=(
             "List directory contents. "
-            "Params: path (str, default '.'), max_entries (int, default 200)."
+            "Params: path (str, default first allowed root), max_entries (int, default 200)."
         ),
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Directory path to list. Defaults to the first allowed root if omitted."},
+                "max_entries": {"type": "integer", "description": "Maximum entries to return (default 200)."},
+            },
+            "required": ["path"],
+        },
         tags=["system", "builtin"],
         capabilities=[READ_LOCAL],
     )
@@ -29,6 +37,10 @@ def make_list_dir_tool(config: StorageConfig) -> Any:
         Returns a formatted listing with file types and sizes.
         Caps output at max_entries to avoid flooding context.
         """
+        # Default to first allowed root if path is omitted or relative "."
+        if path == "." and allowed_roots:
+            path = allowed_roots[0]
+
         # Check path sandboxing
         if error := check_path_allowed(path, allowed_roots):
             return error

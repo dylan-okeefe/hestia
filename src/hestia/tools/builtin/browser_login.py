@@ -37,6 +37,13 @@ def _normalize_domain(hostname: str) -> str:
         "Params: url (str) — the login page URL. "
         "Returns the saved domain name or an error message."
     ),
+    parameters_schema={
+        "type": "object",
+        "properties": {
+            "url": {"type": "string", "description": "The login page URL (e.g. https://linkedin.com/login)."},
+        },
+        "required": ["url"],
+    },
     tags=["network", "browser", "builtin"],
 )
 async def browser_login(url: str) -> str:

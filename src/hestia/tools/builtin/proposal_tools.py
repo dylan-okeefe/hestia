@@ -20,6 +20,13 @@ def make_list_proposals_tool(
     @tool(
         name="list_proposals",
         public_description="List reflection proposals. Params: status (str, default 'pending').",
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "status": {"type": "string", "description": "Filter by status: pending, accepted, rejected, deferred, expired (default pending)."},
+            },
+            "required": [],
+        },
         tags=["proposal", "builtin"],
         capabilities=[SELF_MANAGEMENT],
     )
@@ -59,6 +66,13 @@ def make_show_proposal_tool(
     @tool(
         name="show_proposal",
         public_description="Show full details of a proposal. Params: proposal_id (str).",
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "proposal_id": {"type": "string", "description": "The proposal ID to look up."},
+            },
+            "required": ["proposal_id"],
+        },
         tags=["proposal", "builtin"],
         capabilities=[SELF_MANAGEMENT],
     )
@@ -108,6 +122,14 @@ def make_accept_proposal_tool(
         public_description=(
             "Accept a reflection proposal. Params: proposal_id (str), note (str, optional)."
         ),
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "proposal_id": {"type": "string", "description": "The proposal ID to accept."},
+                "note": {"type": "string", "description": "Optional review note."},
+            },
+            "required": ["proposal_id"],
+        },
         tags=["proposal", "builtin"],
         capabilities=[SELF_MANAGEMENT],
         requires_confirmation=True,
@@ -151,6 +173,14 @@ def make_reject_proposal_tool(
         public_description=(
             "Reject a reflection proposal. Params: proposal_id (str), note (str, optional)."
         ),
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "proposal_id": {"type": "string", "description": "The proposal ID to reject."},
+                "note": {"type": "string", "description": "Optional review note."},
+            },
+            "required": ["proposal_id"],
+        },
         tags=["proposal", "builtin"],
         capabilities=[SELF_MANAGEMENT],
         requires_confirmation=True,
@@ -191,6 +221,13 @@ def make_defer_proposal_tool(
     @tool(
         name="defer_proposal",
         public_description="Defer a reflection proposal. Params: proposal_id (str).",
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "proposal_id": {"type": "string", "description": "The proposal ID to defer."},
+            },
+            "required": ["proposal_id"],
+        },
         tags=["proposal", "builtin"],
         capabilities=[SELF_MANAGEMENT],
     )

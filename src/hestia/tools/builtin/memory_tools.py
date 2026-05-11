@@ -21,7 +21,14 @@ def make_search_memory_tool(
     @tool(
         name="search_memory",
         public_description="Search long-term memory. Params: query (str), limit (int, default 5).",
-
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search query (supports AND, OR, NOT, exact phrases)."},
+                "limit": {"type": "integer", "description": "Maximum number of results (default 5)."},
+            },
+            "required": ["query"],
+        },
         tags=["memory", "builtin"],
         capabilities=[MEMORY_READ],
     )
@@ -59,7 +66,14 @@ def make_save_memory_tool(
     @tool(
         name="save_memory",
         public_description="Save a note to memory. Params: content (str), tags (str or list, default '').",
-
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "content": {"type": "string", "description": "The text content to remember."},
+                "tags": {"type": "string", "description": "Comma-separated tags for categorization (e.g. 'project, todo')."},
+            },
+            "required": ["content"],
+        },
         tags=["memory", "builtin"],
         capabilities=[MEMORY_WRITE],
     )
@@ -102,7 +116,14 @@ def make_list_memories_tool(
     @tool(
         name="list_memories",
         public_description="List recent memories. Params: tag (str, default ''), limit (int, default 20).",
-
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "tag": {"type": "string", "description": "Optional tag to filter by (e.g. 'project')."},
+                "limit": {"type": "integer", "description": "Maximum number of results (default 20)."},
+            },
+            "required": [],
+        },
         tags=["memory", "builtin"],
         capabilities=[MEMORY_READ],
     )
@@ -140,7 +161,13 @@ def make_delete_memory_tool(store: MemoryStore) -> Callable[..., Coroutine[Any, 
     @tool(
         name="delete_memory",
         public_description="Delete a memory by id. Params: memory_id (str).",
-
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "memory_id": {"type": "string", "description": "The memory ID to delete."},
+            },
+            "required": ["memory_id"],
+        },
         tags=["memory", "builtin"],
         capabilities=[MEMORY_WRITE],
         requires_confirmation=True,

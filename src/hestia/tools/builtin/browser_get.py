@@ -52,6 +52,16 @@ def _load_session(store: BrowserSessionStore, domain: str) -> dict[str, Any] | N
         "wait_seconds (int, default 3) — extra time to let JS hydrate. "
         "timeout_seconds (int, default 30)."
     ),
+    parameters_schema={
+        "type": "object",
+        "properties": {
+            "url": {"type": "string", "description": "Full URL to fetch (e.g. https://example.com)."},
+            "wait_for_selector": {"type": "string", "description": "Optional CSS selector to wait for before returning."},
+            "wait_seconds": {"type": "integer", "description": "Extra seconds to wait for JS hydration (default 3)."},
+            "timeout_seconds": {"type": "integer", "description": "Page load timeout in seconds (default 30)."},
+        },
+        "required": ["url"],
+    },
     max_inline_chars=6000,
     tags=["network", "browser", "builtin"],
     capabilities=[NETWORK_EGRESS],
