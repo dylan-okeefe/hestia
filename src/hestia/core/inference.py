@@ -3,6 +3,8 @@
 import asyncio
 import dataclasses
 import json
+import re
+import secrets
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -29,6 +31,155 @@ def _strip_historical_reasoning(messages: list[Message]) -> list[Message]:
             msg = dataclasses.replace(msg, reasoning_content=None)
         result.append(msg)
     return result
+
+
+def _extract_tool_calls_from_text(text: str) -> list[ToolCall]:
+    """Parse XML-style <tool_call> blocks from model text/reasoning.
+
+    Qwen3.5 in reasoning mode occasionally emits tool calls inside its
+    <think> block (which lands in ``reasoning_content``) but fails to
+    output the structured ``tool_calls`` JSON. This fallback extracts
+    them so the turn can continue instead of appearing to hang.
+
+    Supports three formats:
+    1. JSON object: ``<tool_call>{"name": "...", "arguments": {...}}</tool_call>``
+    2. Ad-hoc XML: ``<tool_call>\n<function=name>\n<parameter=key>\nvalue\n...``
+    3. GLM XML: ``<tool_call>func_name\n<arg_key>k</arg_key>\n<arg_value>v</arg_value>\n...``
+    """
+    if "<tool_call>" not in text:
+        return []
+
+    tool_calls: list[ToolCall] = []
+
+    def _is_valid_url(url: str) -> bool:
+        """Reject URLs that contain newlines, XML remnants, or are obviously truncated."""
+        if not url or "\n" in url or "</" in url or "<parameter" in url:
+            return False
+        return url.startswith(("http://", "https://"))
+
+    # --- Format 1: JSON inside <tool_call> ... </tool_call> ---
+    # Use DOTALL so . matches newlines.
+    for match in re.finditer(r"<tool_call>(.+?)</tool_call>", text, re.DOTALL):
+        payload = match.group(1).strip()
+        # Some models wrap the JSON in ```json blocks inside the tag
+        payload = re.sub(r"^```json\s*|\s*```$", "", payload).strip()
+        try:
+            data = json.loads(payload)
+        except json.JSONDecodeError:
+            continue
+
+        name = data.get("name") or data.get("function", {}).get("name")
+        arguments = data.get("arguments") or data.get("function", {}).get("arguments")
+        if name and isinstance(arguments, dict):
+            tool_calls.append(
+                ToolCall(
+                    id="tc_xml_" + secrets.token_hex(8),
+                    name=name,
+                    arguments=arguments,
+                )
+            )
+
+    # --- Format 2: ad-hoc <function=name> <parameter=key> value ---
+    # Only run if Format 1 found nothing.
+    if not tool_calls:
+        for block_match in re.finditer(r"<tool_call>\s*(.+?)(?:</tool_call>|(?=<tool_call>)|$)", text, re.DOTALL):
+            block = block_match.group(1).strip()
+            fn_match = re.search(r"<function[=:]\s*([^>\s]+)>", block)
+            if not fn_match:
+                continue
+            name = fn_match.group(1).strip()
+
+            args: dict[str, Any] = {}
+            # Match <parameter=key> or <parameter key> followed by value on next line(s)
+            for param_match in re.finditer(r"<parameter[=:]\s*([^>\s]+)>\s*(.+?)(?=<parameter[=:]|</tool_call>|$)", block, re.DOTALL):
+                key = param_match.group(1).strip()
+                val = param_match.group(2).strip()
+                # Try to coerce numbers/booleans, else keep as string
+                try:
+                    val_parsed = json.loads(val)
+                except json.JSONDecodeError:
+                    val_parsed = val
+                args[key] = val_parsed
+
+            # --- NSC-ACE-SABER wrapper unwrap ---
+            # Some agentic-tuned models emit <function=call_tool> with inner
+            # <parameter=name>TOOL_NAME</parameter> and <parameter=arguments>{...}</parameter>.
+            # Unwrap to the real tool name and arguments.
+            if name == "call_tool" and "name" in args and "arguments" in args:
+                inner_name = args["name"]
+                inner_args = args["arguments"]
+                if isinstance(inner_name, str) and isinstance(inner_args, dict):
+                    name = inner_name
+                    args = inner_args
+            # Also handle the case where the model puts a single JSON object
+            # inside <parameter=arguments> that contains both name and arguments.
+            elif name == "call_tool" and "arguments" in args:
+                inner = args["arguments"]
+                if isinstance(inner, dict) and "name" in inner and "arguments" in inner:
+                    inner_name = inner["name"]
+                    inner_args = inner["arguments"]
+                    if isinstance(inner_name, str) and isinstance(inner_args, dict):
+                        name = inner_name
+                        args = inner_args
+
+            # Validate extracted args before creating ToolCall
+            if name == "browser_get" and not _is_valid_url(args.get("url", "")):
+                continue
+            if name == "write_file" and (not args.get("path") or not args.get("content")):
+                continue
+
+            if name:
+                tool_calls.append(
+                    ToolCall(
+                        id="tc_xml_" + secrets.token_hex(8),
+                        name=name,
+                        arguments=args,
+                    )
+                )
+
+    # --- Format 3: GLM-4.6V XML ---
+    # <tool_call>function_name
+    # <arg_key>key1</arg_key>
+    # <arg_value>value1</arg_value>
+    # ...
+    # </tool_call>
+    if not tool_calls:
+        for match in re.finditer(r"<tool_call>(.+?)</tool_call>", text, re.DOTALL):
+            block = match.group(1).strip()
+            lines = block.splitlines()
+            if not lines:
+                continue
+            name = lines[0].strip()
+            args: dict[str, Any] = {}
+            # Extract <arg_key>/<arg_value> pairs
+            keys = re.findall(r"<arg_key>(.+?)</arg_key>", block)
+            vals = re.findall(r"<arg_value>(.+?)</arg_value>", block)
+            for k, v in zip(keys, vals):
+                k = k.strip()
+                v = v.strip()
+                # GLM uses tojson for values, so try JSON parse first
+                try:
+                    v_parsed = json.loads(v)
+                except json.JSONDecodeError:
+                    v_parsed = v
+                args[k] = v_parsed
+
+            # Validate extracted args before creating ToolCall
+            if name == "browser_get" and not _is_valid_url(args.get("url", "")):
+                continue
+            if name == "write_file" and (not args.get("path") or not args.get("content")):
+                continue
+
+            if name and args:
+                tool_calls.append(
+                    ToolCall(
+                        id="tc_xml_" + secrets.token_hex(8),
+                        name=name,
+                        arguments=args,
+                    )
+                )
+
+    return tool_calls
 
 
 class InferenceClient:
@@ -269,14 +420,30 @@ class InferenceClient:
                 try:
                     arguments = json.loads(fn["arguments"])
                 except json.JSONDecodeError as exc:
-                    raise InferenceServerError(
-                        f"tool_call arguments for {fn['name']!r} are malformed JSON: {exc}"
-                    ) from exc
+                    # Gracefully skip malformed tool calls instead of crashing the turn.
+                    # Log for debugging; model may retry in next iteration.
+                    print(f"[WARN] Malformed tool_call arguments for {fn['name']!r}: {exc}")
+                    continue
                 if not isinstance(arguments, dict):
-                    raise InferenceServerError(
-                        f"tool_call arguments for {fn['name']!r} are not a dict: "
+                    print(
+                        f"[WARN] tool_call arguments for {fn['name']!r} are not a dict: "
                         f"{type(arguments).__name__}"
                     )
+                    continue
+                # Unwrap call_tool wrapper: if the model uses call_tool with nested name+arguments,
+                # extract the inner tool call directly.
+                if fn["name"] == "call_tool" and "name" in arguments and "arguments" in arguments:
+                    inner_name = arguments["name"]
+                    inner_args = arguments["arguments"]
+                    if isinstance(inner_name, str) and isinstance(inner_args, dict):
+                        tool_calls.append(
+                            ToolCall(
+                                id=tc["id"],
+                                name=inner_name,
+                                arguments=inner_args,
+                            )
+                        )
+                        continue
                 tool_calls.append(
                     ToolCall(
                         id=tc["id"],
@@ -284,6 +451,21 @@ class InferenceClient:
                         arguments=arguments,
                     )
                 )
+        else:
+            # Fallback: Qwen3.5 in reasoning mode sometimes emits tool calls inside
+            # <think> blocks (which land in reasoning_content) but omits the structured
+            # tool_calls JSON. Parse XML-style <tool_call> tags as a safety net.
+            combined = ""
+            reasoning = message.get("reasoning_content")
+            if reasoning:
+                combined += reasoning + "\n"
+            content = message.get("content")
+            if content:
+                combined += content + "\n"
+            if combined:
+                fallback = _extract_tool_calls_from_text(combined)
+                if fallback:
+                    tool_calls = fallback
 
         # Get usage stats
         usage = data.get("usage", {})
