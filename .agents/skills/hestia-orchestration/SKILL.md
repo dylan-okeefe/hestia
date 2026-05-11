@@ -66,6 +66,12 @@ Before declaring a chunk done, verify:
 8. **Type safety** — `mypy` reports 0 errors in changed files.
 9. **No sync I/O in async paths** — Wrap sync calls with `asyncio.to_thread` or use async-native APIs.
 10. **No bare excepts** — Narrow exception clauses; log unexpected ones.
+11. **No leaked API keys or secrets** — Scan for hardcoded tokens, passwords, or API keys in changed files and logs. Run:
+    ```bash
+    git diff --cached -p | grep -iE "(api[_-]?key|token|secret|password|bearer)\s*[:=]\s*[\"'][a-zA-Z0-9_-]{20,}"
+    git diff --cached --name-only | xargs grep -iE "[0-9]+:[A-Za-z0-9_-]{35}" 2>/dev/null
+    ```
+    Log files (`.log`, `*.log`) must NEVER be committed — they capture runtime tokens. If found, `git rm --cached`, add `*.log` to `.gitignore`, and rotate the exposed credential immediately.
 
 See `references/review-checklist.md` for the detailed version with examples.
 
