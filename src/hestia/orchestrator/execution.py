@@ -123,6 +123,25 @@ class TurnExecution:
                 logger.debug("Executing tools: %s", ", ".join(tool_names))
                 await set_typing(True)
 
+                # Show reasoning before tool status so user can see model's thinking
+                if chat_response.reasoning_content:
+                    try:
+                        reasoning_display = f"💭 {chat_response.reasoning_content[:2000]}"
+                        if len(chat_response.reasoning_content) > 2000:
+                            reasoning_display += "\n\n... (reasoning truncated)"
+                        await ctx.respond_callback(reasoning_display)
+                    except Exception:
+                        pass
+
+                # Status update: tell user what we're doing (first iteration only)
+                if turn.iterations == 0:
+                    status = self._format_tool_status(tool_names)
+                    if status:
+                        try:
+                            await ctx.respond_callback(status)
+                        except Exception:
+                            pass  # best-effort; don't fail the turn
+
                 task_desc = (ctx.user_message.content or "").strip()
                 use_policy_delegation = (
                     "delegate_task" in self._tools.list_names()
@@ -144,7 +163,7 @@ class TurnExecution:
                     await transition(turn, TurnState.EXECUTING_TOOLS, "")
                 else:
                     tool_results, handles = await self._execute_tool_calls(
-                        session, chat_response.tool_calls, ctx.allowed_tools
+                        session, chat_response.tool_calls, ctx.allowed_tools, ctx
                     )
                     ctx.artifact_handles.extend(handles)
 
@@ -187,6 +206,16 @@ class TurnExecution:
                     logger.debug("Executing tools: %s", ", ".join(tool_names))
                     await set_typing(True)
 
+                    # Show reasoning before tool status so user can see model's thinking
+                    if chat_response.reasoning_content:
+                        try:
+                            reasoning_display = f"💭 {chat_response.reasoning_content[:2000]}"
+                            if len(chat_response.reasoning_content) > 2000:
+                                reasoning_display += "\n\n... (reasoning truncated)"
+                            await ctx.respond_callback(reasoning_display)
+                        except Exception:
+                            pass
+
                     task_desc = (ctx.user_message.content or "").strip()
                     use_policy_delegation = (
                         "delegate_task" in self._tools.list_names()
@@ -205,7 +234,7 @@ class TurnExecution:
                         await transition(turn, TurnState.EXECUTING_TOOLS, "")
                     else:
                         tool_results, handles = await self._execute_tool_calls(
-                            session, chat_response.tool_calls, ctx.allowed_tools
+                            session, chat_response.tool_calls, ctx.allowed_tools, ctx
                         )
                         ctx.artifact_handles.extend(handles)
 
@@ -246,7 +275,12 @@ class TurnExecution:
 
                 await transition(turn, TurnState.DONE, "")
                 turn.final_response = content
-                await ctx.respond_callback(content)
+                # Surface reasoning to user (does not affect stored message or prompt)
+                if chat_response.reasoning_content:
+                    display = f"💭 {chat_response.reasoning_content}\n\n━━━\n\n{content}"
+                else:
+                    display = content
+                await ctx.respond_callback(display)
                 break
 
             else:
@@ -374,7 +408,11 @@ class TurnExecution:
         )
 
     async def _execute_tool_calls(
-        self, session: Session, tool_calls: list[ToolCall], allowed_tools: list[str] | None = None
+        self,
+        session: Session,
+        tool_calls: list[ToolCall],
+        allowed_tools: list[str] | None = None,
+        ctx: "TurnContext | None" = None,
     ) -> tuple[list[Message], list[str]]:
         """Execute tool calls and return result messages and artifact handles.
 
@@ -463,6 +501,28 @@ class TurnExecution:
         for i, tc in enumerate(tool_calls):
             result = concurrent_results[i] if i in concurrent_results else serial_results[i]
             result = self._scan_tool_result(result)
+
+            # Circuit breaker: detect repeated empty-arg failures
+            is_empty_args = tc.arguments is None or tc.arguments == {}
+            looks_like_missing_arg_error = (
+                result.status == "error"
+                and isinstance(result.content, str)
+                and (
+                    "requires a" in result.content.lower()
+                    or "missing" in result.content.lower()
+                    or "requires" in result.content.lower()
+                )
+            )
+            if is_empty_args and looks_like_missing_arg_error and ctx is not None:
+                count = ctx.empty_tool_failure_counts.get(tc.name, 0) + 1
+                ctx.empty_tool_failure_counts[tc.name] = count
+                if count >= 3:
+                    result = ToolCallResult.error(
+                        f"🛑 CIRCUIT BREAKER: You have called {tc.name} with missing/empty arguments {count} times. "
+                        "You are stuck in a loop and cannot generate the correct JSON payload. "
+                        "STOP calling this tool. Instead, write your response as plain text for the user."
+                    )
+
             if result.artifact_handle:
                 artifact_handles.append(result.artifact_handle)
 
@@ -653,6 +713,44 @@ class TurnExecution:
 
         result = await self._tools.call(tc.name, tc.arguments or {})
         return self._scan_tool_result(result)
+
+    def _format_tool_status(self, tool_names: list[str]) -> str | None:
+        """Format a human-readable status line for the tools about to run."""
+        if not tool_names:
+            return None
+        emoji_map = {
+            "browser_get": "🌐",
+            "browser_login": "🔐",
+            "write_file": "📝",
+            "append_to_file": "📝",
+            "read_file": "📄",
+            "list_dir": "📁",
+            "terminal": "💻",
+            "search_web": "🔍",
+            "http_get": "🌐",
+            "delegate_task": "👤",
+            "list_tools": "🛠️",
+            "describe_tool": "🛠️",
+            "create_scheduled_task": "⏰",
+            "save_memory": "🧠",
+            "search_memory": "🧠",
+            "list_memories": "🧠",
+            "delete_memory": "🧠",
+            "read_artifact": "📦",
+            "current_time": "🕐",
+            "web_search": "🔍",
+            "email_search_and_read": "📧",
+            "send_email": "📧",
+            "accept_proposal": "✅",
+            "reject_proposal": "❌",
+            "show_proposal": "📋",
+            "list_proposals": "📋",
+        }
+        parts = []
+        for name in tool_names:
+            emoji = emoji_map.get(name, "🛠️")
+            parts.append(f"{emoji} {name}")
+        return "Working: " + ", ".join(parts) + "..."
 
     def _scan_tool_result(self, result: ToolCallResult) -> ToolCallResult:
         """Run injection scanner over a tool result, annotating if triggered."""
