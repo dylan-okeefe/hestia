@@ -87,10 +87,10 @@ _DB_PATH = _ROOT / "hestia.db"
 config = HestiaConfig(
     inference=InferenceConfig(
         base_url="http://127.0.0.1:8001",
-        model_name="Qwen3.5-9B-UD-Q4_K_XL.gguf",
+        model_name="Qwen3.5-9B-DeepSeek-V4-Flash-Q4_K_M.gguf",
         # Shared Hermes llama-server runs -c 49152 -np 3 → 16384 per slot.
         # Override this if you change the Hermes service's ctx/parallel.
-        context_length=16384,
+        context_length=32768,
         default_reasoning_budget=2048,
         max_tokens=4096,
         stream=True,
@@ -170,12 +170,15 @@ config = HestiaConfig(
         "5. For LinkedIn, JavaScript-heavy sites, or any page requiring login, ALWAYS use browser_get — NEVER use terminal with curl. curl cannot render JavaScript or reuse authenticated sessions.\n"
         "6. If browser_get fails on a site, STOP and tell the user. Do not fallback to curl or other workarounds.\n"
         "7. STOP after 2-3 searches. Compile and present what you found. Do NOT keep searching for 'better' or 'more' results.\n"
-        "8. If you already have data from a previous search, USE IT. Do not repeat the same search with slightly different filters.\n\n"
+        "8. If you already have data from a previous search, USE IT. Do not repeat the same search with slightly different filters.\n"
+        "9. If a URL returns 404, STOP guessing alternative URLs on that domain. Use the data you already have or tell the user the page is gone.\n"
+        "10. When calling write_file, you MUST provide both 'path' and 'content' as valid JSON strings. If the content is longer than ~2000 characters, write the first chunk with write_file and append the rest with append_to_file.\n\n"
         "TOOL EXAMPLES (always include required arguments):\n"
         '- list_dir: {\"path\": \"/home/dylan/Documents/Job Search\"}\n'
         '- read_file: {\"path\": \"/home/dylan/Documents/Job Search/resume.pdf\"}\n'
         '- browser_get: {\"url\": \"https://www.linkedin.com/jobs/search/?keywords=agentic+AI\", \"wait_seconds\": 5}\n'
         '- write_file: {\"path\": \"/home/dylan/test.txt\", \"content\": \"hello\"}\n'
+        '- append_to_file: {\"path\": \"/home/dylan/test.txt\", \"content\": \"more text\"}\n'
     ),
-    max_iterations=10,
+    max_iterations=40,
 )
