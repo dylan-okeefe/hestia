@@ -34,8 +34,13 @@ def make_read_file_tool(config: StorageConfig) -> Any:
         tags=["filesystem"],
         capabilities=[READ_LOCAL],
     )
-    async def read_file(path: str, max_bytes: int = 1_000_000) -> str:
+    async def read_file(path: str = "", max_bytes: int = 1_000_000) -> str:
         """Read a file and return its contents."""
+        if not path:
+            return (
+                "Error: read_file requires a 'path' argument. "
+                'Example: {"path": "/home/dylan/Documents/file.md"}'
+            )
         # Check path sandboxing
         if error := check_path_allowed(path, allowed_roots):
             return error

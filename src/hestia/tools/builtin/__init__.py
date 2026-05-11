@@ -52,6 +52,7 @@ from hestia.tools.builtin.style_tools import (
 )
 from hestia.tools.builtin.terminal import make_terminal_tool
 from hestia.tools.builtin.web_search import make_web_search_tool
+from hestia.tools.builtin.append_to_file import make_append_to_file_tool
 from hestia.tools.builtin.write_file import make_write_file_tool
 from hestia.tools.capabilities import (
     EMAIL_SEND,
@@ -90,6 +91,7 @@ __all__ = [
     "make_web_search_tool",
     "make_email_search_and_read_tool",
     "make_email_tools",
+    "make_append_to_file_tool",
     "make_write_file_tool",
     "make_list_proposals_tool",
     "make_show_proposal_tool",
