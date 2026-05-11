@@ -356,14 +356,30 @@ class InferenceClient:
                 try:
                     arguments = json.loads(fn["arguments"])
                 except json.JSONDecodeError as exc:
-                    raise InferenceServerError(
-                        f"tool_call arguments for {fn['name']!r} are malformed JSON: {exc}"
-                    ) from exc
+                    # Gracefully skip malformed tool calls instead of crashing the turn.
+                    # Log for debugging; model may retry in next iteration.
+                    print(f"[WARN] Malformed tool_call arguments for {fn['name']!r}: {exc}")
+                    continue
                 if not isinstance(arguments, dict):
-                    raise InferenceServerError(
-                        f"tool_call arguments for {fn['name']!r} are not a dict: "
+                    print(
+                        f"[WARN] tool_call arguments for {fn['name']!r} are not a dict: "
                         f"{type(arguments).__name__}"
                     )
+                    continue
+                # Unwrap call_tool wrapper: if the model uses call_tool with nested name+arguments,
+                # extract the inner tool call directly.
+                if fn["name"] == "call_tool" and "name" in arguments and "arguments" in arguments:
+                    inner_name = arguments["name"]
+                    inner_args = arguments["arguments"]
+                    if isinstance(inner_name, str) and isinstance(inner_args, dict):
+                        tool_calls.append(
+                            ToolCall(
+                                id=tc["id"],
+                                name=inner_name,
+                                arguments=inner_args,
+                            )
+                        )
+                        continue
                 tool_calls.append(
                     ToolCall(
                         id=tc["id"],
