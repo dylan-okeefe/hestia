@@ -17,9 +17,6 @@ from hestia.errors import (
 from hestia.inference.slot_manager import SlotManager
 from hestia.memory.handoff import SessionHandoffSummarizer
 from hestia.orchestrator.assembly import TurnAssembly
-
-if TYPE_CHECKING:
-    from hestia.context.memory_epoch import MemoryEpochBuilder
 from hestia.orchestrator.execution import ConfirmCallback as ConfirmCallback
 from hestia.orchestrator.execution import TurnExecution
 from hestia.orchestrator.finalization import TurnFinalization
@@ -79,7 +76,6 @@ class Orchestrator:
         rate_limiter: SessionRateLimiter | None = None,
         stream: bool = False,
         event_bus: "EventBus | None" = None,
-        memory_epoch_builder: "MemoryEpochBuilder | None" = None,
     ):
         """Initialize the orchestrator."""
         self._inference = inference
@@ -111,7 +107,6 @@ class Orchestrator:
             style_store=style_store,
             style_config=style_config,
             slot_manager=slot_manager,
-            memory_epoch_builder=memory_epoch_builder,
         )
 
         self._execution = TurnExecution(
