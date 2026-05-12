@@ -1,6 +1,7 @@
 """Turn execution phase: model inference, tool dispatch, confirmation gating."""
 
 import asyncio
+import contextlib
 import json
 import logging
 from collections.abc import Awaitable, Callable
@@ -116,75 +117,9 @@ class TurnExecution:
             await self._store.append_message(session.id, assistant_msg)
 
             if chat_response.finish_reason == "tool_calls":
-                await transition(turn, TurnState.EXECUTING_TOOLS, "")
-
-                tool_names = [tc.name for tc in chat_response.tool_calls]
-                ctx.tool_chain.extend(tool_names)
-                logger.debug("Executing tools: %s", ", ".join(tool_names))
-                await set_typing(True)
-
-                # Show reasoning before tool status so user can see model's thinking
-                if chat_response.reasoning_content:
-                    try:
-                        reasoning_display = f"💭 {chat_response.reasoning_content[:2000]}"
-                        if len(chat_response.reasoning_content) > 2000:
-                            reasoning_display += "\n\n... (reasoning truncated)"
-                        await ctx.respond_callback(reasoning_display)
-                    except Exception:
-                        pass
-
-                # Status update: tell user what we're doing (first iteration only)
-                if turn.iterations == 0:
-                    status = self._format_tool_status(tool_names)
-                    if status:
-                        try:
-                            await ctx.respond_callback(status)
-                        except Exception:
-                            pass  # best-effort; don't fail the turn
-
-                task_desc = (ctx.user_message.content or "").strip()
-                use_policy_delegation = (
-                    "delegate_task" in self._tools.list_names()
-                    and self._policy.should_delegate(
-                        session,
-                        task_desc,
-                        turn.tool_calls_made,
-                        len(chat_response.tool_calls),
-                    )
+                await self._handle_tool_calls(
+                    ctx, turn, chat_response, transition, set_typing, assistant_msg
                 )
-                ctx.delegated = use_policy_delegation
-
-                if use_policy_delegation:
-                    await transition(turn, TurnState.AWAITING_SUBAGENT, "")
-                    tool_results, handles = await self._execute_policy_delegation(
-                        ctx.user_message, chat_response.tool_calls
-                    )
-                    ctx.artifact_handles.extend(handles)
-                    await transition(turn, TurnState.EXECUTING_TOOLS, "")
-                else:
-                    tool_results, handles = await self._execute_tool_calls(
-                        session, chat_response.tool_calls, ctx.allowed_tools, ctx
-                    )
-                    ctx.artifact_handles.extend(handles)
-
-                for result_msg in tool_results:
-                    await self._store.append_message(session.id, result_msg)
-
-                await transition(turn, TurnState.BUILDING_CONTEXT, "")
-
-                ctx.running_history.append(assistant_msg)
-                ctx.running_history.extend(tool_results)
-                self._builder.set_style_prefix(ctx.style_prefix)
-                ctx.build_result = await self._builder.build(
-                    session=session,
-                    history=ctx.running_history,
-                    system_prompt=ctx.system_prompt,
-                    tools=ctx.tools,
-                    new_user_message=None,
-                )
-
-                turn.tool_calls_made += len(chat_response.tool_calls)
-                turn.iterations += 1
                 continue
 
             elif chat_response.finish_reason in ("stop", "length"):
@@ -199,61 +134,9 @@ class TurnExecution:
                         chat_response.finish_reason,
                         len(chat_response.tool_calls),
                     )
-                    # Re-use the tool_calls branch logic inline to avoid refactor
-                    await transition(turn, TurnState.EXECUTING_TOOLS, "")
-                    tool_names = [tc.name for tc in chat_response.tool_calls]
-                    ctx.tool_chain.extend(tool_names)
-                    logger.debug("Executing tools: %s", ", ".join(tool_names))
-                    await set_typing(True)
-
-                    # Show reasoning before tool status so user can see model's thinking
-                    if chat_response.reasoning_content:
-                        try:
-                            reasoning_display = f"💭 {chat_response.reasoning_content[:2000]}"
-                            if len(chat_response.reasoning_content) > 2000:
-                                reasoning_display += "\n\n... (reasoning truncated)"
-                            await ctx.respond_callback(reasoning_display)
-                        except Exception:
-                            pass
-
-                    task_desc = (ctx.user_message.content or "").strip()
-                    use_policy_delegation = (
-                        "delegate_task" in self._tools.list_names()
-                        and self._policy.should_delegate(
-                            session, task_desc, turn.tool_calls_made, len(chat_response.tool_calls)
-                        )
+                    await self._handle_tool_calls(
+                        ctx, turn, chat_response, transition, set_typing, assistant_msg
                     )
-                    ctx.delegated = use_policy_delegation
-
-                    if use_policy_delegation:
-                        await transition(turn, TurnState.AWAITING_SUBAGENT, "")
-                        tool_results, handles = await self._execute_policy_delegation(
-                            ctx.user_message, chat_response.tool_calls
-                        )
-                        ctx.artifact_handles.extend(handles)
-                        await transition(turn, TurnState.EXECUTING_TOOLS, "")
-                    else:
-                        tool_results, handles = await self._execute_tool_calls(
-                            session, chat_response.tool_calls, ctx.allowed_tools, ctx
-                        )
-                        ctx.artifact_handles.extend(handles)
-
-                    for result_msg in tool_results:
-                        await self._store.append_message(session.id, result_msg)
-
-                    await transition(turn, TurnState.BUILDING_CONTEXT, "")
-                    ctx.running_history.append(assistant_msg)
-                    ctx.running_history.extend(tool_results)
-                    self._builder.set_style_prefix(ctx.style_prefix)
-                    ctx.build_result = await self._builder.build(
-                        session=session,
-                        history=ctx.running_history,
-                        system_prompt=ctx.system_prompt,
-                        tools=ctx.tools,
-                        new_user_message=None,
-                    )
-                    turn.tool_calls_made += len(chat_response.tool_calls)
-                    turn.iterations += 1
                     continue
 
                 if not content.strip():
@@ -296,6 +179,85 @@ class TurnExecution:
             raise MaxIterationsError(self._max_iterations, turn.iterations)
 
         return content
+
+    async def _handle_tool_calls(
+        self,
+        ctx: TurnContext,
+        turn: Turn,
+        chat_response: ChatResponse,
+        transition: TransitionCallback,
+        set_typing: TypingCallback,
+        assistant_msg: Message,
+    ) -> TurnState:
+        """Dispatch tool calls, handle delegation, rebuild context, and advance the turn."""
+        await transition(turn, TurnState.EXECUTING_TOOLS, "")
+
+        tool_names = [tc.name for tc in chat_response.tool_calls]
+        ctx.tool_chain.extend(tool_names)
+        logger.debug("Executing tools: %s", ", ".join(tool_names))
+        await set_typing(True)
+
+        # Show reasoning before tool status so user can see model's thinking
+        if chat_response.reasoning_content:
+            try:
+                reasoning_display = f"💭 {chat_response.reasoning_content[:2000]}"
+                if len(chat_response.reasoning_content) > 2000:
+                    reasoning_display += "\n\n... (reasoning truncated)"
+                await ctx.respond_callback(reasoning_display)
+            except Exception:
+                pass
+
+        # Status update: tell user what we're doing (first iteration only)
+        if turn.iterations == 0:
+            status = self._format_tool_status(tool_names)
+            if status:
+                with contextlib.suppress(Exception):
+                    await ctx.respond_callback(status)  # best-effort; don't fail the turn
+
+        task_desc = (ctx.user_message.content or "").strip()
+        use_policy_delegation = (
+            "delegate_task" in self._tools.list_names()
+            and self._policy.should_delegate(
+                ctx.session,
+                task_desc,
+                turn.tool_calls_made,
+                len(chat_response.tool_calls),
+            )
+        )
+        ctx.delegated = use_policy_delegation
+
+        if use_policy_delegation:
+            await transition(turn, TurnState.AWAITING_SUBAGENT, "")
+            tool_results, handles = await self._execute_policy_delegation(
+                ctx.user_message, chat_response.tool_calls
+            )
+            ctx.artifact_handles.extend(handles)
+            await transition(turn, TurnState.EXECUTING_TOOLS, "")
+        else:
+            tool_results, handles = await self._execute_tool_calls(
+                ctx.session, chat_response.tool_calls, ctx.allowed_tools, ctx
+            )
+            ctx.artifact_handles.extend(handles)
+
+        for result_msg in tool_results:
+            await self._store.append_message(ctx.session.id, result_msg)
+
+        await transition(turn, TurnState.BUILDING_CONTEXT, "")
+
+        ctx.running_history.append(assistant_msg)
+        ctx.running_history.extend(tool_results)
+        self._builder.set_style_prefix(ctx.style_prefix)
+        ctx.build_result = await self._builder.build(
+            session=ctx.session,
+            history=ctx.running_history,
+            system_prompt=ctx.system_prompt,
+            tools=ctx.tools,
+            new_user_message=None,
+        )
+
+        turn.tool_calls_made += len(chat_response.tool_calls)
+        turn.iterations += 1
+        return TurnState.BUILDING_CONTEXT
 
     async def _run_inference_streaming(
         self, ctx: TurnContext, turn: Turn
