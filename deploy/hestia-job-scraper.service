@@ -1,0 +1,10 @@
+[Unit]
+Description=Hestia Job Scraper
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/dylan/Hestia
+ExecStart=uv run python scripts/scrape_jobs.py
+StandardOutput=journal
+StandardError=journal
