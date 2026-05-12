@@ -56,7 +56,7 @@ export default function Workflows() {
   };
 
   const executionDot = (status?: string) => {
-    const color = status === 'ok' ? '#22c55e' : status === 'error' ? '#ef4444' : '#9ca3af';
+    const color = status === 'ok' ? '#22c55e' : status === 'error' || status === 'failed' ? '#ef4444' : '#9ca3af';
     return (
       <span
         style={{
