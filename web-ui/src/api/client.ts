@@ -325,10 +325,18 @@ export async function fetchExecutions(workflowId: string, limit = 50) {
   return res.json() as Promise<{ executions: ExecutionRecord[] }>;
 }
 
+export interface ToolSchema {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+  requires_confirmation: boolean;
+  tags: string[];
+}
+
 export async function fetchTools() {
   const res = await apiFetch(`${API_BASE}/tools`);
   if (!res.ok) throw new Error('Failed to fetch tools');
-  return res.json() as Promise<{ tools: string[] }>;
+  return res.json() as Promise<{ tools: ToolSchema[] }>;
 }
 
 
