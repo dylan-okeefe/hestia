@@ -116,6 +116,20 @@ class TurnExecution:
             )
             await self._store.append_message(session.id, assistant_msg)
 
+            # Guardrail: model is reasoning extensively but not acting
+            if (
+                chat_response.reasoning_content
+                and len(chat_response.reasoning_content) > 1500
+                and not chat_response.tool_calls
+                and not chat_response.content
+            ):
+                await ctx.respond_callback(
+                    "🛑 You have been reasoning extensively but haven't emitted a tool call. "
+                    "Please make a tool call now."
+                )
+                turn.iterations += 1
+                continue
+
             if chat_response.finish_reason == "tool_calls":
                 await self._handle_tool_calls(
                     ctx, turn, chat_response, transition, set_typing, assistant_msg
