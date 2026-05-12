@@ -200,7 +200,7 @@ class TestAuthManager:
         # Exactly 4 failures should NOT trigger a block
         for i in range(4):
             auth_manager.validate_code(f"bad{i}", "127.0.0.1")
-        assert not auth_manager._is_rate_limited("127.0.0.1")
+        assert not auth_manager.is_rate_limited("127.0.0.1")
 
     def test_rate_limit_boundary_9_minutes_still_blocked(self, auth_manager: AuthManager) -> None:
         for i in range(5):
@@ -211,7 +211,7 @@ class TestAuthManager:
         for i in range(len(window.attempts)):
             window.attempts[i] -= timedelta(minutes=9)
 
-        assert auth_manager._is_rate_limited("127.0.0.1")
+        assert auth_manager.is_rate_limited("127.0.0.1")
 
     def test_rate_limit_boundary_10_minutes_unblocked(self, auth_manager: AuthManager) -> None:
         for i in range(5):
@@ -222,7 +222,7 @@ class TestAuthManager:
         for i in range(len(window.attempts)):
             window.attempts[i] -= timedelta(minutes=10)
 
-        assert not auth_manager._is_rate_limited("127.0.0.1")
+        assert not auth_manager.is_rate_limited("127.0.0.1")
 
     def test_get_session_valid(self, auth_manager: AuthManager) -> None:
         import asyncio

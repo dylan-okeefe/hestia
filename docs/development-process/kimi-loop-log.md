@@ -6,6 +6,34 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-05-10 — L168 Complete (Variable Interpolation & Webhook Route Extraction)
+
+**Outcome:** Built `{{variable}}` interpolation engine, wired it into SendMessageNode and LLMDecisionNode, extracted webhook endpoint from workflows.py into dedicated webhooks.py router, and added public `is_rate_limited()` wrapper to AuthManager. UI live preview deferred as optional.
+
+**Changes:**
+- `src/hestia/workflows/interpolation.py` — new interpolation engine with `VAR_RE` and `interpolate(template, context)`
+- `tests/unit/workflows/test_interpolation.py` — 7 unit tests covering simple keys, nested fields, missing keys, non-dict intermediates, None values, multiple placeholders, and whitespace tolerance
+- `src/hestia/workflows/nodes/send_message.py` — interpolates resolved `text` with `inputs` dict before sending
+- `src/hestia/workflows/nodes/llm_decision.py` — interpolates `prompt_template` with `inputs` dict before building LLM prompt
+- `src/hestia/web/routes/webhooks.py` — new router module containing `receive_webhook` (POST `/api/webhooks/{endpoint}`)
+- `src/hestia/web/routes/workflows.py` — removed `receive_webhook` and unused `hashlib`, `hmac`, `json`, `datetime` imports
+- `src/hestia/web/api.py` — registered `webhooks.router` with `/api` prefix
+- `src/hestia/web/auth.py` — added `is_rate_limited(self, ip: str) -> bool` public method
+- `src/hestia/web/routes/auth.py` — verify-code route now uses public `is_rate_limited()`
+- `tests/unit/test_web_auth.py` — rate-limit boundary tests updated to use public method
+- `docs/handoffs/L168-variable-interpolation-and-webhook-extraction-handoff.md` — new handoff
+
+**Quality gate:**
+- Interpolation tests: 7 passed
+- Webhook + web route tests: 71 passed
+- mypy: clean on all 8 changed source files (1 pre-existing error in browser_get.py unchanged)
+- ruff: clean on all changed files (2 pre-existing issues in untouched auth lines unchanged)
+- Pre-existing test failures unchanged (`test_search_web_duckduckgo.py`, `test_web_auth.py` fixture errors, `test_sessions.py` errors)
+
+**Branch:** `feature/l168-variable-interpolation`
+
+---
+
 ## 2026-05-11 — L167 Complete (Reasoning Guardrails & Parser Cleanup)
 
 **Outcome:** Refactored the 146-line XML fallback parser into three named functions, added an orchestrator guardrail that triggers when the model reasons >1500 chars without acting, verified MemoryStore user scoping, and documented the context_length / llama-server relationship.
