@@ -8,7 +8,6 @@ import {
 } from '../workflow-nodes';
 
 export const EDITOR_NODE_TYPES = [
-  'default',
   'tool_call',
   'llm_decision',
   'send_message',
