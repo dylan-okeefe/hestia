@@ -6,6 +6,26 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-05-11 — L166 Complete (API Tools Endpoint & Standalone Job Scraper)
+
+**Outcome:** Added `/api/tools` backend endpoint and wired the workflow editor UI to it; built a deterministic standalone job scraper with systemd scheduling.
+
+**Changes:**
+- `src/hestia/web/routes/tools.py` — new `GET /api/tools` route returning registered tool schemas
+- `src/hestia/web/api.py` — included `tools.router`
+- `web-ui/src/api/client.ts` — `fetchTools()` now calls backend and returns `ToolSchema[]`
+- `web-ui/src/hooks/useWorkflowEditor.ts` — maps schema objects to tool name strings for dropdown compatibility
+- `scripts/scrape_jobs.py` — standalone scraper for Built In Boston + ReactJobs.io senior React/frontend remote roles
+- `deploy/hestia-job-scraper.service` + `.timer` — systemd daily schedule at 9 AM
+- `tests/unit/test_web_routes.py` — `TestToolsRoutes` (2 tests)
+- `docs/handoffs/L166-api-tools-endpoint-and-job-scraper-handoff.md`
+
+**Quality gate:** `TestToolsRoutes` 2 passed. `mypy scripts/scrape_jobs.py` clean. `ruff check` clean on changed files. `tsc --noEmit` clean. Pre-existing test failures unchanged.
+
+**Branch:** `feature/l166-api-tools-and-job-scraper`
+
+---
+
 ## 2026-05-11 — L165 Complete (Session Handoff Hardening)
 
 **Outcome:** Fixed CRIT-2 issue where handoff content was silently discarded after the first turn. Changed handoff injection from `role="system"` to `role="user"` with `[Previous session context]` prefix, and updated `ContextBuilder` to treat handoff messages as protected context placed before real user messages.
