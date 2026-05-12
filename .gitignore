@@ -57,3 +57,4 @@ node_modules/
 
 # Log files containing potential secrets
 *.log
+escape_room_planning.md
