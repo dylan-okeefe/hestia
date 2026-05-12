@@ -241,9 +241,18 @@ class ContextBuilder:
 
         # Filter out any system messages from history — the builder creates its
         # own system message and strict chat templates (e.g. Qwen) raise errors
-        # when they see a second system message mid-conversation. Session handoff
-        # (L162) may store a system message in the DB; we must drop it here.
+        # when they see a second system message mid-conversation.
         history = [msg for msg in history if msg.role != "system"]
+
+        # Extract handoff messages (synthetic user messages injected by session
+        # handoff). They are treated as context prefix: always included, placed
+        # before real user messages, and excluded from normal history token budget.
+        handoff_msgs = [
+            msg for msg in history
+            if msg.role == "user" and msg.content.startswith("[Previous session context]")
+        ]
+        handoff_ids = {id(msg) for msg in handoff_msgs}
+        history = [msg for msg in history if id(msg) not in handoff_ids]
 
         parts = [layer.value for layer in self._prefix_layers() if layer.value]
         parts.append(system_prompt)
@@ -258,6 +267,7 @@ class ContextBuilder:
                 break
 
         protected_top: list[Message] = [system_msg]
+        protected_top.extend(handoff_msgs)
         if first_user_msg:
             protected_top.append(first_user_msg)
         protected_bottom: list[Message] = [new_user_message] if new_user_message else []

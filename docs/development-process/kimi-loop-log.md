@@ -6,6 +6,22 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-05-11 — L165 Complete (Session Handoff Hardening)
+
+**Outcome:** Fixed CRIT-2 issue where handoff content was silently discarded after the first turn. Changed handoff injection from `role="system"` to `role="user"` with `[Previous session context]` prefix, and updated `ContextBuilder` to treat handoff messages as protected context placed before real user messages.
+
+**Changes:**
+- `src/hestia/persistence/sessions.py` — handoff synthetic message now uses `role="user"`; prefix changed to `[Previous session context]`
+- `src/hestia/context/builder.py` — extracts handoff messages from history, places them in `protected_top` after system message, excludes them from normal history token budget
+- `tests/unit/test_context_builder.py` — added `TestHandoffMessages` (4 tests verifying placement, survival across turns, budget exclusion, and first-user protection)
+- `tests/unit/test_session_store_turns.py` — updated existing handoff injection test to expect `role="user"`
+
+**Quality gate:** 38 passed in targeted unit tests; 1 passed in integration handoff flow. mypy clean on changed files. ruff clean on changed files. Pre-existing failures in broader suite unchanged.
+
+**Branch:** `feature/l165-session-handoff-hardening`
+
+---
+
 ## 2026-05-11 — L163 Complete (Repo Hygiene & Quick Fixes)
 
 **Outcome:** Removed personal/duplicate files from tracking, purged leaked log from git history, fixed three small UI/backend bugs, and added missing test coverage.

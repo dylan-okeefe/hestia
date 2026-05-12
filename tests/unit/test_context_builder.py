@@ -342,3 +342,127 @@ class TestFromCalibrationFile:
 
         assert builder._body_factor == 1.0
         assert builder._meta_tool_overhead == 0
+
+
+class TestHandoffMessages:
+    """Tests for session handoff message handling (L165)."""
+
+    @pytest.mark.asyncio
+    async def test_handoff_placed_after_system(self, fake_client, policy, sample_session):
+        """Handoff user messages are placed after system but before real user messages."""
+        builder = ContextBuilder(fake_client, policy, body_factor=1.0)
+
+        history = [
+            Message(role="user", content="[Previous session context]\nSummary: old stuff"),
+            Message(role="user", content="Real user message"),
+            Message(role="assistant", content="Assistant reply"),
+        ]
+        new_msg = Message(role="user", content="New question")
+
+        result = await builder.build(
+            sample_session, history, "You are helpful.", [], new_user_message=new_msg
+        )
+
+        assert result.messages[0].role == "system"
+        assert result.messages[1].role == "user"
+        assert "[Previous session context]" in result.messages[1].content
+        assert result.messages[2].role == "user"
+        assert result.messages[2].content == "Real user message"
+        assert result.messages[3].role == "assistant"
+        assert result.messages[4].role == "user"
+        assert result.messages[4].content == "New question"
+
+    @pytest.mark.asyncio
+    async def test_handoff_survives_past_first_turn(self, fake_client, policy, sample_session):
+        """Handoff is present in built context across multiple turns."""
+        builder = ContextBuilder(fake_client, policy, body_factor=1.0)
+
+        # Turn 1: history has handoff + first real user message
+        history_turn_1 = [
+            Message(role="user", content="[Previous session context]\nSummary: old stuff"),
+            Message(role="user", content="Hello"),
+        ]
+        result_1 = await builder.build(
+            sample_session,
+            history_turn_1,
+            "System",
+            [],
+            new_user_message=Message(role="user", content="How are you?"),
+        )
+        assert any(
+            m.role == "user" and "[Previous session context]" in m.content
+            for m in result_1.messages
+        )
+
+        # Turn 2: assistant reply appended, new user message
+        history_turn_2 = [
+            *history_turn_1,
+            Message(role="assistant", content="I am fine."),
+        ]
+        result_2 = await builder.build(
+            sample_session,
+            history_turn_2,
+            "System",
+            [],
+            new_user_message=Message(role="user", content="What's new?"),
+        )
+        assert any(
+            m.role == "user" and "[Previous session context]" in m.content
+            for m in result_2.messages
+        )
+
+    @pytest.mark.asyncio
+    async def test_handoff_not_counted_in_history_budget(self, fake_client, sample_session):
+        """Handoff messages are excluded from normal history token budget.
+
+        Normal history messages are subject to truncation, but handoff messages
+        are treated as protected context and always survive.
+        """
+        from hestia.policy.default import DefaultPolicyEngine
+
+        # Budget = int(4096 * 0.85) - 2048 = 1433 tokens for input
+        small_policy = DefaultPolicyEngine(ctx_window=4096)
+        builder = ContextBuilder(fake_client, small_policy, body_factor=1.0)
+
+        history = [
+            Message(role="user", content="[Previous session context]\nSummary: old stuff"),
+            *[Message(role="user", content="x" * 500) for _ in range(20)],
+        ]
+        new_msg = Message(role="user", content="New")
+
+        result = await builder.build(
+            sample_session, history, "System", [], new_user_message=new_msg
+        )
+
+        # Handoff should be present even when normal history is truncated
+        assert any(
+            m.role == "user" and "[Previous session context]" in m.content
+            for m in result.messages
+        )
+        # Some normal history should have been truncated to fit budget
+        assert result.truncated_count > 0
+
+    @pytest.mark.asyncio
+    async def test_first_user_protected_when_handoff_present(
+        self, fake_client, policy, sample_session
+    ):
+        """First real user message is still protected when a handoff is present."""
+        builder = ContextBuilder(fake_client, policy, body_factor=1.0)
+
+        history = [
+            Message(role="user", content="[Previous session context]\nSummary: old stuff"),
+            Message(role="user", content="FIRST REAL USER"),
+            *[Message(role="user", content="x" * 100) for _ in range(50)],
+        ]
+        new_msg = Message(role="user", content="New")
+
+        result = await builder.build(
+            sample_session, history, "System", [], new_user_message=new_msg
+        )
+
+        # First real user message should survive truncation
+        assert any(
+            m.role == "user" and m.content == "FIRST REAL USER"
+            for m in result.messages
+        )
+        assert result.kept_first_user
