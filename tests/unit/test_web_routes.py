@@ -1222,3 +1222,44 @@ class TestWorkflowsRoutes:
 
         response = client.get("/api/workflows/wf1/executions?limit=1")
         assert response.status_code == 200
+
+
+class TestToolsRoutes:
+    """Tests for /api/tools endpoint."""
+
+    def test_list_tools(self, client: TestClient, mock_app: MagicMock) -> None:
+        """GET /api/tools returns registered tools with schemas."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+
+        meta = MagicMock()
+        meta.public_description = "Test tool description"
+        meta.parameters_schema = {"type": "object", "properties": {}}
+        meta.requires_confirmation = False
+        meta.tags = ["builtin"]
+
+        mock_app.tool_registry.list_names.return_value = ["test_tool"]
+        mock_app.tool_registry.describe.return_value = meta
+
+        response = client.get("/api/tools")
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["tools"]) == 1
+        assert data["tools"][0]["name"] == "test_tool"
+        assert data["tools"][0]["description"] == "Test tool description"
+        assert data["tools"][0]["parameters"] == {"type": "object", "properties": {}}
+        assert data["tools"][0]["requires_confirmation"] is False
+        assert data["tools"][0]["tags"] == ["builtin"]
+        mock_app.tool_registry.list_names.assert_called_once()
+        mock_app.tool_registry.describe.assert_called_once_with("test_tool")
+
+    def test_list_tools_empty(self, client: TestClient, mock_app: MagicMock) -> None:
+        """GET /api/tools returns empty list when no tools registered."""
+        mock_app.tool_registry.list_names.return_value = []
+
+        response = client.get("/api/tools")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["tools"] == []
