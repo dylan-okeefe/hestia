@@ -6,6 +6,22 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-05-11 — L167 Complete (Reasoning Guardrails & Parser Cleanup)
+
+**Outcome:** Refactored the 146-line XML fallback parser into three named functions, added an orchestrator guardrail that triggers when the model reasons >1500 chars without acting, verified MemoryStore user scoping, and documented the context_length / llama-server relationship.
+
+**Changes:**
+- `src/hestia/core/inference.py` — split `_extract_tool_calls_from_text` into `_parse_json_tool_calls`, `_parse_adhoc_xml_tool_calls`, `_parse_glm_xml_tool_calls`; moved `_is_valid_url` to module level; fixed `args` variable reuse
+- `src/hestia/orchestrator/execution.py` — added reasoning-length guardrail after assistant message storage; sends 🛑 nudge and continues loop when reasoning >1500 chars with no tool_calls or content
+- `config.runtime.py` — updated comment to document that `context_length=32768` matches `--ctx-size 32768` and that `--parallel 4` yields 8192 tokens per slot
+- `docs/handoffs/L167-reasoning-guardrails-and-parser-cleanup-handoff.md` — new handoff
+
+**Quality gate:** 51 passed in targeted unit tests (inference client, memory store, memory user scope, execution). mypy clean on changed files. ruff clean on changed files. Pre-existing test failures unchanged.
+
+**Branch:** `feature/l167-reasoning-guardrails`
+
+---
+
 ## 2026-05-11 — L166 Complete (API Tools Endpoint & Standalone Job Scraper)
 
 **Outcome:** Added `/api/tools` backend endpoint and wired the workflow editor UI to it; built a deterministic standalone job scraper with systemd scheduling.
