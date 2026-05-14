@@ -307,7 +307,7 @@ class SessionStore:
             handoff = await self.get_latest_handoff(platform, platform_user)
             if handoff is not None:
                 synthetic = Message(
-                    role="system",
+                    role="user",
                     content=self._format_handoff_message(handoff),
                 )
                 await self.append_message(session.id, synthetic)
@@ -315,7 +315,7 @@ class SessionStore:
 
     def _format_handoff_message(self, handoff: SessionHandoff) -> str:
         """Build a synthetic system message from a handoff record."""
-        parts: list[str] = ["[Session handoff from previous conversation]"]
+        parts: list[str] = ["[Previous session context]"]
         if handoff.summary:
             parts.append(f"Summary: {handoff.summary}")
         if handoff.key_messages:

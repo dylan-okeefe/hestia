@@ -368,7 +368,8 @@ class TestSessionHandoff:
         messages = await store.get_messages(new_session.id)
 
         assert len(messages) == 1
-        assert messages[0].role == "system"
+        assert messages[0].role == "user"
+        assert "[Previous session context]" in messages[0].content
         assert "Prior context" in messages[0].content
         assert "Hello" in messages[0].content
 
