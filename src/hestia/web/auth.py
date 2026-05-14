@@ -12,6 +12,7 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.responses import JSONResponse, Response
 
 from hestia.config import WebConfig
+from hestia.persistence.users import UserStore
 from hestia.platforms.base import Platform
 
 
@@ -33,6 +34,7 @@ class WebSession:
     platform_user: str
     created_at: datetime
     expires_at: datetime
+    user_id: str | None = None
 
 
 @dataclass
@@ -59,9 +61,15 @@ class RateLimitWindow:
 class AuthManager:
     """Manages one-time codes and sessions for web dashboard auth."""
 
-    def __init__(self, adapters: dict[str, Platform], config: WebConfig) -> None:
+    def __init__(
+        self,
+        adapters: dict[str, Platform],
+        config: WebConfig,
+        user_store: UserStore | None = None,
+    ) -> None:
         self.adapters = adapters
         self.config = config
+        self._user_store = user_store
         self._pending_codes: dict[str, PendingCode] = {}
         self._sessions: dict[str, WebSession] = {}
         self._rate_limits: dict[str, RateLimitWindow] = {}
@@ -134,14 +142,15 @@ class AuthManager:
         retry = int((oldest + timedelta(minutes=5) - now).total_seconds())
         return max(0, retry)
 
-    async def request_code(self, platform: str) -> dict[str, Any]:
+    async def request_code(self, platform: str, platform_user: str | None = None) -> dict[str, Any]:
         """Generate and send a one-time code via the requested platform.
 
         Returns a dict with status information.
         """
         self._cleanup_stale_entries()
 
-        platform_user = self._get_configured_user(platform)
+        if platform_user is None:
+            platform_user = self._get_configured_user(platform)
         adapter = self.adapters[platform]
 
         code = self.generate_code()
@@ -182,7 +191,7 @@ class AuthManager:
             self._rate_limits[ip] = RateLimitWindow()
         self._rate_limits[ip].record()
 
-    def validate_code(self, code: str, ip: str) -> tuple[str, WebSession] | None:
+    async def validate_code(self, code: str, ip: str) -> tuple[str, WebSession] | None:
         """Validate a one-time code and create a session if valid.
 
         Returns (token, WebSession) on success, or None if the code is invalid,
@@ -206,11 +215,20 @@ class AuthManager:
         now = datetime.now(UTC)
         expires_at = now + timedelta(hours=self.config.session_lifetime_hours)
 
+        user_id = None
+        if self._user_store is not None:
+            user = await self._user_store.get_user_by_identity(
+                pending.platform, pending.platform_user
+            )
+            if user is not None:
+                user_id = user.id
+
         session = WebSession(
             platform=pending.platform,
             platform_user=pending.platform_user,
             created_at=now,
             expires_at=expires_at,
+            user_id=user_id,
         )
         self._sessions[token] = session
         return (token, session)
@@ -260,7 +278,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
         path = request.url.path
 
         # Skip non-API routes and auth routes
-        if not path.startswith("/api/") or path.startswith("/api/auth/") or path.startswith("/api/webhooks/"):
+        if (
+            not path.startswith("/api/")
+            or path.startswith("/api/auth/")
+            or path.startswith("/api/webhooks/")
+        ):
             return await call_next(request)
 
         # Skip if auth disabled
@@ -286,6 +308,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         assert session is not None
         request.state.platform = session.platform
         request.state.platform_user = session.platform_user
+        request.state.user_id = session.user_id
         return await call_next(request)
 
 

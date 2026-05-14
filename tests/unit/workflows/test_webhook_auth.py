@@ -74,6 +74,7 @@ def client(mock_app: MagicMock) -> TestClient:
         execution_store=AsyncMock(),
         app=mock_app,
         auth_manager=None,
+        user_store=AsyncMock(),
     )
     set_web_context(ctx)
     app = create_web_app()

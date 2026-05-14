@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -40,6 +41,8 @@ async def request_code(
             detail="Field 'platform' is required",
         )
 
+    platform_user = body.get("platform_user")
+
     client_ip = request.client.host if request.client else "unknown"
     if not auth_manager.check_code_request_limit(client_ip):
         retry_after = auth_manager.code_request_retry_after(client_ip)
@@ -50,13 +53,12 @@ async def request_code(
         )
 
     # Record this request
-    from datetime import datetime, UTC
     if client_ip not in auth_manager._code_request_limits:
         auth_manager._code_request_limits[client_ip] = []
     auth_manager._code_request_limits[client_ip].append(datetime.now(UTC))
 
     try:
-        result = await auth_manager.request_code(platform)
+        result = await auth_manager.request_code(platform, platform_user)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -81,7 +83,7 @@ async def verify_code(
         )
 
     client_ip = request.client.host if request.client else "unknown"
-    result = auth_manager.validate_code(code, client_ip)
+    result = await auth_manager.validate_code(code, client_ip)
 
     if result is None:
         # Distinguish rate-limit from invalid code
@@ -118,6 +120,25 @@ async def logout(
         auth_manager.remove_session(token)
 
     return {"status": "ok"}
+
+
+@router.get("/available-users")
+async def available_users(
+    auth_manager: AuthManager = _AUTH_DEP,
+) -> dict[str, Any]:
+    """List users with at least one identity on a running platform."""
+    users = []
+    if auth_manager._user_store is not None:
+        all_users = await auth_manager._user_store.list_users()
+        for user in all_users:
+            identities = await auth_manager._user_store.get_identities(user.id)
+            platforms = list({i.platform for i in identities})
+            users.append({
+                "user_id": user.id,
+                "display_name": user.display_name,
+                "platforms": platforms,
+            })
+    return {"users": users}
 
 
 @router.get("/status")

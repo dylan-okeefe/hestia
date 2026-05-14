@@ -1,20 +1,47 @@
 import { useState, useEffect, useRef } from 'react';
-import { requestCode, verifyCode } from '../api/client';
+import { fetchAvailableUsers, requestCode, verifyCode } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+
+interface AvailableUser {
+  user_id: string;
+  display_name: string;
+  platforms: string[];
+}
 
 export default function Login() {
   const { auth, login } = useAuth();
-  const [phase, setPhase] = useState<'select' | 'input'>('select');
+  const [phase, setPhase] = useState<'select-user' | 'select-platform' | 'input'>('select-user');
+  const [availableUsers, setAvailableUsers] = useState<AvailableUser[]>([]);
+  const [selectedUser, setSelectedUser] = useState<AvailableUser | null>(null);
   const [selectedPlatform, setSelectedPlatform] = useState<string>('');
   const [code, setCode] = useState('');
   const [expiresIn, setExpiresIn] = useState(300);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  const [loadingUsers, setLoadingUsers] = useState(true);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
+    fetchAvailableUsers()
+      .then((data) => {
+        if (!cancelled) {
+          setAvailableUsers(data.users || []);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAvailableUsers([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingUsers(false);
+        }
+      });
     return () => {
+      cancelled = true;
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, []);
@@ -31,6 +58,11 @@ export default function Login() {
         return prev - 1;
       });
     }, 1000);
+  };
+
+  const handleSelectUser = (user: AvailableUser) => {
+    setSelectedUser(user);
+    setPhase('select-platform');
   };
 
   const handleRequestCode = async (platform: string) => {
@@ -91,12 +123,38 @@ export default function Login() {
         <h1 style={{ margin: '0 0 0.5rem', fontSize: '1.5rem' }}>Hestia Dashboard</h1>
         <p style={{ margin: '0 0 1.5rem', color: '#666' }}>Authenticate via your chat platform</p>
 
-        {phase === 'select' && (
+        {phase === 'select-user' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            {auth.availablePlatforms.length === 0 && (
-              <p style={{ color: '#888' }}>No chat platforms are currently connected.</p>
+            {loadingUsers && <p style={{ color: '#888' }}>Loading users…</p>}
+            {!loadingUsers && availableUsers.length === 0 && (
+              <p style={{ color: '#888' }}>No users configured. Contact your admin.</p>
             )}
-            {auth.availablePlatforms.map((platform) => (
+            {!loadingUsers && availableUsers.map((user) => (
+              <button
+                key={user.user_id}
+                onClick={() => handleSelectUser(user)}
+                style={{
+                  padding: '0.75rem',
+                  fontSize: '1rem',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                {user.display_name}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {phase === 'select-platform' && selectedUser && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <p style={{ margin: 0, color: '#666' }}>
+              Selected user: <strong>{selectedUser.display_name}</strong>
+            </p>
+            {selectedUser.platforms.length === 0 && (
+              <p style={{ color: '#888' }}>No platforms available for this user.</p>
+            )}
+            {selectedUser.platforms.map((platform) => (
               <button
                 key={platform}
                 onClick={() => handleRequestCode(platform)}
@@ -113,6 +171,22 @@ export default function Login() {
                   : `Send code via ${platform}`}
               </button>
             ))}
+            <button
+              onClick={() => {
+                setPhase('select-user');
+                setSelectedUser(null);
+              }}
+              style={{
+                marginTop: '0.5rem',
+                background: 'none',
+                border: 'none',
+                color: '#1976d2',
+                cursor: 'pointer',
+                fontSize: '0.85rem',
+              }}
+            >
+              ← Back to user selection
+            </button>
           </div>
         )}
 
@@ -149,7 +223,7 @@ export default function Login() {
             </div>
             <button
               onClick={() => {
-                setPhase('select');
+                setPhase('select-platform');
                 setCode('');
                 if (timerRef.current) clearInterval(timerRef.current);
               }}

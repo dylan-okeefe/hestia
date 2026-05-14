@@ -55,7 +55,7 @@ class TestAuthLifecycle:
         assert sent_code == code
 
         # 2. Verify code
-        verify_result = auth_manager.validate_code(code, "127.0.0.1")
+        verify_result = asyncio.run(auth_manager.validate_code(code, "127.0.0.1"))
         assert verify_result is not None
         token, session = verify_result
         assert token
@@ -87,7 +87,7 @@ class TestAuthLifecycle:
         # After auth
         asyncio.run(auth_manager.request_code("telegram"))
         code = list(auth_manager._pending_codes.keys())[0]
-        verify_result = auth_manager.validate_code(code, "127.0.0.1")
+        verify_result = asyncio.run(auth_manager.validate_code(code, "127.0.0.1"))
         assert verify_result is not None
         token, _ = verify_result
 

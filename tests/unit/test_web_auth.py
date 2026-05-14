@@ -150,7 +150,7 @@ class TestAuthManager:
         asyncio.run(auth_manager.request_code("telegram"))
         code = list(auth_manager._pending_codes.keys())[0]
 
-        result = auth_manager.validate_code(code, "127.0.0.1")
+        result = asyncio.run(auth_manager.validate_code(code, "127.0.0.1"))
         assert result is not None
         token, session = result
         assert token
@@ -160,7 +160,9 @@ class TestAuthManager:
         assert len(auth_manager._sessions) == 1
 
     def test_validate_code_invalid(self, auth_manager: AuthManager) -> None:
-        session = auth_manager.validate_code("000000", "127.0.0.1")
+        import asyncio
+
+        session = asyncio.run(auth_manager.validate_code("000000", "127.0.0.1"))
         assert session is None
 
     def test_validate_code_expired(self, auth_manager: AuthManager) -> None:
@@ -172,39 +174,47 @@ class TestAuthManager:
         # Expire the code
         auth_manager._pending_codes[code].expires_at = datetime.now(UTC) - timedelta(seconds=1)
 
-        session = auth_manager.validate_code(code, "127.0.0.1")
+        session = asyncio.run(auth_manager.validate_code(code, "127.0.0.1"))
         assert session is None
 
     def test_validate_code_rate_limit(self, auth_manager: AuthManager) -> None:
-        for i in range(5):
-            auth_manager.validate_code(f"bad{i}", "127.0.0.1")
+        import asyncio
 
-        session = auth_manager.validate_code("bad5", "127.0.0.1")
+        for i in range(5):
+            asyncio.run(auth_manager.validate_code(f"bad{i}", "127.0.0.1"))
+
+        session = asyncio.run(auth_manager.validate_code("bad5", "127.0.0.1"))
         assert session is None
 
     def test_rate_limit_resets_after_window(self, auth_manager: AuthManager) -> None:
+        import asyncio
+
         for i in range(5):
-            auth_manager.validate_code(f"bad{i}", "127.0.0.1")
+            asyncio.run(auth_manager.validate_code(f"bad{i}", "127.0.0.1"))
 
         # Backdate attempts
         window = auth_manager._rate_limits["127.0.0.1"]
         for i in range(len(window.attempts)):
             window.attempts[i] -= timedelta(minutes=11)
 
-        result = auth_manager.validate_code("bad5", "127.0.0.1")
+        result = asyncio.run(auth_manager.validate_code("bad5", "127.0.0.1"))
         assert result is None  # still invalid code, but not rate limited
         # Old attempts pruned; only the newest failed attempt remains
         assert len(auth_manager._rate_limits["127.0.0.1"].attempts) == 1
 
     def test_rate_limit_boundary_4_attempts_not_blocked(self, auth_manager: AuthManager) -> None:
+        import asyncio
+
         # Exactly 4 failures should NOT trigger a block
         for i in range(4):
-            auth_manager.validate_code(f"bad{i}", "127.0.0.1")
+            asyncio.run(auth_manager.validate_code(f"bad{i}", "127.0.0.1"))
         assert not auth_manager.is_rate_limited("127.0.0.1")
 
     def test_rate_limit_boundary_9_minutes_still_blocked(self, auth_manager: AuthManager) -> None:
+        import asyncio
+
         for i in range(5):
-            auth_manager.validate_code(f"bad{i}", "127.0.0.1")
+            asyncio.run(auth_manager.validate_code(f"bad{i}", "127.0.0.1"))
 
         # Backdate by exactly 9 minutes (still within 10-min window)
         window = auth_manager._rate_limits["127.0.0.1"]
@@ -214,8 +224,10 @@ class TestAuthManager:
         assert auth_manager.is_rate_limited("127.0.0.1")
 
     def test_rate_limit_boundary_10_minutes_unblocked(self, auth_manager: AuthManager) -> None:
+        import asyncio
+
         for i in range(5):
-            auth_manager.validate_code(f"bad{i}", "127.0.0.1")
+            asyncio.run(auth_manager.validate_code(f"bad{i}", "127.0.0.1"))
 
         # Backdate by exactly 10 minutes (outside the window)
         window = auth_manager._rate_limits["127.0.0.1"]
@@ -229,7 +241,7 @@ class TestAuthManager:
 
         asyncio.run(auth_manager.request_code("telegram"))
         code = list(auth_manager._pending_codes.keys())[0]
-        session = auth_manager.validate_code(code, "127.0.0.1")
+        session = asyncio.run(auth_manager.validate_code(code, "127.0.0.1"))
         assert session is not None
 
         token = list(auth_manager._sessions.keys())[0]
@@ -266,6 +278,7 @@ class TestAuthManager:
             platform_user="12345",
             created_at=datetime.now(UTC),
             expires_at=datetime.now(UTC) + timedelta(hours=1),
+            user_id=None,
         )
 
         status, session = auth_manager.validate_token(token)
@@ -280,6 +293,7 @@ class TestAuthManager:
             platform_user="12345",
             created_at=datetime.now(UTC) - timedelta(hours=73),
             expires_at=datetime.now(UTC) - timedelta(hours=1),
+            user_id=None,
         )
         status, session = auth_manager.validate_token("expired")
         assert status == "expired"
@@ -329,6 +343,7 @@ class TestAuthMiddleware:
             return JSONResponse({
                 "platform": getattr(request.state, "platform", None),
                 "user": getattr(request.state, "platform_user", None),
+                "user_id": getattr(request.state, "user_id", None),
             })
 
         app = Starlette()
@@ -345,6 +360,7 @@ class TestAuthMiddleware:
             platform_user="12345",
             created_at=datetime.now(UTC),
             expires_at=datetime.now(UTC) + timedelta(hours=1),
+            user_id="user-1",
         )
 
         client = TestClient(app)
@@ -353,6 +369,7 @@ class TestAuthMiddleware:
         data = response.json()
         assert data["platform"] == "telegram"
         assert data["user"] == "12345"
+        assert data["user_id"] == "user-1"
 
     def test_rejects_missing_token(self, auth_manager: AuthManager) -> None:
         from starlette.applications import Starlette
@@ -503,8 +520,10 @@ class TestAuthRoutes:
             trace_store=AsyncMock(),
             failure_store=AsyncMock(),
             workflow_store=AsyncMock(),
+            execution_store=AsyncMock(),
             app=mock_app,
             auth_manager=auth_manager,
+            user_store=AsyncMock(),
         )
         set_web_context(ctx)
         app = create_web_app()
@@ -598,6 +617,7 @@ class TestAuthRoutes:
             platform_user="12345",
             created_at=datetime.now(UTC),
             expires_at=datetime.now(UTC) + timedelta(hours=1),
+            user_id=None,
         )
 
         response = client.post("/api/auth/logout", headers={"Authorization": "Bearer test_token"})
@@ -611,6 +631,7 @@ class TestAuthRoutes:
             platform_user="12345",
             created_at=datetime.now(UTC),
             expires_at=datetime.now(UTC) + timedelta(hours=1),
+            user_id=None,
         )
 
         response = client.get("/api/auth/status", headers={"Authorization": "Bearer test_token"})
@@ -647,6 +668,7 @@ class TestAuthRoutes:
             platform_user="12345",
             created_at=datetime.now(UTC),
             expires_at=datetime.now(UTC) + timedelta(hours=1),
+            user_id=None,
         )
 
         response = client.get("/api/sessions", headers={"Authorization": "Bearer test_token"})
