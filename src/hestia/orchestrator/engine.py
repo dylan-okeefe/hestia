@@ -184,6 +184,7 @@ class Orchestrator:
         platform_user: str | None = None,
         voice_reply: bool = False,
         stream_callback: StreamCallback | None = None,
+        resolved_user: Any | None = None,
     ) -> Turn:
         """Process a single user turn through the state machine."""
         if self._rate_limiter is not None and not self._rate_limiter.allow(session.id):
@@ -216,6 +217,7 @@ class Orchestrator:
                 session=session,
                 voice_reply=voice_reply,
                 stream_callback=stream_callback,
+                resolved_user=resolved_user,
             )
 
             try:

@@ -6,8 +6,9 @@ from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 
 # Callback type for incoming messages from the platform
-IncomingMessageCallback = Callable[[str, str, str], Awaitable[None]]
-# (platform_name, platform_user, message_text) -> None
+IncomingMessageCallback = Callable[[str, str, str, str | None], Awaitable[None]]
+# (platform_name, platform_user, message_text, sender_platform_user) -> None
+# sender_platform_user is the individual sender's platform ID in group chats; None in private chats.
 
 
 class Platform(ABC):
@@ -31,7 +32,10 @@ class Platform(ABC):
 
         Args:
             on_message: Callback to invoke when a message arrives.
-                        The platform passes (platform_name, platform_user, text).
+                        The platform passes (platform_name, platform_user, text,
+                        sender_platform_user). sender_platform_user is the
+                        individual sender's platform ID in group chats; None in
+                        private chats.
         """
         ...
 

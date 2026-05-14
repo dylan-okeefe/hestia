@@ -137,7 +137,7 @@ class TestTelegramAdapterAsync:
         # Track if on_message callback is called
         callback_called = False
 
-        async def on_message(platform: str, user: str, text: str) -> None:
+        async def on_message(platform: str, user: str, text: str, sender: str | None) -> None:
             nonlocal callback_called
             callback_called = True
 
@@ -159,11 +159,11 @@ class TestTelegramAdapterAsync:
         telegram_config.allowed_users = ["12345"]
         adapter = TelegramAdapter(telegram_config)
 
-        received_args: tuple[str, str, str] | None = None
+        received_args: tuple[str, str, str, str | None] | None = None
 
-        async def on_message(platform: str, user: str, text: str) -> None:
+        async def on_message(platform: str, user: str, text: str, sender: str | None) -> None:
             nonlocal received_args
-            received_args = (platform, user, text)
+            received_args = (platform, user, text, sender)
 
         adapter._on_message = on_message
 
@@ -184,6 +184,7 @@ class TestTelegramAdapterAsync:
         assert received_args[0] == "telegram"  # platform
         assert received_args[1] == "12345"     # user_id as string
         assert received_args[2] == "Test message"  # text
+        assert received_args[3] is None  # sender_platform_user in private chat
 
     @pytest.mark.asyncio
     async def test_start_initializes_application(
@@ -207,7 +208,7 @@ class TestTelegramAdapterAsync:
         ):
             callback_called = False
 
-            async def on_message(platform: str, user: str, text: str) -> None:
+            async def on_message(platform: str, user: str, text: str, sender: str | None) -> None:
                 nonlocal callback_called
                 callback_called = True
 

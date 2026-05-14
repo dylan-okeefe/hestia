@@ -6,7 +6,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from hestia.core.types import Message
 
@@ -95,6 +95,9 @@ class TurnContext:
 
     # Per-turn delivery hint (set by platform adapter)
     voice_reply: bool = False
+
+    # Resolved user from identity store (set by platform runner)
+    resolved_user: Any | None = None
 
     # Streaming callback (called for each content chunk)
     stream_callback: StreamCallback | None = None

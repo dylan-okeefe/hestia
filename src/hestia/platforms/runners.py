@@ -134,7 +134,12 @@ async def run_platform(
     # Session cache: platform_user -> Session
     user_sessions: dict[str, Session] = {}
 
-    async def on_message(platform_name_arg: str, platform_user: str, text: str) -> None:
+    async def on_message(
+        platform_name_arg: str,
+        platform_user: str,
+        text: str,
+        sender_platform_user: str | None = None,
+    ) -> None:
         """Handle incoming platform message."""
         token = user_context_var.set(platform_user) if user_context_var is not None else None
         try:
@@ -147,6 +152,30 @@ async def run_platform(
                 session = user_sessions[platform_user]
 
             user_message = Message(role="user", content=text)
+
+            # Resolve user from identity
+            resolved_user = None
+            if sender_platform_user is not None:
+                # Group chat: resolve individual sender
+                resolved_user = await app.user_store.get_user_by_identity(
+                    platform_name, sender_platform_user
+                )
+            else:
+                # Private chat: resolve platform_user directly
+                resolved_user = await app.user_store.get_user_by_identity(
+                    platform_name, platform_user
+                )
+
+            # Auto-register room and membership for group chats
+            if sender_platform_user is not None and resolved_user is not None:
+                room = await app.user_store.get_room_by_platform(platform_name, platform_user)
+                if room is None:
+                    room = await app.user_store.create_room(platform_name, platform_user)
+                # Add member if not already present
+                members = await app.user_store.get_room_members(room.id)
+                member_ids = {m.id for m in members}
+                if resolved_user.id not in member_ids:
+                    await app.user_store.add_room_member(room.id, resolved_user.id)
 
             stream_callback = None
             if getattr(config.inference, "stream", False) and hasattr(
@@ -173,6 +202,7 @@ async def run_platform(
                 platform=adapter,
                 platform_user=platform_user,
                 stream_callback=stream_callback,
+                resolved_user=resolved_user,
             )
 
             # Check for command prefix (e.g., "/workflow ")

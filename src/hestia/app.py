@@ -32,6 +32,7 @@ from hestia.persistence.failure_store import FailureStore
 from hestia.persistence.scheduler import SchedulerStore
 from hestia.persistence.sessions import SessionStore
 from hestia.persistence.trace_store import TraceStore
+from hestia.persistence.users import UserStore
 from hestia.policy.default import DefaultPolicyEngine
 from hestia.reflection.runner import ReflectionRunner
 from hestia.reflection.scheduler import ReflectionScheduler
@@ -45,6 +46,7 @@ from hestia.tools.builtin import (
     browser_login,
     current_time,
     make_accept_proposal_tool,
+    make_append_to_file_tool,
     make_create_scheduled_task_tool,
     make_defer_proposal_tool,
     make_delegate_task_tool,
@@ -62,7 +64,6 @@ from hestia.tools.builtin import (
     make_read_artifact_tool,
     make_read_file_tool,
     make_reject_proposal_tool,
-    make_append_to_file_tool,
     make_reset_style_metric_tool,
     make_reset_style_profile_tool,
     make_save_memory_tool,
@@ -146,6 +147,7 @@ class AppContext:
         self.artifact_store = ArtifactStore(config.storage.artifacts_dir)
         self.event_bus = EventBus()
         self.session_store = SessionStore(self.db, event_bus=self.event_bus)
+        self.user_store = UserStore(self.db)
         self.policy = _make_policy(config)
         self.memory_store = MemoryStore(self.db)
         self.failure_store = FailureStore(self.db)

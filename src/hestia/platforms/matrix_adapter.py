@@ -314,10 +314,12 @@ class MatrixAdapter(Platform):
 
         # Call the orchestrator callback
         # platform_user is the room ID (one room = one session)
+        # Matrix: sender_platform_user is not resolved individually for rooms
         await self._on_message(
             self.name,
             room.room_id,
             body.strip(),
+            None,
         )
 
     @staticmethod

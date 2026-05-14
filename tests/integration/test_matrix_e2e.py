@@ -319,7 +319,9 @@ def _make_on_message(
     """
     responded = asyncio.Event()
 
-    async def on_message(platform_name: str, platform_user: str, text: str) -> None:
+    async def on_message(
+        platform_name: str, platform_user: str, text: str, sender: str | None = None
+    ) -> None:
         if gate_phrase and not text.strip().startswith(gate_phrase):
             return
 
@@ -665,7 +667,9 @@ async def test_matrix_e2e_memory_save_then_recall(tmp_path, e2e_setup):
 
     orchestrator = _make_orchestrator(e2e_setup)
 
-    async def gated_on_message(platform_name: str, platform_user: str, text: str) -> None:
+    async def gated_on_message(
+        platform_name: str, platform_user: str, text: str, sender: str | None = None
+    ) -> None:
         if not text.strip().startswith(gate_ref["current"]):
             return
         session = await e2e_setup["session_store"].get_or_create_session(

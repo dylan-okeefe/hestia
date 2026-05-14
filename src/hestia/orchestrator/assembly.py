@@ -100,6 +100,15 @@ class TurnAssembly:
                 + effective_system_prompt
             )
 
+        if ctx.resolved_user is not None:
+            user = ctx.resolved_user
+            user_context = f"Current user: {user.display_name}"
+            if user.role:
+                user_context += f" ({user.role})"
+            if user.notes:
+                user_context += f"\nNotes: {user.notes}"
+            effective_system_prompt = f"{user_context}\n\n{effective_system_prompt}"
+
         ctx.tools = self._tools.meta_tool_schemas()
         self._builder.set_style_prefix(style_prefix)
         ctx.build_result = await self._builder.build(
