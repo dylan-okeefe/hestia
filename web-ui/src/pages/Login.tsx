@@ -2,10 +2,16 @@ import { useState, useEffect, useRef } from 'react';
 import { fetchAvailableUsers, requestCode, verifyCode } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
+interface AvailableIdentity {
+  platform: string;
+  platform_user: string;
+}
+
 interface AvailableUser {
   user_id: string;
   display_name: string;
   platforms: string[];
+  identities: AvailableIdentity[];
 }
 
 export default function Login() {
@@ -69,7 +75,13 @@ export default function Login() {
     setError(null);
     setSending(true);
     try {
-      const data = await requestCode(platform);
+      // Find the specific platform_user for this platform
+      let platformUser: string | undefined;
+      if (selectedUser) {
+        const identity = selectedUser.identities.find((i) => i.platform === platform);
+        platformUser = identity?.platform_user;
+      }
+      const data = await requestCode(platform, platformUser);
       setSelectedPlatform(platform);
       setPhase('input');
       startTimer(data.expires_in || 300);

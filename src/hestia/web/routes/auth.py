@@ -137,6 +137,10 @@ async def available_users(
                 "user_id": user.id,
                 "display_name": user.display_name,
                 "platforms": platforms,
+                "identities": [
+                    {"platform": i.platform, "platform_user": i.platform_user}
+                    for i in identities
+                ],
             })
     return {"users": users}
 
@@ -161,6 +165,7 @@ async def auth_status(
                 "auth_enabled": True,
                 "platform": session.platform,
                 "platform_user": session.platform_user,
+                "user_id": session.user_id,
             }
 
     return {

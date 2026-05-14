@@ -6,6 +6,7 @@ interface AuthState {
   authEnabled: boolean;
   platform: string | null;
   platformUser: string | null;
+  userId: string | null;
   availablePlatforms: string[];
 }
 
@@ -31,6 +32,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     authEnabled: true,
     platform: null,
     platformUser: null,
+    userId: null,
     availablePlatforms: [],
   });
   const [loading, setLoading] = useState(true);
@@ -44,6 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           authEnabled: false,
           platform: null,
           platformUser: null,
+          userId: null,
           availablePlatforms: [],
         });
         return;
@@ -53,6 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         authEnabled: true,
         platform: data.platform || null,
         platformUser: data.platform_user || null,
+        userId: data.user_id || null,
         availablePlatforms: data.available_platforms || [],
       });
     } catch {
@@ -61,6 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         authEnabled: true,
         platform: null,
         platformUser: null,
+        userId: null,
         availablePlatforms: [],
       });
     }
@@ -82,6 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       authEnabled: true,
       platform: null,
       platformUser: null,
+      userId: null,
       availablePlatforms: auth.availablePlatforms,
     });
   }, [auth.availablePlatforms]);

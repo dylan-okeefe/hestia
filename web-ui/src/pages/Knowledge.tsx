@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { fetchSessions, fetchStyleProfile, fetchUsers, fetchUser, fetchMemories, updateUser } from '../api/client';
+import { fetchUserSessions, fetchStyleProfile, fetchUser, fetchMemoriesForUser, updateUser } from '../api/client';
+import { useAuth } from '../context/AuthContext';
 
 interface Session {
   id: string;
@@ -24,6 +25,7 @@ const cardStyle: React.CSSProperties = {
 };
 
 export default function Knowledge() {
+  const { auth } = useAuth();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [style, setStyle] = useState<Record<string, unknown>>({});
   const [user, setUser] = useState<any>(null);
@@ -40,17 +42,31 @@ export default function Knowledge() {
     setError(null);
     setMemoriesError(null);
 
-    Promise.all([
-      fetchSessions(10),
-      fetchStyleProfile('cli', 'default'),
-      fetchUsers().then((u) => (u.users[0] ? fetchUser(u.users[0].id) : null)),
-      fetchMemories(20).catch(() => null),
-    ])
-      .then(([sessionsData, styleData, userData, memoriesData]) => {
-        setSessions((sessionsData.sessions || []) as Session[]);
-        setStyle(styleData.profile || {});
+    const load = async () => {
+      const userId = auth.userId;
+      if (!userId) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const userData = await fetchUser(userId);
         setUser(userData);
         setEditNotes(userData?.notes || '');
+
+        // Use the first identity for platform-specific fetches
+        const identity = userData.identities?.[0];
+        const platform = identity?.platform || 'cli';
+        const platformUser = identity?.platform_user || 'default';
+
+        const [sessionsData, styleData, memoriesData] = await Promise.all([
+          fetchUserSessions(platform, platformUser, 10),
+          fetchStyleProfile(platform, platformUser),
+          fetchMemoriesForUser(platform, platformUser, 20).catch(() => null),
+        ]);
+
+        setSessions((sessionsData.sessions || []) as Session[]);
+        setStyle(styleData.profile || {});
         if (memoriesData && memoriesData.memories) {
           setMemories(memoriesData.memories as Memory[]);
         } else if (memoriesData && Array.isArray(memoriesData)) {
@@ -58,13 +74,15 @@ export default function Knowledge() {
         } else {
           setMemories([]);
         }
-        setLoading(false);
-      })
-      .catch((err) => {
+      } catch (err: any) {
         setError(err.message);
+      } finally {
         setLoading(false);
-      });
-  }, []);
+      }
+    };
+
+    load();
+  }, [auth.userId]);
 
   const handleSaveNotes = async () => {
     if (!user) return;

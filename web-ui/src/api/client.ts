@@ -43,13 +43,13 @@ async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
 export async function fetchAuthStatus() {
   const res = await apiFetch(`${API_BASE}/auth/status`);
   if (!res.ok) throw new Error('Failed to fetch auth status');
-  return res.json() as Promise<{ auth_enabled: boolean; authenticated: boolean; platform?: string; platform_user?: string; available_platforms?: string[] }>;
+  return res.json() as Promise<{ auth_enabled: boolean; authenticated: boolean; platform?: string; platform_user?: string; user_id?: string; available_platforms?: string[] }>;
 }
 
 export async function fetchAvailableUsers() {
   const res = await apiFetch(`${API_BASE}/auth/available-users`);
   if (!res.ok) throw new Error('Failed to fetch available users');
-  return res.json() as Promise<{ users: Array<{ user_id: string; display_name: string; platforms: string[] }> }>;
+  return res.json() as Promise<{ users: Array<{ user_id: string; display_name: string; platforms: string[]; identities: Array<{ platform: string; platform_user: string }> }> }>;
 }
 
 export async function requestCode(platform: string, platformUser?: string) {

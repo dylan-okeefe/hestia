@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { fetchUsers, fetchUser, updateUser, fetchRooms, addIdentity, removeIdentity } from '../api/client';
+import { fetchUser, updateUser, fetchRooms, addIdentity, removeIdentity } from '../api/client';
+import { useAuth } from '../context/AuthContext';
 
 interface Identity {
   platform: string;
@@ -45,6 +46,7 @@ const roleBadgeColor = (role: string) => {
 };
 
 export default function Profile() {
+  const { auth } = useAuth();
   const [user, setUser] = useState<UserDetail | null>(null);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,10 +61,9 @@ export default function Profile() {
     setLoading(true);
     setError(null);
     try {
-      const usersData = await fetchUsers();
-      const currentUser = usersData.users[0];
-      if (currentUser) {
-        const detail = await fetchUser(currentUser.id);
+      const userId = auth.userId;
+      if (userId) {
+        const detail = await fetchUser(userId);
         setUser(detail);
         setEditName(detail.display_name);
         setEditNotes(detail.notes || '');

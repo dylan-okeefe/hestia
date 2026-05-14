@@ -6,13 +6,14 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from hestia.core.types import Message
 
 if TYPE_CHECKING:
     from hestia.context.builder import BuildResult
     from hestia.core.types import Session, ToolSchema
+    from hestia.persistence.users import User
     from hestia.platforms.base import Platform
 
 
@@ -97,7 +98,7 @@ class TurnContext:
     voice_reply: bool = False
 
     # Resolved user from identity store (set by platform runner)
-    resolved_user: Any | None = None
+    resolved_user: User | None = None
 
     # Streaming callback (called for each content chunk)
     stream_callback: StreamCallback | None = None

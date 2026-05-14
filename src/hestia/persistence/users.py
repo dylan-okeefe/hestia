@@ -154,6 +154,10 @@ class UserStore:
         async with self._db.engine.connect() as conn:
             # Manual cascade for SQLite without PRAGMA foreign_keys
             await conn.execute(
+                sa.text("DELETE FROM room_members WHERE user_id = :user_id"),
+                {"user_id": user_id},
+            )
+            await conn.execute(
                 sa.text("DELETE FROM user_identities WHERE user_id = :user_id"),
                 {"user_id": user_id},
             )
