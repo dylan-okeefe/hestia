@@ -86,6 +86,14 @@
 
 ---
 
+## 2026-05-11 — L164 Absorbed (Execution Refactor: Deduplicate Tool-Call Handling)
+
+**Outcome:** The `_handle_tool_calls` extraction specified in L164 was implemented as part of the L165-L168 batch. The method exists in `orchestrator/execution.py` and the duplicated 70-line blocks are gone. No standalone handoff was written because the work was folded into adjacent loops.
+
+**Status:** Complete (absorbed). No separate branch or handoff document.
+
+---
+
 ## 2026-05-11 — L163 Complete (Repo Hygiene & Quick Fixes)
 
 **Outcome:** Removed personal/duplicate files from tracking, purged leaked log from git history, fixed three small UI/backend bugs, and added missing test coverage.
