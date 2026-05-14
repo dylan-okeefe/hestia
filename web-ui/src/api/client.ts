@@ -356,3 +356,77 @@ export async function fetchDashboard() {
     platforms_connected: string[];
   }>;
 }
+
+// Users
+export async function fetchUsers() {
+  const res = await apiFetch(`${API_BASE}/users`);
+  if (!res.ok) throw new Error('Failed to fetch users');
+  return res.json() as Promise<{ users: Array<{ id: string; display_name: string; role: string; trust_preset: string | null; notes: string | null; created_at: string }> }>;
+}
+
+export async function fetchUser(userId: string) {
+  const res = await apiFetch(`${API_BASE}/users/${userId}`);
+  if (!res.ok) throw new Error('Failed to fetch user');
+  return res.json() as Promise<{ id: string; display_name: string; role: string; trust_preset: string | null; notes: string | null; created_at: string; identities: Array<{ platform: string; platform_user: string; verified: boolean }> }>;
+}
+
+export async function updateUser(userId: string, fields: object) {
+  const res = await apiFetch(`${API_BASE}/users/${userId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) throw new Error('Failed to update user');
+  return res.json();
+}
+
+export async function addIdentity(userId: string, platform: string, platformUser: string) {
+  const res = await apiFetch(`${API_BASE}/users/${userId}/identities`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ platform, platform_user: platformUser }),
+  });
+  if (!res.ok) throw new Error('Failed to add identity');
+  return res.json();
+}
+
+export async function removeIdentity(userId: string, platform: string, platformUser: string) {
+  const res = await apiFetch(`${API_BASE}/users/${userId}/identities/${platform}/${platformUser}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error('Failed to remove identity');
+  return res.json();
+}
+
+// Rooms
+export async function fetchRooms() {
+  const res = await apiFetch(`${API_BASE}/rooms`);
+  if (!res.ok) throw new Error('Failed to fetch rooms');
+  return res.json() as Promise<{ rooms: Array<{ id: string; platform: string; platform_room_id: string; display_name: string | null; created_at: string }> }>;
+}
+
+export async function fetchRoom(roomId: string) {
+  const res = await apiFetch(`${API_BASE}/rooms/${roomId}`);
+  if (!res.ok) throw new Error('Failed to fetch room');
+  return res.json();
+}
+
+// Memories
+export async function fetchMemories(limit = 20) {
+  const res = await apiFetch(`${API_BASE}/memory?limit=${limit}`);
+  if (!res.ok) throw new Error('Failed to fetch memories');
+  return res.json();
+}
+
+export async function fetchMemoriesForUser(platform: string, platformUser: string, limit = 20) {
+  const res = await apiFetch(`${API_BASE}/memory?platform=${encodeURIComponent(platform)}&platform_user=${encodeURIComponent(platformUser)}&limit=${limit}`);
+  if (!res.ok) throw new Error('Failed to fetch memories');
+  return res.json();
+}
+
+// Sessions
+export async function fetchUserSessions(platform: string, platformUser: string, limit = 10) {
+  const res = await apiFetch(`${API_BASE}/sessions?platform=${encodeURIComponent(platform)}&platform_user=${encodeURIComponent(platformUser)}&limit=${limit}`);
+  if (!res.ok) throw new Error('Failed to fetch sessions');
+  return res.json();
+}

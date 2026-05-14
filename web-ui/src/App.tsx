@@ -8,6 +8,8 @@ import Security from './pages/Security';
 import Config from './pages/Config';
 import Workflows from './pages/Workflows';
 import WorkflowEditor from './pages/WorkflowEditor';
+import Profile from './pages/Profile';
+import Knowledge from './pages/Knowledge';
 import Login from './pages/Login';
 import NotFound from './pages/NotFound';
 
@@ -52,6 +54,8 @@ function AppContent() {
             {navLink('Security', '/security')}
             {navLink('Config', '/config')}
             {navLink('Workflows', '/workflows')}
+            {navLink('Profile', '/profile')}
+            {navLink('Knowledge', '/knowledge')}
             {auth.authEnabled && (
               <button
                 onClick={logout}
@@ -70,6 +74,8 @@ function AppContent() {
             <Route path="/config" element={<Config />} />
             <Route path="/workflows" element={<Workflows />} />
             <Route path="/workflows/:id" element={<WorkflowEditor />} />
+            <Route path="/profile" element={<Profile />} />
+            <Route path="/knowledge" element={<Knowledge />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </>

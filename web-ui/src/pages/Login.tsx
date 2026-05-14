@@ -9,7 +9,7 @@ interface AvailableUser {
 }
 
 export default function Login() {
-  const { auth, login } = useAuth();
+  const { login } = useAuth();
   const [phase, setPhase] = useState<'select-user' | 'select-platform' | 'input'>('select-user');
   const [availableUsers, setAvailableUsers] = useState<AvailableUser[]>([]);
   const [selectedUser, setSelectedUser] = useState<AvailableUser | null>(null);
