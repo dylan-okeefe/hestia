@@ -85,7 +85,7 @@ async def verify_code(
 
     if result is None:
         # Distinguish rate-limit from invalid code
-        if auth_manager._is_rate_limited(client_ip):
+        if auth_manager.is_rate_limited(client_ip):
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail="Too many failed attempts. Try again later.",

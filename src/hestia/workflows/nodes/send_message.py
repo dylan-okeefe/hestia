@@ -6,6 +6,7 @@ from typing import Any
 
 from hestia.app import AppContext
 from hestia.platforms.notifier import PlatformNotifier
+from hestia.workflows.interpolation import interpolate
 from hestia.workflows.models import WorkflowNode
 
 
@@ -35,6 +36,9 @@ class SendMessageNode:
         platform = _resolve("platform", node, inputs)
         user = _resolve("target_user", node, inputs, fallback_key="user")
         text = _resolve("message", node, inputs, fallback_key="text")
+
+        if text and isinstance(text, str):
+            text = interpolate(text, inputs)
 
         if not platform:
             raise ValueError(

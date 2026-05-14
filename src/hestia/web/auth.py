@@ -165,6 +165,10 @@ class AuthManager:
             "expires_in": self.config.code_expiry_seconds,
         }
 
+    def is_rate_limited(self, ip: str) -> bool:
+        """Check if the IP is currently rate-limited."""
+        return self._is_rate_limited(ip)
+
     def _is_rate_limited(self, ip: str) -> bool:
         """Check whether the IP is currently rate-limited."""
         window = self._rate_limits.get(ip)

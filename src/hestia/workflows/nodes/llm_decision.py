@@ -8,6 +8,7 @@ from typing import Any
 
 from hestia.app import AppContext
 from hestia.core.types import ChatResponse, Message
+from hestia.workflows.interpolation import interpolate
 from hestia.workflows.models import WorkflowNode
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,9 @@ class LLMDecisionNode:
             "prompt",
             "Based on the following context, select the most appropriate branch.",
         )
+
+        if prompt_template and isinstance(prompt_template, str):
+            prompt_template = interpolate(prompt_template, inputs)
 
         context = json.dumps(inputs, indent=2, default=str)
         branch_list = (
