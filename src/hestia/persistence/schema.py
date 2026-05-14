@@ -239,3 +239,47 @@ workflow_executions = sa.Table(
     sa.Column("created_at", sa.DateTime, nullable=False),
     sa.Index("idx_executions_workflow", "workflow_id", "created_at"),
 )
+
+users = sa.Table(
+    "users",
+    metadata,
+    sa.Column("id", sa.String, primary_key=True),
+    sa.Column("display_name", sa.String, nullable=False),
+    sa.Column("role", sa.String, nullable=False, default="user"),
+    sa.Column("trust_preset", sa.String, nullable=True),
+    sa.Column("notes", sa.Text, nullable=True),
+    sa.Column("created_at", sa.DateTime, nullable=False),
+    sa.Column("updated_at", sa.DateTime, nullable=False),
+)
+
+user_identities = sa.Table(
+    "user_identities",
+    metadata,
+    sa.Column("user_id", sa.String, sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+    sa.Column("platform", sa.String, nullable=False),
+    sa.Column("platform_user", sa.String, nullable=False),
+    sa.Column("verified", sa.Boolean, nullable=False, default=False),
+    sa.Column("created_at", sa.DateTime, nullable=False),
+    sa.PrimaryKeyConstraint("platform", "platform_user"),
+    sa.Index("idx_user_identities_user", "user_id"),
+)
+
+rooms = sa.Table(
+    "rooms",
+    metadata,
+    sa.Column("id", sa.String, primary_key=True),
+    sa.Column("platform", sa.String, nullable=False),
+    sa.Column("platform_room_id", sa.String, nullable=False),
+    sa.Column("display_name", sa.String, nullable=True),
+    sa.Column("created_at", sa.DateTime, nullable=False),
+    sa.UniqueConstraint("platform", "platform_room_id"),
+)
+
+room_members = sa.Table(
+    "room_members",
+    metadata,
+    sa.Column("room_id", sa.String, sa.ForeignKey("rooms.id", ondelete="CASCADE"), nullable=False),
+    sa.Column("user_id", sa.String, sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+    sa.Column("joined_at", sa.DateTime, nullable=False),
+    sa.PrimaryKeyConstraint("room_id", "user_id"),
+)

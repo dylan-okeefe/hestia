@@ -81,9 +81,56 @@ async def m002_session_handoffs(conn: AsyncConnection) -> None:
     )
 
 
+async def m003_users_and_rooms(conn: AsyncConnection) -> None:
+    """Add users, user_identities, rooms, and room_members tables."""
+    await conn.execute(sa.text(
+        "CREATE TABLE IF NOT EXISTS users ("
+        "id TEXT PRIMARY KEY,"
+        "display_name TEXT NOT NULL,"
+        "role TEXT NOT NULL DEFAULT 'user',"
+        "trust_preset TEXT,"
+        "notes TEXT,"
+        "created_at DATETIME NOT NULL,"
+        "updated_at DATETIME NOT NULL"
+        ")"
+    ))
+    await conn.execute(sa.text(
+        "CREATE TABLE IF NOT EXISTS user_identities ("
+        "user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,"
+        "platform TEXT NOT NULL,"
+        "platform_user TEXT NOT NULL,"
+        "verified INTEGER NOT NULL DEFAULT 0,"
+        "created_at DATETIME NOT NULL,"
+        "PRIMARY KEY (platform, platform_user)"
+        ")"
+    ))
+    await conn.execute(sa.text(
+        "CREATE INDEX IF NOT EXISTS idx_user_identities_user ON user_identities(user_id)"
+    ))
+    await conn.execute(sa.text(
+        "CREATE TABLE IF NOT EXISTS rooms ("
+        "id TEXT PRIMARY KEY,"
+        "platform TEXT NOT NULL,"
+        "platform_room_id TEXT NOT NULL,"
+        "display_name TEXT,"
+        "created_at DATETIME NOT NULL,"
+        "UNIQUE (platform, platform_room_id)"
+        ")"
+    ))
+    await conn.execute(sa.text(
+        "CREATE TABLE IF NOT EXISTS room_members ("
+        "room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,"
+        "user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,"
+        "joined_at DATETIME NOT NULL,"
+        "PRIMARY KEY (room_id, user_id)"
+        ")"
+    ))
+
+
 MIGRATIONS: list[Migration] = [
     m001_sessions_active_unique,
     m002_session_handoffs,
+    m003_users_and_rooms,
 ]
 
 

@@ -95,6 +95,14 @@ async def init(app: AppContext, create_config: bool, with_soul: bool) -> None:
     await _commands.cmd_init(app, create_config, with_soul)
 
 
+@cli.command(name="migrate-users")
+@click.pass_obj
+@async_command
+async def migrate_users(app: AppContext) -> None:
+    """Migrate existing config users to the database."""
+    await _commands.cmd_migrate_users(app)
+
+
 @cli.command()
 @click.option("--new-session", is_flag=True, help="Force a new session instead of resuming")
 @click.pass_obj
