@@ -6,6 +6,26 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-05-11 — L163 Complete (Repo Hygiene & Quick Fixes)
+
+**Outcome:** Removed personal/duplicate files from tracking, purged leaked log from git history, fixed three small UI/backend bugs, and added missing test coverage.
+
+**Changes:**
+- `.gitignore` — added `escape_room_planning.md`
+- `escape_room_planning.md` — removed from git tracking
+- `hestia-serve.service` (root) — removed from git tracking
+- `hestia-telegram.log` — purged from current branch history via `git filter-repo`
+- `web-ui/src/components/workflow-editor/constants.ts` — removed `'default'` from `EDITOR_NODE_TYPES`
+- `web-ui/src/pages/Workflows.tsx` — mapped `'failed'` status to error color
+- `src/hestia/web/routes/workflows.py` — added `trust_level` validation to `create_workflow`
+- `tests/unit/test_web_routes.py` — added `test_create_workflow_trust_level_validation`
+
+**Quality gate:** pytest has 1 pre-existing collection error (`test_search_web_duckduckgo.py`). mypy has 2 pre-existing errors. ruff has 184 pre-existing errors. All changed files pass individual checks; 166 workflow tests pass.
+
+**Branch:** `feature/l163-repo-hygiene-and-quick-fixes`
+
+---
+
 
 
 

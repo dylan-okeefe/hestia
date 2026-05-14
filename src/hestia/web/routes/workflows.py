@@ -115,6 +115,11 @@ async def create_workflow(
 
     owner_id = payload.get("owner_id") or getattr(request.state, "platform_user", "")
     trust_level = payload.get("trust_level", "paranoid")
+    if trust_level not in _TRUST_LEVELS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"trust_level must be one of: {', '.join(sorted(_TRUST_LEVELS))}",
+        )
 
     wf = Workflow(
         id=str(uuid.uuid4()),

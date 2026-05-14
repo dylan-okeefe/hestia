@@ -1076,6 +1076,16 @@ class TestWorkflowsRoutes:
         assert saved_wf.owner_id == "alice"
         assert saved_wf.trust_level == "household"
 
+    def test_create_workflow_trust_level_validation(
+        self, client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """POST /api/workflows returns 422 for invalid trust_level."""
+        response = client.post(
+            "/api/workflows",
+            json={"name": "Invalid Trust", "trust_level": "invalid"},
+        )
+        assert response.status_code == 422
+
     def test_update_workflow_trust_level_validation(
         self, client: TestClient, mock_app: MagicMock
     ) -> None:
