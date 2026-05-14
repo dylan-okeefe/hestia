@@ -128,7 +128,7 @@ export function useWorkflowEditor(workflowId: string | undefined) {
       });
 
     fetchTools()
-      .then((data) => setTools(data.tools || []))
+      .then((data) => setTools((data.tools || []).map((t) => t.name)))
       .catch(() => setTools([]));
 
     fetchAuthStatus()

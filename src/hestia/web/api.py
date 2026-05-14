@@ -17,6 +17,7 @@ from hestia.web.routes import (
     scheduler,
     sessions,
     style,
+    tools,
     traces,
     workflows,
 )
@@ -43,6 +44,7 @@ def create_web_app() -> FastAPI:
     app.include_router(audit.router, prefix="/api")
     app.include_router(egress.router, prefix="/api")
     app.include_router(config.router, prefix="/api")
+    app.include_router(tools.router, prefix="/api")
     app.include_router(workflows.router, prefix="/api")
 
     app.mount("/", StaticFiles(directory=str(_web_static), html=True), name="static")
