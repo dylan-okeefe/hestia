@@ -430,3 +430,10 @@ export async function fetchUserSessions(platform: string, platformUser: string, 
   if (!res.ok) throw new Error('Failed to fetch sessions');
   return res.json();
 }
+
+// Handoffs
+export async function fetchHandoffs(userId: string) {
+  const res = await apiFetch(`${API_BASE}/users/${encodeURIComponent(userId)}/handoffs`);
+  if (!res.ok) throw new Error('Failed to fetch handoffs');
+  return res.json() as Promise<{ handoffs: Array<{ session_id: string; summary: string; created_at: string }> }>;
+}

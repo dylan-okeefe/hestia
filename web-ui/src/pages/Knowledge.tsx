@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { fetchUserSessions, fetchStyleProfile, fetchUser, fetchMemoriesForUser, updateUser } from '../api/client';
-import { useAuth } from '../context/AuthContext';
+import { fetchUserSessions, fetchStyleProfile, fetchMemoriesForUser, updateUser, fetchHandoffs } from '../api/client';
+import { useCurrentUser } from '../hooks/useCurrentUser';
 
 interface Session {
   id: string;
@@ -16,6 +16,12 @@ interface Memory {
   created_at?: string;
 }
 
+interface Handoff {
+  session_id: string;
+  summary: string;
+  created_at: string;
+}
+
 const cardStyle: React.CSSProperties = {
   background: '#fff',
   border: '1px solid #eee',
@@ -25,11 +31,11 @@ const cardStyle: React.CSSProperties = {
 };
 
 export default function Knowledge() {
-  const { auth } = useAuth();
+  const { user, isLoading: userLoading, error: userError, refetch: refetchUser } = useCurrentUser();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [style, setStyle] = useState<Record<string, unknown>>({});
-  const [user, setUser] = useState<any>(null);
   const [memories, setMemories] = useState<Memory[]>([]);
+  const [handoffs, setHandoffs] = useState<Handoff[]>([]);
   const [memoriesError, setMemoriesError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -38,31 +44,28 @@ export default function Knowledge() {
   const [savingNotes, setSavingNotes] = useState(false);
 
   useEffect(() => {
+    if (userLoading) return;
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setMemoriesError(null);
 
     const load = async () => {
-      const userId = auth.userId;
-      if (!userId) {
-        setLoading(false);
-        return;
-      }
-
       try {
-        const userData = await fetchUser(userId);
-        setUser(userData);
-        setEditNotes(userData?.notes || '');
-
-        // Use the first identity for platform-specific fetches
-        const identity = userData.identities?.[0];
+        setEditNotes(user.notes || '');
+        const identity = user.identities?.[0];
         const platform = identity?.platform || 'cli';
         const platformUser = identity?.platform_user || 'default';
 
-        const [sessionsData, styleData, memoriesData] = await Promise.all([
+        const [sessionsData, styleData, memoriesData, handoffsData] = await Promise.all([
           fetchUserSessions(platform, platformUser, 10),
           fetchStyleProfile(platform, platformUser),
           fetchMemoriesForUser(platform, platformUser, 20).catch(() => null),
+          fetchHandoffs(user.id).catch(() => ({ handoffs: [] })),
         ]);
 
         setSessions((sessionsData.sessions || []) as Session[]);
@@ -74,6 +77,7 @@ export default function Knowledge() {
         } else {
           setMemories([]);
         }
+        setHandoffs((handoffsData.handoffs || []) as Handoff[]);
       } catch (err: any) {
         setError(err.message);
       } finally {
@@ -82,15 +86,15 @@ export default function Knowledge() {
     };
 
     load();
-  }, [auth.userId]);
+  }, [user, userLoading]);
 
   const handleSaveNotes = async () => {
     if (!user) return;
     setSavingNotes(true);
     try {
       await updateUser(user.id, { notes: editNotes });
-      setUser({ ...user, notes: editNotes });
       setEditingNotes(false);
+      refetchUser();
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -98,8 +102,21 @@ export default function Knowledge() {
     }
   };
 
-  if (loading) {
+  if (userLoading || loading) {
     return <div style={{ padding: '1rem' }}><p>Loading knowledge…</p></div>;
+  }
+
+  if (userError) {
+    return (
+      <div style={{ padding: '1rem' }}>
+        <p style={{ color: 'red' }}>{userError}</p>
+        {userError.includes('Not authenticated') && (
+          <button onClick={() => { window.location.href = '/login'; }}>
+            Go to Login
+          </button>
+        )}
+      </div>
+    );
   }
 
   if (error && !user) {
@@ -139,7 +156,11 @@ export default function Knowledge() {
 
       <div style={cardStyle}>
         <h3 style={{ marginTop: 0 }}>Style Profile</h3>
-        {styleMetrics.length === 0 && <p style={{ color: '#666' }}>No style metrics found.</p>}
+        {styleMetrics.length === 0 && (
+          <p style={{ color: '#666' }}>
+            No style metrics yet — style profiling is disabled or hasn&apos;t collected enough data.
+          </p>
+        )}
         {styleMetrics.map(([key, value]) => (
           <div
             key={key}
@@ -191,7 +212,9 @@ export default function Knowledge() {
       <div style={cardStyle}>
         <h3 style={{ marginTop: 0 }}>Memories</h3>
         {memories.length === 0 && (
-          <p style={{ color: '#666' }}>{memoriesError || 'No memories found.'}</p>
+          <p style={{ color: '#666' }}>
+            {memoriesError || 'No memories yet — Hestia learns about you during conversations.'}
+          </p>
         )}
         {memories.map((m) => (
           <div
@@ -214,7 +237,31 @@ export default function Knowledge() {
 
       <div style={cardStyle}>
         <h3 style={{ marginTop: 0 }}>Handoff Summaries</h3>
-        <p style={{ color: '#666', margin: 0 }}>Session handoff summaries will appear here.</p>
+        {handoffs.length === 0 && (
+          <p style={{ color: '#666', margin: 0 }}>
+            No handoff summaries yet — these appear when Hestia carries context across sessions.
+          </p>
+        )}
+        {handoffs.map((h) => (
+          <div
+            key={h.session_id}
+            style={{
+              padding: '0.5rem 0',
+              borderBottom: '1px solid #eee',
+              fontSize: '0.875rem',
+            }}
+          >
+            <div style={{ fontWeight: 'bold', marginBottom: '0.25rem' }}>
+              Session {h.session_id.slice(0, 8)}…
+            </div>
+            <div style={{ color: '#555', marginBottom: '0.25rem' }}>{h.summary}</div>
+            {h.created_at && (
+              <span style={{ color: '#999', fontSize: '0.75rem' }}>
+                {new Date(h.created_at).toLocaleString()}
+              </span>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   );
