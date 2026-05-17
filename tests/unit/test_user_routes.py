@@ -215,6 +215,34 @@ class TestUserRoutes:
         assert data["display_name"] == "Bob"
         assert data["role"] == "user"
 
+    def test_create_user_child_role(
+        self, client: TestClient, auth_manager: AuthManager, user_store: MagicMock
+    ) -> None:
+        """POST /api/users accepts role='child'."""
+        token = _admin_session(auth_manager)
+        user_store.get_user = AsyncMock(
+            return_value=MagicMock(id="admin-1", display_name="Admin", role="admin")
+        )
+        user_store.create_user = AsyncMock(
+            return_value=MagicMock(
+                id="u-child",
+                display_name="Charlie",
+                role="child",
+                trust_preset=None,
+                notes=None,
+                created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+            )
+        )
+
+        response = client.post(
+            "/api/users",
+            json={"display_name": "Charlie", "role": "child"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["role"] == "child"
+
     def test_create_user_invalid_role(
         self, client: TestClient, auth_manager: AuthManager, user_store: MagicMock
     ) -> None:

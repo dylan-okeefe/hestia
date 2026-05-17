@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -332,6 +333,46 @@ class TestGroupChatResolution:
 
         room = await store.get_room_by_platform("fake", "room_3")
         assert room is None
+
+
+class TestResolvedUserTyping:
+    """Tests that resolved_user is properly typed as User | None."""
+
+    @pytest.mark.asyncio
+    async def test_resolved_user_typed_as_user(self):
+        """TurnContext.resolved_user exposes User attributes without casting."""
+        from hestia.persistence.users import User
+
+        user = User(
+            id="u1",
+            display_name="Dylan",
+            role="admin",
+            trust_preset="household",
+            notes="test",
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+        )
+
+        turn = Turn(
+            id="turn-1",
+            session_id="sess-1",
+            state=TurnState.RECEIVED,
+            user_message=Message(role="user", content="hi"),
+            started_at=datetime.now(UTC),
+        )
+        ctx = TurnContext(
+            turn=turn,
+            user_message=Message(role="user", content="hi"),
+            system_prompt="You are helpful.",
+            respond_callback=AsyncMock(),
+            session=MagicMock(),
+            resolved_user=user,
+        )
+
+        # These attribute accesses should work without casting
+        assert ctx.resolved_user is not None
+        assert ctx.resolved_user.display_name == "Dylan"
+        assert ctx.resolved_user.role == "admin"
 
 
 class TestSystemPromptInjection:
