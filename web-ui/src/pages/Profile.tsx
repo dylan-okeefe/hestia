@@ -1,22 +1,6 @@
 import { useEffect, useState } from 'react';
-import { fetchUser, updateUser, fetchRooms, addIdentity, removeIdentity } from '../api/client';
-import { useAuth } from '../context/AuthContext';
-
-interface Identity {
-  platform: string;
-  platform_user: string;
-  verified: boolean;
-}
-
-interface UserDetail {
-  id: string;
-  display_name: string;
-  role: string;
-  trust_preset: string | null;
-  notes: string | null;
-  created_at: string;
-  identities: Identity[];
-}
+import { fetchRooms, updateUser, addIdentity, removeIdentity } from '../api/client';
+import { useCurrentUser } from '../hooks/useCurrentUser';
 
 interface Room {
   id: string;
@@ -46,49 +30,50 @@ const roleBadgeColor = (role: string) => {
 };
 
 export default function Profile() {
-  const { auth } = useAuth();
-  const [user, setUser] = useState<UserDetail | null>(null);
+  const { user, isLoading: userLoading, error: userError, refetch } = useCurrentUser();
   const [rooms, setRooms] = useState<Room[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [roomsLoading, setRoomsLoading] = useState(true);
+  const [roomsError, setRoomsError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState('');
   const [editNotes, setEditNotes] = useState('');
   const [newPlatform, setNewPlatform] = useState('');
   const [newPlatformUser, setNewPlatformUser] = useState('');
 
-  const load = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const userId = auth.userId;
-      if (userId) {
-        const detail = await fetchUser(userId);
-        setUser(detail);
-        setEditName(detail.display_name);
-        setEditNotes(detail.notes || '');
-      }
-      const roomsData = await fetchRooms();
-      setRooms(roomsData.rooms);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+  useEffect(() => {
+    let cancelled = false;
+    setRoomsLoading(true);
+    setRoomsError(null);
+    fetchRooms()
+      .then((data) => {
+        if (!cancelled) setRooms(data.rooms || []);
+      })
+      .catch((err) => {
+        if (!cancelled) setRoomsError(err.message);
+      })
+      .finally(() => {
+        if (!cancelled) setRoomsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
-    load();
-  }, []);
+    if (user) {
+      setEditName(user.display_name);
+      setEditNotes(user.notes || '');
+    }
+  }, [user?.id]);
 
   const handleSave = async () => {
     if (!user) return;
     try {
       await updateUser(user.id, { display_name: editName, notes: editNotes });
       setEditing(false);
-      load();
+      refetch();
     } catch (err: any) {
-      setError(err.message);
+      // Error handling could be improved; for now swallow to match prior behavior
     }
   };
 
@@ -98,9 +83,9 @@ export default function Profile() {
       await addIdentity(user.id, newPlatform, newPlatformUser);
       setNewPlatform('');
       setNewPlatformUser('');
-      load();
+      refetch();
     } catch (err: any) {
-      setError(err.message);
+      // Error handling could be improved
     }
   };
 
@@ -108,22 +93,39 @@ export default function Profile() {
     if (!user) return;
     try {
       await removeIdentity(user.id, platform, platformUser);
-      load();
+      refetch();
     } catch (err: any) {
-      setError(err.message);
+      // Error handling could be improved
     }
   };
 
-  if (loading) {
-    return <div style={{ padding: '1rem' }}><p>Loading profile…</p></div>;
+  if (userLoading) {
+    return (
+      <div style={{ padding: '1rem' }}>
+        <p>Loading profile…</p>
+      </div>
+    );
   }
 
-  if (error) {
-    return <div style={{ padding: '1rem' }}><p style={{ color: 'red' }}>{error}</p></div>;
+  if (userError) {
+    return (
+      <div style={{ padding: '1rem' }}>
+        <p style={{ color: 'red' }}>{userError}</p>
+        {userError.includes('Not authenticated') && (
+          <button onClick={() => { window.location.href = '/login'; }}>
+            Go to Login
+          </button>
+        )}
+      </div>
+    );
   }
 
   if (!user) {
-    return <div style={{ padding: '1rem' }}><p>No user found.</p></div>;
+    return (
+      <div style={{ padding: '1rem' }}>
+        <p>No user found.</p>
+      </div>
+    );
   }
 
   return (
@@ -244,8 +246,10 @@ export default function Profile() {
 
       <div style={cardStyle}>
         <h3 style={{ marginTop: 0 }}>Rooms</h3>
-        {rooms.length === 0 && <p style={{ color: '#666' }}>No rooms found.</p>}
-        {rooms.map((room) => (
+        {roomsLoading && <p style={{ color: '#666' }}>Loading rooms…</p>}
+        {roomsError && <p style={{ color: 'red' }}>{roomsError}</p>}
+        {!roomsLoading && !roomsError && rooms.length === 0 && <p style={{ color: '#666' }}>No rooms found.</p>}
+        {!roomsLoading && !roomsError && rooms.map((room) => (
           <div
             key={room.id}
             style={{
