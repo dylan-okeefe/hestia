@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { runDoctor } from '../api/client';
+import { HEALTH_CHECK_LABELS, label } from '../lib/labels';
 
 interface Check {
   name: string;
@@ -71,7 +72,7 @@ export default function DoctorCheckList({ checks, onRefresh }: DoctorCheckListPr
                 flexShrink: 0,
               }}
             />
-            <span style={{ flex: 1 }}>{c.name}</span>
+            <span style={{ flex: 1 }}>{label(HEALTH_CHECK_LABELS, c.name)}</span>
           </div>
           {expanded === c.name && c.detail && (
             <div style={{ padding: '0.5rem', fontSize: '0.9rem', color: '#555', background: '#f9f9f9' }}>
