@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { fetchUserSessions, fetchStyleProfile, fetchMemoriesForUser, updateUser, fetchHandoffs } from '../api/client';
 import { useCurrentUser } from '../hooks/useCurrentUser';
+import { formatDate, formatRelativeDate, formatJson } from '../lib/format';
 
 interface Session {
   id: string;
@@ -175,7 +176,7 @@ export default function Knowledge() {
             <div>
               <strong>{key}</strong>
               <div style={{ fontSize: '0.9rem', color: '#555' }}>
-                {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                {typeof value === 'object' ? formatJson(value) : String(value)}
               </div>
             </div>
           </div>
@@ -200,7 +201,7 @@ export default function Knowledge() {
                 <tr key={s.id} style={{ borderBottom: '1px solid #eee' }}>
                   <td style={{ padding: '0.25rem', fontFamily: 'monospace', fontSize: '0.75rem' }}>{s.id.slice(0, 8)}…</td>
                   <td style={{ padding: '0.25rem' }}>{s.platform}</td>
-                  <td style={{ padding: '0.25rem' }}>{s.created_at ? new Date(s.created_at).toLocaleString() : '—'}</td>
+                  <td style={{ padding: '0.25rem' }}>{formatDate(s.created_at)}</td>
                   <td style={{ padding: '0.25rem' }}>{s.message_count ?? '—'}</td>
                 </tr>
               ))}
@@ -257,7 +258,7 @@ export default function Knowledge() {
             <div style={{ color: '#555', marginBottom: '0.25rem' }}>{h.summary}</div>
             {h.created_at && (
               <span style={{ color: '#999', fontSize: '0.75rem' }}>
-                {new Date(h.created_at).toLocaleString()}
+                {formatRelativeDate(h.created_at)}
               </span>
             )}
           </div>
