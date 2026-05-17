@@ -30,6 +30,7 @@ from hestia.orchestrator.types import (
     TurnTransition,
 )
 from hestia.persistence.sessions import SessionStore
+from hestia.persistence.users import User
 from hestia.platforms.base import Platform
 from hestia.policy.engine import PolicyEngine
 from hestia.reflection.store import ProposalStore
@@ -184,7 +185,7 @@ class Orchestrator:
         platform_user: str | None = None,
         voice_reply: bool = False,
         stream_callback: StreamCallback | None = None,
-        resolved_user: Any | None = None,
+        resolved_user: User | None = None,
     ) -> Turn:
         """Process a single user turn through the state machine."""
         if self._rate_limiter is not None and not self._rate_limiter.allow(session.id):
