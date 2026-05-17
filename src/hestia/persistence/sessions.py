@@ -382,6 +382,42 @@ class SessionStore:
                 created_at=row.created_at,
             )
 
+    async def list_handoffs_for_identities(
+        self, identity_tuples: list[tuple[str, str]], limit: int = 3
+    ) -> list[dict[str, Any]]:
+        """Return recent handoffs for a list of (platform, platform_user) identities."""
+        from hestia.persistence.schema import session_handoffs
+
+        if not identity_tuples:
+            return []
+
+        conditions = [
+            sa.and_(
+                session_handoffs.c.platform == platform,
+                session_handoffs.c.platform_user == platform_user,
+            )
+            for platform, platform_user in identity_tuples
+        ]
+
+        query = (
+            sa.select(session_handoffs)
+            .where(sa.or_(*conditions))
+            .order_by(session_handoffs.c.created_at.desc())
+            .limit(limit)
+        )
+
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(query)
+            rows = result.fetchall()
+            return [
+                {
+                    "session_id": row.previous_session_id,
+                    "summary": row.summary or "",
+                    "created_at": row.created_at.isoformat() if row.created_at else None,
+                }
+                for row in rows
+            ]
+
     def _extract_artifact_handles(self, messages: list[Message]) -> list[str]:
         """Scan message content for artifact handle references."""
         handles: set[str] = set()

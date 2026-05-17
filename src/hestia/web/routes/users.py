@@ -208,6 +208,27 @@ async def remove_identity(
     return {"removed": True}
 
 
+@router.get("/users/{user_id}/handoffs")
+async def get_user_handoffs(
+    user_id: str,
+    ctx: WebContext = _CTX_DEP,
+) -> list[dict[str, Any]]:
+    """Return the last 3 handoff summaries for a user's platform identities."""
+    user = await ctx.user_store.get_user(user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    identities = await ctx.user_store.get_identities(user_id)
+    identity_tuples = [
+        (i.platform, i.platform_user) for i in identities
+    ]
+
+    handoffs = await ctx.session_store.list_handoffs_for_identities(
+        identity_tuples, limit=3
+    )
+    return handoffs
+
+
 # Room routes
 
 
