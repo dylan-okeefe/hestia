@@ -171,7 +171,7 @@ class SchedulerStore:
             sa.select(scheduled_tasks)
             .where(
                 sa.and_(
-                    scheduled_tasks.c.enabled == True,
+                    scheduled_tasks.c.enabled.is_(True),
                     scheduled_tasks.c.next_run_at <= now,
                 )
             )
@@ -200,7 +200,7 @@ class SchedulerStore:
         if session_id is not None:
             conditions.append(scheduled_tasks.c.session_id == session_id)
         if not include_disabled:
-            conditions.append(scheduled_tasks.c.enabled == True)
+            conditions.append(scheduled_tasks.c.enabled.is_(True))
 
         query = sa.select(scheduled_tasks).order_by(scheduled_tasks.c.created_at.desc())
         if conditions:
@@ -385,6 +385,61 @@ class SchedulerStore:
             next_run_at=_ensure_utc(row.next_run_at),
             last_error=row.last_error,
         )
+
+    async def update_task(
+        self,
+        task_id: str,
+        prompt: str | None = None,
+        description: str | None = None,
+        cron_expression: str | None = None,
+        enabled: bool | None = None,
+    ) -> ScheduledTask | None:
+        """Update an existing scheduled task.
+
+        Only the provided fields are updated. If cron_expression changes,
+        next_run_at is recalculated.
+
+        Returns:
+            The updated ScheduledTask, or None if not found.
+        """
+        query = sa.select(scheduled_tasks).where(scheduled_tasks.c.id == task_id)
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(query)
+            row = result.fetchone()
+            if not row:
+                return None
+
+            task = self._row_to_task(row)
+            values: dict[str, Any] = {}
+
+            if prompt is not None:
+                values["prompt"] = prompt
+            if description is not None:
+                values["description"] = description
+            if cron_expression is not None:
+                values["cron_expression"] = cron_expression
+                # Recalculate next_run_at based on new cron
+                values["next_run_at"] = _calculate_next_run(cron_expression, None, utcnow())
+            if enabled is not None:
+                values["enabled"] = enabled
+
+            if not values:
+                return task
+
+            update = (
+                sa.update(scheduled_tasks)
+                .where(scheduled_tasks.c.id == task_id)
+                .values(**values)
+            )
+            await conn.execute(update)
+            await conn.commit()
+
+            # Return updated task by re-fetching
+            result = await conn.execute(query)
+            row = result.fetchone()
+            if row:
+                return self._row_to_task(row)
+            return None
 
     async def summary_stats(self) -> dict[str, Any]:
         """Get summary stats for the status command.

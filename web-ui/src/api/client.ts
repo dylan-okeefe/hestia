@@ -135,6 +135,32 @@ export async function fetchSchedulerTasks() {
   return res.json();
 }
 
+export async function createTask(payload: { prompt: string; description?: string; cron_expression?: string; enabled?: boolean; session_id?: string }) {
+  const res = await apiFetch(`${API_BASE}/scheduler/tasks`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error('Failed to create task');
+  return res.json();
+}
+
+export async function updateTask(id: string, payload: Partial<{ prompt: string; description: string; cron_expression: string; enabled: boolean }>) {
+  const res = await apiFetch(`${API_BASE}/scheduler/tasks/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error('Failed to update task');
+  return res.json();
+}
+
+export async function deleteTask(id: string) {
+  const res = await apiFetch(`${API_BASE}/scheduler/tasks/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete task');
+  return res.json() as Promise<{ deleted: boolean }>;
+}
+
 export async function runTaskNow(id: string) {
   return apiFetch(`${API_BASE}/scheduler/tasks/${id}/run`, { method: 'POST' });
 }
