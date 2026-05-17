@@ -76,6 +76,22 @@ class TestUserStore:
         assert identities == []
 
     @pytest.mark.asyncio
+    async def test_delete_user_cascades_to_room_members(self, user_store):
+        user = await user_store.create_user("Alice")
+        await user_store.add_identity(user.id, "telegram", "12345")
+        room = await user_store.create_room("telegram", "-100123")
+        await user_store.add_room_member(room.id, user.id)
+
+        deleted = await user_store.delete_user(user.id)
+        assert deleted is True
+
+        fetched = await user_store.get_user(user.id)
+        assert fetched is None
+
+        members = await user_store.get_room_members(room.id)
+        assert members == []
+
+    @pytest.mark.asyncio
     async def test_add_and_get_identities(self, user_store):
         user = await user_store.create_user("Alice")
         await user_store.add_identity(user.id, "telegram", "12345", verified=True)
