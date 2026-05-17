@@ -1,7 +1,39 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import Profile from '../Profile';
 import * as client from '../../api/client';
+
+interface AuthMockValue {
+  auth: {
+    authenticated: boolean;
+    authEnabled: boolean;
+    platform: string | null;
+    platformUser: string | null;
+    userId: string | null;
+    availablePlatforms: string[];
+  };
+  loading: boolean;
+  login: ReturnType<typeof vi.fn>;
+  logout: ReturnType<typeof vi.fn>;
+  refresh: ReturnType<typeof vi.fn>;
+}
+
+const authState = vi.hoisted(() => ({
+  value: {
+    auth: {
+      authenticated: true,
+      authEnabled: true,
+      platform: 'telegram',
+      platformUser: '12345',
+      userId: 'user-2',
+      availablePlatforms: [],
+    },
+    loading: false,
+    login: vi.fn(),
+    logout: vi.fn(),
+    refresh: vi.fn(),
+  } as AuthMockValue,
+}));
 
 vi.mock('../../api/client', async () => {
   const actual = await vi.importActual<typeof import('../../api/client')>('../../api/client');
@@ -26,38 +58,38 @@ vi.mock('../../api/client', async () => {
 });
 
 vi.mock('../../context/AuthContext', () => ({
-  useAuth: vi.fn(() => ({
-    auth: {
-      authenticated: true,
-      authEnabled: true,
-      platform: 'telegram',
-      platformUser: '12345',
-      userId: 'user-2',
-      availablePlatforms: [],
-    },
-    loading: false,
-    login: vi.fn(),
-    logout: vi.fn(),
-    refresh: vi.fn(),
-  })),
+  useAuth: () => authState.value,
 }));
 
 describe('Profile', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    authState.value = {
+      auth: {
+        authenticated: true,
+        authEnabled: true,
+        platform: 'telegram',
+        platformUser: '12345',
+        userId: 'user-2',
+        availablePlatforms: [],
+      },
+      loading: false,
+      login: vi.fn(),
+      logout: vi.fn(),
+      refresh: vi.fn(),
+    };
   });
 
   it('renders user from session user_id instead of users list', async () => {
     render(<Profile />);
 
     await waitFor(() => expect(screen.getByText('Dylan')).toBeInTheDocument());
-    expect(screen.getByText(/admin/i)).toBeInTheDocument();
+    expect(screen.getByText(/administrator/i)).toBeInTheDocument();
     expect(client.fetchUser).toHaveBeenCalledWith('user-2');
   });
 
   it('shows re-login prompt when auth.userId is missing', async () => {
-    const { useAuth } = await import('../../context/AuthContext');
-    vi.mocked(useAuth).mockReturnValue({
+    authState.value = {
       auth: {
         authenticated: true,
         authEnabled: true,
@@ -70,12 +102,45 @@ describe('Profile', () => {
       login: vi.fn(),
       logout: vi.fn(),
       refresh: vi.fn(),
-    });
+    };
 
     render(<Profile />);
 
     await waitFor(() =>
       expect(screen.getByText('Not authenticated. Please log in again.')).toBeInTheDocument()
+    );
+  });
+
+  it('shows empty state for rooms when no rooms exist', async () => {
+    render(<Profile />);
+    await waitFor(() => expect(screen.getByText('Dylan')).toBeInTheDocument());
+    expect(screen.getByText('No rooms found')).toBeInTheDocument();
+  });
+
+  it('fires updateUser when saving display name', async () => {
+    render(<Profile />);
+    await waitFor(() => expect(screen.getByText('Dylan')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByText('Edit name'));
+    const nameInput = screen.getByDisplayValue('Dylan');
+    fireEvent.change(nameInput, { target: { value: 'Dylan Updated' } });
+    fireEvent.click(screen.getByText('Save'));
+
+    await waitFor(() =>
+      expect(client.updateUser).toHaveBeenCalledWith('user-2', { display_name: 'Dylan Updated' })
+    );
+  });
+
+  it('fires updateUser when saving notes', async () => {
+    render(<Profile />);
+    await waitFor(() => expect(screen.getByText('Dylan')).toBeInTheDocument());
+
+    const notesInput = screen.getByDisplayValue('Test notes');
+    fireEvent.change(notesInput, { target: { value: 'Updated notes' } });
+    fireEvent.click(screen.getByText('Save Notes'));
+
+    await waitFor(() =>
+      expect(client.updateUser).toHaveBeenCalledWith('user-2', { notes: 'Updated notes' })
     );
   });
 });
