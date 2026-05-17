@@ -9,9 +9,16 @@ from hestia.app import AppContext
 
 async def cmd_migrate_users(app: AppContext) -> None:
     """Migrate existing config users to the database."""
-    from hestia.persistence.users import UserStore
+    from hestia.persistence.users import User, UserStore
 
     store = UserStore(app.db)
+
+    # Find existing admin if any
+    admin_user: User | None = None
+    for user in await store.list_users():
+        if user.role == "admin":
+            admin_user = user
+            break
 
     # Read Telegram allowed_users
     telegram_users: list[str] = []
@@ -19,37 +26,60 @@ async def cmd_migrate_users(app: AppContext) -> None:
         telegram_users = getattr(app.config.telegram, "allowed_users", [])
 
     # Read Matrix allowed_rooms
-    matrix_rooms: list[str] = []
+    matrix_entries: list[str] = []
     if hasattr(app.config, "matrix") and app.config.matrix.access_token:
-        matrix_rooms = getattr(app.config.matrix, "allowed_rooms", [])
+        matrix_entries = getattr(app.config.matrix, "allowed_rooms", [])
 
-    # Create users
-    created = 0
-    for i, user_id in enumerate(telegram_users):
-        existing = await store.get_user_by_identity("telegram", str(user_id))
-        if existing:
+    created_users = 0
+    created_rooms = 0
+
+    # Process Telegram users (always users)
+    for user_id in telegram_users:
+        platform_user = str(user_id)
+        existing_user = await store.get_user_by_identity("telegram", platform_user)
+        if existing_user:
+            if admin_user is None:
+                admin_user = existing_user
             continue
 
-        role = "admin" if i == 0 else "user"
+        role = "admin" if admin_user is None else "user"
         user = await store.create_user(
-            display_name=str(user_id),
+            display_name=platform_user,
             role=role,
         )
-        await store.add_identity(user.id, "telegram", str(user_id))
-        created += 1
+        await store.add_identity(user.id, "telegram", platform_user)
+        created_users += 1
+        if admin_user is None:
+            admin_user = user
 
-    # For Matrix rooms, create a user for the first room (admin) and room entries
-    for i, room_id in enumerate(matrix_rooms):
-        existing = await store.get_user_by_identity("matrix", str(room_id))
-        if existing:
-            continue
+    # Process Matrix entries
+    for entry in matrix_entries:
+        platform_user = str(entry)
+        if platform_user.startswith("!"):
+            # Room ID - create Room record
+            existing_room = await store.get_room_by_platform("matrix", platform_user)
+            if existing_room:
+                continue
+            room = await store.create_room("matrix", platform_user, display_name=None)
+            created_rooms += 1
+            if admin_user is not None:
+                await store.add_room_member(room.id, admin_user.id)
+        else:
+            # User ID (starts with @ or other format)
+            existing_user = await store.get_user_by_identity("matrix", platform_user)
+            if existing_user:
+                if admin_user is None:
+                    admin_user = existing_user
+                continue
 
-        role = "admin" if i == 0 else "user"
-        user = await store.create_user(
-            display_name=str(room_id),
-            role=role,
-        )
-        await store.add_identity(user.id, "matrix", str(room_id))
-        created += 1
+            role = "admin" if admin_user is None else "user"
+            user = await store.create_user(
+                display_name=platform_user,
+                role=role,
+            )
+            await store.add_identity(user.id, "matrix", platform_user)
+            created_users += 1
+            if admin_user is None:
+                admin_user = user
 
-    click.echo(f"Migrated {created} user(s).")
+    click.echo(f"Migrated {created_users} user(s) and {created_rooms} room(s).")
