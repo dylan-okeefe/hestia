@@ -579,6 +579,32 @@ class TestAuthRoutes:
         assert call_args[0][0] == "!room:example.com"
         assert "Hestia dashboard code" in call_args[0][1]
 
+    def test_request_code_with_platform_user(self, client: TestClient, auth_manager: AuthManager) -> None:
+        """Explicit platform_user overrides the configured default."""
+        from unittest.mock import AsyncMock
+        telegram_adapter = AsyncMock()
+        telegram_adapter._config.allowed_users = ["default_user"]  # type: ignore[attr-defined]
+        telegram_adapter.send_message = AsyncMock()
+        auth_manager.adapters["telegram"] = telegram_adapter
+
+        response = client.post(
+            "/api/auth/request-code",
+            json={"platform": "telegram", "platform_user": "specific_user"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "sent"
+
+        telegram_adapter.send_message.assert_called_once()
+        call_args = telegram_adapter.send_message.call_args
+        assert call_args[0][0] == "specific_user"
+        assert "Hestia dashboard code" in call_args[0][1]
+
+        # Verify the pending code was stored for the specific user
+        assert len(auth_manager._pending_codes) == 1
+        code = list(auth_manager._pending_codes.keys())[0]
+        assert auth_manager._pending_codes[code].platform_user == "specific_user"
+
     def test_verify_code(self, client: TestClient, auth_manager: AuthManager) -> None:
         import asyncio
 
