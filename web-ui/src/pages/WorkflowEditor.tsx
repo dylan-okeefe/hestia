@@ -203,7 +203,8 @@ export default function WorkflowEditor() {
             onUpdateNodeData={editor.updateSelectedNodeData}
             onChangeNodeType={editor.handleChangeNodeType}
             tools={editor.tools}
-            platforms={editor.platforms}
+            toolSchemas={editor.toolSchemas}
+            triggerType={editor.triggerType}
           />
         )}
       </div>

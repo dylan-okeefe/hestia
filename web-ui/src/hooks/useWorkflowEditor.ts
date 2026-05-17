@@ -15,6 +15,7 @@ import {
   type WorkflowEdge,
   type ExecutionResult,
   type ExecutionRecord,
+  type ToolSchema,
 } from '../api/client';
 import { useUndoRedo } from './useUndoRedo';
 
@@ -43,6 +44,7 @@ export function useWorkflowEditor(workflowId: string | undefined) {
   const [triggerSaving, setTriggerSaving] = useState(false);
   const [webhookUrl, setWebhookUrl] = useState('');
   const [webhookSecret, setWebhookSecret] = useState('');
+  const [toolSchemas, setToolSchemas] = useState<ToolSchema[]>([]);
   const [tools, setTools] = useState<string[]>([]);
   const [platforms, setPlatforms] = useState<string[]>([]);
   const [isDirty, setIsDirty] = useState(false);
@@ -128,8 +130,14 @@ export function useWorkflowEditor(workflowId: string | undefined) {
       });
 
     fetchTools()
-      .then((data) => setTools((data.tools || []).map((t) => t.name)))
-      .catch(() => setTools([]));
+      .then((data) => {
+        setToolSchemas(data.tools || []);
+        setTools((data.tools || []).map((t) => t.name));
+      })
+      .catch(() => {
+        setToolSchemas([]);
+        setTools([]);
+      });
 
     fetchAuthStatus()
       .then((data) => setPlatforms(data.available_platforms || []))
@@ -411,6 +419,7 @@ export function useWorkflowEditor(workflowId: string | undefined) {
     triggerSaving,
     webhookUrl,
     webhookSecret,
+    toolSchemas,
     tools,
     platforms,
     isDirty,
