@@ -323,6 +323,119 @@ class TestSchedulerRoutes:
         response = client.post("/api/scheduler/tasks/missing/run")
         assert response.status_code == 404
 
+    def test_create_task(self, client: TestClient, mock_app: MagicMock) -> None:
+        """POST /api/scheduler/tasks creates a new task."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.scheduler_store.create_task = AsyncMock(
+            return_value=MagicMock(
+                id="task_new",
+                session_id="default",
+                prompt="test prompt",
+                description="test desc",
+                cron_expression="0 8 * * *",
+                enabled=True,
+                created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+                next_run_at=datetime(2024, 1, 2, 8, 0, 0, tzinfo=UTC),
+            )
+        )
+
+        response = client.post(
+            "/api/scheduler/tasks",
+            json={
+                "prompt": "test prompt",
+                "description": "test desc",
+                "cron_expression": "0 8 * * *",
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["id"] == "task_new"
+        assert data["prompt"] == "test prompt"
+        ctx.scheduler_store.create_task.assert_awaited_once()
+
+    def test_create_task_missing_prompt(self, client: TestClient, mock_app: MagicMock) -> None:
+        """POST /api/scheduler/tasks returns 400 when prompt is missing."""
+        response = client.post("/api/scheduler/tasks", json={"description": "no prompt"})
+        assert response.status_code == 400
+
+    def test_update_task(self, client: TestClient, mock_app: MagicMock) -> None:
+        """PUT /api/scheduler/tasks/{id} updates an existing task."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.scheduler_store.update_task = AsyncMock(
+            return_value=MagicMock(
+                id="task1",
+                session_id="default",
+                prompt="updated prompt",
+                description="updated desc",
+                cron_expression="0 9 * * *",
+                enabled=False,
+                created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+                next_run_at=datetime(2024, 1, 2, 9, 0, 0, tzinfo=UTC),
+            )
+        )
+
+        response = client.put(
+            "/api/scheduler/tasks/task1",
+            json={
+                "prompt": "updated prompt",
+                "description": "updated desc",
+                "cron_expression": "0 9 * * *",
+                "enabled": False,
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["prompt"] == "updated prompt"
+        assert data["enabled"] is False
+        ctx.scheduler_store.update_task.assert_awaited_once_with(
+            task_id="task1",
+            prompt="updated prompt",
+            description="updated desc",
+            cron_expression="0 9 * * *",
+            enabled=False,
+        )
+
+    def test_update_task_not_found(self, client: TestClient, mock_app: MagicMock) -> None:
+        """PUT /api/scheduler/tasks/{id} returns 404 when task missing."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.scheduler_store.update_task = AsyncMock(return_value=None)
+
+        response = client.put("/api/scheduler/tasks/missing", json={"prompt": "x"})
+        assert response.status_code == 404
+
+    def test_delete_task(self, client: TestClient, mock_app: MagicMock) -> None:
+        """DELETE /api/scheduler/tasks/{id} deletes a task."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.scheduler_store.delete_task = AsyncMock(return_value=True)
+
+        response = client.delete("/api/scheduler/tasks/task1")
+        assert response.status_code == 200
+        assert response.json()["deleted"] is True
+        ctx.scheduler_store.delete_task.assert_awaited_once_with("task1")
+
+    def test_delete_task_not_found(self, client: TestClient, mock_app: MagicMock) -> None:
+        """DELETE /api/scheduler/tasks/{id} returns 404 when task missing."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.scheduler_store.delete_task = AsyncMock(return_value=False)
+
+        response = client.delete("/api/scheduler/tasks/missing")
+        assert response.status_code == 404
+
 
 class TestTracesRoutes:
     """Tests for /api/traces and /api/failures endpoints."""
