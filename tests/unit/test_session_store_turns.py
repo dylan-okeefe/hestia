@@ -393,6 +393,56 @@ class TestSessionHandoff:
         assert messages[0].content == "First"
 
     @pytest.mark.asyncio
+    async def test_list_handoffs_for_identities(self, store):
+        """list_handoffs_for_identities returns handoffs for multiple identities."""
+        # Create sessions and archive them for two different identities
+        session1 = await store.get_or_create_session("cli", "user1")
+        await store.append_message(session1.id, Message(role="user", content="Hello"))
+        await store.archive_session(session1.id, summary="First handoff")
+
+        session2 = await store.get_or_create_session("matrix", "@user:matrix.org")
+        await store.append_message(session2.id, Message(role="user", content="Hi"))
+        await store.archive_session(session2.id, summary="Second handoff")
+
+        # Query for both identities
+        handoffs = await store.list_handoffs_for_identities(
+            [("cli", "user1"), ("matrix", "@user:matrix.org")], limit=3
+        )
+        assert len(handoffs) == 2
+        summaries = {h["summary"] for h in handoffs}
+        assert "First handoff" in summaries
+        assert "Second handoff" in summaries
+        # Should be ordered by created_at desc (most recent first)
+        assert handoffs[0]["summary"] == "Second handoff"
+
+    @pytest.mark.asyncio
+    async def test_list_handoffs_for_identities_empty(self, store):
+        """list_handoffs_for_identities returns empty list for unknown identities."""
+        handoffs = await store.list_handoffs_for_identities(
+            [("cli", "unknown")], limit=3
+        )
+        assert handoffs == []
+
+    @pytest.mark.asyncio
+    async def test_list_handoffs_for_identities_no_identities(self, store):
+        """list_handoffs_for_identities returns empty list when given no identities."""
+        handoffs = await store.list_handoffs_for_identities([], limit=3)
+        assert handoffs == []
+
+    @pytest.mark.asyncio
+    async def test_list_handoffs_for_identities_respects_limit(self, store):
+        """list_handoffs_for_identities respects the limit parameter."""
+        for i in range(5):
+            session = await store.get_or_create_session("cli", "user1")
+            await store.append_message(session.id, Message(role="user", content=f"Msg {i}"))
+            await store.archive_session(session.id, summary=f"Handoff {i}")
+
+        handoffs = await store.list_handoffs_for_identities(
+            [("cli", "user1")], limit=2
+        )
+        assert len(handoffs) == 2
+
+    @pytest.mark.asyncio
     async def test_create_session_with_archive_generates_handoff(self, store):
         """create_session with archive_previous now calls archive_session and generates handoff."""
         session1 = await store.get_or_create_session("cli", "testuser")

@@ -579,9 +579,12 @@ class TestAuthRoutes:
         assert call_args[0][0] == "!room:example.com"
         assert "Hestia dashboard code" in call_args[0][1]
 
-    def test_request_code_with_platform_user(self, client: TestClient, auth_manager: AuthManager) -> None:
+    def test_request_code_with_platform_user(
+        self, client: TestClient, auth_manager: AuthManager
+    ) -> None:
         """Explicit platform_user overrides the configured default."""
         from unittest.mock import AsyncMock
+
         telegram_adapter = AsyncMock()
         telegram_adapter._config.allowed_users = ["default_user"]  # type: ignore[attr-defined]
         telegram_adapter.send_message = AsyncMock()

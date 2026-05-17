@@ -469,6 +469,85 @@ class TestIdentityRoutes:
         user_store.remove_identity.assert_awaited_once_with("telegram", "12345")
 
 
+class TestHandoffRoutes:
+    """Tests for /api/users/{id}/handoffs endpoint."""
+
+    def test_get_user_handoffs(
+        self, client: TestClient, auth_manager: AuthManager, user_store: MagicMock
+    ) -> None:
+        """GET /api/users/{id}/handoffs returns handoffs for the user's identities."""
+        from unittest.mock import AsyncMock
+
+        token = _user_session(auth_manager)
+        user_store.get_user = AsyncMock(
+            return_value=MagicMock(
+                id="user-1", display_name="Alice", role="user"
+            )
+        )
+        user_store.get_identities = AsyncMock(
+            return_value=[
+                MagicMock(platform="telegram", platform_user="12345"),
+            ]
+        )
+
+        # Replace session_store with one that returns handoffs
+        handoffs = [
+            {
+                "session_id": "sess_1",
+                "summary": "User asked about weather...",
+                "created_at": "2026-05-10T14:00:00+00:00",
+            },
+            {
+                "session_id": "sess_2",
+                "summary": "Discussed project planning",
+                "created_at": "2026-05-09T10:00:00+00:00",
+            },
+        ]
+        session_store = AsyncMock()
+        session_store.list_handoffs_for_identities = AsyncMock(return_value=handoffs)
+
+        ctx = WebContext(
+            session_store=session_store,
+            proposal_store=AsyncMock(),
+            style_store=AsyncMock(),
+            scheduler_store=AsyncMock(),
+            trace_store=AsyncMock(),
+            failure_store=AsyncMock(),
+            workflow_store=AsyncMock(),
+            execution_store=AsyncMock(),
+            app=MagicMock(),
+            auth_manager=auth_manager,
+            user_store=user_store,
+        )
+        set_web_context(ctx)
+
+        response = client.get(
+            "/api/users/user-1/handoffs",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 2
+        assert data[0]["session_id"] == "sess_1"
+        assert data[0]["summary"] == "User asked about weather..."
+        session_store.list_handoffs_for_identities.assert_awaited_once_with(
+            [("telegram", "12345")], limit=3
+        )
+
+    def test_get_user_handoffs_not_found(
+        self, client: TestClient, auth_manager: AuthManager, user_store: MagicMock
+    ) -> None:
+        """GET /api/users/{id}/handoffs returns 404 for missing user."""
+        token = _user_session(auth_manager)
+        user_store.get_user = AsyncMock(return_value=None)
+
+        response = client.get(
+            "/api/users/missing/handoffs",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 404
+
+
 class TestRoomRoutes:
     """Tests for /api/rooms endpoints."""
 
