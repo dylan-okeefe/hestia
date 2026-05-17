@@ -11,7 +11,7 @@ from hestia.web.context import WebContext, get_web_context
 router = APIRouter()
 _CTX_DEP = Depends(get_web_context)
 
-_ROLES = {"admin", "trusted", "user"}
+_ROLES = {"admin", "trusted", "user", "child"}
 _TRUST_PRESETS = {"paranoid", "household", "developer"}
 
 
