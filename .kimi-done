@@ -1,8 +1,1 @@
-HESTIA_KIMI_DONE=1
-LOOP=L112,L152,L157
-BRANCH=feature/workflow-builder
-COMMIT=b7a23e3
-TESTS=1194 passed, 6 skipped (unit+integration)
-RUFF_SRC=clean on changed files
-MYPY_SRC=clean
-MERGED=L89-L101,L102-L103,L157
+LOOP=L172
