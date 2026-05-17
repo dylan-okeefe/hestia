@@ -49,7 +49,7 @@ export async function fetchAuthStatus() {
 export async function fetchAvailableUsers() {
   const res = await apiFetch(`${API_BASE}/auth/available-users`);
   if (!res.ok) throw new Error('Failed to fetch available users');
-  return res.json() as Promise<{ users: Array<{ user_id: string; display_name: string; platforms: string[]; identities: Array<{ platform: string; platform_user: string }> }> }>;
+  return res.json() as Promise<{ users: Array<{ user_id: string; display_name: string; role: string; platforms: string[]; identities: Array<{ platform: string; platform_user: string }> }> }>;
 }
 
 export async function requestCode(platform: string, platformUser?: string) {
@@ -421,6 +421,14 @@ export async function fetchMemories(limit = 20) {
 export async function fetchMemoriesForUser(platform: string, platformUser: string, limit = 20) {
   const res = await apiFetch(`${API_BASE}/memory?platform=${encodeURIComponent(platform)}&platform_user=${encodeURIComponent(platformUser)}&limit=${limit}`);
   if (!res.ok) throw new Error('Failed to fetch memories');
+  return res.json();
+}
+
+export async function deleteMemory(memoryId: string) {
+  const res = await apiFetch(`${API_BASE}/memory/${encodeURIComponent(memoryId)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error('Failed to delete memory');
   return res.json();
 }
 

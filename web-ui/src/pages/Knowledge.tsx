@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react';
-import { fetchUserSessions, fetchStyleProfile, fetchMemoriesForUser, updateUser, fetchHandoffs } from '../api/client';
+
+import { fetchUserSessions, fetchStyleProfile, fetchMemoriesForUser, fetchHandoffs, deleteMemory } from '../api/client';
 import { useCurrentUser } from '../hooks/useCurrentUser';
+import PageCard from '../components/layout/PageCard';
+import EmptyState from '../components/layout/EmptyState';
+import LoadingSkeleton from '../components/layout/LoadingSkeleton';
+import ErrorState from '../components/layout/ErrorState';
 import { formatDate, formatRelativeDate, formatJson } from '../lib/format';
 
 interface Session {
@@ -14,6 +19,7 @@ interface Session {
 interface Memory {
   id: string;
   content: string;
+  tags?: string[];
   created_at?: string;
 }
 
@@ -23,16 +29,8 @@ interface Handoff {
   created_at: string;
 }
 
-const cardStyle: React.CSSProperties = {
-  background: '#fff',
-  border: '1px solid #eee',
-  borderRadius: '8px',
-  padding: '1rem',
-  marginBottom: '1rem',
-};
-
 export default function Knowledge() {
-  const { user, isLoading: userLoading, error: userError, refetch: refetchUser } = useCurrentUser();
+  const { user, isLoading: userLoading, error: userError } = useCurrentUser();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [style, setStyle] = useState<Record<string, unknown>>({});
   const [memories, setMemories] = useState<Memory[]>([]);
@@ -40,9 +38,7 @@ export default function Knowledge() {
   const [memoriesError, setMemoriesError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [editingNotes, setEditingNotes] = useState(false);
-  const [editNotes, setEditNotes] = useState('');
-  const [savingNotes, setSavingNotes] = useState(false);
+  const [deletingMemoryId, setDeletingMemoryId] = useState<string | null>(null);
 
   useEffect(() => {
     if (userLoading) return;
@@ -57,7 +53,6 @@ export default function Knowledge() {
 
     const load = async () => {
       try {
-        setEditNotes(user.notes || '');
         const identity = user.identities?.[0];
         const platform = identity?.platform || 'cli';
         const platformUser = identity?.platform_user || 'default';
@@ -89,39 +84,47 @@ export default function Knowledge() {
     load();
   }, [user, userLoading]);
 
-  const handleSaveNotes = async () => {
-    if (!user) return;
-    setSavingNotes(true);
+  const handleDeleteMemory = async (memoryId: string) => {
+    if (!window.confirm('Delete this memory?')) return;
+    setDeletingMemoryId(memoryId);
     try {
-      await updateUser(user.id, { notes: editNotes });
-      setEditingNotes(false);
-      refetchUser();
+      await deleteMemory(memoryId);
+      setMemories((prev) => prev.filter((m) => m.id !== memoryId));
     } catch (err: any) {
-      setError(err.message);
+      setMemoriesError(err.message);
     } finally {
-      setSavingNotes(false);
+      setDeletingMemoryId(null);
     }
   };
 
   if (userLoading || loading) {
-    return <div style={{ padding: '1rem' }}><p>Loading knowledge…</p></div>;
+    return (
+      <div style={{ padding: '1rem' }}>
+        <h1>What Hestia Knows About You</h1>
+        <PageCard>
+          <LoadingSkeleton lines={5} />
+        </PageCard>
+      </div>
+    );
   }
 
   if (userError) {
     return (
       <div style={{ padding: '1rem' }}>
-        <p style={{ color: 'red' }}>{userError}</p>
-        {userError.includes('Not authenticated') && (
-          <button onClick={() => { window.location.href = '/login'; }}>
-            Go to Login
-          </button>
-        )}
+        <ErrorState
+          message={userError}
+          onRetry={userError.includes('Not authenticated') ? () => { window.location.href = '/login'; } : () => window.location.reload()}
+        />
       </div>
     );
   }
 
   if (error && !user) {
-    return <div style={{ padding: '1rem' }}><p style={{ color: 'red' }}>{error}</p></div>;
+    return (
+      <div style={{ padding: '1rem' }}>
+        <ErrorState message={error} onRetry={() => window.location.reload()} />
+      </div>
+    );
   }
 
   const styleMetrics = Object.entries(style);
@@ -130,37 +133,35 @@ export default function Knowledge() {
     <div style={{ padding: '1rem' }}>
       <h1>What Hestia Knows About You</h1>
 
-      {error && <p style={{ color: 'red' }}>{error}</p>}
+      {error && (
+        <PageCard>
+          <ErrorState message={error} onRetry={() => window.location.reload()} />
+        </PageCard>
+      )}
 
-      <div style={cardStyle}>
+      <PageCard>
         <h3 style={{ marginTop: 0 }}>User Notes</h3>
-        {editingNotes ? (
-          <>
-            <textarea
-              value={editNotes}
-              onChange={(e) => setEditNotes(e.target.value)}
-              rows={4}
-              style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #ccc', fontFamily: 'inherit', marginBottom: '0.5rem' }}
-            />
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <button onClick={handleSaveNotes} disabled={savingNotes}>{savingNotes ? 'Saving…' : 'Save'}</button>
-              <button onClick={() => { setEditingNotes(false); setEditNotes(user?.notes || ''); }}>Cancel</button>
-            </div>
-          </>
-        ) : (
-          <>
-            <p style={{ whiteSpace: 'pre-wrap', marginTop: 0 }}>{user?.notes || 'No notes saved.'}</p>
-            <button onClick={() => setEditingNotes(true)}>Edit Notes</button>
-          </>
-        )}
-      </div>
+        <p style={{ margin: '0 0 0.5rem', fontSize: '0.75rem', color: '#888' }}>
+          Facts about you that Hestia sees in every conversation.
+        </p>
+        <p style={{ whiteSpace: 'pre-wrap', marginTop: 0 }}>
+          {user?.notes || 'No notes saved.'}
+        </p>
+        <a href="/profile" style={{ fontSize: '0.875rem' }}>
+          Edit notes on Profile →
+        </a>
+      </PageCard>
 
-      <div style={cardStyle}>
+      <PageCard>
         <h3 style={{ marginTop: 0 }}>Style Profile</h3>
+        <p style={{ margin: '0 0 0.5rem', fontSize: '0.75rem', color: '#888' }}>
+          How Hestia thinks you communicate.
+        </p>
         {styleMetrics.length === 0 && (
-          <p style={{ color: '#666' }}>
-            No style metrics yet — style profiling is disabled or hasn&apos;t collected enough data.
-          </p>
+          <EmptyState
+            title="No style metrics yet"
+            description="Style profiling is disabled or hasn't collected enough data."
+          />
         )}
         {styleMetrics.map(([key, value]) => (
           <div
@@ -181,11 +182,13 @@ export default function Knowledge() {
             </div>
           </div>
         ))}
-      </div>
+      </PageCard>
 
-      <div style={cardStyle}>
+      <PageCard>
         <h3 style={{ marginTop: 0 }}>Session History</h3>
-        {sessions.length === 0 && <p style={{ color: '#666' }}>No sessions found.</p>}
+        {sessions.length === 0 && (
+          <EmptyState title="No sessions found" description="Your conversation history will appear here." />
+        )}
         {sessions.length > 0 && (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
             <thead>
@@ -208,40 +211,78 @@ export default function Knowledge() {
             </tbody>
           </table>
         )}
-      </div>
+      </PageCard>
 
-      <div style={cardStyle}>
+      <PageCard>
         <h3 style={{ marginTop: 0 }}>Memories</h3>
+        <p style={{ margin: '0 0 0.5rem', fontSize: '0.75rem', color: '#888' }}>
+          Facts Hestia has learned about you. You can delete any you disagree with.
+        </p>
+        {memoriesError && <p style={{ color: '#ef4444', fontSize: '0.875rem' }}>{memoriesError}</p>}
         {memories.length === 0 && (
-          <p style={{ color: '#666' }}>
-            {memoriesError || 'No memories yet — Hestia learns about you during conversations.'}
-          </p>
+          <EmptyState
+            title="No memories yet"
+            description="Hestia learns about you during conversations."
+          />
         )}
-        {memories.map((m) => (
-          <div
-            key={m.id}
-            style={{
-              padding: '0.5rem 0',
-              borderBottom: '1px solid #eee',
-              fontSize: '0.875rem',
-            }}
-          >
-            {m.content}
-            {m.created_at && (
-              <span style={{ color: '#999', fontSize: '0.75rem', marginLeft: '0.5rem' }}>
-                {new Date(m.created_at).toLocaleString()}
-              </span>
-            )}
-          </div>
-        ))}
-      </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          {memories.map((m) => (
+            <div
+              key={m.id}
+              style={{
+                padding: '0.75rem',
+                border: '1px solid #eee',
+                borderRadius: '6px',
+                background: '#fafafa',
+                fontSize: '0.875rem',
+              }}
+            >
+              <div style={{ marginBottom: '0.5rem' }}>{m.content}</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                  {m.tags && m.tags.length > 0 && m.tags.map((tag) => (
+                    <span
+                      key={tag}
+                      style={{
+                        fontSize: '0.75rem',
+                        padding: '0.125rem 0.375rem',
+                        borderRadius: '999px',
+                        background: '#e5e7eb',
+                        color: '#374151',
+                      }}
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                  {m.created_at && (
+                    <span style={{ color: '#999', fontSize: '0.75rem' }}>
+                      {formatDate(m.created_at)}
+                    </span>
+                  )}
+                </div>
+                <button
+                  onClick={() => handleDeleteMemory(m.id)}
+                  disabled={deletingMemoryId === m.id}
+                  style={{ fontSize: '0.75rem', color: '#ef4444' }}
+                >
+                  {deletingMemoryId === m.id ? 'Deleting…' : 'Delete'}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </PageCard>
 
-      <div style={cardStyle}>
+      <PageCard>
         <h3 style={{ marginTop: 0 }}>Handoff Summaries</h3>
+        <p style={{ margin: '0 0 0.5rem', fontSize: '0.75rem', color: '#888' }}>
+          What Hestia remembers from your last few sessions.
+        </p>
         {handoffs.length === 0 && (
-          <p style={{ color: '#666', margin: 0 }}>
-            No handoff summaries yet — these appear when Hestia carries context across sessions.
-          </p>
+          <EmptyState
+            title="No handoff summaries yet"
+            description="These appear when Hestia carries context across sessions."
+          />
         )}
         {handoffs.map((h) => (
           <div
@@ -263,7 +304,7 @@ export default function Knowledge() {
             )}
           </div>
         ))}
-      </div>
+      </PageCard>
     </div>
   );
 }

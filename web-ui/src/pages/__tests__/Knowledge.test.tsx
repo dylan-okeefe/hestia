@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import Knowledge from '../Knowledge';
 import * as client from '../../api/client';
@@ -13,14 +13,18 @@ vi.mock('../../api/client', async () => {
         display_name: 'Alice',
         role: 'user',
         trust_preset: null,
-        notes: '',
+        notes: 'Some notes',
         created_at: '2024-01-01T12:00:00Z',
         identities: [{ platform: 'telegram', platform_user: '12345', verified: true }],
       })
     ),
     fetchUserSessions: vi.fn(() => Promise.resolve({ sessions: [] })),
     fetchStyleProfile: vi.fn(() => Promise.resolve({ profile: {} })),
-    fetchMemoriesForUser: vi.fn(() => Promise.resolve({ memories: [] })),
+    fetchMemoriesForUser: vi.fn(() => Promise.resolve({
+      memories: [
+        { id: 'mem-1', content: 'Alice likes pizza', tags: ['food'], created_at: '2026-05-10T14:00:00Z' },
+      ],
+    })),
     fetchHandoffs: vi.fn(() =>
       Promise.resolve({
         handoffs: [
@@ -37,6 +41,7 @@ vi.mock('../../api/client', async () => {
         ],
       })
     ),
+    deleteMemory: vi.fn(() => Promise.resolve({ deleted: true })),
     updateUser: vi.fn(() => Promise.resolve({})),
   };
 });
@@ -71,7 +76,6 @@ describe('Knowledge', () => {
     );
     expect(screen.getByText('Discussed project planning')).toBeInTheDocument();
 
-    // Verify fetchHandoffs was called with the session user id
     expect(client.fetchHandoffs).toHaveBeenCalledWith('user-1');
   });
 
@@ -82,8 +86,40 @@ describe('Knowledge', () => {
 
     await waitFor(() =>
       expect(
-        screen.getByText('No handoff summaries yet — these appear when Hestia carries context across sessions.')
+        screen.getByText('No handoff summaries yet')
       ).toBeInTheDocument()
+    );
+  });
+
+  it('renders memories and allows deletion', async () => {
+    render(<Knowledge />);
+
+    await waitFor(() =>
+      expect(screen.getByText('Alice likes pizza')).toBeInTheDocument()
+    );
+
+    window.confirm = vi.fn(() => true);
+    fireEvent.click(screen.getByText('Delete'));
+
+    await waitFor(() =>
+      expect(client.deleteMemory).toHaveBeenCalledWith('mem-1')
+    );
+  });
+
+  it('shows user notes as read-only with link to profile', async () => {
+    render(<Knowledge />);
+
+    await waitFor(() =>
+      expect(screen.getByText('Some notes')).toBeInTheDocument()
+    );
+    expect(screen.getByText('Edit notes on Profile →')).toBeInTheDocument();
+  });
+
+  it('shows empty state for style profile when no metrics', async () => {
+    render(<Knowledge />);
+
+    await waitFor(() =>
+      expect(screen.getByText('No style metrics yet')).toBeInTheDocument()
     );
   });
 });
