@@ -1,14 +1,9 @@
 import { useEffect, useState } from 'react';
 import { fetchRooms, updateUser, addIdentity, removeIdentity } from '../api/client';
+import { useApiQuery } from '../hooks/useApi';
 import { useCurrentUser } from '../hooks/useCurrentUser';
-
-interface Room {
-  id: string;
-  platform: string;
-  platform_room_id: string;
-  display_name: string | null;
-  created_at: string;
-}
+import ErrorState from '../components/layout/ErrorState';
+import LoadingSkeleton from '../components/layout/LoadingSkeleton';
 
 const cardStyle: React.CSSProperties = {
   background: '#fff',
@@ -31,33 +26,18 @@ const roleBadgeColor = (role: string) => {
 
 export default function Profile() {
   const { user, isLoading: userLoading, error: userError, refetch } = useCurrentUser();
-  const [rooms, setRooms] = useState<Room[]>([]);
-  const [roomsLoading, setRoomsLoading] = useState(true);
-  const [roomsError, setRoomsError] = useState<string | null>(null);
+  const {
+    data: roomsData,
+    isLoading: roomsLoading,
+    isError: roomsIsError,
+    error: roomsError,
+  } = useApiQuery('rooms', () => fetchRooms().then((d) => d.rooms || []));
+  const rooms = roomsData ?? [];
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState('');
   const [editNotes, setEditNotes] = useState('');
   const [newPlatform, setNewPlatform] = useState('');
   const [newPlatformUser, setNewPlatformUser] = useState('');
-
-  useEffect(() => {
-    let cancelled = false;
-    setRoomsLoading(true);
-    setRoomsError(null);
-    fetchRooms()
-      .then((data) => {
-        if (!cancelled) setRooms(data.rooms || []);
-      })
-      .catch((err) => {
-        if (!cancelled) setRoomsError(err.message);
-      })
-      .finally(() => {
-        if (!cancelled) setRoomsLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     if (user) {
@@ -246,10 +226,12 @@ export default function Profile() {
 
       <div style={cardStyle}>
         <h3 style={{ marginTop: 0 }}>Rooms</h3>
-        {roomsLoading && <p style={{ color: '#666' }}>Loading rooms…</p>}
-        {roomsError && <p style={{ color: 'red' }}>{roomsError}</p>}
-        {!roomsLoading && !roomsError && rooms.length === 0 && <p style={{ color: '#666' }}>No rooms found.</p>}
-        {!roomsLoading && !roomsError && rooms.map((room) => (
+        {roomsLoading && <LoadingSkeleton lines={3} />}
+        {roomsIsError && roomsError && (
+          <ErrorState message={roomsError.message} onRetry={() => window.location.reload()} />
+        )}
+        {!roomsLoading && !roomsIsError && rooms.length === 0 && <p style={{ color: '#666' }}>No rooms found.</p>}
+        {!roomsLoading && !roomsIsError && rooms.map((room) => (
           <div
             key={room.id}
             style={{
