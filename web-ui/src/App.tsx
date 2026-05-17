@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import StickyNav from './components/layout/StickyNav';
 import Dashboard from './pages/Dashboard';
 import Proposals from './pages/Proposals';
 import StyleProfile from './pages/StyleProfile';
@@ -46,7 +47,7 @@ function AppContent() {
         <Login />
       ) : (
         <>
-          <nav style={{ padding: '0.75rem 1rem', borderBottom: '1px solid #ddd', display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          <StickyNav>
             {navLink('Dashboard', '/')}
             {navLink('Proposals', '/proposals')}
             {navLink('Style', '/style')}
@@ -64,7 +65,7 @@ function AppContent() {
                 Log out
               </button>
             )}
-          </nav>
+          </StickyNav>
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/proposals" element={<Proposals />} />
