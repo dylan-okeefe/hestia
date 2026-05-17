@@ -136,6 +136,7 @@ async def available_users(
             users.append({
                 "user_id": user.id,
                 "display_name": user.display_name,
+                "role": user.role,
                 "platforms": platforms,
                 "identities": [
                     {"platform": i.platform, "platform_user": i.platform_user}
