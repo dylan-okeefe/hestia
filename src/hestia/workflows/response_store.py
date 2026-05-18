@@ -11,7 +11,7 @@ import asyncio
 import logging
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +25,7 @@ class WorkflowResponseRequest:
     platform_user: str
     created_at: datetime
     future: asyncio.Future[str]
+    timeout_seconds: float = 300.0
 
 
 class WorkflowResponseStore:
@@ -36,9 +37,10 @@ class WorkflowResponseStore:
 
     def __init__(self) -> None:
         self._pending: dict[str, WorkflowResponseRequest] = {}
+        self._sweep_task: asyncio.Task[Any] | None = None
 
     def create(
-        self, platform: str, platform_user: str
+        self, platform: str, platform_user: str, timeout_seconds: float = 300.0
     ) -> tuple[str, asyncio.Future[str]]:
         """Create a new pending response request.
 
@@ -54,8 +56,11 @@ class WorkflowResponseStore:
             platform_user=platform_user,
             created_at=now,
             future=future,
+            timeout_seconds=timeout_seconds,
         )
         self._pending[req_id] = req
+        if self._sweep_task is None:
+            self._sweep_task = asyncio.get_running_loop().create_task(self._sweep_stale())
         return req_id, future
 
     def resolve(self, request_id: str, response: str) -> bool:
@@ -88,6 +93,27 @@ class WorkflowResponseStore:
             if req.platform == platform and req.platform_user == platform_user:
                 return req_id
         return None
+
+    async def _sweep_stale(self, interval: float = 60.0) -> None:
+        """Periodically cancel requests that have exceeded twice their timeout."""
+        while True:
+            try:
+                await asyncio.sleep(interval)
+            except asyncio.CancelledError:
+                break
+            now = datetime.now(UTC)
+            stale = [
+                rid for rid, req in self._pending.items()
+                if now - req.created_at > timedelta(seconds=req.timeout_seconds * 2)
+            ]
+            for rid in stale:
+                self.cancel(rid)
+
+    def stop(self) -> None:
+        """Cancel the background sweep task for clean shutdown."""
+        if self._sweep_task is not None:
+            self._sweep_task.cancel()
+            self._sweep_task = None
 
     def __len__(self) -> int:
         return len(self._pending)
