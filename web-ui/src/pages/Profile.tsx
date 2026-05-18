@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { fetchRooms, updateUser, addIdentity, removeIdentity } from '../api/client';
+import { fetchRooms, updateUser, addIdentity, removeIdentity, fetchConfig } from '../api/client';
 import { useApiQuery } from '../hooks/useApi';
 import { useCurrentUser } from '../hooks/useCurrentUser';
 import PageCard from '../components/layout/PageCard';
@@ -8,7 +8,7 @@ import LoadingSkeleton from '../components/layout/LoadingSkeleton';
 import ErrorState from '../components/layout/ErrorState';
 import PlatformDropdown from '../components/forms/PlatformDropdown';
 import TrustPresetDropdown from '../components/forms/TrustPresetDropdown';
-import { label, ROLE_LABELS } from '../lib/labels';
+import { label, ROLE_LABELS, TRUST_PRESET_LABELS } from '../lib/labels';
 
 const roleBadgeColor = (role: string) => {
   switch (role) {
@@ -43,6 +43,7 @@ export default function Profile() {
   const [addingIdentity, setAddingIdentity] = useState(false);
 
   const [removingIdentity, setRemovingIdentity] = useState<string | null>(null);
+  const [globalPreset, setGlobalPreset] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -50,6 +51,17 @@ export default function Profile() {
       setEditNotes(user.notes || '');
     }
   }, [user?.id]);
+
+  useEffect(() => {
+    fetchConfig()
+      .then((cfg) => {
+        const preset = cfg?.trust?.preset;
+        setGlobalPreset(typeof preset === 'string' ? preset : null);
+      })
+      .catch(() => {
+        setGlobalPreset(null);
+      });
+  }, []);
 
   const handleSaveName = async () => {
     if (!user) return;
@@ -173,7 +185,7 @@ export default function Profile() {
         </div>
 
         <div style={{ marginBottom: '0.5rem', fontSize: '0.875rem', color: '#666' }}>
-          <strong>Trust preset:</strong>{' '}
+          <strong>Personal trust override:</strong>{' '}
           {user.role === 'admin' ? (
             <TrustPresetDropdown
               value={user.trust_preset || ''}
@@ -191,8 +203,25 @@ export default function Profile() {
           )}
         </div>
         <p style={{ margin: '0.25rem 0 0', fontSize: '0.75rem', color: '#888' }}>
-          Overrides the global trust level for this user.
+          {user.trust_preset
+            ? `Overrides the global trust level (currently: ${globalPreset || '—'}).`
+            : `Using global trust level: ${globalPreset || '—'}. Select a preset to override.`}
         </p>
+        <div style={{ marginTop: '0.5rem' }}>
+          <span
+            style={{
+              display: 'inline-block',
+              padding: '0.25rem 0.5rem',
+              borderRadius: '999px',
+              fontSize: '0.75rem',
+              fontWeight: 'bold',
+              color: '#fff',
+              background: '#1976d2',
+            }}
+          >
+            Effective: {label(TRUST_PRESET_LABELS, user.trust_preset || globalPreset || '—')}
+          </span>
+        </div>
         <div style={{ marginBottom: '0.5rem', fontSize: '0.875rem', color: '#666' }}>
           <strong>Created:</strong>{' '}
           {new Date(user.created_at).toLocaleString()}
