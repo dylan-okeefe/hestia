@@ -425,6 +425,20 @@ class TelegramAdapter(Platform):
             platform_user = str(user_id)
             sender_platform_user = None
 
+        # Check for pending workflow interactive responses
+        from hestia.workflows.response_store import DEFAULT_RESPONSE_STORE
+
+        pending_request_id = DEFAULT_RESPONSE_STORE.find_pending(
+            "telegram", platform_user
+        )
+        if pending_request_id is not None:
+            resolved = DEFAULT_RESPONSE_STORE.resolve(
+                pending_request_id, update.effective_message.text
+            )
+            if resolved:
+                # Don't route workflow replies to the orchestrator
+                return
+
         if self._on_message is not None:
             await self._on_message(
                 self.name,
@@ -576,11 +590,37 @@ class TelegramAdapter(Platform):
             await message.reply_text(sanitize_user_error(e))
 
     async def _handle_callback_query(self, update: Update, context: Any) -> None:
-        """Handle inline-keyboard button presses for confirmations."""
+        """Handle inline-keyboard button presses for confirmations and workflow responses."""
         if update.callback_query is None or update.callback_query.data is None:
             return
 
         data = update.callback_query.data
+
+        # Workflow interactive responses
+        if data.startswith("workflow:"):
+            parts = data.split(":", 2)
+            if len(parts) == 3:
+                _prefix, request_id, response = parts
+                from hestia.workflows.response_store import DEFAULT_RESPONSE_STORE
+
+                resolved = DEFAULT_RESPONSE_STORE.resolve(request_id, response)
+                if resolved:
+                    await update.callback_query.answer(f"Selected: {response}")
+                    # Update the original message to remove the keyboard
+                    msg = update.callback_query.message
+                    if msg is not None:
+                        try:
+                            original_text = getattr(msg, "text", None) or ""
+                            await update.callback_query.edit_message_text(
+                                text=f"{original_text}\n\n✅ {response}",
+                                parse_mode="HTML",
+                            )
+                        except TelegramError as e:
+                            logger.debug("Failed to update workflow message: %s", e)
+                else:
+                    await update.callback_query.answer("This prompt has expired.")
+            return
+
         if not data.startswith("confirm:"):
             return
 

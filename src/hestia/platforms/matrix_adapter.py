@@ -299,6 +299,16 @@ class MatrixAdapter(Platform):
             # Don't route confirmation replies to the orchestrator
             return
 
+        # Check for pending workflow interactive responses
+        from hestia.workflows.response_store import DEFAULT_RESPONSE_STORE
+
+        pending_request_id = DEFAULT_RESPONSE_STORE.find_pending("matrix", room.room_id)
+        if pending_request_id is not None:
+            resolved = DEFAULT_RESPONSE_STORE.resolve(pending_request_id, body.strip())
+            if resolved:
+                # Don't route workflow replies to the orchestrator
+                return
+
         if self._on_message is None:
             return
 

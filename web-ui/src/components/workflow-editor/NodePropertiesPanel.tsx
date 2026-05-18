@@ -503,6 +503,121 @@ export default function NodePropertiesPanel({
             </span>
             <TemplatePreview message={(selectedNode.data.message as string) || ''} />
           </div>
+          <div style={{ marginBottom: '0.75rem' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
+              <input
+                type="checkbox"
+                checked={!!selectedNode.data.requires_response}
+                onChange={(e) => onUpdateNodeData('requires_response', e.target.checked)}
+              />
+              Wait for user response
+            </label>
+            {selectedNode.data.requires_response && (
+              <>
+                <div style={{ marginTop: '0.5rem', marginLeft: '1.25rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>
+                    Response type
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', cursor: 'pointer', marginBottom: '0.25rem' }}>
+                    <input
+                      type="radio"
+                      name="response_type"
+                      value="buttons"
+                      checked={(selectedNode.data.response_type as string) !== 'free_text'}
+                      onChange={() => onUpdateNodeData('response_type', 'buttons')}
+                    />
+                    Buttons
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="response_type"
+                      value="free_text"
+                      checked={(selectedNode.data.response_type as string) === 'free_text'}
+                      onChange={() => onUpdateNodeData('response_type', 'free_text')}
+                    />
+                    Free text
+                  </label>
+                </div>
+                {(selectedNode.data.response_type as string) !== 'free_text' && (
+                  <div style={{ marginTop: '0.5rem', marginLeft: '1.25rem' }}>
+                    <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>
+                      Button labels
+                    </label>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginBottom: '0.25rem' }}>
+                      {((selectedNode.data.buttons as string[]) || ['Approve', 'Deny']).map((btn: string) => (
+                        <span
+                          key={btn}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.25rem',
+                            background: '#e9d5ff',
+                            color: '#581c87',
+                            padding: '0.125rem 0.5rem',
+                            borderRadius: '9999px',
+                            fontSize: '0.75rem',
+                          }}
+                        >
+                          {btn}
+                          <button
+                            onClick={() => {
+                              const current = (selectedNode.data.buttons as string[]) || ['Approve', 'Deny'];
+                              onUpdateNodeData('buttons', current.filter((b: string) => b !== btn));
+                            }}
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              cursor: 'pointer',
+                              padding: 0,
+                              fontSize: '0.75rem',
+                              color: '#581c87',
+                              lineHeight: 1,
+                            }}
+                            aria-label={`Remove button ${btn}`}
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                    <input
+                      placeholder="Add button…"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          const value = (e.target as HTMLInputElement).value.trim();
+                          if (!value) return;
+                          const current = (selectedNode.data.buttons as string[]) || ['Approve', 'Deny'];
+                          if (!current.includes(value)) {
+                            onUpdateNodeData('buttons', [...current, value]);
+                          }
+                          (e.target as HTMLInputElement).value = '';
+                        }
+                      }}
+                      style={{ width: '100%' }}
+                      aria-label="Add button"
+                    />
+                  </div>
+                )}
+                <div style={{ marginTop: '0.5rem', marginLeft: '1.25rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>
+                    Timeout (seconds)
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={(selectedNode.data.timeout_seconds as number) || 300}
+                    onChange={(e) => onUpdateNodeData('timeout_seconds', Number(e.target.value))}
+                    style={{ width: '120px' }}
+                  />
+                </div>
+                <div style={{ marginTop: '0.25rem', marginLeft: '1.25rem', fontSize: '0.75rem', color: '#666' }}>
+                  If enabled, the workflow pauses until the user responds or the timeout expires.
+                </div>
+              </>
+            )}
+          </div>
         </>
       )}
 
