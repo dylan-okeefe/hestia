@@ -135,7 +135,7 @@ class UserStore:
 
     async def update_user(self, user_id: str, **fields: Any) -> User | None:
         allowed = {"display_name", "role", "trust_preset", "notes"}
-        updates = {k: v for k, v in fields.items() if k in allowed and v is not None}
+        updates = {k: v for k, v in fields.items() if k in allowed}
         if not updates:
             return await self.get_user(user_id)
 
@@ -277,7 +277,7 @@ class UserStore:
 
     async def update_room(self, room_id: str, **fields: Any) -> Room | None:
         allowed = {"platform", "platform_room_id", "display_name"}
-        updates = {k: v for k, v in fields.items() if k in allowed and v is not None}
+        updates = {k: v for k, v in fields.items() if k in allowed}
         if not updates:
             return await self.get_room(room_id)
 
