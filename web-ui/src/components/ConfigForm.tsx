@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { saveConfig, fetchConfigSchema } from '../api/client';
 import { CONFIG_KEY_LABELS, label } from '../lib/labels';
+import { formatCron } from '../lib/format';
 
 interface ConfigFormProps {
   initialConfig: Record<string, unknown>;
@@ -32,6 +33,15 @@ function isInvalid(path: string, value: unknown): boolean {
   if (path.endsWith('.port') && (typeof value !== 'number' || value < 1 || value > 65535)) return true;
   if (path.endsWith('.max_tokens') && (typeof value !== 'number' || value < 0)) return true;
   return false;
+}
+
+function looksLikeCron(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  // 5-field cron pattern: numbers, *, -, ,, /
+  const cronPattern = /^(\S+\s+\S+\s+\S+\s+\S+\s+\S+)$/;
+  if (!cronPattern.test(value)) return false;
+  // Additional validation: must contain only allowed characters
+  return /^[\d\*\-\,\/\?LW#\s]+$/.test(value);
 }
 
 function getInputType(_key: string, value: unknown): 'text' | 'number' | 'boolean' | 'array' {
@@ -332,6 +342,8 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
       );
     }
 
+    const cronPreview = looksLikeCron(value) ? formatCron(value as string) : null;
+
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
         {input}
@@ -347,6 +359,11 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
             }}
           >
             Requires restart
+          </span>
+        )}
+        {cronPreview && (
+          <span style={{ fontSize: '0.75rem', color: '#666', width: '100%' }}>
+            {cronPreview}
           </span>
         )}
       </div>
