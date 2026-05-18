@@ -39,6 +39,7 @@ export default function Knowledge() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deletingMemoryId, setDeletingMemoryId] = useState<string | null>(null);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
 
   useEffect(() => {
     if (userLoading) return;
@@ -128,6 +129,11 @@ export default function Knowledge() {
   }
 
   const styleMetrics = Object.entries(style);
+
+  const filteredMemories =
+    selectedTags.length > 0
+      ? memories.filter((m) => selectedTags.every((tag) => m.tags?.includes(tag)))
+      : memories;
 
   return (
     <div style={{ padding: '1rem' }}>
@@ -225,8 +231,58 @@ export default function Knowledge() {
             description="Hestia learns about you during conversations."
           />
         )}
+        {memories.length > 0 && (
+          <div style={{ marginBottom: '0.75rem' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
+              {Array.from(new Set(memories.flatMap((m) => m.tags || []))).sort().map((tag) => {
+                const active = selectedTags.includes(tag);
+                return (
+                  <button
+                    key={tag}
+                    onClick={() => {
+                      setSelectedTags((prev) =>
+                        active ? prev.filter((t) => t !== tag) : [...prev, tag]
+                      );
+                    }}
+                    style={{
+                      fontSize: '0.75rem',
+                      padding: '0.25rem 0.5rem',
+                      borderRadius: '999px',
+                      border: '1px solid #d1d5db',
+                      background: active ? '#374151' : '#e5e7eb',
+                      color: active ? '#fff' : '#374151',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {tag}
+                  </button>
+                );
+              })}
+              {selectedTags.length > 0 && (
+                <button
+                  onClick={() => setSelectedTags([])}
+                  style={{
+                    fontSize: '0.75rem',
+                    padding: '0.25rem 0.5rem',
+                    borderRadius: '4px',
+                    border: 'none',
+                    background: 'none',
+                    color: '#6b7280',
+                    cursor: 'pointer',
+                    textDecoration: 'underline',
+                  }}
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+            <p style={{ fontSize: '0.75rem', color: '#888', margin: '0.25rem 0 0' }}>
+              Showing {filteredMemories.length} of {memories.length} memories
+            </p>
+          </div>
+        )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-          {memories.map((m) => (
+          {filteredMemories.map((m) => (
             <div
               key={m.id}
               style={{
