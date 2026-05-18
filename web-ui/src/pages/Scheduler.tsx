@@ -238,11 +238,12 @@ export default function Scheduler() {
               </label>
               <label>
                 Prompt / URL
-                <input
+                <textarea
+                  rows={4}
                   value={form.prompt}
                   onChange={(e) => setForm((f) => ({ ...f, prompt: e.target.value }))}
                   placeholder="https://example.com or prompt text"
-                  style={{ width: '100%', padding: '0.5rem', marginTop: '0.25rem' }}
+                  style={{ width: '100%', padding: '0.5rem', marginTop: '0.25rem', fontFamily: 'inherit' }}
                 />
               </label>
               <label>
