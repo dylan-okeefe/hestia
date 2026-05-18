@@ -170,20 +170,13 @@ async def debug_error(error_id: str, ctx: WebContext = _CTX_DEP) -> dict[str, An
         else:
             prompt_parts.append("Task record not found.")
     elif source_type == "session_turn":
-        import sqlalchemy as sa
-
-        from hestia.persistence.schema import turns
-
-        query = sa.select(turns).where(turns.c.id == source_id)
-        async with ctx.session_store._db.engine.connect() as conn:
-            result = await conn.execute(query)
-            row = result.fetchone()
-            if row:
-                prompt_parts.append(f"Session: {row.session_id}")
-                prompt_parts.append(f"State: {row.state}")
-                prompt_parts.append(f"Error: {row.error}")
-            else:
-                prompt_parts.append("Turn record not found.")
+        messages = await ctx.session_store.get_turn_messages(source_id)
+        if messages:
+            prompt_parts.append(f"Session: {messages['session_id']}")
+            prompt_parts.append(f"State: {messages['state']}")
+            prompt_parts.append(f"Error: {messages['error']}")
+        else:
+            prompt_parts.append("Turn record not found.")
     else:
         raise HTTPException(status_code=400, detail="Unknown error type")
 
