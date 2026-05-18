@@ -393,6 +393,7 @@ class SchedulerStore:
         description: str | None = None,
         cron_expression: str | None = None,
         enabled: bool | None = None,
+        notify: bool | None = None,
     ) -> ScheduledTask | None:
         """Update an existing scheduled task.
 
@@ -422,6 +423,8 @@ class SchedulerStore:
                 values["next_run_at"] = _calculate_next_run(cron_expression, None, utcnow())
             if enabled is not None:
                 values["enabled"] = enabled
+            if notify is not None:
+                values["notify"] = notify
 
             if not values:
                 return task

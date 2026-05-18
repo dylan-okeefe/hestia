@@ -458,9 +458,9 @@ class TestSchedulerRoutes:
         ctx.scheduler_store.create_task.assert_awaited_once()
 
     def test_create_task_missing_prompt(self, client: TestClient, mock_app: MagicMock) -> None:
-        """POST /api/scheduler/tasks returns 400 when prompt is missing."""
+        """POST /api/scheduler/tasks returns 422 when prompt is missing."""
         response = client.post("/api/scheduler/tasks", json={"description": "no prompt"})
-        assert response.status_code == 400
+        assert response.status_code == 422
 
     def test_update_task(self, client: TestClient, mock_app: MagicMock) -> None:
         """PUT /api/scheduler/tasks/{id} updates an existing task."""

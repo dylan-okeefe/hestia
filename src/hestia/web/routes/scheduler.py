@@ -4,13 +4,55 @@ from __future__ import annotations
 
 from typing import Any
 
+from croniter import croniter
 from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, field_validator
 
 from hestia.web.context import WebContext, get_web_context
 
 router = APIRouter()
 
 _CTX_DEP = Depends(get_web_context)
+
+
+class TaskCreate(BaseModel):
+    """Payload for creating a scheduled task."""
+
+    prompt: str
+    description: str | None = None
+    cron_expression: str | None = None
+    enabled: bool = True
+    notify: bool = False
+
+    @field_validator("cron_expression")
+    @classmethod
+    def _validate_cron(cls, v: str | None) -> str | None:
+        if v is not None:
+            try:
+                croniter(v)
+            except (ValueError, TypeError) as exc:
+                raise ValueError(f"Invalid cron expression: {exc}") from exc
+        return v
+
+
+class TaskUpdate(BaseModel):
+    """Payload for updating a scheduled task."""
+
+    prompt: str | None = None
+    description: str | None = None
+    cron_expression: str | None = None
+    enabled: bool | None = None
+    notify: bool | None = None
+
+    @field_validator("cron_expression")
+    @classmethod
+    def _validate_cron(cls, v: str | None) -> str | None:
+        if v is not None:
+            try:
+                croniter(v)
+            except (ValueError, TypeError) as exc:
+                raise ValueError(f"Invalid cron expression: {exc}") from exc
+        return v
 
 
 @router.get("/tasks")
@@ -45,27 +87,19 @@ async def list_tasks(
 @router.post("/tasks")
 async def create_task(
     request: Request,
-    payload: dict[str, Any],
+    payload: TaskCreate,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """Create a new scheduled task."""
-    prompt = payload.get("prompt")
-    if not prompt:
-        raise HTTPException(status_code=400, detail="prompt is required")
-
-    description = payload.get("description")
-    cron_expression = payload.get("cron_expression")
-    enabled = payload.get("enabled", True)
-    notify = payload.get("notify", False)
     session_id = getattr(request.state, "platform_user", None) or "default"
 
     task = await ctx.scheduler_store.create_task(
         session_id=session_id,
-        prompt=prompt,
-        description=description,
-        cron_expression=cron_expression,
-        enabled=enabled,
-        notify=notify,
+        prompt=payload.prompt,
+        description=payload.description,
+        cron_expression=payload.cron_expression,
+        enabled=payload.enabled,
+        notify=payload.notify,
     )
     return {
         "id": task.id,
@@ -84,7 +118,7 @@ async def create_task(
 async def update_task(
     task_id: str,
     request: Request,
-    payload: dict[str, Any],
+    payload: TaskUpdate,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """Update an existing scheduled task."""
@@ -96,13 +130,16 @@ async def update_task(
     if caller_platform_user is not None and task.session_id != caller_platform_user:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    task = await ctx.scheduler_store.update_task(
-        task_id=task_id,
-        prompt=payload.get("prompt"),
-        description=payload.get("description"),
-        cron_expression=payload.get("cron_expression"),
-        enabled=payload.get("enabled"),
-    )
+    update_kwargs: dict[str, Any] = {
+        "task_id": task_id,
+        "prompt": payload.prompt,
+        "description": payload.description,
+        "cron_expression": payload.cron_expression,
+        "enabled": payload.enabled,
+    }
+    if payload.notify is not None:
+        update_kwargs["notify"] = payload.notify
+    task = await ctx.scheduler_store.update_task(**update_kwargs)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
     return {
