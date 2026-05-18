@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import NodePropertiesPanel from '../NodePropertiesPanel';
 import * as client from '../../../api/client';
+import { TEXT } from '../../../lib/text';
 
 vi.mock('../../../api/client', async () => {
   const actual = await vi.importActual<typeof import('../../../api/client')>('../../../api/client');
@@ -74,8 +75,8 @@ describe('NodePropertiesPanel', () => {
       />
     );
     await waitFor(() => expect(screen.getAllByRole('combobox').length).toBeGreaterThanOrEqual(2));
-    expect(screen.getByText('Which adapter sends the message.')).toBeInTheDocument();
-    expect(screen.getByText('The user or room that receives the message.')).toBeInTheDocument();
+    expect(screen.getByText(TEXT.workflowEditor.platformHelper)).toBeInTheDocument();
+    expect(screen.getByText(TEXT.workflowEditor.targetUserHelper)).toBeInTheDocument();
   });
 
   it('shows tag chips and add input for llm_decision branches', () => {
@@ -95,7 +96,7 @@ describe('NodePropertiesPanel', () => {
     );
     expect(screen.getByText('yes')).toBeInTheDocument();
     expect(screen.getByText('no')).toBeInTheDocument();
-    const input = screen.getByPlaceholderText(/add branch/i);
+    const input = screen.getByPlaceholderText(TEXT.workflowEditor.addBranchPlaceholder);
     fireEvent.keyDown(input, { key: 'Enter', target: { value: 'maybe' } });
     expect(onUpdate).toHaveBeenCalledWith('branches', ['yes', 'no', 'maybe']);
   });
@@ -174,7 +175,7 @@ describe('NodePropertiesPanel', () => {
         triggerType="manual"
       />
     );
-    expect(screen.getByPlaceholderText('{"query": "example"}')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(TEXT.workflowEditor.argsJsonPlaceholder)).toBeInTheDocument();
   });
 
   it('shows interactive response options when checkbox is checked', async () => {
@@ -200,12 +201,12 @@ describe('NodePropertiesPanel', () => {
         triggerType="manual"
       />
     );
-    expect(screen.getByLabelText(/Wait for user response/i)).toBeChecked();
-    expect(screen.getByText(/Response type/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(TEXT.workflowEditor.interactiveCheckbox)).toBeChecked();
+    expect(screen.getByText(TEXT.workflowEditor.interactiveTypeLabel)).toBeInTheDocument();
     expect(screen.getByText('Approve')).toBeInTheDocument();
     expect(screen.getByText('Deny')).toBeInTheDocument();
     expect(screen.getByDisplayValue(300)).toBeInTheDocument();
-    expect(screen.getByText(/workflow pauses until the user responds/i)).toBeInTheDocument();
+    expect(screen.getByText(TEXT.workflowEditor.interactiveHelper)).toBeInTheDocument();
   });
 
   it('toggles response type between buttons and free text', async () => {
@@ -229,7 +230,7 @@ describe('NodePropertiesPanel', () => {
         triggerType="manual"
       />
     );
-    const freeTextRadio = screen.getByLabelText(/Free text/i);
+    const freeTextRadio = screen.getByLabelText(TEXT.workflowEditor.interactiveTypeText);
     fireEvent.click(freeTextRadio);
     expect(onUpdate).toHaveBeenCalledWith('response_type', 'free_text');
   });
@@ -256,7 +257,7 @@ describe('NodePropertiesPanel', () => {
         triggerType="manual"
       />
     );
-    const input = screen.getByLabelText(/Add button/i);
+    const input = screen.getByLabelText(TEXT.workflowEditor.addButtonAriaLabel);
     fireEvent.keyDown(input, { key: 'Enter', target: { value: 'Maybe' } });
     expect(onUpdate).toHaveBeenCalledWith('buttons', ['Approve', 'Maybe']);
 

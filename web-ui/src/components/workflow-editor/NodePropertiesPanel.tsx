@@ -5,6 +5,7 @@ import PlatformDropdown from '../forms/PlatformDropdown';
 import UserDropdown from '../forms/UserDropdown';
 import ToolDropdown from '../forms/ToolDropdown';
 import type { ToolSchema } from '../../api/client';
+import { TEXT } from '../../lib/text';
 
 const TRIGGER_VARIABLES: Record<string, string[]> = {
   manual: [],
@@ -40,16 +41,16 @@ function SyntaxHelp() {
         onClick={() => setOpen((o) => !o)}
         style={{ fontSize: '0.75rem', background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: '#2563eb' }}
       >
-        {open ? 'Hide' : 'Show'} Syntax Help
+        {open ? TEXT.workflowEditor.hideSyntaxHelp : TEXT.workflowEditor.showSyntaxHelp}
       </button>
       {open && (
         <div style={{ fontSize: '0.75rem', color: '#444', marginTop: '0.25rem', padding: '0.5rem', background: '#f9fafb', borderRadius: 4 }}>
-          <p style={{ margin: '0 0 0.25rem' }}><strong>Variables:</strong> input.field_name</p>
-          <p style={{ margin: '0 0 0.25rem' }}><strong>Comparisons:</strong> ==, !=, &lt;, &gt;, &lt;=, &gt;=</p>
-          <p style={{ margin: '0 0 0.25rem' }}><strong>Logic:</strong> and, or, not</p>
-          <p style={{ margin: '0 0 0.25rem' }}><strong>Arithmetic:</strong> +, -, *, / (no power)</p>
-          <p style={{ margin: '0 0 0.25rem' }}><strong>Literals:</strong> strings in quotes, numbers, True, False, None</p>
-          <p style={{ margin: 0 }}><strong>Examples:</strong> input.status == &quot;error&quot;, input.count &gt; 10 and input.retry, not input.skipped</p>
+          <p style={{ margin: '0 0 0.25rem' }}><strong>{TEXT.workflowEditor.syntaxHelpVariables}</strong> {TEXT.workflowEditor.syntaxHelpVariablesValue}</p>
+          <p style={{ margin: '0 0 0.25rem' }}><strong>{TEXT.workflowEditor.syntaxHelpComparisons}</strong> {TEXT.workflowEditor.syntaxHelpComparisonsValue}</p>
+          <p style={{ margin: '0 0 0.25rem' }}><strong>{TEXT.workflowEditor.syntaxHelpLogic}</strong> {TEXT.workflowEditor.syntaxHelpLogicValue}</p>
+          <p style={{ margin: '0 0 0.25rem' }}><strong>{TEXT.workflowEditor.syntaxHelpArithmetic}</strong> {TEXT.workflowEditor.syntaxHelpArithmeticValue}</p>
+          <p style={{ margin: '0 0 0.25rem' }}><strong>{TEXT.workflowEditor.syntaxHelpLiterals}</strong> {TEXT.workflowEditor.syntaxHelpLiteralsValue}</p>
+          <p style={{ margin: 0 }}><strong>{TEXT.workflowEditor.syntaxHelpExamples}</strong> {TEXT.workflowEditor.syntaxHelpExamplesValue}</p>
         </div>
       )}
     </div>
@@ -66,10 +67,10 @@ function UpstreamVariables({ nodeId, nodes, edges }: { nodeId: string; nodes: No
 
   return (
     <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.25rem' }}>
-      Available:{' '}
+      {TEXT.workflowEditor.availableLabel}{' '}
       {upstream.map((n) => (
         <code key={n.id} style={{ background: '#f3f4f6', padding: '0.125rem 0.25rem', borderRadius: 4 }}>
-          {n.id}.output
+          {TEXT.workflowEditor.upstreamVariable(n.id)}
         </code>
       ))}
     </div>
@@ -97,12 +98,12 @@ function TemplatePreview({ message }: { message: string }) {
   const count = message.length;
   return (
     <div style={{ marginTop: '0.5rem' }}>
-      <div style={{ fontSize: '0.875rem', marginBottom: '0.25rem' }}>Preview</div>
+      <div style={{ fontSize: '0.875rem', marginBottom: '0.25rem' }}>{TEXT.workflowEditor.previewLabel}</div>
       <HighlightPreview text={message} />
       <div style={{ fontSize: '0.75rem', marginTop: '0.25rem', color: count > 4096 ? '#dc2626' : count > 4000 ? '#ca8a04' : '#666' }}>
-        {count} characters
-        {count > 4096 && ' — Exceeds Telegram limit'}
-        {count > 4000 && count <= 4096 && ' — May exceed Telegram limit'}
+        {TEXT.workflowEditor.characterCount(count)}
+        {count > 4096 && TEXT.workflowEditor.exceedsTelegramLimit}
+        {count > 4000 && count <= 4096 && TEXT.workflowEditor.mayExceedTelegramLimit}
       </div>
     </div>
   );
@@ -139,13 +140,13 @@ function JsonTextarea({
     try {
       const parsed = JSON.parse(text);
       if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-        setError('Headers must be a JSON object, not an array or primitive.');
+        setError(TEXT.workflowEditor.headersObjectError);
         return;
       }
       onChange(parsed);
       setError(null);
     } catch {
-      setError('Invalid JSON — headers must be a JSON object like {"Authorization": "Bearer ..."}');
+      setError(TEXT.workflowEditor.invalidJsonError);
     }
   };
 
@@ -202,15 +203,15 @@ function InsertVariableDropdown({
       }}
       aria-label="Insert variable"
     >
-      <option value="">Insert variable…</option>
+      <option value="">{TEXT.workflowEditor.insertVariablePlaceholder}</option>
       {triggerVars.map((v) => (
         <option key={`trigger_${v}`} value={v}>
-          Trigger: {v}
+          {TEXT.workflowEditor.triggerVariable(v)}
         </option>
       ))}
       {upstream.map((n) => (
         <option key={`upstream_${n.id}`} value={`${n.id}.output`}>
-          Node {n.id}: output
+          {TEXT.workflowEditor.upstreamVariable(n.id)}
         </option>
       ))}
     </select>
@@ -276,28 +277,28 @@ export default function NodePropertiesPanel({
         overflowY: 'auto',
       }}
     >
-      <h3 style={{ marginTop: 0 }}>Properties</h3>
+      <h3 style={{ marginTop: 0 }}>{TEXT.workflowEditor.propertiesTitle}</h3>
       <div style={{ marginBottom: '0.75rem' }}>
         <button
           onClick={() => onDeleteNode(selectedNode.id)}
           style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', color: 'red', marginBottom: '0.5rem' }}
         >
-          Delete Node
+          {TEXT.workflowEditor.deleteNode}
         </button>
       </div>
       <div style={{ marginBottom: '0.75rem' }}>
-        <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>ID</label>
+        <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>{TEXT.workflowEditor.idLabel}</label>
         <input value={selectedNode.id} readOnly style={{ width: '100%' }} />
       </div>
       <div style={{ marginBottom: '0.75rem' }}>
-        <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Type</label>
+        <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>{TEXT.workflowEditor.typeLabel}</label>
         <NodeTypeDropdown
           value={selectedNode.type || ''}
           onChange={(type) => onChangeNodeType(type)}
         />
       </div>
       <div style={{ marginBottom: '0.75rem' }}>
-        <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Label</label>
+        <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>{TEXT.workflowEditor.labelLabel}</label>
         <input
           value={(selectedNode.data.label as string) || ''}
           onChange={(e) => onUpdateNodeData('label', e.target.value)}
@@ -309,19 +310,19 @@ export default function NodePropertiesPanel({
         <>
           <div style={{ marginBottom: '0.75rem' }}>
             <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>
-              Tool Name
+              {TEXT.workflowEditor.toolNameLabel}
             </label>
             <ToolDropdown
               value={(selectedNode.data.tool_name as string) || ''}
               onChange={(value: string) => onUpdateNodeData('tool_name', value)}
             />
             <span style={{ fontSize: '0.75rem', color: '#666', display: 'block', marginTop: '0.25rem' }}>
-              The registered tool to invoke.
+              {TEXT.workflowEditor.toolNameHelper}
             </span>
           </div>
           {hasSimpleSchema ? (
             <div style={{ marginBottom: '0.75rem' }}>
-              <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Args</label>
+              <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>{TEXT.workflowEditor.argsLabel}</label>
               {Object.entries(toolSchema.parameters.properties as Record<string, unknown>).map(([key, prop]) => {
                 const currentArgs = (selectedNode.data.args as Record<string, unknown>) || {};
                 return (
@@ -345,16 +346,16 @@ export default function NodePropertiesPanel({
                 );
               })}
               <span style={{ fontSize: '0.75rem', color: '#666', display: 'block', marginTop: '0.25rem' }}>
-                JSON arguments passed to the tool.
+                {TEXT.workflowEditor.argsHelper}
               </span>
             </div>
           ) : (
             <JsonTextarea
-              label="Args (JSON)"
+              label={TEXT.workflowEditor.argsJsonLabel}
               value={(selectedNode.data.args as object) || {}}
               onChange={(v) => onUpdateNodeData('args', v)}
               rows={4}
-              placeholder='{"query": "example"}'
+              placeholder={TEXT.workflowEditor.argsJsonPlaceholder}
             />
           )}
         </>
@@ -364,7 +365,7 @@ export default function NodePropertiesPanel({
         <>
           <div style={{ marginBottom: '0.75rem' }}>
             <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>
-              Prompt{' '}
+              {TEXT.workflowEditor.promptLabel}{' '}
               <InsertVariableDropdown
                 triggerType={triggerType}
                 nodeId={selectedNode.id}
@@ -382,15 +383,15 @@ export default function NodePropertiesPanel({
             />
             <UpstreamVariables nodeId={selectedNode.id} nodes={nodes} edges={edges} />
             <div style={{ fontSize: '0.75rem', marginTop: '0.25rem', color: '#666' }}>
-              {((selectedNode.data.prompt as string) || '').length} characters
+              {((selectedNode.data.prompt as string) || '').length}{TEXT.workflowEditor.charactersSuffix}
             </div>
           </div>
           <div style={{ marginBottom: '0.75rem' }}>
             <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>
-              Branches
+              {TEXT.workflowEditor.branchesLabel}
             </label>
             <span style={{ fontSize: '0.75rem', color: '#666', display: 'block', marginBottom: '0.25rem' }}>
-              Possible outcomes. The LLM selects one based on the prompt.
+              {TEXT.workflowEditor.llmDecisionBranchesHelper}
             </span>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginBottom: '0.25rem' }}>
               {((selectedNode.data.branches as string[]) || []).map((branch: string) => (
@@ -433,7 +434,7 @@ export default function NodePropertiesPanel({
               ))}
             </div>
             <input
-              placeholder="Add branch…"
+              placeholder={TEXT.workflowEditor.addBranchPlaceholder}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault();
@@ -447,7 +448,7 @@ export default function NodePropertiesPanel({
                 }
               }}
               style={{ width: '100%' }}
-              aria-label="Add branch"
+              aria-label={TEXT.workflowEditor.addBranchAriaLabel}
             />
           </div>
         </>
@@ -457,7 +458,7 @@ export default function NodePropertiesPanel({
         <>
           <div style={{ marginBottom: '0.75rem' }}>
             <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>
-              Platform
+              {TEXT.workflowEditor.platformLabel}
             </label>
             <PlatformDropdown
               value={(selectedNode.data.platform as string) || ''}
@@ -465,24 +466,24 @@ export default function NodePropertiesPanel({
               includeEmpty
             />
             <span style={{ fontSize: '0.75rem', color: '#666', display: 'block', marginTop: '0.25rem' }}>
-              Which adapter sends the message.
+              {TEXT.workflowEditor.platformHelper}
             </span>
           </div>
           <div style={{ marginBottom: '0.75rem' }}>
             <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>
-              Target User
+              {TEXT.workflowEditor.targetUserLabel}
             </label>
             <UserDropdown
               value={(selectedNode.data.target_user as string) || ''}
               onChange={(value: string) => onUpdateNodeData('target_user', value)}
             />
             <span style={{ fontSize: '0.75rem', color: '#666', display: 'block', marginTop: '0.25rem' }}>
-              The user or room that receives the message.
+              {TEXT.workflowEditor.targetUserHelper}
             </span>
           </div>
           <div style={{ marginBottom: '0.75rem' }}>
             <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>
-              Message{' '}
+              {TEXT.workflowEditor.messageLabel}{' '}
               <InsertVariableDropdown
                 triggerType={triggerType}
                 nodeId={selectedNode.id}
@@ -499,7 +500,7 @@ export default function NodePropertiesPanel({
               style={{ width: '100%' }}
             />
             <span style={{ fontSize: '0.75rem', color: '#666', display: 'block', marginTop: '0.25rem' }}>
-              Use {'{data.field_name}'} to reference trigger or upstream node outputs.
+              {TEXT.workflowEditor.sendMessageHelper}
             </span>
             <TemplatePreview message={(selectedNode.data.message as string) || ''} />
           </div>
@@ -510,13 +511,13 @@ export default function NodePropertiesPanel({
                 checked={!!selectedNode.data.requires_response}
                 onChange={(e) => onUpdateNodeData('requires_response', e.target.checked)}
               />
-              Wait for user response
+              {TEXT.workflowEditor.interactiveCheckbox}
             </label>
             {selectedNode.data.requires_response && (
               <>
                 <div style={{ marginTop: '0.5rem', marginLeft: '1.25rem' }}>
                   <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>
-                    Response type
+                    {TEXT.workflowEditor.interactiveTypeLabel}
                   </label>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', cursor: 'pointer', marginBottom: '0.25rem' }}>
                     <input
@@ -526,7 +527,7 @@ export default function NodePropertiesPanel({
                       checked={(selectedNode.data.response_type as string) !== 'free_text'}
                       onChange={() => onUpdateNodeData('response_type', 'buttons')}
                     />
-                    Buttons
+                    {TEXT.workflowEditor.interactiveTypeButtons}
                   </label>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', cursor: 'pointer' }}>
                     <input
@@ -536,13 +537,13 @@ export default function NodePropertiesPanel({
                       checked={(selectedNode.data.response_type as string) === 'free_text'}
                       onChange={() => onUpdateNodeData('response_type', 'free_text')}
                     />
-                    Free text
+                    {TEXT.workflowEditor.interactiveTypeText}
                   </label>
                 </div>
                 {(selectedNode.data.response_type as string) !== 'free_text' && (
                   <div style={{ marginTop: '0.5rem', marginLeft: '1.25rem' }}>
                     <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>
-                      Button labels
+                      {TEXT.workflowEditor.buttonLabelsLabel}
                     </label>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginBottom: '0.25rem' }}>
                       {((selectedNode.data.buttons as string[]) || ['Approve', 'Deny']).map((btn: string) => (
@@ -582,7 +583,7 @@ export default function NodePropertiesPanel({
                       ))}
                     </div>
                     <input
-                      placeholder="Add button…"
+                      placeholder={TEXT.workflowEditor.addButtonPlaceholder}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           e.preventDefault();
@@ -596,24 +597,24 @@ export default function NodePropertiesPanel({
                         }
                       }}
                       style={{ width: '100%' }}
-                      aria-label="Add button"
+                      aria-label={TEXT.workflowEditor.addButtonAriaLabel}
                     />
                   </div>
                 )}
                 <div style={{ marginTop: '0.5rem', marginLeft: '1.25rem' }}>
                   <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>
-                    Timeout (seconds)
+                    {TEXT.workflowEditor.interactiveTimeoutLabel}
                   </label>
                   <input
                     type="number"
                     min={1}
-                    value={(selectedNode.data.timeout_seconds as number) || 300}
+                    value={(selectedNode.data.timeout_seconds as number) ?? 300}
                     onChange={(e) => onUpdateNodeData('timeout_seconds', Number(e.target.value))}
                     style={{ width: '120px' }}
                   />
                 </div>
                 <div style={{ marginTop: '0.25rem', marginLeft: '1.25rem', fontSize: '0.75rem', color: '#666' }}>
-                  If enabled, the workflow pauses until the user responds or the timeout expires.
+                  {TEXT.workflowEditor.interactiveHelper}
                 </div>
               </>
             )}
@@ -624,7 +625,7 @@ export default function NodePropertiesPanel({
       {selectedNode.type === 'http_request' && (
         <>
           <div style={{ marginBottom: '0.75rem' }}>
-            <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Method</label>
+            <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>{TEXT.workflowEditor.methodLabel}</label>
             <select
               value={(selectedNode.data.method as string) || 'GET'}
               onChange={(e) => onUpdateNodeData('method', e.target.value)}
@@ -638,7 +639,7 @@ export default function NodePropertiesPanel({
             </select>
           </div>
           <div style={{ marginBottom: '0.75rem' }}>
-            <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>URL</label>
+            <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>{TEXT.workflowEditor.urlLabel}</label>
             <input
               value={(selectedNode.data.url as string) || ''}
               onChange={(e) => onUpdateNodeData('url', e.target.value)}
@@ -646,14 +647,14 @@ export default function NodePropertiesPanel({
             />
           </div>
           <JsonTextarea
-            label="Headers (JSON)"
+            label={TEXT.workflowEditor.headersJsonLabel}
             value={(selectedNode.data.headers as object) || {}}
             onChange={(v) => onUpdateNodeData('headers', v)}
             rows={3}
             validate
           />
           <div style={{ marginBottom: '0.75rem' }}>
-            <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Body</label>
+            <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>{TEXT.workflowEditor.bodyLabel}</label>
             <textarea
               rows={3}
               value={(selectedNode.data.body as string) || ''}
@@ -667,7 +668,7 @@ export default function NodePropertiesPanel({
       {selectedNode.type === 'condition' && (
         <div style={{ marginBottom: '0.75rem' }}>
           <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>
-            Expression{' '}
+            {TEXT.workflowEditor.expressionLabel}{' '}
             <InsertVariableDropdown
               triggerType={triggerType}
               nodeId={selectedNode.id}
@@ -685,7 +686,7 @@ export default function NodePropertiesPanel({
             aria-label="Expression"
           />
           <span style={{ fontSize: '0.75rem', color: '#666', display: 'block', marginTop: '0.25rem' }}>
-            A condition that evaluates to true or false.
+            {TEXT.workflowEditor.conditionHelperAlt}
           </span>
           {(selectedNode.data.expression as string) && (
             <HighlightPreview text={(selectedNode.data.expression as string) || ''} />
@@ -697,7 +698,7 @@ export default function NodePropertiesPanel({
       {selectedNode.type === 'investigate' && (
         <>
           <div style={{ marginBottom: '0.75rem' }}>
-            <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Topic</label>
+            <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>{TEXT.workflowEditor.topicLabel}</label>
             <textarea
               rows={4}
               value={(selectedNode.data.topic as string) || ''}
@@ -706,7 +707,7 @@ export default function NodePropertiesPanel({
             />
           </div>
           <div style={{ marginBottom: '0.75rem' }}>
-            <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Depth</label>
+            <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>{TEXT.workflowEditor.depthLabel}</label>
             <select
               value={(selectedNode.data.depth as string) || 'shallow'}
               onChange={(e) => onUpdateNodeData('depth', e.target.value)}
@@ -717,7 +718,7 @@ export default function NodePropertiesPanel({
             </select>
           </div>
           <div style={{ marginBottom: '0.75rem' }}>
-            <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Tools</label>
+            <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>{TEXT.workflowEditor.toolsLabel}</label>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
               {tools.map((t: string) => {
                 const selected = ((selectedNode.data.tools as string[]) || []);
