@@ -103,6 +103,22 @@ async def migrate_users(app: AppContext) -> None:
     await _commands.cmd_migrate_users(app)
 
 
+@cli.command(name="migrate-rooms")
+@click.option(
+    "--telegram-group",
+    "telegram_groups",
+    multiple=True,
+    help="Telegram group chat ID to register as a room.",
+)
+@click.pass_obj
+@async_command
+async def migrate_rooms(app: AppContext, telegram_groups: tuple[str, ...]) -> None:
+    """Migrate existing group chats to the rooms table."""
+    await _commands.cmd_migrate_rooms(
+        app, telegram_groups=list(telegram_groups) if telegram_groups else None
+    )
+
+
 @cli.command()
 @click.option("--new-session", is_flag=True, help="Force a new session instead of resuming")
 @click.pass_obj

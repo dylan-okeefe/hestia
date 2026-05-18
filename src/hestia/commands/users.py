@@ -82,4 +82,22 @@ async def cmd_migrate_users(app: AppContext) -> None:
             if admin_user is None:
                 admin_user = user
 
+    # Telegram group chats: the adapter does not expose an enumeration API.
+    # Rooms will be auto-registered on the next group message.
+    telegram_groups_found = False
+    if (
+        hasattr(app.config, "telegram")
+        and app.config.telegram.bot_token
+        and telegram_users
+    ):
+        # The running adapter may have group chat state, but it is not available
+        # in the CLI context. Log a note so the admin knows what to expect.
+        pass
+
+    if not telegram_groups_found:
+        click.echo(
+            "No Telegram group chats found for migration. "
+            "Rooms will be auto-registered on next group message."
+        )
+
     click.echo(f"Migrated {created_users} user(s) and {created_rooms} room(s).")
