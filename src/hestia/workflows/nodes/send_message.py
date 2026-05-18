@@ -72,6 +72,12 @@ class SendMessageNode:
         response_type = node.config.get("response_type", "buttons")
         buttons = node.config.get("buttons", ["Approve", "Deny"])
 
+        if platform == "telegram":
+            try:
+                int(user)
+            except ValueError:
+                raise ValueError(f"Invalid Telegram chat ID: {user}")
+
         store = DEFAULT_RESPONSE_STORE
         request_id, future = store.create(platform, user)
 
