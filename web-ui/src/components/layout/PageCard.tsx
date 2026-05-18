@@ -1,22 +1,17 @@
 import type { ReactNode, CSSProperties } from 'react';
+import './PageCard.css';
 
 interface PageCardProps {
   children: ReactNode;
   style?: CSSProperties;
+  className?: string;
 }
 
-export default function PageCard({ children, style }: PageCardProps) {
+export default function PageCard({ children, style, className }: PageCardProps) {
   return (
     <div
-      style={{
-        background: '#fff',
-        border: '1px solid #eee',
-        borderRadius: '8px',
-        padding: '1rem',
-        marginBottom: '1rem',
-        boxShadow: '0 1px 3px -2px rgba(0,0,0,0.02), 0 2px 5px -2px rgba(0,0,0,0.04)',
-        ...style,
-      }}
+      className={`page-card${className ? ' ' + className : ''}`}
+      style={style}
     >
       {children}
     </div>

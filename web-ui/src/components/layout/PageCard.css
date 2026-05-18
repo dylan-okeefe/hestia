@@ -1,0 +1,8 @@
+.page-card {
+  background: var(--color-surface-raised);
+  border: var(--border-thin);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+  box-shadow: var(--shadow-sm);
+}
