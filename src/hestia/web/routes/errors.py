@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from hestia.web.context import WebContext, get_web_context
 
@@ -14,6 +14,17 @@ _CTX_DEP = Depends(get_web_context)
 # In-memory status tracking (resets on server restart)
 _resolved_ids: set[str] = set()
 _ignored_ids: set[str] = set()
+
+
+async def _require_admin(request: Request, ctx: WebContext) -> None:
+    """Check if the current web session has admin role."""
+    user_id = getattr(request.state, "user_id", None)
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    user = await ctx.user_store.get_user(user_id)
+    if user is None or user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
 
 
 def _build_error_id(source_type: str, source_id: str) -> str:
@@ -28,8 +39,12 @@ def _parse_error_id(error_id: str) -> tuple[str, str]:
 
 
 @router.get("/errors")
-async def list_errors(ctx: WebContext = _CTX_DEP) -> dict[str, Any]:
+async def list_errors(
+    request: Request,
+    ctx: WebContext = _CTX_DEP,
+) -> dict[str, Any]:
     """Aggregate last 50 errors from workflows, scheduler, and session turns."""
+    await _require_admin(request, ctx)
     errors: list[dict[str, Any]] = []
 
     # Workflow execution failures
@@ -129,8 +144,13 @@ async def list_errors(ctx: WebContext = _CTX_DEP) -> dict[str, Any]:
 
 
 @router.post("/errors/{error_id}/resolve")
-async def resolve_error(error_id: str) -> dict[str, Any]:
+async def resolve_error(
+    error_id: str,
+    request: Request,
+    ctx: WebContext = _CTX_DEP,
+) -> dict[str, Any]:
     """Mark an error as resolved."""
+    await _require_admin(request, ctx)
     _parse_error_id(error_id)
     _resolved_ids.add(error_id)
     _ignored_ids.discard(error_id)
@@ -138,8 +158,13 @@ async def resolve_error(error_id: str) -> dict[str, Any]:
 
 
 @router.post("/errors/{error_id}/ignore")
-async def ignore_error(error_id: str) -> dict[str, Any]:
+async def ignore_error(
+    error_id: str,
+    request: Request,
+    ctx: WebContext = _CTX_DEP,
+) -> dict[str, Any]:
     """Mark an error as ignored."""
+    await _require_admin(request, ctx)
     _parse_error_id(error_id)
     _ignored_ids.add(error_id)
     _resolved_ids.discard(error_id)
@@ -147,8 +172,13 @@ async def ignore_error(error_id: str) -> dict[str, Any]:
 
 
 @router.post("/errors/{error_id}/debug")
-async def debug_error(error_id: str, ctx: WebContext = _CTX_DEP) -> dict[str, Any]:
+async def debug_error(
+    error_id: str,
+    request: Request,
+    ctx: WebContext = _CTX_DEP,
+) -> dict[str, Any]:
     """Return a debug prompt payload for the given error."""
+    await _require_admin(request, ctx)
     source_type, source_id = _parse_error_id(error_id)
 
     prompt_parts: list[str] = []
