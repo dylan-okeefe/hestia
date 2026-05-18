@@ -441,6 +441,19 @@ class SchedulerStore:
                 return self._row_to_task(row)
             return None
 
+    async def list_tasks_with_errors(self, limit: int = 50) -> list[ScheduledTask]:
+        """Return recent tasks that have a last_error, newest by last_run_at."""
+        query = (
+            sa.select(scheduled_tasks)
+            .where(scheduled_tasks.c.last_error.is_not(None))
+            .order_by(scheduled_tasks.c.last_run_at.desc())
+            .limit(limit)
+        )
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(query)
+            rows = result.fetchall()
+            return [self._row_to_task(row) for row in rows]
+
     async def summary_stats(self) -> dict[str, Any]:
         """Get summary stats for the status command.
 

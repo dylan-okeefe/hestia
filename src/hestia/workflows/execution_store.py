@@ -132,6 +132,19 @@ class ExecutionStore:
                 return None
             return self._row_to_dict(row)
 
+    async def list_failed(self, limit: int = 50) -> list[dict[str, Any]]:
+        """Return recent executions with error status, newest first."""
+        query = (
+            sa.select(workflow_executions)
+            .where(workflow_executions.c.status.in_(["error", "failed"]))
+            .order_by(workflow_executions.c.created_at.desc())
+            .limit(limit)
+        )
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(query)
+            rows = result.fetchall()
+            return [self._row_to_dict(row) for row in rows]
+
     def _row_to_dict(self, row: Any) -> dict[str, Any]:
         """Convert a database row to a plain dict."""
         return {

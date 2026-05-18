@@ -904,6 +904,37 @@ class SessionStore:
             rows = result.fetchall()
             return {row.state: row[1] for row in rows}
 
+    async def list_turns_with_errors(self, limit: int = 50) -> list[Turn]:
+        """List turns that have an error set, newest first."""
+        from hestia.orchestrator.types import Turn, TurnState
+        from hestia.persistence.schema import turns
+
+        query = (
+            sa.select(turns)
+            .where(turns.c.error.is_not(None))
+            .order_by(turns.c.started_at.desc())
+            .limit(limit)
+        )
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(query)
+            rows = result.fetchall()
+            return [
+                Turn(
+                    id=row.id,
+                    session_id=row.session_id,
+                    state=TurnState(row.state),
+                    user_message=None,
+                    started_at=row.started_at,
+                    completed_at=None,
+                    iterations=row.iteration,
+                    tool_calls_made=0,
+                    final_response=None,
+                    error=row.error,
+                    transitions=[],
+                )
+                for row in rows
+            ]
+
     async def turn_stats_since(self, since: datetime) -> dict[str, int]:
         """Count turns by terminal state since a given time.
 

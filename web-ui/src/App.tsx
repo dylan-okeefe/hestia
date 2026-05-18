@@ -14,6 +14,7 @@ import Profile from './pages/Profile';
 import Knowledge from './pages/Knowledge';
 import SessionDetail from './pages/SessionDetail';
 import AdminUsers from './pages/AdminUsers';
+import ErrorDashboard from './pages/ErrorDashboard';
 import Login from './pages/Login';
 import NotFound from './pages/NotFound';
 
@@ -63,6 +64,7 @@ function AppContent() {
             {navLink('Workflows', '/workflows')}
             {navLink('Profile', '/profile')}
             {navLink('Knowledge', '/knowledge')}
+            {navLink('Errors', '/errors')}
             {auth.authenticated && isAdmin && navLink('Users', '/admin/users')}
             {auth.authEnabled && (
               <button
@@ -86,6 +88,7 @@ function AppContent() {
             <Route path="/knowledge" element={<Knowledge />} />
             <Route path="/sessions/:id" element={<SessionDetail />} />
             <Route path="/admin/users" element={<AdminUsers />} />
+            <Route path="/errors" element={<ErrorDashboard />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </>

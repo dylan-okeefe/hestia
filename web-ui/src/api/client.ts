@@ -490,6 +490,41 @@ export async function fetchSessionMessages(sessionId: string) {
   }>;
 }
 
+// Errors
+export interface ErrorItem {
+  id: string;
+  type: 'workflow_execution' | 'scheduler_task' | 'session_turn';
+  source_id: string;
+  source_name: string;
+  message: string;
+  created_at: string;
+  status: 'unresolved' | 'resolved' | 'ignored';
+}
+
+export async function fetchErrors() {
+  const res = await apiFetch(`${API_BASE}/errors`);
+  if (!res.ok) throw new Error('Failed to fetch errors');
+  return res.json() as Promise<{ errors: ErrorItem[] }>;
+}
+
+export async function resolveError(id: string) {
+  const res = await apiFetch(`${API_BASE}/errors/${encodeURIComponent(id)}/resolve`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to resolve error');
+  return res.json();
+}
+
+export async function ignoreError(id: string) {
+  const res = await apiFetch(`${API_BASE}/errors/${encodeURIComponent(id)}/ignore`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to ignore error');
+  return res.json();
+}
+
+export async function debugError(id: string) {
+  const res = await apiFetch(`${API_BASE}/errors/${encodeURIComponent(id)}/debug`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to fetch debug prompt');
+  return res.json() as Promise<{ prompt: string }>;
+}
+
 // Handoffs
 export async function fetchHandoffs(userId: string) {
   const res = await apiFetch(`${API_BASE}/users/${encodeURIComponent(userId)}/handoffs`);

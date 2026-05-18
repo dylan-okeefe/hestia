@@ -13,6 +13,7 @@ from hestia.web.routes import (
     config,
     doctor,
     egress,
+    errors,
     memory,
     proposals,
     scheduler,
@@ -49,6 +50,7 @@ def create_web_app() -> FastAPI:
     app.include_router(config.router, prefix="/api")
     app.include_router(tools.router, prefix="/api")
     app.include_router(users.router, prefix="/api")
+    app.include_router(errors.router, prefix="/api")
     app.include_router(webhooks.router, prefix="/api")
     app.include_router(workflows.router, prefix="/api")
     app.include_router(memory.router, prefix="/api")
