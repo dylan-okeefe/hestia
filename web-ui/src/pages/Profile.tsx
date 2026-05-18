@@ -44,6 +44,7 @@ export default function Profile() {
 
   const [removingIdentity, setRemovingIdentity] = useState<string | null>(null);
   const [globalPreset, setGlobalPreset] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -65,23 +66,25 @@ export default function Profile() {
 
   const handleSaveName = async () => {
     if (!user) return;
+    setError(null);
     try {
       await updateUser(user.id, { display_name: editName });
       setEditingName(false);
       refetch();
-    } catch {
-      // swallow to match prior behavior
+    } catch (err: any) {
+      setError(err.message);
     }
   };
 
   const handleSaveNotes = async () => {
     if (!user) return;
+    setError(null);
     setSavingNotes(true);
     try {
       await updateUser(user.id, { notes: editNotes });
       refetch();
-    } catch {
-      // swallow to match prior behavior
+    } catch (err: any) {
+      setError(err.message);
     } finally {
       setSavingNotes(false);
     }
@@ -89,6 +92,7 @@ export default function Profile() {
 
   const handleAddIdentity = async () => {
     if (!user || !newPlatform || !newPlatformUser) return;
+    setError(null);
     setAddingIdentity(true);
     try {
       await addIdentity(user.id, newPlatform, newPlatformUser);
@@ -96,8 +100,8 @@ export default function Profile() {
       setNewPlatformUser('');
       setShowAddIdentity(false);
       refetch();
-    } catch {
-      // swallow to match prior behavior
+    } catch (err: any) {
+      setError(err.message);
     } finally {
       setAddingIdentity(false);
     }
@@ -106,12 +110,13 @@ export default function Profile() {
   const handleRemoveIdentity = async (platform: string, platformUser: string) => {
     if (!user) return;
     if (!window.confirm(`Remove identity ${platform}: ${platformUser}?`)) return;
+    setError(null);
     setRemovingIdentity(`${platform}-${platformUser}`);
     try {
       await removeIdentity(user.id, platform, platformUser);
       refetch();
-    } catch {
-      // swallow to match prior behavior
+    } catch (err: any) {
+      setError(err.message);
     } finally {
       setRemovingIdentity(null);
     }
@@ -147,6 +152,21 @@ export default function Profile() {
   return (
     <div style={{ padding: '1rem' }}>
       <h1>User Profile</h1>
+
+      {error && (
+        <div
+          style={{
+            marginBottom: '1rem',
+            padding: '0.75rem 1rem',
+            background: '#fee2e2',
+            color: '#991b1b',
+            borderRadius: '6px',
+            fontSize: '0.875rem',
+          }}
+        >
+          {error}
+        </div>
+      )}
 
       <PageCard>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
@@ -190,11 +210,12 @@ export default function Profile() {
             <TrustPresetDropdown
               value={user.trust_preset || ''}
               onChange={async (value) => {
+                setError(null);
                 try {
                   await updateUser(user.id, { trust_preset: value || null });
                   refetch();
-                } catch {
-                  // swallow
+                } catch (err: any) {
+                  setError(err.message);
                 }
               }}
             />
