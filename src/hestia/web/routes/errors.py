@@ -12,8 +12,25 @@ router = APIRouter()
 _CTX_DEP = Depends(get_web_context)
 
 # In-memory status tracking (resets on server restart)
+_MAX_RESOLVED = 10_000
 _resolved_ids: set[str] = set()
 _ignored_ids: set[str] = set()
+
+
+def _mark_resolved(error_id: str) -> None:
+    """Add an error ID to the resolved set, capping size."""
+    _resolved_ids.add(error_id)
+    _ignored_ids.discard(error_id)
+    if len(_resolved_ids) > _MAX_RESOLVED:
+        _resolved_ids.pop()
+
+
+def _mark_ignored(error_id: str) -> None:
+    """Add an error ID to the ignored set, capping size."""
+    _ignored_ids.add(error_id)
+    _resolved_ids.discard(error_id)
+    if len(_ignored_ids) > _MAX_RESOLVED:
+        _ignored_ids.pop()
 
 
 def _build_error_id(source_type: str, source_id: str) -> str:
@@ -130,19 +147,17 @@ async def list_errors(ctx: WebContext = _CTX_DEP) -> dict[str, Any]:
 
 @router.post("/errors/{error_id}/resolve")
 async def resolve_error(error_id: str) -> dict[str, Any]:
-    """Mark an error as resolved."""
+    """Mark an error as resolved. Resolution state is in-memory only."""
     _parse_error_id(error_id)
-    _resolved_ids.add(error_id)
-    _ignored_ids.discard(error_id)
+    _mark_resolved(error_id)
     return {"resolved": True}
 
 
 @router.post("/errors/{error_id}/ignore")
 async def ignore_error(error_id: str) -> dict[str, Any]:
-    """Mark an error as ignored."""
+    """Mark an error as ignored. Resolution state is in-memory only."""
     _parse_error_id(error_id)
-    _ignored_ids.add(error_id)
-    _resolved_ids.discard(error_id)
+    _mark_ignored(error_id)
     return {"ignored": True}
 
 
