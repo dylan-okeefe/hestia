@@ -422,6 +422,23 @@ class MemoryStore:
             rows = result.fetchall()
             return [self._row_to_memory(row) for row in rows]
 
+    async def get(self, memory_id: str) -> Memory | None:
+        """Get a memory by ID.
+
+        Returns:
+            The Memory, or None if not found.
+        """
+        sql = sa.text(
+            "SELECT id, content, tags, session_id, created_at, platform, platform_user "
+            "FROM memory WHERE id = :id"
+        )
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(sql, {"id": memory_id})
+            row = result.fetchone()
+            if row:
+                return self._row_to_memory(row)
+            return None
+
     async def delete(
         self,
         memory_id: str,

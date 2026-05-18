@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from hestia.web.context import WebContext, get_web_context
 
@@ -26,12 +26,24 @@ def _memory_to_dict(mem: Any) -> dict[str, Any]:
 
 @router.get("/memory")
 async def list_memories(
+    request: Request,
     platform: str | None = None,
     platform_user: str | None = None,
     limit: int = 20,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """List memories, optionally filtered by platform user."""
+    caller_platform_user = getattr(request.state, "platform_user", None)
+    caller_role = None
+    user_id = getattr(request.state, "user_id", None)
+    if user_id is not None:
+        user = await ctx.user_store.get_user(user_id)
+        if user is not None:
+            caller_role = user.role
+
+    if caller_platform_user is not None and caller_role != "admin":
+        platform_user = caller_platform_user
+
     memories = await ctx.app.memory_store.list_memories(
         limit=limit,
         platform=platform,
@@ -43,9 +55,18 @@ async def list_memories(
 @router.delete("/memory/{memory_id}")
 async def delete_memory(
     memory_id: str,
+    request: Request,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """Delete a memory by ID."""
+    caller_platform_user = getattr(request.state, "platform_user", None)
+    if caller_platform_user is not None:
+        mem = await ctx.app.memory_store.get(memory_id)
+        if mem is None:
+            raise HTTPException(status_code=404, detail="Memory not found")
+        if mem.platform_user != caller_platform_user:
+            raise HTTPException(status_code=403, detail="Access denied")
+
     deleted = await ctx.app.memory_store.delete(memory_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Memory not found")
