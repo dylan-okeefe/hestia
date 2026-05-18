@@ -11,6 +11,7 @@ import Workflows from './pages/Workflows';
 import WorkflowEditor from './pages/WorkflowEditor';
 import Profile from './pages/Profile';
 import Knowledge from './pages/Knowledge';
+import SessionDetail from './pages/SessionDetail';
 import Login from './pages/Login';
 import NotFound from './pages/NotFound';
 
@@ -77,6 +78,7 @@ function AppContent() {
             <Route path="/workflows/:id" element={<WorkflowEditor />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/knowledge" element={<Knowledge />} />
+            <Route path="/sessions/:id" element={<SessionDetail />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </>

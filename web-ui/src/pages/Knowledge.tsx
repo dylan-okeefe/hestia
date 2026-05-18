@@ -201,8 +201,8 @@ export default function Knowledge() {
             </thead>
             <tbody>
               {sessions.map((s) => (
-                <tr key={s.id} style={{ borderBottom: '1px solid #eee' }}>
-                  <td style={{ padding: '0.25rem', fontFamily: 'monospace', fontSize: '0.75rem' }}>{s.id.slice(0, 8)}…</td>
+                <tr key={s.id} style={{ borderBottom: '1px solid #eee', cursor: 'pointer' }} onClick={() => window.location.href = `/sessions/${s.id}`}>
+                  <td style={{ padding: '0.25rem', fontFamily: 'monospace', fontSize: '0.75rem' }}><a href={`/sessions/${s.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>{s.id.slice(0, 8)}…</a></td>
                   <td style={{ padding: '0.25rem' }}>{s.platform}</td>
                   <td style={{ padding: '0.25rem' }}>{formatDate(s.started_at)}</td>
                   <td style={{ padding: '0.25rem' }}>{s.message_count ?? '—'}</td>

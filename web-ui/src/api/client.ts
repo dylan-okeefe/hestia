@@ -465,6 +465,15 @@ export async function fetchUserSessions(platform: string, platformUser: string, 
   return res.json();
 }
 
+export async function fetchSessionMessages(sessionId: string) {
+  const res = await apiFetch(`${API_BASE}/sessions/${encodeURIComponent(sessionId)}/messages`);
+  if (!res.ok) throw new Error('Failed to fetch session messages');
+  return res.json() as Promise<{
+    session: { id: string; platform: string; platform_user: string; started_at: string | null };
+    turns: Array<{ id: string; state: string | null; started_at: string | null; iterations: number; error: string | null }>;
+  }>;
+}
+
 // Handoffs
 export async function fetchHandoffs(userId: string) {
   const res = await apiFetch(`${API_BASE}/users/${encodeURIComponent(userId)}/handoffs`);

@@ -62,3 +62,36 @@ async def get_turns(
             for t in turns
         ]
     }
+
+
+@router.get("/{session_id}/messages")
+async def get_session_messages(
+    session_id: str,
+    ctx: WebContext = _CTX_DEP,
+) -> dict[str, Any]:
+    """Get session metadata with turn transcript."""
+    session = await ctx.session_store.get_session(session_id)
+    if session is None:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    turns = await ctx.session_store.list_turns_for_session(session_id)
+    return {
+        "session": {
+            "id": session.id,
+            "platform": session.platform,
+            "platform_user": session.platform_user,
+            "started_at": session.started_at.isoformat() if session.started_at else None,
+        },
+        "turns": [
+            {
+                "id": t.id,
+                "state": t.state.value if t.state else None,
+                "started_at": t.started_at.isoformat() if t.started_at else None,
+                "iterations": t.iterations,
+                "error": t.error,
+            }
+            for t in turns
+        ],
+    }
