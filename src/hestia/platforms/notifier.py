@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -140,7 +141,7 @@ class PlatformNotifier:
 
             async with httpx.AsyncClient() as client:
                 room_id = platform_user
-                txn_id = hash(text) & 0xFFFFFFFF
+                txn_id = uuid.uuid4().hex[:16]
                 url = (
                     f"{cfg.homeserver}/_matrix/client/v3/rooms/{room_id}"
                     f"/send/m.room.message/txn{txn_id}"
