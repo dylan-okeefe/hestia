@@ -2,6 +2,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import Scheduler from '../Scheduler';
 import * as client from '../../api/client';
+import { TEXT } from '../../lib/text';
 
 vi.mock('../../api/client', async () => {
   const actual = await vi.importActual<typeof import('../../api/client')>('../../api/client');
@@ -54,18 +55,18 @@ describe('Scheduler', () => {
     render(<Scheduler />);
 
     await waitFor(() => expect(screen.getByText('Daily check')).toBeInTheDocument());
-    fireEvent.click(screen.getByText('+ New Task'));
+    fireEvent.click(screen.getByText(TEXT.scheduler.createButton));
 
-    await waitFor(() => expect(screen.getByText('New Task')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(TEXT.scheduler.createTitle)).toBeInTheDocument());
 
-    const nameInput = screen.getByPlaceholderText('Daily summary');
+    const nameInput = screen.getByPlaceholderText(TEXT.scheduler.namePlaceholder);
     fireEvent.change(nameInput, { target: { value: 'Test task' } });
 
-    const promptInput = screen.getByPlaceholderText('https://example.com or prompt text');
+    const promptInput = screen.getByPlaceholderText(TEXT.scheduler.promptPlaceholder);
     expect(promptInput.tagName.toLowerCase()).toBe('textarea');
     fireEvent.change(promptInput, { target: { value: 'https://test.com' } });
 
-    fireEvent.click(screen.getByText('Create'));
+    fireEvent.click(screen.getByText(TEXT.common.create));
 
     await waitFor(() => expect(client.createTask).toHaveBeenCalled());
   });
@@ -74,10 +75,10 @@ describe('Scheduler', () => {
     render(<Scheduler />);
 
     await waitFor(() => expect(screen.getByText('Daily check')).toBeInTheDocument());
-    fireEvent.click(screen.getByText('Edit'));
+    fireEvent.click(screen.getByText(TEXT.common.edit));
 
-    await waitFor(() => expect(screen.getByText('Edit Task')).toBeInTheDocument());
-    fireEvent.click(screen.getByText('Save'));
+    await waitFor(() => expect(screen.getByText(TEXT.scheduler.editTitle)).toBeInTheDocument());
+    fireEvent.click(screen.getByText(TEXT.common.save));
 
     await waitFor(() => expect(client.updateTask).toHaveBeenCalled());
   });
@@ -86,10 +87,10 @@ describe('Scheduler', () => {
     render(<Scheduler />);
 
     await waitFor(() => expect(screen.getByText('Daily check')).toBeInTheDocument());
-    fireEvent.click(screen.getAllByText('Delete')[0]);
+    fireEvent.click(screen.getAllByText(TEXT.common.delete)[0]);
 
-    await waitFor(() => expect(screen.getByText('Delete task?')).toBeInTheDocument());
-    const deleteButtons = screen.getAllByText('Delete');
+    await waitFor(() => expect(screen.getByText(TEXT.scheduler.deleteConfirmTitle)).toBeInTheDocument());
+    const deleteButtons = screen.getAllByText(TEXT.common.delete);
     fireEvent.click(deleteButtons[deleteButtons.length - 1]);
 
     await waitFor(() => expect(client.deleteTask).toHaveBeenCalledWith('task-1'));
@@ -99,10 +100,10 @@ describe('Scheduler', () => {
     render(<Scheduler />);
 
     await waitFor(() => expect(screen.getByText('Daily check')).toBeInTheDocument());
-    fireEvent.click(screen.getByText('Run now'));
+    fireEvent.click(screen.getByText(TEXT.scheduler.runNow));
 
-    await waitFor(() => expect(screen.getByText('Run task now?')).toBeInTheDocument());
-    fireEvent.click(screen.getByText('Run'));
+    await waitFor(() => expect(screen.getByText(TEXT.scheduler.runNowConfirmTitle)).toBeInTheDocument());
+    fireEvent.click(screen.getByText(TEXT.common.run));
 
     await waitFor(() => expect(client.runTaskNow).toHaveBeenCalledWith('task-1'));
   });
@@ -112,7 +113,7 @@ describe('Scheduler', () => {
     render(<Scheduler />);
 
     await waitFor(() =>
-      expect(screen.getByText('No scheduled tasks')).toBeInTheDocument()
+      expect(screen.getByText(TEXT.scheduler.emptyTitle)).toBeInTheDocument()
     );
   });
 });

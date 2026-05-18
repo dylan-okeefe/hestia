@@ -12,6 +12,7 @@ import LoadingSkeleton from '../components/layout/LoadingSkeleton';
 import ErrorState from '../components/layout/ErrorState';
 import EmptyState from '../components/layout/EmptyState';
 import { formatRelativeDate } from '../lib/format';
+import { TEXT } from '../lib/text';
 
 const TYPE_LABELS: Record<string, string> = {
   workflow_execution: 'Workflow',
@@ -82,14 +83,14 @@ export default function ErrorDashboard() {
   return (
     <div style={{ padding: '1rem' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-        <h1 style={{ margin: 0 }}>Errors & Failures</h1>
+        <h1 style={{ margin: 0 }}>{TEXT.errorDashboard.title}</h1>
       </div>
 
       <PageCard style={{ marginBottom: '1rem' }}>
         <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
           <div>
             <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{unresolvedCount}</div>
-            <div style={{ fontSize: '0.875rem', color: '#666' }}>Unresolved</div>
+            <div style={{ fontSize: '0.875rem', color: '#666' }}>{TEXT.errorDashboard.unresolvedLabel}</div>
           </div>
           {Object.entries(typeBreakdown).map(([type, count]) => (
             <div key={type}>
@@ -106,20 +107,20 @@ export default function ErrorDashboard() {
           onChange={(e) => setTypeFilter(e.target.value)}
           style={{ padding: '0.35rem 0.5rem', borderRadius: '4px', border: '1px solid #ccc', fontSize: '0.875rem' }}
         >
-          <option value="all">All Types</option>
-          <option value="workflow_execution">Workflow</option>
-          <option value="scheduler_task">Scheduler</option>
-          <option value="session_turn">Session</option>
+          <option value="all">{TEXT.errorDashboard.filterAllTypes}</option>
+          <option value="workflow_execution">{TEXT.errorDashboard.typeWorkflow}</option>
+          <option value="scheduler_task">{TEXT.errorDashboard.typeScheduler}</option>
+          <option value="session_turn">{TEXT.errorDashboard.typeSession}</option>
         </select>
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
           style={{ padding: '0.35rem 0.5rem', borderRadius: '4px', border: '1px solid #ccc', fontSize: '0.875rem' }}
         >
-          <option value="all">All Statuses</option>
-          <option value="unresolved">Unresolved</option>
-          <option value="resolved">Resolved</option>
-          <option value="ignored">Ignored</option>
+          <option value="all">{TEXT.errorDashboard.filterAllStatuses}</option>
+          <option value="unresolved">{TEXT.errorDashboard.filterUnresolved}</option>
+          <option value="resolved">{TEXT.errorDashboard.filterResolved}</option>
+          <option value="ignored">{TEXT.errorDashboard.filterIgnored}</option>
         </select>
       </div>
 
@@ -130,13 +131,13 @@ export default function ErrorDashboard() {
       )}
 
       {isError && (
-        <ErrorState message={error?.message ?? 'Failed to load errors'} onRetry={refetch} />
+        <ErrorState message={error?.message ?? TEXT.errorDashboard.loadError} onRetry={refetch} />
       )}
 
       {!isLoading && !isError && filteredErrors.length === 0 && (
         <EmptyState
-          title="No errors found"
-          description="Hestia is running smoothly."
+          title={TEXT.errorDashboard.emptyTitle}
+          description={TEXT.errorDashboard.emptyDescription}
         />
       )}
 
@@ -145,12 +146,12 @@ export default function ErrorDashboard() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
             <thead>
               <tr style={{ borderBottom: '2px solid #eee', textAlign: 'left', background: '#fafafa' }}>
-                <th style={{ padding: '0.75rem 1rem' }}>Type</th>
-                <th style={{ padding: '0.75rem 1rem' }}>Source</th>
-                <th style={{ padding: '0.75rem 1rem' }}>Message</th>
-                <th style={{ padding: '0.75rem 1rem' }}>When</th>
-                <th style={{ padding: '0.75rem 1rem' }}>Status</th>
-                <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Actions</th>
+                <th style={{ padding: '0.75rem 1rem' }}>{TEXT.errorDashboard.tableType}</th>
+                <th style={{ padding: '0.75rem 1rem' }}>{TEXT.errorDashboard.tableSource}</th>
+                <th style={{ padding: '0.75rem 1rem' }}>{TEXT.errorDashboard.tableMessage}</th>
+                <th style={{ padding: '0.75rem 1rem' }}>{TEXT.errorDashboard.tableWhen}</th>
+                <th style={{ padding: '0.75rem 1rem' }}>{TEXT.errorDashboard.tableStatus}</th>
+                <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>{TEXT.errorDashboard.tableActions}</th>
               </tr>
             </thead>
             <tbody>
@@ -200,15 +201,15 @@ export default function ErrorDashboard() {
                     <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
                       <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
                         <button onClick={() => setExpandedId(expandedId === err.id ? null : err.id)}>
-                          {expandedId === err.id ? 'Hide' : 'Details'}
+                          {expandedId === err.id ? TEXT.errorDashboard.hideButton : TEXT.errorDashboard.detailsButton}
                         </button>
-                        <button onClick={() => handleDebug(err.id)}>Debug</button>
+                        <button onClick={() => handleDebug(err.id)}>{TEXT.errorDashboard.debugButton}</button>
                         {err.status !== 'resolved' && (
-                          <button onClick={() => handleResolve(err.id)}>Resolve</button>
+                          <button onClick={() => handleResolve(err.id)}>{TEXT.errorDashboard.resolveButton}</button>
                         )}
                         {err.status !== 'ignored' && (
                           <button onClick={() => handleIgnore(err.id)} style={{ color: '#6b7280' }}>
-                            Ignore
+                            {TEXT.errorDashboard.ignoreButton}
                           </button>
                         )}
                       </div>
@@ -221,7 +222,7 @@ export default function ErrorDashboard() {
                           {err.message}
                         </div>
                         <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: '#888' }}>
-                          Source ID: {err.source_id} | Type: {err.type}
+                          {TEXT.errorDashboard.sourceIdFormat(err.source_id, err.type)}
                         </div>
                       </td>
                     </tr>
@@ -250,7 +251,7 @@ export default function ErrorDashboard() {
             style={{ width: '90%', maxWidth: 640, maxHeight: '90vh', overflowY: 'auto', background: '#fff', border: '1px solid #eee', borderRadius: '8px', padding: '1rem' }}
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 style={{ marginTop: 0 }}>Debug Prompt</h3>
+            <h3 style={{ marginTop: 0 }}>{TEXT.errorDashboard.debugModalTitle}</h3>
             <textarea
               readOnly
               value={debugModal.prompt}
@@ -258,7 +259,7 @@ export default function ErrorDashboard() {
               style={{ width: '100%', padding: '0.5rem', fontFamily: 'monospace', fontSize: '0.875rem', border: '1px solid #ccc', borderRadius: '4px' }}
             />
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem' }}>
-              <button onClick={() => setDebugModal(null)}>Close</button>
+              <button onClick={() => setDebugModal(null)}>{TEXT.common.close}</button>
             </div>
           </div>
         </div>
