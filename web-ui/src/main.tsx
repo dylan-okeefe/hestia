@@ -6,6 +6,7 @@ import { hestiaTheme } from './theme';
 import './index.css';
 import './styles/global.css';
 import './styles/utilities.css';
+import './styles/components.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

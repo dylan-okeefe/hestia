@@ -10,6 +10,7 @@ import PlatformDropdown from '../components/forms/PlatformDropdown';
 import TrustPresetDropdown from '../components/forms/TrustPresetDropdown';
 import { label, ROLE_LABELS, TRUST_PRESET_LABELS } from '../lib/labels';
 import { TEXT } from '../lib/text';
+import './Profile.css';
 
 const roleBadgeColor = (role: string) => {
   switch (role) {
@@ -125,7 +126,7 @@ export default function Profile() {
 
   if (userLoading) {
     return (
-      <div style={{ padding: '1rem' }}>
+      <div className="profile-page">
         <LoadingSkeleton lines={5} />
       </div>
     );
@@ -133,7 +134,7 @@ export default function Profile() {
 
   if (userError) {
     return (
-      <div style={{ padding: '1rem' }}>
+      <div className="profile-page">
         <ErrorState
           message={userError}
           onRetry={userError.includes('Not authenticated') ? () => { window.location.href = '/login'; } : refetch}
@@ -144,39 +145,30 @@ export default function Profile() {
 
   if (!user) {
     return (
-      <div style={{ padding: '1rem' }}>
+      <div className="profile-page">
         <EmptyState title={TEXT.profile.noUserTitle} description={TEXT.profile.noUserDescription} />
       </div>
     );
   }
 
   return (
-    <div style={{ padding: '1rem' }}>
+    <div className="profile-page">
       <h1>{TEXT.profile.title}</h1>
 
       {error && (
-        <div
-          style={{
-            marginBottom: '1rem',
-            padding: '0.75rem 1rem',
-            background: '#fee2e2',
-            color: '#991b1b',
-            borderRadius: '6px',
-            fontSize: '0.875rem',
-          }}
-        >
+        <div className="alert alert--danger mb-4">
           {error}
         </div>
       )}
 
       <PageCard>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+        <div className="profile-header">
           {editingName ? (
             <>
               <input
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
-                style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid #ccc', fontSize: '1.25rem', fontWeight: 'bold', flex: 1, minWidth: '200px' }}
+                className="profile-name-input"
               />
               <button onClick={handleSaveName} disabled={!editName.trim()}>{TEXT.common.save}</button>
               <button onClick={() => { setEditingName(false); setEditName(user.display_name); }}>{TEXT.common.cancel}</button>
@@ -185,27 +177,19 @@ export default function Profile() {
             <>
               <h2 style={{ margin: 0 }}>{user.display_name}</h2>
               <span
-                style={{
-                  display: 'inline-block',
-                  padding: '0.25rem 0.5rem',
-                  borderRadius: '999px',
-                  fontSize: '0.75rem',
-                  fontWeight: 'bold',
-                  color: '#fff',
-                  background: roleBadgeColor(user.role),
-                  textTransform: 'uppercase',
-                }}
+                className="profile-role-badge"
+                style={{ background: roleBadgeColor(user.role) }}
               >
                 {label(ROLE_LABELS, user.role)}
               </span>
-              <button onClick={() => setEditingName(true)} style={{ fontSize: '0.875rem' }}>
+              <button onClick={() => setEditingName(true)} className="text-small">
                 {TEXT.profile.editName}
               </button>
             </>
           )}
         </div>
 
-        <div style={{ marginBottom: '0.5rem', fontSize: '0.875rem', color: '#666' }}>
+        <div className="profile-info-row">
           <strong>{TEXT.profile.trustOverrideLabel}</strong>{' '}
           {user.role === 'admin' ? (
             <TrustPresetDropdown
@@ -224,27 +208,17 @@ export default function Profile() {
             <span>{user.trust_preset || TEXT.common.none}</span>
           )}
         </div>
-        <p style={{ margin: '0.25rem 0 0', fontSize: '0.75rem', color: '#888' }}>
+        <p className="text-xs text-muted">
           {user.trust_preset
             ? TEXT.profile.trustOverrideHelper(globalPreset || TEXT.common.none)
             : TEXT.profile.trustUsingGlobal(globalPreset || TEXT.common.none)}
         </p>
-        <div style={{ marginTop: '0.5rem' }}>
-          <span
-            style={{
-              display: 'inline-block',
-              padding: '0.25rem 0.5rem',
-              borderRadius: '999px',
-              fontSize: '0.75rem',
-              fontWeight: 'bold',
-              color: '#fff',
-              background: '#1976d2',
-            }}
-          >
+        <div className="mb-2">
+          <span className="profile-trust-badge">
             {TEXT.profile.effectiveTrustLabel} {label(TRUST_PRESET_LABELS, user.trust_preset || globalPreset || TEXT.common.none)}
           </span>
         </div>
-        <div style={{ marginBottom: '0.5rem', fontSize: '0.875rem', color: '#666' }}>
+        <div className="profile-info-row">
           <strong>{TEXT.profile.createdLabel}</strong>{' '}
           {new Date(user.created_at).toLocaleString()}
         </div>
@@ -252,17 +226,17 @@ export default function Profile() {
 
       <PageCard>
         <h3 style={{ marginTop: 0 }}>{TEXT.profile.notesTitle}</h3>
-        <p style={{ margin: '0 0 0.5rem', fontSize: '0.75rem', color: '#888' }}>
+        <p className="text-xs text-muted mb-2">
           {TEXT.profile.notesDescription}
         </p>
         <textarea
           value={editNotes}
           onChange={(e) => setEditNotes(e.target.value)}
           rows={4}
-          style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #ccc', fontFamily: 'inherit', marginBottom: '0.5rem' }}
+          className="profile-notes-textarea"
         />
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: '0.75rem', color: '#888' }}>
+        <div className="row-between">
+          <span className="text-xs text-muted">
             {editNotes.length}{TEXT.profile.charactersSuffix}
           </span>
           <button onClick={handleSaveNotes} disabled={savingNotes}>
@@ -276,30 +250,22 @@ export default function Profile() {
         {user.identities.length === 0 && (
           <EmptyState title={TEXT.profile.identitiesEmptyTitle} description={TEXT.profile.identitiesEmptyDescription} />
         )}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+        <div className="stack-sm">
           {user.identities.map((id) => (
             <div
               key={`${id.platform}-${id.platform_user}`}
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                padding: '0.5rem 0.75rem',
-                borderRadius: '6px',
-                border: '1px solid #eee',
-                background: '#fafafa',
-              }}
+              className="profile-identity-row"
             >
-              <div style={{ fontSize: '0.875rem' }}>
+              <div className="profile-identity-info">
                 <strong>{id.platform}</strong>: {id.platform_user}{' '}
                 {id.verified && (
-                  <span style={{ color: '#22c55e', fontSize: '0.75rem', fontWeight: 'bold' }}>{TEXT.profile.verifiedBadge}</span>
+                  <span className="profile-identity-verified">{TEXT.profile.verifiedBadge}</span>
                 )}
               </div>
               <button
                 onClick={() => handleRemoveIdentity(id.platform, id.platform_user)}
                 disabled={removingIdentity === `${id.platform}-${id.platform_user}`}
-                style={{ fontSize: '0.75rem', color: '#ef4444' }}
+                className="text-xs text-danger"
               >
                 {removingIdentity === `${id.platform}-${id.platform_user}` ? TEXT.common.removing : TEXT.common.remove}
               </button>
@@ -308,25 +274,25 @@ export default function Profile() {
         </div>
 
         {!showAddIdentity ? (
-          <button onClick={() => setShowAddIdentity(true)} style={{ marginTop: '1rem' }}>
+          <button onClick={() => setShowAddIdentity(true)} className="mt-4">
             {TEXT.profile.addIdentityButton}
           </button>
         ) : (
-          <div style={{ marginTop: '1rem', padding: '1rem', border: '1px solid #eee', borderRadius: '8px', background: '#fafafa' }}>
-            <div style={{ marginBottom: '0.5rem' }}>
-              <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.875rem' }}>{TEXT.profile.addIdentityPlatformLabel}</label>
+          <div className="profile-add-identity-form">
+            <div className="mb-2">
+              <label className="form-label">{TEXT.profile.addIdentityPlatformLabel}</label>
               <PlatformDropdown value={newPlatform} onChange={setNewPlatform} includeEmpty />
             </div>
-            <div style={{ marginBottom: '0.5rem' }}>
-              <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.875rem' }}>{TEXT.profile.addIdentityUserLabel}</label>
+            <div className="mb-2">
+              <label className="form-label">{TEXT.profile.addIdentityUserLabel}</label>
               <input
                 value={newPlatformUser}
                 onChange={(e) => setNewPlatformUser(e.target.value)}
                 placeholder={TEXT.profile.addIdentityUserPlaceholder}
-                style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #ccc', fontSize: '0.875rem' }}
+                className="form-input"
               />
             </div>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <div className="row-sm">
               <button onClick={handleAddIdentity} disabled={addingIdentity || !newPlatform || !newPlatformUser.trim()}>
                 {addingIdentity ? TEXT.common.adding : TEXT.common.add}
               </button>
@@ -353,14 +319,10 @@ export default function Profile() {
         {!roomsLoading && !roomsIsError && rooms.map((room) => (
           <div
             key={room.id}
-            style={{
-              padding: '0.5rem 0',
-              borderBottom: '1px solid #eee',
-              fontSize: '0.875rem',
-            }}
+            className="profile-room-row"
           >
             <strong>{room.display_name || room.platform_room_id}</strong>{' '}
-            <span style={{ color: '#666' }}>({room.platform})</span>
+            <span className="text-secondary">({room.platform})</span>
           </div>
         ))}
       </PageCard>

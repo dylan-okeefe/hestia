@@ -1,0 +1,53 @@
+.workflows-page {
+  padding: var(--space-4);
+}
+
+.workflows-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+}
+
+.workflows-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.workflows-table thead tr {
+  border-bottom: 1px solid #ddd;
+  text-align: left;
+}
+
+.workflows-table th,
+.workflows-table td {
+  padding: var(--space-2);
+}
+
+.workflows-table tbody tr {
+  border-bottom: 1px solid var(--color-border-subtle);
+  cursor: pointer;
+}
+
+.workflows-trigger-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: 9999px;
+  background: #e5e7eb;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.workflows-delete-btn {
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--font-size-xs);
+  color: var(--color-danger);
+}
+
+.workflows-webhook-link {
+  margin-left: var(--space-2);
+  text-decoration: none;
+}

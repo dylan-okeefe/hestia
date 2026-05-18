@@ -6,6 +6,7 @@ import PageCard from '../components/layout/PageCard';
 import LoadingSkeleton from '../components/layout/LoadingSkeleton';
 import ErrorState from '../components/layout/ErrorState';
 import { TEXT } from '../lib/text';
+import './Dashboard.css';
 
 interface DashboardData {
   active_workflow_count: number;
@@ -61,7 +62,7 @@ export default function Dashboard() {
 
   if (loading || userLoading) {
     return (
-      <div style={{ padding: '1rem' }}>
+      <div className="dashboard-page">
         <LoadingSkeleton lines={6} height="2rem" />
       </div>
     );
@@ -69,7 +70,7 @@ export default function Dashboard() {
 
   if (error) {
     return (
-      <div style={{ padding: '1rem' }}>
+      <div className="dashboard-page">
         <ErrorState message={error} onRetry={() => window.location.reload()} />
       </div>
     );
@@ -77,7 +78,7 @@ export default function Dashboard() {
 
   if (!data) {
     return (
-      <div style={{ padding: '1rem' }}>
+      <div className="dashboard-page">
         <ErrorState message={TEXT.dashboard.noData} />
       </div>
     );
@@ -90,62 +91,47 @@ export default function Dashboard() {
     const connected = data.platforms_connected.includes(name);
     return (
       <span
-        style={{
-          display: 'inline-block',
-          width: 10,
-          height: 10,
-          borderRadius: '50%',
-          background: connected ? '#22c55e' : '#ef4444',
-          marginRight: '0.5rem',
-        }}
+        className={`status-dot ${connected ? 'status-dot--success' : 'status-dot--danger'}`}
         title={connected ? TEXT.dashboard.connected : TEXT.dashboard.disconnected}
       />
     );
   };
 
-  const healthColor = healthRate === null ? '#9ca3af' : healthRate === 100 ? '#22c55e' : healthRate >= 50 ? '#f59e0b' : '#ef4444';
+  const healthColorClass = healthRate === null ? 'status-dot--neutral' : healthRate === 100 ? 'status-dot--success' : healthRate >= 50 ? 'status-dot--warning' : 'status-dot--danger';
 
   return (
-    <div style={{ padding: '1rem' }}>
-      <h1 style={{ marginBottom: '1.5rem' }}>{greeting}</h1>
+    <div className="dashboard-page">
+      <h1 className="dashboard-greeting">{greeting}</h1>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+      <div className="dashboard-grid">
         <PageCard>
-          <div style={{ fontSize: '0.875rem', color: '#666' }}>{TEXT.dashboard.activeWorkflowsLabel}</div>
-          <div style={{ fontSize: '1.5rem', fontWeight: 'bold', margin: '0.25rem 0' }}>{data.active_workflow_count}</div>
+          <div className="dashboard-stat-label">{TEXT.dashboard.activeWorkflowsLabel}</div>
+          <div className="dashboard-stat-value">{data.active_workflow_count}</div>
         </PageCard>
         <PageCard>
-          <div style={{ fontSize: '0.875rem', color: '#666' }}>{TEXT.dashboard.scheduledTasksLabel}</div>
-          <div style={{ fontSize: '1.5rem', fontWeight: 'bold', margin: '0.25rem 0' }}>{scheduledCount}</div>
+          <div className="dashboard-stat-label">{TEXT.dashboard.scheduledTasksLabel}</div>
+          <div className="dashboard-stat-value">{scheduledCount}</div>
         </PageCard>
         <PageCard>
-          <div style={{ fontSize: '0.875rem', color: '#666' }}>{TEXT.dashboard.pendingProposalsLabel}</div>
-          <div style={{ fontSize: '1.5rem', fontWeight: 'bold', margin: '0.25rem 0' }}>{data.pending_proposal_count}</div>
+          <div className="dashboard-stat-label">{TEXT.dashboard.pendingProposalsLabel}</div>
+          <div className="dashboard-stat-value">{data.pending_proposal_count}</div>
         </PageCard>
         <PageCard>
-          <div style={{ fontSize: '0.875rem', color: '#666' }}>{TEXT.dashboard.recentSessionsLabel}</div>
-          <div style={{ fontSize: '1.5rem', fontWeight: 'bold', margin: '0.25rem 0' }}>{data.recent_executions.length}</div>
+          <div className="dashboard-stat-label">{TEXT.dashboard.recentSessionsLabel}</div>
+          <div className="dashboard-stat-value">{data.recent_executions.length}</div>
         </PageCard>
         <PageCard>
-          <div style={{ fontSize: '0.875rem', color: '#666', marginBottom: '0.25rem' }}>{TEXT.dashboard.systemHealthLabel}</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span
-              style={{
-                display: 'inline-block',
-                width: 12,
-                height: 12,
-                borderRadius: '50%',
-                background: healthColor,
-              }}
-            />
-            <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>
+          <div className="dashboard-stat-label mb-1">{TEXT.dashboard.systemHealthLabel}</div>
+          <div className="row-center gap-2">
+            <span className={`status-dot ${healthColorClass}`} />
+            <span className="text-small" style={{ fontWeight: 600 }}>
               {healthRate === null ? TEXT.dashboard.healthUnknown : TEXT.dashboard.healthPassing(healthRate)}
             </span>
           </div>
         </PageCard>
         <PageCard>
-          <div style={{ fontSize: '0.875rem', color: '#666', marginBottom: '0.25rem' }}>{TEXT.dashboard.platformsLabel}</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontSize: '0.875rem' }}>
+          <div className="dashboard-stat-label mb-1">{TEXT.dashboard.platformsLabel}</div>
+          <div className="stack-sm text-small">
             <div>{platformStatus('telegram')} Telegram</div>
             <div>{platformStatus('matrix')} Matrix</div>
             <div>{platformStatus('email')} Email</div>
@@ -153,38 +139,37 @@ export default function Dashboard() {
         </PageCard>
       </div>
 
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+      <div className="dashboard-actions">
         <button onClick={() => navigate('/workflows')}>{TEXT.dashboard.goToWorkflows}</button>
         <button onClick={() => navigate('/profile')}>{TEXT.dashboard.viewProfile}</button>
         <button onClick={handleHealthCheck}>{TEXT.dashboard.runHealthCheck}</button>
       </div>
 
-      <h2 style={{ marginBottom: '0.75rem' }}>{TEXT.dashboard.recentExecutionsTitle}</h2>
+      <h2 className="dashboard-section-title">{TEXT.dashboard.recentExecutionsTitle}</h2>
       {data.recent_executions.length === 0 && <p>{TEXT.dashboard.noExecutions}</p>}
       {data.recent_executions.length > 0 && (
         <PageCard style={{ padding: 0, overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+          <table className="data-table">
             <thead>
-              <tr style={{ borderBottom: '1px solid #ccc', textAlign: 'left', background: '#fafafa' }}>
-                <th style={{ padding: '0.5rem 0.75rem' }}>{TEXT.dashboard.tableWorkflow}</th>
-                <th style={{ padding: '0.5rem 0.75rem' }}>{TEXT.dashboard.tableStatus}</th>
-                <th style={{ padding: '0.5rem 0.75rem' }}>{TEXT.dashboard.tableTime}</th>
-                <th style={{ padding: '0.5rem 0.75rem' }}>{TEXT.dashboard.tableElapsed}</th>
-                <th style={{ padding: '0.5rem 0.75rem' }}>{TEXT.dashboard.tableNodes}</th>
+              <tr>
+                <th>{TEXT.dashboard.tableWorkflow}</th>
+                <th>{TEXT.dashboard.tableStatus}</th>
+                <th>{TEXT.dashboard.tableTime}</th>
+                <th>{TEXT.dashboard.tableElapsed}</th>
+                <th>{TEXT.dashboard.tableNodes}</th>
               </tr>
             </thead>
             <tbody>
               {data.recent_executions.map((ex: ExecutionRecord) => (
                 <tr
                   key={ex.id}
-                  style={{ borderBottom: '1px solid #eee', cursor: 'pointer' }}
                   onClick={() => navigate(`/workflows/${ex.workflow_id}`)}
                 >
-                  <td style={{ padding: '0.5rem 0.75rem' }}>{ex.workflow_id}</td>
-                  <td style={{ padding: '0.5rem 0.75rem', color: ex.status === 'ok' ? 'green' : 'red' }}>{ex.status}</td>
-                  <td style={{ padding: '0.5rem 0.75rem' }}>{ex.created_at ? new Date(ex.created_at).toLocaleString() : '—'}</td>
-                  <td style={{ padding: '0.5rem 0.75rem' }}>{ex.total_elapsed_ms}ms</td>
-                  <td style={{ padding: '0.5rem 0.75rem' }}>{ex.node_results.length}</td>
+                  <td>{ex.workflow_id}</td>
+                  <td className={ex.status === 'ok' ? 'text-success' : 'text-danger'}>{ex.status}</td>
+                  <td>{ex.created_at ? new Date(ex.created_at).toLocaleString() : '—'}</td>
+                  <td>{ex.total_elapsed_ms}ms</td>
+                  <td>{ex.node_results.length}</td>
                 </tr>
               ))}
             </tbody>

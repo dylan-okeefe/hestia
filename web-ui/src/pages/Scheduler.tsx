@@ -14,6 +14,7 @@ import EmptyState from '../components/layout/EmptyState';
 import CronBuilder from '../components/workflow-editor/CronBuilder';
 import { formatDate, formatCron } from '../lib/format';
 import { TEXT } from '../lib/text';
+import './Scheduler.css';
 
 interface Task {
   id: string;
@@ -109,9 +110,9 @@ export default function Scheduler() {
   };
 
   return (
-    <div style={{ padding: '1rem' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-        <h1 style={{ margin: 0 }}>{TEXT.scheduler.title}</h1>
+    <div className="scheduler-page">
+      <div className="scheduler-header">
+        <h1 className="scheduler-title">{TEXT.scheduler.title}</h1>
         <button onClick={openCreate}>{TEXT.scheduler.createButton}</button>
       </div>
 
@@ -135,68 +136,52 @@ export default function Scheduler() {
 
       {!isLoading && tasks.length > 0 && (
         <PageCard style={{ padding: 0, overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+          <table className="data-table">
             <thead>
-              <tr style={{ borderBottom: '2px solid #eee', textAlign: 'left', background: '#fafafa' }}>
-                <th style={{ padding: '0.75rem 1rem' }}>{TEXT.scheduler.tableTask}</th>
-                <th style={{ padding: '0.75rem 1rem' }}>{TEXT.scheduler.tableSchedule}</th>
-                <th style={{ padding: '0.75rem 1rem' }}>{TEXT.scheduler.tableNextRun}</th>
-                <th style={{ padding: '0.75rem 1rem' }}>{TEXT.scheduler.tableStatus}</th>
-                <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>{TEXT.scheduler.tableActions}</th>
+              <tr>
+                <th>{TEXT.scheduler.tableTask}</th>
+                <th>{TEXT.scheduler.tableSchedule}</th>
+                <th>{TEXT.scheduler.tableNextRun}</th>
+                <th>{TEXT.scheduler.tableStatus}</th>
+                <th style={{ textAlign: 'right' }}>{TEXT.scheduler.tableActions}</th>
               </tr>
             </thead>
             <tbody>
               {tasks.map((t) => (
-                <tr key={t.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                  <td style={{ padding: '0.75rem 1rem' }}>
+                <tr key={t.id}>
+                  <td>
                     <div style={{ fontWeight: 600 }}>{getTaskName(t)}</div>
-                    <div style={{ fontSize: '0.8rem', color: '#888', wordBreak: 'break-all' }}>{t.prompt}</div>
+                    <div className="text-small text-muted" style={{ wordBreak: 'break-all' }}>{t.prompt}</div>
                   </td>
-                  <td style={{ padding: '0.75rem 1rem' }}>
+                  <td>
                     {t.cron_expression ? formatCron(t.cron_expression) : '—'}
                   </td>
-                  <td style={{ padding: '0.75rem 1rem' }}>{formatDate(t.next_run_at)}</td>
-                  <td style={{ padding: '0.75rem 1rem' }}>
+                  <td>{formatDate(t.next_run_at)}</td>
+                  <td>
                     <span
-                      style={{
-                        display: 'inline-block',
-                        padding: '0.15rem 0.5rem',
-                        borderRadius: '12px',
-                        fontSize: '0.75rem',
-                        fontWeight: 600,
-                        background: t.enabled ? '#dcfce7' : '#f3f4f6',
-                        color: t.enabled ? '#166534' : '#6b7280',
-                      }}
+                      className={`scheduler-status-badge scheduler-status-badge--${t.enabled ? 'enabled' : 'disabled'}`}
                     >
                       {t.enabled ? TEXT.scheduler.statusEnabled : TEXT.scheduler.statusDisabled}
                     </span>
                     {t.last_error && (
                       <span
-                        style={{
-                          display: 'inline-block',
-                          marginLeft: '0.25rem',
-                          padding: '0.15rem 0.5rem',
-                          borderRadius: '12px',
-                          fontSize: '0.75rem',
-                          fontWeight: 600,
-                          background: '#fee2e2',
-                          color: '#991b1b',
-                        }}
+                        className="scheduler-error-badge"
                         title={t.last_error}
                       >
                         {TEXT.scheduler.statusError}
                       </span>
                     )}
                   </td>
-                  <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
-                    <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                  <td style={{ textAlign: 'right' }}>
+                    <div className="scheduler-actions">
                       <button onClick={() => setConfirmRun(t.id)} disabled={!t.enabled}>
                         {TEXT.scheduler.runNow}
                       </button>
                       <button onClick={() => openEdit(t)}>{TEXT.common.edit}</button>
                       <button
                         onClick={() => setConfirmDelete(t.id)}
-                        style={{ color: '#ef4444', borderColor: '#ef4444' }}
+                        className="text-danger"
+                        style={{ borderColor: 'var(--color-danger)' }}
                       >
                         {TEXT.common.delete}
                       </button>
@@ -211,30 +196,22 @@ export default function Scheduler() {
 
       {modalOpen && (
         <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.4)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-          }}
+          className="modal-overlay"
           onClick={() => setModalOpen(false)}
         >
           <div
-            style={{ width: '90%', maxWidth: 480, maxHeight: '90vh', overflowY: 'auto', background: '#fff', border: '1px solid #eee', borderRadius: '8px', padding: '1rem' }}
+            className="modal modal--md"
             onClick={(e) => e.stopPropagation()}
           >
             <h2 style={{ marginTop: 0 }}>{editingTask ? TEXT.scheduler.editTitle : TEXT.scheduler.createTitle}</h2>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <div className="stack-md">
               <label>
                 {TEXT.scheduler.nameLabel}
                 <input
                   value={form.description}
                   onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
                   placeholder={TEXT.scheduler.namePlaceholder}
-                  style={{ width: '100%', padding: '0.5rem', marginTop: '0.25rem' }}
+                  className="form-input mt-1"
                 />
               </label>
               <label>
@@ -244,19 +221,19 @@ export default function Scheduler() {
                   value={form.prompt}
                   onChange={(e) => setForm((f) => ({ ...f, prompt: e.target.value }))}
                   placeholder={TEXT.scheduler.promptPlaceholder}
-                  style={{ width: '100%', padding: '0.5rem', marginTop: '0.25rem', fontFamily: 'inherit' }}
+                  className="form-textarea mt-1"
                 />
               </label>
               <label>
                 {TEXT.scheduler.scheduleLabel}
-                <div style={{ marginTop: '0.25rem' }}>
+                <div className="mt-1">
                   <CronBuilder
                     value={form.cron_expression}
                     onChange={(v) => setForm((f) => ({ ...f, cron_expression: v }))}
                   />
                 </div>
               </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+              <label className="row-center gap-2" style={{ cursor: 'pointer' }}>
                 <input
                   type="checkbox"
                   checked={form.enabled}
@@ -265,7 +242,7 @@ export default function Scheduler() {
                 {TEXT.scheduler.enabledLabel}
               </label>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem' }}>
+            <div className="row-between mt-4">
               <button onClick={() => setModalOpen(false)}>{TEXT.common.cancel}</button>
               <button onClick={handleSave} disabled={!form.prompt.trim()}>
                 {editingTask ? TEXT.common.save : TEXT.common.create}
@@ -277,25 +254,17 @@ export default function Scheduler() {
 
       {confirmDelete && (
         <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.4)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-          }}
+          className="modal-overlay"
           onClick={() => setConfirmDelete(null)}
         >
-          <div style={{ width: 360, textAlign: 'center', background: '#fff', border: '1px solid #eee', borderRadius: '8px', padding: '1rem' }} onClick={(e) => e.stopPropagation()}>
+          <div className="modal modal--sm" onClick={(e) => e.stopPropagation()}>
             <h3 style={{ marginTop: 0 }}>{TEXT.scheduler.deleteConfirmTitle}</h3>
-            <p style={{ fontSize: '0.875rem', color: '#666' }}>
+            <p className="text-small text-secondary">
               {TEXT.scheduler.deleteConfirmDescription}
             </p>
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', marginTop: '1rem' }}>
+            <div className="row-center gap-2 mt-4" style={{ justifyContent: 'center' }}>
               <button onClick={() => setConfirmDelete(null)}>{TEXT.common.cancel}</button>
-              <button onClick={() => handleDelete(confirmDelete)} style={{ color: '#ef4444', borderColor: '#ef4444' }}>
+              <button onClick={() => handleDelete(confirmDelete)} className="text-danger" style={{ borderColor: 'var(--color-danger)' }}>
                 {TEXT.common.delete}
               </button>
             </div>
@@ -305,23 +274,15 @@ export default function Scheduler() {
 
       {confirmRun && (
         <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.4)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-          }}
+          className="modal-overlay"
           onClick={() => setConfirmRun(null)}
         >
-          <div style={{ width: 360, textAlign: 'center', background: '#fff', border: '1px solid #eee', borderRadius: '8px', padding: '1rem' }} onClick={(e) => e.stopPropagation()}>
+          <div className="modal modal--sm" onClick={(e) => e.stopPropagation()}>
             <h3 style={{ marginTop: 0 }}>{TEXT.scheduler.runNowConfirmTitle}</h3>
-            <p style={{ fontSize: '0.875rem', color: '#666' }}>
+            <p className="text-small text-secondary">
               {TEXT.scheduler.runNowConfirmDescription}
             </p>
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', marginTop: '1rem' }}>
+            <div className="row-center gap-2 mt-4" style={{ justifyContent: 'center' }}>
               <button onClick={() => setConfirmRun(null)}>{TEXT.common.cancel}</button>
               <button onClick={() => handleRun(confirmRun)}>{TEXT.common.run}</button>
             </div>

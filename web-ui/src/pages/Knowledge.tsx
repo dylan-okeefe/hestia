@@ -8,6 +8,7 @@ import LoadingSkeleton from '../components/layout/LoadingSkeleton';
 import ErrorState from '../components/layout/ErrorState';
 import { formatDate, formatRelativeDate, formatJson } from '../lib/format';
 import { TEXT } from '../lib/text';
+import './Knowledge.css';
 
 interface Session {
   id: string;
@@ -101,7 +102,7 @@ export default function Knowledge() {
 
   if (userLoading || loading) {
     return (
-      <div style={{ padding: '1rem' }}>
+      <div className="knowledge-page">
         <h1>{TEXT.knowledge.title}</h1>
         <PageCard>
           <LoadingSkeleton lines={5} />
@@ -112,7 +113,7 @@ export default function Knowledge() {
 
   if (userError) {
     return (
-      <div style={{ padding: '1rem' }}>
+      <div className="knowledge-page">
         <ErrorState
           message={userError}
           onRetry={userError.includes('Not authenticated') ? () => { window.location.href = '/login'; } : () => window.location.reload()}
@@ -123,7 +124,7 @@ export default function Knowledge() {
 
   if (error && !user) {
     return (
-      <div style={{ padding: '1rem' }}>
+      <div className="knowledge-page">
         <ErrorState message={error} onRetry={() => window.location.reload()} />
       </div>
     );
@@ -137,7 +138,7 @@ export default function Knowledge() {
       : memories;
 
   return (
-    <div style={{ padding: '1rem' }}>
+    <div className="knowledge-page">
       <h1>{TEXT.knowledge.title}</h1>
 
       {error && (
@@ -148,20 +149,20 @@ export default function Knowledge() {
 
       <PageCard>
         <h3 style={{ marginTop: 0 }}>{TEXT.knowledge.notesTitle}</h3>
-        <p style={{ margin: '0 0 0.5rem', fontSize: '0.75rem', color: '#888' }}>
+        <p className="text-xs text-muted mb-2">
           {TEXT.knowledge.notesDescription}
         </p>
         <p style={{ whiteSpace: 'pre-wrap', marginTop: 0 }}>
           {user?.notes || TEXT.knowledge.noNotesSaved}
         </p>
-        <a href="/profile" style={{ fontSize: '0.875rem' }}>
+        <a href="/profile" className="text-small">
           {TEXT.knowledge.editNotesLink}
         </a>
       </PageCard>
 
       <PageCard>
         <h3 style={{ marginTop: 0 }}>{TEXT.knowledge.styleTitle}</h3>
-        <p style={{ margin: '0 0 0.5rem', fontSize: '0.75rem', color: '#888' }}>
+        <p className="text-xs text-muted mb-2">
           {TEXT.knowledge.styleDescription}
         </p>
         {styleMetrics.length === 0 && (
@@ -173,17 +174,11 @@ export default function Knowledge() {
         {styleMetrics.map(([key, value]) => (
           <div
             key={key}
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              padding: '0.75rem',
-              borderBottom: '1px solid #eee',
-            }}
+            className="knowledge-style-row"
           >
             <div>
               <strong>{key}</strong>
-              <div style={{ fontSize: '0.9rem', color: '#555' }}>
+              <div className="text-small text-secondary">
                 {typeof value === 'object' ? formatJson(value) : String(value)}
               </div>
             </div>
@@ -197,22 +192,22 @@ export default function Knowledge() {
           <EmptyState title={TEXT.knowledge.sessionsEmptyTitle} description={TEXT.knowledge.sessionsEmptyDescription} />
         )}
         {sessions.length > 0 && (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+          <table className="knowledge-table">
             <thead>
-              <tr style={{ borderBottom: '1px solid #ccc', textAlign: 'left' }}>
-                <th style={{ padding: '0.25rem' }}>Session</th>
-                <th style={{ padding: '0.25rem' }}>Platform</th>
-                <th style={{ padding: '0.25rem' }}>Start</th>
-                <th style={{ padding: '0.25rem' }}>Messages</th>
+              <tr>
+                <th>Session</th>
+                <th>Platform</th>
+                <th>Start</th>
+                <th>Messages</th>
               </tr>
             </thead>
             <tbody>
               {sessions.map((s) => (
-                <tr key={s.id} style={{ borderBottom: '1px solid #eee', cursor: 'pointer' }} onClick={() => window.location.href = `/sessions/${s.id}`}>
-                  <td style={{ padding: '0.25rem', fontFamily: 'monospace', fontSize: '0.75rem' }}><a href={`/sessions/${s.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>{s.id.slice(0, 8)}…</a></td>
-                  <td style={{ padding: '0.25rem' }}>{s.platform}</td>
-                  <td style={{ padding: '0.25rem' }}>{formatDate(s.started_at)}</td>
-                  <td style={{ padding: '0.25rem' }}>{s.message_count ?? '—'}</td>
+                <tr key={s.id} onClick={() => window.location.href = `/sessions/${s.id}`}>
+                  <td className="knowledge-table__mono"><a href={`/sessions/${s.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>{s.id.slice(0, 8)}…</a></td>
+                  <td>{s.platform}</td>
+                  <td>{formatDate(s.started_at)}</td>
+                  <td>{s.message_count ?? '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -222,10 +217,10 @@ export default function Knowledge() {
 
       <PageCard>
         <h3 style={{ marginTop: 0 }}>{TEXT.knowledge.memoriesTitle}</h3>
-        <p style={{ margin: '0 0 0.5rem', fontSize: '0.75rem', color: '#888' }}>
+        <p className="text-xs text-muted mb-2">
           {TEXT.knowledge.memoriesDescription}
         </p>
-        {memoriesError && <p style={{ color: '#ef4444', fontSize: '0.875rem' }}>{memoriesError}</p>}
+        {memoriesError && <p className="text-small text-danger">{memoriesError}</p>}
         {memories.length === 0 && (
           <EmptyState
             title={TEXT.knowledge.memoriesEmptyTitle}
@@ -233,8 +228,8 @@ export default function Knowledge() {
           />
         )}
         {memories.length > 0 && (
-          <div style={{ marginBottom: '0.75rem' }}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
+          <div className="mb-4">
+            <div className="row-sm" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
               {Array.from(new Set(memories.flatMap((m) => m.tags || []))).sort().map((tag) => {
                 const active = selectedTags.includes(tag);
                 return (
@@ -245,15 +240,7 @@ export default function Knowledge() {
                         active ? prev.filter((t) => t !== tag) : [...prev, tag]
                       );
                     }}
-                    style={{
-                      fontSize: '0.75rem',
-                      padding: '0.25rem 0.5rem',
-                      borderRadius: '999px',
-                      border: '1px solid #d1d5db',
-                      background: active ? '#374151' : '#e5e7eb',
-                      color: active ? '#fff' : '#374151',
-                      cursor: 'pointer',
-                    }}
+                    className={active ? 'knowledge-tag knowledge-tag--active' : 'knowledge-tag'}
                   >
                     {tag}
                   </button>
@@ -262,57 +249,36 @@ export default function Knowledge() {
               {selectedTags.length > 0 && (
                 <button
                   onClick={() => setSelectedTags([])}
-                  style={{
-                    fontSize: '0.75rem',
-                    padding: '0.25rem 0.5rem',
-                    borderRadius: '4px',
-                    border: 'none',
-                    background: 'none',
-                    color: '#6b7280',
-                    cursor: 'pointer',
-                    textDecoration: 'underline',
-                  }}
+                  className="knowledge-tag-clear"
                 >
                   {TEXT.knowledge.tagFilterClear}
                 </button>
               )}
             </div>
-            <p style={{ fontSize: '0.75rem', color: '#888', margin: '0.25rem 0 0' }}>
+            <p className="text-xs text-muted mt-1">
               {TEXT.knowledge.tagFilterShowing(filteredMemories.length, memories.length)}
             </p>
           </div>
         )}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        <div className="stack-md">
           {filteredMemories.map((m) => (
             <div
               key={m.id}
-              style={{
-                padding: '0.75rem',
-                border: '1px solid #eee',
-                borderRadius: '6px',
-                background: '#fafafa',
-                fontSize: '0.875rem',
-              }}
+              className="knowledge-memory-card"
             >
-              <div style={{ marginBottom: '0.5rem' }}>{m.content}</div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+              <div className="mb-2">{m.content}</div>
+              <div className="row-between" style={{ flexWrap: 'wrap' }}>
+                <div className="row-sm" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
                   {m.tags && m.tags.length > 0 && m.tags.map((tag) => (
                     <span
                       key={tag}
-                      style={{
-                        fontSize: '0.75rem',
-                        padding: '0.125rem 0.375rem',
-                        borderRadius: '999px',
-                        background: '#e5e7eb',
-                        color: '#374151',
-                      }}
+                      className="knowledge-memory-tag"
                     >
                       {tag}
                     </span>
                   ))}
                   {m.created_at && (
-                    <span style={{ color: '#999', fontSize: '0.75rem' }}>
+                    <span className="text-muted text-xs">
                       {formatDate(m.created_at)}
                     </span>
                   )}
@@ -320,7 +286,7 @@ export default function Knowledge() {
                 <button
                   onClick={() => handleDeleteMemory(m.id)}
                   disabled={deletingMemoryId === m.id}
-                  style={{ fontSize: '0.75rem', color: '#ef4444' }}
+                  className="text-xs text-danger"
                 >
                   {deletingMemoryId === m.id ? TEXT.common.deleting : TEXT.common.delete}
                 </button>
@@ -332,7 +298,7 @@ export default function Knowledge() {
 
       <PageCard>
         <h3 style={{ marginTop: 0 }}>{TEXT.knowledge.handoffsTitle}</h3>
-        <p style={{ margin: '0 0 0.5rem', fontSize: '0.75rem', color: '#888' }}>
+        <p className="text-xs text-muted mb-2">
           {TEXT.knowledge.handoffsDescription}
         </p>
         {handoffs.length === 0 && (
@@ -344,18 +310,14 @@ export default function Knowledge() {
         {handoffs.map((h) => (
           <div
             key={h.session_id}
-            style={{
-              padding: '0.5rem 0',
-              borderBottom: '1px solid #eee',
-              fontSize: '0.875rem',
-            }}
+            className="knowledge-handoff-row"
           >
             <div style={{ fontWeight: 'bold', marginBottom: '0.25rem' }}>
               Session {h.session_id.slice(0, 8)}…
             </div>
-            <div style={{ color: '#555', marginBottom: '0.25rem' }}>{h.summary}</div>
+            <div className="text-secondary mb-1">{h.summary}</div>
             {h.created_at && (
-              <span style={{ color: '#999', fontSize: '0.75rem' }}>
+              <span className="text-muted text-xs">
                 {formatRelativeDate(h.created_at)}
               </span>
             )}

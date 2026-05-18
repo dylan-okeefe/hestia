@@ -8,6 +8,7 @@ import LoadingSkeleton from '../components/layout/LoadingSkeleton';
 import ErrorState from '../components/layout/ErrorState';
 import { formatDate } from '../lib/format';
 import { TEXT } from '../lib/text';
+import './SessionDetail.css';
 
 interface Turn {
   id: string;
@@ -57,7 +58,7 @@ export default function SessionDetail() {
 
   if (loading) {
     return (
-      <div style={{ padding: '1rem' }}>
+      <div className="session-detail-page">
         <h1>{TEXT.sessionDetail.title}</h1>
         <PageCard>
           <LoadingSkeleton lines={5} />
@@ -68,7 +69,7 @@ export default function SessionDetail() {
 
   if (error) {
     return (
-      <div style={{ padding: '1rem' }}>
+      <div className="session-detail-page">
         <h1>{TEXT.sessionDetail.title}</h1>
         <PageCard>
           <ErrorState message={error} onRetry={() => window.location.reload()} />
@@ -81,7 +82,7 @@ export default function SessionDetail() {
   }
 
   return (
-    <div style={{ padding: '1rem' }}>
+    <div className="session-detail-page">
       <h1>{TEXT.sessionDetail.title}</h1>
 
       <p>
@@ -91,16 +92,16 @@ export default function SessionDetail() {
       {session && (
         <PageCard>
           <h3 style={{ marginTop: 0 }}>{TEXT.sessionDetail.metadataTitle}</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '0.5rem 1rem', fontSize: '0.875rem' }}>
-            <div style={{ color: '#666' }}>{TEXT.sessionDetail.idLabel}</div>
-            <div style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{session.id}</div>
-            <div style={{ color: '#666' }}>{TEXT.sessionDetail.platformLabel}</div>
+          <div className="session-detail-grid">
+            <div className="session-detail-grid__label">{TEXT.sessionDetail.idLabel}</div>
+            <div className="session-detail-grid__mono">{session.id}</div>
+            <div className="session-detail-grid__label">{TEXT.sessionDetail.platformLabel}</div>
             <div>{session.platform}</div>
-            <div style={{ color: '#666' }}>{TEXT.sessionDetail.userLabel}</div>
+            <div className="session-detail-grid__label">{TEXT.sessionDetail.userLabel}</div>
             <div>{session.platform_user}</div>
-            <div style={{ color: '#666' }}>{TEXT.sessionDetail.startedLabel}</div>
+            <div className="session-detail-grid__label">{TEXT.sessionDetail.startedLabel}</div>
             <div>{formatDate(session.started_at)}</div>
-            <div style={{ color: '#666' }}>{TEXT.sessionDetail.messagesLabel}</div>
+            <div className="session-detail-grid__label">{TEXT.sessionDetail.messagesLabel}</div>
             <div>{turns.length}</div>
           </div>
         </PageCard>
@@ -111,40 +112,27 @@ export default function SessionDetail() {
         {turns.length === 0 && (
           <EmptyState title={TEXT.sessionDetail.emptyTitle} description={TEXT.sessionDetail.emptyDescription} />
         )}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        <div className="stack-md">
           {turns.map((t) => (
             <div
               key={t.id}
-              style={{
-                padding: '0.75rem',
-                border: '1px solid #eee',
-                borderRadius: '6px',
-                background: t.error ? '#fef2f2' : '#fafafa',
-                borderLeft: t.error ? '3px solid #ef4444' : '3px solid #e5e7eb',
-                fontSize: '0.875rem',
-              }}
+              className={`session-turn${t.error ? ' session-turn--error' : ''}`}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
-                <span style={{ fontWeight: 'bold', fontFamily: 'monospace', fontSize: '0.75rem' }}>
+              <div className="session-turn__header">
+                <span className="session-turn__id">
                   {TEXT.sessionDetail.turnLabel(t.id)}
                 </span>
                 <span
-                  style={{
-                    fontSize: '0.75rem',
-                    padding: '0.125rem 0.375rem',
-                    borderRadius: '4px',
-                    background: t.state === 'done' ? '#dcfce7' : t.state === 'failed' ? '#fee2e2' : '#e5e7eb',
-                    color: t.state === 'done' ? '#166534' : t.state === 'failed' ? '#991b1b' : '#374151',
-                  }}
+                  className={`session-turn__state session-turn__state--${t.state === 'done' ? 'done' : t.state === 'failed' ? 'failed' : 'default'}`}
                 >
                   {t.state ?? TEXT.common.unknown}
                 </span>
               </div>
-              <div style={{ color: '#666', fontSize: '0.75rem', marginBottom: '0.25rem' }}>
+              <div className="session-turn__meta">
                 {formatDate(t.started_at)} · {t.iterations} iteration{t.iterations === 1 ? '' : 's'}
               </div>
               {t.error && (
-                <div style={{ color: '#ef4444', fontSize: '0.875rem', whiteSpace: 'pre-wrap' }}>
+                <div className="session-turn__error">
                   {t.error}
                 </div>
               )}
