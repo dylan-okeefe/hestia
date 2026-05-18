@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import PageCard from '../components/layout/PageCard';
 import EmptyState from '../components/layout/EmptyState';
 import { label, ROLE_LABELS } from '../lib/labels';
+import { TEXT } from '../lib/text';
 
 interface AvailableIdentity {
   platform: string;
@@ -137,7 +138,7 @@ export default function Login() {
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
-  const steps = ['Select User', 'Select Platform', 'Enter Code'];
+  const steps = [TEXT.login.step1Label, TEXT.login.step2Label, TEXT.login.step3Label];
   const currentStepIndex = phase === 'select-user' ? 0 : phase === 'select-platform' ? 1 : 2;
 
   return (
@@ -152,8 +153,8 @@ export default function Login() {
     >
       <div style={{ width: '100%', maxWidth: '480px', padding: '1rem' }}>
         <PageCard style={{ padding: '2rem' }}>
-          <h1 style={{ margin: '0 0 0.5rem', fontSize: '1.5rem' }}>Hestia Dashboard</h1>
-          <p style={{ margin: '0 0 1.5rem', color: '#666' }}>Authenticate via your chat platform</p>
+          <h1 style={{ margin: '0 0 0.5rem', fontSize: '1.5rem' }}>{TEXT.login.title}</h1>
+          <p style={{ margin: '0 0 1.5rem', color: '#666' }}>{TEXT.login.subtitle}</p>
 
           {/* Progress indicator */}
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
@@ -200,13 +201,13 @@ export default function Login() {
           {phase === 'select-user' && (
             <div>
               <p style={{ margin: '0 0 0.75rem', fontSize: '0.875rem', color: '#666' }}>
-                Choose your user account to continue.
+                {TEXT.login.step1Description}
               </p>
-              {loadingUsers && <EmptyState title="Loading users…" description="Please wait." />}
+              {loadingUsers && <EmptyState title={TEXT.login.loadingTitle} description={TEXT.login.loadingDescription} />
               {!loadingUsers && availableUsers.length === 0 && (
                 <EmptyState
-                  title="No users available"
-                  description="No users configured. Contact your admin."
+                  title={TEXT.login.noUsersTitle}
+                  description={TEXT.login.noUsersDescription}
                 />
               )}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '0.75rem' }}>
@@ -252,12 +253,12 @@ export default function Login() {
           {phase === 'select-platform' && selectedUser && (
             <div>
               <p style={{ margin: '0 0 0.75rem', fontSize: '0.875rem', color: '#666' }}>
-                Selected user: <strong>{selectedUser.display_name}</strong>
+                {TEXT.login.selectedUserPrefix}<strong>{selectedUser.display_name}</strong>
               </p>
               {selectedUser.platforms.length === 0 && (
                 <EmptyState
-                  title="No platforms available"
-                  description="No platforms configured for this user."
+                  title={TEXT.login.noPlatformsTitle}
+                  description={TEXT.login.noPlatformsDescription}
                 />
               )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
@@ -279,8 +280,8 @@ export default function Login() {
                   >
                     <div style={{ fontWeight: 'bold', marginBottom: '0.25rem' }}>
                       {sending && selectedPlatform === platform
-                        ? 'Sending…'
-                        : `Send code via ${platform}`}
+                        ? TEXT.common.sending
+                        : TEXT.login.sendCodeVia(platform)}
                     </div>
                     <div style={{ fontSize: '0.8rem', color: '#666' }}>
                       {platformHelperText[platform] || 'A verification code will be sent to your device.'}
@@ -302,7 +303,7 @@ export default function Login() {
                   fontSize: '0.85rem',
                 }}
               >
-                ← Back to user selection
+                {TEXT.login.backToUserSelection}
               </button>
             </div>
           )}
@@ -310,7 +311,7 @@ export default function Login() {
           {phase === 'input' && (
             <div>
               <p style={{ margin: '0 0 0.5rem', fontSize: '0.875rem', color: '#666' }}>
-                Enter the code sent to <strong>{selectedPlatform}</strong>
+                {TEXT.login.enterCodePrefix}<strong>{selectedPlatform}</strong>
               </p>
               <input
                 type="text"
@@ -318,7 +319,7 @@ export default function Login() {
                 maxLength={6}
                 value={code}
                 onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                placeholder="000000"
+                placeholder={TEXT.login.codePlaceholder}
                 style={{
                   width: '100%',
                   padding: '0.75rem',
@@ -332,10 +333,10 @@ export default function Login() {
               />
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
                 <span style={{ fontSize: '0.85rem', color: expiresIn > 0 ? '#666' : '#f44336' }}>
-                  {expiresIn > 0 ? `Expires in ${formatTime(expiresIn)}` : 'Code expired'}
+                  {expiresIn > 0 ? TEXT.login.expiresIn(formatTime(expiresIn)) : TEXT.login.codeExpired}
                 </span>
                 <button onClick={handleVerify} disabled={verifying || code.length < 6 || expiresIn <= 0}>
-                  {verifying ? 'Verifying…' : 'Verify'}
+                  {verifying ? TEXT.common.verifying : TEXT.login.verify}
                 </button>
               </div>
               <button
@@ -352,11 +353,11 @@ export default function Login() {
                   fontSize: '0.85rem',
                 }}
               >
-                ← Back to platform selection
+                {TEXT.login.backToPlatformSelection}
               </button>
               {expiresIn <= 0 && (
                 <p style={{ margin: '0.5rem 0 0', fontSize: '0.8rem', color: '#666' }}>
-                  Code expired.{' '}
+                  {TEXT.login.codeExpiredPrefix}{' '}
                   <button
                     onClick={() => {
                       setPhase('select-platform');
@@ -373,7 +374,7 @@ export default function Login() {
                       textDecoration: 'underline',
                     }}
                   >
-                    Resend code
+                    {TEXT.login.resend}
                   </button>
                 </p>
               )}

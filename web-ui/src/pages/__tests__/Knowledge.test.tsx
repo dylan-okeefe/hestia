@@ -2,6 +2,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import Knowledge from '../Knowledge';
 import * as client from '../../api/client';
+import { TEXT } from '../../lib/text';
 
 vi.mock('../../api/client', async () => {
   const actual = await vi.importActual<typeof import('../../api/client')>('../../api/client');
@@ -87,7 +88,7 @@ describe('Knowledge', () => {
 
     await waitFor(() =>
       expect(
-        screen.getByText('No handoff summaries yet')
+        screen.getByText(TEXT.knowledge.handoffsEmptyTitle)
       ).toBeInTheDocument()
     );
   });
@@ -100,7 +101,7 @@ describe('Knowledge', () => {
     );
 
     window.confirm = vi.fn(() => true);
-    const deleteButtons = screen.getAllByText('Delete');
+    const deleteButtons = screen.getAllByText(TEXT.common.delete);
     fireEvent.click(deleteButtons[0]);
 
     await waitFor(() =>
@@ -114,14 +115,14 @@ describe('Knowledge', () => {
     await waitFor(() =>
       expect(screen.getByText('Some notes')).toBeInTheDocument()
     );
-    expect(screen.getByText('Edit notes on Profile →')).toBeInTheDocument();
+    expect(screen.getByText(TEXT.knowledge.editNotesLink)).toBeInTheDocument();
   });
 
   it('shows empty state for style profile when no metrics', async () => {
     render(<Knowledge />);
 
     await waitFor(() =>
-      expect(screen.getByText('No style metrics yet')).toBeInTheDocument()
+      expect(screen.getByText(TEXT.knowledge.styleEmptyTitle)).toBeInTheDocument()
     );
   });
 
@@ -142,7 +143,7 @@ describe('Knowledge', () => {
     );
     expect(screen.getByText('Alice likes pizza')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText('Clear filters'));
+    fireEvent.click(screen.getByText(TEXT.knowledge.tagFilterClear));
 
     await waitFor(() =>
       expect(screen.getByText('Bob plays guitar')).toBeInTheDocument()

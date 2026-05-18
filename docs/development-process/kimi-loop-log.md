@@ -6,6 +6,60 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-05-18 — L182 Complete (Backend Bug Fixes & Cleanup)
+
+**Outcome:** Fixed six backend bugs: `update_user` null guard preventing field clearing, raw SQL in error dashboard, session messages endpoint returning turn metadata instead of messages, unbounded in-memory error state, Telegram `int(platform_user)` crash on non-numeric IDs, and timeout coercion preventing 0-second timeouts.
+
+**Changes:**
+- `src/hestia/persistence/users.py` — removed `v is not None` guard from `update_user` and `update_room`
+- `src/hestia/persistence/sessions.py` — added `get_turn_messages()` method
+- `src/hestia/web/routes/errors.py` — replaced raw SQL with `get_turn_messages()`; capped `_resolved_ids`/`_ignored_ids` at 10,000
+- `src/hestia/web/routes/sessions.py` — `get_session_messages` now returns actual `messages` array
+- `src/hestia/workflows/nodes/send_message.py` — validates `timeout_seconds >= 0`; validates Telegram IDs are numeric
+- `src/hestia/platforms/notifier.py` — graceful `ValueError` on non-numeric Telegram chat IDs
+- `web-ui/src/components/workflow-editor/NodePropertiesPanel.tsx` — `??` instead of `||` for timeout
+- Tests for all fixes
+
+**Quality gate:** pytest 94 passed, mypy 0 new, ruff 0 new issues.
+**Branch:** `feature/l182-backend-bug-fixes`
+
+---
+
+## 2026-05-18 — L181 Complete (Performance & Resource Cleanup)
+
+**Outcome:** Fixed N+1 queries in `list_users` and `list_sessions` via batch methods, added TTL cleanup to `WorkflowResponseStore`, cached Telegram Bot to prevent connection leaks, and fixed Matrix `txn_id` collision bug.
+
+**Changes:**
+- `src/hestia/persistence/users.py` — `get_identities_for_users()`, `get_rooms_for_users()` batch methods
+- `src/hestia/persistence/sessions.py` — `count_turns_for_sessions()` batch method
+- `src/hestia/web/routes/users.py` / `sessions.py` — use batch methods
+- `src/hestia/workflows/response_store.py` — `timeout_seconds`, lazy sweep task, `stop()`
+- `src/hestia/platforms/notifier.py` — cached Bot, `close()`, UUID `txn_id`
+- Tests for all fixes
+
+**Quality gate:** pytest 61 passed, mypy 0 new, ruff 0 new issues.
+**Branch:** `feature/l181-performance-cleanup`
+
+---
+
+## 2026-05-18 — L180 Complete (Security & Authorization Hardening)
+
+**Outcome:** Closed critical authorization gaps where any authenticated user could read all sessions, memories, errors, and manage any scheduled task. Added per-user ownership checks, admin-only error dashboard, Pydantic validation for scheduler endpoints, and shared auth dependency helpers.
+
+**Changes:**
+- `src/hestia/web/dependencies.py` — new shared auth dependencies (`require_admin`, `get_current_platform_user`, `RequireOwner`)
+- `src/hestia/web/routes/sessions.py` — per-user filtering; ownership checks
+- `src/hestia/web/routes/memory.py` — per-user filtering; ownership check on delete
+- `src/hestia/web/routes/scheduler.py` — Pydantic `TaskCreate`/`TaskUpdate` with `croniter` validation; ownership checks
+- `src/hestia/web/routes/errors.py` — admin-only access
+- `src/hestia/memory/store.py` — added `get(memory_id)`
+- Tests: `tests/unit/test_web_authz.py` (7 tests)
+
+**Quality gate:** pytest 110 passed, mypy 0 new, ruff 0 new issues.
+**Branch:** `feature/l180-security-hardening`
+
+---
+
 ## 2026-05-10 — L168 Complete (Variable Interpolation & Webhook Route Extraction)
 
 **Outcome:** Built `{{variable}}` interpolation engine, wired it into SendMessageNode and LLMDecisionNode, extracted webhook endpoint from workflows.py into dedicated webhooks.py router, and added public `is_rate_limited()` wrapper to AuthManager. UI live preview deferred as optional.

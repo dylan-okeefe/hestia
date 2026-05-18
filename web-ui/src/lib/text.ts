@@ -50,6 +50,8 @@ export const TEXT = {
     codeExpired: 'Code expired',
     backToPlatformSelection: '← Back to platform selection',
     codeExpiredPrefix: 'Code expired.',
+    loadingTitle: 'Loading users…',
+    loadingDescription: 'Please wait.',
   },
   profile: {
     title: 'User Profile',

@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import Login from '../Login';
 import * as client from '../../api/client';
+import { TEXT } from '../../lib/text';
 
 vi.mock('../../api/client', async () => {
   const actual = await vi.importActual<typeof import('../../api/client')>('../../api/client');
@@ -80,10 +81,10 @@ describe('Login', () => {
     fireEvent.click(screen.getByText('Bob'));
 
     await waitFor(() =>
-      expect(screen.getByText('Send code via telegram')).toBeInTheDocument()
+      expect(screen.getByText(TEXT.login.sendCodeVia('telegram'))).toBeInTheDocument()
     );
 
-    fireEvent.click(screen.getByText('Send code via telegram'));
+    fireEvent.click(screen.getByText(TEXT.login.sendCodeVia('telegram')));
 
     await waitFor(() => {
       expect(client.requestCode).toHaveBeenCalledWith('telegram', '@bob:telegram');
@@ -97,10 +98,10 @@ describe('Login', () => {
     fireEvent.click(screen.getByText('Alice'));
 
     await waitFor(() =>
-      expect(screen.getByText('Send code via telegram')).toBeInTheDocument()
+      expect(screen.getByText(TEXT.login.sendCodeVia('telegram'))).toBeInTheDocument()
     );
 
-    fireEvent.click(screen.getByText('Send code via telegram'));
+    fireEvent.click(screen.getByText(TEXT.login.sendCodeVia('telegram')));
 
     await waitFor(() => {
       expect(screen.getByPlaceholderText('000000')).toBeInTheDocument();
@@ -122,10 +123,10 @@ describe('Login', () => {
     fireEvent.click(screen.getByText('Alice'));
 
     await waitFor(() =>
-      expect(screen.getByText('Send code via telegram')).toBeInTheDocument()
+      expect(screen.getByText(TEXT.login.sendCodeVia('telegram'))).toBeInTheDocument()
     );
 
-    fireEvent.click(screen.getByText('← Back to user selection'));
+    fireEvent.click(screen.getByText(TEXT.login.backToUserSelection));
 
     await waitFor(() =>
       expect(screen.getByText('Alice')).toBeInTheDocument()

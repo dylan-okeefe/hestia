@@ -2,65 +2,70 @@
 
 **Orchestrator:** Kimi (self-orchestrating via subagents)
 
-**Last set by:** Kimi — 2026-05-01 (L118–L121 arc complete)
+**Last set by:** Kimi — 2026-05-18 (L182 complete, L183 starting)
 
 ---
 
 ## Current task
 
-**Status:** **IDLE — L157 complete on branch.**
+**Status:** **IN PROGRESS — L183 User-Facing Text Extraction**
 
-L102–L103 and L118–L121 merged to `develop`. L104–L112 complete on `feature/web-dashboard`. L157 complete on `feature/l157-browser-session-persistence`.
+Branch: `feature/l183-text-extraction` (from `feature/l179-rooms-interactive-nodes`)
 
 ---
 
 ## Completed arcs
 
-### L102–L103 (pre-web, merged to develop)
+### L169–L179 (User Registry + Web UI Rewrite + Workflow + Interactive Nodes)
 | Loop | Branch | Status |
 |------|--------|--------|
-| L102 | `feature/l102-pii-credential-hardening` | **Merged to `develop`** |
-| L103 | `feature/l103-chat-proposal-style-tools` | **Merged to `develop`** |
+| L169–L179 | `feature/l179-rooms-interactive-nodes` | **Complete** |
 
-### L104–L112 (web dashboard, on feature branch)
+### L180–L182 (Backend Remediation)
 | Loop | Branch | Status |
 |------|--------|--------|
-| L104 | `feature/web-dashboard` | **Complete, pushed** |
-| L105 | `feature/web-dashboard` | **Complete, pushed** |
-| L106 | `feature/web-dashboard` | **Complete, pushed** |
-| L107 | `feature/web-dashboard` | **Complete, pushed** |
-| L108 | `feature/web-dashboard` | **Complete, pushed** |
-| L109 | `feature/web-dashboard` | **Complete, pushed** |
-| L110 | `feature/web-dashboard` | **Complete, pushed** |
-| L111 | `feature/web-dashboard` | **Complete, pushed** |
-| L112 | `feature/web-dashboard` | **Complete, pushed** |
-
-### L118–L121 (web hardening, merged to develop)
-| Loop | Branch | Status |
-|------|--------|--------|
-| L118 | `feature/l118-web-auth-chat-2fa` | **Merged to `develop`** |
-| L119 | `feature/l119-config-dropdowns` | **Merged to `develop`** |
-| L120 | `feature/l120-auto-run-doctor-audit` | **Merged to `develop`** |
-| L121 | `feature/l121-trust-preset-cards` | **Merged to `develop`** |
+| L180 | `feature/l180-security-hardening` | **Complete, pushed** |
+| L181 | `feature/l181-performance-cleanup` | **Complete, pushed** |
+| L182 | `feature/l182-backend-bug-fixes` | **Complete, pushed** |
 
 ---
 
-## What's queued (not authorized yet)
+## Remediation arc: L180–L186 (from comprehensive audit)
 
-### Merge `feature/web-dashboard` to develop
-- Integration testing across all dashboard pages
-- Decide when to merge the feature branch
+### Phase 1 — Backend (COMPLETE)
+| Loop | Branch | Status | Scope |
+|------|--------|--------|-------|
+| **L180** | `feature/l180-security-hardening` | **✅ Complete** | Per-user auth, admin-only errors, Pydantic validation |
+| **L181** | `feature/l181-performance-cleanup` | **✅ Complete** | Batch queries, TTL cleanup, connection leaks |
+| **L182** | `feature/l182-backend-bug-fixes` | **✅ Complete** | Null guard, raw SQL, messages endpoint, validation |
 
-### Phase 1D: Calendar + Morning Briefing (L113–L115)
-- CalDAV adapter, calendar tools, morning briefing skill
+### Phase 2 — Frontend Style (sequential)
+| Loop | Branch | Status | Scope |
+|------|--------|--------|-------|
+| **L184** | `feature/l184-shared-css` | **⏳ Queued** | CSS variables, utility classes, zero inline styles |
+| **L185** | `feature/l185-responsive-design` | **⏳ Queued** | Mobile nav, card tables, stacked layouts |
+| **L186** | `feature/l186-dark-mode` | **⏳ Queued** | Dark tokens, theme toggle, system preference |
 
-### Phase 2: Event System + Composer (L116–L123)
-- Workflow runtime, React Flow canvas, test-run with WebSocket
+### Phase 3 — Text (independent)
+| Loop | Branch | Status | Scope |
+|------|--------|--------|-------|
+| **L183** | `feature/l183-text-extraction` | **🔄 In Progress** | Centralized text catalog, 100+ string extractions |
+
+---
+
+## Execution order
+
+```
+L180 ✅ → L181 ✅ → L182 ✅ → L183 🔄 → L184 ⏳ → L185 ⏳ → L186 ⏳
+```
 
 ---
 
 ## Reference
 
-- Web UI design: [`../design-artifacts/web-ui-and-event-composer.md`](../design-artifacts/web-ui-and-event-composer.md)
-- Loop log: [`../kimi-loop-log.md`](../kimi-loop-log.md)
+- Audit report: `docs/development-process/reviews/L176-L179-comprehensive-audit.md`
+- Loop specs: `docs/development-process/loops/L180-*.md` through `L186-*.md`
+- Master index: `docs/development-process/loops/README-L180-L186.md`
+- Handoffs: `docs/handoffs/L180-*`, `L181-*`, `L182-*`
+- Loop log: `../kimi-loop-log.md`
 - Release discipline: `.cursorrules`

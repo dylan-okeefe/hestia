@@ -2,6 +2,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import Profile from '../Profile';
 import * as client from '../../api/client';
+import { TEXT } from '../../lib/text';
 
 interface AuthMockValue {
   auth: {
@@ -115,18 +116,18 @@ describe('Profile', () => {
   it('shows empty state for rooms when no rooms exist', async () => {
     render(<Profile />);
     await waitFor(() => expect(screen.getByText('Dylan')).toBeInTheDocument());
-    expect(screen.getByText('No rooms yet')).toBeInTheDocument();
-    expect(screen.getByText(/Telegram and Matrix group chats are registered automatically/i)).toBeInTheDocument();
+    expect(screen.getByText(TEXT.profile.roomsEmptyTitle)).toBeInTheDocument();
+    expect(screen.getByText(TEXT.profile.roomsEmptyDescription)).toBeInTheDocument();
   });
 
   it('fires updateUser when saving display name', async () => {
     render(<Profile />);
     await waitFor(() => expect(screen.getByText('Dylan')).toBeInTheDocument());
 
-    fireEvent.click(screen.getByText('Edit name'));
+    fireEvent.click(screen.getByText(TEXT.profile.editName));
     const nameInput = screen.getByDisplayValue('Dylan');
     fireEvent.change(nameInput, { target: { value: 'Dylan Updated' } });
-    fireEvent.click(screen.getByText('Save'));
+    fireEvent.click(screen.getByText(TEXT.common.save));
 
     await waitFor(() =>
       expect(client.updateUser).toHaveBeenCalledWith('user-2', { display_name: 'Dylan Updated' })
@@ -139,7 +140,7 @@ describe('Profile', () => {
 
     const notesInput = screen.getByDisplayValue('Test notes');
     fireEvent.change(notesInput, { target: { value: 'Updated notes' } });
-    fireEvent.click(screen.getByText('Save Notes'));
+    fireEvent.click(screen.getByText(TEXT.profile.saveNotes));
 
     await waitFor(() =>
       expect(client.updateUser).toHaveBeenCalledWith('user-2', { notes: 'Updated notes' })
@@ -150,9 +151,9 @@ describe('Profile', () => {
     render(<Profile />);
     await waitFor(() => expect(screen.getByText('Dylan')).toBeInTheDocument());
 
-    expect(screen.getByText(/Personal trust override/i)).toBeInTheDocument();
-    expect(screen.getByText(/Effective:/i)).toBeInTheDocument();
-    expect(screen.getByText(/Overrides the global trust level/i)).toBeInTheDocument();
+    expect(screen.getByText(TEXT.profile.trustOverrideLabel)).toBeInTheDocument();
+    expect(screen.getByText(TEXT.profile.effectiveTrustLabel)).toBeInTheDocument();
+    expect(screen.getByText(TEXT.profile.trustOverrideHelper('developer'))).toBeInTheDocument();
   });
 
   it('surfaces errors instead of swallowing', async () => {

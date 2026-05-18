@@ -7,6 +7,7 @@ import EmptyState from '../components/layout/EmptyState';
 import LoadingSkeleton from '../components/layout/LoadingSkeleton';
 import ErrorState from '../components/layout/ErrorState';
 import { formatDate, formatRelativeDate, formatJson } from '../lib/format';
+import { TEXT } from '../lib/text';
 
 interface Session {
   id: string;
@@ -86,7 +87,7 @@ export default function Knowledge() {
   }, [user, userLoading]);
 
   const handleDeleteMemory = async (memoryId: string) => {
-    if (!window.confirm('Delete this memory?')) return;
+    if (!window.confirm(TEXT.knowledge.memoriesDeleteConfirm)) return;
     setDeletingMemoryId(memoryId);
     try {
       await deleteMemory(memoryId);
@@ -101,7 +102,7 @@ export default function Knowledge() {
   if (userLoading || loading) {
     return (
       <div style={{ padding: '1rem' }}>
-        <h1>What Hestia Knows About You</h1>
+        <h1>{TEXT.knowledge.title}</h1>
         <PageCard>
           <LoadingSkeleton lines={5} />
         </PageCard>
@@ -137,7 +138,7 @@ export default function Knowledge() {
 
   return (
     <div style={{ padding: '1rem' }}>
-      <h1>What Hestia Knows About You</h1>
+      <h1>{TEXT.knowledge.title}</h1>
 
       {error && (
         <PageCard>
@@ -146,27 +147,27 @@ export default function Knowledge() {
       )}
 
       <PageCard>
-        <h3 style={{ marginTop: 0 }}>User Notes</h3>
+        <h3 style={{ marginTop: 0 }}>{TEXT.knowledge.notesTitle}</h3>
         <p style={{ margin: '0 0 0.5rem', fontSize: '0.75rem', color: '#888' }}>
-          Facts about you that Hestia sees in every conversation.
+          {TEXT.knowledge.notesDescription}
         </p>
         <p style={{ whiteSpace: 'pre-wrap', marginTop: 0 }}>
-          {user?.notes || 'No notes saved.'}
+          {user?.notes || TEXT.knowledge.noNotesSaved}
         </p>
         <a href="/profile" style={{ fontSize: '0.875rem' }}>
-          Edit notes on Profile →
+          {TEXT.knowledge.editNotesLink}
         </a>
       </PageCard>
 
       <PageCard>
-        <h3 style={{ marginTop: 0 }}>Style Profile</h3>
+        <h3 style={{ marginTop: 0 }}>{TEXT.knowledge.styleTitle}</h3>
         <p style={{ margin: '0 0 0.5rem', fontSize: '0.75rem', color: '#888' }}>
-          How Hestia thinks you communicate.
+          {TEXT.knowledge.styleDescription}
         </p>
         {styleMetrics.length === 0 && (
           <EmptyState
-            title="No style metrics yet"
-            description="Style profiling is disabled or hasn't collected enough data."
+            title={TEXT.knowledge.styleEmptyTitle}
+            description={TEXT.knowledge.styleEmptyDescription}
           />
         )}
         {styleMetrics.map(([key, value]) => (
@@ -191,9 +192,9 @@ export default function Knowledge() {
       </PageCard>
 
       <PageCard>
-        <h3 style={{ marginTop: 0 }}>Session History</h3>
+        <h3 style={{ marginTop: 0 }}>{TEXT.knowledge.sessionsTitle}</h3>
         {sessions.length === 0 && (
-          <EmptyState title="No sessions found" description="Your conversation history will appear here." />
+          <EmptyState title={TEXT.knowledge.sessionsEmptyTitle} description={TEXT.knowledge.sessionsEmptyDescription} />
         )}
         {sessions.length > 0 && (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
@@ -220,15 +221,15 @@ export default function Knowledge() {
       </PageCard>
 
       <PageCard>
-        <h3 style={{ marginTop: 0 }}>Memories</h3>
+        <h3 style={{ marginTop: 0 }}>{TEXT.knowledge.memoriesTitle}</h3>
         <p style={{ margin: '0 0 0.5rem', fontSize: '0.75rem', color: '#888' }}>
-          Session summaries and notes from your conversations with Hestia. You can delete any you disagree with.
+          {TEXT.knowledge.memoriesDescription}
         </p>
         {memoriesError && <p style={{ color: '#ef4444', fontSize: '0.875rem' }}>{memoriesError}</p>}
         {memories.length === 0 && (
           <EmptyState
-            title="No memories yet"
-            description="Hestia learns about you during conversations."
+            title={TEXT.knowledge.memoriesEmptyTitle}
+            description={TEXT.knowledge.memoriesEmptyDescription}
           />
         )}
         {memories.length > 0 && (
@@ -272,12 +273,12 @@ export default function Knowledge() {
                     textDecoration: 'underline',
                   }}
                 >
-                  Clear filters
+                  {TEXT.knowledge.tagFilterClear}
                 </button>
               )}
             </div>
             <p style={{ fontSize: '0.75rem', color: '#888', margin: '0.25rem 0 0' }}>
-              Showing {filteredMemories.length} of {memories.length} memories
+              {TEXT.knowledge.tagFilterShowing(filteredMemories.length, memories.length)}
             </p>
           </div>
         )}
@@ -321,7 +322,7 @@ export default function Knowledge() {
                   disabled={deletingMemoryId === m.id}
                   style={{ fontSize: '0.75rem', color: '#ef4444' }}
                 >
-                  {deletingMemoryId === m.id ? 'Deleting…' : 'Delete'}
+                  {deletingMemoryId === m.id ? TEXT.common.deleting : TEXT.common.delete}
                 </button>
               </div>
             </div>
@@ -330,14 +331,14 @@ export default function Knowledge() {
       </PageCard>
 
       <PageCard>
-        <h3 style={{ marginTop: 0 }}>Handoff Summaries</h3>
+        <h3 style={{ marginTop: 0 }}>{TEXT.knowledge.handoffsTitle}</h3>
         <p style={{ margin: '0 0 0.5rem', fontSize: '0.75rem', color: '#888' }}>
-          What Hestia remembers from your last few sessions.
+          {TEXT.knowledge.handoffsDescription}
         </p>
         {handoffs.length === 0 && (
           <EmptyState
-            title="No handoff summaries yet"
-            description="These appear when Hestia carries context across sessions."
+            title={TEXT.knowledge.handoffsEmptyTitle}
+            description={TEXT.knowledge.handoffsEmptyDescription}
           />
         )}
         {handoffs.map((h) => (
