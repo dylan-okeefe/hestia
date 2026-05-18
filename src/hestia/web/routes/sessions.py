@@ -4,23 +4,35 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from hestia.web.context import WebContext, get_web_context
 
 router = APIRouter()
-
 _CTX_DEP = Depends(get_web_context)
 
 
 @router.get("")
 async def list_sessions(
+    request: Request,
     limit: int = Query(50, ge=1, le=500),
     platform: str | None = Query(None),
     platform_user: str | None = Query(None),
+    all: bool = Query(False),
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """List recent sessions."""
+    caller_platform_user = getattr(request.state, "platform_user", None)
+    caller_role = None
+    user_id = getattr(request.state, "user_id", None)
+    if user_id is not None:
+        user = await ctx.user_store.get_user(user_id)
+        if user is not None:
+            caller_role = user.role
+
+    if caller_platform_user is not None and (not all or caller_role != "admin"):
+        platform_user = caller_platform_user
+
     sessions = await ctx.session_store.list_sessions(
         limit=limit, platform=platform, platform_user=platform_user
     )
@@ -45,9 +57,17 @@ async def list_sessions(
 @router.get("/{session_id}/turns")
 async def get_turns(
     session_id: str,
+    request: Request,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """List turns for a session."""
+    session = await ctx.session_store.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    caller_platform_user = getattr(request.state, "platform_user", None)
+    if caller_platform_user is not None and session.platform_user != caller_platform_user:
+        raise HTTPException(status_code=403, detail="Access denied")
+
     turns = await ctx.session_store.list_turns_for_session(session_id)
     return {
         "turns": [
@@ -67,14 +87,16 @@ async def get_turns(
 @router.get("/{session_id}/messages")
 async def get_session_messages(
     session_id: str,
+    request: Request,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """Get session metadata with turn transcript."""
     session = await ctx.session_store.get_session(session_id)
     if session is None:
-        from fastapi import HTTPException
-
         raise HTTPException(status_code=404, detail="Session not found")
+    caller_platform_user = getattr(request.state, "platform_user", None)
+    if caller_platform_user is not None and session.platform_user != caller_platform_user:
+        raise HTTPException(status_code=403, detail="Access denied")
 
     turns = await ctx.session_store.list_turns_for_session(session_id)
     return {
