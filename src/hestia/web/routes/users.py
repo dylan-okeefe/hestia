@@ -22,10 +22,13 @@ _TRUST_PRESETS = {"paranoid", "household", "developer"}
 @router.get("/users")
 async def list_users(ctx: WebContext = _CTX_DEP) -> dict[str, Any]:
     users = await ctx.user_store.list_users()
+    user_ids = [u.id for u in users]
+    identities_map = await ctx.user_store.get_identities_for_users(user_ids)
+    rooms_map = await ctx.user_store.get_rooms_for_users(user_ids)
     result = []
     for u in users:
-        identities = await ctx.user_store.get_identities(u.id)
-        rooms = await ctx.user_store.get_user_rooms(u.id)
+        identities = identities_map.get(u.id, [])
+        rooms = rooms_map.get(u.id, [])
         result.append(
             {
                 "id": u.id,

@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 import sqlalchemy as sa
 
 from hestia.core.clock import utcnow
+from hestia.persistence.schema import room_members, rooms, user_identities
 
 if TYPE_CHECKING:
     from hestia.persistence.db import Database
@@ -208,6 +209,43 @@ class UserStore:
             result = await conn.execute(sql, {"user_id": user_id})
             rows = result.fetchall()
             return [self._row_to_identity(row) for row in rows]
+
+    async def get_identities_for_users(self, user_ids: list[str]) -> dict[str, list[UserIdentity]]:
+        if not user_ids:
+            return {}
+        query = sa.select(user_identities).where(user_identities.c.user_id.in_(user_ids))
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(query)
+            rows = result.fetchall()
+        grouped: dict[str, list[UserIdentity]] = {}
+        for row in rows:
+            identity = self._row_to_identity(row)
+            grouped.setdefault(row.user_id, []).append(identity)
+        return grouped
+
+    async def get_rooms_for_users(self, user_ids: list[str]) -> dict[str, list[Room]]:
+        if not user_ids:
+            return {}
+        query = (
+            sa.select(
+                rooms.c.id,
+                rooms.c.platform,
+                rooms.c.platform_room_id,
+                rooms.c.display_name,
+                rooms.c.created_at,
+                room_members.c.user_id,
+            )
+            .select_from(rooms.join(room_members, rooms.c.id == room_members.c.room_id))
+            .where(room_members.c.user_id.in_(user_ids))
+        )
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(query)
+            rows = result.fetchall()
+        grouped: dict[str, list[Room]] = {}
+        for row in rows:
+            room = self._row_to_room(row)
+            grouped.setdefault(row.user_id, []).append(room)
+        return grouped
 
     # --- Room methods ---
 
