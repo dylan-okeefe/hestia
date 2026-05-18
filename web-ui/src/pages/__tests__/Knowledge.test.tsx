@@ -23,6 +23,7 @@ vi.mock('../../api/client', async () => {
     fetchMemoriesForUser: vi.fn(() => Promise.resolve({
       memories: [
         { id: 'mem-1', content: 'Alice likes pizza', tags: ['food'], created_at: '2026-05-10T14:00:00Z' },
+        { id: 'mem-2', content: 'Bob plays guitar', tags: ['music'], created_at: '2026-05-11T14:00:00Z' },
       ],
     })),
     fetchHandoffs: vi.fn(() =>
@@ -99,7 +100,8 @@ describe('Knowledge', () => {
     );
 
     window.confirm = vi.fn(() => true);
-    fireEvent.click(screen.getByText('Delete'));
+    const deleteButtons = screen.getAllByText('Delete');
+    fireEvent.click(deleteButtons[0]);
 
     await waitFor(() =>
       expect(client.deleteMemory).toHaveBeenCalledWith('mem-1')
@@ -121,5 +123,52 @@ describe('Knowledge', () => {
     await waitFor(() =>
       expect(screen.getByText('No style metrics yet')).toBeInTheDocument()
     );
+  });
+
+  it('filters memories by tag clicks', async () => {
+    render(<Knowledge />);
+
+    await waitFor(() =>
+      expect(screen.getByText('Alice likes pizza')).toBeInTheDocument()
+    );
+    expect(screen.getByText('Bob plays guitar')).toBeInTheDocument();
+
+    const foodButton = screen.getAllByText('food').find((el) => el.tagName === 'BUTTON');
+    expect(foodButton).toBeDefined();
+    fireEvent.click(foodButton!);
+
+    await waitFor(() =>
+      expect(screen.queryByText('Bob plays guitar')).not.toBeInTheDocument()
+    );
+    expect(screen.getByText('Alice likes pizza')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Clear filters'));
+
+    await waitFor(() =>
+      expect(screen.getByText('Bob plays guitar')).toBeInTheDocument()
+    );
+  });
+
+  it('renders clickable session rows linking to session detail', async () => {
+    vi.mocked(client.fetchUserSessions).mockResolvedValue({
+      sessions: [
+        {
+          id: 'cli_alice_20240101120000_abc12345',
+          platform: 'cli',
+          platform_user: 'alice',
+          started_at: '2024-01-01T12:00:00Z',
+          message_count: 5,
+        },
+      ],
+    });
+
+    render(<Knowledge />);
+
+    await waitFor(() =>
+      expect(screen.getByText('cli')).toBeInTheDocument()
+    );
+
+    const link = screen.getByText('cli_alic…');
+    expect(link.closest('a')).toHaveAttribute('href', '/sessions/cli_alice_20240101120000_abc12345');
   });
 });

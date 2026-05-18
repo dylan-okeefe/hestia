@@ -102,7 +102,9 @@ class TestSessionsRoutes:
         data = response.json()
         assert len(data["sessions"]) == 1
         assert data["sessions"][0]["id"] == "s1"
-        ctx.session_store.list_sessions.assert_awaited_once_with(limit=10)
+        ctx.session_store.list_sessions.assert_awaited_once_with(
+            limit=10, platform=None, platform_user=None
+        )
 
     def test_get_turns(self, client: TestClient, mock_app: MagicMock) -> None:
         """GET /api/sessions/{id}/turns returns turns."""
@@ -129,6 +131,105 @@ class TestSessionsRoutes:
         assert len(data["turns"]) == 1
         assert data["turns"][0]["id"] == "t1"
         ctx.session_store.list_turns_for_session.assert_awaited_once_with("s1")
+
+    def test_list_sessions_with_platform_filter(
+        self, client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """GET /api/sessions filters by platform and platform_user."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.session_store.list_sessions = AsyncMock(return_value=[])
+        ctx.session_store.count_turns_for_session = AsyncMock(return_value=0)
+
+        response = client.get(
+            "/api/sessions?platform=cli&platform_user=u1&limit=5"
+        )
+        assert response.status_code == 200
+        ctx.session_store.list_sessions.assert_awaited_once_with(
+            limit=5, platform="cli", platform_user="u1"
+        )
+
+    def test_list_sessions_includes_message_count(
+        self, client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """GET /api/sessions includes message_count from turn count."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.session_store.list_sessions = AsyncMock(
+            return_value=[
+                MagicMock(
+                    id="s1",
+                    platform="cli",
+                    platform_user="u1",
+                    started_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+                    last_active_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+                    state=MagicMock(value="ACTIVE"),
+                    temperature=MagicMock(value="COLD"),
+                )
+            ]
+        )
+        ctx.session_store.count_turns_for_session = AsyncMock(return_value=3)
+
+        response = client.get("/api/sessions?limit=10")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["sessions"][0]["message_count"] == 3
+
+    def test_get_session_messages(
+        self, client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """GET /api/sessions/{id}/messages returns session with turns."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.session_store.get_session = AsyncMock(
+            return_value=MagicMock(
+                id="s1",
+                platform="cli",
+                platform_user="u1",
+                started_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+            )
+        )
+        ctx.session_store.list_turns_for_session = AsyncMock(
+            return_value=[
+                MagicMock(
+                    id="t1",
+                    session_id="s1",
+                    state=MagicMock(value="done"),
+                    started_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+                    iterations=1,
+                    error=None,
+                )
+            ]
+        )
+
+        response = client.get("/api/sessions/s1/messages")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["session"]["id"] == "s1"
+        assert data["session"]["platform"] == "cli"
+        assert len(data["turns"]) == 1
+        assert data["turns"][0]["state"] == "done"
+        ctx.session_store.get_session.assert_awaited_once_with("s1")
+        ctx.session_store.list_turns_for_session.assert_awaited_once_with("s1")
+
+    def test_get_session_messages_not_found(
+        self, client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """GET /api/sessions/{id}/messages returns 404 for unknown session."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.session_store.get_session = AsyncMock(return_value=None)
+
+        response = client.get("/api/sessions/unknown/messages")
+        assert response.status_code == 404
 
 
 class TestProposalsRoutes:
