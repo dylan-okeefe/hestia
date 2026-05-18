@@ -16,12 +16,18 @@ _CTX_DEP = Depends(get_web_context)
 @router.get("")
 async def list_sessions(
     limit: int = Query(50, ge=1, le=500),
+    platform: str | None = Query(None),
+    platform_user: str | None = Query(None),
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """List recent sessions."""
-    sessions = await ctx.session_store.list_sessions(limit=limit)
-    return {
-        "sessions": [
+    sessions = await ctx.session_store.list_sessions(
+        limit=limit, platform=platform, platform_user=platform_user
+    )
+    result = []
+    for s in sessions:
+        message_count = await ctx.session_store.count_turns_for_session(s.id)
+        result.append(
             {
                 "id": s.id,
                 "platform": s.platform,
@@ -30,10 +36,10 @@ async def list_sessions(
                 "last_active_at": s.last_active_at.isoformat() if s.last_active_at else None,
                 "state": s.state.value if s.state else None,
                 "temperature": s.temperature.value if s.temperature else None,
+                "message_count": message_count,
             }
-            for s in sessions
-        ]
-    }
+        )
+    return {"sessions": result}
 
 
 @router.get("/{session_id}/turns")

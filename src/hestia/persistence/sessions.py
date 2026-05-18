@@ -853,20 +853,38 @@ class SessionStore:
             await conn.execute(update)
             await conn.commit()
 
-    async def list_sessions(self, limit: int = 20) -> list[Session]:
+    async def count_turns_for_session(self, session_id: str) -> int:
+        """Count turns for a session."""
+        from hestia.persistence.schema import turns
+
+        query = sa.select(sa.func.count(turns.c.id)).where(turns.c.session_id == session_id)
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(query)
+            return result.scalar_one() or 0
+
+    async def list_sessions(
+        self, limit: int = 20, platform: str | None = None, platform_user: str | None = None
+    ) -> list[Session]:
         """List recent sessions ordered by last activity.
 
         Args:
             limit: Maximum number of sessions to return.
+            platform: Optional platform filter.
+            platform_user: Optional platform user filter.
 
         Returns:
             List of sessions, most recently active first.
         """
-        query = (
-            sa.select(sessions)
-            .order_by(sessions.c.last_active_at.desc())
-            .limit(limit)
-        )
+        conditions = []
+        if platform is not None:
+            conditions.append(sessions.c.platform == platform)
+        if platform_user is not None:
+            conditions.append(sessions.c.platform_user == platform_user)
+
+        query = sa.select(sessions).order_by(sessions.c.last_active_at.desc()).limit(limit)
+        if conditions:
+            query = query.where(sa.and_(*conditions))
+
         async with self._db.engine.connect() as conn:
             result = await conn.execute(query)
             rows = result.fetchall()

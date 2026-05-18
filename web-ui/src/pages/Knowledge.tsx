@@ -12,7 +12,7 @@ interface Session {
   id: string;
   platform: string;
   platform_user: string;
-  created_at: string;
+  started_at: string;
   message_count?: number;
 }
 
@@ -204,7 +204,7 @@ export default function Knowledge() {
                 <tr key={s.id} style={{ borderBottom: '1px solid #eee' }}>
                   <td style={{ padding: '0.25rem', fontFamily: 'monospace', fontSize: '0.75rem' }}>{s.id.slice(0, 8)}…</td>
                   <td style={{ padding: '0.25rem' }}>{s.platform}</td>
-                  <td style={{ padding: '0.25rem' }}>{formatDate(s.created_at)}</td>
+                  <td style={{ padding: '0.25rem' }}>{formatDate(s.started_at)}</td>
                   <td style={{ padding: '0.25rem' }}>{s.message_count ?? '—'}</td>
                 </tr>
               ))}
