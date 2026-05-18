@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { runDoctor } from '../api/client';
 import { HEALTH_CHECK_LABELS, label } from '../lib/labels';
-import { formatDate } from '../lib/format';
+import { formatRelativeDate } from '../lib/format';
 import PageCard from './layout/PageCard';
 
 interface Check {
@@ -34,13 +34,17 @@ export default function DoctorCheckList({ checks, onRefresh }: DoctorCheckListPr
   const [expanded, setExpanded] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [cachedAt, setCachedAt] = useState<string | null>(null);
+  const [flash, setFlash] = useState(false);
 
   const handleRerun = async () => {
     setLoading(true);
+    setFlash(false);
     try {
       const data = await runDoctor();
       onRefresh(data.checks || []);
       if (data.cached_at) setCachedAt(data.cached_at);
+      setFlash(true);
+      setTimeout(() => setFlash(false), 800);
     } finally {
       setLoading(false);
     }
@@ -57,7 +61,7 @@ export default function DoctorCheckList({ checks, onRefresh }: DoctorCheckListPr
     : 0;
 
   return (
-    <PageCard>
+    <PageCard style={{ transition: 'box-shadow 0.3s ease', boxShadow: flash ? '0 0 0 2px #1976d2' : undefined }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
         <h2 style={{ margin: 0 }}>Health Checks</h2>
         <button onClick={handleRerun} disabled={loading}>
@@ -66,7 +70,7 @@ export default function DoctorCheckList({ checks, onRefresh }: DoctorCheckListPr
       </div>
       {cachedAt && (
         <p style={{ fontSize: '0.8rem', color: '#888', marginTop: '-0.25rem', marginBottom: '0.5rem' }}>
-          Last checked: {formatDate(cachedAt)}
+          Last checked: {formatRelativeDate(cachedAt)}
         </p>
       )}
       {checks.length > 0 && (
