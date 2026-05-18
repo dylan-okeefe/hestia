@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { saveConfig, fetchConfigSchema } from '../api/client';
+import { CONFIG_KEY_LABELS, label } from '../lib/labels';
 
 interface ConfigFormProps {
   initialConfig: Record<string, unknown>;
@@ -241,7 +242,7 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
             onClick={() => setCollapsed((s) => ({ ...s, [sectionPath]: !isCollapsed }))}
             style={{ background: 'none', border: 'none', cursor: 'pointer', fontWeight: 'bold', padding: 0 }}
           >
-            {isCollapsed ? '▶' : '▼'} {key}
+            {isCollapsed ? '▶' : '▼'} {label(CONFIG_KEY_LABELS, key)}
           </button>
           {!isCollapsed && (
             <div style={{ marginTop: '0.25rem' }}>
@@ -273,7 +274,7 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
     if (schema[fullPath]?.type === 'enum') {
       input = (
         <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-          <span>{key}</span>
+          <span>{label(CONFIG_KEY_LABELS, key)}</span>
           <select
             value={String(value)}
             onChange={(e) => updateValue(fullPath, e.target.value)}
@@ -293,13 +294,13 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
             checked={value as boolean}
             onChange={(e) => updateValue(fullPath, e.target.checked)}
           />
-          <span>{key}</span>
+          <span>{label(CONFIG_KEY_LABELS, key)}</span>
         </label>
       );
     } else if (inputType === 'array') {
       input = (
         <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-          <span>{key}</span>
+          <span>{label(CONFIG_KEY_LABELS, key)}</span>
           <input
             type="text"
             value={(value as unknown[]).join(', ')}
@@ -311,7 +312,7 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
     } else {
       input = (
         <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-          <span>{key}</span>
+          <span>{label(CONFIG_KEY_LABELS, key)}</span>
           <input
             type={isCred && !revealed[fullPath] ? 'password' : inputType === 'number' ? 'number' : 'text'}
             value={value as string | number}
