@@ -203,7 +203,7 @@ export default function Login() {
               <p style={{ margin: '0 0 0.75rem', fontSize: '0.875rem', color: '#666' }}>
                 {TEXT.login.step1Description}
               </p>
-              {loadingUsers && <EmptyState title={TEXT.login.loadingTitle} description={TEXT.login.loadingDescription} />
+              {loadingUsers && <EmptyState title={TEXT.login.loadingTitle} description={TEXT.login.loadingDescription} />}
               {!loadingUsers && availableUsers.length === 0 && (
                 <EmptyState
                   title={TEXT.login.noUsersTitle}

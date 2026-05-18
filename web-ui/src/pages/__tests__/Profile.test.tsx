@@ -152,7 +152,7 @@ describe('Profile', () => {
     await waitFor(() => expect(screen.getByText('Dylan')).toBeInTheDocument());
 
     expect(screen.getByText(TEXT.profile.trustOverrideLabel)).toBeInTheDocument();
-    expect(screen.getByText(TEXT.profile.effectiveTrustLabel)).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(TEXT.profile.effectiveTrustLabel))).toBeInTheDocument();
     expect(screen.getByText(TEXT.profile.trustOverrideHelper('developer'))).toBeInTheDocument();
   });
 
