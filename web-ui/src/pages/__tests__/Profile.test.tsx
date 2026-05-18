@@ -54,6 +54,7 @@ vi.mock('../../api/client', async () => {
     updateUser: vi.fn(() => Promise.resolve({})),
     addIdentity: vi.fn(() => Promise.resolve({})),
     removeIdentity: vi.fn(() => Promise.resolve({})),
+    fetchConfig: vi.fn(() => Promise.resolve({ trust: { preset: 'developer' } })),
   };
 });
 
@@ -142,5 +143,27 @@ describe('Profile', () => {
     await waitFor(() =>
       expect(client.updateUser).toHaveBeenCalledWith('user-2', { notes: 'Updated notes' })
     );
+  });
+
+  it('shows personal trust override label and effective badge', async () => {
+    render(<Profile />);
+    await waitFor(() => expect(screen.getByText('Dylan')).toBeInTheDocument());
+
+    expect(screen.getByText(/Personal trust override/i)).toBeInTheDocument();
+    expect(screen.getByText(/Effective:/i)).toBeInTheDocument();
+    expect(screen.getByText(/Overrides the global trust level/i)).toBeInTheDocument();
+  });
+
+  it('surfaces errors instead of swallowing', async () => {
+    vi.mocked(client.updateUser).mockRejectedValueOnce(new Error('Save failed'));
+    render(<Profile />);
+    await waitFor(() => expect(screen.getByText('Dylan')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByText('Edit name'));
+    const nameInput = screen.getByDisplayValue('Dylan');
+    fireEvent.change(nameInput, { target: { value: 'Dylan Updated' } });
+    fireEvent.click(screen.getByText('Save'));
+
+    await waitFor(() => expect(screen.getByText('Save failed')).toBeInTheDocument());
   });
 });

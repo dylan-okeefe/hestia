@@ -62,6 +62,7 @@ describe('Scheduler', () => {
     fireEvent.change(nameInput, { target: { value: 'Test task' } });
 
     const promptInput = screen.getByPlaceholderText('https://example.com or prompt text');
+    expect(promptInput.tagName.toLowerCase()).toBe('textarea');
     fireEvent.change(promptInput, { target: { value: 'https://test.com' } });
 
     fireEvent.click(screen.getByText('Create'));

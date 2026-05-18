@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends
@@ -35,7 +35,7 @@ async def doctor_check(
             for r in results
         ],
         "cached": False,
-        "cached_at": datetime.now(timezone.utc).isoformat(),
+        "cached_at": datetime.now(UTC).isoformat(),
     }
     _doctor_cache.set("doctor", data)
     return data

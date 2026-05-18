@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { TRIGGER_LABELS, NODE_TYPE_LABELS, HEALTH_CHECK_LABELS, ROLE_LABELS, TRUST_PRESET_LABELS, label } from '../labels';
+import { TRIGGER_LABELS, NODE_TYPE_LABELS, HEALTH_CHECK_LABELS, ROLE_LABELS, TRUST_PRESET_LABELS, CONFIG_KEY_LABELS, label } from '../labels';
 
 describe('label helper', () => {
   it('returns mapped label for known trigger key', () => {
@@ -24,5 +24,15 @@ describe('label helper', () => {
 
   it('returns mapped label for known node type', () => {
     expect(label(NODE_TYPE_LABELS, 'llm_decision')).toBe('LLM Decision');
+  });
+
+  it('returns mapped label for known config key', () => {
+    expect(label(CONFIG_KEY_LABELS, 'bot_token')).toBe('Bot Token');
+    expect(label(CONFIG_KEY_LABELS, 'context_window')).toBe('Context Window');
+    expect(label(CONFIG_KEY_LABELS, 'auto_approve_tools')).toBe('Auto-approve Tools');
+  });
+
+  it('returns key itself for unknown config key', () => {
+    expect(label(CONFIG_KEY_LABELS, 'unknown_key')).toBe('unknown_key');
   });
 });

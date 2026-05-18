@@ -529,6 +529,7 @@ class TestDoctorRoute:
             assert response.status_code == 200
             data = response.json()
             assert data["checks"][0]["name"] == "python_version"
+            assert "cached_at" in data
             mock_run.assert_awaited_once_with(mock_app)
 
 
