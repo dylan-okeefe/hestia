@@ -222,7 +222,7 @@ export default function Knowledge() {
       <PageCard>
         <h3 style={{ marginTop: 0 }}>Memories</h3>
         <p style={{ margin: '0 0 0.5rem', fontSize: '0.75rem', color: '#888' }}>
-          Facts Hestia has learned about you. You can delete any you disagree with.
+          Session summaries and notes from your conversations with Hestia. You can delete any you disagree with.
         </p>
         {memoriesError && <p style={{ color: '#ef4444', fontSize: '0.875rem' }}>{memoriesError}</p>}
         {memories.length === 0 && (
