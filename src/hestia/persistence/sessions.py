@@ -862,6 +862,21 @@ class SessionStore:
             result = await conn.execute(query)
             return result.scalar_one() or 0
 
+    async def count_turns_for_sessions(self, session_ids: list[str]) -> dict[str, int]:
+        """Count turns for multiple sessions in a single query."""
+        if not session_ids:
+            return {}
+        from hestia.persistence.schema import turns
+
+        query = (
+            sa.select(turns.c.session_id, sa.func.count(turns.c.id))
+            .where(turns.c.session_id.in_(session_ids))
+            .group_by(turns.c.session_id)
+        )
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(query)
+            return {row.session_id: row[1] for row in result}
+
     async def list_sessions(
         self, limit: int = 20, platform: str | None = None, platform_user: str | None = None
     ) -> list[Session]:

@@ -37,9 +37,11 @@ async def list_sessions(
     sessions = await ctx.session_store.list_sessions(
         limit=limit, platform=platform, platform_user=platform_user
     )
+    session_ids = [s.id for s in sessions]
+    turn_counts = await ctx.session_store.count_turns_for_sessions(session_ids)
     result = []
     for s in sessions:
-        message_count = await ctx.session_store.count_turns_for_session(s.id)
+        message_count = turn_counts.get(s.id, 0)
         result.append(
             {
                 "id": s.id,
