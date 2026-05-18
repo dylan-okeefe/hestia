@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from hestia.web.context import WebContext, get_web_context
+from hestia.web.dependencies import RequireOwner, get_current_platform_user
 
 router = APIRouter()
 _CTX_DEP = Depends(get_web_context)
@@ -22,7 +23,7 @@ async def list_sessions(
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """List recent sessions."""
-    caller_platform_user = getattr(request.state, "platform_user", None)
+    caller_platform_user = get_current_platform_user(request)
     caller_role = None
     user_id = getattr(request.state, "user_id", None)
     if user_id is not None:
@@ -64,9 +65,7 @@ async def get_turns(
     session = await ctx.session_store.get_session(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
-    caller_platform_user = getattr(request.state, "platform_user", None)
-    if caller_platform_user is not None and session.platform_user != caller_platform_user:
-        raise HTTPException(status_code=403, detail="Access denied")
+    await RequireOwner(session.platform_user)(request, ctx)
 
     turns = await ctx.session_store.list_turns_for_session(session_id)
     return {
@@ -94,9 +93,7 @@ async def get_session_messages(
     session = await ctx.session_store.get_session(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
-    caller_platform_user = getattr(request.state, "platform_user", None)
-    if caller_platform_user is not None and session.platform_user != caller_platform_user:
-        raise HTTPException(status_code=403, detail="Access denied")
+    await RequireOwner(session.platform_user)(request, ctx)
 
     turns = await ctx.session_store.list_turns_for_session(session_id)
     return {

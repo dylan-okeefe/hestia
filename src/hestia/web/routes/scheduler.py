@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, field_validator
 
 from hestia.web.context import WebContext, get_web_context
+from hestia.web.dependencies import get_current_platform_user
 
 router = APIRouter()
 
@@ -91,7 +92,7 @@ async def create_task(
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """Create a new scheduled task."""
-    session_id = getattr(request.state, "platform_user", None) or "default"
+    session_id = get_current_platform_user(request) or "default"
 
     task = await ctx.scheduler_store.create_task(
         session_id=session_id,
@@ -126,7 +127,7 @@ async def update_task(
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    caller_platform_user = getattr(request.state, "platform_user", None)
+    caller_platform_user = get_current_platform_user(request)
     if caller_platform_user is not None and task.session_id != caller_platform_user:
         raise HTTPException(status_code=403, detail="Access denied")
 
@@ -165,7 +166,7 @@ async def delete_task(
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    caller_platform_user = getattr(request.state, "platform_user", None)
+    caller_platform_user = get_current_platform_user(request)
     if caller_platform_user is not None and task.session_id != caller_platform_user:
         raise HTTPException(status_code=403, detail="Access denied")
 
@@ -186,7 +187,7 @@ async def run_task(
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    caller_platform_user = getattr(request.state, "platform_user", None)
+    caller_platform_user = get_current_platform_user(request)
     if caller_platform_user is not None and task.session_id != caller_platform_user:
         raise HTTPException(status_code=403, detail="Access denied")
 

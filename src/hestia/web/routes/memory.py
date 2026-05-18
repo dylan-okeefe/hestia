@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from hestia.web.context import WebContext, get_web_context
+from hestia.web.dependencies import RequireOwner, get_current_platform_user
 
 router = APIRouter()
 _CTX_DEP = Depends(get_web_context)
@@ -33,7 +34,7 @@ async def list_memories(
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """List memories, optionally filtered by platform user."""
-    caller_platform_user = getattr(request.state, "platform_user", None)
+    caller_platform_user = get_current_platform_user(request)
     caller_role = None
     user_id = getattr(request.state, "user_id", None)
     if user_id is not None:
@@ -59,13 +60,12 @@ async def delete_memory(
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """Delete a memory by ID."""
-    caller_platform_user = getattr(request.state, "platform_user", None)
+    caller_platform_user = get_current_platform_user(request)
     if caller_platform_user is not None:
         mem = await ctx.app.memory_store.get(memory_id)
         if mem is None:
             raise HTTPException(status_code=404, detail="Memory not found")
-        if mem.platform_user != caller_platform_user:
-            raise HTTPException(status_code=403, detail="Access denied")
+        await RequireOwner(mem.platform_user)(request, ctx)
 
     deleted = await ctx.app.memory_store.delete(memory_id)
     if not deleted:

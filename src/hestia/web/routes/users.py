@@ -7,23 +7,13 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from hestia.web.context import WebContext, get_web_context
+from hestia.web.dependencies import require_admin
 
 router = APIRouter()
 _CTX_DEP = Depends(get_web_context)
 
 _ROLES = {"admin", "trusted", "user", "child"}
 _TRUST_PRESETS = {"paranoid", "household", "developer"}
-
-
-async def _require_admin(request: Request, ctx: WebContext) -> None:
-    """Check if the current web session has admin role."""
-    user_id = getattr(request.state, "user_id", None)
-    if user_id is None:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
-    user = await ctx.user_store.get_user(user_id)
-    if user is None or user.role != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
 
 
 # User CRUD
@@ -57,7 +47,7 @@ async def create_user(
     request: Request,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
-    await _require_admin(request, ctx)
+    await require_admin(request, ctx)
     display_name = payload.get("display_name", "")
     if not display_name or not isinstance(display_name, str):
         raise HTTPException(status_code=400, detail="display_name is required")
@@ -123,7 +113,7 @@ async def update_user(
     request: Request,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
-    await _require_admin(request, ctx)
+    await require_admin(request, ctx)
     user = await ctx.user_store.get_user(user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
@@ -168,7 +158,7 @@ async def delete_user(
     request: Request,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
-    await _require_admin(request, ctx)
+    await require_admin(request, ctx)
     deleted = await ctx.user_store.delete_user(user_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="User not found")
@@ -185,7 +175,7 @@ async def add_identity(
     request: Request,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
-    await _require_admin(request, ctx)
+    await require_admin(request, ctx)
     platform = payload.get("platform", "")
     platform_user = payload.get("platform_user", "")
     if not platform or not platform_user:
@@ -205,7 +195,7 @@ async def remove_identity(
     request: Request,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
-    await _require_admin(request, ctx)
+    await require_admin(request, ctx)
     removed = await ctx.user_store.remove_identity(platform, platform_user)
     if not removed:
         raise HTTPException(status_code=404, detail="Identity not found")
@@ -279,7 +269,7 @@ async def update_room(
     request: Request,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
-    await _require_admin(request, ctx)
+    await require_admin(request, ctx)
     room = await ctx.user_store.get_room(room_id)
     if room is None:
         raise HTTPException(status_code=404, detail="Room not found")
@@ -315,7 +305,7 @@ async def add_room_member(
     request: Request,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
-    await _require_admin(request, ctx)
+    await require_admin(request, ctx)
     user_id = payload.get("user_id", "")
     if not user_id:
         raise HTTPException(status_code=400, detail="user_id is required")
@@ -330,7 +320,7 @@ async def remove_room_member(
     request: Request,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
-    await _require_admin(request, ctx)
+    await require_admin(request, ctx)
     removed = await ctx.user_store.remove_room_member(room_id, user_id)
     if not removed:
         raise HTTPException(status_code=404, detail="Member not found")
