@@ -182,7 +182,7 @@ class TestSessionsRoutes:
     def test_get_session_messages(
         self, client: TestClient, mock_app: MagicMock
     ) -> None:
-        """GET /api/sessions/{id}/messages returns session with turns."""
+        """GET /api/sessions/{id}/messages returns session with turns and messages."""
         from hestia.web import context as ctx_mod
 
         ctx = ctx_mod._ctx
@@ -207,6 +207,14 @@ class TestSessionsRoutes:
                 )
             ]
         )
+        from hestia.core.types import Message
+
+        ctx.session_store.get_messages = AsyncMock(
+            return_value=[
+                Message(role="user", content="hello"),
+                Message(role="assistant", content="hi there"),
+            ]
+        )
 
         response = client.get("/api/sessions/s1/messages")
         assert response.status_code == 200
@@ -215,8 +223,12 @@ class TestSessionsRoutes:
         assert data["session"]["platform"] == "cli"
         assert len(data["turns"]) == 1
         assert data["turns"][0]["state"] == "done"
+        assert len(data["messages"]) == 2
+        assert data["messages"][0]["role"] == "user"
+        assert data["messages"][0]["content"] == "hello"
         ctx.session_store.get_session.assert_awaited_once_with("s1")
         ctx.session_store.list_turns_for_session.assert_awaited_once_with("s1")
+        ctx.session_store.get_messages.assert_awaited_once_with("s1")
 
     def test_get_session_messages_not_found(
         self, client: TestClient, mock_app: MagicMock
@@ -230,6 +242,100 @@ class TestSessionsRoutes:
 
         response = client.get("/api/sessions/unknown/messages")
         assert response.status_code == 404
+
+
+class TestErrorsRoutes:
+    """Tests for /api/errors endpoints."""
+
+    def test_debug_error_uses_get_turn_messages(
+        self, client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """POST /api/errors/{id}/debug uses SessionStore.get_turn_messages."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.session_store.get_turn_messages = AsyncMock(
+            return_value={
+                "session_id": "s1",
+                "state": "failed",
+                "error": "Something broke",
+            }
+        )
+
+        response = client.post("/api/errors/session_turn:t1/debug")
+        assert response.status_code == 200
+        data = response.json()
+        assert "Something broke" in data["prompt"]
+        ctx.session_store.get_turn_messages.assert_awaited_once_with("t1")
+
+    def test_debug_error_turn_not_found(
+        self, client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """POST /api/errors/{id}/debug handles missing turn."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.session_store.get_turn_messages = AsyncMock(return_value=None)
+
+        response = client.post("/api/errors/session_turn:t1/debug")
+        assert response.status_code == 200
+        data = response.json()
+        assert "Turn record not found" in data["prompt"]
+
+    def test_resolve_and_ignore_error(
+        self, client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """POST /api/errors/{id}/resolve and /ignore toggle status."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.execution_store.list_failed = AsyncMock(
+            return_value=[
+                {
+                    "id": "e1",
+                    "workflow_id": "wf1",
+                    "status": "failed",
+                    "created_at": "2024-01-01T12:00:00Z",
+                    "node_results": [],
+                }
+            ]
+        )
+        ctx.workflow_store.list_workflows = AsyncMock(return_value=[])
+
+        response = client.post("/api/errors/workflow_execution:e1/resolve")
+        assert response.status_code == 200
+        assert response.json()["resolved"] is True
+
+        response = client.get("/api/errors")
+        data = response.json()
+        assert any(e["status"] == "resolved" for e in data["errors"])
+
+        response = client.post("/api/errors/workflow_execution:e1/ignore")
+        assert response.status_code == 200
+        assert response.json()["ignored"] is True
+
+        response = client.get("/api/errors")
+        data = response.json()
+        assert any(e["status"] == "ignored" for e in data["errors"])
+
+    def test_error_state_cap(self, client: TestClient) -> None:
+        """Resolved and ignored sets are capped at 10,000 entries."""
+        from hestia.web.routes.errors import _mark_ignored, _mark_resolved
+
+        for i in range(10_001):
+            _mark_resolved(f"id:{i}")
+        from hestia.web.routes.errors import _resolved_ids
+
+        assert len(_resolved_ids) == 10_000
+
+        for i in range(10_001):
+            _mark_ignored(f"ignored:{i}")
+        from hestia.web.routes.errors import _ignored_ids
+
+        assert len(_ignored_ids) == 10_000
 
 
 class TestProposalsRoutes:

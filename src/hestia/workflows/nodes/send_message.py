@@ -77,8 +77,8 @@ class SendMessageNode:
         if platform == "telegram":
             try:
                 int(user)
-            except ValueError:
-                raise ValueError(f"Invalid Telegram chat ID: {user}")
+            except ValueError as exc:
+                raise ValueError(f"Invalid Telegram chat ID: {user}") from exc
 
         store = DEFAULT_RESPONSE_STORE
         request_id, future = store.create(platform, user)

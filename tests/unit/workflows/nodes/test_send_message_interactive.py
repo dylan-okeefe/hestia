@@ -162,3 +162,26 @@ async def test_non_interactive_send_unchanged(app: AppContext) -> None:
         "text": "Hello",
     }
     mock_send.assert_awaited_once_with("telegram", "123", "Hello")
+
+
+@pytest.mark.asyncio
+async def test_interactive_telegram_non_numeric_user_raises(app: AppContext) -> None:
+    """Passing a Matrix room ID to Telegram interactive send raises ValueError."""
+    node = WorkflowNode(
+        id="n1",
+        type="send_message",
+        label="Ask",
+        config={
+            "platform": "telegram",
+            "target_user": "!room:matrix.org",
+            "message": "Approve this?",
+            "requires_response": True,
+            "response_type": "buttons",
+            "buttons": ["Approve", "Deny"],
+            "timeout_seconds": 5,
+        },
+    )
+
+    executor = SendMessageNode()
+    with pytest.raises(ValueError, match="Invalid Telegram chat ID"):
+        await executor.execute(app, node, {})
