@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from hestia.web.context import WebContext, get_web_context
 
@@ -44,6 +44,7 @@ async def list_tasks(
 
 @router.post("/tasks")
 async def create_task(
+    request: Request,
     payload: dict[str, Any],
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
@@ -55,7 +56,8 @@ async def create_task(
     description = payload.get("description")
     cron_expression = payload.get("cron_expression")
     enabled = payload.get("enabled", True)
-    session_id = payload.get("session_id", "default")
+    notify = payload.get("notify", False)
+    session_id = getattr(request.state, "platform_user", None) or "default"
 
     task = await ctx.scheduler_store.create_task(
         session_id=session_id,
@@ -63,6 +65,7 @@ async def create_task(
         description=description,
         cron_expression=cron_expression,
         enabled=enabled,
+        notify=notify,
     )
     return {
         "id": task.id,
@@ -71,6 +74,7 @@ async def create_task(
         "description": task.description,
         "cron_expression": task.cron_expression,
         "enabled": task.enabled,
+        "notify": task.notify,
         "created_at": task.created_at.isoformat() if task.created_at else None,
         "next_run_at": task.next_run_at.isoformat() if task.next_run_at else None,
     }
@@ -79,10 +83,19 @@ async def create_task(
 @router.put("/tasks/{task_id}")
 async def update_task(
     task_id: str,
+    request: Request,
     payload: dict[str, Any],
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """Update an existing scheduled task."""
+    task = await ctx.scheduler_store.get_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    caller_platform_user = getattr(request.state, "platform_user", None)
+    if caller_platform_user is not None and task.session_id != caller_platform_user:
+        raise HTTPException(status_code=403, detail="Access denied")
+
     task = await ctx.scheduler_store.update_task(
         task_id=task_id,
         prompt=payload.get("prompt"),
@@ -107,9 +120,18 @@ async def update_task(
 @router.delete("/tasks/{task_id}")
 async def delete_task(
     task_id: str,
+    request: Request,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """Delete a scheduled task."""
+    task = await ctx.scheduler_store.get_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    caller_platform_user = getattr(request.state, "platform_user", None)
+    if caller_platform_user is not None and task.session_id != caller_platform_user:
+        raise HTTPException(status_code=403, detail="Access denied")
+
     deleted = await ctx.scheduler_store.delete_task(task_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -119,11 +141,17 @@ async def delete_task(
 @router.post("/tasks/{task_id}/run")
 async def run_task(
     task_id: str,
+    request: Request,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """Trigger a task to run on the next scheduler tick."""
     task = await ctx.scheduler_store.get_task(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
+
+    caller_platform_user = getattr(request.state, "platform_user", None)
+    if caller_platform_user is not None and task.session_id != caller_platform_user:
+        raise HTTPException(status_code=403, detail="Access denied")
+
     await ctx.scheduler_store.run_now(task_id)
     return {"id": task_id, "triggered": True}
