@@ -52,7 +52,7 @@ function AppContent() {
             {navLink('Proposals', '/proposals')}
             {navLink('Style', '/style')}
             {navLink('Scheduler', '/scheduler')}
-            {navLink('Security', '/security')}
+            {navLink('Security & Health', '/security')}
             {navLink('Config', '/config')}
             {navLink('Workflows', '/workflows')}
             {navLink('Profile', '/profile')}
