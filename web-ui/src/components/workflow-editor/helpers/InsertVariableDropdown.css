@@ -1,0 +1,5 @@
+.insert-variable-dropdown {
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--font-size-xs);
+  margin-left: var(--space-2);
+}

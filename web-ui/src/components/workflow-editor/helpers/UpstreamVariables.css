@@ -1,0 +1,11 @@
+.upstream-variables {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  margin-top: var(--space-1);
+}
+
+.upstream-variables__code {
+  background: var(--color-surface);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+}
