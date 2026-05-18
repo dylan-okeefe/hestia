@@ -69,7 +69,7 @@ async def get_session_messages(
     session_id: str,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
-    """Get session metadata with turn transcript."""
+    """Get session metadata with turn transcript and actual messages."""
     session = await ctx.session_store.get_session(session_id)
     if session is None:
         from fastapi import HTTPException
@@ -77,6 +77,7 @@ async def get_session_messages(
         raise HTTPException(status_code=404, detail="Session not found")
 
     turns = await ctx.session_store.list_turns_for_session(session_id)
+    messages = await ctx.session_store.get_messages(session_id)
     return {
         "session": {
             "id": session.id,
@@ -93,5 +94,13 @@ async def get_session_messages(
                 "error": t.error,
             }
             for t in turns
+        ],
+        "messages": [
+            {
+                "role": m.role,
+                "content": m.content,
+                "created_at": m.created_at.isoformat() if m.created_at else None,
+            }
+            for m in messages
         ],
     }
