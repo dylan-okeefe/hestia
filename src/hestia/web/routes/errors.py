@@ -35,14 +35,26 @@ async def list_errors(
 ) -> dict[str, Any]:
     """Aggregate last 50 errors from workflows, scheduler, and session turns."""
     await require_admin(request, ctx)
+
+    # Ownership filtering (defensive: L180 restricts this route to admin,
+    # so is_admin is effectively always True here. Kept for future
+    # compatibility if auth restrictions are relaxed.)
+    caller_user_id = getattr(request.state, "user_id", None)
+    caller_platform_user = getattr(request.state, "platform_user", None)
+    caller = await ctx.user_store.get_user(caller_user_id) if caller_user_id else None
+    is_admin = caller is not None and caller.role == "admin"
+
     errors: list[dict[str, Any]] = []
 
     # Workflow execution failures
     failed_executions = await ctx.execution_store.list_failed(limit=50)
     workflows = await ctx.workflow_store.list_workflows()
     workflow_names = {w.id: w.name for w in workflows}
+    workflow_owners = {w.id: w.owner_id for w in workflows}
 
     for ex in failed_executions:
+        if not is_admin and workflow_owners.get(ex.get("workflow_id")) != caller_user_id:
+            continue
         error_id = _build_error_id("workflow_execution", ex["id"])
         status = (
             "ignored"
@@ -72,7 +84,17 @@ async def list_errors(
 
     # Scheduler tasks with errors
     scheduler_tasks = await ctx.scheduler_store.list_tasks_with_errors(limit=50)
+    task_session_ids = list({t.session_id for t in scheduler_tasks})
+    task_sessions = (
+        await ctx.session_store.get_sessions_batch(task_session_ids)
+        if task_session_ids
+        else []
+    )
+    task_session_owners = {s.id: s.platform_user for s in task_sessions}
+
     for task in scheduler_tasks:
+        if not is_admin and task_session_owners.get(task.session_id) != caller_platform_user:
+            continue
         error_id = _build_error_id("scheduler_task", task.id)
         status = (
             "ignored"
@@ -99,7 +121,17 @@ async def list_errors(
 
     # Session turns with errors
     turns = await ctx.session_store.list_turns_with_errors(limit=50)
+    turn_session_ids = list({t.session_id for t in turns})
+    turn_sessions = (
+        await ctx.session_store.get_sessions_batch(turn_session_ids)
+        if turn_session_ids
+        else []
+    )
+    turn_session_owners = {s.id: s.platform_user for s in turn_sessions}
+
     for turn in turns:
+        if not is_admin and turn_session_owners.get(turn.session_id) != caller_platform_user:
+            continue
         error_id = _build_error_id("session_turn", turn.id)
         status = (
             "ignored"
@@ -108,10 +140,9 @@ async def list_errors(
             if error_id in _resolved_ids
             else "unresolved"
         )
-        session = await ctx.session_store.get_session(turn.session_id)
         source_name = (
-            f"{session.platform}/{session.platform_user}"
-            if session
+            f"{turn_session_owners[turn.session_id]}/{turn.session_id}"
+            if turn.session_id in turn_session_owners
             else turn.session_id
         )
         errors.append(
