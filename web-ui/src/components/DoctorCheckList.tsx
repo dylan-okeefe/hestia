@@ -129,7 +129,7 @@ export default function DoctorCheckList({ checks, onRefresh }: DoctorCheckListPr
           {expanded === c.name && (
             <div style={{ padding: '0.75rem', fontSize: '0.875rem', background: '#f9f9f9', borderBottom: '1px solid #eee' }}>
               {c.detail && (
-                <div style={{ marginBottom: '0.5rem', color: '#555' }}>
+                <div style={{ marginBottom: '0.5rem', color: c.ok ? '#666' : '#ef4444' }}>
                   <strong>Detail:</strong> {c.detail}
                 </div>
               )}
