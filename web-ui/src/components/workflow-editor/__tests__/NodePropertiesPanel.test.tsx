@@ -32,7 +32,7 @@ describe('NodePropertiesPanel', () => {
     });
     vi.mocked(client.fetchUsers).mockResolvedValue({
       users: [
-        { id: 'u1', display_name: 'Alice', role: 'admin', trust_preset: null, notes: null, created_at: '' },
+        { id: 'u1', display_name: 'Alice', role: 'admin', trust_preset: null, notes: null, created_at: '', identity_count: 0, room_count: 0 },
       ],
     });
     vi.mocked(client.fetchTools).mockResolvedValue({

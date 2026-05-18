@@ -387,13 +387,23 @@ export async function fetchDashboard() {
 export async function fetchUsers() {
   const res = await apiFetch(`${API_BASE}/users`);
   if (!res.ok) throw new Error('Failed to fetch users');
-  return res.json() as Promise<{ users: Array<{ id: string; display_name: string; role: string; trust_preset: string | null; notes: string | null; created_at: string }> }>;
+  return res.json() as Promise<{ users: Array<{ id: string; display_name: string; role: string; trust_preset: string | null; notes: string | null; created_at: string; identity_count: number; room_count: number }> }>;
 }
 
 export async function fetchUser(userId: string) {
   const res = await apiFetch(`${API_BASE}/users/${userId}`);
   if (!res.ok) throw new Error('Failed to fetch user');
   return res.json() as Promise<{ id: string; display_name: string; role: string; trust_preset: string | null; notes: string | null; created_at: string; identities: Array<{ platform: string; platform_user: string; verified: boolean }> }>;
+}
+
+export async function createUser(fields: { display_name: string; role: string; notes?: string; trust_preset?: string }) {
+  const res = await apiFetch(`${API_BASE}/users`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) throw new Error('Failed to create user');
+  return res.json() as Promise<{ id: string; display_name: string; role: string; trust_preset: string | null; notes: string | null; created_at: string }>;
 }
 
 export async function updateUser(userId: string, fields: object) {
@@ -404,6 +414,12 @@ export async function updateUser(userId: string, fields: object) {
   });
   if (!res.ok) throw new Error('Failed to update user');
   return res.json();
+}
+
+export async function deleteUser(userId: string) {
+  const res = await apiFetch(`${API_BASE}/users/${userId}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete user');
+  return res.json() as Promise<{ deleted: boolean }>;
 }
 
 export async function addIdentity(userId: string, platform: string, platformUser: string) {

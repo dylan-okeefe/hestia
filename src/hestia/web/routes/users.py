@@ -32,8 +32,11 @@ async def _require_admin(request: Request, ctx: WebContext) -> None:
 @router.get("/users")
 async def list_users(ctx: WebContext = _CTX_DEP) -> dict[str, Any]:
     users = await ctx.user_store.list_users()
-    return {
-        "users": [
+    result = []
+    for u in users:
+        identities = await ctx.user_store.get_identities(u.id)
+        rooms = await ctx.user_store.get_user_rooms(u.id)
+        result.append(
             {
                 "id": u.id,
                 "display_name": u.display_name,
@@ -41,10 +44,11 @@ async def list_users(ctx: WebContext = _CTX_DEP) -> dict[str, Any]:
                 "trust_preset": u.trust_preset,
                 "notes": u.notes,
                 "created_at": u.created_at.isoformat() if u.created_at else None,
+                "identity_count": len(identities),
+                "room_count": len(rooms),
             }
-            for u in users
-        ]
-    }
+        )
+    return {"users": result}
 
 
 @router.post("/users")

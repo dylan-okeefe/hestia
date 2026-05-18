@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { useCurrentUser } from './hooks/useCurrentUser';
 import StickyNav from './components/layout/StickyNav';
 import Dashboard from './pages/Dashboard';
 import Proposals from './pages/Proposals';
@@ -12,13 +13,17 @@ import WorkflowEditor from './pages/WorkflowEditor';
 import Profile from './pages/Profile';
 import Knowledge from './pages/Knowledge';
 import SessionDetail from './pages/SessionDetail';
+import AdminUsers from './pages/AdminUsers';
 import Login from './pages/Login';
 import NotFound from './pages/NotFound';
 
 function AppContent() {
   const { auth, loading, logout } = useAuth();
+  const { user: currentUser, isLoading: userLoading } = useCurrentUser();
 
-  if (loading) {
+  const isAdmin = currentUser?.role === 'admin';
+
+  if (loading || userLoading) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
         <p>Loading…</p>
@@ -58,6 +63,7 @@ function AppContent() {
             {navLink('Workflows', '/workflows')}
             {navLink('Profile', '/profile')}
             {navLink('Knowledge', '/knowledge')}
+            {auth.authenticated && isAdmin && navLink('Users', '/admin/users')}
             {auth.authEnabled && (
               <button
                 onClick={logout}
@@ -79,6 +85,7 @@ function AppContent() {
             <Route path="/profile" element={<Profile />} />
             <Route path="/knowledge" element={<Knowledge />} />
             <Route path="/sessions/:id" element={<SessionDetail />} />
+            <Route path="/admin/users" element={<AdminUsers />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </>
