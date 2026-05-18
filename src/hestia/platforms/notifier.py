@@ -70,6 +70,14 @@ class PlatformNotifier:
         full_text = f"{text}\n\nReply with one of: {button_text}"
         return await self.send(platform, platform_user, full_text)
 
+    def _get_telegram_bot(self) -> Any:
+        """Return a cached telegram.Bot instance, creating it on first use."""
+        if self._telegram_bot is None:
+            from telegram import Bot
+
+            self._telegram_bot = Bot(token=self._config.telegram.bot_token)
+        return self._telegram_bot
+
     async def _send_telegram_interactive(
         self, platform_user: str, text: str, buttons: list[str], request_id: str
     ) -> bool:
@@ -78,9 +86,9 @@ class PlatformNotifier:
             logger.debug("Telegram bot token not configured, skipping interactive message")
             return False
         try:
-            from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
+            from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-            bot = Bot(token)
+            bot = self._get_telegram_bot()
             keyboard = [
                 [
                     InlineKeyboardButton(
@@ -113,9 +121,7 @@ class PlatformNotifier:
             logger.debug("Telegram bot token not configured, skipping notification")
             return False
         try:
-            from telegram import Bot
-
-            bot = Bot(token)
+            bot = self._get_telegram_bot()
             await bot.send_message(chat_id=int(platform_user), text=text)
             logger.debug("Sent Telegram notification to %s", platform_user)
             return True
@@ -154,3 +160,12 @@ class PlatformNotifier:
             # Platform notifications are best-effort; log and continue.
             logger.exception("Failed to send Matrix notification to %s", platform_user)
             return False
+
+    async def close(self) -> None:
+        """Release resources held by the notifier (e.g., the cached Telegram bot)."""
+        if self._telegram_bot is not None:
+            try:
+                await self._telegram_bot.shutdown()
+            except Exception:  # noqa: BLE001
+                logger.exception("Failed to shutdown Telegram bot")
+            self._telegram_bot = None
