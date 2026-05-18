@@ -7,6 +7,7 @@ import EmptyState from '../components/layout/EmptyState';
 import LoadingSkeleton from '../components/layout/LoadingSkeleton';
 import ErrorState from '../components/layout/ErrorState';
 import { formatDate } from '../lib/format';
+import { TEXT } from '../lib/text';
 
 interface Turn {
   id: string;
@@ -32,7 +33,7 @@ export default function SessionDetail() {
 
   useEffect(() => {
     if (!id) {
-      setError('No session ID provided');
+      setError(TEXT.sessionDetail.noSessionIdError);
       setLoading(false);
       return;
     }
@@ -57,7 +58,7 @@ export default function SessionDetail() {
   if (loading) {
     return (
       <div style={{ padding: '1rem' }}>
-        <h1>Session Detail</h1>
+        <h1>{TEXT.sessionDetail.title}</h1>
         <PageCard>
           <LoadingSkeleton lines={5} />
         </PageCard>
@@ -68,12 +69,12 @@ export default function SessionDetail() {
   if (error) {
     return (
       <div style={{ padding: '1rem' }}>
-        <h1>Session Detail</h1>
+        <h1>{TEXT.sessionDetail.title}</h1>
         <PageCard>
           <ErrorState message={error} onRetry={() => window.location.reload()} />
         </PageCard>
         <p>
-          <Link to="/knowledge">← Back to Knowledge</Link>
+          <Link to="/knowledge">{TEXT.sessionDetail.backToKnowledge}</Link>
         </p>
       </div>
     );
@@ -81,34 +82,34 @@ export default function SessionDetail() {
 
   return (
     <div style={{ padding: '1rem' }}>
-      <h1>Session Detail</h1>
+      <h1>{TEXT.sessionDetail.title}</h1>
 
       <p>
-        <Link to="/knowledge">← Back to Knowledge</Link>
+        <Link to="/knowledge">{TEXT.sessionDetail.backToKnowledge}</Link>
       </p>
 
       {session && (
         <PageCard>
-          <h3 style={{ marginTop: 0 }}>Session Metadata</h3>
+          <h3 style={{ marginTop: 0 }}>{TEXT.sessionDetail.metadataTitle}</h3>
           <div style={{ display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '0.5rem 1rem', fontSize: '0.875rem' }}>
-            <div style={{ color: '#666' }}>ID</div>
+            <div style={{ color: '#666' }}>{TEXT.sessionDetail.idLabel}</div>
             <div style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{session.id}</div>
-            <div style={{ color: '#666' }}>Platform</div>
+            <div style={{ color: '#666' }}>{TEXT.sessionDetail.platformLabel}</div>
             <div>{session.platform}</div>
-            <div style={{ color: '#666' }}>User</div>
+            <div style={{ color: '#666' }}>{TEXT.sessionDetail.userLabel}</div>
             <div>{session.platform_user}</div>
-            <div style={{ color: '#666' }}>Started</div>
+            <div style={{ color: '#666' }}>{TEXT.sessionDetail.startedLabel}</div>
             <div>{formatDate(session.started_at)}</div>
-            <div style={{ color: '#666' }}>Messages</div>
+            <div style={{ color: '#666' }}>{TEXT.sessionDetail.messagesLabel}</div>
             <div>{turns.length}</div>
           </div>
         </PageCard>
       )}
 
       <PageCard>
-        <h3 style={{ marginTop: 0 }}>Conversation Transcript</h3>
+        <h3 style={{ marginTop: 0 }}>{TEXT.sessionDetail.transcriptTitle}</h3>
         {turns.length === 0 && (
-          <EmptyState title="No turns found" description="This session has no conversation turns." />
+          <EmptyState title={TEXT.sessionDetail.emptyTitle} description={TEXT.sessionDetail.emptyDescription} />
         )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
           {turns.map((t) => (
@@ -125,7 +126,7 @@ export default function SessionDetail() {
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
                 <span style={{ fontWeight: 'bold', fontFamily: 'monospace', fontSize: '0.75rem' }}>
-                  Turn {t.id.slice(0, 8)}…
+                  {TEXT.sessionDetail.turnLabel(t.id)}
                 </span>
                 <span
                   style={{
@@ -136,7 +137,7 @@ export default function SessionDetail() {
                     color: t.state === 'done' ? '#166534' : t.state === 'failed' ? '#991b1b' : '#374151',
                   }}
                 >
-                  {t.state ?? 'unknown'}
+                  {t.state ?? TEXT.common.unknown}
                 </span>
               </div>
               <div style={{ color: '#666', fontSize: '0.75rem', marginBottom: '0.25rem' }}>

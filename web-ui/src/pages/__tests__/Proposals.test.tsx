@@ -2,6 +2,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import Proposals from '../Proposals';
 import * as client from '../../api/client';
+import { TEXT } from '../../lib/text';
 
 vi.mock('../../api/client', async () => {
   const actual = await vi.importActual<typeof import('../../api/client')>('../../api/client');
@@ -57,7 +58,7 @@ describe('Proposals', () => {
     render(<Proposals />);
 
     await waitFor(() => expect(screen.getByText('Approve deployment')).toBeInTheDocument());
-    fireEvent.click(screen.getByText('History'));
+    fireEvent.click(screen.getByText(TEXT.proposals.tabHistory));
 
     await waitFor(() => expect(screen.getByText('accepted')).toBeInTheDocument());
   });
@@ -67,7 +68,7 @@ describe('Proposals', () => {
     render(<Proposals />);
 
     await waitFor(() =>
-      expect(screen.getByText('No pending proposals')).toBeInTheDocument()
+      expect(screen.getByText(TEXT.proposals.pendingEmptyTitle)).toBeInTheDocument()
     );
   });
 });

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchWorkflows, createWorkflow, deleteWorkflow, type Workflow } from '../api/client';
+import { TEXT } from '../lib/text';
 
 const TRIGGER_ICONS: Record<string, string> = {
   manual: '🖱️',
@@ -48,10 +49,10 @@ export default function Workflows() {
 
   const handleNew = async () => {
     try {
-      const wf = await createWorkflow('New Workflow');
+      const wf = await createWorkflow(TEXT.workflows.defaultName);
       navigate(`/workflows/${wf.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create workflow');
+      setError(err instanceof Error ? err.message : TEXT.workflows.createError);
     }
   };
 
@@ -75,21 +76,21 @@ export default function Workflows() {
   return (
     <div style={{ padding: '1rem' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-        <h1>Workflows</h1>
-        <button onClick={handleNew}>New Workflow</button>
+        <h1>{TEXT.workflows.title}</h1>
+        <button onClick={handleNew}>{TEXT.workflows.createButton}</button>
       </div>
-      {loading && <p>Loading workflows…</p>}
+      {loading && <p>{TEXT.workflows.loading}</p>}
       {error && <p style={{ color: 'red' }}>{error}</p>}
-      {!loading && workflows.length === 0 && <p>No workflows yet.</p>}
+      {!loading && workflows.length === 0 && <p>{TEXT.workflows.empty}</p>}
       {!loading && workflows.length > 0 && (
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid #ddd', textAlign: 'left' }}>
-              <th style={{ padding: '0.5rem' }}>Name</th>
-              <th style={{ padding: '0.5rem' }}>Trigger</th>
-              <th style={{ padding: '0.5rem' }}>Last Run</th>
-              <th style={{ padding: '0.5rem' }}>Active Version</th>
-              <th style={{ padding: '0.5rem' }}>Actions</th>
+              <th style={{ padding: '0.5rem' }}>{TEXT.workflows.tableName}</th>
+              <th style={{ padding: '0.5rem' }}>{TEXT.workflows.tableTrigger}</th>
+              <th style={{ padding: '0.5rem' }}>{TEXT.workflows.tableLastRun}</th>
+              <th style={{ padding: '0.5rem' }}>{TEXT.workflows.tableActiveVersion}</th>
+              <th style={{ padding: '0.5rem' }}>{TEXT.workflows.tableActions}</th>
             </tr>
           </thead>
           <tbody>
@@ -142,14 +143,14 @@ export default function Workflows() {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (!window.confirm(`Delete workflow "${wf.name}"?`)) return;
+                      if (!window.confirm(TEXT.workflows.deleteConfirm(wf.name))) return;
                       deleteWorkflow(wf.id)
                         .then(() => setWorkflows((prev) => prev.filter((w) => w.id !== wf.id)))
-                        .catch((err) => setError(err instanceof Error ? err.message : 'Failed to delete workflow'));
+                        .catch((err) => setError(err instanceof Error ? err.message : TEXT.workflows.deleteError));
                     }}
                     style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', color: 'red' }}
                   >
-                    Delete
+                    {TEXT.common.delete}
                   </button>
                 </td>
               </tr>

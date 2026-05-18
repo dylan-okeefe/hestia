@@ -1,6 +1,7 @@
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import Security from '../Security';
+import { TEXT } from '../../lib/text';
 
 vi.mock('../../api/client', async () => {
   const actual = await vi.importActual<typeof import('../../api/client')>('../../api/client');
@@ -55,7 +56,7 @@ describe('Security', () => {
 
     await waitFor(() => expect(screen.getByText('Weak secret')).toBeInTheDocument());
 
-    fireEvent.click(screen.getByText('Info'));
+    fireEvent.click(screen.getByText(TEXT.security.tabInfo));
     expect(screen.queryByText('Weak secret')).not.toBeInTheDocument();
     expect(screen.getByText('Up to date')).toBeInTheDocument();
   });

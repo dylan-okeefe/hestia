@@ -384,6 +384,7 @@ export const TEXT = {
     ) =>
       `This will delete all ${count} metrics for ${platformUser} on ${platform}.`,
     resetConfirmButton: 'Reset',
+    resetError: 'Failed to reset profile',
   },
   proposals: {
     title: 'Proposals',
@@ -404,6 +405,7 @@ export const TEXT = {
   workflows: {
     title: 'Workflows',
     createButton: 'New Workflow',
+    defaultName: 'New Workflow',
     loading: 'Loading workflows…',
     empty: 'No workflows yet.',
     tableName: 'Name',
