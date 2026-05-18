@@ -12,6 +12,7 @@ import logging
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +95,16 @@ class WorkflowResponseStore:
                 return req_id
         return None
 
+    def _do_sweep(self) -> None:
+        """Cancel requests that have exceeded twice their timeout."""
+        now = datetime.now(UTC)
+        stale = [
+            rid for rid, req in self._pending.items()
+            if now - req.created_at > timedelta(seconds=req.timeout_seconds * 2)
+        ]
+        for rid in stale:
+            self.cancel(rid)
+
     async def _sweep_stale(self, interval: float = 60.0) -> None:
         """Periodically cancel requests that have exceeded twice their timeout."""
         while True:
@@ -101,13 +112,7 @@ class WorkflowResponseStore:
                 await asyncio.sleep(interval)
             except asyncio.CancelledError:
                 break
-            now = datetime.now(UTC)
-            stale = [
-                rid for rid, req in self._pending.items()
-                if now - req.created_at > timedelta(seconds=req.timeout_seconds * 2)
-            ]
-            for rid in stale:
-                self.cancel(rid)
+            self._do_sweep()
 
     def stop(self) -> None:
         """Cancel the background sweep task for clean shutdown."""

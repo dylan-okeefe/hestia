@@ -229,3 +229,41 @@ class TestUserStore:
         await user_store.create_room("telegram", "-100123")
         with pytest.raises(Exception):
             await user_store.create_room("telegram", "-100123")
+
+    @pytest.mark.asyncio
+    async def test_get_identities_for_users(self, user_store):
+        user1 = await user_store.create_user("Alice")
+        user2 = await user_store.create_user("Bob")
+        await user_store.add_identity(user1.id, "telegram", "12345", verified=True)
+        await user_store.add_identity(user1.id, "matrix", "@alice:matrix.org")
+        await user_store.add_identity(user2.id, "telegram", "67890")
+
+        result = await user_store.get_identities_for_users([user1.id, user2.id])
+        assert len(result[user1.id]) == 2
+        assert len(result[user2.id]) == 1
+        assert result[user1.id][0].platform == "telegram"
+        assert result[user1.id][0].verified is True
+
+    @pytest.mark.asyncio
+    async def test_get_identities_for_users_empty(self, user_store):
+        assert await user_store.get_identities_for_users([]) == {}
+
+    @pytest.mark.asyncio
+    async def test_get_rooms_for_users(self, user_store):
+        user1 = await user_store.create_user("Alice")
+        user2 = await user_store.create_user("Bob")
+        room1 = await user_store.create_room("telegram", "-100123")
+        room2 = await user_store.create_room("matrix", "!room:matrix.org")
+        await user_store.add_room_member(room1.id, user1.id)
+        await user_store.add_room_member(room2.id, user1.id)
+        await user_store.add_room_member(room1.id, user2.id)
+
+        result = await user_store.get_rooms_for_users([user1.id, user2.id])
+        assert len(result[user1.id]) == 2
+        assert len(result[user2.id]) == 1
+        room_ids = {r.id for r in result[user1.id]}
+        assert room_ids == {room1.id, room2.id}
+
+    @pytest.mark.asyncio
+    async def test_get_rooms_for_users_empty(self, user_store):
+        assert await user_store.get_rooms_for_users([]) == {}

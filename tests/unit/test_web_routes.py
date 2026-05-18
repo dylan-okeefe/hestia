@@ -96,6 +96,7 @@ class TestSessionsRoutes:
                 )
             ]
         )
+        ctx.session_store.count_turns_for_sessions = AsyncMock(return_value={"s1": 0})
 
         response = client.get("/api/sessions?limit=10")
         assert response.status_code == 200
@@ -141,7 +142,7 @@ class TestSessionsRoutes:
         ctx = ctx_mod._ctx
         assert ctx is not None
         ctx.session_store.list_sessions = AsyncMock(return_value=[])
-        ctx.session_store.count_turns_for_session = AsyncMock(return_value=0)
+        ctx.session_store.count_turns_for_sessions = AsyncMock(return_value={})
 
         response = client.get(
             "/api/sessions?platform=cli&platform_user=u1&limit=5"
@@ -172,7 +173,7 @@ class TestSessionsRoutes:
                 )
             ]
         )
-        ctx.session_store.count_turns_for_session = AsyncMock(return_value=3)
+        ctx.session_store.count_turns_for_sessions = AsyncMock(return_value={"s1": 3})
 
         response = client.get("/api/sessions?limit=10")
         assert response.status_code == 200

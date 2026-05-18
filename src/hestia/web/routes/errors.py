@@ -53,7 +53,8 @@ async def list_errors(
     workflow_owners = {w.id: w.owner_id for w in workflows}
 
     for ex in failed_executions:
-        if not is_admin and workflow_owners.get(ex.get("workflow_id")) != caller_user_id:
+        wf_id = ex.get("workflow_id")
+        if not is_admin and workflow_owners.get(wf_id or "") != caller_user_id:
             continue
         error_id = _build_error_id("workflow_execution", ex["id"])
         status = (

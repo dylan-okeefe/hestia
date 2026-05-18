@@ -68,3 +68,24 @@ class TestWorkflowResponseStore:
         store.resolve(req2, "no")
         assert (await fut2) == "no"
         assert len(store) == 0
+
+    @pytest.mark.asyncio
+    async def test_sweep_stale_removes_old_requests(self) -> None:
+        store = WorkflowResponseStore()
+        store.create("telegram", "123", timeout_seconds=0.1)
+        assert len(store) == 1
+
+        # Wait for the request to become stale
+        await asyncio.sleep(0.25)
+        store._do_sweep()
+        assert len(store) == 0
+
+        store.stop()
+
+    @pytest.mark.asyncio
+    async def test_stop_cancels_sweep_task(self) -> None:
+        store = WorkflowResponseStore()
+        store.create("telegram", "123")
+        assert store._sweep_task is not None
+        store.stop()
+        assert store._sweep_task is None

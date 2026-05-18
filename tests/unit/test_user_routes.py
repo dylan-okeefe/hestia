@@ -154,6 +154,8 @@ class TestUserRoutes:
                 )
             ]
         )
+        user_store.get_identities_for_users = AsyncMock(return_value={"u1": []})
+        user_store.get_rooms_for_users = AsyncMock(return_value={"u1": []})
 
         response = client.get("/api/users", headers={"Authorization": f"Bearer {token}"})
         assert response.status_code == 200

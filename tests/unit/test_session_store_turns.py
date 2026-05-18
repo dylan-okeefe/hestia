@@ -168,6 +168,41 @@ class TestTurnPersistence:
         assert len(turns) == 1
         assert turns[0].id == "turn_a"
 
+    @pytest.mark.asyncio
+    async def test_count_turns_for_sessions(self, store):
+        """count_turns_for_sessions returns correct counts for multiple sessions."""
+        session1 = await store.get_or_create_session("test", "user5")
+        session2 = await store.get_or_create_session("test", "user6")
+
+        for i in range(3):
+            await store.insert_turn(
+                Turn(
+                    id=f"t1_{i}",
+                    session_id=session1.id,
+                    state=TurnState.DONE,
+                    user_message=None,
+                    started_at=datetime.now(),
+                )
+            )
+        for i in range(5):
+            await store.insert_turn(
+                Turn(
+                    id=f"t2_{i}",
+                    session_id=session2.id,
+                    state=TurnState.DONE,
+                    user_message=None,
+                    started_at=datetime.now(),
+                )
+            )
+
+        counts = await store.count_turns_for_sessions([session1.id, session2.id])
+        assert counts[session1.id] == 3
+        assert counts[session2.id] == 5
+
+    @pytest.mark.asyncio
+    async def test_count_turns_for_sessions_empty(self, store):
+        assert await store.count_turns_for_sessions([]) == {}
+
 
 class TestCreateSession:
     """Tests for create_session method."""
