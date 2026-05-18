@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, Fragment } from 'react';
 import { useApiQuery, useApiMutation } from '../hooks/useApi';
 import {
   fetchErrors,
@@ -155,7 +155,7 @@ export default function ErrorDashboard() {
             </thead>
             <tbody>
               {filteredErrors.map((err) => (
-                <>
+                <Fragment key={err.id}>
                   <tr key={err.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
                     <td style={{ padding: '0.75rem 1rem' }}>
                       <span
@@ -226,7 +226,7 @@ export default function ErrorDashboard() {
                       </td>
                     </tr>
                   )}
-                </>
+                </Fragment>
               ))}
             </tbody>
           </table>
