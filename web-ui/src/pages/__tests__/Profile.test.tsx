@@ -115,7 +115,8 @@ describe('Profile', () => {
   it('shows empty state for rooms when no rooms exist', async () => {
     render(<Profile />);
     await waitFor(() => expect(screen.getByText('Dylan')).toBeInTheDocument());
-    expect(screen.getByText('No rooms found')).toBeInTheDocument();
+    expect(screen.getByText('No rooms yet')).toBeInTheDocument();
+    expect(screen.getByText(/Telegram and Matrix group chats are registered automatically/i)).toBeInTheDocument();
   });
 
   it('fires updateUser when saving display name', async () => {

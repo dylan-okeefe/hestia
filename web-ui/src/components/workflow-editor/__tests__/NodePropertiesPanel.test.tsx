@@ -176,4 +176,91 @@ describe('NodePropertiesPanel', () => {
     );
     expect(screen.getByPlaceholderText('{"query": "example"}')).toBeInTheDocument();
   });
+
+  it('shows interactive response options when checkbox is checked', async () => {
+    const onUpdate = vi.fn();
+    render(
+      <NodePropertiesPanel
+        selectedNode={makeNode('send_message', {
+          platform: 'telegram',
+          message: 'Hello',
+          target_user: '',
+          requires_response: true,
+          response_type: 'buttons',
+          buttons: ['Approve', 'Deny'],
+          timeout_seconds: 300,
+        })}
+        nodes={[]}
+        edges={[]}
+        onDeleteNode={vi.fn()}
+        onUpdateNodeData={onUpdate}
+        onChangeNodeType={vi.fn()}
+        tools={[]}
+        toolSchemas={[]}
+        triggerType="manual"
+      />
+    );
+    expect(screen.getByLabelText(/Wait for user response/i)).toBeChecked();
+    expect(screen.getByText(/Response type/i)).toBeInTheDocument();
+    expect(screen.getByText('Approve')).toBeInTheDocument();
+    expect(screen.getByText('Deny')).toBeInTheDocument();
+    expect(screen.getByDisplayValue(300)).toBeInTheDocument();
+    expect(screen.getByText(/workflow pauses until the user responds/i)).toBeInTheDocument();
+  });
+
+  it('toggles response type between buttons and free text', async () => {
+    const onUpdate = vi.fn();
+    render(
+      <NodePropertiesPanel
+        selectedNode={makeNode('send_message', {
+          platform: 'telegram',
+          message: 'Hello',
+          target_user: '',
+          requires_response: true,
+          response_type: 'buttons',
+        })}
+        nodes={[]}
+        edges={[]}
+        onDeleteNode={vi.fn()}
+        onUpdateNodeData={onUpdate}
+        onChangeNodeType={vi.fn()}
+        tools={[]}
+        toolSchemas={[]}
+        triggerType="manual"
+      />
+    );
+    const freeTextRadio = screen.getByLabelText(/Free text/i);
+    fireEvent.click(freeTextRadio);
+    expect(onUpdate).toHaveBeenCalledWith('response_type', 'free_text');
+  });
+
+  it('adds and removes button labels', async () => {
+    const onUpdate = vi.fn();
+    render(
+      <NodePropertiesPanel
+        selectedNode={makeNode('send_message', {
+          platform: 'telegram',
+          message: 'Hello',
+          target_user: '',
+          requires_response: true,
+          response_type: 'buttons',
+          buttons: ['Approve'],
+        })}
+        nodes={[]}
+        edges={[]}
+        onDeleteNode={vi.fn()}
+        onUpdateNodeData={onUpdate}
+        onChangeNodeType={vi.fn()}
+        tools={[]}
+        toolSchemas={[]}
+        triggerType="manual"
+      />
+    );
+    const input = screen.getByLabelText(/Add button/i);
+    fireEvent.keyDown(input, { key: 'Enter', target: { value: 'Maybe' } });
+    expect(onUpdate).toHaveBeenCalledWith('buttons', ['Approve', 'Maybe']);
+
+    fireEvent.click(screen.getByRole('button', { name: /remove button Approve/i }));
+    expect(onUpdate).toHaveBeenCalledWith('buttons', []);
+  });
 });
