@@ -344,7 +344,10 @@ export default function Profile() {
           <ErrorState message={roomsError.message} onRetry={() => window.location.reload()} />
         )}
         {!roomsLoading && !roomsIsError && rooms.length === 0 && (
-          <EmptyState title="No rooms found" description="Rooms appear when Hestia is added to group chats." />
+          <EmptyState
+            title="No rooms yet"
+            description="Telegram and Matrix group chats are registered automatically when a message is received. Run `hestia migrate-users` to register existing groups."
+          />
         )}
         {!roomsLoading && !roomsIsError && rooms.map((room) => (
           <div
