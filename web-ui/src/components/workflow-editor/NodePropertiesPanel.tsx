@@ -607,7 +607,7 @@ export default function NodePropertiesPanel({
                   <input
                     type="number"
                     min={1}
-                    value={(selectedNode.data.timeout_seconds as number) || 300}
+                    value={(selectedNode.data.timeout_seconds as number) ?? 300}
                     onChange={(e) => onUpdateNodeData('timeout_seconds', Number(e.target.value))}
                     style={{ width: '120px' }}
                   />
