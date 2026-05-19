@@ -144,7 +144,7 @@ export default function ErrorDashboard() {
 
       {!isLoading && filteredErrors.length > 0 && (
         <PageCard className="page-card--flush">
-          <table className="data-table">
+          <table className="data-table responsive-table">
             <thead>
               <tr>
                 <th>{TEXT.errorDashboard.tableType}</th>
@@ -159,7 +159,7 @@ export default function ErrorDashboard() {
               {filteredErrors.map((err) => (
                 <Fragment key={err.id}>
                   <tr>
-                    <td>
+                    <td data-label={TEXT.errorDashboard.tableType}>
                       <span
                         className="error-dashboard-type-badge"
                         style={{
@@ -170,17 +170,17 @@ export default function ErrorDashboard() {
                         {TYPE_LABELS[err.type] || err.type}
                       </span>
                     </td>
-                    <td>
+                    <td data-label={TEXT.errorDashboard.tableSource}>
                       <div className="font-semibold">{err.source_name}</div>
                       <div className="text-xs text-muted">{err.source_id.slice(0, 8)}</div>
                     </td>
-                    <td className="max-w-300">
+                    <td data-label={TEXT.errorDashboard.tableMessage} className="max-w-300">
                       <div className="text-small text-ellipsis">
                         {err.message}
                       </div>
                     </td>
-                    <td>{formatRelativeDate(err.created_at)}</td>
-                    <td>
+                    <td data-label={TEXT.errorDashboard.tableWhen}>{formatRelativeDate(err.created_at)}</td>
+                    <td data-label={TEXT.errorDashboard.tableStatus}>
                       <span
                         className="error-dashboard-status-badge"
                         style={{
@@ -191,7 +191,7 @@ export default function ErrorDashboard() {
                         {err.status}
                       </span>
                     </td>
-                    <td className="text-right">
+                    <td data-label={TEXT.errorDashboard.tableActions} className="text-right">
                       <div className="admin-users-actions">
                         <button onClick={() => setExpandedId(expandedId === err.id ? null : err.id)}>
                           {expandedId === err.id ? TEXT.errorDashboard.hideButton : TEXT.errorDashboard.detailsButton}

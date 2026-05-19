@@ -136,7 +136,7 @@ export default function Scheduler() {
 
       {!isLoading && tasks.length > 0 && (
         <PageCard className="page-card--flush">
-          <table className="data-table">
+          <table className="data-table responsive-table">
             <thead>
               <tr>
                 <th>{TEXT.scheduler.tableTask}</th>
@@ -149,15 +149,15 @@ export default function Scheduler() {
             <tbody>
               {tasks.map((t) => (
                 <tr key={t.id}>
-                  <td>
+                  <td data-label={TEXT.scheduler.tableTask}>
                     <div className="font-semibold">{getTaskName(t)}</div>
                     <div className="text-small text-muted break-all">{t.prompt}</div>
                   </td>
-                  <td>
+                  <td data-label={TEXT.scheduler.tableSchedule}>
                     {t.cron_expression ? formatCron(t.cron_expression) : '—'}
                   </td>
-                  <td>{formatDate(t.next_run_at)}</td>
-                  <td>
+                  <td data-label={TEXT.scheduler.tableNextRun}>{formatDate(t.next_run_at)}</td>
+                  <td data-label={TEXT.scheduler.tableStatus}>
                     <span
                       className={`scheduler-status-badge scheduler-status-badge--${t.enabled ? 'enabled' : 'disabled'}`}
                     >
@@ -172,7 +172,7 @@ export default function Scheduler() {
                       </span>
                     )}
                   </td>
-                  <td className="text-right">
+                  <td data-label={TEXT.scheduler.tableActions} className="text-right">
                     <div className="scheduler-actions">
                       <button onClick={() => setConfirmRun(t.id)} disabled={!t.enabled}>
                         {TEXT.scheduler.runNow}
