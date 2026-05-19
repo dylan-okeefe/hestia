@@ -191,7 +191,7 @@ export default function Login() {
                   onClick={() => handleSelectUser(user)}
                   className="login-user-card"
                 >
-                  <span style={{ fontWeight: 'bold' }}>{user.display_name}</span>
+                  <span className="font-bold">{user.display_name}</span>
                   <span
                     className="login-role-badge"
                     style={{ background: roleBadgeColor(user.role) }}

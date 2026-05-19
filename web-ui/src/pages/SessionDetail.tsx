@@ -91,7 +91,7 @@ export default function SessionDetail() {
 
       {session && (
         <PageCard>
-          <h3 style={{ marginTop: 0 }}>{TEXT.sessionDetail.metadataTitle}</h3>
+          <h3>{TEXT.sessionDetail.metadataTitle}</h3>
           <div className="session-detail-grid">
             <div className="session-detail-grid__label">{TEXT.sessionDetail.idLabel}</div>
             <div className="session-detail-grid__mono">{session.id}</div>
@@ -108,7 +108,7 @@ export default function SessionDetail() {
       )}
 
       <PageCard>
-        <h3 style={{ marginTop: 0 }}>{TEXT.sessionDetail.transcriptTitle}</h3>
+        <h3>{TEXT.sessionDetail.transcriptTitle}</h3>
         {turns.length === 0 && (
           <EmptyState title={TEXT.sessionDetail.emptyTitle} description={TEXT.sessionDetail.emptyDescription} />
         )}

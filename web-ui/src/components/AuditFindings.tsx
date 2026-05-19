@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { runAudit } from '../api/client';
+import './AuditFindings.css';
 
 interface Finding {
   severity: 'critical' | 'warning' | 'info';
@@ -41,27 +42,24 @@ export default function AuditFindings({ findings, onRefresh }: AuditFindingsProp
     (a, b) => (severityOrder[a.severity] ?? 99) - (severityOrder[b.severity] ?? 99)
   );
 
-  const badgeColor = (severity: string) => {
+  const severityClass = (severity: string) => {
     switch (severity) {
-      case 'critical':
-        return '#d32f2f';
-      case 'warning':
-        return '#f57c00';
-      default:
-        return '#388e3c';
+      case 'critical': return 'audit-findings__severity--critical';
+      case 'warning': return 'audit-findings__severity--warning';
+      default: return 'audit-findings__severity--info';
     }
   };
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+      <div className="audit-findings__header">
         <h2>Audit Findings</h2>
         <button onClick={handleRun} disabled={loading}>
           {loading ? 'Running…' : 'Run audit'}
         </button>
       </div>
       {cachedAt && (
-        <p style={{ fontSize: '0.8rem', color: '#888', marginTop: '-0.25rem', marginBottom: '0.5rem' }}>
+        <p className="audit-findings__cached">
           Last checked: {cachedAt}
         </p>
       )}
@@ -69,40 +67,20 @@ export default function AuditFindings({ findings, onRefresh }: AuditFindingsProp
       {sorted.map((f, idx) => (
         <div
           key={idx}
-          style={{
-            padding: '0.75rem',
-            borderBottom: '1px solid #eee',
-            cursor: 'pointer',
-          }}
+          className="audit-findings__item"
           onClick={() => setExpanded(expanded === idx ? null : idx)}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div className="row-center gap-2">
             <span
-              style={{
-                padding: '0.15rem 0.4rem',
-                borderRadius: '4px',
-                background: badgeColor(f.severity),
-                color: '#fff',
-                fontSize: '0.75rem',
-                textTransform: 'uppercase',
-              }}
+              className={`audit-findings__severity ${severityClass(f.severity)}`}
             >
               {f.severity}
             </span>
             <strong>{f.category}</strong>
           </div>
-          <p style={{ margin: '0.25rem 0 0', fontSize: '0.9rem' }}>{f.message}</p>
+          <p className="audit-findings__message">{f.message}</p>
           {expanded === idx && Object.keys(f.details).length > 0 && (
-            <pre
-              style={{
-                marginTop: '0.5rem',
-                background: '#f5f5f5',
-                padding: '0.5rem',
-                borderRadius: '4px',
-                fontSize: '0.85rem',
-                overflowX: 'auto',
-              }}
-            >
+            <pre className="audit-findings__details">
               {JSON.stringify(f.details, null, 2)}
             </pre>
           )}

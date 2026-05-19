@@ -1,4 +1,5 @@
 import { Handle, Position, type NodeProps } from 'reactflow';
+import './workflow-nodes.css';
 
 export default function ToolCallNode({ data }: NodeProps) {
   const label = (data.label as string) || 'Tool Call';
@@ -8,20 +9,12 @@ export default function ToolCallNode({ data }: NodeProps) {
     <div
       data-testid="workflow-node"
       data-node-type="tool_call"
-      style={{
-        background: '#dbeafe',
-        border: '1px solid #93c5fd',
-        borderRadius: 8,
-        padding: '0.5rem 0.75rem',
-        minWidth: 140,
-        fontSize: '0.875rem',
-        color: '#1e3a8a',
-      }}
+      className="workflow-node workflow-node--tool_call"
     >
-      <Handle type="target" position={Position.Top} style={{ background: '#555' }} />
-      <div style={{ fontWeight: 600, marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: '0.75rem' }}>🔧 {toolName}</div>
-      <Handle type="source" position={Position.Bottom} style={{ background: '#555' }} />
+      <Handle type="target" position={Position.Top} className="workflow-node__handle" />
+      <div className="workflow-node__label">{label}</div>
+      <div className="workflow-node__snippet">🔧 {toolName}</div>
+      <Handle type="source" position={Position.Bottom} className="workflow-node__handle" />
     </div>
   );
 }

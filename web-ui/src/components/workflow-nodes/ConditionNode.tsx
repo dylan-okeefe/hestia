@@ -1,4 +1,5 @@
 import { Handle, Position, type NodeProps } from 'reactflow';
+import './workflow-nodes.css';
 
 export default function ConditionNode({ data }: NodeProps) {
   const label = (data.label as string) || 'Condition';
@@ -9,34 +10,20 @@ export default function ConditionNode({ data }: NodeProps) {
     <div
       data-testid="workflow-node"
       data-node-type="condition"
-      style={{
-        background: '#fef9c3',
-        border: '1px solid #fde047',
-        borderRadius: 8,
-        padding: '0.5rem 0.75rem',
-        minWidth: 140,
-        fontSize: '0.875rem',
-        color: '#713f12',
-      }}
+      className="workflow-node workflow-node--condition"
     >
-      <Handle type="target" position={Position.Top} style={{ background: '#555' }} />
-      <div style={{ fontWeight: 600, marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: '0.75rem' }}>🔀 {snippet || '—'}</div>
+      <Handle type="target" position={Position.Top} className="workflow-node__handle" />
+      <div className="workflow-node__label">{label}</div>
+      <div className="workflow-node__snippet">🔀 {snippet || '—'}</div>
       <Handle
         type="source"
         position={Position.Bottom}
         id="true"
-        style={{ background: '#22c55e', left: '30%' }}
+        className="workflow-node__handle--true" style={{ left: '30%' }}
       />
       <span
-        style={{
-          position: 'absolute',
-          bottom: -16,
-          left: '30%',
-          transform: 'translateX(-50%)',
-          fontSize: '0.65rem',
-          color: '#713f12',
-        }}
+        className="workflow-node__handle-label"
+        className="workflow-node__handle-label" style={{ left: '30%' }}
       >
         true
       </span>
@@ -44,17 +31,11 @@ export default function ConditionNode({ data }: NodeProps) {
         type="source"
         position={Position.Bottom}
         id="false"
-        style={{ background: '#ef4444', left: '70%' }}
+        className="workflow-node__handle--false" style={{ left: '70%' }}
       />
       <span
-        style={{
-          position: 'absolute',
-          bottom: -16,
-          left: '70%',
-          transform: 'translateX(-50%)',
-          fontSize: '0.65rem',
-          color: '#713f12',
-        }}
+        className="workflow-node__handle-label"
+        className="workflow-node__handle-label" style={{ left: '70%' }}
       >
         false
       </span>

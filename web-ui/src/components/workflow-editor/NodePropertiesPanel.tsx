@@ -77,7 +77,7 @@ export default function NodePropertiesPanel({
   return (
     <div key={selectedNode.id} className="node-properties">
       <div className="node-properties__header">
-        <h3 style={{ marginTop: 0 }}>{TEXT.workflowEditor.propertiesTitle}</h3>
+        <h3>{TEXT.workflowEditor.propertiesTitle}</h3>
         <button
           onClick={() => onDeleteNode(selectedNode.id)}
           className="node-properties__delete-btn"

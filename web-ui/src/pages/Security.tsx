@@ -43,8 +43,8 @@ export default function Security() {
 
       <section className="security-section">
         <PageCard>
-          <div className="row-between mb-3" style={{ flexWrap: 'wrap', gap: 'var(--space-2)' }}>
-            <h2 style={{ margin: 0 }}>{TEXT.security.auditFindingsTitle}</h2>
+          <div className="row-between mb-3">
+            <h2>{TEXT.security.auditFindingsTitle}</h2>
             <div className="row-sm">
               {(['all', 'warnings', 'info'] as AuditTab[]).map((tab) => (
                 <button

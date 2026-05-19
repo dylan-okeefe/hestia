@@ -135,7 +135,7 @@ export default function Scheduler() {
       )}
 
       {!isLoading && tasks.length > 0 && (
-        <PageCard style={{ padding: 0, overflow: 'hidden' }}>
+        <PageCard className="page-card--flush">
           <table className="data-table">
             <thead>
               <tr>
@@ -143,15 +143,15 @@ export default function Scheduler() {
                 <th>{TEXT.scheduler.tableSchedule}</th>
                 <th>{TEXT.scheduler.tableNextRun}</th>
                 <th>{TEXT.scheduler.tableStatus}</th>
-                <th style={{ textAlign: 'right' }}>{TEXT.scheduler.tableActions}</th>
+                <th className="text-right">{TEXT.scheduler.tableActions}</th>
               </tr>
             </thead>
             <tbody>
               {tasks.map((t) => (
                 <tr key={t.id}>
                   <td>
-                    <div style={{ fontWeight: 600 }}>{getTaskName(t)}</div>
-                    <div className="text-small text-muted" style={{ wordBreak: 'break-all' }}>{t.prompt}</div>
+                    <div className="font-semibold">{getTaskName(t)}</div>
+                    <div className="text-small text-muted" className="break-all">{t.prompt}</div>
                   </td>
                   <td>
                     {t.cron_expression ? formatCron(t.cron_expression) : '—'}
@@ -172,7 +172,7 @@ export default function Scheduler() {
                       </span>
                     )}
                   </td>
-                  <td style={{ textAlign: 'right' }}>
+                  <td className="text-right">
                     <div className="scheduler-actions">
                       <button onClick={() => setConfirmRun(t.id)} disabled={!t.enabled}>
                         {TEXT.scheduler.runNow}
@@ -180,8 +180,7 @@ export default function Scheduler() {
                       <button onClick={() => openEdit(t)}>{TEXT.common.edit}</button>
                       <button
                         onClick={() => setConfirmDelete(t.id)}
-                        className="text-danger"
-                        style={{ borderColor: 'var(--color-danger)' }}
+                        className="text-danger" className="border-danger"
                       >
                         {TEXT.common.delete}
                       </button>
@@ -203,7 +202,7 @@ export default function Scheduler() {
             className="modal modal--md"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 style={{ marginTop: 0 }}>{editingTask ? TEXT.scheduler.editTitle : TEXT.scheduler.createTitle}</h2>
+            <h2>{editingTask ? TEXT.scheduler.editTitle : TEXT.scheduler.createTitle}</h2>
             <div className="stack-md">
               <label>
                 {TEXT.scheduler.nameLabel}
@@ -233,7 +232,7 @@ export default function Scheduler() {
                   />
                 </div>
               </label>
-              <label className="row-center gap-2" style={{ cursor: 'pointer' }}>
+              <label className="row-center gap-2" className="cursor-pointer">
                 <input
                   type="checkbox"
                   checked={form.enabled}
@@ -258,13 +257,13 @@ export default function Scheduler() {
           onClick={() => setConfirmDelete(null)}
         >
           <div className="modal modal--sm" onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ marginTop: 0 }}>{TEXT.scheduler.deleteConfirmTitle}</h3>
+            <h3>{TEXT.scheduler.deleteConfirmTitle}</h3>
             <p className="text-small text-secondary">
               {TEXT.scheduler.deleteConfirmDescription}
             </p>
-            <div className="row-center gap-2 mt-4" style={{ justifyContent: 'center' }}>
+            <div className="row-center gap-2 mt-4">
               <button onClick={() => setConfirmDelete(null)}>{TEXT.common.cancel}</button>
-              <button onClick={() => handleDelete(confirmDelete)} className="text-danger" style={{ borderColor: 'var(--color-danger)' }}>
+              <button onClick={() => handleDelete(confirmDelete)} className="text-danger" className="border-danger">
                 {TEXT.common.delete}
               </button>
             </div>
@@ -278,11 +277,11 @@ export default function Scheduler() {
           onClick={() => setConfirmRun(null)}
         >
           <div className="modal modal--sm" onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ marginTop: 0 }}>{TEXT.scheduler.runNowConfirmTitle}</h3>
+            <h3>{TEXT.scheduler.runNowConfirmTitle}</h3>
             <p className="text-small text-secondary">
               {TEXT.scheduler.runNowConfirmDescription}
             </p>
-            <div className="row-center gap-2 mt-4" style={{ justifyContent: 'center' }}>
+            <div className="row-center gap-2 mt-4">
               <button onClick={() => setConfirmRun(null)}>{TEXT.common.cancel}</button>
               <button onClick={() => handleRun(confirmRun)}>{TEXT.common.run}</button>
             </div>

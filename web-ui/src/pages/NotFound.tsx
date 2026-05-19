@@ -1,11 +1,12 @@
 import { Link } from 'react-router-dom';
+import './NotFound.css';
 
 export default function NotFound() {
   return (
-    <div style={{ padding: '2rem', textAlign: 'center' }}>
+    <div className="not-found">
       <h1>Page not found</h1>
       <p>
-        <Link to="/" style={{ color: '#1976d2' }}>
+        <Link to="/" className="not-found__link">
           ← Back to dashboard
         </Link>
       </p>

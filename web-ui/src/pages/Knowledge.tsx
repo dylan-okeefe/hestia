@@ -148,11 +148,11 @@ export default function Knowledge() {
       )}
 
       <PageCard>
-        <h3 style={{ marginTop: 0 }}>{TEXT.knowledge.notesTitle}</h3>
+        <h3>{TEXT.knowledge.notesTitle}</h3>
         <p className="text-xs text-muted mb-2">
           {TEXT.knowledge.notesDescription}
         </p>
-        <p style={{ whiteSpace: 'pre-wrap', marginTop: 0 }}>
+        <p className="whitespace-pre-wrap mt-0">
           {user?.notes || TEXT.knowledge.noNotesSaved}
         </p>
         <a href="/profile" className="text-small">
@@ -161,7 +161,7 @@ export default function Knowledge() {
       </PageCard>
 
       <PageCard>
-        <h3 style={{ marginTop: 0 }}>{TEXT.knowledge.styleTitle}</h3>
+        <h3>{TEXT.knowledge.styleTitle}</h3>
         <p className="text-xs text-muted mb-2">
           {TEXT.knowledge.styleDescription}
         </p>
@@ -187,7 +187,7 @@ export default function Knowledge() {
       </PageCard>
 
       <PageCard>
-        <h3 style={{ marginTop: 0 }}>{TEXT.knowledge.sessionsTitle}</h3>
+        <h3>{TEXT.knowledge.sessionsTitle}</h3>
         {sessions.length === 0 && (
           <EmptyState title={TEXT.knowledge.sessionsEmptyTitle} description={TEXT.knowledge.sessionsEmptyDescription} />
         )}
@@ -204,7 +204,7 @@ export default function Knowledge() {
             <tbody>
               {sessions.map((s) => (
                 <tr key={s.id} onClick={() => window.location.href = `/sessions/${s.id}`}>
-                  <td className="knowledge-table__mono"><a href={`/sessions/${s.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>{s.id.slice(0, 8)}…</a></td>
+                  <td className="knowledge-table__mono"><a href={`/sessions/${s.id}`} className="no-underline">{s.id.slice(0, 8)}…</a></td>
                   <td>{s.platform}</td>
                   <td>{formatDate(s.started_at)}</td>
                   <td>{s.message_count ?? '—'}</td>
@@ -216,7 +216,7 @@ export default function Knowledge() {
       </PageCard>
 
       <PageCard>
-        <h3 style={{ marginTop: 0 }}>{TEXT.knowledge.memoriesTitle}</h3>
+        <h3>{TEXT.knowledge.memoriesTitle}</h3>
         <p className="text-xs text-muted mb-2">
           {TEXT.knowledge.memoriesDescription}
         </p>
@@ -229,7 +229,7 @@ export default function Knowledge() {
         )}
         {memories.length > 0 && (
           <div className="mb-4">
-            <div className="row-sm" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
+            <div className="row-sm" className="row-center flex-wrap">
               {Array.from(new Set(memories.flatMap((m) => m.tags || []))).sort().map((tag) => {
                 const active = selectedTags.includes(tag);
                 return (
@@ -267,8 +267,8 @@ export default function Knowledge() {
               className="knowledge-memory-card"
             >
               <div className="mb-2">{m.content}</div>
-              <div className="row-between" style={{ flexWrap: 'wrap' }}>
-                <div className="row-sm" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
+              <div className="row-between">
+                <div className="row-sm" className="row-center flex-wrap">
                   {m.tags && m.tags.length > 0 && m.tags.map((tag) => (
                     <span
                       key={tag}
@@ -297,7 +297,7 @@ export default function Knowledge() {
       </PageCard>
 
       <PageCard>
-        <h3 style={{ marginTop: 0 }}>{TEXT.knowledge.handoffsTitle}</h3>
+        <h3>{TEXT.knowledge.handoffsTitle}</h3>
         <p className="text-xs text-muted mb-2">
           {TEXT.knowledge.handoffsDescription}
         </p>
@@ -312,7 +312,7 @@ export default function Knowledge() {
             key={h.session_id}
             className="knowledge-handoff-row"
           >
-            <div style={{ fontWeight: 'bold', marginBottom: '0.25rem' }}>
+            <div className="font-bold mb-1">
               Session {h.session_id.slice(0, 8)}…
             </div>
             <div className="text-secondary mb-1">{h.summary}</div>

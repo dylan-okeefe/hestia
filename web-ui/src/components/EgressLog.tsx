@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { fetchEgress } from '../api/client';
+import './EgressLog.css';
 
 interface EgressEvent {
   id: string;
@@ -46,7 +47,7 @@ export default function EgressLog() {
   return (
     <div>
       <h2>Egress Log</h2>
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+      <div className="egress-log__filters">
         <label>
           Domain:{ ' '}
           <input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="example.com" />
@@ -59,12 +60,12 @@ export default function EgressLog() {
           {loading ? 'Loading…' : 'Search'}
         </button>
       </div>
-      {error && <p style={{ color: 'red' }}>{error}</p>}
+      {error && <p className="text-danger">{error}</p>}
       {events.length === 0 && !loading && !error && <p>No events found.</p>}
       {events.length > 0 && (
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <table className="egress-log__table">
           <thead>
-            <tr style={{ borderBottom: '2px solid #ccc', textAlign: 'left' }}>
+            <tr>
               <th>URL</th>
               <th>Status</th>
               <th>Size</th>
@@ -73,8 +74,8 @@ export default function EgressLog() {
           </thead>
           <tbody>
             {events.map((e) => (
-              <tr key={e.id} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ wordBreak: 'break-all' }}>{stripQuery(e.url)}</td>
+              <tr key={e.id}>
+                <td className="egress-log__url">{stripQuery(e.url)}</td>
                 <td>{e.status}</td>
                 <td>{e.size}</td>
                 <td>{e.created_at ? new Date(e.created_at).toLocaleString() : '—'}</td>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { CronExpressionParser } from 'cron-parser';
 import { formatCron } from '../../lib/format';
+import './CronBuilder.css';
 
 const PRESETS = [
   { label: 'Every hour', value: '0 * * * *' },
@@ -126,20 +127,13 @@ export default function CronBuilder({ value, onChange }: CronBuilderProps) {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+    <div className="cron-builder">
+      <div className="cron-builder__freq-row">
         {(['hourly', 'daily', 'weekly', 'custom'] as Frequency[]).map((f) => (
           <button
             key={f}
             onClick={() => setFrequency(f)}
-            style={{
-              padding: '0.25rem 0.5rem',
-              fontSize: '0.875rem',
-              borderRadius: '4px',
-              border: frequency === f ? '2px solid #2563eb' : '1px solid #ccc',
-              background: frequency === f ? '#eff6ff' : '#fff',
-              cursor: 'pointer',
-            }}
+            className={frequency === f ? 'cron-builder__freq-btn cron-builder__freq-btn--active' : 'cron-builder__freq-btn'}
             aria-pressed={frequency === f}
           >
             {f.charAt(0).toUpperCase() + f.slice(1)}
@@ -148,8 +142,8 @@ export default function CronBuilder({ value, onChange }: CronBuilderProps) {
       </div>
 
       {frequency === 'daily' && (
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          <label style={{ fontSize: '0.875rem' }}>
+        <div className="cron-builder__time-row">
+          <label className="text-small">
             Hour (0–23){' '}
             <input
               type="number"
@@ -157,10 +151,10 @@ export default function CronBuilder({ value, onChange }: CronBuilderProps) {
               max={23}
               value={dailyHour}
               onChange={(e) => setDailyHour(e.target.value)}
-              style={{ width: 60, padding: '0.25rem 0.5rem' }}
+              className="form-input cron-builder__time-input"
             />
           </label>
-          <label style={{ fontSize: '0.875rem' }}>
+          <label className="text-small">
             Minute (0–59){' '}
             <input
               type="number"
@@ -168,16 +162,16 @@ export default function CronBuilder({ value, onChange }: CronBuilderProps) {
               max={59}
               value={dailyMinute}
               onChange={(e) => setDailyMinute(e.target.value)}
-              style={{ width: 60, padding: '0.25rem 0.5rem' }}
+              className="form-input cron-builder__time-input"
             />
           </label>
         </div>
       )}
 
       {frequency === 'weekly' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-            <label style={{ fontSize: '0.875rem' }}>
+        <div className="stack-md">
+          <div className="cron-builder__time-row">
+            <label className="text-small">
               Hour (0–23){' '}
               <input
                 type="number"
@@ -185,10 +179,10 @@ export default function CronBuilder({ value, onChange }: CronBuilderProps) {
                 max={23}
                 value={dailyHour}
                 onChange={(e) => setDailyHour(e.target.value)}
-                style={{ width: 60, padding: '0.25rem 0.5rem' }}
+                className="form-input cron-builder__time-input"
               />
             </label>
-            <label style={{ fontSize: '0.875rem' }}>
+            <label className="text-small">
               Minute (0–59){' '}
               <input
                 type="number"
@@ -196,31 +190,20 @@ export default function CronBuilder({ value, onChange }: CronBuilderProps) {
                 max={59}
                 value={dailyMinute}
                 onChange={(e) => setDailyMinute(e.target.value)}
-                style={{ width: 60, padding: '0.25rem 0.5rem' }}
+                className="form-input cron-builder__time-input"
               />
             </label>
           </div>
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <div className="row-sm">
             {WEEKDAYS.map((d) => (
               <label
                 key={d.value}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.25rem',
-                  fontSize: '0.875rem',
-                  cursor: 'pointer',
-                  padding: '0.25rem 0.5rem',
-                  borderRadius: '4px',
-                  background: selectedDays.includes(d.value) ? '#eff6ff' : '#f9fafb',
-                  border: selectedDays.includes(d.value) ? '1px solid #2563eb' : '1px solid #e5e7eb',
-                }}
+                className={selectedDays.includes(d.value) ? 'cron-builder__day-label cron-builder__day-label--active' : 'cron-builder__day-label'}
               >
                 <input
                   type="checkbox"
                   checked={selectedDays.includes(d.value)}
-                  onChange={() => toggleDay(d.value)}
-                  style={{ cursor: 'pointer' }}
+                  onChange={() => toggleDay(d.value)} className="cursor-pointer"
                 />
                 {d.label}
               </label>
@@ -238,24 +221,18 @@ export default function CronBuilder({ value, onChange }: CronBuilderProps) {
             onChange(e.target.value);
           }}
           placeholder="* * * * *"
-          style={{
-            width: '100%',
-            padding: '0.5rem',
-            border: error ? '2px solid #dc2626' : '1px solid #ccc',
-            fontFamily: 'monospace',
-            fontSize: '0.875rem',
-          }}
+          className={error ? 'cron-builder__custom cron-builder__custom--error' : 'cron-builder__custom'}
           aria-label="Custom cron expression"
           aria-invalid={error ? 'true' : 'false'}
         />
       )}
 
-      <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
+      <div className="cron-builder__preset-row">
         {PRESETS.map((p) => (
           <button
             key={p.value}
             onClick={() => handlePreset(p.value)}
-            style={{ padding: '0.125rem 0.375rem', fontSize: '0.75rem' }}
+            className="cron-builder__preset-btn"
             title={p.value}
           >
             {p.label}
@@ -263,9 +240,9 @@ export default function CronBuilder({ value, onChange }: CronBuilderProps) {
         ))}
       </div>
 
-      {error && <span style={{ color: '#dc2626', fontSize: '0.75rem' }}>{error}</span>}
+      {error && <span className="cron-builder__error">{error}</span>}
       {!error && value && (
-        <span style={{ color: '#666', fontSize: '0.75rem' }}>{formatCron(value)}</span>
+        <span className="cron-builder__preview">{formatCron(value)}</span>
       )}
     </div>
   );

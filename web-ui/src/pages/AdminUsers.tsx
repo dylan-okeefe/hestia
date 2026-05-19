@@ -180,7 +180,7 @@ export default function AdminUsers() {
       )}
 
       {!isLoading && filteredUsers.length > 0 && (
-        <PageCard style={{ padding: 0, overflow: 'hidden' }}>
+        <PageCard className="page-card--flush">
           <table className="data-table">
             <thead>
               <tr>
@@ -190,14 +190,14 @@ export default function AdminUsers() {
                 <th>{TEXT.adminUsers.tableIdentities}</th>
                 <th>{TEXT.adminUsers.tableRooms}</th>
                 <th>{TEXT.adminUsers.tableCreated}</th>
-                <th style={{ textAlign: 'right' }}>{TEXT.adminUsers.tableActions}</th>
+                <th className="text-right">{TEXT.adminUsers.tableActions}</th>
               </tr>
             </thead>
             <tbody>
               {filteredUsers.map((u) => (
                 <tr key={u.id}>
                   <td>
-                    <div style={{ fontWeight: 600 }}>{u.display_name}</div>
+                    <div className="font-semibold">{u.display_name}</div>
                     <div className="text-xs text-muted">{u.id.slice(0, 8)}</div>
                   </td>
                   <td>
@@ -211,13 +211,12 @@ export default function AdminUsers() {
                   <td>{u.identity_count}</td>
                   <td>{u.room_count}</td>
                   <td>{formatDate(u.created_at)}</td>
-                  <td style={{ textAlign: 'right' }}>
+                  <td className="text-right">
                     <div className="admin-users-actions">
                       <button onClick={() => openEdit(u)}>{TEXT.common.edit}</button>
                       <button
                         onClick={() => setConfirmDelete(u.id)}
-                        className="text-danger"
-                        style={{ borderColor: 'var(--color-danger)' }}
+                        className="text-danger" className="border-danger"
                       >
                         {TEXT.common.delete}
                       </button>
@@ -239,7 +238,7 @@ export default function AdminUsers() {
             className="modal modal--md"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 style={{ marginTop: 0 }}>{editingUser ? TEXT.adminUsers.editTitle : TEXT.adminUsers.createTitle}</h3>
+            <h3>{editingUser ? TEXT.adminUsers.editTitle : TEXT.adminUsers.createTitle}</h3>
             <div className="stack-md">
               <label>
                 {TEXT.adminUsers.displayNameLabel}
@@ -289,13 +288,13 @@ export default function AdminUsers() {
           onClick={() => setConfirmDelete(null)}
         >
           <div className="modal modal--sm" onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ marginTop: 0 }}>{TEXT.adminUsers.deleteConfirmTitle}</h3>
+            <h3>{TEXT.adminUsers.deleteConfirmTitle}</h3>
             <p className="text-small text-secondary">
               {TEXT.adminUsers.deleteConfirmDescription}
             </p>
-            <div className="row-center gap-2 mt-4" style={{ justifyContent: 'center' }}>
+            <div className="row-center gap-2 mt-4">
               <button onClick={() => setConfirmDelete(null)}>{TEXT.common.cancel}</button>
-              <button onClick={() => handleDelete(confirmDelete)} className="text-danger" style={{ borderColor: 'var(--color-danger)' }}>
+              <button onClick={() => handleDelete(confirmDelete)} className="text-danger" className="border-danger">
                 {TEXT.common.delete}
               </button>
             </div>
@@ -309,7 +308,7 @@ export default function AdminUsers() {
           onClick={() => setShowAddIdentity(null)}
         >
           <div className="modal modal--sm" onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ marginTop: 0 }}>{TEXT.adminUsers.addIdentityTitle}</h3>
+            <h3>{TEXT.adminUsers.addIdentityTitle}</h3>
             <p className="text-small text-secondary">
               {TEXT.adminUsers.addIdentityPrompt}
             </p>

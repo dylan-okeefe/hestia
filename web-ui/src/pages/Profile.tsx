@@ -175,7 +175,7 @@ export default function Profile() {
             </>
           ) : (
             <>
-              <h2 style={{ margin: 0 }}>{user.display_name}</h2>
+              <h2>{user.display_name}</h2>
               <span
                 className="profile-role-badge"
                 style={{ background: roleBadgeColor(user.role) }}
@@ -225,7 +225,7 @@ export default function Profile() {
       </PageCard>
 
       <PageCard>
-        <h3 style={{ marginTop: 0 }}>{TEXT.profile.notesTitle}</h3>
+        <h3>{TEXT.profile.notesTitle}</h3>
         <p className="text-xs text-muted mb-2">
           {TEXT.profile.notesDescription}
         </p>
@@ -246,7 +246,7 @@ export default function Profile() {
       </PageCard>
 
       <PageCard>
-        <h3 style={{ marginTop: 0 }}>{TEXT.profile.identitiesTitle}</h3>
+        <h3>{TEXT.profile.identitiesTitle}</h3>
         {user.identities.length === 0 && (
           <EmptyState title={TEXT.profile.identitiesEmptyTitle} description={TEXT.profile.identitiesEmptyDescription} />
         )}
@@ -305,7 +305,7 @@ export default function Profile() {
       </PageCard>
 
       <PageCard>
-        <h3 style={{ marginTop: 0 }}>{TEXT.profile.roomsTitle}</h3>
+        <h3>{TEXT.profile.roomsTitle}</h3>
         {roomsLoading && <LoadingSkeleton lines={3} />}
         {roomsIsError && roomsError && (
           <ErrorState message={roomsError.message} onRetry={() => window.location.reload()} />

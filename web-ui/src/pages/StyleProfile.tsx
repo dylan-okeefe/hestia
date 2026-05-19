@@ -83,7 +83,7 @@ export default function StyleProfile() {
       <div className="style-profile-header">
         <h1 className="style-profile-title">{TEXT.styleProfile.title}</h1>
         {metrics.length > 0 && (
-          <button onClick={() => setConfirmReset(true)} className="text-danger" style={{ borderColor: 'var(--color-danger)' }}>
+          <button onClick={() => setConfirmReset(true)} className="text-danger" className="border-danger">
             {TEXT.styleProfile.resetButton}
           </button>
         )}
@@ -97,7 +97,7 @@ export default function StyleProfile() {
           </div>
           <div>
             <span className="style-profile-info-label">{TEXT.styleProfile.userLabel}</span>
-            <div style={{ fontWeight: 600 }}>{platformUser}</div>
+            <div className="font-semibold">{platformUser}</div>
           </div>
           {identities.length > 1 && (
             <div>
@@ -106,7 +106,7 @@ export default function StyleProfile() {
                 value={selectedIdentity}
                 onChange={(e) => setSelectedIdentity(Number(e.target.value))}
                 className="form-select"
-                style={{ marginLeft: 'var(--space-2)' }}
+                className="ml-2"
               >
                 {identities.map((id, idx) => (
                   <option key={idx} value={idx}>
@@ -135,7 +135,7 @@ export default function StyleProfile() {
       )}
 
       {!loading && metrics.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 'var(--space-4)' }}>
+        <div className="grid-auto-220">
           {metrics.map((m) => (
             <PageCard key={m.key}>
               <div className="style-profile-metric-key">{m.key}</div>
@@ -153,13 +153,13 @@ export default function StyleProfile() {
           onClick={() => setConfirmReset(false)}
         >
           <div className="modal modal--sm" onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ marginTop: 0 }}>{TEXT.styleProfile.resetConfirmTitle}</h3>
+            <h3>{TEXT.styleProfile.resetConfirmTitle}</h3>
             <p className="text-small text-secondary">
               {TEXT.styleProfile.resetConfirmDescription(metrics.length, platformUser, platform)}
             </p>
-            <div className="row-center gap-2 mt-4" style={{ justifyContent: 'center' }}>
+            <div className="row-center gap-2 mt-4">
               <button onClick={() => setConfirmReset(false)}>{TEXT.common.cancel}</button>
-              <button onClick={handleReset} className="text-danger" style={{ borderColor: 'var(--color-danger)' }}>
+              <button onClick={handleReset} className="text-danger" className="border-danger">
                 {TEXT.styleProfile.resetConfirmButton}
               </button>
             </div>

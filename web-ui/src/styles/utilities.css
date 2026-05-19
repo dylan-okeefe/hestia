@@ -102,3 +102,70 @@
 
 /* Border utilities */
 .border-danger { border-color: #fecaca; }
+
+/* Margin utilities */
+.mt-0 { margin-top: 0; }
+.mt-1 { margin-top: var(--space-1); }
+.mt-2 { margin-top: var(--space-2); }
+.mt-4 { margin-top: var(--space-4); }
+
+/* Text alignment */
+.text-right { text-align: right; }
+.text-center { text-align: center; }
+
+/* Font weight */
+.font-semibold { font-weight: 600; }
+.font-bold { font-weight: 700; }
+
+/* Flex utilities */
+.flex-wrap { flex-wrap: wrap; }
+.flex-1 { flex: 1; }
+
+/* Cursor */
+.cursor-pointer { cursor: pointer; }
+
+/* Overflow */
+.overflow-hidden { overflow: hidden; }
+
+/* White space */
+.whitespace-pre-wrap { white-space: pre-wrap; }
+
+/* Text overflow */
+.text-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* No underline */
+.no-underline {
+  text-decoration: none;
+  color: inherit;
+}
+
+/* Break words */
+.break-all {
+  word-break: break-all;
+}
+
+/* Grid utilities */
+.ml-2 { margin-left: var(--space-2); }
+.ml-4 { margin-left: var(--space-4); }
+.ml-auto { margin-left: auto; }
+.mt-2 { margin-top: var(--space-2); }
+
+.grid-auto-220 {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-4);
+}
+
+/* Position utilities */
+.relative {
+  position: relative;
+}
+
+/* Inline code margin */
+.inline-code + .inline-code {
+  margin-right: 4px;
+}

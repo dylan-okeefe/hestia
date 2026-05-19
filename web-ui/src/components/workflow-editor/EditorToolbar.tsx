@@ -1,4 +1,5 @@
 import { EDITOR_NODE_TYPES } from './constants';
+import './EditorToolbar.css';
 
 interface EditorToolbarProps {
   workflowName: string;
@@ -54,7 +55,7 @@ export default function EditorToolbar({
   onRedo,
 }: EditorToolbarProps) {
   return (
-    <div style={{ padding: '0.5rem 1rem', borderBottom: '1px solid #ddd', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+    <div className="editor-toolbar">
       <input
         value={workflowName}
         onChange={(e) => onNameChange(e.target.value)}
@@ -64,19 +65,11 @@ export default function EditorToolbar({
             e.currentTarget.blur();
           }
         }}
-        style={{
-          margin: 0,
-          fontSize: '1.5rem',
-          fontWeight: 'bold',
-          border: 'none',
-          borderBottom: '1px solid transparent',
-          background: 'transparent',
-          minWidth: 120,
-        }}
+        className="editor-toolbar__name-input"
         aria-label="Workflow name"
       />
       {isDirty && (
-        <span style={{ color: '#666', fontSize: '0.875rem' }} aria-label="Unsaved changes">
+        <span className="editor-toolbar__unsaved" aria-label="Unsaved changes">
           (unsaved)
         </span>
       )}
@@ -84,7 +77,7 @@ export default function EditorToolbar({
       <select
         value={addNodeType}
         onChange={(e) => onAddNodeTypeChange(e.target.value)}
-        style={{ padding: '0.25rem 0.5rem' }}
+        className="editor-toolbar__node-select"
         aria-label="Node type to add"
       >
         {EDITOR_NODE_TYPES.map((t: string) => (
@@ -117,7 +110,7 @@ export default function EditorToolbar({
       <button onClick={onToggleVersions}>
         {showVersions ? 'Hide Versions' : 'Versions'}
       </button>
-      {error && !testError && <span style={{ color: 'red', marginLeft: 'auto' }}>{error}</span>}
+      {error && !testError && <span className="editor-toolbar__error">{error}</span>}
     </div>
   );
 }

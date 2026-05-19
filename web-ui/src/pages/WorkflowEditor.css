@@ -1,0 +1,18 @@
+.workflow-editor {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 60px);
+}
+
+.workflow-editor__main {
+  display: flex;
+  flex: 1;
+}
+
+.workflow-editor__canvas {
+  flex: 1;
+}
+
+.workflow-editor__loading {
+  padding: var(--space-4);
+}

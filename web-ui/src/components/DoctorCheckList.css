@@ -1,0 +1,53 @@
+.doctor-check-list__cached {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  margin-top: -0.25rem;
+  margin-bottom: var(--space-2);
+}
+
+.doctor-check-list__progress {
+  margin-bottom: var(--space-3);
+}
+
+.doctor-check-list__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--color-border-subtle);
+  cursor: pointer;
+}
+
+.doctor-check-list__dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.doctor-check-list__dot--ok {
+  background: var(--color-success);
+}
+
+.doctor-check-list__dot--fail {
+  background: var(--color-danger);
+}
+
+.doctor-check-list__detail {
+  padding: var(--space-3);
+  font-size: var(--font-size-sm);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.doctor-check-list__detail-text {
+  margin-bottom: var(--space-2);
+}
+
+.doctor-check-list__remediation {
+  color: #92400e;
+  background: #fef3c7;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+}

@@ -143,7 +143,7 @@ export default function ErrorDashboard() {
       )}
 
       {!isLoading && filteredErrors.length > 0 && (
-        <PageCard style={{ padding: 0, overflow: 'hidden' }}>
+        <PageCard className="page-card--flush">
           <table className="data-table">
             <thead>
               <tr>
@@ -152,7 +152,7 @@ export default function ErrorDashboard() {
                 <th>{TEXT.errorDashboard.tableMessage}</th>
                 <th>{TEXT.errorDashboard.tableWhen}</th>
                 <th>{TEXT.errorDashboard.tableStatus}</th>
-                <th style={{ textAlign: 'right' }}>{TEXT.errorDashboard.tableActions}</th>
+                <th className="text-right">{TEXT.errorDashboard.tableActions}</th>
               </tr>
             </thead>
             <tbody>
@@ -171,11 +171,11 @@ export default function ErrorDashboard() {
                       </span>
                     </td>
                     <td>
-                      <div style={{ fontWeight: 600 }}>{err.source_name}</div>
+                      <div className="font-semibold">{err.source_name}</div>
                       <div className="text-xs text-muted">{err.source_id.slice(0, 8)}</div>
                     </td>
-                    <td style={{ maxWidth: 300 }}>
-                      <div className="text-small" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <td className="max-w-300">
+                      <div className="text-small" className="text-ellipsis">
                         {err.message}
                       </div>
                     </td>
@@ -191,7 +191,7 @@ export default function ErrorDashboard() {
                         {err.status}
                       </span>
                     </td>
-                    <td style={{ textAlign: 'right' }}>
+                    <td className="text-right">
                       <div className="admin-users-actions">
                         <button onClick={() => setExpandedId(expandedId === err.id ? null : err.id)}>
                           {expandedId === err.id ? TEXT.errorDashboard.hideButton : TEXT.errorDashboard.detailsButton}
@@ -236,7 +236,7 @@ export default function ErrorDashboard() {
             className="modal modal--lg"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 style={{ marginTop: 0 }}>{TEXT.errorDashboard.debugModalTitle}</h3>
+            <h3>{TEXT.errorDashboard.debugModalTitle}</h3>
             <textarea
               readOnly
               value={debugModal.prompt}

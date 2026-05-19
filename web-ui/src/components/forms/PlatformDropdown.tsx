@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { fetchAuthStatus } from '../../api/client';
+import './dropdowns.css';
 
 interface PlatformDropdownProps {
   value: string;
@@ -36,14 +37,14 @@ export default function PlatformDropdown({ value, onChange, includeEmpty = false
   }, []);
 
   if (loading) {
-    return <div style={{ padding: '0.5rem', color: '#888', fontSize: '0.875rem' }}>Loading platforms…</div>;
+    return <div className="text-small text-muted p-2">Loading platforms…</div>;
   }
 
   if (error) {
     return (
-      <div style={{ padding: '0.5rem', color: '#ef4444', fontSize: '0.875rem' }}>
+      <div className="text-small text-danger p-2">
         Failed to load platforms
-        <button onClick={() => window.location.reload()} style={{ marginLeft: '0.5rem', fontSize: '0.75rem' }}>
+        <button onClick={() => window.location.reload()} className="text-xs ml-2">
           Retry
         </button>
       </div>
@@ -54,14 +55,7 @@ export default function PlatformDropdown({ value, onChange, includeEmpty = false
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      style={{
-        width: '100%',
-        padding: '0.5rem',
-        borderRadius: '4px',
-        border: '1px solid #ccc',
-        fontFamily: 'inherit',
-        fontSize: '0.875rem',
-      }}
+      className="form-select form-select--full"
     >
       {includeEmpty && <option value="">— Select —</option>}
       {platforms.map((p) => (

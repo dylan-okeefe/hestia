@@ -1,0 +1,8 @@
+.not-found {
+  padding: var(--space-8);
+  text-align: center;
+}
+
+.not-found__link {
+  color: var(--color-primary);
+}

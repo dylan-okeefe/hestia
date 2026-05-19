@@ -4,6 +4,7 @@ import { HEALTH_CHECK_LABELS, label } from '../lib/labels';
 import { formatRelativeDate } from '../lib/format';
 import PageCard from './layout/PageCard';
 import { TEXT } from '../lib/text';
+import './DoctorCheckList.css';
 
 interface Check {
   name: string;
@@ -61,39 +62,30 @@ export default function DoctorCheckList({ checks, onRefresh }: DoctorCheckListPr
     ? Math.round((checks.filter((c) => c.ok).length / checks.length) * 100)
     : 0;
 
+  const fillClass = passRate === 100 ? 'progress-bar__fill--success' : passRate >= 50 ? 'progress-bar__fill--warning' : 'progress-bar__fill--danger';
+
   return (
-    <PageCard style={{ transition: 'box-shadow 0.3s ease', boxShadow: flash ? '0 0 0 2px #1976d2' : undefined }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-        <h2 style={{ margin: 0 }}>{TEXT.healthChecks.title}</h2>
+    <PageCard style={{ transition: 'box-shadow 0.3s ease', boxShadow: flash ? '0 0 0 2px var(--color-primary)' : undefined }}>
+      <div className="row-between mb-2">
+        <h2>{TEXT.healthChecks.title}</h2>
         <button onClick={handleRerun} disabled={loading}>
           {loading ? TEXT.healthChecks.rerunButtonLoading : TEXT.healthChecks.rerunButton}
         </button>
       </div>
       {cachedAt && (
-        <p style={{ fontSize: '0.8rem', color: '#888', marginTop: '-0.25rem', marginBottom: '0.5rem' }}>
+        <p className="doctor-check-list__cached">
           {TEXT.healthChecks.lastChecked(formatRelativeDate(cachedAt))}
         </p>
       )}
       {checks.length > 0 && (
-        <div style={{ marginBottom: '0.75rem' }}>
-          <div
-            style={{
-              height: '6px',
-              background: '#eee',
-              borderRadius: '3px',
-              overflow: 'hidden',
-            }}
-          >
+        <div className="doctor-check-list__progress">
+          <div className="progress-bar">
             <div
-              style={{
-                width: `${passRate}%`,
-                height: '100%',
-                background: passRate === 100 ? '#22c55e' : passRate >= 50 ? '#f59e0b' : '#ef4444',
-                transition: 'width 0.3s ease',
-              }}
+              className={`progress-bar__fill ${fillClass}`}
+              style={{ width: `${passRate}%` }}
             />
           </div>
-          <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.25rem' }}>
+          <div className="text-xs text-secondary mt-1">
             {TEXT.healthChecks.passRate(passRate, checks.filter((c) => c.ok).length, checks.length)}
           </div>
         </div>
@@ -102,40 +94,26 @@ export default function DoctorCheckList({ checks, onRefresh }: DoctorCheckListPr
       {checks.map((c) => (
         <div key={c.name}>
           <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              padding: '0.5rem',
-              borderBottom: '1px solid #eee',
-              cursor: 'pointer',
-            }}
+            className="doctor-check-list__item"
             onClick={() => setExpanded(expanded === c.name ? null : c.name)}
           >
             <span
-              style={{
-                width: '12px',
-                height: '12px',
-                borderRadius: '50%',
-                background: c.ok ? '#4caf50' : '#f44336',
-                display: 'inline-block',
-                flexShrink: 0,
-              }}
+              className={`doctor-check-list__dot ${c.ok ? 'doctor-check-list__dot--ok' : 'doctor-check-list__dot--fail'}`}
             />
-            <span style={{ flex: 1 }}>{label(HEALTH_CHECK_LABELS, c.name)}</span>
-            <span style={{ fontSize: '0.75rem', color: '#888' }}>
+            <span className="flex-1">{label(HEALTH_CHECK_LABELS, c.name)}</span>
+            <span className="text-xs text-muted">
               {expanded === c.name ? '▲' : '▼'}
             </span>
           </div>
           {expanded === c.name && (
-            <div style={{ padding: '0.75rem', fontSize: '0.875rem', background: '#f9f9f9', borderBottom: '1px solid #eee' }}>
+            <div className="doctor-check-list__detail">
               {c.detail && (
-                <div style={{ marginBottom: '0.5rem', color: c.ok ? '#666' : '#ef4444' }}>
+                <div className={`doctor-check-list__detail-text ${c.ok ? 'text-secondary' : 'text-danger'}`}>
                   <strong>{TEXT.healthChecks.detailLabel}</strong> {c.detail}
                 </div>
               )}
               {!c.ok && REMEDIATION[c.name] && (
-                <div style={{ color: '#92400e', background: '#fef3c7', padding: '0.5rem', borderRadius: '4px' }}>
+                <div className="doctor-check-list__remediation">
                   <strong>{TEXT.healthChecks.remediationLabel}</strong> {REMEDIATION[c.name]}
                 </div>
               )}

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import './StickyNav.css';
 
 interface StickyNavProps {
   children: ReactNode;
@@ -6,19 +7,7 @@ interface StickyNavProps {
 
 export default function StickyNav({ children }: StickyNavProps) {
   return (
-    <nav
-      style={{
-        position: 'sticky',
-        top: 0,
-        zIndex: 50,
-        background: '#fff',
-        borderBottom: '1px solid #ddd',
-        padding: '0.75rem 1rem',
-        display: 'flex',
-        gap: '1rem',
-        alignItems: 'center',
-      }}
-    >
+    <nav className="sticky-nav">
       {children}
     </nav>
   );

@@ -6,6 +6,23 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-05-18 — L183 Complete (User-Facing Text Extraction)
+
+**Outcome:** Extracted all user-facing strings from 12 page components and 3 shared components into a centralized `web-ui/src/lib/text.ts` catalog (443 lines, 16 feature areas). Updated 13 test files to assert against catalog values.
+
+**Changes:**
+- `web-ui/src/lib/text.ts` — new hierarchical `TEXT` catalog with `t()` helper
+- `web-ui/src/lib/text.test.ts` — recursive completeness and consistency validation
+- All pages and shared components now import `TEXT` instead of hardcoding strings
+
+**Quality gate:**
+- `npm run build`: **0 errors**
+- `npx vitest run`: **117 passed, 22 test files**
+
+**Branch:** `feature/l183-text-extraction`
+
+---
+
 ## 2026-05-18 — L182 Complete (Backend Bug Fixes & Cleanup)
 
 **Outcome:** Fixed six backend bugs: `update_user` null guard preventing field clearing, raw SQL in error dashboard, session messages endpoint returning turn metadata instead of messages, unbounded in-memory error state, Telegram `int(platform_user)` crash on non-numeric IDs, and timeout coercion preventing 0-second timeouts.

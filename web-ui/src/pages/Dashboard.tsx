@@ -124,7 +124,7 @@ export default function Dashboard() {
           <div className="dashboard-stat-label mb-1">{TEXT.dashboard.systemHealthLabel}</div>
           <div className="row-center gap-2">
             <span className={`status-dot ${healthColorClass}`} />
-            <span className="text-small" style={{ fontWeight: 600 }}>
+            <span className="text-small" className="font-semibold">
               {healthRate === null ? TEXT.dashboard.healthUnknown : TEXT.dashboard.healthPassing(healthRate)}
             </span>
           </div>
@@ -148,7 +148,7 @@ export default function Dashboard() {
       <h2 className="dashboard-section-title">{TEXT.dashboard.recentExecutionsTitle}</h2>
       {data.recent_executions.length === 0 && <p>{TEXT.dashboard.noExecutions}</p>}
       {data.recent_executions.length > 0 && (
-        <PageCard style={{ padding: 0, overflow: 'hidden' }}>
+        <PageCard className="page-card--flush">
           <table className="data-table">
             <thead>
               <tr>
