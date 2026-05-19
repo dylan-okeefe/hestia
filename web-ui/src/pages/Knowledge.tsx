@@ -147,6 +147,7 @@ export default function Knowledge() {
         </PageCard>
       )}
 
+      <div className="knowledge-layout">
       <PageCard>
         <h3>{TEXT.knowledge.notesTitle}</h3>
         <p className="text-xs text-muted mb-2">
@@ -324,6 +325,7 @@ export default function Knowledge() {
           </div>
         ))}
       </PageCard>
+      </div>
     </div>
   );
 }

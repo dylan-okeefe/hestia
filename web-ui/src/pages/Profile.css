@@ -88,3 +88,15 @@
   border-bottom: var(--border-subtle);
   font-size: var(--font-size-sm);
 }
+
+.profile-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-6);
+}
+
+@media (min-width: 1024px) {
+  .profile-layout {
+    grid-template-columns: 1fr 1fr;
+  }
+}
