@@ -38,7 +38,7 @@ export default function VersionPanel({ versions, activeVersionId, onView, onActi
                 <td>
                   <button
                     onClick={() => onView(v)}
-                    className="version-panel__action-btn" className="mr-2"
+                    className="version-panel__action-btn mr-2"
                   >
                     View
                   </button>

@@ -293,7 +293,7 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
       );
     } else if (inputType === 'boolean') {
       input = (
-        <label className="row-center gap-2" className="cursor-pointer">
+        <label className="row-center gap-2 cursor-pointer">
           <input
             type="checkbox"
             checked={value as boolean}
@@ -435,7 +435,7 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
         </div>
       )}
 
-      <div className="row-sm" className="row-center">
+      <div className="row-sm row-center">
         <button onClick={handleSave} disabled={saving}>
           {saving ? TEXT.common.saving : TEXT.common.save}
         </button>

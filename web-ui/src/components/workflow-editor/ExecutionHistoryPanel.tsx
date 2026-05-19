@@ -121,7 +121,7 @@ export default function ExecutionHistoryPanel({
             <>
               <div className="execution-history-panel__test-meta">
                 <strong>Status:</strong>
-                <span className={testResult.status === 'ok' ? 'text-success' : 'text-danger'} className="font-bold">
+                <span className={`${testResult.status === 'ok' ? 'text-success' : 'text-danger'} font-bold`}>
                   {testResult.status}
                 </span>
                 <span>

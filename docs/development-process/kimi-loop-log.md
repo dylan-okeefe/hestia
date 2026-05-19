@@ -6,6 +6,26 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-05-18 — L184 Complete (Shared CSS System)
+
+**Outcome:** Replaced 680+ inline styles with a shared CSS system. Created `variables.css`, `utilities.css`, `global.css`, and per-component CSS files. Inline style count reduced from 680+ to 12. `NodePropertiesPanel.tsx` reduced from 749 to 477 lines with 6 helpers extracted.
+
+**Changes:**
+- `web-ui/src/styles/` — `variables.css`, `utilities.css`, `global.css`, `components.css`
+- `web-ui/src/components/workflow-editor/helpers/` — 6 extracted helper components
+- Per-page and per-component CSS files across the entire frontend
+- `tests/smoke/inline-styles.test.ts` — regression guard
+- `AGENTS.md` — no-inline-styles convention
+
+**Quality gate:**
+- `npm run build`: **0 errors**
+- `npx vitest run`: **118 passed, 23 test files**
+- Inline `style={{` count: **12** (target: under 20)
+
+**Branch:** `feature/l184-shared-css`
+
+---
+
 ## 2026-05-18 — L183 Complete (User-Facing Text Extraction)
 
 **Outcome:** Extracted all user-facing strings from 12 page components and 3 shared components into a centralized `web-ui/src/lib/text.ts` catalog (443 lines, 16 feature areas). Updated 13 test files to assert against catalog values.

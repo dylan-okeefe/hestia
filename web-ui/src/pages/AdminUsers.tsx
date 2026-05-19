@@ -181,7 +181,7 @@ export default function AdminUsers() {
 
       {!isLoading && filteredUsers.length > 0 && (
         <PageCard className="page-card--flush">
-          <table className="data-table">
+          <table className="data-table responsive-table">
             <thead>
               <tr>
                 <th>{TEXT.adminUsers.tableName}</th>
@@ -196,27 +196,27 @@ export default function AdminUsers() {
             <tbody>
               {filteredUsers.map((u) => (
                 <tr key={u.id}>
-                  <td>
+                  <td data-label={TEXT.adminUsers.tableName}>
                     <div className="font-semibold">{u.display_name}</div>
                     <div className="text-xs text-muted">{u.id.slice(0, 8)}</div>
                   </td>
-                  <td>
+                  <td data-label={TEXT.adminUsers.tableRole}>
                     <span
                       className={`admin-users-role-badge admin-users-role-badge--${u.role === 'admin' ? 'admin' : u.role === 'trusted' ? 'trusted' : u.role === 'child' ? 'child' : 'default'}`}
                     >
                       {label(ROLE_LABELS, u.role)}
                     </span>
                   </td>
-                  <td>{u.trust_preset ?? '—'}</td>
-                  <td>{u.identity_count}</td>
-                  <td>{u.room_count}</td>
-                  <td>{formatDate(u.created_at)}</td>
-                  <td className="text-right">
+                  <td data-label={TEXT.adminUsers.tableTrust}>{u.trust_preset ?? '—'}</td>
+                  <td data-label={TEXT.adminUsers.tableIdentities}>{u.identity_count}</td>
+                  <td data-label={TEXT.adminUsers.tableRooms}>{u.room_count}</td>
+                  <td data-label={TEXT.adminUsers.tableCreated}>{formatDate(u.created_at)}</td>
+                  <td data-label={TEXT.adminUsers.tableActions} className="text-right">
                     <div className="admin-users-actions">
                       <button onClick={() => openEdit(u)}>{TEXT.common.edit}</button>
                       <button
                         onClick={() => setConfirmDelete(u.id)}
-                        className="text-danger" className="border-danger"
+                        className="text-danger border-danger"
                       >
                         {TEXT.common.delete}
                       </button>
@@ -294,7 +294,7 @@ export default function AdminUsers() {
             </p>
             <div className="row-center gap-2 mt-4">
               <button onClick={() => setConfirmDelete(null)}>{TEXT.common.cancel}</button>
-              <button onClick={() => handleDelete(confirmDelete)} className="text-danger" className="border-danger">
+              <button onClick={() => handleDelete(confirmDelete)} className="text-danger border-danger">
                 {TEXT.common.delete}
               </button>
             </div>

@@ -218,3 +218,17 @@
 .login-timer--active {
   color: var(--color-text-secondary);
 }
+
+@media (max-width: 767px) {
+  .login-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-3);
+  }
+  .login-user-card {
+    padding: var(--space-4);
+  }
+  .login-card {
+    padding: var(--space-5);
+    border-radius: var(--radius-lg);
+  }
+}

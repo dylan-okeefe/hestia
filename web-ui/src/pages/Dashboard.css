@@ -8,7 +8,7 @@
 
 .dashboard-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: var(--space-4);
   margin-bottom: var(--space-6);
 }
@@ -33,4 +33,11 @@
 
 .dashboard-section-title {
   margin-bottom: var(--space-3);
+}
+
+@media (max-width: 767px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-3);
+  }
 }

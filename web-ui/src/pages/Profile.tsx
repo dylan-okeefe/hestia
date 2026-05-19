@@ -161,6 +161,7 @@ export default function Profile() {
         </div>
       )}
 
+      <div className="profile-layout">
       <PageCard>
         <div className="profile-header">
           {editingName ? (
@@ -326,6 +327,7 @@ export default function Profile() {
           </div>
         ))}
       </PageCard>
+      </div>
     </div>
   );
 }

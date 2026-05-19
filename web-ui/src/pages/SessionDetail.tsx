@@ -89,6 +89,7 @@ export default function SessionDetail() {
         <Link to="/knowledge">{TEXT.sessionDetail.backToKnowledge}</Link>
       </p>
 
+      <div className="session-detail-layout">
       {session && (
         <PageCard>
           <h3>{TEXT.sessionDetail.metadataTitle}</h3>
@@ -140,6 +141,7 @@ export default function SessionDetail() {
           ))}
         </div>
       </PageCard>
+      </div>
     </div>
   );
 }

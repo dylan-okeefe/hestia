@@ -127,4 +127,14 @@ describe('ErrorDashboard', () => {
     await waitFor(() => expect(screen.getByText(TEXT.errorDashboard.emptyTitle)).toBeInTheDocument());
     expect(screen.getByText(TEXT.errorDashboard.emptyDescription)).toBeInTheDocument();
   });
+
+  it('has data-label attributes on table cells for responsive layout', async () => {
+    render(<ErrorDashboard />);
+    await waitFor(() => expect(screen.getByText('Test Workflow')).toBeInTheDocument());
+    const cells = document.querySelectorAll('table.responsive-table td[data-label]');
+    expect(cells.length).toBeGreaterThan(0);
+    const labels = Array.from(cells).map((c) => c.getAttribute('data-label'));
+    expect(labels).toContain(TEXT.errorDashboard.tableType);
+    expect(labels).toContain(TEXT.errorDashboard.tableSource);
+  });
 });

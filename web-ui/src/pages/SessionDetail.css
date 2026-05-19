@@ -77,3 +77,15 @@
   font-size: var(--font-size-sm);
   white-space: pre-wrap;
 }
+
+.session-detail-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-6);
+}
+
+@media (min-width: 1024px) {
+  .session-detail-layout {
+    grid-template-columns: 320px 1fr;
+  }
+}
