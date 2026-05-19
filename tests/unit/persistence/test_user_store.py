@@ -58,6 +58,27 @@ class TestUserStore:
         assert updated.display_name == "Alice"
 
     @pytest.mark.asyncio
+    async def test_update_user_clears_fields(self, user_store):
+        user = await user_store.create_user(
+            "Alice", trust_preset="developer", notes="some notes"
+        )
+        updated = await user_store.update_user(
+            user.id, trust_preset=None, notes=""
+        )
+        assert updated is not None
+        assert updated.trust_preset is None
+        assert updated.notes == ""
+
+    @pytest.mark.asyncio
+    async def test_update_room_clears_display_name(self, user_store):
+        room = await user_store.create_room(
+            "telegram", "-100123", display_name="Old"
+        )
+        updated = await user_store.update_room(room.id, display_name=None)
+        assert updated is not None
+        assert updated.display_name is None
+
+    @pytest.mark.asyncio
     async def test_update_user_not_found(self, user_store):
         updated = await user_store.update_user("nonexistent", display_name="X")
         assert updated is None

@@ -538,6 +538,24 @@ class SessionStore:
                 )
                 await asyncio.sleep(0.001 * (2**attempt))
 
+    async def get_turn_messages(self, turn_id: str) -> dict[str, str] | None:
+        """Return debug-relevant fields for a turn."""
+        from hestia.persistence.schema import turns
+
+        query = sa.select(turns.c.session_id, turns.c.state, turns.c.error).where(
+            turns.c.id == turn_id
+        )
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(query)
+            row = result.mappings().first()
+            if row:
+                return {
+                    "session_id": row.session_id,
+                    "state": row.state,
+                    "error": row.error or "",
+                }
+            return None
+
     async def get_messages(self, session_id: str) -> list[Message]:
         """Get all messages for a session in order."""
         query = (

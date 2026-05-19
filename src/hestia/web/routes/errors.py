@@ -13,8 +13,25 @@ router = APIRouter()
 _CTX_DEP = Depends(get_web_context)
 
 # In-memory status tracking (resets on server restart)
+_MAX_RESOLVED = 10_000
 _resolved_ids: set[str] = set()
 _ignored_ids: set[str] = set()
+
+
+def _mark_resolved(error_id: str) -> None:
+    """Add an error ID to the resolved set, capping size."""
+    _resolved_ids.add(error_id)
+    _ignored_ids.discard(error_id)
+    if len(_resolved_ids) > _MAX_RESOLVED:
+        _resolved_ids.pop()
+
+
+def _mark_ignored(error_id: str) -> None:
+    """Add an error ID to the ignored set, capping size."""
+    _ignored_ids.add(error_id)
+    _resolved_ids.discard(error_id)
+    if len(_ignored_ids) > _MAX_RESOLVED:
+        _ignored_ids.pop()
 
 
 def _build_error_id(source_type: str, source_id: str) -> str:
@@ -171,11 +188,10 @@ async def resolve_error(
     request: Request,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
-    """Mark an error as resolved."""
+    """Mark an error as resolved. Resolution state is in-memory only."""
     await require_admin(request, ctx)
     _parse_error_id(error_id)
-    _resolved_ids.add(error_id)
-    _ignored_ids.discard(error_id)
+    _mark_resolved(error_id)
     return {"resolved": True}
 
 
@@ -185,11 +201,10 @@ async def ignore_error(
     request: Request,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
-    """Mark an error as ignored."""
+    """Mark an error as ignored. Resolution state is in-memory only."""
     await require_admin(request, ctx)
     _parse_error_id(error_id)
-    _ignored_ids.add(error_id)
-    _resolved_ids.discard(error_id)
+    _mark_ignored(error_id)
     return {"ignored": True}
 
 
@@ -222,20 +237,13 @@ async def debug_error(
         else:
             prompt_parts.append("Task record not found.")
     elif source_type == "session_turn":
-        import sqlalchemy as sa
-
-        from hestia.persistence.schema import turns
-
-        query = sa.select(turns).where(turns.c.id == source_id)
-        async with ctx.session_store._db.engine.connect() as conn:
-            result = await conn.execute(query)
-            row = result.fetchone()
-            if row:
-                prompt_parts.append(f"Session: {row.session_id}")
-                prompt_parts.append(f"State: {row.state}")
-                prompt_parts.append(f"Error: {row.error}")
-            else:
-                prompt_parts.append("Turn record not found.")
+        messages = await ctx.session_store.get_turn_messages(source_id)
+        if messages:
+            prompt_parts.append(f"Session: {messages['session_id']}")
+            prompt_parts.append(f"State: {messages['state']}")
+            prompt_parts.append(f"Error: {messages['error']}")
+        else:
+            prompt_parts.append("Turn record not found.")
     else:
         raise HTTPException(status_code=400, detail="Unknown error type")
 

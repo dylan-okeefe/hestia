@@ -69,8 +69,16 @@ class SendMessageNode:
 
         # Interactive mode: send message and wait for response
         timeout_seconds = node.config.get("timeout_seconds", 300)
+        if not isinstance(timeout_seconds, (int, float)) or timeout_seconds < 0:
+            timeout_seconds = 300
         response_type = node.config.get("response_type", "buttons")
         buttons = node.config.get("buttons", ["Approve", "Deny"])
+
+        if platform == "telegram":
+            try:
+                int(user)
+            except ValueError as exc:
+                raise ValueError(f"Invalid Telegram chat ID: {user}") from exc
 
         store = DEFAULT_RESPONSE_STORE
         request_id, future = store.create(platform, user)

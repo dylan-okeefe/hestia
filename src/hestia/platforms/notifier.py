@@ -87,6 +87,12 @@ class PlatformNotifier:
             logger.debug("Telegram bot token not configured, skipping interactive message")
             return False
         try:
+            chat_id = int(platform_user)
+        except ValueError as exc:
+            raise ValueError(
+                f"Cannot send interactive message to non-numeric Telegram ID: {platform_user}"
+            ) from exc
+        try:
             from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
             bot = self._get_telegram_bot()
@@ -100,7 +106,7 @@ class PlatformNotifier:
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await bot.send_message(
-                chat_id=int(platform_user),
+                chat_id=chat_id,
                 text=text,
                 reply_markup=reply_markup,
             )
@@ -122,8 +128,14 @@ class PlatformNotifier:
             logger.debug("Telegram bot token not configured, skipping notification")
             return False
         try:
+            chat_id = int(platform_user)
+        except ValueError as exc:
+            raise ValueError(
+                f"Cannot send to non-numeric Telegram ID: {platform_user}"
+            ) from exc
+        try:
             bot = self._get_telegram_bot()
-            await bot.send_message(chat_id=int(platform_user), text=text)
+            await bot.send_message(chat_id=chat_id, text=text)
             logger.debug("Sent Telegram notification to %s", platform_user)
             return True
         except Exception:  # noqa: BLE001
