@@ -176,8 +176,9 @@ export default function WorkflowEditor() {
         webhookSecret={editor.webhookSecret}
       />
       <div className="workflow-editor__main">
-        <div className="workflow-editor__canvas" tabIndex={0} data-testid="reactflow-wrapper">
-          <ReactFlow
+        <div className="workflow-canvas-container" tabIndex={0} data-testid="reactflow-wrapper">
+          <div className="workflow-canvas">
+            <ReactFlow
             nodes={editor.nodes}
             edges={editor.edges}
             onNodesChange={onNodesChange}
@@ -194,6 +195,7 @@ export default function WorkflowEditor() {
             <Controls />
             <MiniMap />
           </ReactFlow>
+          </div>
         </div>
         {editor.selectedNode && (
           <NodePropertiesPanel
