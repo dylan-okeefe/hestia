@@ -219,6 +219,12 @@
   color: var(--color-text-secondary);
 }
 
+.login-code-digit {
+  background: var(--color-bg);
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+
 @media (max-width: 767px) {
   .login-grid {
     grid-template-columns: 1fr 1fr;

@@ -43,6 +43,10 @@
   font-family: inherit;
 }
 
+.node-properties__input::placeholder {
+  color: var(--color-text-muted);
+}
+
 .node-properties__input:focus {
   outline: none;
   border-color: var(--color-primary);
