@@ -44,7 +44,7 @@ describe('DoctorCheckList', () => {
 
     await waitFor(() => expect(screen.getByText(/3.13.0/i)).toBeInTheDocument());
     const detail = screen.getByText(/3.13.0/i).closest('div');
-    expect(detail).toHaveStyle('color: rgb(102, 102, 102)');
+    expect(detail).toHaveClass('text-secondary');
   });
 
   it('shows warning detail color for failing checks', async () => {
@@ -54,7 +54,7 @@ describe('DoctorCheckList', () => {
 
     await waitFor(() => expect(screen.getByText(/Out of sync/i)).toBeInTheDocument());
     const detail = screen.getByText(/Out of sync/i).closest('div');
-    expect(detail).toHaveStyle('color: rgb(239, 68, 68)');
+    expect(detail).toHaveClass('text-danger');
   });
 
   it('calls onRefresh and shows cached_at when re-run is clicked', async () => {

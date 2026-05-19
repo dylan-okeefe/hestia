@@ -22,7 +22,6 @@ export default function ConditionNode({ data }: NodeProps) {
         className="workflow-node__handle--true" style={{ left: '30%' }}
       />
       <span
-        className="workflow-node__handle-label"
         className="workflow-node__handle-label" style={{ left: '30%' }}
       >
         true
@@ -34,7 +33,6 @@ export default function ConditionNode({ data }: NodeProps) {
         className="workflow-node__handle--false" style={{ left: '70%' }}
       />
       <span
-        className="workflow-node__handle-label"
         className="workflow-node__handle-label" style={{ left: '70%' }}
       >
         false

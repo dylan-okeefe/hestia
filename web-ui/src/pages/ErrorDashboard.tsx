@@ -175,7 +175,7 @@ export default function ErrorDashboard() {
                       <div className="text-xs text-muted">{err.source_id.slice(0, 8)}</div>
                     </td>
                     <td className="max-w-300">
-                      <div className="text-small" className="text-ellipsis">
+                      <div className="text-small text-ellipsis">
                         {err.message}
                       </div>
                     </td>

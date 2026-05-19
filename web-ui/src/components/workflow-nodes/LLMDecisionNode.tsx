@@ -27,8 +27,7 @@ export default function LLMDecisionNode({ data }: NodeProps) {
               className="workflow-node__handle relative"
             />
             <span
-              className="workflow-node__branch-label"
-              className="text-purple"
+              className="workflow-node__branch-label text-purple"
             >
               {branch}
             </span>

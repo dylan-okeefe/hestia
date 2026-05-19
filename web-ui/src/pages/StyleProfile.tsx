@@ -83,7 +83,7 @@ export default function StyleProfile() {
       <div className="style-profile-header">
         <h1 className="style-profile-title">{TEXT.styleProfile.title}</h1>
         {metrics.length > 0 && (
-          <button onClick={() => setConfirmReset(true)} className="text-danger" className="border-danger">
+          <button onClick={() => setConfirmReset(true)} className="text-danger border-danger">
             {TEXT.styleProfile.resetButton}
           </button>
         )}
@@ -105,8 +105,7 @@ export default function StyleProfile() {
               <select
                 value={selectedIdentity}
                 onChange={(e) => setSelectedIdentity(Number(e.target.value))}
-                className="form-select"
-                className="ml-2"
+                className="form-select ml-2"
               >
                 {identities.map((id, idx) => (
                   <option key={idx} value={idx}>
@@ -159,7 +158,7 @@ export default function StyleProfile() {
             </p>
             <div className="row-center gap-2 mt-4">
               <button onClick={() => setConfirmReset(false)}>{TEXT.common.cancel}</button>
-              <button onClick={handleReset} className="text-danger" className="border-danger">
+              <button onClick={handleReset} className="text-danger border-danger">
                 {TEXT.styleProfile.resetConfirmButton}
               </button>
             </div>

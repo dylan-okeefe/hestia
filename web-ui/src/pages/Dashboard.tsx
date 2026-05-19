@@ -124,7 +124,7 @@ export default function Dashboard() {
           <div className="dashboard-stat-label mb-1">{TEXT.dashboard.systemHealthLabel}</div>
           <div className="row-center gap-2">
             <span className={`status-dot ${healthColorClass}`} />
-            <span className="text-small" className="font-semibold">
+            <span className="text-small font-semibold">
               {healthRate === null ? TEXT.dashboard.healthUnknown : TEXT.dashboard.healthPassing(healthRate)}
             </span>
           </div>

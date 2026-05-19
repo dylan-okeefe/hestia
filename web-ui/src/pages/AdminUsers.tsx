@@ -216,7 +216,7 @@ export default function AdminUsers() {
                       <button onClick={() => openEdit(u)}>{TEXT.common.edit}</button>
                       <button
                         onClick={() => setConfirmDelete(u.id)}
-                        className="text-danger" className="border-danger"
+                        className="text-danger border-danger"
                       >
                         {TEXT.common.delete}
                       </button>
@@ -294,7 +294,7 @@ export default function AdminUsers() {
             </p>
             <div className="row-center gap-2 mt-4">
               <button onClick={() => setConfirmDelete(null)}>{TEXT.common.cancel}</button>
-              <button onClick={() => handleDelete(confirmDelete)} className="text-danger" className="border-danger">
+              <button onClick={() => handleDelete(confirmDelete)} className="text-danger border-danger">
                 {TEXT.common.delete}
               </button>
             </div>

@@ -229,7 +229,7 @@ export default function Knowledge() {
         )}
         {memories.length > 0 && (
           <div className="mb-4">
-            <div className="row-sm" className="row-center flex-wrap">
+            <div className="row-sm row-center flex-wrap">
               {Array.from(new Set(memories.flatMap((m) => m.tags || []))).sort().map((tag) => {
                 const active = selectedTags.includes(tag);
                 return (
@@ -268,7 +268,7 @@ export default function Knowledge() {
             >
               <div className="mb-2">{m.content}</div>
               <div className="row-between">
-                <div className="row-sm" className="row-center flex-wrap">
+                <div className="row-sm row-center flex-wrap">
                   {m.tags && m.tags.length > 0 && m.tags.map((tag) => (
                     <span
                       key={tag}

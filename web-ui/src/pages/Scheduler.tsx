@@ -151,7 +151,7 @@ export default function Scheduler() {
                 <tr key={t.id}>
                   <td>
                     <div className="font-semibold">{getTaskName(t)}</div>
-                    <div className="text-small text-muted" className="break-all">{t.prompt}</div>
+                    <div className="text-small text-muted break-all">{t.prompt}</div>
                   </td>
                   <td>
                     {t.cron_expression ? formatCron(t.cron_expression) : '—'}
@@ -180,7 +180,7 @@ export default function Scheduler() {
                       <button onClick={() => openEdit(t)}>{TEXT.common.edit}</button>
                       <button
                         onClick={() => setConfirmDelete(t.id)}
-                        className="text-danger" className="border-danger"
+                        className="text-danger border-danger"
                       >
                         {TEXT.common.delete}
                       </button>
@@ -232,7 +232,7 @@ export default function Scheduler() {
                   />
                 </div>
               </label>
-              <label className="row-center gap-2" className="cursor-pointer">
+              <label className="row-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={form.enabled}
@@ -263,7 +263,7 @@ export default function Scheduler() {
             </p>
             <div className="row-center gap-2 mt-4">
               <button onClick={() => setConfirmDelete(null)}>{TEXT.common.cancel}</button>
-              <button onClick={() => handleDelete(confirmDelete)} className="text-danger" className="border-danger">
+              <button onClick={() => handleDelete(confirmDelete)} className="text-danger border-danger">
                 {TEXT.common.delete}
               </button>
             </div>
