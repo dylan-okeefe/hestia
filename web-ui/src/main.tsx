@@ -8,6 +8,7 @@ import './styles/global.css';
 import './styles/utilities.css';
 import './styles/components.css';
 import './components/ResponsiveTable.css';
+import './components/Modal.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
