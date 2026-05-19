@@ -155,3 +155,19 @@
   font-size: var(--font-size-sm);
   cursor: pointer;
 }
+
+.syntax-highlight {
+  background: var(--color-surface);
+  border: var(--border-thin);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-size: var(--font-size-sm);
+  overflow-x: auto;
+}
+
+.syntax-keyword { color: var(--color-primary); }
+.syntax-string { color: var(--color-success); }
+.syntax-number { color: var(--color-warning); }
+.syntax-comment { color: var(--color-text-muted); }
+.syntax-variable { color: var(--color-text); }
