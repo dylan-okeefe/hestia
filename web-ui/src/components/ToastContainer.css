@@ -1,0 +1,11 @@
+.toast {
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  border: var(--border-thin);
+  box-shadow: var(--shadow-lg);
+}
+
+.toast--success { border-left: 3px solid var(--color-success); }
+.toast--error   { border-left: 3px solid var(--color-danger); }
+.toast--warning { border-left: 3px solid var(--color-warning); }
+.toast--info    { border-left: 3px solid var(--color-primary); }

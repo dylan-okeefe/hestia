@@ -16,6 +16,11 @@
   line-height: var(--line-height-normal);
 }
 
+.empty-state__icon {
+  color: var(--color-text-muted);
+  opacity: 0.5;
+}
+
 .empty-state__action {
   padding: var(--space-2) var(--space-4);
   border-radius: var(--radius-sm);

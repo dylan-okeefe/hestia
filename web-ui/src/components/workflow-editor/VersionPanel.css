@@ -14,7 +14,7 @@
 }
 
 .version-panel__table thead tr {
-  border-bottom: 1px solid #ccc;
+  border-bottom: 1px solid var(--color-border-subtle);
 }
 
 .version-panel__table th,

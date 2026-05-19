@@ -65,15 +65,15 @@
 }
 
 .workflow-node__handle {
-  background: #555;
+  background: var(--color-text-secondary);
 }
 
 .workflow-node__handle--true {
-  background: #22c55e;
+  background: var(--color-success);
 }
 
 .workflow-node__handle--false {
-  background: #ef4444;
+  background: var(--color-danger);
 }
 
 .text-purple {
