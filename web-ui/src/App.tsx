@@ -66,7 +66,8 @@ function AppContent() {
               </button>
             )}
           </StickyNav>
-          <Routes>
+          <div className="main-content">
+            <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/proposals" element={<Proposals />} />
             <Route path="/style" element={<StyleProfile />} />
@@ -82,6 +83,7 @@ function AppContent() {
             <Route path="/errors" element={<ErrorDashboard />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
+          </div>
         </>
       )}
     </>
