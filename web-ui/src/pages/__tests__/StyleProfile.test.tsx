@@ -2,6 +2,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import StyleProfile from '../StyleProfile';
 import * as client from '../../api/client';
+import { TEXT } from '../../lib/text';
 
 const authState = vi.hoisted(() => ({
   value: {
@@ -83,7 +84,7 @@ describe('StyleProfile', () => {
 
     await waitFor(() =>
       expect(
-        screen.getByText('No style metrics for this identity yet. Hestia builds a style profile over time.')
+        screen.getByText(TEXT.styleProfile.emptyDescription)
       ).toBeInTheDocument()
     );
   });

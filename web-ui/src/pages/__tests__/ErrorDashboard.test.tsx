@@ -2,6 +2,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import ErrorDashboard from '../ErrorDashboard';
 import * as client from '../../api/client';
+import { TEXT } from '../../lib/text';
 
 vi.mock('../../api/client', async () => {
   const actual = await vi.importActual<typeof import('../../api/client')>('../../api/client');
@@ -89,9 +90,9 @@ describe('ErrorDashboard', () => {
   it('expands and collapses details', async () => {
     render(<ErrorDashboard />);
     await waitFor(() => expect(screen.getByText('Test Workflow')).toBeInTheDocument());
-    fireEvent.click(screen.getAllByText('Details')[0]);
-    await waitFor(() => expect(screen.getByText(/Source ID: ex1/)).toBeInTheDocument());
-    fireEvent.click(screen.getAllByText('Hide')[0]);
+    fireEvent.click(screen.getAllByText(TEXT.errorDashboard.detailsButton)[0]);
+    await waitFor(() => expect(screen.getByText(TEXT.errorDashboard.sourceIdFormat('ex1', 'workflow_execution'))).toBeInTheDocument());
+    fireEvent.click(screen.getAllByText(TEXT.errorDashboard.hideButton)[0]);
     await waitFor(() => expect(screen.queryByText(/Source ID: ex1/)).not.toBeInTheDocument());
   });
 
@@ -99,7 +100,7 @@ describe('ErrorDashboard', () => {
     vi.mocked(client.resolveError).mockResolvedValue({ resolved: true });
     render(<ErrorDashboard />);
     await waitFor(() => expect(screen.getByText('Test Workflow')).toBeInTheDocument());
-    fireEvent.click(screen.getAllByText('Resolve')[0]);
+    fireEvent.click(screen.getAllByText(TEXT.errorDashboard.resolveButton)[0]);
     await waitFor(() => expect(client.resolveError).toHaveBeenCalledWith('workflow_execution:ex1'));
   });
 
@@ -107,7 +108,7 @@ describe('ErrorDashboard', () => {
     vi.mocked(client.ignoreError).mockResolvedValue({ ignored: true });
     render(<ErrorDashboard />);
     await waitFor(() => expect(screen.getByText('Test Workflow')).toBeInTheDocument());
-    fireEvent.click(screen.getAllByText('Ignore')[0]);
+    fireEvent.click(screen.getAllByText(TEXT.errorDashboard.ignoreButton)[0]);
     await waitFor(() => expect(client.ignoreError).toHaveBeenCalledWith('workflow_execution:ex1'));
   });
 
@@ -115,15 +116,15 @@ describe('ErrorDashboard', () => {
     vi.mocked(client.debugError).mockResolvedValue({ prompt: 'Debug workflow_execution error:\nWorkflow: wf1' });
     render(<ErrorDashboard />);
     await waitFor(() => expect(screen.getByText('Test Workflow')).toBeInTheDocument());
-    fireEvent.click(screen.getAllByText('Debug')[0]);
-    await waitFor(() => expect(screen.getByText('Debug Prompt')).toBeInTheDocument());
+    fireEvent.click(screen.getAllByText(TEXT.errorDashboard.debugButton)[0]);
+    await waitFor(() => expect(screen.getByText(TEXT.errorDashboard.debugModalTitle)).toBeInTheDocument());
     expect(screen.getByDisplayValue(/Debug workflow_execution error:/)).toBeInTheDocument();
   });
 
   it('shows empty state when no errors', async () => {
     vi.mocked(client.fetchErrors).mockResolvedValue({ errors: [] });
     render(<ErrorDashboard />);
-    await waitFor(() => expect(screen.getByText('No errors found')).toBeInTheDocument());
-    expect(screen.getByText('Hestia is running smoothly.')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText(TEXT.errorDashboard.emptyTitle)).toBeInTheDocument());
+    expect(screen.getByText(TEXT.errorDashboard.emptyDescription)).toBeInTheDocument();
   });
 });

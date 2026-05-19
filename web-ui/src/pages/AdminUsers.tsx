@@ -16,6 +16,7 @@ import RoleDropdown from '../components/forms/RoleDropdown';
 import TrustPresetDropdown from '../components/forms/TrustPresetDropdown';
 import { label, ROLE_LABELS } from '../lib/labels';
 import { formatDate } from '../lib/format';
+import { TEXT } from '../lib/text';
 
 interface User {
   id: string;
@@ -134,7 +135,7 @@ export default function AdminUsers() {
     return (
       <div style={{ padding: '1rem' }}>
         <PageCard>
-          <EmptyState title="Administrator access required" description="You do not have permission to view this page." />
+          <EmptyState title={TEXT.adminUsers.accessDeniedTitle} description={TEXT.adminUsers.accessDeniedDescription} />
         </PageCard>
       </div>
     );
@@ -143,8 +144,8 @@ export default function AdminUsers() {
   return (
     <div style={{ padding: '1rem' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-        <h1 style={{ margin: 0 }}>Users</h1>
-        <button onClick={openCreate}>+ New User</button>
+        <h1 style={{ margin: 0 }}>{TEXT.adminUsers.title}</h1>
+        <button onClick={openCreate}>{TEXT.adminUsers.createButton}</button>
       </div>
 
       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
@@ -163,7 +164,7 @@ export default function AdminUsers() {
               textTransform: 'capitalize',
             }}
           >
-            {r === 'all' ? 'All' : label(ROLE_LABELS, r)}
+            {r === 'all' ? TEXT.common.filter : label(ROLE_LABELS, r)}
           </button>
         ))}
       </div>
@@ -175,14 +176,14 @@ export default function AdminUsers() {
       )}
 
       {isError && (
-        <ErrorState message={error?.message ?? 'Failed to load users'} onRetry={refetch} />
+        <ErrorState message={error?.message ?? TEXT.adminUsers.loadError} onRetry={refetch} />
       )}
 
       {!isLoading && !isError && filteredUsers.length === 0 && (
         <EmptyState
-          title="No users found"
-          description="Create a user to get started."
-          action={{ label: 'Create user', onClick: openCreate }}
+          title={TEXT.adminUsers.emptyTitle}
+          description={TEXT.adminUsers.emptyDescription}
+          action={{ label: TEXT.adminUsers.emptyAction, onClick: openCreate }}
         />
       )}
 
@@ -191,13 +192,13 @@ export default function AdminUsers() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
             <thead>
               <tr style={{ borderBottom: '2px solid #eee', textAlign: 'left', background: '#fafafa' }}>
-                <th style={{ padding: '0.75rem 1rem' }}>Name</th>
-                <th style={{ padding: '0.75rem 1rem' }}>Role</th>
-                <th style={{ padding: '0.75rem 1rem' }}>Trust</th>
-                <th style={{ padding: '0.75rem 1rem' }}>Identities</th>
-                <th style={{ padding: '0.75rem 1rem' }}>Rooms</th>
-                <th style={{ padding: '0.75rem 1rem' }}>Created</th>
-                <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Actions</th>
+                <th style={{ padding: '0.75rem 1rem' }}>{TEXT.adminUsers.tableName}</th>
+                <th style={{ padding: '0.75rem 1rem' }}>{TEXT.adminUsers.tableRole}</th>
+                <th style={{ padding: '0.75rem 1rem' }}>{TEXT.adminUsers.tableTrust}</th>
+                <th style={{ padding: '0.75rem 1rem' }}>{TEXT.adminUsers.tableIdentities}</th>
+                <th style={{ padding: '0.75rem 1rem' }}>{TEXT.adminUsers.tableRooms}</th>
+                <th style={{ padding: '0.75rem 1rem' }}>{TEXT.adminUsers.tableCreated}</th>
+                <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>{TEXT.adminUsers.tableActions}</th>
               </tr>
             </thead>
             <tbody>
@@ -242,12 +243,12 @@ export default function AdminUsers() {
                   <td style={{ padding: '0.75rem 1rem' }}>{formatDate(u.created_at)}</td>
                   <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
                     <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-                      <button onClick={() => openEdit(u)}>Edit</button>
+                      <button onClick={() => openEdit(u)}>{TEXT.common.edit}</button>
                       <button
                         onClick={() => setConfirmDelete(u.id)}
                         style={{ color: '#ef4444', borderColor: '#ef4444' }}
                       >
-                        Delete
+                        {TEXT.common.delete}
                       </button>
                     </div>
                   </td>
@@ -275,44 +276,44 @@ export default function AdminUsers() {
             style={{ width: '90%', maxWidth: 480, maxHeight: '90vh', overflowY: 'auto', background: '#fff', border: '1px solid #eee', borderRadius: '8px', padding: '1rem' }}
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 style={{ marginTop: 0 }}>{editingUser ? 'Edit User' : 'New User'}</h2>
+            <h2 style={{ marginTop: 0 }}>{editingUser ? TEXT.adminUsers.editTitle : TEXT.adminUsers.createTitle}</h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               <label>
-                Display Name
+                {TEXT.adminUsers.displayNameLabel}
                 <input
                   value={form.display_name}
                   onChange={(e) => setForm((f) => ({ ...f, display_name: e.target.value }))}
-                  placeholder="Jane Doe"
+                  placeholder={TEXT.adminUsers.displayNamePlaceholder}
                   style={{ width: '100%', padding: '0.5rem', marginTop: '0.25rem' }}
                 />
               </label>
               <label>
-                Role
+                {TEXT.adminUsers.roleLabel}
                 <div style={{ marginTop: '0.25rem' }}>
                   <RoleDropdown value={form.role} onChange={(v) => setForm((f) => ({ ...f, role: v }))} />
                 </div>
               </label>
               <label>
-                Trust Preset
+                {TEXT.adminUsers.trustPresetLabel}
                 <div style={{ marginTop: '0.25rem' }}>
                   <TrustPresetDropdown value={form.trust_preset} onChange={(v) => setForm((f) => ({ ...f, trust_preset: v }))} />
                 </div>
               </label>
               <label>
-                Notes
+                {TEXT.adminUsers.notesLabel}
                 <textarea
                   rows={3}
                   value={form.notes}
                   onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-                  placeholder="Optional notes about this user"
+                  placeholder={TEXT.adminUsers.notesPlaceholder}
                   style={{ width: '100%', padding: '0.5rem', marginTop: '0.25rem', fontFamily: 'inherit' }}
                 />
               </label>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem' }}>
-              <button onClick={() => setModalOpen(false)}>Cancel</button>
+              <button onClick={() => setModalOpen(false)}>{TEXT.common.cancel}</button>
               <button onClick={handleSave} disabled={!form.display_name.trim()}>
-                {editingUser ? 'Save' : 'Create'}
+                {editingUser ? TEXT.common.save : TEXT.common.create}
               </button>
             </div>
           </div>
@@ -333,14 +334,14 @@ export default function AdminUsers() {
           onClick={() => setConfirmDelete(null)}
         >
           <div style={{ width: 360, textAlign: 'center', background: '#fff', border: '1px solid #eee', borderRadius: '8px', padding: '1rem' }} onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ marginTop: 0 }}>Delete user?</h3>
+            <h3 style={{ marginTop: 0 }}>{TEXT.adminUsers.deleteConfirmTitle}</h3>
             <p style={{ fontSize: '0.875rem', color: '#666' }}>
-              This action cannot be undone.
+              {TEXT.adminUsers.deleteConfirmDescription}
             </p>
             <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', marginTop: '1rem' }}>
-              <button onClick={() => setConfirmDelete(null)}>Cancel</button>
+              <button onClick={() => setConfirmDelete(null)}>{TEXT.common.cancel}</button>
               <button onClick={() => handleDelete(confirmDelete)} style={{ color: '#ef4444', borderColor: '#ef4444' }}>
-                Delete
+                {TEXT.common.delete}
               </button>
             </div>
           </div>
@@ -361,13 +362,13 @@ export default function AdminUsers() {
           onClick={() => setShowAddIdentity(null)}
         >
           <div style={{ width: 360, background: '#fff', border: '1px solid #eee', borderRadius: '8px', padding: '1rem' }} onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ marginTop: 0 }}>Add Identity</h3>
+            <h3 style={{ marginTop: 0 }}>{TEXT.adminUsers.addIdentityTitle}</h3>
             <p style={{ fontSize: '0.875rem', color: '#666' }}>
-              User created. Would you like to add a platform identity now?
+              {TEXT.adminUsers.addIdentityPrompt}
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.5rem' }}>
               <label>
-                Platform
+                {TEXT.adminUsers.addIdentityPlatformLabel}
                 <input
                   value={identityForm.platform}
                   onChange={(e) => setIdentityForm((f) => ({ ...f, platform: e.target.value }))}
@@ -375,7 +376,7 @@ export default function AdminUsers() {
                 />
               </label>
               <label>
-                Platform User
+                {TEXT.adminUsers.addIdentityUserLabel}
                 <input
                   value={identityForm.platform_user}
                   onChange={(e) => setIdentityForm((f) => ({ ...f, platform_user: e.target.value }))}
@@ -384,9 +385,9 @@ export default function AdminUsers() {
               </label>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem' }}>
-              <button onClick={() => setShowAddIdentity(null)}>Skip</button>
+              <button onClick={() => setShowAddIdentity(null)}>{TEXT.adminUsers.skip}</button>
               <button onClick={handleAddIdentity} disabled={!identityForm.platform.trim() || !identityForm.platform_user.trim()}>
-                Add
+                {TEXT.common.add}
               </button>
             </div>
           </div>

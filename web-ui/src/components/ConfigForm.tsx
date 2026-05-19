@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { saveConfig, fetchConfigSchema } from '../api/client';
 import { CONFIG_KEY_LABELS, label } from '../lib/labels';
 import { formatCron } from '../lib/format';
+import { TEXT } from '../lib/text';
 
 interface ConfigFormProps {
   initialConfig: Record<string, unknown>;
@@ -205,10 +206,10 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
       const res = await saveConfig(config);
       const data = await res.json();
       if (res.ok) {
-        setSaveMsg('Saved successfully');
+        setSaveMsg(TEXT.config.saveSuccess);
         onSave?.();
       } else {
-        setSaveMsg(data.detail || 'Save failed');
+        setSaveMsg(data.detail || TEXT.config.saveFailed);
       }
     } catch (err) {
       setSaveMsg((err as Error).message);
@@ -335,7 +336,7 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
               onClick={() => setRevealed((s) => ({ ...s, [fullPath]: !s[fullPath] }))}
               style={{ fontSize: '0.8rem' }}
             >
-              {revealed[fullPath] ? 'Hide' : 'Reveal'}
+              {revealed[fullPath] ? TEXT.config.hide : TEXT.config.reveal}
             </button>
           )}
         </label>
@@ -347,7 +348,7 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
         {input}
-        {invalid && <span style={{ color: '#f44336', fontSize: '0.85rem' }}>Invalid</span>}
+        {invalid && <span style={{ color: '#f44336', fontSize: '0.85rem' }}>{TEXT.config.invalid}</span>}
         {needsRestart && (
           <span
             style={{
@@ -358,7 +359,7 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
               borderRadius: '4px',
             }}
           >
-            Requires restart
+            {TEXT.config.requiresRestart}
           </span>
         )}
         {cronPreview && (
@@ -377,7 +378,7 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
     <div>
       {typeof config.trust === 'object' && config.trust !== null && (
         <div style={{ marginBottom: '1rem' }}>
-          <strong>Trust Preset</strong>
+          <strong>{TEXT.config.trustPresetTitle}</strong>
           <div
             style={{
               display: 'grid',
@@ -442,7 +443,7 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
                   resetSection(sectionKey);
                 }}
               >
-                Reset to initial
+                {TEXT.config.resetToInitial}
               </button>
               <span>{collapsed[sectionKey] ? '▶' : '▼'}</span>
             </div>
@@ -462,7 +463,7 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
       {topFields.length > 0 && (
         <div style={{ border: '1px solid #ddd', borderRadius: '8px', marginBottom: '1rem', overflow: 'hidden' }}>
           <div style={{ padding: '0.75rem 1rem', background: '#fafafa' }}>
-            <strong>General</strong>
+            <strong>{TEXT.config.generalSection}</strong>
           </div>
           <div style={{ padding: '1rem' }}>
             {topFields.map(([k, v]) => (
@@ -476,7 +477,7 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
 
       <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
         <button onClick={handleSave} disabled={saving}>
-          {saving ? 'Saving…' : 'Save'}
+          {saving ? TEXT.common.saving : TEXT.common.save}
         </button>
         {saveMsg && <span>{saveMsg}</span>}
       </div>

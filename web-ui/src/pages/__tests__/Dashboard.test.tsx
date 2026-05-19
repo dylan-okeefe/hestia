@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import Dashboard from '../Dashboard';
+import { TEXT } from '../../lib/text';
 
 const authState = vi.hoisted(() => ({
   value: {
@@ -75,9 +76,9 @@ describe('Dashboard', () => {
     );
 
     await waitFor(() => expect(screen.getByText('3')).toBeInTheDocument());
-    expect(screen.getByText('Active Workflows')).toBeInTheDocument();
-    expect(screen.getByText('Scheduled Tasks')).toBeInTheDocument();
-    expect(screen.getByText('Pending Proposals')).toBeInTheDocument();
+    expect(screen.getByText(TEXT.dashboard.activeWorkflowsLabel)).toBeInTheDocument();
+    expect(screen.getByText(TEXT.dashboard.scheduledTasksLabel)).toBeInTheDocument();
+    expect(screen.getByText(TEXT.dashboard.pendingProposalsLabel)).toBeInTheDocument();
   });
 
   it('shows quick action buttons', async () => {
@@ -87,8 +88,8 @@ describe('Dashboard', () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => expect(screen.getByText('Go to Workflows')).toBeInTheDocument());
-    expect(screen.getByText('View Profile')).toBeInTheDocument();
-    expect(screen.getByText('Run Health Check')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText(TEXT.dashboard.goToWorkflows)).toBeInTheDocument());
+    expect(screen.getByText(TEXT.dashboard.viewProfile)).toBeInTheDocument();
+    expect(screen.getByText(TEXT.dashboard.runHealthCheck)).toBeInTheDocument();
   });
 });

@@ -9,6 +9,7 @@ import ErrorState from '../components/layout/ErrorState';
 import PlatformDropdown from '../components/forms/PlatformDropdown';
 import TrustPresetDropdown from '../components/forms/TrustPresetDropdown';
 import { label, ROLE_LABELS, TRUST_PRESET_LABELS } from '../lib/labels';
+import { TEXT } from '../lib/text';
 
 const roleBadgeColor = (role: string) => {
   switch (role) {
@@ -109,7 +110,7 @@ export default function Profile() {
 
   const handleRemoveIdentity = async (platform: string, platformUser: string) => {
     if (!user) return;
-    if (!window.confirm(`Remove identity ${platform}: ${platformUser}?`)) return;
+    if (!window.confirm(TEXT.profile.removeIdentityConfirm(platform, platformUser))) return;
     setError(null);
     setRemovingIdentity(`${platform}-${platformUser}`);
     try {
@@ -144,14 +145,14 @@ export default function Profile() {
   if (!user) {
     return (
       <div style={{ padding: '1rem' }}>
-        <EmptyState title="No user found" description="Please log in to view your profile." />
+        <EmptyState title={TEXT.profile.noUserTitle} description={TEXT.profile.noUserDescription} />
       </div>
     );
   }
 
   return (
     <div style={{ padding: '1rem' }}>
-      <h1>User Profile</h1>
+      <h1>{TEXT.profile.title}</h1>
 
       {error && (
         <div
@@ -177,8 +178,8 @@ export default function Profile() {
                 onChange={(e) => setEditName(e.target.value)}
                 style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid #ccc', fontSize: '1.25rem', fontWeight: 'bold', flex: 1, minWidth: '200px' }}
               />
-              <button onClick={handleSaveName} disabled={!editName.trim()}>Save</button>
-              <button onClick={() => { setEditingName(false); setEditName(user.display_name); }}>Cancel</button>
+              <button onClick={handleSaveName} disabled={!editName.trim()}>{TEXT.common.save}</button>
+              <button onClick={() => { setEditingName(false); setEditName(user.display_name); }}>{TEXT.common.cancel}</button>
             </>
           ) : (
             <>
@@ -198,14 +199,14 @@ export default function Profile() {
                 {label(ROLE_LABELS, user.role)}
               </span>
               <button onClick={() => setEditingName(true)} style={{ fontSize: '0.875rem' }}>
-                Edit name
+                {TEXT.profile.editName}
               </button>
             </>
           )}
         </div>
 
         <div style={{ marginBottom: '0.5rem', fontSize: '0.875rem', color: '#666' }}>
-          <strong>Personal trust override:</strong>{' '}
+          <strong>{TEXT.profile.trustOverrideLabel}</strong>{' '}
           {user.role === 'admin' ? (
             <TrustPresetDropdown
               value={user.trust_preset || ''}
@@ -220,13 +221,13 @@ export default function Profile() {
               }}
             />
           ) : (
-            <span>{user.trust_preset || '—'}</span>
+            <span>{user.trust_preset || TEXT.common.none}</span>
           )}
         </div>
         <p style={{ margin: '0.25rem 0 0', fontSize: '0.75rem', color: '#888' }}>
           {user.trust_preset
-            ? `Overrides the global trust level (currently: ${globalPreset || '—'}).`
-            : `Using global trust level: ${globalPreset || '—'}. Select a preset to override.`}
+            ? TEXT.profile.trustOverrideHelper(globalPreset || TEXT.common.none)
+            : TEXT.profile.trustUsingGlobal(globalPreset || TEXT.common.none)}
         </p>
         <div style={{ marginTop: '0.5rem' }}>
           <span
@@ -240,19 +241,19 @@ export default function Profile() {
               background: '#1976d2',
             }}
           >
-            Effective: {label(TRUST_PRESET_LABELS, user.trust_preset || globalPreset || '—')}
+            {TEXT.profile.effectiveTrustLabel} {label(TRUST_PRESET_LABELS, user.trust_preset || globalPreset || TEXT.common.none)}
           </span>
         </div>
         <div style={{ marginBottom: '0.5rem', fontSize: '0.875rem', color: '#666' }}>
-          <strong>Created:</strong>{' '}
+          <strong>{TEXT.profile.createdLabel}</strong>{' '}
           {new Date(user.created_at).toLocaleString()}
         </div>
       </PageCard>
 
       <PageCard>
-        <h3 style={{ marginTop: 0 }}>Notes</h3>
+        <h3 style={{ marginTop: 0 }}>{TEXT.profile.notesTitle}</h3>
         <p style={{ margin: '0 0 0.5rem', fontSize: '0.75rem', color: '#888' }}>
-          Facts about you that Hestia sees in every conversation.
+          {TEXT.profile.notesDescription}
         </p>
         <textarea
           value={editNotes}
@@ -262,18 +263,18 @@ export default function Profile() {
         />
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ fontSize: '0.75rem', color: '#888' }}>
-            {editNotes.length} characters
+            {editNotes.length}{TEXT.profile.charactersSuffix}
           </span>
           <button onClick={handleSaveNotes} disabled={savingNotes}>
-            {savingNotes ? 'Saving…' : 'Save Notes'}
+            {savingNotes ? TEXT.common.saving : TEXT.profile.saveNotes}
           </button>
         </div>
       </PageCard>
 
       <PageCard>
-        <h3 style={{ marginTop: 0 }}>Identities</h3>
+        <h3 style={{ marginTop: 0 }}>{TEXT.profile.identitiesTitle}</h3>
         {user.identities.length === 0 && (
-          <EmptyState title="No identities linked" description="Add an identity so Hestia knows how to reach you on other platforms." />
+          <EmptyState title={TEXT.profile.identitiesEmptyTitle} description={TEXT.profile.identitiesEmptyDescription} />
         )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
           {user.identities.map((id) => (
@@ -292,7 +293,7 @@ export default function Profile() {
               <div style={{ fontSize: '0.875rem' }}>
                 <strong>{id.platform}</strong>: {id.platform_user}{' '}
                 {id.verified && (
-                  <span style={{ color: '#22c55e', fontSize: '0.75rem', fontWeight: 'bold' }}>✓ verified</span>
+                  <span style={{ color: '#22c55e', fontSize: '0.75rem', fontWeight: 'bold' }}>{TEXT.profile.verifiedBadge}</span>
                 )}
               </div>
               <button
@@ -300,7 +301,7 @@ export default function Profile() {
                 disabled={removingIdentity === `${id.platform}-${id.platform_user}`}
                 style={{ fontSize: '0.75rem', color: '#ef4444' }}
               >
-                {removingIdentity === `${id.platform}-${id.platform_user}` ? 'Removing…' : 'Remove'}
+                {removingIdentity === `${id.platform}-${id.platform_user}` ? TEXT.common.removing : TEXT.common.remove}
               </button>
             </div>
           ))}
@@ -308,29 +309,29 @@ export default function Profile() {
 
         {!showAddIdentity ? (
           <button onClick={() => setShowAddIdentity(true)} style={{ marginTop: '1rem' }}>
-            + Add identity
+            {TEXT.profile.addIdentityButton}
           </button>
         ) : (
           <div style={{ marginTop: '1rem', padding: '1rem', border: '1px solid #eee', borderRadius: '8px', background: '#fafafa' }}>
             <div style={{ marginBottom: '0.5rem' }}>
-              <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.875rem' }}>Platform</label>
+              <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.875rem' }}>{TEXT.profile.addIdentityPlatformLabel}</label>
               <PlatformDropdown value={newPlatform} onChange={setNewPlatform} includeEmpty />
             </div>
             <div style={{ marginBottom: '0.5rem' }}>
-              <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.875rem' }}>User ID</label>
+              <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.875rem' }}>{TEXT.profile.addIdentityUserLabel}</label>
               <input
                 value={newPlatformUser}
                 onChange={(e) => setNewPlatformUser(e.target.value)}
-                placeholder="e.g. @alice:example.com"
+                placeholder={TEXT.profile.addIdentityUserPlaceholder}
                 style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #ccc', fontSize: '0.875rem' }}
               />
             </div>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
               <button onClick={handleAddIdentity} disabled={addingIdentity || !newPlatform || !newPlatformUser.trim()}>
-                {addingIdentity ? 'Adding…' : 'Add'}
+                {addingIdentity ? TEXT.common.adding : TEXT.common.add}
               </button>
               <button onClick={() => { setShowAddIdentity(false); setNewPlatform(''); setNewPlatformUser(''); }}>
-                Cancel
+                {TEXT.common.cancel}
               </button>
             </div>
           </div>
@@ -338,15 +339,15 @@ export default function Profile() {
       </PageCard>
 
       <PageCard>
-        <h3 style={{ marginTop: 0 }}>Rooms</h3>
+        <h3 style={{ marginTop: 0 }}>{TEXT.profile.roomsTitle}</h3>
         {roomsLoading && <LoadingSkeleton lines={3} />}
         {roomsIsError && roomsError && (
           <ErrorState message={roomsError.message} onRetry={() => window.location.reload()} />
         )}
         {!roomsLoading && !roomsIsError && rooms.length === 0 && (
           <EmptyState
-            title="No rooms yet"
-            description="Telegram and Matrix group chats are registered automatically when a message is received. Run `hestia migrate-users` to register existing groups."
+            title={TEXT.profile.roomsEmptyTitle}
+            description={TEXT.profile.roomsEmptyDescription}
           />
         )}
         {!roomsLoading && !roomsIsError && rooms.map((room) => (

@@ -5,6 +5,7 @@ import PageCard from '../components/layout/PageCard';
 import LoadingSkeleton from '../components/layout/LoadingSkeleton';
 import ErrorState from '../components/layout/ErrorState';
 import EmptyState from '../components/layout/EmptyState';
+import { TEXT } from '../lib/text';
 
 interface Metric {
   key: string;
@@ -52,7 +53,7 @@ export default function StyleProfile() {
       setConfirmReset(false);
       setRefreshKey((k) => k + 1);
     } catch (err: any) {
-      setError(err.message || 'Failed to reset profile');
+      setError(err.message || TEXT.styleProfile.resetError);
     }
   };
 
@@ -79,10 +80,10 @@ export default function StyleProfile() {
   return (
     <div style={{ padding: '1rem' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-        <h1 style={{ margin: 0 }}>Style Profile</h1>
+        <h1 style={{ margin: 0 }}>{TEXT.styleProfile.title}</h1>
         {metrics.length > 0 && (
           <button onClick={() => setConfirmReset(true)} style={{ color: '#ef4444', borderColor: '#ef4444' }}>
-            Reset Profile
+            {TEXT.styleProfile.resetButton}
           </button>
         )}
       </div>
@@ -90,16 +91,16 @@ export default function StyleProfile() {
       <PageCard style={{ marginBottom: '1rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
           <div>
-            <span style={{ fontSize: '0.875rem', color: '#666' }}>Platform</span>
+            <span style={{ fontSize: '0.875rem', color: '#666' }}>{TEXT.styleProfile.platformLabel}</span>
             <div style={{ fontWeight: 600, textTransform: 'uppercase' }}>{platform}</div>
           </div>
           <div>
-            <span style={{ fontSize: '0.875rem', color: '#666' }}>User</span>
+            <span style={{ fontSize: '0.875rem', color: '#666' }}>{TEXT.styleProfile.userLabel}</span>
             <div style={{ fontWeight: 600 }}>{platformUser}</div>
           </div>
           {identities.length > 1 && (
             <div>
-              <span style={{ fontSize: '0.875rem', color: '#666' }}>Identity</span>
+              <span style={{ fontSize: '0.875rem', color: '#666' }}>{TEXT.styleProfile.identityLabel}</span>
               <select
                 value={selectedIdentity}
                 onChange={(e) => setSelectedIdentity(Number(e.target.value))}
@@ -126,8 +127,8 @@ export default function StyleProfile() {
 
       {!loading && !error && metrics.length === 0 && (
         <EmptyState
-          title="No style metrics"
-          description="No style metrics for this identity yet. Hestia builds a style profile over time."
+          title={TEXT.styleProfile.emptyTitle}
+          description={TEXT.styleProfile.emptyDescription}
         />
       )}
 
@@ -163,14 +164,14 @@ export default function StyleProfile() {
             style={{ width: 360, textAlign: 'center', background: '#fff', border: '1px solid #eee', borderRadius: '8px', padding: '1rem' }}
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 style={{ marginTop: 0 }}>Reset style profile?</h3>
+            <h3 style={{ marginTop: 0 }}>{TEXT.styleProfile.resetConfirmTitle}</h3>
             <p style={{ fontSize: '0.875rem', color: '#666' }}>
-              This will delete all {metrics.length} metrics for {platformUser} on {platform}.
+              {TEXT.styleProfile.resetConfirmDescription(metrics.length, platformUser, platform)}
             </p>
             <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', marginTop: '1rem' }}>
-              <button onClick={() => setConfirmReset(false)}>Cancel</button>
+              <button onClick={() => setConfirmReset(false)}>{TEXT.common.cancel}</button>
               <button onClick={handleReset} style={{ color: '#ef4444', borderColor: '#ef4444' }}>
-                Reset
+                {TEXT.styleProfile.resetConfirmButton}
               </button>
             </div>
           </div>

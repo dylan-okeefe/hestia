@@ -3,6 +3,7 @@ import DoctorCheckList from '../components/DoctorCheckList';
 import AuditFindings from '../components/AuditFindings';
 import EgressLog from '../components/EgressLog';
 import PageCard from '../components/layout/PageCard';
+import { TEXT } from '../lib/text';
 
 interface Check {
   name: string;
@@ -33,7 +34,7 @@ export default function Security() {
 
   return (
     <div style={{ padding: '1rem' }}>
-      <h1 style={{ marginBottom: '1rem' }}>Security &amp; Health</h1>
+      <h1 style={{ marginBottom: '1rem' }}>{TEXT.security.title}</h1>
 
       <section style={{ marginBottom: '2rem' }}>
         <DoctorCheckList checks={checks} onRefresh={setChecks} />
@@ -42,7 +43,7 @@ export default function Security() {
       <section style={{ marginBottom: '2rem' }}>
         <PageCard>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-            <h2 style={{ margin: 0 }}>Audit Findings</h2>
+            <h2 style={{ margin: 0 }}>{TEXT.security.auditFindingsTitle}</h2>
             <div style={{ display: 'flex', gap: '0.25rem' }}>
               {(['all', 'warnings', 'info'] as AuditTab[]).map((tab) => (
                 <button
@@ -59,7 +60,7 @@ export default function Security() {
                     cursor: 'pointer',
                   }}
                 >
-                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                  {tab === 'all' ? TEXT.security.tabAll : tab === 'warnings' ? TEXT.security.tabWarnings : TEXT.security.tabInfo}
                 </button>
               ))}
             </div>

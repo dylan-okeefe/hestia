@@ -13,6 +13,7 @@ import ErrorState from '../components/layout/ErrorState';
 import EmptyState from '../components/layout/EmptyState';
 import CronBuilder from '../components/workflow-editor/CronBuilder';
 import { formatDate, formatCron } from '../lib/format';
+import { TEXT } from '../lib/text';
 
 interface Task {
   id: string;
@@ -110,8 +111,8 @@ export default function Scheduler() {
   return (
     <div style={{ padding: '1rem' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-        <h1 style={{ margin: 0 }}>Scheduled Tasks</h1>
-        <button onClick={openCreate}>+ New Task</button>
+        <h1 style={{ margin: 0 }}>{TEXT.scheduler.title}</h1>
+        <button onClick={openCreate}>{TEXT.scheduler.createButton}</button>
       </div>
 
       {isLoading && (
@@ -121,14 +122,14 @@ export default function Scheduler() {
       )}
 
       {isError && (
-        <ErrorState message={error?.message ?? 'Failed to load tasks'} onRetry={refetch} />
+        <ErrorState message={error?.message ?? TEXT.scheduler.loadError} onRetry={refetch} />
       )}
 
       {!isLoading && !isError && tasks.length === 0 && (
         <EmptyState
-          title="No scheduled tasks"
-          description="Create a scheduled task to run prompts or URLs on a recurring basis."
-          action={{ label: 'Create task', onClick: openCreate }}
+          title={TEXT.scheduler.emptyTitle}
+          description={TEXT.scheduler.emptyDescription}
+          action={{ label: TEXT.scheduler.emptyAction, onClick: openCreate }}
         />
       )}
 
@@ -137,11 +138,11 @@ export default function Scheduler() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
             <thead>
               <tr style={{ borderBottom: '2px solid #eee', textAlign: 'left', background: '#fafafa' }}>
-                <th style={{ padding: '0.75rem 1rem' }}>Task</th>
-                <th style={{ padding: '0.75rem 1rem' }}>Schedule</th>
-                <th style={{ padding: '0.75rem 1rem' }}>Next Run</th>
-                <th style={{ padding: '0.75rem 1rem' }}>Status</th>
-                <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Actions</th>
+                <th style={{ padding: '0.75rem 1rem' }}>{TEXT.scheduler.tableTask}</th>
+                <th style={{ padding: '0.75rem 1rem' }}>{TEXT.scheduler.tableSchedule}</th>
+                <th style={{ padding: '0.75rem 1rem' }}>{TEXT.scheduler.tableNextRun}</th>
+                <th style={{ padding: '0.75rem 1rem' }}>{TEXT.scheduler.tableStatus}</th>
+                <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>{TEXT.scheduler.tableActions}</th>
               </tr>
             </thead>
             <tbody>
@@ -167,7 +168,7 @@ export default function Scheduler() {
                         color: t.enabled ? '#166534' : '#6b7280',
                       }}
                     >
-                      {t.enabled ? 'Enabled' : 'Disabled'}
+                      {t.enabled ? TEXT.scheduler.statusEnabled : TEXT.scheduler.statusDisabled}
                     </span>
                     {t.last_error && (
                       <span
@@ -183,21 +184,21 @@ export default function Scheduler() {
                         }}
                         title={t.last_error}
                       >
-                        Error
+                        {TEXT.scheduler.statusError}
                       </span>
                     )}
                   </td>
                   <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
                     <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
                       <button onClick={() => setConfirmRun(t.id)} disabled={!t.enabled}>
-                        Run now
+                        {TEXT.scheduler.runNow}
                       </button>
-                      <button onClick={() => openEdit(t)}>Edit</button>
+                      <button onClick={() => openEdit(t)}>{TEXT.common.edit}</button>
                       <button
                         onClick={() => setConfirmDelete(t.id)}
                         style={{ color: '#ef4444', borderColor: '#ef4444' }}
                       >
-                        Delete
+                        {TEXT.common.delete}
                       </button>
                     </div>
                   </td>
@@ -225,29 +226,29 @@ export default function Scheduler() {
             style={{ width: '90%', maxWidth: 480, maxHeight: '90vh', overflowY: 'auto', background: '#fff', border: '1px solid #eee', borderRadius: '8px', padding: '1rem' }}
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 style={{ marginTop: 0 }}>{editingTask ? 'Edit Task' : 'New Task'}</h2>
+            <h2 style={{ marginTop: 0 }}>{editingTask ? TEXT.scheduler.editTitle : TEXT.scheduler.createTitle}</h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               <label>
-                Name / Description
+                {TEXT.scheduler.nameLabel}
                 <input
                   value={form.description}
                   onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                  placeholder="Daily summary"
+                  placeholder={TEXT.scheduler.namePlaceholder}
                   style={{ width: '100%', padding: '0.5rem', marginTop: '0.25rem' }}
                 />
               </label>
               <label>
-                Prompt / URL
+                {TEXT.scheduler.promptLabel}
                 <textarea
                   rows={4}
                   value={form.prompt}
                   onChange={(e) => setForm((f) => ({ ...f, prompt: e.target.value }))}
-                  placeholder="https://example.com or prompt text"
+                  placeholder={TEXT.scheduler.promptPlaceholder}
                   style={{ width: '100%', padding: '0.5rem', marginTop: '0.25rem', fontFamily: 'inherit' }}
                 />
               </label>
               <label>
-                Schedule
+                {TEXT.scheduler.scheduleLabel}
                 <div style={{ marginTop: '0.25rem' }}>
                   <CronBuilder
                     value={form.cron_expression}
@@ -261,13 +262,13 @@ export default function Scheduler() {
                   checked={form.enabled}
                   onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))}
                 />
-                Enabled
+                {TEXT.scheduler.enabledLabel}
               </label>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem' }}>
-              <button onClick={() => setModalOpen(false)}>Cancel</button>
+              <button onClick={() => setModalOpen(false)}>{TEXT.common.cancel}</button>
               <button onClick={handleSave} disabled={!form.prompt.trim()}>
-                {editingTask ? 'Save' : 'Create'}
+                {editingTask ? TEXT.common.save : TEXT.common.create}
               </button>
             </div>
           </div>
@@ -288,14 +289,14 @@ export default function Scheduler() {
           onClick={() => setConfirmDelete(null)}
         >
           <div style={{ width: 360, textAlign: 'center', background: '#fff', border: '1px solid #eee', borderRadius: '8px', padding: '1rem' }} onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ marginTop: 0 }}>Delete task?</h3>
+            <h3 style={{ marginTop: 0 }}>{TEXT.scheduler.deleteConfirmTitle}</h3>
             <p style={{ fontSize: '0.875rem', color: '#666' }}>
-              This action cannot be undone.
+              {TEXT.scheduler.deleteConfirmDescription}
             </p>
             <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', marginTop: '1rem' }}>
-              <button onClick={() => setConfirmDelete(null)}>Cancel</button>
+              <button onClick={() => setConfirmDelete(null)}>{TEXT.common.cancel}</button>
               <button onClick={() => handleDelete(confirmDelete)} style={{ color: '#ef4444', borderColor: '#ef4444' }}>
-                Delete
+                {TEXT.common.delete}
               </button>
             </div>
           </div>
@@ -316,13 +317,13 @@ export default function Scheduler() {
           onClick={() => setConfirmRun(null)}
         >
           <div style={{ width: 360, textAlign: 'center', background: '#fff', border: '1px solid #eee', borderRadius: '8px', padding: '1rem' }} onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ marginTop: 0 }}>Run task now?</h3>
+            <h3 style={{ marginTop: 0 }}>{TEXT.scheduler.runNowConfirmTitle}</h3>
             <p style={{ fontSize: '0.875rem', color: '#666' }}>
-              The task will be triggered on the next scheduler tick.
+              {TEXT.scheduler.runNowConfirmDescription}
             </p>
             <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', marginTop: '1rem' }}>
-              <button onClick={() => setConfirmRun(null)}>Cancel</button>
-              <button onClick={() => handleRun(confirmRun)}>Run</button>
+              <button onClick={() => setConfirmRun(null)}>{TEXT.common.cancel}</button>
+              <button onClick={() => handleRun(confirmRun)}>{TEXT.common.run}</button>
             </div>
           </div>
         </div>

@@ -2,6 +2,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import DoctorCheckList from '../DoctorCheckList';
 import * as client from '../../api/client';
+import { TEXT } from '../../lib/text';
 
 vi.mock('../../api/client', async () => {
   const actual = await vi.importActual<typeof import('../../api/client')>('../../api/client');
@@ -60,10 +61,10 @@ describe('DoctorCheckList', () => {
     const onRefresh = vi.fn();
     render(<DoctorCheckList checks={defaultChecks} onRefresh={onRefresh} />);
 
-    fireEvent.click(screen.getByText('Re-run checks'));
+    fireEvent.click(screen.getByText(TEXT.healthChecks.rerunButton));
 
     await waitFor(() => expect(client.runDoctor).toHaveBeenCalled());
     await waitFor(() => expect(onRefresh).toHaveBeenCalled());
-    await waitFor(() => expect(screen.getByText(/Last checked:/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(new RegExp(TEXT.healthChecks.lastChecked('').slice(0, -1)))).toBeInTheDocument());
   });
 });

@@ -5,6 +5,7 @@ import LoadingSkeleton from '../components/layout/LoadingSkeleton';
 import ErrorState from '../components/layout/ErrorState';
 import EmptyState from '../components/layout/EmptyState';
 import { formatDate } from '../lib/format';
+import { TEXT } from '../lib/text';
 
 interface Proposal {
   id: string;
@@ -52,7 +53,7 @@ export default function Proposals() {
       await acceptProposal(id);
       setRefreshKey((k) => k + 1);
     } catch (err: any) {
-      setError(err.message || 'Failed to accept proposal');
+      setError(err.message || TEXT.proposals.acceptError);
     } finally {
       setActingId(null);
     }
@@ -64,7 +65,7 @@ export default function Proposals() {
       await rejectProposal(id, '');
       setRefreshKey((k) => k + 1);
     } catch (err: any) {
-      setError(err.message || 'Failed to reject proposal');
+      setError(err.message || TEXT.proposals.rejectError);
     } finally {
       setActingId(null);
     }
@@ -101,7 +102,7 @@ export default function Proposals() {
   return (
     <div style={{ padding: '1rem' }}>
       <h1 style={{ marginBottom: '1rem' }}>
-        Proposals{' '}
+        {TEXT.proposals.title}{' '}
         {pendingCount > 0 && (
           <span
             style={{
@@ -131,7 +132,7 @@ export default function Proposals() {
             padding: '0.25rem 0.5rem',
           }}
         >
-          Pending
+          {TEXT.proposals.tabPending}
         </button>
         <button
           onClick={() => setTab('history')}
@@ -145,7 +146,7 @@ export default function Proposals() {
             padding: '0.25rem 0.5rem',
           }}
         >
-          History
+          {TEXT.proposals.tabHistory}
         </button>
       </div>
 
@@ -159,11 +160,11 @@ export default function Proposals() {
 
       {!loading && !error && proposals.length === 0 && (
         <EmptyState
-          title={tab === 'pending' ? 'No pending proposals' : 'No history'}
+          title={tab === 'pending' ? TEXT.proposals.pendingEmptyTitle : TEXT.proposals.historyEmptyTitle}
           description={
             tab === 'pending'
-              ? 'There are no proposals awaiting your review. Hestia will create proposals when it needs confirmation for actions.'
-              : 'No reviewed proposals yet. Approved or rejected proposals will appear here.'
+              ? TEXT.proposals.pendingEmptyDescription
+              : TEXT.proposals.historyEmptyDescription
           }
         />
       )}
@@ -178,7 +179,7 @@ export default function Proposals() {
               </div>
               <p style={{ margin: '0.25rem 0', fontSize: '0.95rem' }}>{p.summary}</p>
               <p style={{ margin: 0, fontSize: '0.8rem', color: '#888' }}>
-                Created {formatDate(p.created_at)}
+                {TEXT.proposals.created(formatDate(p.created_at))}
               </p>
             </div>
             {p.status === 'pending' && (
@@ -188,14 +189,14 @@ export default function Proposals() {
                   disabled={actingId === p.id}
                   style={{ background: '#dcfce7', color: '#166534', borderColor: '#bbf7d0' }}
                 >
-                  Approve
+                  {TEXT.proposals.approveButton}
                 </button>
                 <button
                   onClick={() => handleReject(p.id)}
                   disabled={actingId === p.id}
                   style={{ background: '#fee2e2', color: '#991b1b', borderColor: '#fecaca' }}
                 >
-                  Reject
+                  {TEXT.proposals.rejectButton}
                 </button>
               </div>
             )}

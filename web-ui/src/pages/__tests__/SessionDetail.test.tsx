@@ -3,6 +3,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import SessionDetail from '../SessionDetail';
 import * as client from '../../api/client';
+import { TEXT } from '../../lib/text';
 
 vi.mock('../../api/client', async () => {
   const actual = await vi.importActual<typeof import('../../api/client')>('../../api/client');
@@ -56,7 +57,7 @@ describe('SessionDetail', () => {
     renderWithParams('s1');
 
     await waitFor(() =>
-      expect(screen.getByText('Session Metadata')).toBeInTheDocument()
+      expect(screen.getByText(TEXT.sessionDetail.metadataTitle)).toBeInTheDocument()
     );
 
     expect(screen.getByText('s1')).toBeInTheDocument();
@@ -73,7 +74,7 @@ describe('SessionDetail', () => {
     renderWithParams('s1');
 
     await waitFor(() =>
-      expect(screen.getByText('← Back to Knowledge')).toBeInTheDocument()
+      expect(screen.getByText(TEXT.sessionDetail.backToKnowledge)).toBeInTheDocument()
     );
   });
 
@@ -101,7 +102,7 @@ describe('SessionDetail', () => {
     renderWithParams('s2');
 
     await waitFor(() =>
-      expect(screen.getByText('No turns found')).toBeInTheDocument()
+      expect(screen.getByText(TEXT.sessionDetail.emptyTitle)).toBeInTheDocument()
     );
   });
 });

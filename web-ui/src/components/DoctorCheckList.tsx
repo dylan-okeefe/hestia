@@ -3,6 +3,7 @@ import { runDoctor } from '../api/client';
 import { HEALTH_CHECK_LABELS, label } from '../lib/labels';
 import { formatRelativeDate } from '../lib/format';
 import PageCard from './layout/PageCard';
+import { TEXT } from '../lib/text';
 
 interface Check {
   name: string;
@@ -63,14 +64,14 @@ export default function DoctorCheckList({ checks, onRefresh }: DoctorCheckListPr
   return (
     <PageCard style={{ transition: 'box-shadow 0.3s ease', boxShadow: flash ? '0 0 0 2px #1976d2' : undefined }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-        <h2 style={{ margin: 0 }}>Health Checks</h2>
+        <h2 style={{ margin: 0 }}>{TEXT.healthChecks.title}</h2>
         <button onClick={handleRerun} disabled={loading}>
-          {loading ? 'Running…' : 'Re-run checks'}
+          {loading ? TEXT.healthChecks.rerunButtonLoading : TEXT.healthChecks.rerunButton}
         </button>
       </div>
       {cachedAt && (
         <p style={{ fontSize: '0.8rem', color: '#888', marginTop: '-0.25rem', marginBottom: '0.5rem' }}>
-          Last checked: {formatRelativeDate(cachedAt)}
+          {TEXT.healthChecks.lastChecked(formatRelativeDate(cachedAt))}
         </p>
       )}
       {checks.length > 0 && (
@@ -93,11 +94,11 @@ export default function DoctorCheckList({ checks, onRefresh }: DoctorCheckListPr
             />
           </div>
           <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.25rem' }}>
-            {passRate}% passing ({checks.filter((c) => c.ok).length}/{checks.length})
+            {TEXT.healthChecks.passRate(passRate, checks.filter((c) => c.ok).length, checks.length)}
           </div>
         </div>
       )}
-      {checks.length === 0 && <p>No checks available.</p>}
+      {checks.length === 0 && <p>{TEXT.healthChecks.noChecksAvailable}</p>}
       {checks.map((c) => (
         <div key={c.name}>
           <div
@@ -130,12 +131,12 @@ export default function DoctorCheckList({ checks, onRefresh }: DoctorCheckListPr
             <div style={{ padding: '0.75rem', fontSize: '0.875rem', background: '#f9f9f9', borderBottom: '1px solid #eee' }}>
               {c.detail && (
                 <div style={{ marginBottom: '0.5rem', color: c.ok ? '#666' : '#ef4444' }}>
-                  <strong>Detail:</strong> {c.detail}
+                  <strong>{TEXT.healthChecks.detailLabel}</strong> {c.detail}
                 </div>
               )}
               {!c.ok && REMEDIATION[c.name] && (
                 <div style={{ color: '#92400e', background: '#fef3c7', padding: '0.5rem', borderRadius: '4px' }}>
-                  <strong>Remediation:</strong> {REMEDIATION[c.name]}
+                  <strong>{TEXT.healthChecks.remediationLabel}</strong> {REMEDIATION[c.name]}
                 </div>
               )}
             </div>

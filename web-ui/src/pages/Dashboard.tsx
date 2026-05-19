@@ -5,6 +5,7 @@ import { useCurrentUser } from '../hooks/useCurrentUser';
 import PageCard from '../components/layout/PageCard';
 import LoadingSkeleton from '../components/layout/LoadingSkeleton';
 import ErrorState from '../components/layout/ErrorState';
+import { TEXT } from '../lib/text';
 
 interface DashboardData {
   active_workflow_count: number;
@@ -15,9 +16,9 @@ interface DashboardData {
 
 function getGreeting(): string {
   const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 18) return 'Good afternoon';
-  return 'Good evening';
+  if (hour < 12) return TEXT.dashboard.greetingMorning;
+  if (hour < 18) return TEXT.dashboard.greetingAfternoon;
+  return TEXT.dashboard.greetingEvening;
 }
 
 export default function Dashboard() {
@@ -40,7 +41,7 @@ export default function Dashboard() {
         setLoading(false);
       })
       .catch((err) => {
-        setError(err instanceof Error ? err.message : 'Failed to load dashboard');
+        setError(err instanceof Error ? err.message : TEXT.dashboard.loadError);
         setLoading(false);
       });
   }, []);
@@ -77,7 +78,7 @@ export default function Dashboard() {
   if (!data) {
     return (
       <div style={{ padding: '1rem' }}>
-        <ErrorState message="No data available." />
+        <ErrorState message={TEXT.dashboard.noData} />
       </div>
     );
   }
@@ -97,7 +98,7 @@ export default function Dashboard() {
           background: connected ? '#22c55e' : '#ef4444',
           marginRight: '0.5rem',
         }}
-        title={connected ? 'Connected' : 'Disconnected'}
+        title={connected ? TEXT.dashboard.connected : TEXT.dashboard.disconnected}
       />
     );
   };
@@ -110,23 +111,23 @@ export default function Dashboard() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
         <PageCard>
-          <div style={{ fontSize: '0.875rem', color: '#666' }}>Active Workflows</div>
+          <div style={{ fontSize: '0.875rem', color: '#666' }}>{TEXT.dashboard.activeWorkflowsLabel}</div>
           <div style={{ fontSize: '1.5rem', fontWeight: 'bold', margin: '0.25rem 0' }}>{data.active_workflow_count}</div>
         </PageCard>
         <PageCard>
-          <div style={{ fontSize: '0.875rem', color: '#666' }}>Scheduled Tasks</div>
+          <div style={{ fontSize: '0.875rem', color: '#666' }}>{TEXT.dashboard.scheduledTasksLabel}</div>
           <div style={{ fontSize: '1.5rem', fontWeight: 'bold', margin: '0.25rem 0' }}>{scheduledCount}</div>
         </PageCard>
         <PageCard>
-          <div style={{ fontSize: '0.875rem', color: '#666' }}>Pending Proposals</div>
+          <div style={{ fontSize: '0.875rem', color: '#666' }}>{TEXT.dashboard.pendingProposalsLabel}</div>
           <div style={{ fontSize: '1.5rem', fontWeight: 'bold', margin: '0.25rem 0' }}>{data.pending_proposal_count}</div>
         </PageCard>
         <PageCard>
-          <div style={{ fontSize: '0.875rem', color: '#666' }}>Recent Sessions</div>
+          <div style={{ fontSize: '0.875rem', color: '#666' }}>{TEXT.dashboard.recentSessionsLabel}</div>
           <div style={{ fontSize: '1.5rem', fontWeight: 'bold', margin: '0.25rem 0' }}>{data.recent_executions.length}</div>
         </PageCard>
         <PageCard>
-          <div style={{ fontSize: '0.875rem', color: '#666', marginBottom: '0.25rem' }}>System Health</div>
+          <div style={{ fontSize: '0.875rem', color: '#666', marginBottom: '0.25rem' }}>{TEXT.dashboard.systemHealthLabel}</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <span
               style={{
@@ -138,12 +139,12 @@ export default function Dashboard() {
               }}
             />
             <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>
-              {healthRate === null ? 'Unknown' : `${healthRate}% passing`}
+              {healthRate === null ? TEXT.dashboard.healthUnknown : TEXT.dashboard.healthPassing(healthRate)}
             </span>
           </div>
         </PageCard>
         <PageCard>
-          <div style={{ fontSize: '0.875rem', color: '#666', marginBottom: '0.25rem' }}>Platforms</div>
+          <div style={{ fontSize: '0.875rem', color: '#666', marginBottom: '0.25rem' }}>{TEXT.dashboard.platformsLabel}</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontSize: '0.875rem' }}>
             <div>{platformStatus('telegram')} Telegram</div>
             <div>{platformStatus('matrix')} Matrix</div>
@@ -153,23 +154,23 @@ export default function Dashboard() {
       </div>
 
       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
-        <button onClick={() => navigate('/workflows')}>Go to Workflows</button>
-        <button onClick={() => navigate('/profile')}>View Profile</button>
-        <button onClick={handleHealthCheck}>Run Health Check</button>
+        <button onClick={() => navigate('/workflows')}>{TEXT.dashboard.goToWorkflows}</button>
+        <button onClick={() => navigate('/profile')}>{TEXT.dashboard.viewProfile}</button>
+        <button onClick={handleHealthCheck}>{TEXT.dashboard.runHealthCheck}</button>
       </div>
 
-      <h2 style={{ marginBottom: '0.75rem' }}>Recent Executions</h2>
-      {data.recent_executions.length === 0 && <p>No executions yet.</p>}
+      <h2 style={{ marginBottom: '0.75rem' }}>{TEXT.dashboard.recentExecutionsTitle}</h2>
+      {data.recent_executions.length === 0 && <p>{TEXT.dashboard.noExecutions}</p>}
       {data.recent_executions.length > 0 && (
         <PageCard style={{ padding: 0, overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid #ccc', textAlign: 'left', background: '#fafafa' }}>
-                <th style={{ padding: '0.5rem 0.75rem' }}>Workflow</th>
-                <th style={{ padding: '0.5rem 0.75rem' }}>Status</th>
-                <th style={{ padding: '0.5rem 0.75rem' }}>Time</th>
-                <th style={{ padding: '0.5rem 0.75rem' }}>Elapsed</th>
-                <th style={{ padding: '0.5rem 0.75rem' }}>Nodes</th>
+                <th style={{ padding: '0.5rem 0.75rem' }}>{TEXT.dashboard.tableWorkflow}</th>
+                <th style={{ padding: '0.5rem 0.75rem' }}>{TEXT.dashboard.tableStatus}</th>
+                <th style={{ padding: '0.5rem 0.75rem' }}>{TEXT.dashboard.tableTime}</th>
+                <th style={{ padding: '0.5rem 0.75rem' }}>{TEXT.dashboard.tableElapsed}</th>
+                <th style={{ padding: '0.5rem 0.75rem' }}>{TEXT.dashboard.tableNodes}</th>
               </tr>
             </thead>
             <tbody>
