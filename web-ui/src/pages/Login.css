@@ -125,7 +125,7 @@
 }
 
 .login-error-text {
-  color: #ef4444;
+  color: var(--color-danger);
   margin: 0;
   font-size: var(--font-size-sm);
 }
@@ -157,12 +157,12 @@
 
 .login-stepper__circle--active {
   background: var(--color-primary);
-  color: #fff;
+  color: var(--color-bg);
 }
 
 .login-stepper__circle--inactive {
-  background: #e5e7eb;
-  color: #6b7280;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
 }
 
 .login-stepper__label {
@@ -174,7 +174,7 @@
 }
 
 .login-stepper__label--inactive {
-  color: #9ca3af;
+  color: var(--color-text-muted);
 }
 
 .login-stepper__label--current {
@@ -203,7 +203,7 @@
   border-radius: 999px;
   font-size: 0.65rem;
   font-weight: bold;
-  color: #fff;
+  color: var(--color-bg);
   text-transform: uppercase;
 }
 

@@ -11,7 +11,7 @@
 }
 
 .egress-log__table thead tr {
-  border-bottom: 2px solid #ccc;
+  border-bottom: 2px solid var(--color-border-subtle);
   text-align: left;
 }
 

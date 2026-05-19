@@ -148,9 +148,9 @@
 }
 
 .toggle-btn--active {
-  background: #333;
-  color: #fff;
-  border-color: #333;
+  background: var(--color-text);
+  color: var(--color-bg);
+  border-color: var(--color-text);
 }
 
 /* Tab buttons */

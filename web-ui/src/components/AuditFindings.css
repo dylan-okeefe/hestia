@@ -21,7 +21,7 @@
 .audit-findings__severity {
   padding: 0.15rem 0.4rem;
   border-radius: var(--radius-sm);
-  color: #fff;
+  color: var(--color-bg);
   font-size: var(--font-size-xs);
   text-transform: uppercase;
 }

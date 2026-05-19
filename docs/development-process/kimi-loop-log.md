@@ -6,6 +6,26 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-05-18 — L185 Complete (Responsive Design)
+
+**Outcome:** Made the entire web UI usable on mobile (< 768px). Sidebar → hamburger menu, tables → cards, two-column layouts → stacked, modals → full-screen, workflow canvas → scrollable, dashboard → adaptive grid.
+
+**Changes:**
+- `web-ui/src/styles/responsive.css` — breakpoint variables, visibility helpers
+- `web-ui/src/hooks/useMediaQuery.ts` — viewport detection hook
+- `web-ui/src/components/layout/StickyNav.tsx` — desktop sidebar / mobile hamburger overlay
+- `web-ui/src/components/ResponsiveTable.css` — card-based mobile tables
+- `web-ui/src/components/Modal.css` — responsive modals
+- Responsive grids for Profile, Knowledge, SessionDetail, Login, Dashboard, Workflows
+
+**Quality gate:**
+- `npm run build`: **0 errors**
+- `npx vitest run`: **124 passed, 24 test files**
+
+**Branch:** `feature/l185-responsive-design`
+
+---
+
 ## 2026-05-18 — L184 Complete (Shared CSS System)
 
 **Outcome:** Replaced 680+ inline styles with a shared CSS system. Created `variables.css`, `utilities.css`, `global.css`, and per-component CSS files. Inline style count reduced from 680+ to 12. `NodePropertiesPanel.tsx` reduced from 749 to 477 lines with 6 helpers extracted.

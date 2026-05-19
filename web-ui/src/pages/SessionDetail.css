@@ -23,7 +23,7 @@
   border: var(--border-subtle);
   border-radius: var(--radius-md);
   background: var(--color-surface);
-  border-left: 3px solid #e5e7eb;
+  border-left: 3px solid var(--color-border);
   font-size: var(--font-size-sm);
 }
 
@@ -62,8 +62,8 @@
 }
 
 .session-turn__state--default {
-  background: #e5e7eb;
-  color: #374151;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
 }
 
 .session-turn__meta {

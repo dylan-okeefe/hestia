@@ -27,8 +27,8 @@
 }
 
 .scheduler-status-badge--disabled {
-  background: #f3f4f6;
-  color: #6b7280;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
 }
 
 .scheduler-error-badge {

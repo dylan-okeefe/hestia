@@ -2,15 +2,15 @@
 
 **Orchestrator:** Kimi (self-orchestrating via subagents)
 
-**Last set by:** Kimi — 2026-05-18 (L184 complete, L185 starting)
+**Last set by:** Kimi — 2026-05-18 (L185 complete, L186 starting)
 
 ---
 
 ## Current task
 
-**Status:** **IN PROGRESS — L185 Responsive Design**
+**Status:** **IN PROGRESS — L186 Dark Mode**
 
-Branch: `feature/l185-responsive-design` (from `feature/l184-shared-css`)
+Branch: `feature/l186-dark-mode` (from `feature/l185-responsive-design`)
 
 ---
 
@@ -21,7 +21,7 @@ Branch: `feature/l185-responsive-design` (from `feature/l184-shared-css`)
 |------|--------|--------|
 | L169–L179 | `feature/l179-rooms-interactive-nodes` | **Complete** |
 
-### L180–L184 (Remediation)
+### L180–L185 (Remediation)
 | Loop | Branch | Status |
 |------|--------|--------|
 | L180 | `feature/l180-security-hardening` | **Complete, pushed** |
@@ -29,6 +29,7 @@ Branch: `feature/l185-responsive-design` (from `feature/l184-shared-css`)
 | L182 | `feature/l182-backend-bug-fixes` | **Complete, pushed** |
 | L183 | `feature/l183-text-extraction` | **Complete, pushed** |
 | L184 | `feature/l184-shared-css` | **Complete, pushed** |
+| L185 | `feature/l185-responsive-design` | **Complete, pushed** |
 
 ---
 
@@ -46,15 +47,15 @@ Branch: `feature/l185-responsive-design` (from `feature/l184-shared-css`)
 | Loop | Branch | Status | Scope |
 |------|--------|--------|-------|
 | **L184** | `feature/l184-shared-css` | **✅ Complete** | CSS variables, utility classes, zero inline styles |
-| **L185** | `feature/l185-responsive-design` | **🔄 In Progress** | Mobile nav, card tables, stacked layouts |
-| **L186** | `feature/l186-dark-mode` | **⏳ Queued** | Dark tokens, theme toggle, system preference |
+| **L185** | `feature/l185-responsive-design` | **✅ Complete** | Mobile nav, card tables, stacked layouts |
+| **L186** | `feature/l186-dark-mode` | **🔄 In Progress** | Dark tokens, theme toggle, system preference |
 
 ---
 
 ## Execution order
 
 ```
-L180 ✅ → L181 ✅ → L182 ✅ → L183 ✅ → L184 ✅ → L185 🔄 → L186 ⏳
+L180 ✅ → L181 ✅ → L182 ✅ → L183 ✅ → L184 ✅ → L185 ✅ → L186 🔄
 ```
 
 ---
@@ -64,6 +65,6 @@ L180 ✅ → L181 ✅ → L182 ✅ → L183 ✅ → L184 ✅ → L185 🔄 → L
 - Audit report: `docs/development-process/reviews/L176-L179-comprehensive-audit.md`
 - Loop specs: `docs/development-process/loops/L180-*.md` through `L186-*.md`
 - Master index: `docs/development-process/loops/README-L180-L186.md`
-- Handoffs: `docs/handoffs/L180-*` through `L184-*`
+- Handoffs: `docs/handoffs/L180-*` through `L185-*`
 - Loop log: `../kimi-loop-log.md`
 - Release discipline: `.cursorrules`
