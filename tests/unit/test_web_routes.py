@@ -248,8 +248,33 @@ class TestSessionsRoutes:
 class TestErrorsRoutes:
     """Tests for /api/errors endpoints."""
 
+    @pytest.fixture
+    def errors_client(self, mock_app: MagicMock) -> TestClient:
+        """Create a TestClient with auth bypassed for error routes."""
+        async_mock = AsyncMock()
+        with patch("hestia.web.routes.errors.require_admin", new=async_mock):
+            ctx = WebContext(
+                session_store=AsyncMock(),
+                proposal_store=AsyncMock(),
+                style_store=AsyncMock(),
+                scheduler_store=AsyncMock(),
+                trace_store=AsyncMock(),
+                failure_store=AsyncMock(),
+                workflow_store=AsyncMock(),
+                execution_store=AsyncMock(),
+                app=mock_app,
+                auth_manager=None,
+                user_store=AsyncMock(),
+            )
+            ctx.execution_store.get_last_execution_per_workflow = AsyncMock(
+                return_value={}
+            )
+            set_web_context(ctx)
+            app = create_web_app()
+            yield TestClient(app)
+
     def test_debug_error_uses_get_turn_messages(
-        self, client: TestClient, mock_app: MagicMock
+        self, errors_client: TestClient, mock_app: MagicMock
     ) -> None:
         """POST /api/errors/{id}/debug uses SessionStore.get_turn_messages."""
         from hestia.web import context as ctx_mod
@@ -264,14 +289,14 @@ class TestErrorsRoutes:
             }
         )
 
-        response = client.post("/api/errors/session_turn:t1/debug")
+        response = errors_client.post("/api/errors/session_turn:t1/debug")
         assert response.status_code == 200
         data = response.json()
         assert "Something broke" in data["prompt"]
         ctx.session_store.get_turn_messages.assert_awaited_once_with("t1")
 
     def test_debug_error_turn_not_found(
-        self, client: TestClient, mock_app: MagicMock
+        self, errors_client: TestClient, mock_app: MagicMock
     ) -> None:
         """POST /api/errors/{id}/debug handles missing turn."""
         from hestia.web import context as ctx_mod
@@ -280,13 +305,13 @@ class TestErrorsRoutes:
         assert ctx is not None
         ctx.session_store.get_turn_messages = AsyncMock(return_value=None)
 
-        response = client.post("/api/errors/session_turn:t1/debug")
+        response = errors_client.post("/api/errors/session_turn:t1/debug")
         assert response.status_code == 200
         data = response.json()
         assert "Turn record not found" in data["prompt"]
 
     def test_resolve_and_ignore_error(
-        self, client: TestClient, mock_app: MagicMock
+        self, errors_client: TestClient, mock_app: MagicMock
     ) -> None:
         """POST /api/errors/{id}/resolve and /ignore toggle status."""
         from hestia.web import context as ctx_mod
@@ -306,19 +331,19 @@ class TestErrorsRoutes:
         )
         ctx.workflow_store.list_workflows = AsyncMock(return_value=[])
 
-        response = client.post("/api/errors/workflow_execution:e1/resolve")
+        response = errors_client.post("/api/errors/workflow_execution:e1/resolve")
         assert response.status_code == 200
         assert response.json()["resolved"] is True
 
-        response = client.get("/api/errors")
+        response = errors_client.get("/api/errors")
         data = response.json()
         assert any(e["status"] == "resolved" for e in data["errors"])
 
-        response = client.post("/api/errors/workflow_execution:e1/ignore")
+        response = errors_client.post("/api/errors/workflow_execution:e1/ignore")
         assert response.status_code == 200
         assert response.json()["ignored"] is True
 
-        response = client.get("/api/errors")
+        response = errors_client.get("/api/errors")
         data = response.json()
         assert any(e["status"] == "ignored" for e in data["errors"])
 

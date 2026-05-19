@@ -52,6 +52,8 @@
 }
 
 [data-theme="dark"] {
+  color-scheme: dark;
+
   --color-bg: #0f0f0f;
   --color-surface: #1a1a1a;
   --color-surface-raised: #1f1f1f;

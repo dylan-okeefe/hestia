@@ -329,7 +329,7 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
             <button
               type="button"
               onClick={() => setRevealed((s) => ({ ...s, [fullPath]: !s[fullPath] }))}
-              className="text-small"
+              className="text-small config-form__btn"
             >
               {revealed[fullPath] ? TEXT.config.hide : TEXT.config.reveal}
             </button>
@@ -398,6 +398,7 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
             <strong>{sectionKey}</strong>
             <div className="row-sm">
               <button
+                className="config-form__btn"
                 onClick={(e) => {
                   e.stopPropagation();
                   resetSection(sectionKey);
@@ -436,7 +437,7 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
       )}
 
       <div className="row-sm row-center">
-        <button onClick={handleSave} disabled={saving}>
+        <button className="config-form__btn" onClick={handleSave} disabled={saving}>
           {saving ? TEXT.common.saving : TEXT.common.save}
         </button>
         {saveMsg && <span>{saveMsg}</span>}

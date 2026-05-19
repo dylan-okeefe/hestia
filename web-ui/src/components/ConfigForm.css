@@ -15,7 +15,7 @@
 
 .config-form__trust-card--selected {
   border-color: var(--color-primary);
-  background: rgba(37, 99, 235, 0.04);
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
 }
 
 .config-form__trust-card h3 {
@@ -72,8 +72,8 @@
 
 .config-form__restart-badge {
   font-size: var(--font-size-xs);
-  background: #fff3e0;
-  color: #e65100;
+  background: color-mix(in srgb, var(--color-warning) 15%, transparent);
+  color: var(--color-warning);
   padding: 0.1rem 0.35rem;
   border-radius: var(--radius-sm);
 }
@@ -84,6 +84,22 @@
   cursor: pointer;
   font-weight: bold;
   padding: 0;
+  color: inherit;
+}
+
+.config-form__btn {
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-sm);
+  border: var(--border-thin);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+}
+
+.config-form__btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .config-form__cron-preview {
