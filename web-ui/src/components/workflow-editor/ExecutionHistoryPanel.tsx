@@ -1,6 +1,7 @@
 import { Fragment } from 'react';
 import type { Node } from 'reactflow';
 import type { ExecutionRecord, ExecutionResult } from '../../api/client';
+import './ExecutionHistoryPanel.css';
 
 interface ExecutionHistoryPanelProps {
   show: boolean;
@@ -37,76 +38,67 @@ export default function ExecutionHistoryPanel({
   if (!show && !testResult && !testError) return null;
 
   return (
-    <div
-      style={{
-        borderTop: '1px solid #ddd',
-        padding: '1rem',
-        maxHeight: '40vh',
-        overflowY: 'auto',
-        background: '#fafafa',
-      }}
-    >
+    <div className="execution-history-panel">
       {show && (
         <>
           <strong>Execution History</strong>
           {loading && <p>Loading…</p>}
-          {error && <p style={{ color: 'red' }}>{error}</p>}
+          {error && <p className="text-danger">{error}</p>}
           {!loading && !error && executions.length === 0 && <p>No executions yet.</p>}
           {!loading && executions.length > 0 && (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem', marginTop: '0.5rem' }}>
+            <table className="execution-history-panel__table">
               <thead>
-                <tr style={{ borderBottom: '1px solid #ccc' }}>
-                  <th style={{ textAlign: 'left', padding: '0.25rem' }}>Time</th>
-                  <th style={{ textAlign: 'left', padding: '0.25rem' }}>Status</th>
-                  <th style={{ textAlign: 'left', padding: '0.25rem' }}>Elapsed</th>
-                  <th style={{ textAlign: 'left', padding: '0.25rem' }}>Tokens</th>
-                  <th style={{ textAlign: 'left', padding: '0.25rem' }}>Nodes</th>
+                <tr>
+                  <th>Time</th>
+                  <th>Status</th>
+                  <th>Elapsed</th>
+                  <th>Tokens</th>
+                  <th>Nodes</th>
                 </tr>
               </thead>
               <tbody>
                 {executions.map((ex: ExecutionRecord) => (
                   <Fragment key={ex.id}>
                     <tr
-                      style={{ borderBottom: '1px solid #eee', cursor: 'pointer' }}
                       onClick={() => onSelectExecution(ex.id === selectedExecution ? null : ex.id)}
                     >
-                      <td style={{ padding: '0.25rem' }}>{new Date(ex.created_at).toLocaleString()}</td>
-                      <td style={{ padding: '0.25rem', color: ex.status === 'ok' ? 'green' : 'red' }}>{ex.status}</td>
-                      <td style={{ padding: '0.25rem' }}>{ex.total_elapsed_ms}ms</td>
-                      <td style={{ padding: '0.25rem' }}>
+                      <td>{new Date(ex.created_at).toLocaleString()}</td>
+                      <td className={ex.status === 'ok' ? 'text-success' : 'text-danger'}>{ex.status}</td>
+                      <td>{ex.total_elapsed_ms}ms</td>
+                      <td>
                         {ex.total_prompt_tokens} prompt + {ex.total_completion_tokens} completion
                       </td>
-                      <td style={{ padding: '0.25rem' }}>{ex.node_results.length}</td>
+                      <td>{ex.node_results.length}</td>
                     </tr>
                     {selectedExecution === ex.id && (
                       <tr>
-                        <td colSpan={5} style={{ padding: '0.5rem', background: '#f0f0f0' }}>
+                        <td colSpan={5} className="execution-history-panel__detail">
                           <button
                             onClick={() => onSelectExecution(null)}
-                            style={{ marginBottom: '0.5rem', fontSize: '0.75rem', padding: '0.125rem 0.5rem' }}
+                            className="execution-history-panel__back-btn"
                           >
                             ← Back to history
                           </button>
-                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                          <table className="execution-history-panel__detail-table">
                             <thead>
-                              <tr style={{ borderBottom: '1px solid #ccc' }}>
-                                <th style={{ textAlign: 'left', padding: '0.25rem' }}>Node</th>
-                                <th style={{ textAlign: 'left', padding: '0.25rem' }}>Status</th>
-                                <th style={{ textAlign: 'left', padding: '0.25rem' }}>Time</th>
-                                <th style={{ textAlign: 'left', padding: '0.25rem' }}>Output</th>
+                              <tr>
+                                <th>Node</th>
+                                <th>Status</th>
+                                <th>Time</th>
+                                <th>Output</th>
                               </tr>
                             </thead>
                             <tbody>
                               {ex.node_results.map((nr) => (
-                                <tr key={nr.node_id} style={{ borderBottom: '1px solid #eee' }}>
-                                  <td style={{ padding: '0.25rem' }}>
+                                <tr key={nr.node_id}>
+                                  <td>
                                     {formatNodeLabel(nr.node_id, nodes)}
                                   </td>
-                                  <td style={{ padding: '0.25rem', color: nr.status === 'ok' ? 'green' : 'red' }}>
+                                  <td className={nr.status === 'ok' ? 'text-success' : 'text-danger'}>
                                     {nr.status}
                                   </td>
-                                  <td style={{ padding: '0.25rem' }}>{nr.elapsed_ms}ms</td>
-                                  <td style={{ padding: '0.25rem' }}>
+                                  <td>{nr.elapsed_ms}ms</td>
+                                  <td>
                                     {typeof nr.output === 'string' ? nr.output : JSON.stringify(nr.output)?.slice(0, 100)}
                                   </td>
                                 </tr>
@@ -124,12 +116,12 @@ export default function ExecutionHistoryPanel({
         </>
       )}
       {(testResult || testError) && (
-        <div style={{ marginTop: show ? '1rem' : 0 }}>
+        <div className={show ? 'execution-history-panel__test-result' : ''}>
           {testResult && (
             <>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.5rem' }}>
+              <div className="execution-history-panel__test-meta">
                 <strong>Status:</strong>
-                <span style={{ color: testResult.status === 'ok' ? 'green' : 'red', fontWeight: 'bold' }}>
+                <span className={testResult.status === 'ok' ? 'text-success' : 'text-danger'} className="font-bold">
                   {testResult.status}
                 </span>
                 <span>
@@ -139,28 +131,28 @@ export default function ExecutionHistoryPanel({
                   <strong>Tokens:</strong> {testResult.total_prompt_tokens} prompt + {testResult.total_completion_tokens} completion
                 </span>
               </div>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+              <table className="execution-history-panel__table">
                 <thead>
-                  <tr style={{ borderBottom: '1px solid #ccc' }}>
-                    <th style={{ textAlign: 'left', padding: '0.25rem' }}>Node</th>
-                    <th style={{ textAlign: 'left', padding: '0.25rem' }}>Status</th>
-                    <th style={{ textAlign: 'left', padding: '0.25rem' }}>Time (ms)</th>
-                    <th style={{ textAlign: 'left', padding: '0.25rem' }}>Prompt</th>
-                    <th style={{ textAlign: 'left', padding: '0.25rem' }}>Completion</th>
-                    <th style={{ textAlign: 'left', padding: '0.25rem' }}>Output</th>
+                  <tr>
+                    <th>Node</th>
+                    <th>Status</th>
+                    <th>Time (ms)</th>
+                    <th>Prompt</th>
+                    <th>Completion</th>
+                    <th>Output</th>
                   </tr>
                 </thead>
                 <tbody>
                   {testResult.node_results.map((nr) => (
-                    <tr key={nr.node_id} style={{ borderBottom: '1px solid #eee' }}>
-                      <td style={{ padding: '0.25rem' }}>
+                    <tr key={nr.node_id}>
+                      <td>
                         {formatNodeLabel(nr.node_id, nodes)}
                       </td>
-                      <td style={{ padding: '0.25rem', color: nr.status === 'ok' ? 'green' : 'red' }}>{nr.status}</td>
-                      <td style={{ padding: '0.25rem' }}>{nr.elapsed_ms}</td>
-                      <td style={{ padding: '0.25rem' }}>{nr.prompt_tokens}</td>
-                      <td style={{ padding: '0.25rem' }}>{nr.completion_tokens}</td>
-                      <td style={{ padding: '0.25rem' }}>
+                      <td className={nr.status === 'ok' ? 'text-success' : 'text-danger'}>{nr.status}</td>
+                      <td>{nr.elapsed_ms}</td>
+                      <td>{nr.prompt_tokens}</td>
+                      <td>{nr.completion_tokens}</td>
+                      <td>
                         {typeof nr.output === 'string' ? nr.output : JSON.stringify(nr.output)?.slice(0, 100)}
                       </td>
                     </tr>
@@ -170,7 +162,7 @@ export default function ExecutionHistoryPanel({
             </>
           )}
           {testError && (
-            <div style={{ color: 'red' }}>
+            <div className="text-danger">
               <strong>Test Run Failed:</strong> {testError}
             </div>
           )}

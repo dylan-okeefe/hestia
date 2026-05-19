@@ -1,0 +1,65 @@
+.proposal-card {
+  border: var(--border-thin);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+  background: var(--color-surface-raised);
+}
+
+.proposal-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.proposal-card__header h3 {
+  margin: 0;
+}
+
+.proposal-card__status {
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  font-size: 0.85rem;
+}
+
+.proposal-card__summary {
+  margin: var(--space-2) 0;
+}
+
+.proposal-card__confidence {
+  margin: var(--space-1) 0;
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+}
+
+.proposal-card__evidence {
+  margin: var(--space-2) 0;
+  padding-left: var(--space-5);
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+}
+
+.proposal-card__action-pre {
+  background: var(--color-surface);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  overflow-x: auto;
+}
+
+.proposal-card__actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.proposal-card__reject-row {
+  margin-top: var(--space-2);
+  display: flex;
+  gap: var(--space-2);
+}
+
+.proposal-card__reject-row input {
+  flex: 1;
+}

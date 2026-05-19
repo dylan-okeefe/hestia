@@ -1,4 +1,5 @@
 import type { WorkflowVersion } from '../../api/client';
+import './VersionPanel.css';
 
 interface VersionPanelProps {
   versions: WorkflowVersion[];
@@ -9,60 +10,42 @@ interface VersionPanelProps {
 
 export default function VersionPanel({ versions, activeVersionId, onView, onActivate }: VersionPanelProps) {
   return (
-    <div
-      style={{
-        borderTop: '1px solid #ddd',
-        padding: '1rem',
-        maxHeight: '40vh',
-        overflowY: 'auto',
-        background: '#fafafa',
-      }}
-    >
+    <div className="version-panel">
       <strong>Versions</strong>
       {versions.length === 0 && <p>No versions yet.</p>}
       {versions.length > 0 && (
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem', marginTop: '0.5rem' }}>
+        <table className="version-panel__table">
           <thead>
-            <tr style={{ borderBottom: '1px solid #ccc' }}>
-              <th style={{ textAlign: 'left', padding: '0.25rem' }}>Number</th>
-              <th style={{ textAlign: 'left', padding: '0.25rem' }}>Date</th>
-              <th style={{ textAlign: 'left', padding: '0.25rem' }}>Status</th>
-              <th style={{ textAlign: 'left', padding: '0.25rem' }}>Actions</th>
+            <tr>
+              <th>Number</th>
+              <th>Date</th>
+              <th>Status</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {versions.map((v: WorkflowVersion) => (
-              <tr key={v.id} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: '0.25rem' }}>{v.version_number}</td>
-                <td style={{ padding: '0.25rem' }}>{new Date(v.created_at).toLocaleString()}</td>
-                <td style={{ padding: '0.25rem' }}>
+              <tr key={v.id}>
+                <td>{v.version_number}</td>
+                <td>{new Date(v.created_at).toLocaleString()}</td>
+                <td>
                   {v.id === activeVersionId && (
-                    <span
-                      style={{
-                        display: 'inline-block',
-                        padding: '0.125rem 0.5rem',
-                        borderRadius: '9999px',
-                        background: '#dcfce7',
-                        color: '#166534',
-                        fontSize: '0.75rem',
-                        fontWeight: 600,
-                      }}
-                    >
+                    <span className="version-panel__active-badge">
                       Active
                     </span>
                   )}
                 </td>
-                <td style={{ padding: '0.25rem' }}>
+                <td>
                   <button
                     onClick={() => onView(v)}
-                    style={{ padding: '0.125rem 0.5rem', fontSize: '0.75rem', marginRight: '0.5rem' }}
+                    className="version-panel__action-btn" className="mr-2"
                   >
                     View
                   </button>
                   <button
                     onClick={() => onActivate(v.id)}
                     disabled={v.id === activeVersionId}
-                    style={{ padding: '0.125rem 0.5rem', fontSize: '0.75rem' }}
+                    className="version-panel__action-btn"
                   >
                     Activate
                   </button>

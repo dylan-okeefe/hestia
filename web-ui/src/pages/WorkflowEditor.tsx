@@ -21,6 +21,7 @@ import TriggerConfigPanel from '../components/workflow-editor/TriggerConfigPanel
 import ExecutionHistoryPanel from '../components/workflow-editor/ExecutionHistoryPanel';
 import VersionPanel from '../components/workflow-editor/VersionPanel';
 import { useWorkflowEditor } from '../hooks/useWorkflowEditor';
+import './WorkflowEditor.css';
 
 export default function WorkflowEditor() {
   const { id } = useParams<{ id: string }>();
@@ -81,14 +82,14 @@ export default function WorkflowEditor() {
 
   if (editor.loading) {
     return (
-      <div style={{ padding: '1rem' }}>
+      <div className="workflow-editor__loading">
         <p>Loading workflow…</p>
       </div>
     );
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 60px)' }}>
+    <div className="workflow-editor">
       <EditorToolbar
         workflowName={editor.workflowName}
         isDirty={editor.isDirty}
@@ -174,8 +175,8 @@ export default function WorkflowEditor() {
         webhookUrl={editor.webhookUrl}
         webhookSecret={editor.webhookSecret}
       />
-      <div style={{ display: 'flex', flex: 1 }}>
-        <div style={{ flex: 1 }} tabIndex={0} data-testid="reactflow-wrapper">
+      <div className="workflow-editor__main">
+        <div className="workflow-editor__canvas" tabIndex={0} data-testid="reactflow-wrapper">
           <ReactFlow
             nodes={editor.nodes}
             edges={editor.edges}

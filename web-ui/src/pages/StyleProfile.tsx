@@ -6,6 +6,7 @@ import LoadingSkeleton from '../components/layout/LoadingSkeleton';
 import ErrorState from '../components/layout/ErrorState';
 import EmptyState from '../components/layout/EmptyState';
 import { TEXT } from '../lib/text';
+import './StyleProfile.css';
 
 interface Metric {
   key: string;
@@ -61,7 +62,7 @@ export default function StyleProfile() {
 
   if (userLoading) {
     return (
-      <div style={{ padding: '1rem' }}>
+      <div className="style-profile-page">
         <PageCard>
           <LoadingSkeleton lines={3} />
         </PageCard>
@@ -71,40 +72,41 @@ export default function StyleProfile() {
 
   if (userError) {
     return (
-      <div style={{ padding: '1rem' }}>
+      <div className="style-profile-page">
         <ErrorState message={userError} />
       </div>
     );
   }
 
   return (
-    <div style={{ padding: '1rem' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-        <h1 style={{ margin: 0 }}>{TEXT.styleProfile.title}</h1>
+    <div className="style-profile-page">
+      <div className="style-profile-header">
+        <h1 className="style-profile-title">{TEXT.styleProfile.title}</h1>
         {metrics.length > 0 && (
-          <button onClick={() => setConfirmReset(true)} style={{ color: '#ef4444', borderColor: '#ef4444' }}>
+          <button onClick={() => setConfirmReset(true)} className="text-danger" className="border-danger">
             {TEXT.styleProfile.resetButton}
           </button>
         )}
       </div>
 
-      <PageCard style={{ marginBottom: '1rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+      <PageCard className="mb-4">
+        <div className="style-profile-info-grid">
           <div>
-            <span style={{ fontSize: '0.875rem', color: '#666' }}>{TEXT.styleProfile.platformLabel}</span>
-            <div style={{ fontWeight: 600, textTransform: 'uppercase' }}>{platform}</div>
+            <span className="style-profile-info-label">{TEXT.styleProfile.platformLabel}</span>
+            <div className="style-profile-info-value">{platform}</div>
           </div>
           <div>
-            <span style={{ fontSize: '0.875rem', color: '#666' }}>{TEXT.styleProfile.userLabel}</span>
-            <div style={{ fontWeight: 600 }}>{platformUser}</div>
+            <span className="style-profile-info-label">{TEXT.styleProfile.userLabel}</span>
+            <div className="font-semibold">{platformUser}</div>
           </div>
           {identities.length > 1 && (
             <div>
-              <span style={{ fontSize: '0.875rem', color: '#666' }}>{TEXT.styleProfile.identityLabel}</span>
+              <span className="style-profile-info-label">{TEXT.styleProfile.identityLabel}</span>
               <select
                 value={selectedIdentity}
                 onChange={(e) => setSelectedIdentity(Number(e.target.value))}
-                style={{ marginLeft: '0.5rem', padding: '0.25rem 0.5rem' }}
+                className="form-select"
+                className="ml-2"
               >
                 {identities.map((id, idx) => (
                   <option key={idx} value={idx}>
@@ -133,13 +135,11 @@ export default function StyleProfile() {
       )}
 
       {!loading && metrics.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '1rem' }}>
+        <div className="grid-auto-220">
           {metrics.map((m) => (
             <PageCard key={m.key}>
-              <div style={{ fontSize: '0.75rem', color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.25rem' }}>
-                {m.key}
-              </div>
-              <div style={{ fontSize: '1.25rem', fontWeight: 600, wordBreak: 'break-word' }}>
+              <div className="style-profile-metric-key">{m.key}</div>
+              <div className="style-profile-metric-value">
                 {typeof m.value === 'object' ? JSON.stringify(m.value) : String(m.value)}
               </div>
             </PageCard>
@@ -149,28 +149,17 @@ export default function StyleProfile() {
 
       {confirmReset && (
         <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.4)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-          }}
+          className="modal-overlay"
           onClick={() => setConfirmReset(false)}
         >
-          <div
-            style={{ width: 360, textAlign: 'center', background: '#fff', border: '1px solid #eee', borderRadius: '8px', padding: '1rem' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 style={{ marginTop: 0 }}>{TEXT.styleProfile.resetConfirmTitle}</h3>
-            <p style={{ fontSize: '0.875rem', color: '#666' }}>
+          <div className="modal modal--sm" onClick={(e) => e.stopPropagation()}>
+            <h3>{TEXT.styleProfile.resetConfirmTitle}</h3>
+            <p className="text-small text-secondary">
               {TEXT.styleProfile.resetConfirmDescription(metrics.length, platformUser, platform)}
             </p>
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', marginTop: '1rem' }}>
+            <div className="row-center gap-2 mt-4">
               <button onClick={() => setConfirmReset(false)}>{TEXT.common.cancel}</button>
-              <button onClick={handleReset} style={{ color: '#ef4444', borderColor: '#ef4444' }}>
+              <button onClick={handleReset} className="text-danger" className="border-danger">
                 {TEXT.styleProfile.resetConfirmButton}
               </button>
             </div>

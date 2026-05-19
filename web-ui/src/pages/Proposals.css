@@ -1,0 +1,120 @@
+.proposals-page {
+  padding: var(--space-4);
+}
+
+.proposals-title {
+  margin-bottom: var(--space-4);
+}
+
+.proposals-count-badge {
+  background: #d32f2f;
+  color: #fff;
+  border-radius: 12px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.85rem;
+  vertical-align: middle;
+}
+
+.proposals-tabs {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.proposals-tab {
+  font-weight: normal;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  padding: var(--space-1) var(--space-2);
+}
+
+.proposals-tab--active {
+  font-weight: bold;
+  border-bottom: 2px solid var(--color-primary);
+}
+
+.proposals-outcome-badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 12px;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.proposals-outcome-badge--accepted {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.proposals-outcome-badge--rejected {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.proposals-outcome-badge--deferred {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.proposals-outcome-badge--pending {
+  background: #eff6ff;
+  color: #1e40af;
+}
+
+.proposals-outcome-badge--default {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.proposals-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.proposals-card-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+}
+
+.proposals-card-type {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.proposals-card-summary {
+  margin: var(--space-1) 0;
+  font-size: 0.95rem;
+}
+
+.proposals-card-date {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.proposals-card-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.proposals-approve-btn {
+  background: #dcfce7;
+  color: #166534;
+  border-color: #bbf7d0;
+}
+
+.proposals-reject-btn {
+  background: #fee2e2;
+  color: #991b1b;
+  border-color: #fecaca;
+}

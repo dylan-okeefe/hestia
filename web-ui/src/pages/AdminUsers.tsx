@@ -17,6 +17,7 @@ import TrustPresetDropdown from '../components/forms/TrustPresetDropdown';
 import { label, ROLE_LABELS } from '../lib/labels';
 import { formatDate } from '../lib/format';
 import { TEXT } from '../lib/text';
+import './AdminUsers.css';
 
 interface User {
   id: string;
@@ -123,7 +124,7 @@ export default function AdminUsers() {
 
   if (userLoading) {
     return (
-      <div style={{ padding: '1rem' }}>
+      <div className="admin-users-page">
         <PageCard>
           <LoadingSkeleton lines={3} height="2rem" />
         </PageCard>
@@ -133,7 +134,7 @@ export default function AdminUsers() {
 
   if (currentUser?.role !== 'admin') {
     return (
-      <div style={{ padding: '1rem' }}>
+      <div className="admin-users-page">
         <PageCard>
           <EmptyState title={TEXT.adminUsers.accessDeniedTitle} description={TEXT.adminUsers.accessDeniedDescription} />
         </PageCard>
@@ -142,27 +143,18 @@ export default function AdminUsers() {
   }
 
   return (
-    <div style={{ padding: '1rem' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-        <h1 style={{ margin: 0 }}>{TEXT.adminUsers.title}</h1>
+    <div className="admin-users-page">
+      <div className="admin-users-header">
+        <h1 className="admin-users-title">{TEXT.adminUsers.title}</h1>
         <button onClick={openCreate}>{TEXT.adminUsers.createButton}</button>
       </div>
 
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+      <div className="admin-users-filters">
         {ROLE_FILTERS.map((r) => (
           <button
             key={r}
             onClick={() => setRoleFilter(r)}
-            style={{
-              padding: '0.35rem 0.75rem',
-              borderRadius: '4px',
-              border: '1px solid #ccc',
-              background: roleFilter === r ? '#333' : '#fff',
-              color: roleFilter === r ? '#fff' : '#333',
-              cursor: 'pointer',
-              fontSize: '0.875rem',
-              textTransform: 'capitalize',
-            }}
+            className={roleFilter === r ? 'toggle-btn toggle-btn--active' : 'toggle-btn'}
           >
             {r === 'all' ? TEXT.common.filter : label(ROLE_LABELS, r)}
           </button>
@@ -188,65 +180,43 @@ export default function AdminUsers() {
       )}
 
       {!isLoading && filteredUsers.length > 0 && (
-        <PageCard style={{ padding: 0, overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+        <PageCard className="page-card--flush">
+          <table className="data-table">
             <thead>
-              <tr style={{ borderBottom: '2px solid #eee', textAlign: 'left', background: '#fafafa' }}>
-                <th style={{ padding: '0.75rem 1rem' }}>{TEXT.adminUsers.tableName}</th>
-                <th style={{ padding: '0.75rem 1rem' }}>{TEXT.adminUsers.tableRole}</th>
-                <th style={{ padding: '0.75rem 1rem' }}>{TEXT.adminUsers.tableTrust}</th>
-                <th style={{ padding: '0.75rem 1rem' }}>{TEXT.adminUsers.tableIdentities}</th>
-                <th style={{ padding: '0.75rem 1rem' }}>{TEXT.adminUsers.tableRooms}</th>
-                <th style={{ padding: '0.75rem 1rem' }}>{TEXT.adminUsers.tableCreated}</th>
-                <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>{TEXT.adminUsers.tableActions}</th>
+              <tr>
+                <th>{TEXT.adminUsers.tableName}</th>
+                <th>{TEXT.adminUsers.tableRole}</th>
+                <th>{TEXT.adminUsers.tableTrust}</th>
+                <th>{TEXT.adminUsers.tableIdentities}</th>
+                <th>{TEXT.adminUsers.tableRooms}</th>
+                <th>{TEXT.adminUsers.tableCreated}</th>
+                <th className="text-right">{TEXT.adminUsers.tableActions}</th>
               </tr>
             </thead>
             <tbody>
               {filteredUsers.map((u) => (
-                <tr key={u.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                  <td style={{ padding: '0.75rem 1rem' }}>
-                    <div style={{ fontWeight: 600 }}>{u.display_name}</div>
-                    <div style={{ fontSize: '0.75rem', color: '#888' }}>{u.id.slice(0, 8)}</div>
+                <tr key={u.id}>
+                  <td>
+                    <div className="font-semibold">{u.display_name}</div>
+                    <div className="text-xs text-muted">{u.id.slice(0, 8)}</div>
                   </td>
-                  <td style={{ padding: '0.75rem 1rem' }}>
+                  <td>
                     <span
-                      style={{
-                        display: 'inline-block',
-                        padding: '0.15rem 0.5rem',
-                        borderRadius: '12px',
-                        fontSize: '0.75rem',
-                        fontWeight: 600,
-                        background:
-                          u.role === 'admin'
-                            ? '#fee2e2'
-                            : u.role === 'trusted'
-                            ? '#dcfce7'
-                            : u.role === 'child'
-                            ? '#fef3c7'
-                            : '#f3f4f6',
-                        color:
-                          u.role === 'admin'
-                            ? '#991b1b'
-                            : u.role === 'trusted'
-                            ? '#166534'
-                            : u.role === 'child'
-                            ? '#92400e'
-                            : '#374151',
-                      }}
+                      className={`admin-users-role-badge admin-users-role-badge--${u.role === 'admin' ? 'admin' : u.role === 'trusted' ? 'trusted' : u.role === 'child' ? 'child' : 'default'}`}
                     >
                       {label(ROLE_LABELS, u.role)}
                     </span>
                   </td>
-                  <td style={{ padding: '0.75rem 1rem' }}>{u.trust_preset ?? '—'}</td>
-                  <td style={{ padding: '0.75rem 1rem' }}>{u.identity_count}</td>
-                  <td style={{ padding: '0.75rem 1rem' }}>{u.room_count}</td>
-                  <td style={{ padding: '0.75rem 1rem' }}>{formatDate(u.created_at)}</td>
-                  <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
-                    <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                  <td>{u.trust_preset ?? '—'}</td>
+                  <td>{u.identity_count}</td>
+                  <td>{u.room_count}</td>
+                  <td>{formatDate(u.created_at)}</td>
+                  <td className="text-right">
+                    <div className="admin-users-actions">
                       <button onClick={() => openEdit(u)}>{TEXT.common.edit}</button>
                       <button
                         onClick={() => setConfirmDelete(u.id)}
-                        style={{ color: '#ef4444', borderColor: '#ef4444' }}
+                        className="text-danger" className="border-danger"
                       >
                         {TEXT.common.delete}
                       </button>
@@ -261,41 +231,33 @@ export default function AdminUsers() {
 
       {modalOpen && (
         <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.4)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-          }}
+          className="modal-overlay"
           onClick={() => setModalOpen(false)}
         >
           <div
-            style={{ width: '90%', maxWidth: 480, maxHeight: '90vh', overflowY: 'auto', background: '#fff', border: '1px solid #eee', borderRadius: '8px', padding: '1rem' }}
+            className="modal modal--md"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 style={{ marginTop: 0 }}>{editingUser ? TEXT.adminUsers.editTitle : TEXT.adminUsers.createTitle}</h2>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <h3>{editingUser ? TEXT.adminUsers.editTitle : TEXT.adminUsers.createTitle}</h3>
+            <div className="stack-md">
               <label>
                 {TEXT.adminUsers.displayNameLabel}
                 <input
                   value={form.display_name}
                   onChange={(e) => setForm((f) => ({ ...f, display_name: e.target.value }))}
                   placeholder={TEXT.adminUsers.displayNamePlaceholder}
-                  style={{ width: '100%', padding: '0.5rem', marginTop: '0.25rem' }}
+                  className="form-input mt-1"
                 />
               </label>
               <label>
                 {TEXT.adminUsers.roleLabel}
-                <div style={{ marginTop: '0.25rem' }}>
+                <div className="mt-1">
                   <RoleDropdown value={form.role} onChange={(v) => setForm((f) => ({ ...f, role: v }))} />
                 </div>
               </label>
               <label>
                 {TEXT.adminUsers.trustPresetLabel}
-                <div style={{ marginTop: '0.25rem' }}>
+                <div className="mt-1">
                   <TrustPresetDropdown value={form.trust_preset} onChange={(v) => setForm((f) => ({ ...f, trust_preset: v }))} />
                 </div>
               </label>
@@ -306,11 +268,11 @@ export default function AdminUsers() {
                   value={form.notes}
                   onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
                   placeholder={TEXT.adminUsers.notesPlaceholder}
-                  style={{ width: '100%', padding: '0.5rem', marginTop: '0.25rem', fontFamily: 'inherit' }}
+                  className="form-textarea mt-1"
                 />
               </label>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem' }}>
+            <div className="row-between mt-4">
               <button onClick={() => setModalOpen(false)}>{TEXT.common.cancel}</button>
               <button onClick={handleSave} disabled={!form.display_name.trim()}>
                 {editingUser ? TEXT.common.save : TEXT.common.create}
@@ -322,25 +284,17 @@ export default function AdminUsers() {
 
       {confirmDelete && (
         <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.4)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-          }}
+          className="modal-overlay"
           onClick={() => setConfirmDelete(null)}
         >
-          <div style={{ width: 360, textAlign: 'center', background: '#fff', border: '1px solid #eee', borderRadius: '8px', padding: '1rem' }} onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ marginTop: 0 }}>{TEXT.adminUsers.deleteConfirmTitle}</h3>
-            <p style={{ fontSize: '0.875rem', color: '#666' }}>
+          <div className="modal modal--sm" onClick={(e) => e.stopPropagation()}>
+            <h3>{TEXT.adminUsers.deleteConfirmTitle}</h3>
+            <p className="text-small text-secondary">
               {TEXT.adminUsers.deleteConfirmDescription}
             </p>
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', marginTop: '1rem' }}>
+            <div className="row-center gap-2 mt-4">
               <button onClick={() => setConfirmDelete(null)}>{TEXT.common.cancel}</button>
-              <button onClick={() => handleDelete(confirmDelete)} style={{ color: '#ef4444', borderColor: '#ef4444' }}>
+              <button onClick={() => handleDelete(confirmDelete)} className="text-danger" className="border-danger">
                 {TEXT.common.delete}
               </button>
             </div>
@@ -350,29 +304,21 @@ export default function AdminUsers() {
 
       {showAddIdentity && (
         <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.4)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-          }}
+          className="modal-overlay"
           onClick={() => setShowAddIdentity(null)}
         >
-          <div style={{ width: 360, background: '#fff', border: '1px solid #eee', borderRadius: '8px', padding: '1rem' }} onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ marginTop: 0 }}>{TEXT.adminUsers.addIdentityTitle}</h3>
-            <p style={{ fontSize: '0.875rem', color: '#666' }}>
+          <div className="modal modal--sm" onClick={(e) => e.stopPropagation()}>
+            <h3>{TEXT.adminUsers.addIdentityTitle}</h3>
+            <p className="text-small text-secondary">
               {TEXT.adminUsers.addIdentityPrompt}
             </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.5rem' }}>
+            <div className="stack-md mt-2">
               <label>
                 {TEXT.adminUsers.addIdentityPlatformLabel}
                 <input
                   value={identityForm.platform}
                   onChange={(e) => setIdentityForm((f) => ({ ...f, platform: e.target.value }))}
-                  style={{ width: '100%', padding: '0.5rem', marginTop: '0.25rem' }}
+                  className="form-input mt-1"
                 />
               </label>
               <label>
@@ -380,11 +326,11 @@ export default function AdminUsers() {
                 <input
                   value={identityForm.platform_user}
                   onChange={(e) => setIdentityForm((f) => ({ ...f, platform_user: e.target.value }))}
-                  style={{ width: '100%', padding: '0.5rem', marginTop: '0.25rem' }}
+                  className="form-input mt-1"
                 />
               </label>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem' }}>
+            <div className="row-between mt-4">
               <button onClick={() => setShowAddIdentity(null)}>{TEXT.adminUsers.skip}</button>
               <button onClick={handleAddIdentity} disabled={!identityForm.platform.trim() || !identityForm.platform_user.trim()}>
                 {TEXT.common.add}

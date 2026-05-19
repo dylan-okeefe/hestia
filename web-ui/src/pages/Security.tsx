@@ -4,6 +4,7 @@ import AuditFindings from '../components/AuditFindings';
 import EgressLog from '../components/EgressLog';
 import PageCard from '../components/layout/PageCard';
 import { TEXT } from '../lib/text';
+import './Security.css';
 
 interface Check {
   name: string;
@@ -33,32 +34,23 @@ export default function Security() {
   });
 
   return (
-    <div style={{ padding: '1rem' }}>
-      <h1 style={{ marginBottom: '1rem' }}>{TEXT.security.title}</h1>
+    <div className="security-page">
+      <h1 className="security-title">{TEXT.security.title}</h1>
 
-      <section style={{ marginBottom: '2rem' }}>
+      <section className="security-section">
         <DoctorCheckList checks={checks} onRefresh={setChecks} />
       </section>
 
-      <section style={{ marginBottom: '2rem' }}>
+      <section className="security-section">
         <PageCard>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-            <h2 style={{ margin: 0 }}>{TEXT.security.auditFindingsTitle}</h2>
-            <div style={{ display: 'flex', gap: '0.25rem' }}>
+          <div className="row-between mb-3">
+            <h2>{TEXT.security.auditFindingsTitle}</h2>
+            <div className="row-sm">
               {(['all', 'warnings', 'info'] as AuditTab[]).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setAuditTab(tab)}
-                  style={{
-                    padding: '0.25rem 0.5rem',
-                    fontSize: '0.8rem',
-                    fontWeight: auditTab === tab ? 600 : 400,
-                    borderBottom: auditTab === tab ? '2px solid #1976d2' : '2px solid transparent',
-                    background: 'transparent',
-                    border: 'none',
-                    borderRadius: 0,
-                    cursor: 'pointer',
-                  }}
+                  className={auditTab === tab ? 'tab-btn tab-btn--active' : 'tab-btn'}
                 >
                   {tab === 'all' ? TEXT.security.tabAll : tab === 'warnings' ? TEXT.security.tabWarnings : TEXT.security.tabInfo}
                 </button>

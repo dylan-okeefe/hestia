@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { fetchConfig } from '../api/client';
 import ConfigForm from '../components/ConfigForm';
+import './Config.css';
 
 export default function Config() {
   const [config, setConfig] = useState<Record<string, unknown> | null>(null);
@@ -20,10 +21,10 @@ export default function Config() {
   }, []);
 
   return (
-    <div style={{ padding: '1rem' }}>
+    <div className="config-page">
       <h1>Configuration</h1>
       {loading && <p>Loading configuration…</p>}
-      {error && <p style={{ color: 'red' }}>{error}</p>}
+      {error && <p className="text-danger">{error}</p>}
       {config && <ConfigForm initialConfig={config} onSave={() => setError(null)} />}
     </div>
   );

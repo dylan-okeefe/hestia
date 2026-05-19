@@ -1,4 +1,5 @@
 import { Handle, Position, type NodeProps } from 'reactflow';
+import './workflow-nodes.css';
 
 export default function InvestigateNode({ data }: NodeProps) {
   const label = (data.label as string) || 'Investigate';
@@ -9,20 +10,12 @@ export default function InvestigateNode({ data }: NodeProps) {
     <div
       data-testid="workflow-node"
       data-node-type="investigate"
-      style={{
-        background: '#fee2e2',
-        border: '1px solid #fca5a5',
-        borderRadius: 8,
-        padding: '0.5rem 0.75rem',
-        minWidth: 140,
-        fontSize: '0.875rem',
-        color: '#7f1d1d',
-      }}
+      className="workflow-node workflow-node--investigate"
     >
-      <Handle type="target" position={Position.Top} style={{ background: '#555' }} />
-      <div style={{ fontWeight: 600, marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: '0.75rem' }}>🔍 {snippet || '—'}</div>
-      <Handle type="source" position={Position.Bottom} style={{ background: '#555' }} />
+      <Handle type="target" position={Position.Top} className="workflow-node__handle" />
+      <div className="workflow-node__label">{label}</div>
+      <div className="workflow-node__snippet">🔍 {snippet || '—'}</div>
+      <Handle type="source" position={Position.Bottom} className="workflow-node__handle" />
     </div>
   );
 }

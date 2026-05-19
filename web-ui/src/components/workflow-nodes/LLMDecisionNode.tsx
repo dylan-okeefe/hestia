@@ -1,4 +1,5 @@
 import { Handle, Position, type NodeProps } from 'reactflow';
+import './workflow-nodes.css';
 
 export default function LLMDecisionNode({ data }: NodeProps) {
   const label = (data.label as string) || 'LLM Decision';
@@ -10,39 +11,24 @@ export default function LLMDecisionNode({ data }: NodeProps) {
     <div
       data-testid="workflow-node"
       data-node-type="llm_decision"
-      style={{
-        background: '#f3e8ff',
-        border: '1px solid #d8b4fe',
-        borderRadius: 8,
-        padding: '0.5rem 0.75rem',
-        minWidth: 140,
-        fontSize: '0.875rem',
-        color: '#581c87',
-        position: 'relative',
-      }}
+      className="workflow-node workflow-node--llm_decision"
     >
-      <Handle type="target" position={Position.Top} style={{ background: '#555' }} />
-      <div style={{ fontWeight: 600, marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: '0.75rem' }}>🧠 {snippet || '—'}</div>
+      <Handle type="target" position={Position.Top} className="workflow-node__handle" />
+      <div className="workflow-node__label">{label}</div>
+      <div className="workflow-node__snippet">🧠 {snippet || '—'}</div>
       {branches.map((branch, index) => {
         const left = branches.length === 1 ? '50%' : `${((index + 1) / (branches.length + 1)) * 100}%`;
         return (
-          <div key={branch} style={{ position: 'absolute', bottom: 0, left, transform: 'translateX(-50%)' }}>
+          <div key={branch} className="workflow-node__branch-container" style={{ left }}>
             <Handle
               type="source"
               position={Position.Bottom}
               id={branch}
-              style={{ background: '#555', position: 'relative' }}
+              className="workflow-node__handle relative"
             />
             <span
-              style={{
-                display: 'block',
-                textAlign: 'center',
-                fontSize: '0.65rem',
-                color: '#581c87',
-                marginTop: 2,
-                whiteSpace: 'nowrap',
-              }}
+              className="workflow-node__branch-label"
+              className="text-purple"
             >
               {branch}
             </span>

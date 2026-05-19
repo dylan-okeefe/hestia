@@ -1,4 +1,5 @@
 import { Handle, Position, type NodeProps } from 'reactflow';
+import './workflow-nodes.css';
 
 export default function SendMessageNode({ data }: NodeProps) {
   const label = (data.label as string) || 'Send Message';
@@ -9,23 +10,15 @@ export default function SendMessageNode({ data }: NodeProps) {
     <div
       data-testid="workflow-node"
       data-node-type="send_message"
-      style={{
-        background: '#dcfce7',
-        border: '1px solid #86efac',
-        borderRadius: 8,
-        padding: '0.5rem 0.75rem',
-        minWidth: 140,
-        fontSize: '0.875rem',
-        color: '#14532d',
-      }}
+      className="workflow-node workflow-node--send_message"
     >
-      <Handle type="target" position={Position.Top} style={{ background: '#555' }} />
-      <div style={{ fontWeight: 600, marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: '0.75rem' }}>
+      <Handle type="target" position={Position.Top} className="workflow-node__handle" />
+      <div className="workflow-node__label">{label}</div>
+      <div className="workflow-node__snippet">
         💬 {platform}
         {target && ` → ${target}`}
       </div>
-      <Handle type="source" position={Position.Bottom} style={{ background: '#555' }} />
+      <Handle type="source" position={Position.Bottom} className="workflow-node__handle" />
     </div>
   );
 }

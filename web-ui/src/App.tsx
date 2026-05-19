@@ -17,6 +17,7 @@ import AdminUsers from './pages/AdminUsers';
 import ErrorDashboard from './pages/ErrorDashboard';
 import Login from './pages/Login';
 import NotFound from './pages/NotFound';
+import './App.css';
 
 function AppContent() {
   const { auth, loading, logout } = useAuth();
@@ -26,7 +27,7 @@ function AppContent() {
 
   if (loading || userLoading) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+      <div className="app-loading">
         <p>Loading…</p>
       </div>
     );
@@ -35,14 +36,7 @@ function AppContent() {
   const navLink = (label: string, to: string) => (
     <NavLink
       to={to}
-      style={({ isActive }) => ({
-        fontWeight: isActive ? 'bold' : 'normal',
-        background: 'none',
-        border: 'none',
-        cursor: 'pointer',
-        textDecoration: isActive ? 'underline' : 'none',
-        color: 'inherit',
-      })}
+      className={({ isActive }) => isActive ? 'nav-link nav-link--active' : 'nav-link'}
     >
       {label}
     </NavLink>
@@ -67,10 +61,7 @@ function AppContent() {
             {navLink('Errors', '/errors')}
             {auth.authenticated && isAdmin && navLink('Users', '/admin/users')}
             {auth.authEnabled && (
-              <button
-                onClick={logout}
-                style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: '#666' }}
-              >
+              <button onClick={logout} className="nav-logout">
                 Log out
               </button>
             )}

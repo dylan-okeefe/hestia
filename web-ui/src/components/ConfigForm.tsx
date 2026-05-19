@@ -3,6 +3,7 @@ import { saveConfig, fetchConfigSchema } from '../api/client';
 import { CONFIG_KEY_LABELS, label } from '../lib/labels';
 import { formatCron } from '../lib/format';
 import { TEXT } from '../lib/text';
+import './ConfigForm.css';
 
 interface ConfigFormProps {
   initialConfig: Record<string, unknown>;
@@ -38,10 +39,8 @@ function isInvalid(path: string, value: unknown): boolean {
 
 function looksLikeCron(value: unknown): boolean {
   if (typeof value !== 'string') return false;
-  // 5-field cron pattern: numbers, *, -, ,, /
   const cronPattern = /^(\S+\s+\S+\s+\S+\s+\S+\s+\S+)$/;
   if (!cronPattern.test(value)) return false;
-  // Additional validation: must contain only allowed characters
   return /^[\d\*\-\,\/\?LW#\s]+$/.test(value);
 }
 
@@ -241,24 +240,24 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
 
   const renderField = (path: string, key: string, value: unknown, depth: number) => {
     if (value === null || value === undefined) {
-      return <span style={{ color: '#999' }}>null</span>;
+      return <span className="config-form__null">null</span>;
     }
 
     if (typeof value === 'object' && !Array.isArray(value)) {
       const sectionPath = path ? `${path}.${key}` : key;
       const isCollapsed = collapsed[sectionPath] ?? (depth > 0);
       return (
-        <div style={{ marginLeft: depth > 0 ? '1rem' : 0, marginTop: '0.5rem' }}>
+        <div className={depth > 0 ? 'ml-4 mt-2' : 'mt-2'}>
           <button
             onClick={() => setCollapsed((s) => ({ ...s, [sectionPath]: !isCollapsed }))}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', fontWeight: 'bold', padding: 0 }}
+            className="config-form__toggle-btn"
           >
             {isCollapsed ? '▶' : '▼'} {label(CONFIG_KEY_LABELS, key)}
           </button>
           {!isCollapsed && (
-            <div style={{ marginTop: '0.25rem' }}>
+            <div className="mt-1">
               {Object.entries(value as Record<string, unknown>).map(([k, v]) => (
-                <div key={k} style={{ marginBottom: '0.25rem' }}>
+                <div key={k} className="mb-1">
                   {renderField(sectionPath, k, v, depth + 1)}
                 </div>
               ))}
@@ -274,22 +273,17 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
     const invalid = isInvalid(fullPath, value);
     const needsRestart = restartPaths.has(fullPath);
 
-    const baseStyle: React.CSSProperties = {
-      border: `1px solid ${invalid ? '#f44336' : '#ccc'}`,
-      borderRadius: '4px',
-      padding: '0.35rem 0.5rem',
-      minWidth: '200px',
-    };
+    const baseClass = 'form-input';
 
     let input: React.ReactNode;
     if (schema[fullPath]?.type === 'enum') {
       input = (
-        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <label className="row-center gap-2">
           <span>{label(CONFIG_KEY_LABELS, key)}</span>
           <select
             value={String(value)}
             onChange={(e) => updateValue(fullPath, e.target.value)}
-            style={baseStyle}
+            className="form-select"
           >
             {schema[fullPath].values?.map((v: string) => (
               <option key={v} value={v}>{v}</option>
@@ -299,7 +293,7 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
       );
     } else if (inputType === 'boolean') {
       input = (
-        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+        <label className="row-center gap-2" className="cursor-pointer">
           <input
             type="checkbox"
             checked={value as boolean}
@@ -310,31 +304,32 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
       );
     } else if (inputType === 'array') {
       input = (
-        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <label className="row-center gap-2">
           <span>{label(CONFIG_KEY_LABELS, key)}</span>
           <input
             type="text"
             value={(value as unknown[]).join(', ')}
             onChange={(e) => updateValue(fullPath, e.target.value.split(',').map((s) => s.trim()).filter(Boolean))}
-            style={baseStyle}
+            className={baseClass}
           />
         </label>
       );
     } else {
       input = (
-        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <label className="row-center gap-2">
           <span>{label(CONFIG_KEY_LABELS, key)}</span>
           <input
             type={isCred && !revealed[fullPath] ? 'password' : inputType === 'number' ? 'number' : 'text'}
             value={value as string | number}
             onChange={(e) => updateValue(fullPath, inputType === 'number' ? Number(e.target.value) : e.target.value)}
-            style={baseStyle}
+            className={baseClass}
+            style={invalid ? { border: '2px solid var(--color-danger)' } : undefined}
           />
           {isCred && (
             <button
               type="button"
               onClick={() => setRevealed((s) => ({ ...s, [fullPath]: !s[fullPath] }))}
-              style={{ fontSize: '0.8rem' }}
+              className="text-small"
             >
               {revealed[fullPath] ? TEXT.config.hide : TEXT.config.reveal}
             </button>
@@ -346,24 +341,16 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
     const cronPreview = looksLikeCron(value) ? formatCron(value as string) : null;
 
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+      <div className="config-form__field-row">
         {input}
-        {invalid && <span style={{ color: '#f44336', fontSize: '0.85rem' }}>{TEXT.config.invalid}</span>}
+        {invalid && <span className="text-danger text-small">{TEXT.config.invalid}</span>}
         {needsRestart && (
-          <span
-            style={{
-              fontSize: '0.75rem',
-              background: '#fff3e0',
-              color: '#e65100',
-              padding: '0.1rem 0.35rem',
-              borderRadius: '4px',
-            }}
-          >
+          <span className="config-form__restart-badge">
             {TEXT.config.requiresRestart}
           </span>
         )}
         {cronPreview && (
-          <span style={{ fontSize: '0.75rem', color: '#666', width: '100%' }}>
+          <span className="config-form__cron-preview">
             {cronPreview}
           </span>
         )}
@@ -377,33 +364,18 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
   return (
     <div>
       {typeof config.trust === 'object' && config.trust !== null && (
-        <div style={{ marginBottom: '1rem' }}>
+        <div className="mb-4">
           <strong>{TEXT.config.trustPresetTitle}</strong>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-              gap: '1rem',
-              marginTop: '0.5rem',
-            }}
-          >
+          <div className="config-form__trust-grid">
             {Object.entries(trustPresets).map(([key, preset]) => (
               <div
                 key={key}
                 onClick={() => applyTrustPreset(key)}
-                style={{
-                  border: `2px solid ${currentPreset === key ? '#1976d2' : '#ddd'}`,
-                  borderRadius: '8px',
-                  padding: '1rem',
-                  cursor: 'pointer',
-                  background: currentPreset === key ? '#e3f2fd' : '#fff',
-                }}
+                className={currentPreset === key ? 'config-form__trust-card config-form__trust-card--selected' : 'config-form__trust-card'}
               >
-                <h3 style={{ margin: '0 0 0.5rem' }}>{preset.name}</h3>
-                <p style={{ margin: '0 0 0.75rem', fontSize: '0.9rem', color: '#555' }}>
-                  {preset.description}
-                </p>
-                <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.85rem', color: '#444' }}>
+                <h3>{preset.name}</h3>
+                <p>{preset.description}</p>
+                <ul>
                   {preset.bullets.map((b, i) => (
                     <li key={i}>{b}</li>
                   ))}
@@ -417,26 +389,14 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
       {topSections.map(([sectionKey, sectionValue]) => (
         <div
           key={sectionKey}
-          style={{
-            border: '1px solid #ddd',
-            borderRadius: '8px',
-            marginBottom: '1rem',
-            overflow: 'hidden',
-          }}
+          className="config-form__section"
         >
           <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              padding: '0.75rem 1rem',
-              background: '#fafafa',
-              cursor: 'pointer',
-            }}
+            className="config-form__section-header"
             onClick={() => setCollapsed((s) => ({ ...s, [sectionKey]: !s[sectionKey] }))}
           >
-            <strong style={{ textTransform: 'capitalize' }}>{sectionKey}</strong>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <strong>{sectionKey}</strong>
+            <div className="row-sm">
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -449,9 +409,9 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
             </div>
           </div>
           {!collapsed[sectionKey] && (
-            <div style={{ padding: '1rem' }}>
+            <div className="config-form__section-body">
               {Object.entries(sectionValue as Record<string, unknown>).map(([k, v]) => (
-                <div key={k} style={{ marginBottom: '0.5rem' }}>
+                <div key={k} className="config-form__field">
                   {renderField(sectionKey, k, v, 1)}
                 </div>
               ))}
@@ -461,13 +421,13 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
       ))}
 
       {topFields.length > 0 && (
-        <div style={{ border: '1px solid #ddd', borderRadius: '8px', marginBottom: '1rem', overflow: 'hidden' }}>
-          <div style={{ padding: '0.75rem 1rem', background: '#fafafa' }}>
+        <div className="config-form__section">
+          <div className="config-form__section-header">
             <strong>{TEXT.config.generalSection}</strong>
           </div>
-          <div style={{ padding: '1rem' }}>
+          <div className="config-form__section-body">
             {topFields.map(([k, v]) => (
-              <div key={k} style={{ marginBottom: '0.5rem' }}>
+              <div key={k} className="config-form__field">
                 {renderField('', k, v, 0)}
               </div>
             ))}
@@ -475,7 +435,7 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+      <div className="row-sm" className="row-center">
         <button onClick={handleSave} disabled={saving}>
           {saving ? TEXT.common.saving : TEXT.common.save}
         </button>

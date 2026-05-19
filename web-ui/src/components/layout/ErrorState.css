@@ -1,0 +1,16 @@
+.error-state {
+  padding: var(--space-4);
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-md);
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.error-state__message {
+  margin: 0 0 var(--space-2);
+}
+
+.error-state__actions {
+  display: flex;
+  gap: var(--space-2);
+}

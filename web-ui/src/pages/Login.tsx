@@ -5,6 +5,7 @@ import PageCard from '../components/layout/PageCard';
 import EmptyState from '../components/layout/EmptyState';
 import { label, ROLE_LABELS } from '../lib/labels';
 import { TEXT } from '../lib/text';
+import './Login.css';
 
 interface AvailableIdentity {
   platform: string;
@@ -142,251 +143,164 @@ export default function Login() {
   const currentStepIndex = phase === 'select-user' ? 0 : phase === 'select-platform' ? 1 : 2;
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '100vh',
-        background: '#f5f5f5',
-      }}
-    >
-      <div style={{ width: '100%', maxWidth: '480px', padding: '1rem' }}>
-        <PageCard style={{ padding: '2rem' }}>
-          <h1 style={{ margin: '0 0 0.5rem', fontSize: '1.5rem' }}>{TEXT.login.title}</h1>
-          <p style={{ margin: '0 0 1.5rem', color: '#666' }}>{TEXT.login.subtitle}</p>
+    <div className="login-page">
+      <div className="login-card">
+        <h1 className="login-title">{TEXT.login.title}</h1>
+        <p className="login-subtitle">{TEXT.login.subtitle}</p>
 
-          {/* Progress indicator */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
-            {steps.map((step, index) => (
+        {/* Progress indicator */}
+        <div className="login-stepper">
+          {steps.map((step, index) => (
+            <div key={step} className="login-stepper__item">
               <div
-                key={step}
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: '0.25rem',
-                  flex: 1,
-                }}
+                className={
+                  index <= currentStepIndex
+                    ? 'login-stepper__circle login-stepper__circle--active'
+                    : 'login-stepper__circle login-stepper__circle--inactive'
+                }
               >
-                <div
-                  style={{
-                    width: '28px',
-                    height: '28px',
-                    borderRadius: '50%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '0.875rem',
-                    fontWeight: 'bold',
-                    background: index <= currentStepIndex ? '#2563eb' : '#e5e7eb',
-                    color: index <= currentStepIndex ? '#fff' : '#6b7280',
-                  }}
-                >
-                  {index + 1}
-                </div>
-                <span
-                  style={{
-                    fontSize: '0.7rem',
-                    color: index <= currentStepIndex ? '#2563eb' : '#9ca3af',
-                    fontWeight: index === currentStepIndex ? 'bold' : 'normal',
-                  }}
-                >
-                  {step}
-                </span>
+                {index + 1}
               </div>
-            ))}
-          </div>
-
-          {phase === 'select-user' && (
-            <div>
-              <p style={{ margin: '0 0 0.75rem', fontSize: '0.875rem', color: '#666' }}>
-                {TEXT.login.step1Description}
-              </p>
-              {loadingUsers && <EmptyState title={TEXT.login.loadingTitle} description={TEXT.login.loadingDescription} />}
-              {!loadingUsers && availableUsers.length === 0 && (
-                <EmptyState
-                  title={TEXT.login.noUsersTitle}
-                  description={TEXT.login.noUsersDescription}
-                />
-              )}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '0.75rem' }}>
-                {!loadingUsers && availableUsers.map((user) => (
-                  <button
-                    key={user.user_id}
-                    onClick={() => handleSelectUser(user)}
-                    style={{
-                      padding: '1rem',
-                      fontSize: '1rem',
-                      cursor: 'pointer',
-                      textAlign: 'center',
-                      borderRadius: '8px',
-                      border: '1px solid #eee',
-                      background: '#fff',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      gap: '0.5rem',
-                    }}
-                  >
-                    <span style={{ fontWeight: 'bold' }}>{user.display_name}</span>
-                    <span
-                      style={{
-                        display: 'inline-block',
-                        padding: '0.125rem 0.5rem',
-                        borderRadius: '999px',
-                        fontSize: '0.65rem',
-                        fontWeight: 'bold',
-                        color: '#fff',
-                        background: roleBadgeColor(user.role),
-                        textTransform: 'uppercase',
-                      }}
-                    >
-                      {label(ROLE_LABELS, user.role)}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {phase === 'select-platform' && selectedUser && (
-            <div>
-              <p style={{ margin: '0 0 0.75rem', fontSize: '0.875rem', color: '#666' }}>
-                {TEXT.login.selectedUserPrefix}<strong>{selectedUser.display_name}</strong>
-              </p>
-              {selectedUser.platforms.length === 0 && (
-                <EmptyState
-                  title={TEXT.login.noPlatformsTitle}
-                  description={TEXT.login.noPlatformsDescription}
-                />
-              )}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                {selectedUser.platforms.map((platform) => (
-                  <button
-                    key={platform}
-                    onClick={() => handleRequestCode(platform)}
-                    disabled={sending}
-                    style={{
-                      padding: '0.75rem',
-                      fontSize: '1rem',
-                      cursor: 'pointer',
-                      textTransform: 'capitalize',
-                      textAlign: 'left',
-                      borderRadius: '6px',
-                      border: '1px solid #eee',
-                      background: '#fff',
-                    }}
-                  >
-                    <div style={{ fontWeight: 'bold', marginBottom: '0.25rem' }}>
-                      {sending && selectedPlatform === platform
-                        ? TEXT.common.sending
-                        : TEXT.login.sendCodeVia(platform)}
-                    </div>
-                    <div style={{ fontSize: '0.8rem', color: '#666' }}>
-                      {platformHelperText[platform] || 'A verification code will be sent to your device.'}
-                    </div>
-                  </button>
-                ))}
-              </div>
-              <button
-                onClick={() => {
-                  setPhase('select-user');
-                  setSelectedUser(null);
-                }}
-                style={{
-                  marginTop: '1rem',
-                  background: 'none',
-                  border: 'none',
-                  color: '#1976d2',
-                  cursor: 'pointer',
-                  fontSize: '0.85rem',
-                }}
+              <span
+                className={
+                  'login-stepper__label ' +
+                  (index <= currentStepIndex ? 'login-stepper__label--active' : 'login-stepper__label--inactive') +
+                  (index === currentStepIndex ? ' login-stepper__label--current' : '')
+                }
               >
-                {TEXT.login.backToUserSelection}
-              </button>
+                {step}
+              </span>
             </div>
-          )}
+          ))}
+        </div>
 
-          {phase === 'input' && (
-            <div>
-              <p style={{ margin: '0 0 0.5rem', fontSize: '0.875rem', color: '#666' }}>
-                {TEXT.login.enterCodePrefix}<strong>{selectedPlatform}</strong>
-              </p>
-              <input
-                type="text"
-                inputMode="numeric"
-                maxLength={6}
-                value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                placeholder={TEXT.login.codePlaceholder}
-                style={{
-                  width: '100%',
-                  padding: '0.75rem',
-                  fontSize: '1.25rem',
-                  letterSpacing: '0.5rem',
-                  textAlign: 'center',
-                  marginBottom: '0.5rem',
-                  borderRadius: '4px',
-                  border: '1px solid #ccc',
-                }}
+        {phase === 'select-user' && (
+          <div className="login-step">
+            <p className="login-description">{TEXT.login.step1Description}</p>
+            {loadingUsers && <EmptyState title={TEXT.login.loadingTitle} description={TEXT.login.loadingDescription} />}
+            {!loadingUsers && availableUsers.length === 0 && (
+              <EmptyState
+                title={TEXT.login.noUsersTitle}
+                description={TEXT.login.noUsersDescription}
               />
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                <span style={{ fontSize: '0.85rem', color: expiresIn > 0 ? '#666' : '#f44336' }}>
-                  {expiresIn > 0 ? TEXT.login.expiresIn(formatTime(expiresIn)) : TEXT.login.codeExpired}
-                </span>
-                <button onClick={handleVerify} disabled={verifying || code.length < 6 || expiresIn <= 0}>
-                  {verifying ? TEXT.common.verifying : TEXT.login.verify}
-                </button>
-              </div>
-              <button
-                onClick={() => {
-                  setPhase('select-platform');
-                  setCode('');
-                  if (timerRef.current) clearInterval(timerRef.current);
-                }}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: '#1976d2',
-                  cursor: 'pointer',
-                  fontSize: '0.85rem',
-                }}
-              >
-                {TEXT.login.backToPlatformSelection}
-              </button>
-              {expiresIn <= 0 && (
-                <p style={{ margin: '0.5rem 0 0', fontSize: '0.8rem', color: '#666' }}>
-                  {TEXT.login.codeExpiredPrefix}{' '}
-                  <button
-                    onClick={() => {
-                      setPhase('select-platform');
-                      setCode('');
-                      if (timerRef.current) clearInterval(timerRef.current);
-                    }}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: '#1976d2',
-                      cursor: 'pointer',
-                      fontSize: '0.8rem',
-                      padding: 0,
-                      textDecoration: 'underline',
-                    }}
+            )}
+            <div className="login-grid">
+              {!loadingUsers && availableUsers.map((user) => (
+                <button
+                  key={user.user_id}
+                  onClick={() => handleSelectUser(user)}
+                  className="login-user-card"
+                >
+                  <span className="font-bold">{user.display_name}</span>
+                  <span
+                    className="login-role-badge"
+                    style={{ background: roleBadgeColor(user.role) }}
                   >
-                    {TEXT.login.resend}
-                  </button>
-                </p>
-              )}
+                    {label(ROLE_LABELS, user.role)}
+                  </span>
+                </button>
+              ))}
             </div>
-          )}
+          </div>
+        )}
 
-          {error && (
-            <PageCard style={{ marginTop: '1rem', marginBottom: 0, borderColor: '#fecaca', background: '#fef2f2' }}>
-              <p style={{ color: '#ef4444', margin: 0, fontSize: '0.875rem' }}>{error}</p>
-            </PageCard>
-          )}
-        </PageCard>
+        {phase === 'select-platform' && selectedUser && (
+          <div className="login-step">
+            <p className="login-description">
+              {TEXT.login.selectedUserPrefix}<strong>{selectedUser.display_name}</strong>
+            </p>
+            {selectedUser.platforms.length === 0 && (
+              <EmptyState
+                title={TEXT.login.noPlatformsTitle}
+                description={TEXT.login.noPlatformsDescription}
+              />
+            )}
+            <div className="stack-md">
+              {selectedUser.platforms.map((platform) => (
+                <button
+                  key={platform}
+                  onClick={() => handleRequestCode(platform)}
+                  disabled={sending}
+                  className="login-platform-btn"
+                >
+                  <div className="login-platform-btn__title">
+                    {sending && selectedPlatform === platform
+                      ? TEXT.common.sending
+                      : TEXT.login.sendCodeVia(platform)}
+                  </div>
+                  <div className="login-platform-btn__helper">
+                    {platformHelperText[platform] || 'A verification code will be sent to your device.'}
+                  </div>
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => {
+                setPhase('select-user');
+                setSelectedUser(null);
+              }}
+              className="login-back-btn"
+            >
+              {TEXT.login.backToUserSelection}
+            </button>
+          </div>
+        )}
+
+        {phase === 'input' && (
+          <div className="login-step">
+            <p className="login-description">
+              {TEXT.login.enterCodePrefix}<strong>{selectedPlatform}</strong>
+            </p>
+            <input
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              placeholder={TEXT.login.codePlaceholder}
+              className="login-code-input"
+            />
+            <div className="login-footer">
+              <span className={expiresIn > 0 ? 'login-timer--active' : 'login-timer--expired'}>
+                {expiresIn > 0 ? TEXT.login.expiresIn(formatTime(expiresIn)) : TEXT.login.codeExpired}
+              </span>
+              <button onClick={handleVerify} disabled={verifying || code.length < 6 || expiresIn <= 0}>
+                {verifying ? TEXT.common.verifying : TEXT.login.verify}
+              </button>
+            </div>
+            <button
+              onClick={() => {
+                setPhase('select-platform');
+                setCode('');
+                if (timerRef.current) clearInterval(timerRef.current);
+              }}
+              className="login-back-btn"
+            >
+              {TEXT.login.backToPlatformSelection}
+            </button>
+            {expiresIn <= 0 && (
+              <p className="text-small text-secondary">
+                {TEXT.login.codeExpiredPrefix}{' '}
+                <button
+                  onClick={() => {
+                    setPhase('select-platform');
+                    setCode('');
+                    if (timerRef.current) clearInterval(timerRef.current);
+                  }}
+                  className="login-resend-btn"
+                >
+                  {TEXT.login.resend}
+                </button>
+              </p>
+            )}
+          </div>
+        )}
+
+        {error && (
+          <PageCard className="login-error-card">
+            <p className="login-error-text">{error}</p>
+          </PageCard>
+        )}
       </div>
     </div>
   );

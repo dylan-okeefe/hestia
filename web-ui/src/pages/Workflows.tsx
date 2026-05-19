@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchWorkflows, createWorkflow, deleteWorkflow, type Workflow } from '../api/client';
 import { TEXT } from '../lib/text';
+import './Workflows.css';
 
 const TRIGGER_ICONS: Record<string, string> = {
   manual: '🖱️',
@@ -57,40 +58,33 @@ export default function Workflows() {
   };
 
   const executionDot = (status?: string) => {
-    const color = status === 'ok' ? '#22c55e' : status === 'error' || status === 'failed' ? '#ef4444' : '#9ca3af';
+    const colorClass = status === 'ok' ? 'status-dot-sm--success' : status === 'error' || status === 'failed' ? 'status-dot-sm--danger' : 'status-dot-sm--neutral';
     return (
       <span
-        style={{
-          display: 'inline-block',
-          width: 8,
-          height: 8,
-          borderRadius: '50%',
-          background: color,
-          marginRight: '0.5rem',
-        }}
+        className={`status-dot-sm ${colorClass}`}
         title={status || 'never run'}
       />
     );
   };
 
   return (
-    <div style={{ padding: '1rem' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+    <div className="workflows-page">
+      <div className="workflows-header">
         <h1>{TEXT.workflows.title}</h1>
         <button onClick={handleNew}>{TEXT.workflows.createButton}</button>
       </div>
       {loading && <p>{TEXT.workflows.loading}</p>}
-      {error && <p style={{ color: 'red' }}>{error}</p>}
+      {error && <p className="text-danger">{error}</p>}
       {!loading && workflows.length === 0 && <p>{TEXT.workflows.empty}</p>}
       {!loading && workflows.length > 0 && (
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <table className="workflows-table">
           <thead>
-            <tr style={{ borderBottom: '1px solid #ddd', textAlign: 'left' }}>
-              <th style={{ padding: '0.5rem' }}>{TEXT.workflows.tableName}</th>
-              <th style={{ padding: '0.5rem' }}>{TEXT.workflows.tableTrigger}</th>
-              <th style={{ padding: '0.5rem' }}>{TEXT.workflows.tableLastRun}</th>
-              <th style={{ padding: '0.5rem' }}>{TEXT.workflows.tableActiveVersion}</th>
-              <th style={{ padding: '0.5rem' }}>{TEXT.workflows.tableActions}</th>
+            <tr>
+              <th>{TEXT.workflows.tableName}</th>
+              <th>{TEXT.workflows.tableTrigger}</th>
+              <th>{TEXT.workflows.tableLastRun}</th>
+              <th>{TEXT.workflows.tableActiveVersion}</th>
+              <th>{TEXT.workflows.tableActions}</th>
             </tr>
           </thead>
           <tbody>
@@ -98,24 +92,11 @@ export default function Workflows() {
               <tr
                 key={wf.id}
                 onClick={() => navigate(`/workflows/${wf.id}`)}
-                style={{ borderBottom: '1px solid #eee', cursor: 'pointer' }}
                 data-testid="workflow-row"
               >
-                <td style={{ padding: '0.5rem' }}>{wf.name}</td>
-                <td style={{ padding: '0.5rem' }}>
-                  <span
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '0.25rem',
-                      padding: '0.125rem 0.5rem',
-                      borderRadius: '9999px',
-                      background: '#e5e7eb',
-                      fontSize: '0.75rem',
-                      fontWeight: 600,
-                      textTransform: 'uppercase',
-                    }}
-                  >
+                <td>{wf.name}</td>
+                <td>
+                  <span className="workflows-trigger-badge">
                     <span>{TRIGGER_ICONS[wf.trigger_type] || '•'}</span>
                     {wf.trigger_type}
                   </span>
@@ -126,20 +107,20 @@ export default function Workflows() {
                       rel="noopener noreferrer"
                       title="Open webhook URL"
                       onClick={(e) => e.stopPropagation()}
-                      style={{ marginLeft: '0.5rem', textDecoration: 'none' }}
+                      className="workflows-webhook-link"
                     >
                       🔗
                     </a>
                   )}
                 </td>
-                <td style={{ padding: '0.5rem' }}>
-                  <span style={{ display: 'flex', alignItems: 'center' }}>
+                <td>
+                  <span className="row-center">
                     {executionDot(wf.last_execution_status)}
                     {relativeTime(wf.last_execution_at ?? null)}
                   </span>
                 </td>
-                <td style={{ padding: '0.5rem' }}>{wf.active_version_id ?? '—'}</td>
-                <td style={{ padding: '0.5rem' }}>
+                <td>{wf.active_version_id ?? '—'}</td>
+                <td>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -148,7 +129,7 @@ export default function Workflows() {
                         .then(() => setWorkflows((prev) => prev.filter((w) => w.id !== wf.id)))
                         .catch((err) => setError(err instanceof Error ? err.message : TEXT.workflows.deleteError));
                     }}
-                    style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', color: 'red' }}
+                    className="workflows-delete-btn"
                   >
                     {TEXT.common.delete}
                   </button>

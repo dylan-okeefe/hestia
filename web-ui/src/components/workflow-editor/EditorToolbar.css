@@ -1,0 +1,32 @@
+.editor-toolbar {
+  padding: var(--space-2) var(--space-4);
+  border-bottom: var(--border-thin);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.editor-toolbar__name-input {
+  margin: 0;
+  font-size: var(--font-size-2xl);
+  font-weight: bold;
+  border: none;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  min-width: 120px;
+}
+
+.editor-toolbar__unsaved {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.editor-toolbar__node-select {
+  padding: var(--space-1) var(--space-2);
+}
+
+.editor-toolbar__error {
+  color: var(--color-danger);
+  margin-left: auto;
+}

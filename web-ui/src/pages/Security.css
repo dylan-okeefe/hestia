@@ -1,0 +1,11 @@
+.security-page {
+  padding: var(--space-4);
+}
+
+.security-title {
+  margin-bottom: var(--space-4);
+}
+
+.security-section {
+  margin-bottom: var(--space-8);
+}

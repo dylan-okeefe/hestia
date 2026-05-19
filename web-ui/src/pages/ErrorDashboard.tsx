@@ -13,6 +13,7 @@ import ErrorState from '../components/layout/ErrorState';
 import EmptyState from '../components/layout/EmptyState';
 import { formatRelativeDate } from '../lib/format';
 import { TEXT } from '../lib/text';
+import './ErrorDashboard.css';
 
 const TYPE_LABELS: Record<string, string> = {
   workflow_execution: 'Workflow',
@@ -81,31 +82,31 @@ export default function ErrorDashboard() {
   };
 
   return (
-    <div style={{ padding: '1rem' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-        <h1 style={{ margin: 0 }}>{TEXT.errorDashboard.title}</h1>
+    <div className="error-dashboard-page">
+      <div className="error-dashboard-header">
+        <h1 className="error-dashboard-title">{TEXT.errorDashboard.title}</h1>
       </div>
 
-      <PageCard style={{ marginBottom: '1rem' }}>
-        <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
+      <PageCard className="mb-4">
+        <div className="error-dashboard-stats">
           <div>
-            <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{unresolvedCount}</div>
-            <div style={{ fontSize: '0.875rem', color: '#666' }}>{TEXT.errorDashboard.unresolvedLabel}</div>
+            <div className="error-dashboard-stat-value">{unresolvedCount}</div>
+            <div className="error-dashboard-stat-label">{TEXT.errorDashboard.unresolvedLabel}</div>
           </div>
           {Object.entries(typeBreakdown).map(([type, count]) => (
             <div key={type}>
-              <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{count}</div>
-              <div style={{ fontSize: '0.875rem', color: '#666' }}>{TYPE_LABELS[type] || type}</div>
+              <div className="error-dashboard-stat-value">{count}</div>
+              <div className="error-dashboard-stat-label">{TYPE_LABELS[type] || type}</div>
             </div>
           ))}
         </div>
       </PageCard>
 
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+      <div className="error-dashboard-filters">
         <select
           value={typeFilter}
           onChange={(e) => setTypeFilter(e.target.value)}
-          style={{ padding: '0.35rem 0.5rem', borderRadius: '4px', border: '1px solid #ccc', fontSize: '0.875rem' }}
+          className="form-select"
         >
           <option value="all">{TEXT.errorDashboard.filterAllTypes}</option>
           <option value="workflow_execution">{TEXT.errorDashboard.typeWorkflow}</option>
@@ -115,7 +116,7 @@ export default function ErrorDashboard() {
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          style={{ padding: '0.35rem 0.5rem', borderRadius: '4px', border: '1px solid #ccc', fontSize: '0.875rem' }}
+          className="form-select"
         >
           <option value="all">{TEXT.errorDashboard.filterAllStatuses}</option>
           <option value="unresolved">{TEXT.errorDashboard.filterUnresolved}</option>
@@ -142,30 +143,26 @@ export default function ErrorDashboard() {
       )}
 
       {!isLoading && filteredErrors.length > 0 && (
-        <PageCard style={{ padding: 0, overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+        <PageCard className="page-card--flush">
+          <table className="data-table">
             <thead>
-              <tr style={{ borderBottom: '2px solid #eee', textAlign: 'left', background: '#fafafa' }}>
-                <th style={{ padding: '0.75rem 1rem' }}>{TEXT.errorDashboard.tableType}</th>
-                <th style={{ padding: '0.75rem 1rem' }}>{TEXT.errorDashboard.tableSource}</th>
-                <th style={{ padding: '0.75rem 1rem' }}>{TEXT.errorDashboard.tableMessage}</th>
-                <th style={{ padding: '0.75rem 1rem' }}>{TEXT.errorDashboard.tableWhen}</th>
-                <th style={{ padding: '0.75rem 1rem' }}>{TEXT.errorDashboard.tableStatus}</th>
-                <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>{TEXT.errorDashboard.tableActions}</th>
+              <tr>
+                <th>{TEXT.errorDashboard.tableType}</th>
+                <th>{TEXT.errorDashboard.tableSource}</th>
+                <th>{TEXT.errorDashboard.tableMessage}</th>
+                <th>{TEXT.errorDashboard.tableWhen}</th>
+                <th>{TEXT.errorDashboard.tableStatus}</th>
+                <th className="text-right">{TEXT.errorDashboard.tableActions}</th>
               </tr>
             </thead>
             <tbody>
               {filteredErrors.map((err) => (
                 <Fragment key={err.id}>
-                  <tr key={err.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                    <td style={{ padding: '0.75rem 1rem' }}>
+                  <tr>
+                    <td>
                       <span
+                        className="error-dashboard-type-badge"
                         style={{
-                          display: 'inline-block',
-                          padding: '0.15rem 0.5rem',
-                          borderRadius: '12px',
-                          fontSize: '0.75rem',
-                          fontWeight: 600,
                           background: TYPE_COLORS[err.type]?.bg || '#f3f4f6',
                           color: TYPE_COLORS[err.type]?.color || '#374151',
                         }}
@@ -173,24 +170,20 @@ export default function ErrorDashboard() {
                         {TYPE_LABELS[err.type] || err.type}
                       </span>
                     </td>
-                    <td style={{ padding: '0.75rem 1rem' }}>
-                      <div style={{ fontWeight: 600 }}>{err.source_name}</div>
-                      <div style={{ fontSize: '0.75rem', color: '#888' }}>{err.source_id.slice(0, 8)}</div>
+                    <td>
+                      <div className="font-semibold">{err.source_name}</div>
+                      <div className="text-xs text-muted">{err.source_id.slice(0, 8)}</div>
                     </td>
-                    <td style={{ padding: '0.75rem 1rem', maxWidth: 300 }}>
-                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <td className="max-w-300">
+                      <div className="text-small" className="text-ellipsis">
                         {err.message}
                       </div>
                     </td>
-                    <td style={{ padding: '0.75rem 1rem' }}>{formatRelativeDate(err.created_at)}</td>
-                    <td style={{ padding: '0.75rem 1rem' }}>
+                    <td>{formatRelativeDate(err.created_at)}</td>
+                    <td>
                       <span
+                        className="error-dashboard-status-badge"
                         style={{
-                          display: 'inline-block',
-                          padding: '0.15rem 0.5rem',
-                          borderRadius: '12px',
-                          fontSize: '0.75rem',
-                          fontWeight: 600,
                           background: STATUS_COLORS[err.status]?.bg || '#f3f4f6',
                           color: STATUS_COLORS[err.status]?.color || '#374151',
                         }}
@@ -198,8 +191,8 @@ export default function ErrorDashboard() {
                         {err.status}
                       </span>
                     </td>
-                    <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
-                      <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                    <td className="text-right">
+                      <div className="admin-users-actions">
                         <button onClick={() => setExpandedId(expandedId === err.id ? null : err.id)}>
                           {expandedId === err.id ? TEXT.errorDashboard.hideButton : TEXT.errorDashboard.detailsButton}
                         </button>
@@ -208,7 +201,7 @@ export default function ErrorDashboard() {
                           <button onClick={() => handleResolve(err.id)}>{TEXT.errorDashboard.resolveButton}</button>
                         )}
                         {err.status !== 'ignored' && (
-                          <button onClick={() => handleIgnore(err.id)} style={{ color: '#6b7280' }}>
+                          <button onClick={() => handleIgnore(err.id)} className="text-secondary">
                             {TEXT.errorDashboard.ignoreButton}
                           </button>
                         )}
@@ -216,12 +209,12 @@ export default function ErrorDashboard() {
                     </td>
                   </tr>
                   {expandedId === err.id && (
-                    <tr style={{ background: '#fafafa' }}>
-                      <td colSpan={6} style={{ padding: '0.75rem 1rem' }}>
-                        <div style={{ fontFamily: 'monospace', fontSize: '0.8rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                    <tr className="error-dashboard-detail-row">
+                      <td colSpan={6} className="p-4">
+                        <div className="error-dashboard-detail-text">
                           {err.message}
                         </div>
-                        <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: '#888' }}>
+                        <div className="error-dashboard-detail-meta">
                           {TEXT.errorDashboard.sourceIdFormat(err.source_id, err.type)}
                         </div>
                       </td>
@@ -236,29 +229,21 @@ export default function ErrorDashboard() {
 
       {debugModal && (
         <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.4)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-          }}
+          className="modal-overlay"
           onClick={() => setDebugModal(null)}
         >
           <div
-            style={{ width: '90%', maxWidth: 640, maxHeight: '90vh', overflowY: 'auto', background: '#fff', border: '1px solid #eee', borderRadius: '8px', padding: '1rem' }}
+            className="modal modal--lg"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 style={{ marginTop: 0 }}>{TEXT.errorDashboard.debugModalTitle}</h3>
+            <h3>{TEXT.errorDashboard.debugModalTitle}</h3>
             <textarea
               readOnly
               value={debugModal.prompt}
               rows={12}
-              style={{ width: '100%', padding: '0.5rem', fontFamily: 'monospace', fontSize: '0.875rem', border: '1px solid #ccc', borderRadius: '4px' }}
+              className="code-input"
             />
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem' }}>
+            <div className="row-between mt-4">
               <button onClick={() => setDebugModal(null)}>{TEXT.common.close}</button>
             </div>
           </div>

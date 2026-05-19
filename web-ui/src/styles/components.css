@@ -1,0 +1,211 @@
+/* Modal / Overlay */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal {
+  background: var(--color-surface-raised);
+  border: var(--border-thin);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+}
+
+.modal--sm {
+  width: 360px;
+  text-align: center;
+}
+
+.modal--md {
+  width: 90%;
+  max-width: 480px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.modal--lg {
+  width: 90%;
+  max-width: 640px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+/* Table */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.data-table thead tr {
+  border-bottom: 2px solid var(--color-border-subtle);
+  text-align: left;
+  background: var(--color-surface);
+}
+
+.data-table th,
+.data-table td {
+  padding: var(--space-2) var(--space-3);
+}
+
+.data-table tbody tr {
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.data-table tbody tr:hover {
+  background: var(--color-surface);
+}
+
+.data-table--dense th,
+.data-table--dense td {
+  padding: var(--space-1) var(--space-2);
+}
+
+/* Form elements */
+.form-input {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-thin);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: inherit;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
+.form-textarea {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-thin);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: inherit;
+  resize: vertical;
+}
+
+.form-textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
+.form-select {
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-thin);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: inherit;
+}
+
+.form-label {
+  display: block;
+  font-size: var(--font-size-sm);
+  margin-bottom: var(--space-1);
+}
+
+/* Progress bar */
+.progress-bar {
+  height: 6px;
+  background: var(--color-border-subtle);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-bar__fill {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.progress-bar__fill--success { background: var(--color-success); }
+.progress-bar__fill--warning { background: var(--color-warning); }
+.progress-bar__fill--danger { background: var(--color-danger); }
+
+/* Toggle button group */
+.toggle-btn {
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-sm);
+  border: var(--border-thin);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  text-transform: capitalize;
+}
+
+.toggle-btn--active {
+  background: #333;
+  color: #fff;
+  border-color: #333;
+}
+
+/* Tab buttons */
+.tab-btn {
+  padding: var(--space-1) var(--space-2);
+  font-size: 0.8rem;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.tab-btn--active {
+  font-weight: 600;
+  border-bottom-color: var(--color-primary);
+}
+
+/* Inline code */
+.inline-code {
+  background: var(--color-surface);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+}
+
+/* Preformatted block */
+.pre-block {
+  background: var(--color-surface);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Monaco-like input for readonly code */
+.code-input {
+  width: 100%;
+  padding: var(--space-2);
+  font-family: monospace;
+  font-size: var(--font-size-sm);
+  border: var(--border-thin);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+/* Alert / error box */
+.alert {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+}
+
+.alert--danger {
+  background: #fee2e2;
+  color: #991b1b;
+}
