@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
+import { ThemeToggle } from '../ThemeToggle';
 import './StickyNav.css';
 
 interface StickyNavProps {
@@ -35,6 +36,7 @@ export default function StickyNav({ children }: StickyNavProps) {
               ✕
             </button>
           </div>
+          <ThemeToggle />
           <nav className="stack-md" onClick={() => setMenuOpen(false)}>
             {children}
           </nav>
@@ -47,6 +49,7 @@ export default function StickyNav({ children }: StickyNavProps) {
     <nav className="nav-sidebar">
       <div className="font-semibold mb-2">Hestia</div>
       {children}
+      <ThemeToggle />
     </nav>
   );
 }
