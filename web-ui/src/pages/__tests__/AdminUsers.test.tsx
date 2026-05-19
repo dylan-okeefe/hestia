@@ -117,4 +117,14 @@ describe('AdminUsers', () => {
     render(<AdminUsers />);
     await waitFor(() => expect(screen.getByText(TEXT.adminUsers.emptyTitle)).toBeInTheDocument());
   });
+
+  it('has data-label attributes on table cells for responsive layout', async () => {
+    render(<AdminUsers />);
+    await waitFor(() => expect(screen.getByText('Alice')).toBeInTheDocument());
+    const cells = document.querySelectorAll('table.responsive-table td[data-label]');
+    expect(cells.length).toBeGreaterThan(0);
+    const labels = Array.from(cells).map((c) => c.getAttribute('data-label'));
+    expect(labels).toContain(TEXT.adminUsers.tableName);
+    expect(labels).toContain(TEXT.adminUsers.tableRole);
+  });
 });
