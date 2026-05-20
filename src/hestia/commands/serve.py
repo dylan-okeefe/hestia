@@ -12,6 +12,7 @@ import uvicorn
 
 from hestia.app import AppContext
 from hestia.config import HestiaConfig
+from hestia.scheduler.cleanup import run_error_resolution_cleanup
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +56,9 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
             from hestia.web.context import WebContext, set_web_context
 
             web_app = create_web_app()
-            auth_manager = AuthManager(adapters=adapters, config=config.web, user_store=app.user_store)
+            auth_manager = AuthManager(
+                adapters=adapters, config=config.web, user_store=app.user_store
+            )
             set_web_context(
                 WebContext(
                     session_store=app.session_store,
@@ -66,6 +69,7 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
                     failure_store=app.failure_store,
                     workflow_store=app.workflow_store,
                     execution_store=app.execution_store,
+                    error_resolution_store=app.error_resolution_store,
                     app=app,
                     auth_manager=auth_manager,
                     trigger_registry=app.trigger_registry,
@@ -84,6 +88,11 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
                 f"Dashboard available at http://{config.web.host}:{config.web.port}"
             )
             tasks.append(asyncio.create_task(server.serve()))
+            tasks.append(
+                asyncio.create_task(
+                    run_error_resolution_cleanup(app.error_resolution_store)
+                )
+            )
 
         if not tasks:
             click.echo("No platforms or web server configured. Exiting.")

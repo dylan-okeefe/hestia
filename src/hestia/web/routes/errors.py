@@ -12,27 +12,6 @@ from hestia.web.dependencies import require_admin
 router = APIRouter()
 _CTX_DEP = Depends(get_web_context)
 
-# In-memory status tracking (resets on server restart)
-_MAX_RESOLVED = 10_000
-_resolved_ids: set[str] = set()
-_ignored_ids: set[str] = set()
-
-
-def _mark_resolved(error_id: str) -> None:
-    """Add an error ID to the resolved set, capping size."""
-    _resolved_ids.add(error_id)
-    _ignored_ids.discard(error_id)
-    if len(_resolved_ids) > _MAX_RESOLVED:
-        _resolved_ids.pop()
-
-
-def _mark_ignored(error_id: str) -> None:
-    """Add an error ID to the ignored set, capping size."""
-    _ignored_ids.add(error_id)
-    _resolved_ids.discard(error_id)
-    if len(_ignored_ids) > _MAX_RESOLVED:
-        _ignored_ids.pop()
-
 
 def _build_error_id(source_type: str, source_id: str) -> str:
     return f"{source_type}:{source_id}"
@@ -74,29 +53,19 @@ async def list_errors(
         if not is_admin and workflow_owners.get(wf_id or "") != caller_user_id:
             continue
         error_id = _build_error_id("workflow_execution", ex["id"])
-        status = (
-            "ignored"
-            if error_id in _ignored_ids
-            else "resolved"
-            if error_id in _resolved_ids
-            else "unresolved"
-        )
-        node_errors = [
-            nr.get("error", "")
-            for nr in ex.get("node_results", [])
-            if nr.get("error")
-        ]
-        default_msg = f"Workflow execution {ex.get('status')}"
-        message = "; ".join(node_errors) if node_errors else default_msg
         errors.append(
             {
                 "id": error_id,
                 "type": "workflow_execution",
                 "source_id": ex["id"],
                 "source_name": workflow_names.get(ex["workflow_id"], ex["workflow_id"]),
-                "message": message,
+                "message": "; ".join(
+                    nr.get("error", "")
+                    for nr in ex.get("node_results", [])
+                    if nr.get("error")
+                ) or f"Workflow execution {ex.get('status')}",
                 "created_at": ex["created_at"],
-                "status": status,
+                "status": "unresolved",
             }
         )
 
@@ -114,13 +83,6 @@ async def list_errors(
         if not is_admin and task_session_owners.get(task.session_id) != caller_platform_user:
             continue
         error_id = _build_error_id("scheduler_task", task.id)
-        status = (
-            "ignored"
-            if error_id in _ignored_ids
-            else "resolved"
-            if error_id in _resolved_ids
-            else "unresolved"
-        )
         errors.append(
             {
                 "id": error_id,
@@ -133,7 +95,7 @@ async def list_errors(
                     if task.last_run_at
                     else task.created_at.isoformat()
                 ),
-                "status": status,
+                "status": "unresolved",
             }
         )
 
@@ -151,13 +113,6 @@ async def list_errors(
         if not is_admin and turn_session_owners.get(turn.session_id) != caller_platform_user:
             continue
         error_id = _build_error_id("session_turn", turn.id)
-        status = (
-            "ignored"
-            if error_id in _ignored_ids
-            else "resolved"
-            if error_id in _resolved_ids
-            else "unresolved"
-        )
         source_name = (
             f"{turn_session_owners[turn.session_id]}/{turn.session_id}"
             if turn.session_id in turn_session_owners
@@ -171,9 +126,18 @@ async def list_errors(
                 "source_name": source_name,
                 "message": turn.error or "Session turn error",
                 "created_at": turn.started_at.isoformat() if turn.started_at else None,
-                "status": status,
+                "status": "unresolved",
             }
         )
+
+    # Batch-fetch resolution statuses for all visible errors
+    if errors and ctx.error_resolution_store is not None:
+        error_ids = [e["id"] for e in errors]
+        statuses = await ctx.error_resolution_store.list_statuses(error_ids)
+        for error in errors:
+            status = statuses.get(error["id"])
+            if status:
+                error["status"] = status
 
     # Sort by created_at descending and take last 50 overall
     errors.sort(key=lambda e: e["created_at"] or "", reverse=True)
@@ -188,10 +152,14 @@ async def resolve_error(
     request: Request,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
-    """Mark an error as resolved. Resolution state is in-memory only."""
+    """Mark an error as resolved. Persisted to SQLite."""
     await require_admin(request, ctx)
     _parse_error_id(error_id)
-    _mark_resolved(error_id)
+    current_user_id = getattr(request.state, "user_id", None)
+    if ctx.error_resolution_store is not None:
+        await ctx.error_resolution_store.set_status(
+            error_id, "resolved", resolved_by=current_user_id
+        )
     return {"resolved": True}
 
 
@@ -201,10 +169,14 @@ async def ignore_error(
     request: Request,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
-    """Mark an error as ignored. Resolution state is in-memory only."""
+    """Mark an error as ignored. Persisted to SQLite."""
     await require_admin(request, ctx)
     _parse_error_id(error_id)
-    _mark_ignored(error_id)
+    current_user_id = getattr(request.state, "user_id", None)
+    if ctx.error_resolution_store is not None:
+        await ctx.error_resolution_store.set_status(
+            error_id, "ignored", resolved_by=current_user_id
+        )
     return {"ignored": True}
 
 

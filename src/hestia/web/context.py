@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from hestia.app import AppContext
+from hestia.persistence.error_resolution_store import ErrorResolutionStore
 from hestia.persistence.failure_store import FailureStore
 from hestia.persistence.scheduler import SchedulerStore
 from hestia.persistence.sessions import SessionStore
@@ -32,6 +33,7 @@ class WebContext:
     execution_store: ExecutionStore
     app: AppContext
     user_store: UserStore
+    error_resolution_store: ErrorResolutionStore | None = field(default=None)
     auth_manager: AuthManager | None = field(default=None)
     trigger_registry: TriggerRegistry | None = field(default=None)
 
