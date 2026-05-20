@@ -21,16 +21,16 @@ const TYPE_LABELS: Record<string, string> = {
   session_turn: 'Session',
 };
 
-const TYPE_COLORS: Record<string, { bg: string; color: string }> = {
-  workflow_execution: { bg: '#fee2e2', color: '#991b1b' },
-  scheduler_task: { bg: '#fef3c7', color: '#92400e' },
-  session_turn: { bg: '#dbeafe', color: '#1e40af' },
+const TYPE_CLASSES: Record<string, string> = {
+  workflow_execution: 'badge--solid-danger',
+  scheduler_task: 'badge--solid-warning',
+  session_turn: 'badge--solid-info',
 };
 
-const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
-  unresolved: { bg: '#fee2e2', color: '#991b1b' },
-  resolved: { bg: '#dcfce7', color: '#166534' },
-  ignored: { bg: '#f3f4f6', color: '#6b7280' },
+const STATUS_CLASSES: Record<string, string> = {
+  unresolved: 'badge--solid-danger',
+  resolved: 'badge--solid-success',
+  ignored: 'badge--solid-neutral',
 };
 
 export default function ErrorDashboard() {
@@ -161,11 +161,7 @@ export default function ErrorDashboard() {
                   <tr>
                     <td data-label={TEXT.errorDashboard.tableType}>
                       <span
-                        className="error-dashboard-type-badge"
-                        style={{
-                          background: TYPE_COLORS[err.type]?.bg || '#f3f4f6',
-                          color: TYPE_COLORS[err.type]?.color || '#374151',
-                        }}
+                        className={`error-dashboard-type-badge ${TYPE_CLASSES[err.type] || 'badge--solid-neutral'}`}
                       >
                         {TYPE_LABELS[err.type] || err.type}
                       </span>
@@ -182,11 +178,7 @@ export default function ErrorDashboard() {
                     <td data-label={TEXT.errorDashboard.tableWhen}>{formatRelativeDate(err.created_at)}</td>
                     <td data-label={TEXT.errorDashboard.tableStatus}>
                       <span
-                        className="error-dashboard-status-badge"
-                        style={{
-                          background: STATUS_COLORS[err.status]?.bg || '#f3f4f6',
-                          color: STATUS_COLORS[err.status]?.color || '#374151',
-                        }}
+                        className={`error-dashboard-status-badge ${STATUS_CLASSES[err.status] || 'badge--solid-neutral'}`}
                       >
                         {err.status}
                       </span>
