@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -42,9 +43,15 @@ async def list_errors(
 
     errors: list[dict[str, Any]] = []
 
-    # Workflow execution failures
-    failed_executions = await ctx.execution_store.list_failed(limit=50)
-    workflows = await ctx.workflow_store.list_workflows()
+    # Fetch error sources concurrently — these four calls are independent.
+    # Batch session lookups below depend on the IDs returned here.
+    failed_executions, workflows, scheduler_tasks, turns = await asyncio.gather(
+        ctx.execution_store.list_failed(limit=50),
+        ctx.workflow_store.list_workflows(),
+        ctx.scheduler_store.list_tasks_with_errors(limit=50),
+        ctx.session_store.list_turns_with_errors(limit=50),
+    )
+
     workflow_names = {w.id: w.name for w in workflows}
     workflow_owners = {w.id: w.owner_id for w in workflows}
 
@@ -69,8 +76,7 @@ async def list_errors(
             }
         )
 
-    # Scheduler tasks with errors
-    scheduler_tasks = await ctx.scheduler_store.list_tasks_with_errors(limit=50)
+    # Scheduler tasks with errors — session batch lookup depends on task IDs.
     task_session_ids = list({t.session_id for t in scheduler_tasks})
     task_sessions = (
         await ctx.session_store.get_sessions_batch(task_session_ids)
@@ -99,8 +105,7 @@ async def list_errors(
             }
         )
 
-    # Session turns with errors
-    turns = await ctx.session_store.list_turns_with_errors(limit=50)
+    # Session turns with errors — session batch lookup depends on turn IDs.
     turn_session_ids = list({t.session_id for t in turns})
     turn_sessions = (
         await ctx.session_store.get_sessions_batch(turn_session_ids)
