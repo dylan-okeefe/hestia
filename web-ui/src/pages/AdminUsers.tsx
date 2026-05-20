@@ -14,6 +14,7 @@ import ErrorState from '../components/layout/ErrorState';
 import EmptyState from '../components/layout/EmptyState';
 import RoleDropdown from '../components/forms/RoleDropdown';
 import TrustPresetDropdown from '../components/forms/TrustPresetDropdown';
+import PlatformDropdown from '../components/forms/PlatformDropdown';
 import { label, ROLE_LABELS } from '../lib/labels';
 import { formatDate } from '../lib/format';
 import { TEXT } from '../lib/text';
@@ -54,7 +55,7 @@ export default function AdminUsers() {
   });
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [showAddIdentity, setShowAddIdentity] = useState<string | null>(null);
-  const [identityForm, setIdentityForm] = useState({ platform: 'telegram', platform_user: '' });
+  const [identityForm, setIdentityForm] = useState({ platform: '', platform_user: '' });
 
   const createMut = useApiMutation(createUser);
   const updateMut = useApiMutation((args: { id: string; payload: object }) => updateUser(args.id, args.payload));
@@ -315,11 +316,13 @@ export default function AdminUsers() {
             <div className="stack-md mt-2">
               <label>
                 {TEXT.adminUsers.addIdentityPlatformLabel}
-                <input
-                  value={identityForm.platform}
-                  onChange={(e) => setIdentityForm((f) => ({ ...f, platform: e.target.value }))}
-                  className="form-input mt-1"
-                />
+                <div className="mt-1">
+                  <PlatformDropdown
+                    value={identityForm.platform}
+                    onChange={(v) => setIdentityForm((f) => ({ ...f, platform: v }))}
+                    includeEmpty
+                  />
+                </div>
               </label>
               <label>
                 {TEXT.adminUsers.addIdentityUserLabel}
