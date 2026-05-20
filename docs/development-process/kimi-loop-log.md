@@ -6,6 +6,43 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-05-20 — L187–L189 Complete (Post-Review Fixes + Error Persistence + Backend Quality)
+
+**Outcome:** Three loops completed from the post-UI-rewrite review. L187 was done by the runtime Hestia instance (automated). L188 and L189 were done manually after recovering from repeated branch interference by the runtime worktree.
+
+### L187 — Post-Review UI Fixes & Polish (runtime agent)
+**Branch:** `feature/l187-post-review-ui-fixes-and-polish` (8 commits)
+- SessionDetail: render message content (user + assistant messages)
+- ErrorDashboard: CSS badge classes replacing inline styles
+- AdminUsers: PlatformDropdown for identity platform input
+- AdminUsers: confirm dialog on self-role-change away from admin
+- alert--danger: CSS variables replacing hardcoded colors
+- ThemeToggle: SVG icons replacing emoji
+- utilities.css: deduplicate `.mt-2`
+- useTheme.ts: `localStorage` guard for SSR safety
+
+**Quality gates:** build ✅, 128 vitest tests ✅, 10 inline styles (under 20) ✅
+
+### L188 — Error Persistence Backend
+**Branch:** `feature/l188-error-persistence-backend` (1 clean commit)
+- Alembic migration: `error_resolutions` table (`error_id` PK, `status`, `resolved_at`, `resolved_by`)
+- `ErrorResolutionStore`: `get_status`, `set_status` (UPSERT), `list_statuses`, `clear_old`
+- Wired into `errors.py`: `list_errors` batch-fetches statuses, `resolve_error`/`ignore_error` persist to SQLite
+- `app.py` creates store instance; `commands/serve.py` passes it to WebContext
+- `scheduler/cleanup.py`: background task purges resolutions older than 30 days
+- Tests updated for new WebContext field
+
+**Quality gates:** 164 pytest tests ✅, ruff ✅, mypy ✅
+
+### L189 — Backend Quality & Performance
+**Branch:** `feature/l189-backend-quality-and-performance` (1 commit, based on L188)
+- `memory.py`: `_memory_to_dict(mem: Any)` → `_memory_to_dict(mem: Memory)` with null guard on `RequireOwner`
+- `errors.py`: parallelized independent fetches (`list_failed`, `list_workflows`, `list_tasks_with_errors`, `list_turns_with_errors`) via `asyncio.gather()`
+
+**Quality gates:** 164 pytest tests ✅, ruff ✅, mypy ✅
+
+---
+
 ## 2026-05-18 — L186 Complete (Dark Mode)
 
 **Outcome:** Added complete dark mode to the web UI. Dark color tokens, theme provider with light/dark/system options, localStorage persistence, OS preference listener, theme toggle in nav, and per-component dark mode fixes. All 7 remediation loops from the comprehensive audit are now complete.

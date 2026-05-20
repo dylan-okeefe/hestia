@@ -2,15 +2,15 @@
 
 **Orchestrator:** Kimi (self-orchestrating via subagents)
 
-**Last set by:** Kimi — 2026-05-20 (L187–L191 spec creation from post-UI-rewrite review)
+**Last set by:** Kimi — 2026-05-20 (L187–L189 complete)
 
 ---
 
 ## Current task
 
-**Status:** SPEC CREATION COMPLETE — All items from `develop-post-ui-rewrite-review.md` have been specced into loops L187–L191.
+**Status:** L187–L189 COMPLETE — L190–L191 pending.
 
-### Next: implement L187 (or whichever loop Dylan prioritizes)
+### Next: implement L190 (Frontend Component Infrastructure) or L191 (Config Overhaul & Rooms Migration)
 
 ---
 
@@ -31,6 +31,13 @@
 | **L184** | `feature/l184-shared-css-system` | **✅ Complete, pushed** | 50 CSS files, design tokens, inline-style removal |
 | **L185** | `feature/l185-responsive-design` | **✅ Complete, pushed** | Mobile layouts, hamburger nav, card tables |
 | **L186** | `feature/l186-dark-mode` | **✅ Complete, pushed** | Dark tokens, theme toggle, OS preference |
+
+### L187–L189 (Post-Review Fixes — COMPLETE)
+| Loop | Branch | Status | Focus |
+|------|--------|--------|-------|
+| **L187** | `feature/l187-post-review-ui-fixes-and-polish` | **✅ Complete** | 8 UI polish items (SessionDetail, ErrorDashboard, AdminUsers, ThemeToggle, CSS) |
+| **L188** | `feature/l188-error-persistence-backend` | **✅ Complete** | SQLite error_resolutions table, ErrorResolutionStore, route wiring, cleanup task |
+| **L189** | `feature/l189-backend-quality-and-performance` | **✅ Complete** | Typed `_memory_to_dict`, parallelized error dashboard fetches |
 
 ---
 
