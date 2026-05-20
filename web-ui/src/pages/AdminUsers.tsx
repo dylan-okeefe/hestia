@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useApiQuery, useApiMutation } from '../hooks/useApi';
 import { useCurrentUser } from '../hooks/useCurrentUser';
+import { useToast } from '../hooks/useToast';
 import {
   fetchUsers,
   createUser,
@@ -12,6 +13,7 @@ import PageCard from '../components/layout/PageCard';
 import LoadingSkeleton from '../components/layout/LoadingSkeleton';
 import ErrorState from '../components/layout/ErrorState';
 import EmptyState from '../components/layout/EmptyState';
+import Button from '../components/Button';
 import RoleDropdown from '../components/forms/RoleDropdown';
 import TrustPresetDropdown from '../components/forms/TrustPresetDropdown';
 import PlatformDropdown from '../components/forms/PlatformDropdown';
@@ -35,6 +37,7 @@ const ROLE_FILTERS = ['all', 'admin', 'trusted', 'user', 'child'];
 
 export default function AdminUsers() {
   const { user: currentUser, isLoading: userLoading } = useCurrentUser();
+  const { addToast } = useToast();
   const {
     data,
     isLoading,
@@ -102,8 +105,10 @@ export default function AdminUsers() {
         return;
       }
       await updateMut.mutateAsync({ id: editingUser.id, payload });
+      addToast({ message: 'User updated', type: 'success', duration: 3000 });
     } else {
       const created = await createMut.mutateAsync(payload as { display_name: string; role: string; notes?: string; trust_preset?: string });
+      addToast({ message: 'User created', type: 'success', duration: 3000 });
       setModalOpen(false);
       if (created?.id) {
         setShowAddIdentity(created.id);
@@ -117,6 +122,7 @@ export default function AdminUsers() {
 
   const handleDelete = async (id: string) => {
     await deleteMut.mutateAsync(id);
+    addToast({ message: 'User deleted', type: 'success', duration: 3000 });
     setConfirmDelete(null);
     refetch();
   };
@@ -284,10 +290,12 @@ export default function AdminUsers() {
               </label>
             </div>
             <div className="row-between mt-4">
-              <button onClick={() => { setModalOpen(false); setConfirmRoleChange(false); }}>{TEXT.common.cancel}</button>
-              <button onClick={handleSave} disabled={!form.display_name.trim()}>
+              <Button variant="ghost" onClick={() => { setModalOpen(false); setConfirmRoleChange(false); }}>
+                {TEXT.common.cancel}
+              </Button>
+              <Button onClick={handleSave} disabled={!form.display_name.trim()}>
                 {editingUser ? TEXT.common.save : TEXT.common.create}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -324,10 +332,12 @@ export default function AdminUsers() {
               {TEXT.adminUsers.deleteConfirmDescription}
             </p>
             <div className="row-center gap-2 mt-4">
-              <button onClick={() => setConfirmDelete(null)}>{TEXT.common.cancel}</button>
-              <button onClick={() => handleDelete(confirmDelete)} className="text-danger border-danger">
+              <Button variant="ghost" onClick={() => setConfirmDelete(null)}>
+                {TEXT.common.cancel}
+              </Button>
+              <Button variant="danger" onClick={() => handleDelete(confirmDelete)}>
                 {TEXT.common.delete}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
