@@ -1,5 +1,7 @@
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ToastProvider } from './hooks/useToast';
+import ToastContainer from './components/ToastContainer';
 import { useCurrentUser } from './hooks/useCurrentUser';
 import StickyNav from './components/layout/StickyNav';
 import Dashboard from './pages/Dashboard';
@@ -44,6 +46,7 @@ function AppContent() {
 
   return (
     <>
+      <ToastContainer />
       {auth.authEnabled && !auth.authenticated ? (
         <Login />
       ) : (
@@ -94,7 +97,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AppContent />
+        <ToastProvider>
+          <AppContent />
+        </ToastProvider>
       </AuthProvider>
     </BrowserRouter>
   );

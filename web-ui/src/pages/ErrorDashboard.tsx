@@ -1,5 +1,6 @@
 import { useState, Fragment } from 'react';
 import { useApiQuery, useApiMutation } from '../hooks/useApi';
+import { useToast } from '../hooks/useToast';
 import {
   fetchErrors,
   resolveError,
@@ -8,6 +9,7 @@ import {
   type ErrorItem,
 } from '../api/client';
 import PageCard from '../components/layout/PageCard';
+import Button from '../components/Button';
 import LoadingSkeleton from '../components/layout/LoadingSkeleton';
 import ErrorState from '../components/layout/ErrorState';
 import EmptyState from '../components/layout/EmptyState';
@@ -34,6 +36,7 @@ const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
 };
 
 export default function ErrorDashboard() {
+  const { addToast } = useToast();
   const {
     data,
     isLoading,
@@ -68,11 +71,13 @@ export default function ErrorDashboard() {
 
   const handleResolve = async (id: string) => {
     await resolveMut.mutateAsync(id);
+    addToast({ message: 'Error resolved', type: 'success', duration: 3000 });
     refetch();
   };
 
   const handleIgnore = async (id: string) => {
     await ignoreMut.mutateAsync(id);
+    addToast({ message: 'Error ignored', type: 'info', duration: 3000 });
     refetch();
   };
 
@@ -193,17 +198,21 @@ export default function ErrorDashboard() {
                     </td>
                     <td data-label={TEXT.errorDashboard.tableActions} className="text-right">
                       <div className="admin-users-actions">
-                        <button onClick={() => setExpandedId(expandedId === err.id ? null : err.id)}>
+                        <Button variant="ghost" size="sm" onClick={() => setExpandedId(expandedId === err.id ? null : err.id)}>
                           {expandedId === err.id ? TEXT.errorDashboard.hideButton : TEXT.errorDashboard.detailsButton}
-                        </button>
-                        <button onClick={() => handleDebug(err.id)}>{TEXT.errorDashboard.debugButton}</button>
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => handleDebug(err.id)}>
+                          {TEXT.errorDashboard.debugButton}
+                        </Button>
                         {err.status !== 'resolved' && (
-                          <button onClick={() => handleResolve(err.id)}>{TEXT.errorDashboard.resolveButton}</button>
+                          <Button size="sm" onClick={() => handleResolve(err.id)}>
+                            {TEXT.errorDashboard.resolveButton}
+                          </Button>
                         )}
                         {err.status !== 'ignored' && (
-                          <button onClick={() => handleIgnore(err.id)} className="text-secondary">
+                          <Button variant="ghost" size="sm" onClick={() => handleIgnore(err.id)}>
                             {TEXT.errorDashboard.ignoreButton}
-                          </button>
+                          </Button>
                         )}
                       </div>
                     </td>
