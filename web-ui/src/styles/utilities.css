@@ -152,7 +152,6 @@
 .ml-2 { margin-left: var(--space-2); }
 .ml-4 { margin-left: var(--space-4); }
 .ml-auto { margin-left: auto; }
-.mt-2 { margin-top: var(--space-2); }
 
 .grid-auto-220 {
   display: grid;
