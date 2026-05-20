@@ -56,6 +56,7 @@ export default function AdminUsers() {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [showAddIdentity, setShowAddIdentity] = useState<string | null>(null);
   const [identityForm, setIdentityForm] = useState({ platform: '', platform_user: '' });
+  const [confirmRoleChange, setConfirmRoleChange] = useState(false);
 
   const createMut = useApiMutation(createUser);
   const updateMut = useApiMutation((args: { id: string; payload: object }) => updateUser(args.id, args.payload));
@@ -91,6 +92,15 @@ export default function AdminUsers() {
       trust_preset: form.trust_preset,
     };
     if (editingUser) {
+      if (
+        editingUser.id === currentUser?.id &&
+        editingUser.role === 'admin' &&
+        form.role !== 'admin' &&
+        !confirmRoleChange
+      ) {
+        setConfirmRoleChange(true);
+        return;
+      }
       await updateMut.mutateAsync({ id: editingUser.id, payload });
     } else {
       const created = await createMut.mutateAsync(payload as { display_name: string; role: string; notes?: string; trust_preset?: string });
@@ -274,9 +284,29 @@ export default function AdminUsers() {
               </label>
             </div>
             <div className="row-between mt-4">
-              <button onClick={() => setModalOpen(false)}>{TEXT.common.cancel}</button>
+              <button onClick={() => { setModalOpen(false); setConfirmRoleChange(false); }}>{TEXT.common.cancel}</button>
               <button onClick={handleSave} disabled={!form.display_name.trim()}>
                 {editingUser ? TEXT.common.save : TEXT.common.create}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmRoleChange && (
+        <div
+          className="modal-overlay"
+          onClick={() => setConfirmRoleChange(false)}
+        >
+          <div className="modal modal--sm" onClick={(e) => e.stopPropagation()}>
+            <h3>Remove admin role?</h3>
+            <p className="text-small text-secondary">
+              You are about to remove your own administrator role. You will lose access to this page.
+            </p>
+            <div className="row-center gap-2 mt-4">
+              <button onClick={() => setConfirmRoleChange(false)}>{TEXT.common.cancel}</button>
+              <button onClick={handleSave} className="text-danger border-danger">
+                {TEXT.common.confirm}
               </button>
             </div>
           </div>
