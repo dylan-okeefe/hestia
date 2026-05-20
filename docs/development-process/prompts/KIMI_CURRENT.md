@@ -2,15 +2,15 @@
 
 **Orchestrator:** Kimi (self-orchestrating via subagents)
 
-**Last set by:** Kimi — 2026-05-20 (L187–L191 spec creation from post-UI-rewrite review)
+**Last set by:** Kimi — 2026-05-20 (L187–L191 all complete)
 
 ---
 
 ## Current task
 
-**Status:** SPEC CREATION COMPLETE — All items from `develop-post-ui-rewrite-review.md` have been specced into loops L187–L191.
+**Status:** L187–L191 ALL COMPLETE.
 
-### Next: implement L187 (or whichever loop Dylan prioritizes)
+### Next: Await Dylan's direction
 
 ---
 
@@ -32,69 +32,14 @@
 | **L185** | `feature/l185-responsive-design` | **✅ Complete, pushed** | Mobile layouts, hamburger nav, card tables |
 | **L186** | `feature/l186-dark-mode` | **✅ Complete, pushed** | Dark tokens, theme toggle, OS preference |
 
----
-
-## Pending arcs (from 2026-05-19 review)
-
-### L187 — Post-Review UI Fixes & Polish
-| # | Item | Source |
-|---|------|--------|
-| 1 | SessionDetail: render actual message content | Should fix soon |
-| 2 | ErrorDashboard badge colors → CSS classes | Should fix soon |
-| 3 | AdminUsers identity platform → PlatformDropdown | Should fix soon |
-| 4 | AdminUsers self-role-change guard | Should fix soon |
-| 5 | alert--danger hardcoded colors → CSS variables | Worth fixing |
-| 6 | ThemeToggle emoji → SVG icons | Worth fixing |
-| 7 | Duplicate `.mt-2` in utilities.css | Worth fixing |
-| 8 | `localStorage` guard in useTheme | Worth fixing |
-
-**Spec:** `docs/development-process/loops/L187-post-review-ui-fixes-and-polish.md`  
-**Branch:** `feature/l187-post-review-ui-fixes-and-polish`
-
----
-
-### L188 — Error Persistence Backend
-| # | Item | Source |
-|---|------|--------|
-| 1 | Error status persistence → SQLite | Should fix soon |
-| 2 | `_mark_resolved` arbitrary eviction fix | Worth fixing |
-
-**Spec:** `docs/development-process/loops/L188-error-persistence-backend.md`  
-**Branch:** `feature/l188-error-persistence-backend`
-
----
-
-### L189 — Backend Quality & Performance
-| # | Item | Source |
-|---|------|--------|
-| 1 | `_memory_to_dict` parameter typing | Worth fixing |
-| 2 | Error aggregation query optimization (parallel fetches) | Future improvements |
-
-**Spec:** `docs/development-process/loops/L189-backend-quality-and-performance.md`  
-**Branch:** `feature/l189-backend-quality-and-performance`
-
----
-
-### L190 — Frontend Component Infrastructure
-| # | Item | Source |
-|---|------|--------|
-| 1 | Shared Button component | Future improvements |
-| 2 | Toast/notification system | Future improvements |
-| 3 | Field-level form validation display | Future improvements |
-
-**Spec:** `docs/development-process/loops/L190-frontend-component-infrastructure.md`  
-**Branch:** `feature/l190-frontend-component-infrastructure`
-
----
-
-### L191 — Config Overhaul & Rooms Migration
-| # | Item | Source |
-|---|------|--------|
-| 1 | Config page structural overhaul | Future improvements |
-| 2 | Rooms migration for pre-existing Telegram groups | Future improvements |
-
-**Spec:** `docs/development-process/loops/L191-config-overhaul-and-rooms-migration.md`  
-**Branch:** `feature/l191-config-overhaul-and-rooms-migration`
+### L187–L191 (Post-Review Fixes — COMPLETE)
+| Loop | Branch | Status | Focus |
+|------|--------|--------|-------|
+| **L187** | `feature/l187-post-review-ui-fixes-and-polish` | **✅ Complete** | 8 UI polish items (SessionDetail, ErrorDashboard, AdminUsers, ThemeToggle, CSS) |
+| **L188** | `feature/l188-error-persistence-backend` | **✅ Complete** | SQLite error_resolutions table, ErrorResolutionStore, route wiring, cleanup task |
+| **L189** | `feature/l189-backend-quality-and-performance` | **✅ Complete** | Typed `_memory_to_dict`, parallelized error dashboard fetches |
+| **L190** | `feature/l190-frontend-component-infrastructure` | **✅ Complete** | Button component, toast system, FormField wrapper |
+| **L191** | `feature/l191-config-overhaul-and-rooms-migration` | **✅ Complete** | Config page search/descriptions/grouping, Telegram migrate-rooms CLI |
 
 ---
 
