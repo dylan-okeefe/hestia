@@ -110,12 +110,21 @@ async def migrate_users(app: AppContext) -> None:
     multiple=True,
     help="Telegram group chat ID to register as a room.",
 )
+@click.option(
+    "--auto-discover",
+    is_flag=True,
+    help="Query Telegram Bot API for group chats the bot is in.",
+)
 @click.pass_obj
 @async_command
-async def migrate_rooms(app: AppContext, telegram_groups: tuple[str, ...]) -> None:
+async def migrate_rooms(
+    app: AppContext, telegram_groups: tuple[str, ...], auto_discover: bool
+) -> None:
     """Migrate existing group chats to the rooms table."""
     await _commands.cmd_migrate_rooms(
-        app, telegram_groups=list(telegram_groups) if telegram_groups else None
+        app,
+        telegram_groups=list(telegram_groups) if telegram_groups else None,
+        auto_discover=auto_discover,
     )
 
 

@@ -6,9 +6,9 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
-## 2026-05-20 — L187–L189 Complete (Post-Review Fixes + Error Persistence + Backend Quality)
+## 2026-05-20 — L187–L191 Complete (Post-Review Fixes + Error Persistence + Backend Quality + Component Infrastructure + Config Overhaul)
 
-**Outcome:** Three loops completed from the post-UI-rewrite review. L187 was done by the runtime Hestia instance (automated). L188 and L189 were done manually after recovering from repeated branch interference by the runtime worktree.
+**Outcome:** All five loops from the post-UI-rewrite review are complete. L187 was done by the runtime Hestia instance. L188–L191 were done manually, with significant branch-interference challenges from the runtime worktree auto-committing to `feature/l187-post-review-ui-fixes-and-polish`.
 
 ### L187 — Post-Review UI Fixes & Polish (runtime agent)
 **Branch:** `feature/l187-post-review-ui-fixes-and-polish` (8 commits)
@@ -40,6 +40,24 @@
 - `errors.py`: parallelized independent fetches (`list_failed`, `list_workflows`, `list_tasks_with_errors`, `list_turns_with_errors`) via `asyncio.gather()`
 
 **Quality gates:** 164 pytest tests ✅, ruff ✅, mypy ✅
+
+### L190 — Frontend Component Infrastructure
+**Branch:** `feature/l190-frontend-component-infrastructure` (1 commit)
+- `Button.tsx` + `Button.css`: reusable button with primary/danger/ghost/outline/link variants, sm/md/lg sizes, loading spinner, icon support
+- `ToastContainer.tsx` + `useToast.tsx`: toast notification system with auto-dismiss, success/error/warning/info types
+- `FormField.tsx` + `FormField.css`: wrapper for label + input + error display
+- Wired Button into AdminUsers modal and ErrorDashboard action buttons
+- Wired toasts into AdminUsers save/delete and ErrorDashboard resolve/ignore
+
+**Quality gates:** build ✅, 128 vitest tests ✅, 12 inline styles (under 20) ✅
+
+### L191 — Config Overhaul & Rooms Migration
+**Branch:** `feature/l191-config-overhaul-and-rooms-migration` (2 commits)
+- `ConfigForm.tsx`: search/filter input matching section labels, key labels, and descriptions; human-readable section headers; description text below fields
+- `labels.ts`: `CONFIG_KEY_DESCRIPTIONS` with ~30 descriptions for commonly changed keys
+- `rooms.py`: `cmd_migrate_rooms` with `--auto-discover` flag; calls Telegram Bot API `getUpdates` to find group/supergroup chats; registers each as a room with display_name
+
+**Quality gates:** build ✅, 128 vitest tests ✅, ruff ✅, mypy ✅, 67 pytest tests ✅
 
 ---
 

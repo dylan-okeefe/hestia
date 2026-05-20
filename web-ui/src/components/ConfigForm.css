@@ -111,3 +111,26 @@
 .config-form__null {
   color: var(--color-text-muted);
 }
+
+.config-form__search {
+  margin-bottom: var(--space-4);
+}
+
+.config-form__search input {
+  width: 100%;
+  max-width: 24rem;
+}
+
+.config-form__field-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1;
+  min-width: 0;
+}
+
+.config-form__description {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  line-height: 1.4;
+}

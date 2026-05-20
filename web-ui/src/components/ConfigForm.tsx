@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { saveConfig, fetchConfigSchema } from '../api/client';
-import { CONFIG_KEY_LABELS, label } from '../lib/labels';
+import { CONFIG_KEY_LABELS, CONFIG_KEY_DESCRIPTIONS, label } from '../lib/labels';
 import { formatCron } from '../lib/format';
 import { TEXT } from '../lib/text';
 import './ConfigForm.css';
@@ -169,6 +169,7 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [schema, setSchema] = useState<Record<string, SchemaEntry>>({});
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -339,10 +340,16 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
     }
 
     const cronPreview = looksLikeCron(value) ? formatCron(value as string) : null;
+    const description = CONFIG_KEY_DESCRIPTIONS[key];
 
     return (
       <div className="config-form__field-row">
-        {input}
+        <div className="config-form__field-stack">
+          {input}
+          {description && (
+            <span className="config-form__description">{description}</span>
+          )}
+        </div>
         {invalid && <span className="text-danger text-small">{TEXT.config.invalid}</span>}
         {needsRestart && (
           <span className="config-form__restart-badge">
@@ -358,11 +365,47 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
     );
   };
 
-  const topSections = Object.entries(config).filter(([, v]) => typeof v === 'object' && v !== null && !Array.isArray(v));
-  const topFields = Object.entries(config).filter(([, v]) => typeof v !== 'object' || v === null || Array.isArray(v));
+  const matchesSearch = (sectionKey: string, fieldKey: string): boolean => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    const sectionLabel = label(CONFIG_KEY_LABELS, sectionKey).toLowerCase();
+    const fieldLabel = label(CONFIG_KEY_LABELS, fieldKey).toLowerCase();
+    const fieldDesc = (CONFIG_KEY_DESCRIPTIONS[fieldKey] || '').toLowerCase();
+    return sectionLabel.includes(q) || fieldLabel.includes(q) || fieldDesc.includes(q);
+  };
+
+  const filterSection = (sectionKey: string, sectionValue: Record<string, unknown>): [string, unknown][] => {
+    return Object.entries(sectionValue).filter(([k]) => matchesSearch(sectionKey, k));
+  };
+
+  const topSections = Object.entries(config)
+    .filter(([, v]) => typeof v === 'object' && v !== null && !Array.isArray(v))
+    .map(([k, v]) => [k, v] as [string, Record<string, unknown>]);
+
+  const visibleSections = topSections.filter(([k, v]) => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    const sectionLabel = label(CONFIG_KEY_LABELS, k).toLowerCase();
+    if (sectionLabel.includes(q)) return true;
+    return Object.keys(v).some((fk) => matchesSearch(k, fk));
+  });
+
+  const topFields = Object.entries(config).filter(([k, v]) => {
+    if (typeof v === 'object' && v !== null && !Array.isArray(v)) return false;
+    return matchesSearch('', k);
+  });
 
   return (
     <div>
+      <div className="config-form__search">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search config keys…"
+          className="form-input"
+        />
+      </div>
       {typeof config.trust === 'object' && config.trust !== null && (
         <div className="mb-4">
           <strong>{TEXT.config.trustPresetTitle}</strong>
@@ -386,40 +429,44 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
         </div>
       )}
 
-      {topSections.map(([sectionKey, sectionValue]) => (
-        <div
-          key={sectionKey}
-          className="config-form__section"
-        >
+      {visibleSections.map(([sectionKey, sectionValue]) => {
+        const filteredFields = filterSection(sectionKey, sectionValue);
+        if (filteredFields.length === 0) return null;
+        return (
           <div
-            className="config-form__section-header"
-            onClick={() => setCollapsed((s) => ({ ...s, [sectionKey]: !s[sectionKey] }))}
+            key={sectionKey}
+            className="config-form__section"
           >
-            <strong>{sectionKey}</strong>
-            <div className="row-sm">
-              <button
-                className="config-form__btn"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  resetSection(sectionKey);
-                }}
-              >
-                {TEXT.config.resetToInitial}
-              </button>
-              <span>{collapsed[sectionKey] ? '▶' : '▼'}</span>
+            <div
+              className="config-form__section-header"
+              onClick={() => setCollapsed((s) => ({ ...s, [sectionKey]: !s[sectionKey] }))}
+            >
+              <strong>{label(CONFIG_KEY_LABELS, sectionKey)}</strong>
+              <div className="row-sm">
+                <button
+                  className="config-form__btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    resetSection(sectionKey);
+                  }}
+                >
+                  {TEXT.config.resetToInitial}
+                </button>
+                <span>{collapsed[sectionKey] ? '▶' : '▼'}</span>
+              </div>
             </div>
+            {!collapsed[sectionKey] && (
+              <div className="config-form__section-body">
+                {filteredFields.map(([k, v]) => (
+                  <div key={k} className="config-form__field">
+                    {renderField(sectionKey, k, v, 1)}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-          {!collapsed[sectionKey] && (
-            <div className="config-form__section-body">
-              {Object.entries(sectionValue as Record<string, unknown>).map(([k, v]) => (
-                <div key={k} className="config-form__field">
-                  {renderField(sectionKey, k, v, 1)}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      ))}
+        );
+      })}
 
       {topFields.length > 0 && (
         <div className="config-form__section">
