@@ -78,6 +78,68 @@
   white-space: pre-wrap;
 }
 
+.session-message {
+  padding: var(--space-3);
+  border: var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  font-size: var(--font-size-sm);
+}
+
+.session-message--user {
+  border-left: 3px solid var(--color-primary);
+}
+
+.session-message--assistant {
+  border-left: 3px solid var(--color-success);
+}
+
+.session-message--system {
+  border-left: 3px solid var(--color-text-muted);
+}
+
+.session-message__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-2);
+}
+
+.session-message__role {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
+.session-message__role--user {
+  background: rgba(37, 99, 235, 0.1);
+  color: var(--color-primary);
+}
+
+.session-message__role--assistant {
+  background: rgba(22, 163, 74, 0.1);
+  color: var(--color-success);
+}
+
+.session-message__role--system {
+  background: var(--color-surface-raised);
+  color: var(--color-text-secondary);
+}
+
+.session-message__time {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.session-message__content {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: var(--line-height-normal);
+}
+
 .session-detail-layout {
   display: grid;
   grid-template-columns: 1fr;

@@ -33,6 +33,10 @@ vi.mock('../../api/client', async () => {
             error: 'Something went wrong',
           },
         ],
+        messages: [
+          { role: 'user', content: 'Hello', created_at: '2024-01-01T12:00:00Z' },
+          { role: 'assistant', content: 'Hi there!', created_at: '2024-01-01T12:00:05Z' },
+        ],
       })
     ),
   };
@@ -97,12 +101,13 @@ describe('SessionDetail', () => {
         started_at: '2024-01-01T12:00:00Z',
       },
       turns: [],
+      messages: [],
     });
 
     renderWithParams('s2');
 
     await waitFor(() =>
-      expect(screen.getByText(TEXT.sessionDetail.emptyTitle)).toBeInTheDocument()
+      expect(screen.getAllByText(TEXT.sessionDetail.emptyTitle).length).toBeGreaterThanOrEqual(1)
     );
   });
 });

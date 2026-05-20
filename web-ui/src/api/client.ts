@@ -487,6 +487,7 @@ export async function fetchSessionMessages(sessionId: string) {
   return res.json() as Promise<{
     session: { id: string; platform: string; platform_user: string; started_at: string | null };
     turns: Array<{ id: string; state: string | null; started_at: string | null; iterations: number; error: string | null }>;
+    messages: Array<{ role: string; content: string; created_at: string | null }>;
   }>;
 }
 

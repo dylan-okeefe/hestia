@@ -18,6 +18,12 @@ interface Turn {
   error: string | null;
 }
 
+interface Message {
+  role: string;
+  content: string;
+  created_at: string | null;
+}
+
 interface SessionInfo {
   id: string;
   platform: string;
@@ -29,6 +35,7 @@ export default function SessionDetail() {
   const { id } = useParams<{ id: string }>();
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [turns, setTurns] = useState<Turn[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,6 +53,7 @@ export default function SessionDetail() {
         const data = await fetchSessionMessages(id);
         setSession(data.session);
         setTurns(data.turns || []);
+        setMessages(data.messages || []);
       } catch (err: any) {
         setError(err.message);
       } finally {
@@ -137,6 +145,32 @@ export default function SessionDetail() {
                   {t.error}
                 </div>
               )}
+            </div>
+          ))}
+        </div>
+      </PageCard>
+
+      <PageCard>
+        <h3>{TEXT.sessionDetail.messagesTitle}</h3>
+        {messages.length === 0 && (
+          <EmptyState title={TEXT.sessionDetail.emptyTitle} description={TEXT.sessionDetail.emptyDescription} />
+        )}
+        <div className="stack-md">
+          {messages.map((m, idx) => (
+            <div key={idx} className={`session-message session-message--${m.role}`}>
+              <div className="session-message__header">
+                <span className={`session-message__role session-message__role--${m.role}`}>
+                  {m.role === 'user'
+                    ? TEXT.sessionDetail.messageRoleUser
+                    : m.role === 'assistant'
+                      ? TEXT.sessionDetail.messageRoleAssistant
+                      : m.role === 'system'
+                        ? TEXT.sessionDetail.messageRoleSystem
+                        : m.role}
+                </span>
+                <span className="session-message__time">{formatDate(m.created_at)}</span>
+              </div>
+              <div className="session-message__content">{m.content}</div>
             </div>
           ))}
         </div>
