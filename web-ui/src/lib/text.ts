@@ -321,6 +321,7 @@ export const TEXT = {
     saveFailed: 'Save failed',
     hide: 'Hide',
     reveal: 'Reveal',
+    readOnlyNotice: 'Configuration is read-only in the UI. Edit config.py directly and restart the server to apply changes.',
   },
   sessionDetail: {
     title: 'Session Detail',

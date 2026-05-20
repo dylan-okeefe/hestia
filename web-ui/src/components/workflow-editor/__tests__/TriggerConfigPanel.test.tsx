@@ -110,7 +110,7 @@ describe('TriggerConfigPanel', () => {
       />
     );
     expect(screen.getByText(/available variables/i)).toBeInTheDocument();
-    expect(screen.getByText(/{data.command}/i)).toBeInTheDocument();
+    expect(screen.getByText(/{{data.command}}/i)).toBeInTheDocument();
   });
 
   it('opens and closes help modal', () => {

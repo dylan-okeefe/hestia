@@ -138,7 +138,7 @@ describe('NodePropertiesPanel', () => {
     const picker = screen.getByRole('combobox', { name: /insert variable/i });
     expect(picker).toBeInTheDocument();
     fireEvent.change(picker, { target: { value: 'command' } });
-    expect(onUpdate).toHaveBeenCalledWith('message', '{data.command}hello');
+    expect(onUpdate).toHaveBeenCalledWith('message', '{{data.command}}hello');
   });
 
   it('shows schema-aware args for tool_call when schema available', async () => {

@@ -52,7 +52,7 @@ function AvailableVariables({ triggerType }: { triggerType: string }) {
       <strong>Available variables:</strong>{' '}
       {vars.map((v) => (
         <code key={v} className="inline-code">
-          {'{data.' + v + '}'}
+          {'{{data.' + v + '}}'}
         </code>
       ))}
     </div>

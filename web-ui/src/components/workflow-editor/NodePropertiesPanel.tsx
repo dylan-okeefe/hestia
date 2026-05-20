@@ -48,7 +48,7 @@ export default function NodePropertiesPanel({
     const end = el.selectionEnd ?? el.value.length;
     const before = el.value.slice(0, start);
     const after = el.value.slice(end);
-    const newValue = before + `{data.${value}}` + after;
+    const newValue = before + `{{data.${value}}}` + after;
     if (ref === messageRef) {
       onUpdateNodeData('message', newValue);
     } else if (ref === expressionRef) {
@@ -58,7 +58,7 @@ export default function NodePropertiesPanel({
     }
     requestAnimationFrame(() => {
       if (ref.current) {
-        const pos = start + `{data.${value}}`.length;
+        const pos = start + `{{data.${value}}}`.length;
         ref.current.focus();
         ref.current.setSelectionRange(pos, pos);
       }

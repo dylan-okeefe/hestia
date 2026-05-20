@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { saveConfig, fetchConfigSchema } from '../api/client';
+import { fetchConfigSchema } from '../api/client';
 import { CONFIG_KEY_LABELS, CONFIG_KEY_DESCRIPTIONS, label } from '../lib/labels';
 import { formatCron } from '../lib/format';
 import { TEXT } from '../lib/text';
@@ -7,7 +7,6 @@ import './ConfigForm.css';
 
 interface ConfigFormProps {
   initialConfig: Record<string, unknown>;
-  onSave?: () => void;
 }
 
 interface SchemaEntry {
@@ -51,100 +50,6 @@ function getInputType(_key: string, value: unknown): 'text' | 'number' | 'boolea
   return 'text';
 }
 
-interface TrustPreset {
-  name: string;
-  description: string;
-  bullets: string[];
-  values: Record<string, unknown>;
-}
-
-const trustPresets: Record<string, TrustPreset> = {
-  paranoid: {
-    name: 'Paranoid',
-    description: 'Maximum safety. Every tool requires explicit confirmation.',
-    bullets: [
-      'No tools auto-approved',
-      'Scheduler and subagent shell access disabled',
-      'Self-management tools disabled',
-      'No email sending from autonomous agents',
-    ],
-    values: {
-      auto_approve_tools: [],
-      scheduler_shell_exec: false,
-      subagent_shell_exec: false,
-      subagent_write_local: false,
-      subagent_email_send: false,
-      scheduler_email_send: false,
-      self_management: false,
-      blocked_shell_patterns: [],
-      preset: 'paranoid',
-    },
-  },
-  prompt_on_mobile: {
-    name: 'Prompt on Mobile',
-    description: 'Safe for phone use. Destructive tools show ✅/❌ buttons on Telegram.',
-    bullets: [
-      'No tools auto-approved',
-      'Scheduler and subagent shell access disabled',
-      'Self-management tools disabled',
-      'Blocks dangerous patterns like rm -rf /',
-    ],
-    values: {
-      auto_approve_tools: [],
-      scheduler_shell_exec: false,
-      subagent_shell_exec: false,
-      subagent_write_local: false,
-      subagent_email_send: false,
-      scheduler_email_send: false,
-      self_management: false,
-      blocked_shell_patterns: ['rm -rf /'],
-      preset: 'prompt_on_mobile',
-    },
-  },
-  household: {
-    name: 'Household',
-    description: 'Balanced for daily use. Common file tools work without prompts.',
-    bullets: [
-      'Terminal and write_file auto-approved',
-      'Subagent local file writes enabled',
-      'Self-management tools enabled (proposals, style)',
-      'Blocks dangerous shell patterns',
-    ],
-    values: {
-      auto_approve_tools: ['terminal', 'write_file'],
-      scheduler_shell_exec: false,
-      subagent_shell_exec: false,
-      subagent_write_local: true,
-      subagent_email_send: false,
-      scheduler_email_send: false,
-      self_management: true,
-      blocked_shell_patterns: ['rm -rf /', 'dd if=/dev/zero'],
-      preset: 'household',
-    },
-  },
-  developer: {
-    name: 'Developer',
-    description: 'Full access. All tools auto-approved, autonomous agents can send email.',
-    bullets: [
-      'All common tools auto-approved',
-      'Scheduler and subagent shell access enabled',
-      'Self-management tools enabled',
-      'Email sending from autonomous agents enabled',
-    ],
-    values: {
-      auto_approve_tools: ['terminal', 'write_file', 'read_file', 'shell'],
-      scheduler_shell_exec: true,
-      subagent_shell_exec: true,
-      subagent_write_local: true,
-      subagent_email_send: true,
-      scheduler_email_send: true,
-      self_management: true,
-      blocked_shell_patterns: [],
-      preset: 'developer',
-    },
-  },
-};
-
 function stripSecrets(obj: unknown): unknown {
   if (obj === null || obj === undefined) return obj;
   if (Array.isArray(obj)) return obj.map(stripSecrets);
@@ -162,12 +67,10 @@ function stripSecrets(obj: unknown): unknown {
   return obj;
 }
 
-export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
-  const [config, setConfig] = useState<Record<string, unknown>>(() => stripSecrets(initialConfig) as Record<string, unknown>);
+export default function ConfigForm({ initialConfig }: ConfigFormProps) {
+  const [config] = useState<Record<string, unknown>>(() => stripSecrets(initialConfig) as Record<string, unknown>);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
-  const [saving, setSaving] = useState(false);
-  const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [schema, setSchema] = useState<Record<string, SchemaEntry>>({});
   const [search, setSearch] = useState('');
 
@@ -185,61 +88,7 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
     return () => { cancelled = true; };
   }, []);
 
-  const updateValue = useCallback((path: string, value: unknown) => {
-    setConfig((prev) => {
-      const next = { ...prev };
-      const keys = path.split('.');
-      let target: Record<string, unknown> = next;
-      for (let i = 0; i < keys.length - 1; i++) {
-        target[keys[i]] = { ...(target[keys[i]] as Record<string, unknown>) };
-        target = target[keys[i]] as Record<string, unknown>;
-      }
-      target[keys[keys.length - 1]] = value;
-      return next;
-    });
-  }, []);
-
-  const handleSave = async () => {
-    setSaving(true);
-    setSaveMsg(null);
-    try {
-      const res = await saveConfig(config);
-      const data = await res.json();
-      if (res.ok) {
-        setSaveMsg(TEXT.config.saveSuccess);
-        onSave?.();
-      } else {
-        setSaveMsg(data.detail || TEXT.config.saveFailed);
-      }
-    } catch (err) {
-      setSaveMsg((err as Error).message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const currentPreset =
-    typeof config.trust === 'object' && config.trust !== null
-      ? String((config.trust as Record<string, unknown>).preset || '')
-      : '';
-
-  const applyTrustPreset = (presetKey: string) => {
-    const preset = trustPresets[presetKey];
-    if (!preset) return;
-    setConfig((prev) => ({
-      ...prev,
-      trust: { ...(prev.trust as Record<string, unknown> || {}), ...preset.values },
-    }));
-  };
-
-  const resetSection = (sectionKey: string) => {
-    setConfig((prev) => ({
-      ...prev,
-      [sectionKey]: stripSecrets((initialConfig[sectionKey] as Record<string, unknown>) || {}),
-    }));
-  };
-
-  const renderField = (path: string, key: string, value: unknown, depth: number) => {
+  const renderField = useCallback((path: string, key: string, value: unknown, depth: number) => {
     if (value === null || value === undefined) {
       return <span className="config-form__null">null</span>;
     }
@@ -283,7 +132,7 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
           <span>{label(CONFIG_KEY_LABELS, key)}</span>
           <select
             value={String(value)}
-            onChange={(e) => updateValue(fullPath, e.target.value)}
+            disabled
             className="form-select"
           >
             {schema[fullPath].values?.map((v: string) => (
@@ -294,11 +143,11 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
       );
     } else if (inputType === 'boolean') {
       input = (
-        <label className="row-center gap-2 cursor-pointer">
+        <label className="row-center gap-2">
           <input
             type="checkbox"
             checked={value as boolean}
-            onChange={(e) => updateValue(fullPath, e.target.checked)}
+            disabled
           />
           <span>{label(CONFIG_KEY_LABELS, key)}</span>
         </label>
@@ -310,7 +159,7 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
           <input
             type="text"
             value={(value as unknown[]).join(', ')}
-            onChange={(e) => updateValue(fullPath, e.target.value.split(',').map((s) => s.trim()).filter(Boolean))}
+            disabled
             className={baseClass}
           />
         </label>
@@ -322,7 +171,7 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
           <input
             type={isCred && !revealed[fullPath] ? 'password' : inputType === 'number' ? 'number' : 'text'}
             value={value as string | number}
-            onChange={(e) => updateValue(fullPath, inputType === 'number' ? Number(e.target.value) : e.target.value)}
+            disabled
             className={baseClass}
             style={invalid ? { border: '2px solid var(--color-danger)' } : undefined}
           />
@@ -363,7 +212,7 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
         )}
       </div>
     );
-  };
+  }, [collapsed, revealed, schema]);
 
   const matchesSearch = (sectionKey: string, fieldKey: string): boolean => {
     if (!search.trim()) return true;
@@ -397,6 +246,9 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
 
   return (
     <div>
+      <div className="config-form__notice">
+        {TEXT.config.readOnlyNotice}
+      </div>
       <div className="config-form__search">
         <input
           type="text"
@@ -406,28 +258,6 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
           className="form-input"
         />
       </div>
-      {typeof config.trust === 'object' && config.trust !== null && (
-        <div className="mb-4">
-          <strong>{TEXT.config.trustPresetTitle}</strong>
-          <div className="config-form__trust-grid">
-            {Object.entries(trustPresets).map(([key, preset]) => (
-              <div
-                key={key}
-                onClick={() => applyTrustPreset(key)}
-                className={currentPreset === key ? 'config-form__trust-card config-form__trust-card--selected' : 'config-form__trust-card'}
-              >
-                <h3>{preset.name}</h3>
-                <p>{preset.description}</p>
-                <ul>
-                  {preset.bullets.map((b, i) => (
-                    <li key={i}>{b}</li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {visibleSections.map(([sectionKey, sectionValue]) => {
         const filteredFields = filterSection(sectionKey, sectionValue);
@@ -442,18 +272,7 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
               onClick={() => setCollapsed((s) => ({ ...s, [sectionKey]: !s[sectionKey] }))}
             >
               <strong>{label(CONFIG_KEY_LABELS, sectionKey)}</strong>
-              <div className="row-sm">
-                <button
-                  className="config-form__btn"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    resetSection(sectionKey);
-                  }}
-                >
-                  {TEXT.config.resetToInitial}
-                </button>
-                <span>{collapsed[sectionKey] ? '▶' : '▼'}</span>
-              </div>
+              <span>{collapsed[sectionKey] ? '▶' : '▼'}</span>
             </div>
             {!collapsed[sectionKey] && (
               <div className="config-form__section-body">
@@ -482,13 +301,6 @@ export default function ConfigForm({ initialConfig, onSave }: ConfigFormProps) {
           </div>
         </div>
       )}
-
-      <div className="row-sm row-center">
-        <button className="config-form__btn" onClick={handleSave} disabled={saving}>
-          {saving ? TEXT.common.saving : TEXT.common.save}
-        </button>
-        {saveMsg && <span>{saveMsg}</span>}
-      </div>
     </div>
   );
 }

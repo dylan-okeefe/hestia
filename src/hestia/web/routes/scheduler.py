@@ -58,11 +58,24 @@ class TaskUpdate(BaseModel):
 
 @router.get("/tasks")
 async def list_tasks(
+    request: Request,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
-    """List all scheduled tasks."""
+    """List scheduled tasks scoped to the caller."""
+    caller_platform_user = getattr(request.state, "platform_user", None)
+    session_id: str | None = None
+
+    if caller_platform_user is not None:
+        caller_user_id = getattr(request.state, "user_id", None)
+        if caller_user_id is not None:
+            caller = await ctx.user_store.get_user(caller_user_id)
+            if caller is None or caller.role != "admin":
+                session_id = caller_platform_user
+        else:
+            session_id = caller_platform_user
+
     tasks = await ctx.scheduler_store.list_tasks_for_session(
-        session_id=None, include_disabled=True
+        session_id=session_id, include_disabled=True
     )
     return {
         "tasks": [

@@ -12,6 +12,27 @@ from hestia.web.context import WebContext, get_web_context
 from hestia.workflows.executor import WorkflowExecutor
 from hestia.workflows.models import Workflow, WorkflowEdge, WorkflowNode, WorkflowVersion
 
+
+async def _require_workflow_access(
+    request: Request,
+    ctx: WebContext,
+    workflow: Workflow,
+) -> None:
+    """Raise 403 if caller is not the workflow owner and not an admin."""
+    caller_platform_user = getattr(request.state, "platform_user", None)
+    if caller_platform_user is None:
+        return
+    if caller_platform_user == workflow.owner_id:
+        return
+
+    caller_user_id = getattr(request.state, "user_id", None)
+    if caller_user_id is not None:
+        caller = await ctx.user_store.get_user(caller_user_id)
+        if caller is not None and caller.role == "admin":
+            return
+
+    raise HTTPException(status_code=403, detail="Access denied")
+
 router = APIRouter()
 
 _CTX_DEP = Depends(get_web_context)
@@ -142,6 +163,8 @@ async def get_workflow(
     if workflow is None:
         raise HTTPException(status_code=404, detail="Workflow not found")
 
+    await _require_workflow_access(request, ctx, workflow)
+
     api_wf = _workflow_to_api(workflow)
     active = await ctx.workflow_store.get_active_version(workflow_id)
     if active is not None:
@@ -156,6 +179,7 @@ async def get_workflow(
 @router.put("/workflows/{workflow_id}")
 async def update_workflow(
     workflow_id: str,
+    request: Request,
     payload: dict[str, Any],
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
@@ -163,6 +187,8 @@ async def update_workflow(
     workflow = await ctx.workflow_store.get_workflow(workflow_id)
     if workflow is None:
         raise HTTPException(status_code=404, detail="Workflow not found")
+
+    await _require_workflow_access(request, ctx, workflow)
 
     if "name" in payload:
         name = payload["name"]
@@ -195,9 +221,16 @@ async def update_workflow(
 @router.delete("/workflows/{workflow_id}")
 async def delete_workflow(
     workflow_id: str,
+    request: Request,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """Delete a workflow and all its versions."""
+    workflow = await ctx.workflow_store.get_workflow(workflow_id)
+    if workflow is None:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    await _require_workflow_access(request, ctx, workflow)
+
     deleted = await ctx.workflow_store.delete_workflow(workflow_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Workflow not found")
@@ -209,9 +242,16 @@ async def delete_workflow(
 @router.get("/workflows/{workflow_id}/versions")
 async def list_versions(
     workflow_id: str,
+    request: Request,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """List all versions for a workflow."""
+    workflow = await ctx.workflow_store.get_workflow(workflow_id)
+    if workflow is None:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    await _require_workflow_access(request, ctx, workflow)
+
     versions = await ctx.workflow_store.list_versions(workflow_id)
     return {"versions": [_version_to_api(v) for v in versions]}
 
@@ -219,6 +259,7 @@ async def list_versions(
 @router.post("/workflows/{workflow_id}/versions")
 async def create_version(
     workflow_id: str,
+    request: Request,
     payload: dict[str, Any],
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
@@ -226,6 +267,8 @@ async def create_version(
     workflow = await ctx.workflow_store.get_workflow(workflow_id)
     if workflow is None:
         raise HTTPException(status_code=404, detail="Workflow not found")
+
+    await _require_workflow_access(request, ctx, workflow)
 
     existing = await ctx.workflow_store.list_versions(workflow_id)
     next_version = max((v.version for v in existing), default=0) + 1
@@ -275,12 +318,19 @@ async def create_version(
 async def activate_version(
     workflow_id: str,
     version_id: str,
+    request: Request,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """Activate a specific version of a workflow.
 
     version_id is expected to be "{workflow_id}:{version}" or just the version number.
     """
+    workflow = await ctx.workflow_store.get_workflow(workflow_id)
+    if workflow is None:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    await _require_workflow_access(request, ctx, workflow)
+
     # Parse version from version_id
     if ":" in version_id:
         _, version_str = version_id.rsplit(":", 1)
@@ -300,6 +350,7 @@ async def activate_version(
 @router.get("/workflows/{workflow_id}/executions")
 async def list_executions(
     workflow_id: str,
+    request: Request,
     limit: int = Query(50, ge=1, le=200),
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
@@ -308,6 +359,8 @@ async def list_executions(
     if workflow is None:
         raise HTTPException(status_code=404, detail="Workflow not found")
 
+    await _require_workflow_access(request, ctx, workflow)
+
     executions = await ctx.execution_store.list_executions(workflow_id, limit=limit)
     return {"executions": executions}
 
@@ -315,6 +368,7 @@ async def list_executions(
 @router.post("/workflows/{workflow_id}/test-run")
 async def test_run_workflow(
     workflow_id: str,
+    request: Request,
     payload: dict[str, Any] | None = None,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
@@ -322,6 +376,8 @@ async def test_run_workflow(
     workflow = await ctx.workflow_store.get_workflow(workflow_id)
     if workflow is None:
         raise HTTPException(status_code=404, detail="Workflow not found")
+
+    await _require_workflow_access(request, ctx, workflow)
 
     version = await ctx.workflow_store.get_active_version(workflow_id)
     if version is None:

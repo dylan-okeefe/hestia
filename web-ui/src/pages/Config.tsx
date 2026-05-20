@@ -25,7 +25,7 @@ export default function Config() {
       <h1>Configuration</h1>
       {loading && <p>Loading configuration…</p>}
       {error && <p className="text-danger">{error}</p>}
-      {config && <ConfigForm initialConfig={config} onSave={() => setError(null)} />}
+      {config && <ConfigForm initialConfig={config} />}
     </div>
   );
 }
