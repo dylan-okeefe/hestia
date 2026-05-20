@@ -64,6 +64,7 @@ def client(mock_app: MagicMock) -> TestClient:
         failure_store=AsyncMock(),
         workflow_store=AsyncMock(),
         execution_store=AsyncMock(),
+        error_resolution_store=AsyncMock(),
         app=mock_app,
         auth_manager=None,
         user_store=AsyncMock(),
@@ -262,6 +263,7 @@ class TestErrorsRoutes:
                 failure_store=AsyncMock(),
                 workflow_store=AsyncMock(),
                 execution_store=AsyncMock(),
+                error_resolution_store=AsyncMock(),
                 app=mock_app,
                 auth_manager=None,
                 user_store=AsyncMock(),
@@ -313,7 +315,7 @@ class TestErrorsRoutes:
     def test_resolve_and_ignore_error(
         self, errors_client: TestClient, mock_app: MagicMock
     ) -> None:
-        """POST /api/errors/{id}/resolve and /ignore toggle status."""
+        """POST /api/errors/{id}/resolve and /ignore toggle status via store."""
         from hestia.web import context as ctx_mod
 
         ctx = ctx_mod._ctx
@@ -331,9 +333,20 @@ class TestErrorsRoutes:
         )
         ctx.workflow_store.list_workflows = AsyncMock(return_value=[])
 
+        # First GET after resolve should see resolved; second GET after ignore should see ignored
+        ctx.error_resolution_store.list_statuses = AsyncMock(
+            side_effect=[
+                {"workflow_execution:e1": "resolved"},
+                {"workflow_execution:e1": "ignored"},
+            ]
+        )
+
         response = errors_client.post("/api/errors/workflow_execution:e1/resolve")
         assert response.status_code == 200
         assert response.json()["resolved"] is True
+        ctx.error_resolution_store.set_status.assert_awaited_once_with(
+            "workflow_execution:e1", "resolved", resolved_by=None
+        )
 
         response = errors_client.get("/api/errors")
         data = response.json()
@@ -346,22 +359,6 @@ class TestErrorsRoutes:
         response = errors_client.get("/api/errors")
         data = response.json()
         assert any(e["status"] == "ignored" for e in data["errors"])
-
-    def test_error_state_cap(self, client: TestClient) -> None:
-        """Resolved and ignored sets are capped at 10,000 entries."""
-        from hestia.web.routes.errors import _mark_ignored, _mark_resolved
-
-        for i in range(10_001):
-            _mark_resolved(f"id:{i}")
-        from hestia.web.routes.errors import _resolved_ids
-
-        assert len(_resolved_ids) == 10_000
-
-        for i in range(10_001):
-            _mark_ignored(f"ignored:{i}")
-        from hestia.web.routes.errors import _ignored_ids
-
-        assert len(_ignored_ids) == 10_000
 
 
 class TestProposalsRoutes:
@@ -1317,6 +1314,7 @@ class TestWorkflowsRoutes:
                 failure_store=AsyncMock(),
                 workflow_store=workflow_store,
                 execution_store=AsyncMock(),
+                error_resolution_store=AsyncMock(),
                 app=mock_app,
                 auth_manager=auth_manager,
                 user_store=AsyncMock(),

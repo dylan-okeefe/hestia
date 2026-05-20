@@ -92,6 +92,7 @@ def client(mock_app: MagicMock) -> TestClient:
         failure_store=AsyncMock(),
         workflow_store=AsyncMock(),
         execution_store=AsyncMock(),
+        error_resolution_store=AsyncMock(),
         app=mock_app,
         auth_manager=auth_manager,
         user_store=AsyncMock(),

@@ -28,6 +28,7 @@ from hestia.memory.handoff import SessionHandoffSummarizer
 from hestia.orchestrator import Orchestrator
 from hestia.orchestrator.engine import ConfirmCallback
 from hestia.persistence.db import Database
+from hestia.persistence.error_resolution_store import ErrorResolutionStore
 from hestia.persistence.failure_store import FailureStore
 from hestia.persistence.scheduler import SchedulerStore
 from hestia.persistence.sessions import SessionStore
@@ -155,6 +156,7 @@ class AppContext:
         self.scheduler_store = SchedulerStore(self.db)
         self.workflow_store = WorkflowStore(self.db)
         self.execution_store = ExecutionStore(self.db)
+        self.error_resolution_store = ErrorResolutionStore(self.db)
         self.trigger_registry: Any = None
         self.epoch_compiler = MemoryEpochCompiler(self.memory_store, max_tokens=500)
         self.tool_registry = ToolRegistry(self.artifact_store)
