@@ -9,8 +9,13 @@ function getSystemTheme(): 'light' | 'dark' {
 }
 
 function getInitialTheme(): Theme {
-  const stored = localStorage.getItem(STORAGE_KEY) as Theme | null;
-  return stored || 'system';
+  if (typeof window === 'undefined') return 'system';
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY) as Theme | null;
+    return stored || 'system';
+  } catch {
+    return 'system';
+  }
 }
 
 export function useTheme() {
@@ -34,7 +39,11 @@ export function useTheme() {
   }, [theme]);
 
   const setTheme = useCallback((newTheme: Theme) => {
-    localStorage.setItem(STORAGE_KEY, newTheme);
+    try {
+      localStorage.setItem(STORAGE_KEY, newTheme);
+    } catch {
+      // ignore storage errors
+    }
     setThemeState(newTheme);
   }, []);
 
