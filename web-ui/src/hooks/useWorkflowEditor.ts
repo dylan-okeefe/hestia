@@ -300,7 +300,15 @@ export function useWorkflowEditor(workflowId: string | undefined) {
     setTestResult(null);
     setTestError(null);
     try {
-      const result = await testRunWorkflow(workflowId);
+      let versionId: string | undefined;
+      if (!activeVersionId && versions.length > 0) {
+        const latest = versions[versions.length - 1];
+        versionId = latest.id;
+      }
+      const result = await testRunWorkflow(
+        workflowId,
+        versionId ? { version_id: versionId } : undefined
+      );
       setTestResult(result);
       setError(null);
       await loadExecutions();

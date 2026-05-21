@@ -1163,7 +1163,11 @@ class TestWorkflowsRoutes:
             assert data["total_elapsed_ms"] == 100
             assert data["total_prompt_tokens"] == 50
             assert data["total_completion_tokens"] == 25
-            instance.execute.assert_awaited_once_with("wf1", trigger_payload={"key": "value"})
+            instance.execute.assert_awaited_once_with(
+                "wf1",
+                trigger_payload={"key": "value"},
+                version_id=None,
+            )
 
     def test_test_run_workflow_not_found(self, client: TestClient, mock_app: MagicMock) -> None:
         """POST test-run returns 404 when workflow missing."""
