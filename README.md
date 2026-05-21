@@ -1,26 +1,34 @@
-# Hestia Documentation
+# Hestia
 
-This directory contains all documentation for the Hestia project.
+A personal AI assistant that runs locally. Hestia connects to your chat platforms (Telegram, Matrix), manages scheduled tasks, executes workflows, and provides a web dashboard for administration.
 
-## For operators
+## Features
 
-Getting Hestia running and keeping it healthy:
+- **Local inference** — runs on your own hardware via llama.cpp
+- **Multi-platform** — Telegram, Matrix, CLI, Discord (voice)
+- **Workflows** — visual workflow editor with triggers and nodes
+- **Web dashboard** — admin UI with auth, dark mode, responsive design
+- **User registry** — multi-user support with roles and trust levels
+- **Memory** — long-term searchable memory with FTS5
+- **Scheduler** — cron-based recurring tasks
+- **Trust system** — paranoid to developer presets for tool approval
 
-- **[Guides](guides/)** — Step-by-step walkthroughs for setup, voice, email, multi-user, security, and tuning.
-- **[Environment Variables](guides/environment-variables.md)** — Full reference for every `HESTIA_*` env var.
-- **[Deploy](deploy/)** — systemd service templates, install script, and config examples.
+## Quick Start
 
-## For contributors
+```bash
+pip install hestia
+hestia --config config.py serve
+```
 
-Understanding why Hestia is built the way it is:
+See [docs/guides/runtime-setup.md](docs/guides/runtime-setup.md) for detailed setup.
 
-- **[Architecture Decisions](adr/)** — 33 ADRs covering everything from "why Python" to "why FTS5 over vector search."
-- **[Design Documents](design/)** — Deep dives on Matrix integration, the phase-8+ roadmap, and the revised architecture.
-- **[Development Process](development-process/)** — Internal development record: loop specs, review notes, and the Kimi/Cursor workflow. This is project archaeology, not user-facing documentation. Operators and contributors should start with Guides and ADRs instead.
+## Documentation
 
-## Reference
+- [User Guides](docs/guides/) — setup, platforms, security, voice, email, workflows
+- [Architecture Decisions](docs/adr/) — design rationale
+- [Changelog](CHANGELOG.md) — version history
+- [Release Notes](docs/releases/) — human-facing release summaries
 
-- **[Release Notes](releases/)** — Human-facing summaries for each tagged release.
-- **[Roadmap](roadmap/future-systems-deferred-roadmap.md)** — Deferred features and future system directions.
-- **[Security](../SECURITY.md)** — Security policy and responsible disclosure.
-- **[Testing](testing/)** — Credentials/secrets handling and manual smoke-test procedures.
+## License
+
+MIT
