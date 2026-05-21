@@ -138,16 +138,23 @@ class WorkflowExecutor:
         self._workflow_store = workflow_store
         self._execution_store = execution_store
 
-    async def execute(self, workflow_id: str, trigger_payload: Any) -> ExecutionResult:
+    async def execute(
+        self,
+        workflow_id: str,
+        trigger_payload: Any,
+        version_id: str | None = None,
+    ) -> ExecutionResult:
         """Execute a workflow by its ID.
 
-        Loads the workflow and its active version, topologically sorts the nodes,
-        and executes them in dependency order with trust checks and fail-fast
-        semantics.
+        Loads the workflow and its active version (or a specific version if
+        version_id is provided), topologically sorts the nodes, and executes
+        them in dependency order with trust checks and fail-fast semantics.
 
         Args:
             workflow_id: The unique identifier of the workflow.
             trigger_payload: The payload that triggered the workflow execution.
+            version_id: Optional ``{workflow_id}:{version}`` string to execute
+                a specific version instead of the active one.
 
         Returns:
             ExecutionResult containing the status and results of all nodes.
@@ -173,24 +180,67 @@ class WorkflowExecutor:
                 )
             return result
 
-        version = await store.get_active_version(workflow_id)
-        if version is None:
-            result = ExecutionResult(
-                workflow_id=workflow_id,
-                status="failed",
-                node_results=[
-                    NodeResult(
-                        node_id="",
-                        status="failed",
-                        error=f"No active version for workflow: {workflow_id}",
-                    )
-                ],
-            )
-            if self._execution_store is not None:
-                await self._execution_store.save_execution(
-                    result, workflow_id, 0, trigger_payload
+        if version_id is not None:
+            if ":" in version_id:
+                _, version_str = version_id.rsplit(":", 1)
+            else:
+                version_str = version_id
+            try:
+                version_num = int(version_str)
+            except ValueError:
+                result = ExecutionResult(
+                    workflow_id=workflow_id,
+                    status="failed",
+                    node_results=[
+                        NodeResult(
+                            node_id="",
+                            status="failed",
+                            error=f"Invalid version ID: {version_id}",
+                        )
+                    ],
                 )
-            return result
+                if self._execution_store is not None:
+                    await self._execution_store.save_execution(
+                        result, workflow_id, 0, trigger_payload
+                    )
+                return result
+            version = await store.get_version(workflow_id, version_num)
+            if version is None:
+                result = ExecutionResult(
+                    workflow_id=workflow_id,
+                    status="failed",
+                    node_results=[
+                        NodeResult(
+                            node_id="",
+                            status="failed",
+                            error=f"Version not found: {version_id}",
+                        )
+                    ],
+                )
+                if self._execution_store is not None:
+                    await self._execution_store.save_execution(
+                        result, workflow_id, 0, trigger_payload
+                    )
+                return result
+        else:
+            version = await store.get_active_version(workflow_id)
+            if version is None:
+                result = ExecutionResult(
+                    workflow_id=workflow_id,
+                    status="failed",
+                    node_results=[
+                        NodeResult(
+                            node_id="",
+                            status="failed",
+                            error=f"No active version for workflow: {workflow_id}",
+                        )
+                    ],
+                )
+                if self._execution_store is not None:
+                    await self._execution_store.save_execution(
+                        result, workflow_id, 0, trigger_payload
+                    )
+                return result
 
         node_results: list[NodeResult] = []
         outputs: dict[str, Any] = {"trigger": trigger_payload}
