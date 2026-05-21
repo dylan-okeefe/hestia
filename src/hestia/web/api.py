@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import pathlib
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from hestia.web.routes import (
@@ -27,6 +28,7 @@ from hestia.web.routes import (
 )
 
 _web_static = pathlib.Path(__file__).with_name("static")
+_index_html = _web_static / "index.html"
 
 
 def create_web_app() -> FastAPI:
@@ -55,5 +57,14 @@ def create_web_app() -> FastAPI:
     app.include_router(workflows.router, prefix="/api")
     app.include_router(memory.router, prefix="/api")
 
-    app.mount("/", StaticFiles(directory=str(_web_static), html=True), name="static")
+    app.mount("/assets", StaticFiles(directory=str(_web_static / "assets")), name="assets")
+
+    @app.get("/{path:path}")
+    async def spa_catch_all(request: Request, path: str) -> FileResponse:
+        """Serve index.html for all non-API routes (SPA routing)."""
+        # API 404s should not return HTML
+        if path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not found")
+        return FileResponse(_index_html)
+
     return app
