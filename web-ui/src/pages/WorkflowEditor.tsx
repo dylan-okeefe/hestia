@@ -142,14 +142,6 @@ export default function WorkflowEditor() {
         onUndo={editor.handleUndo}
         onRedo={editor.handleRedo}
       />
-      {editor.showVersions && (
-        <VersionPanel
-          versions={editor.versions}
-          activeVersionId={editor.activeVersionId}
-          onView={editor.handleViewVersion}
-          onActivate={editor.handleActivateVersion}
-        />
-      )}
       <ExecutionHistoryPanel
         show={editor.showHistory}
         executions={editor.executions}
@@ -176,6 +168,14 @@ export default function WorkflowEditor() {
         webhookSecret={editor.webhookSecret}
       />
       <div className="workflow-editor__main">
+        {editor.showVersions && (
+          <VersionPanel
+            versions={editor.versions}
+            activeVersionId={editor.activeVersionId}
+            onView={editor.handleViewVersion}
+            onActivate={editor.handleActivateVersion}
+          />
+        )}
         <div className="workflow-canvas-container" tabIndex={0} data-testid="reactflow-wrapper">
           <div className="workflow-canvas">
             <ReactFlow
