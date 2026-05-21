@@ -104,8 +104,8 @@ export default function EditorToolbar({
       </button>
       <button
         onClick={onTestRun}
-        disabled={testing || !activeVersionId}
-        title={activeVersionId ? 'Run the active workflow version' : 'Save and activate a version before testing'}
+        disabled={testing}
+        title={activeVersionId ? 'Run the active workflow version' : 'Run the most recent saved version'}
       >
         {testing ? 'Running…' : 'Test Run'}
       </button>
