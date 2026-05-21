@@ -121,6 +121,10 @@ export function useWorkflowEditor(workflowId: string | undefined) {
           setActiveVersionId(active.id);
           setNodes(active.nodes.map((n: WorkflowNode) => ({ ...n, data: n.data || {} })));
           setEdges(active.edges.map((e: WorkflowEdge) => ({ ...e })));
+        } else if (vs.versions.length > 0) {
+          const latest = vs.versions[vs.versions.length - 1];
+          setNodes(latest.nodes.map((n: WorkflowNode) => ({ ...n, data: n.data || {} })));
+          setEdges(latest.edges.map((e: WorkflowEdge) => ({ ...e })));
         }
         setLoading(false);
       })

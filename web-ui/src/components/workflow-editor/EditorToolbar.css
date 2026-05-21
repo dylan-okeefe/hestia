@@ -12,9 +12,17 @@
   font-size: var(--font-size-2xl);
   font-weight: bold;
   border: none;
-  border-bottom: 1px solid transparent;
+  border-bottom: 2px solid var(--color-border-subtle);
   background: transparent;
-  min-width: 120px;
+  min-width: 180px;
+  padding: var(--space-1) var(--space-2);
+  transition: border-color 0.15s ease;
+}
+
+.editor-toolbar__name-input:hover,
+.editor-toolbar__name-input:focus {
+  border-bottom-color: var(--color-primary);
+  outline: none;
 }
 
 .editor-toolbar__unsaved {

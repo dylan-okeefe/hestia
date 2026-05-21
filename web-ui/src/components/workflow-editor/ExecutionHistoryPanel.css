@@ -1,7 +1,7 @@
 .execution-history-panel {
   border-top: var(--border-thin);
   padding: var(--space-4);
-  max-height: 40vh;
+  max-height: 50vh;
   overflow-y: auto;
   background: var(--color-surface);
 }
