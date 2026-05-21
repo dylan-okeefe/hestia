@@ -1,0 +1,534 @@
+const API_BASE = '/api';
+
+let _authToken: string | null = sessionStorage.getItem('hestia_auth_token');
+
+export function setAuthToken(token: string | null) {
+  _authToken = token;
+  if (token) {
+    sessionStorage.setItem('hestia_auth_token', token);
+  } else {
+    sessionStorage.removeItem('hestia_auth_token');
+  }
+}
+
+export function getAuthToken(): string | null {
+  return _authToken;
+}
+
+export function clearAuthToken() {
+  _authToken = null;
+  sessionStorage.removeItem('hestia_auth_token');
+}
+
+function getHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  const headers: Record<string, string> = { ...extra };
+  if (_authToken) {
+    headers['Authorization'] = `Bearer ${_authToken}`;
+  }
+  return headers;
+}
+
+async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
+  const res = await fetch(input, {
+    ...init,
+    headers: getHeaders((init?.headers as Record<string, string>) || {}),
+  });
+  if (res.status === 401) {
+    clearAuthToken();
+    window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+  }
+  return res;
+}
+
+export async function fetchAuthStatus() {
+  const res = await apiFetch(`${API_BASE}/auth/status`);
+  if (!res.ok) throw new Error('Failed to fetch auth status');
+  return res.json() as Promise<{ auth_enabled: boolean; authenticated: boolean; platform?: string; platform_user?: string; user_id?: string; available_platforms?: string[] }>;
+}
+
+export async function fetchAvailableUsers() {
+  const res = await apiFetch(`${API_BASE}/auth/available-users`);
+  if (!res.ok) throw new Error('Failed to fetch available users');
+  return res.json() as Promise<{ users: Array<{ user_id: string; display_name: string; role: string; platforms: string[]; identities: Array<{ platform: string; platform_user: string }> }> }>;
+}
+
+export async function requestCode(platform: string, platformUser?: string) {
+  const res = await apiFetch(`${API_BASE}/auth/request-code`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ platform, platform_user: platformUser }),
+  });
+  if (!res.ok) throw new Error('Failed to request code');
+  return res.json();
+}
+
+export async function verifyCode(code: string) {
+  const res = await apiFetch(`${API_BASE}/auth/verify-code`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+  });
+  if (!res.ok) throw new Error('Invalid or expired code');
+  return res.json();
+}
+
+export async function logout() {
+  const res = await apiFetch(`${API_BASE}/auth/logout`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to logout');
+  return res.json();
+}
+
+export async function fetchSessions(limit = 50) {
+  const res = await apiFetch(`${API_BASE}/sessions?limit=${limit}`);
+  if (!res.ok) throw new Error('Failed to fetch sessions');
+  return res.json();
+}
+
+export async function fetchTurns(sessionId: string) {
+  const res = await apiFetch(`${API_BASE}/sessions/${sessionId}/turns`);
+  if (!res.ok) throw new Error('Failed to fetch turns');
+  return res.json();
+}
+
+export async function fetchProposals(status = 'pending') {
+  const qs = status ? `?status=${status}` : '';
+  const res = await apiFetch(`${API_BASE}/proposals${qs}`);
+  if (!res.ok) throw new Error('Failed to fetch proposals');
+  return res.json();
+}
+
+export async function acceptProposal(id: string, note?: string) {
+  return apiFetch(`${API_BASE}/proposals/${id}/accept`, {
+    method: 'POST',
+    body: JSON.stringify({ note }),
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+export async function rejectProposal(id: string, note: string) {
+  return apiFetch(`${API_BASE}/proposals/${id}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ note }),
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+export async function deferProposal(id: string) {
+  return apiFetch(`${API_BASE}/proposals/${id}/defer`, { method: 'POST' });
+}
+
+export async function fetchStyleProfile(platform: string, user: string) {
+  const res = await apiFetch(`${API_BASE}/style/${encodeURIComponent(platform)}/${encodeURIComponent(user)}`);
+  if (!res.ok) throw new Error('Failed to fetch style');
+  return res.json();
+}
+
+export async function deleteStyleMetric(platform: string, user: string, metric: string) {
+  return apiFetch(`${API_BASE}/style/${encodeURIComponent(platform)}/${encodeURIComponent(user)}/${encodeURIComponent(metric)}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function fetchSchedulerTasks() {
+  const res = await apiFetch(`${API_BASE}/scheduler/tasks`);
+  if (!res.ok) throw new Error('Failed to fetch tasks');
+  return res.json();
+}
+
+export async function createTask(payload: { prompt: string; description?: string; cron_expression?: string; enabled?: boolean; session_id?: string }) {
+  const res = await apiFetch(`${API_BASE}/scheduler/tasks`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error('Failed to create task');
+  return res.json();
+}
+
+export async function updateTask(id: string, payload: Partial<{ prompt: string; description: string; cron_expression: string; enabled: boolean }>) {
+  const res = await apiFetch(`${API_BASE}/scheduler/tasks/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error('Failed to update task');
+  return res.json();
+}
+
+export async function deleteTask(id: string) {
+  const res = await apiFetch(`${API_BASE}/scheduler/tasks/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete task');
+  return res.json() as Promise<{ deleted: boolean }>;
+}
+
+export async function runTaskNow(id: string) {
+  return apiFetch(`${API_BASE}/scheduler/tasks/${id}/run`, { method: 'POST' });
+}
+
+export async function runDoctor() {
+  const res = await apiFetch(`${API_BASE}/doctor`);
+  if (!res.ok) throw new Error('Doctor check failed');
+  return res.json();
+}
+
+export async function runAudit() {
+  const res = await apiFetch(`${API_BASE}/audit`);
+  if (!res.ok) throw new Error('Audit failed');
+  return res.json();
+}
+
+export async function fetchEgress(domain?: string, since?: string) {
+  const params = new URLSearchParams();
+  if (domain) params.set('domain', domain);
+  if (since) params.set('since', since);
+  const res = await apiFetch(`${API_BASE}/egress?${params}`);
+  if (!res.ok) throw new Error('Failed to fetch egress');
+  return res.json();
+}
+
+export async function fetchConfig() {
+  const res = await apiFetch(`${API_BASE}/config`);
+  if (!res.ok) throw new Error('Failed to fetch config');
+  return res.json();
+}
+
+export async function fetchConfigSchema() {
+  const res = await apiFetch(`${API_BASE}/config/schema`);
+  if (!res.ok) throw new Error('Failed to fetch config schema');
+  return res.json();
+}
+
+export async function saveConfig(config: object) {
+  return apiFetch(`${API_BASE}/config`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+}
+
+export interface Workflow {
+  id: string;
+  name: string;
+  trigger_type: string;
+  trigger_config: Record<string, unknown>;
+  last_edited_at: string;
+  active_version_id: string | null;
+  webhook_url?: string;
+  secret?: string;
+  last_execution_status?: string;
+  last_execution_at?: string;
+}
+
+export interface WorkflowVersion {
+  id: string;
+  workflow_id: string;
+  version_number: number;
+  nodes: WorkflowNode[];
+  edges: WorkflowEdge[];
+  created_at: string;
+  activated_at: string | null;
+}
+
+export interface WorkflowNode {
+  id: string;
+  type: string;
+  position: { x: number; y: number };
+  data: Record<string, unknown>;
+}
+
+export interface WorkflowEdge {
+  id: string;
+  source: string;
+  target: string;
+  type?: string;
+  sourceHandle?: string;
+  targetHandle?: string;
+}
+
+export async function fetchWorkflows() {
+  const res = await apiFetch(`${API_BASE}/workflows`);
+  if (!res.ok) throw new Error('Failed to fetch workflows');
+  return res.json() as Promise<{ workflows: Workflow[] }>;
+}
+
+export async function createWorkflow(name: string, triggerType = 'manual') {
+  const res = await apiFetch(`${API_BASE}/workflows`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, trigger_type: triggerType }),
+  });
+  if (!res.ok) throw new Error('Failed to create workflow');
+  return res.json() as Promise<Workflow>;
+}
+
+export async function fetchWorkflow(id: string) {
+  const res = await apiFetch(`${API_BASE}/workflows/${id}`);
+  if (!res.ok) throw new Error('Failed to fetch workflow');
+  return res.json() as Promise<Workflow>;
+}
+
+export async function updateWorkflow(id: string, updates: Partial<Workflow>) {
+  const res = await apiFetch(`${API_BASE}/workflows/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) throw new Error('Failed to update workflow');
+  return res.json() as Promise<Workflow>;
+}
+
+export async function deleteWorkflow(id: string) {
+  const res = await apiFetch(`${API_BASE}/workflows/${id}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error('Failed to delete workflow');
+  return res.json() as Promise<{ deleted: boolean }>;
+}
+
+export async function fetchWorkflowVersions(id: string) {
+  const res = await apiFetch(`${API_BASE}/workflows/${id}/versions`);
+  if (!res.ok) throw new Error('Failed to fetch workflow versions');
+  return res.json() as Promise<{ versions: WorkflowVersion[] }>;
+}
+
+export async function saveWorkflowVersion(id: string, nodes: WorkflowNode[], edges: WorkflowEdge[]) {
+  const res = await apiFetch(`${API_BASE}/workflows/${id}/versions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nodes, edges }),
+  });
+  if (!res.ok) throw new Error('Failed to save workflow version');
+  return res.json() as Promise<WorkflowVersion>;
+}
+
+export async function activateWorkflowVersion(workflowId: string, versionId: string) {
+  const res = await apiFetch(`${API_BASE}/workflows/${workflowId}/versions/${versionId}/activate`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error('Failed to activate workflow version');
+  return res.json() as Promise<{ activated: boolean }>;
+}
+
+export interface NodeResult {
+  node_id: string;
+  status: string;
+  elapsed_ms: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  output: unknown;
+  error?: string;
+}
+
+export interface ExecutionRecord {
+  id: string;
+  workflow_id: string;
+  version: number;
+  status: string;
+  trigger_payload: Record<string, unknown>;
+  node_results: NodeResult[];
+  total_elapsed_ms: number;
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  created_at: string;
+}
+
+export interface ExecutionResult {
+  status: string;
+  total_elapsed_ms: number;
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  node_results: NodeResult[];
+  outputs: Record<string, unknown>;
+}
+
+export async function testRunWorkflow(id: string, payload?: Record<string, unknown>) {
+  const res = await apiFetch(`${API_BASE}/workflows/${id}/test-run`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: payload ? JSON.stringify(payload) : undefined,
+  });
+  if (!res.ok) throw new Error('Failed to test run workflow');
+  return res.json() as Promise<ExecutionResult>;
+}
+
+export async function fetchExecutions(workflowId: string, limit = 50) {
+  const res = await apiFetch(`${API_BASE}/workflows/${workflowId}/executions?limit=${limit}`);
+  if (!res.ok) throw new Error('Failed to fetch executions');
+  return res.json() as Promise<{ executions: ExecutionRecord[] }>;
+}
+
+export interface ToolSchema {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+  requires_confirmation: boolean;
+  tags: string[];
+}
+
+export async function fetchTools() {
+  const res = await apiFetch(`${API_BASE}/tools`);
+  if (!res.ok) throw new Error('Failed to fetch tools');
+  return res.json() as Promise<{ tools: ToolSchema[] }>;
+}
+
+
+export async function fetchDashboard() {
+  const res = await apiFetch(`${API_BASE}/dashboard`);
+  if (!res.ok) throw new Error('Failed to fetch dashboard');
+  return res.json() as Promise<{
+    active_workflow_count: number;
+    recent_executions: ExecutionRecord[];
+    pending_proposal_count: number;
+    platforms_connected: string[];
+  }>;
+}
+
+// Users
+export async function fetchUsers() {
+  const res = await apiFetch(`${API_BASE}/users`);
+  if (!res.ok) throw new Error('Failed to fetch users');
+  return res.json() as Promise<{ users: Array<{ id: string; display_name: string; role: string; trust_preset: string | null; notes: string | null; created_at: string; identity_count: number; room_count: number }> }>;
+}
+
+export async function fetchUser(userId: string) {
+  const res = await apiFetch(`${API_BASE}/users/${userId}`);
+  if (!res.ok) throw new Error('Failed to fetch user');
+  return res.json() as Promise<{ id: string; display_name: string; role: string; trust_preset: string | null; notes: string | null; created_at: string; identities: Array<{ platform: string; platform_user: string; verified: boolean }> }>;
+}
+
+export async function createUser(fields: { display_name: string; role: string; notes?: string; trust_preset?: string }) {
+  const res = await apiFetch(`${API_BASE}/users`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) throw new Error('Failed to create user');
+  return res.json() as Promise<{ id: string; display_name: string; role: string; trust_preset: string | null; notes: string | null; created_at: string }>;
+}
+
+export async function updateUser(userId: string, fields: object) {
+  const res = await apiFetch(`${API_BASE}/users/${userId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) throw new Error('Failed to update user');
+  return res.json();
+}
+
+export async function deleteUser(userId: string) {
+  const res = await apiFetch(`${API_BASE}/users/${userId}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete user');
+  return res.json() as Promise<{ deleted: boolean }>;
+}
+
+export async function addIdentity(userId: string, platform: string, platformUser: string) {
+  const res = await apiFetch(`${API_BASE}/users/${userId}/identities`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ platform, platform_user: platformUser }),
+  });
+  if (!res.ok) throw new Error('Failed to add identity');
+  return res.json();
+}
+
+export async function removeIdentity(userId: string, platform: string, platformUser: string) {
+  const res = await apiFetch(`${API_BASE}/users/${userId}/identities/${platform}/${platformUser}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error('Failed to remove identity');
+  return res.json();
+}
+
+// Rooms
+export async function fetchRooms() {
+  const res = await apiFetch(`${API_BASE}/rooms`);
+  if (!res.ok) throw new Error('Failed to fetch rooms');
+  return res.json() as Promise<{ rooms: Array<{ id: string; platform: string; platform_room_id: string; display_name: string | null; created_at: string }> }>;
+}
+
+export async function fetchRoom(roomId: string) {
+  const res = await apiFetch(`${API_BASE}/rooms/${roomId}`);
+  if (!res.ok) throw new Error('Failed to fetch room');
+  return res.json();
+}
+
+// Memories
+export async function fetchMemories(limit = 20) {
+  const res = await apiFetch(`${API_BASE}/memory?limit=${limit}`);
+  if (!res.ok) throw new Error('Failed to fetch memories');
+  return res.json();
+}
+
+export async function fetchMemoriesForUser(platform: string, platformUser: string, limit = 20) {
+  const res = await apiFetch(`${API_BASE}/memory?platform=${encodeURIComponent(platform)}&platform_user=${encodeURIComponent(platformUser)}&limit=${limit}`);
+  if (!res.ok) throw new Error('Failed to fetch memories');
+  return res.json();
+}
+
+export async function deleteMemory(memoryId: string) {
+  const res = await apiFetch(`${API_BASE}/memory/${encodeURIComponent(memoryId)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error('Failed to delete memory');
+  return res.json();
+}
+
+// Sessions
+export async function fetchUserSessions(platform: string, platformUser: string, limit = 10) {
+  const res = await apiFetch(`${API_BASE}/sessions?platform=${encodeURIComponent(platform)}&platform_user=${encodeURIComponent(platformUser)}&limit=${limit}`);
+  if (!res.ok) throw new Error('Failed to fetch sessions');
+  return res.json();
+}
+
+export async function fetchSessionMessages(sessionId: string) {
+  const res = await apiFetch(`${API_BASE}/sessions/${encodeURIComponent(sessionId)}/messages`);
+  if (!res.ok) throw new Error('Failed to fetch session messages');
+  return res.json() as Promise<{
+    session: { id: string; platform: string; platform_user: string; started_at: string | null };
+    turns: Array<{ id: string; state: string | null; started_at: string | null; iterations: number; error: string | null }>;
+    messages: Array<{ role: string; content: string; created_at: string | null }>;
+  }>;
+}
+
+// Errors
+export interface ErrorItem {
+  id: string;
+  type: 'workflow_execution' | 'scheduler_task' | 'session_turn';
+  source_id: string;
+  source_name: string;
+  message: string;
+  created_at: string;
+  status: 'unresolved' | 'resolved' | 'ignored';
+}
+
+export async function fetchErrors() {
+  const res = await apiFetch(`${API_BASE}/errors`);
+  if (!res.ok) throw new Error('Failed to fetch errors');
+  return res.json() as Promise<{ errors: ErrorItem[] }>;
+}
+
+export async function resolveError(id: string) {
+  const res = await apiFetch(`${API_BASE}/errors/${encodeURIComponent(id)}/resolve`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to resolve error');
+  return res.json();
+}
+
+export async function ignoreError(id: string) {
+  const res = await apiFetch(`${API_BASE}/errors/${encodeURIComponent(id)}/ignore`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to ignore error');
+  return res.json();
+}
+
+export async function debugError(id: string) {
+  const res = await apiFetch(`${API_BASE}/errors/${encodeURIComponent(id)}/debug`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to fetch debug prompt');
+  return res.json() as Promise<{ prompt: string }>;
+}
+
+// Handoffs
+export async function fetchHandoffs(userId: string) {
+  const res = await apiFetch(`${API_BASE}/users/${encodeURIComponent(userId)}/handoffs`);
+  if (!res.ok) throw new Error('Failed to fetch handoffs');
+  return res.json() as Promise<{ handoffs: Array<{ session_id: string; summary: string; created_at: string }> }>;
+}

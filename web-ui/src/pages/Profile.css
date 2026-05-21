@@ -1,0 +1,102 @@
+.profile-page {
+  padding: var(--space-4);
+}
+
+.profile-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.profile-name-input {
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  border: var(--border-thin);
+  font-size: var(--font-size-xl);
+  font-weight: bold;
+  flex: 1;
+  min-width: 200px;
+}
+
+.profile-role-badge {
+  display: inline-block;
+  padding: var(--space-1) var(--space-2);
+  border-radius: 999px;
+  font-size: var(--font-size-xs);
+  font-weight: bold;
+  color: var(--color-bg);
+  text-transform: uppercase;
+}
+
+.profile-trust-badge {
+  display: inline-block;
+  padding: var(--space-1) var(--space-2);
+  border-radius: 999px;
+  font-size: var(--font-size-xs);
+  font-weight: bold;
+  color: #fff;
+  background: var(--color-primary);
+}
+
+.profile-info-row {
+  margin-bottom: var(--space-2);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.profile-notes-textarea {
+  width: 100%;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  border: var(--border-thin);
+  font-family: inherit;
+  margin-bottom: var(--space-2);
+}
+
+.profile-identity-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: var(--border-subtle);
+  background: var(--color-surface);
+}
+
+.profile-identity-info {
+  font-size: var(--font-size-sm);
+}
+
+.profile-identity-verified {
+  color: var(--color-success);
+  font-size: var(--font-size-xs);
+  font-weight: bold;
+}
+
+.profile-add-identity-form {
+  margin-top: var(--space-4);
+  padding: var(--space-4);
+  border: var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
+.profile-room-row {
+  padding: var(--space-2) 0;
+  border-bottom: var(--border-subtle);
+  font-size: var(--font-size-sm);
+}
+
+.profile-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-6);
+}
+
+@media (min-width: 1024px) {
+  .profile-layout {
+    grid-template-columns: 1fr 1fr;
+  }
+}

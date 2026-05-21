@@ -207,7 +207,7 @@ def make_delegate_task_tool(
                     tool_calls_made=turn.tool_calls_made,
                 )
 
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 duration = (utcnow() - start_time).total_seconds()
                 # On timeout we don't have a completed Turn to inspect, so
                 # artifact_refs stays empty. Any artifacts the subagent did

@@ -1,0 +1,110 @@
+"""Implementation for `hestia serve` — run all configured platform adapters and web dashboard."""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import logging
+from typing import Any
+
+import click
+import uvicorn
+
+from hestia.app import AppContext
+from hestia.config import HestiaConfig
+from hestia.scheduler.cleanup import run_error_resolution_cleanup
+
+logger = logging.getLogger(__name__)
+
+
+async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
+    """Run Hestia with all configured platform adapters and the web dashboard."""
+    await app.bootstrap_db()
+    await app.start_trigger_registry()
+    tasks: list[asyncio.Task[Any]] = []
+    original_close = app.inference.close
+
+    async def _noop_close() -> None:
+        pass
+
+    # Prevent individual platform runners from closing inference;
+    # we will close it centrally after everything stops.
+    app.inference.close = _noop_close  # type: ignore[method-assign]
+
+    adapters: dict[str, Any] = {}
+
+    try:
+        if config.telegram.bot_token:
+            from hestia.platforms.runners import run_telegram
+            from hestia.platforms.telegram_adapter import TelegramAdapter
+
+            telegram_adapter = TelegramAdapter(config.telegram)
+            adapters["telegram"] = telegram_adapter
+            tasks.append(asyncio.create_task(run_telegram(app, config, adapter=telegram_adapter)))
+
+        if config.matrix.access_token:
+            from hestia.platforms.matrix_adapter import MatrixAdapter
+            from hestia.platforms.runners import run_matrix
+
+            matrix_adapter = MatrixAdapter(config.matrix)
+            adapters["matrix"] = matrix_adapter
+            tasks.append(asyncio.create_task(run_matrix(app, config, adapter=matrix_adapter)))
+
+        if config.web.enabled:
+            from hestia.web.api import create_web_app
+            from hestia.web.auth import AuthManager, add_auth_middleware
+            from hestia.web.context import WebContext, set_web_context
+
+            web_app = create_web_app()
+            auth_manager = AuthManager(
+                adapters=adapters, config=config.web, user_store=app.user_store
+            )
+            set_web_context(
+                WebContext(
+                    session_store=app.session_store,
+                    proposal_store=app.proposal_store,
+                    style_store=app.style_store,
+                    scheduler_store=app.scheduler_store,
+                    trace_store=app.trace_store,
+                    failure_store=app.failure_store,
+                    workflow_store=app.workflow_store,
+                    execution_store=app.execution_store,
+                    error_resolution_store=app.error_resolution_store,
+                    app=app,
+                    auth_manager=auth_manager,
+                    trigger_registry=app.trigger_registry,
+                    user_store=app.user_store,
+                )
+            )
+            add_auth_middleware(web_app, auth_manager, config.web)
+            uvicorn_config = uvicorn.Config(
+                web_app,
+                host=config.web.host,
+                port=config.web.port,
+                log_level="info",
+            )
+            server = uvicorn.Server(uvicorn_config)
+            click.echo(
+                f"Dashboard available at http://{config.web.host}:{config.web.port}"
+            )
+            tasks.append(asyncio.create_task(server.serve()))
+            tasks.append(
+                asyncio.create_task(
+                    run_error_resolution_cleanup(app.error_resolution_store)
+                )
+            )
+
+        if not tasks:
+            click.echo("No platforms or web server configured. Exiting.")
+            return
+
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.gather(*tasks)
+    finally:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        app.inference.close = original_close  # type: ignore[method-assign]
+        await app.inference.close()

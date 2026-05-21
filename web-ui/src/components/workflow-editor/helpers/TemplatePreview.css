@@ -1,0 +1,25 @@
+.template-preview {
+  margin-top: var(--space-2);
+}
+
+.template-preview__label {
+  font-size: var(--font-size-sm);
+  margin-bottom: var(--space-1);
+}
+
+.template-preview__count {
+  font-size: var(--font-size-xs);
+  margin-top: var(--space-1);
+}
+
+.template-preview__count--danger {
+  color: var(--color-danger);
+}
+
+.template-preview__count--warning {
+  color: var(--color-warning);
+}
+
+.template-preview__count--normal {
+  color: var(--color-text-secondary);
+}

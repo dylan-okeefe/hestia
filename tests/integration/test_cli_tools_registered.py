@@ -48,3 +48,12 @@ class TestCliToolsRegistered:
             assert captured_registry is not None
             assert "read_artifact" in captured_registry.list_names()
             assert "delete_memory" in captured_registry.list_names()
+            # L103: proposal and style tools
+            assert "list_proposals" in captured_registry.list_names()
+            assert "show_proposal" in captured_registry.list_names()
+            assert "accept_proposal" in captured_registry.list_names()
+            assert "reject_proposal" in captured_registry.list_names()
+            assert "defer_proposal" in captured_registry.list_names()
+            assert "show_style_profile" in captured_registry.list_names()
+            assert "reset_style_metric" in captured_registry.list_names()
+            assert "reset_style_profile" in captured_registry.list_names()

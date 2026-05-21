@@ -1,0 +1,24 @@
+.egress-log__filters {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.egress-log__table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.egress-log__table thead tr {
+  border-bottom: 2px solid var(--color-border-subtle);
+  text-align: left;
+}
+
+.egress-log__table tbody tr {
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.egress-log__url {
+  word-break: break-all;
+}

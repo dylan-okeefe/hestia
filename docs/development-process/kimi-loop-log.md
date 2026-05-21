@@ -6,8 +6,575 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-05-20 — L187–L191 Complete (Post-Review Fixes + Error Persistence + Backend Quality + Component Infrastructure + Config Overhaul)
+
+**Outcome:** All five loops from the post-UI-rewrite review are complete. L187 was done by the runtime Hestia instance. L188–L191 were done manually, with significant branch-interference challenges from the runtime worktree auto-committing to `feature/l187-post-review-ui-fixes-and-polish`.
+
+### L187 — Post-Review UI Fixes & Polish (runtime agent)
+**Branch:** `feature/l187-post-review-ui-fixes-and-polish` (8 commits)
+- SessionDetail: render message content (user + assistant messages)
+- ErrorDashboard: CSS badge classes replacing inline styles
+- AdminUsers: PlatformDropdown for identity platform input
+- AdminUsers: confirm dialog on self-role-change away from admin
+- alert--danger: CSS variables replacing hardcoded colors
+- ThemeToggle: SVG icons replacing emoji
+- utilities.css: deduplicate `.mt-2`
+- useTheme.ts: `localStorage` guard for SSR safety
+
+**Quality gates:** build ✅, 128 vitest tests ✅, 10 inline styles (under 20) ✅
+
+### L188 — Error Persistence Backend
+**Branch:** `feature/l188-error-persistence-backend` (1 clean commit)
+- Alembic migration: `error_resolutions` table (`error_id` PK, `status`, `resolved_at`, `resolved_by`)
+- `ErrorResolutionStore`: `get_status`, `set_status` (UPSERT), `list_statuses`, `clear_old`
+- Wired into `errors.py`: `list_errors` batch-fetches statuses, `resolve_error`/`ignore_error` persist to SQLite
+- `app.py` creates store instance; `commands/serve.py` passes it to WebContext
+- `scheduler/cleanup.py`: background task purges resolutions older than 30 days
+- Tests updated for new WebContext field
+
+**Quality gates:** 164 pytest tests ✅, ruff ✅, mypy ✅
+
+### L189 — Backend Quality & Performance
+**Branch:** `feature/l189-backend-quality-and-performance` (1 commit, based on L188)
+- `memory.py`: `_memory_to_dict(mem: Any)` → `_memory_to_dict(mem: Memory)` with null guard on `RequireOwner`
+- `errors.py`: parallelized independent fetches (`list_failed`, `list_workflows`, `list_tasks_with_errors`, `list_turns_with_errors`) via `asyncio.gather()`
+
+**Quality gates:** 164 pytest tests ✅, ruff ✅, mypy ✅
+
+### L190 — Frontend Component Infrastructure
+**Branch:** `feature/l190-frontend-component-infrastructure` (1 commit)
+- `Button.tsx` + `Button.css`: reusable button with primary/danger/ghost/outline/link variants, sm/md/lg sizes, loading spinner, icon support
+- `ToastContainer.tsx` + `useToast.tsx`: toast notification system with auto-dismiss, success/error/warning/info types
+- `FormField.tsx` + `FormField.css`: wrapper for label + input + error display
+- Wired Button into AdminUsers modal and ErrorDashboard action buttons
+- Wired toasts into AdminUsers save/delete and ErrorDashboard resolve/ignore
+
+**Quality gates:** build ✅, 128 vitest tests ✅, 12 inline styles (under 20) ✅
+
+### L191 — Config Overhaul & Rooms Migration
+**Branch:** `feature/l191-config-overhaul-and-rooms-migration` (2 commits)
+- `ConfigForm.tsx`: search/filter input matching section labels, key labels, and descriptions; human-readable section headers; description text below fields
+- `labels.ts`: `CONFIG_KEY_DESCRIPTIONS` with ~30 descriptions for commonly changed keys
+- `rooms.py`: `cmd_migrate_rooms` with `--auto-discover` flag; calls Telegram Bot API `getUpdates` to find group/supergroup chats; registers each as a room with display_name
+
+**Quality gates:** build ✅, 128 vitest tests ✅, ruff ✅, mypy ✅, 67 pytest tests ✅
+
+---
+
+## 2026-05-18 — L186 Complete (Dark Mode)
+
+**Outcome:** Added complete dark mode to the web UI. Dark color tokens, theme provider with light/dark/system options, localStorage persistence, OS preference listener, theme toggle in nav, and per-component dark mode fixes. All 7 remediation loops from the comprehensive audit are now complete.
+
+**Changes:**
+- `web-ui/src/styles/variables.css` — `[data-theme="dark"]` token block
+- `web-ui/src/hooks/useTheme.ts` — theme state, persistence, OS change listener
+- `web-ui/src/components/ThemeToggle.tsx` + `.css` — toggle in sidebar and mobile overlay
+- 16 CSS files — replaced hardcoded grayscale colors with CSS variables
+- `ToastContainer.css` — toast styles with left-border variants
+- `useTheme.test.ts` — 4 tests
+
+**Quality gate:**
+- `npm run build`: **0 errors**
+- `npx vitest run`: **128 passed, 25 test files**
+
+**Branch:** `feature/l186-dark-mode`
+
+---
+
+## 2026-05-18 — L185 Complete (Responsive Design)
+
+**Outcome:** Made the entire web UI usable on mobile (< 768px). Sidebar → hamburger menu, tables → cards, two-column layouts → stacked, modals → full-screen, workflow canvas → scrollable, dashboard → adaptive grid.
+
+**Changes:**
+- `web-ui/src/styles/responsive.css` — breakpoint variables, visibility helpers
+- `web-ui/src/hooks/useMediaQuery.ts` — viewport detection hook
+- `web-ui/src/components/layout/StickyNav.tsx` — desktop sidebar / mobile hamburger overlay
+- `web-ui/src/components/ResponsiveTable.css` — card-based mobile tables
+- `web-ui/src/components/Modal.css` — responsive modals
+- Responsive grids for Profile, Knowledge, SessionDetail, Login, Dashboard, Workflows
+
+**Quality gate:**
+- `npm run build`: **0 errors**
+- `npx vitest run`: **124 passed, 24 test files**
+
+**Branch:** `feature/l185-responsive-design`
+
+---
+
+## 2026-05-18 — L184 Complete (Shared CSS System)
+
+**Outcome:** Replaced 680+ inline styles with a shared CSS system. Created `variables.css`, `utilities.css`, `global.css`, and per-component CSS files. Inline style count reduced from 680+ to 12. `NodePropertiesPanel.tsx` reduced from 749 to 477 lines with 6 helpers extracted.
+
+**Changes:**
+- `web-ui/src/styles/` — `variables.css`, `utilities.css`, `global.css`, `components.css`
+- `web-ui/src/components/workflow-editor/helpers/` — 6 extracted helper components
+- Per-page and per-component CSS files across the entire frontend
+- `tests/smoke/inline-styles.test.ts` — regression guard
+- `AGENTS.md` — no-inline-styles convention
+
+**Quality gate:**
+- `npm run build`: **0 errors**
+- `npx vitest run`: **118 passed, 23 test files**
+- Inline `style={{` count: **12** (target: under 20)
+
+**Branch:** `feature/l184-shared-css`
+
+---
+
+## 2026-05-18 — L183 Complete (User-Facing Text Extraction)
+
+**Outcome:** Extracted all user-facing strings from 12 page components and 3 shared components into a centralized `web-ui/src/lib/text.ts` catalog (443 lines, 16 feature areas). Updated 13 test files to assert against catalog values.
+
+**Changes:**
+- `web-ui/src/lib/text.ts` — new hierarchical `TEXT` catalog with `t()` helper
+- `web-ui/src/lib/text.test.ts` — recursive completeness and consistency validation
+- All pages and shared components now import `TEXT` instead of hardcoding strings
+
+**Quality gate:**
+- `npm run build`: **0 errors**
+- `npx vitest run`: **117 passed, 22 test files**
+
+**Branch:** `feature/l183-text-extraction`
+
+---
+
+## 2026-05-18 — L182 Complete (Backend Bug Fixes & Cleanup)
+
+**Outcome:** Fixed six backend bugs: `update_user` null guard preventing field clearing, raw SQL in error dashboard, session messages endpoint returning turn metadata instead of messages, unbounded in-memory error state, Telegram `int(platform_user)` crash on non-numeric IDs, and timeout coercion preventing 0-second timeouts.
+
+**Changes:**
+- `src/hestia/persistence/users.py` — removed `v is not None` guard from `update_user` and `update_room`
+- `src/hestia/persistence/sessions.py` — added `get_turn_messages()` method
+- `src/hestia/web/routes/errors.py` — replaced raw SQL with `get_turn_messages()`; capped `_resolved_ids`/`_ignored_ids` at 10,000
+- `src/hestia/web/routes/sessions.py` — `get_session_messages` now returns actual `messages` array
+- `src/hestia/workflows/nodes/send_message.py` — validates `timeout_seconds >= 0`; validates Telegram IDs are numeric
+- `src/hestia/platforms/notifier.py` — graceful `ValueError` on non-numeric Telegram chat IDs
+- `web-ui/src/components/workflow-editor/NodePropertiesPanel.tsx` — `??` instead of `||` for timeout
+- Tests for all fixes
+
+**Quality gate:** pytest 94 passed, mypy 0 new, ruff 0 new issues.
+**Branch:** `feature/l182-backend-bug-fixes`
+
+---
+
+## 2026-05-18 — L181 Complete (Performance & Resource Cleanup)
+
+**Outcome:** Fixed N+1 queries in `list_users` and `list_sessions` via batch methods, added TTL cleanup to `WorkflowResponseStore`, cached Telegram Bot to prevent connection leaks, and fixed Matrix `txn_id` collision bug.
+
+**Changes:**
+- `src/hestia/persistence/users.py` — `get_identities_for_users()`, `get_rooms_for_users()` batch methods
+- `src/hestia/persistence/sessions.py` — `count_turns_for_sessions()` batch method
+- `src/hestia/web/routes/users.py` / `sessions.py` — use batch methods
+- `src/hestia/workflows/response_store.py` — `timeout_seconds`, lazy sweep task, `stop()`
+- `src/hestia/platforms/notifier.py` — cached Bot, `close()`, UUID `txn_id`
+- Tests for all fixes
+
+**Quality gate:** pytest 61 passed, mypy 0 new, ruff 0 new issues.
+**Branch:** `feature/l181-performance-cleanup`
+
+---
+
+## 2026-05-18 — L180 Complete (Security & Authorization Hardening)
+
+**Outcome:** Closed critical authorization gaps where any authenticated user could read all sessions, memories, errors, and manage any scheduled task. Added per-user ownership checks, admin-only error dashboard, Pydantic validation for scheduler endpoints, and shared auth dependency helpers.
+
+**Changes:**
+- `src/hestia/web/dependencies.py` — new shared auth dependencies (`require_admin`, `get_current_platform_user`, `RequireOwner`)
+- `src/hestia/web/routes/sessions.py` — per-user filtering; ownership checks
+- `src/hestia/web/routes/memory.py` — per-user filtering; ownership check on delete
+- `src/hestia/web/routes/scheduler.py` — Pydantic `TaskCreate`/`TaskUpdate` with `croniter` validation; ownership checks
+- `src/hestia/web/routes/errors.py` — admin-only access
+- `src/hestia/memory/store.py` — added `get(memory_id)`
+- Tests: `tests/unit/test_web_authz.py` (7 tests)
+
+**Quality gate:** pytest 110 passed, mypy 0 new, ruff 0 new issues.
+**Branch:** `feature/l180-security-hardening`
+
+---
+
+## 2026-05-10 — L168 Complete (Variable Interpolation & Webhook Route Extraction)
+
+**Outcome:** Built `{{variable}}` interpolation engine, wired it into SendMessageNode and LLMDecisionNode, extracted webhook endpoint from workflows.py into dedicated webhooks.py router, and added public `is_rate_limited()` wrapper to AuthManager. UI live preview deferred as optional.
+
+**Changes:**
+- `src/hestia/workflows/interpolation.py` — new interpolation engine with `VAR_RE` and `interpolate(template, context)`
+- `tests/unit/workflows/test_interpolation.py` — 7 unit tests covering simple keys, nested fields, missing keys, non-dict intermediates, None values, multiple placeholders, and whitespace tolerance
+- `src/hestia/workflows/nodes/send_message.py` — interpolates resolved `text` with `inputs` dict before sending
+- `src/hestia/workflows/nodes/llm_decision.py` — interpolates `prompt_template` with `inputs` dict before building LLM prompt
+- `src/hestia/web/routes/webhooks.py` — new router module containing `receive_webhook` (POST `/api/webhooks/{endpoint}`)
+- `src/hestia/web/routes/workflows.py` — removed `receive_webhook` and unused `hashlib`, `hmac`, `json`, `datetime` imports
+- `src/hestia/web/api.py` — registered `webhooks.router` with `/api` prefix
+- `src/hestia/web/auth.py` — added `is_rate_limited(self, ip: str) -> bool` public method
+- `src/hestia/web/routes/auth.py` — verify-code route now uses public `is_rate_limited()`
+- `tests/unit/test_web_auth.py` — rate-limit boundary tests updated to use public method
+- `docs/handoffs/L168-variable-interpolation-and-webhook-extraction-handoff.md` — new handoff
+
+**Quality gate:**
+- Interpolation tests: 7 passed
+- Webhook + web route tests: 71 passed
+- mypy: clean on all 8 changed source files (1 pre-existing error in browser_get.py unchanged)
+- ruff: clean on all changed files (2 pre-existing issues in untouched auth lines unchanged)
+- Pre-existing test failures unchanged (`test_search_web_duckduckgo.py`, `test_web_auth.py` fixture errors, `test_sessions.py` errors)
+
+**Branch:** `feature/l168-variable-interpolation`
+
+---
+
+## 2026-05-11 — L167 Complete (Reasoning Guardrails & Parser Cleanup)
+
+**Outcome:** Refactored the 146-line XML fallback parser into three named functions, added an orchestrator guardrail that triggers when the model reasons >1500 chars without acting, verified MemoryStore user scoping, and documented the context_length / llama-server relationship.
+
+**Changes:**
+- `src/hestia/core/inference.py` — split `_extract_tool_calls_from_text` into `_parse_json_tool_calls`, `_parse_adhoc_xml_tool_calls`, `_parse_glm_xml_tool_calls`; moved `_is_valid_url` to module level; fixed `args` variable reuse
+- `src/hestia/orchestrator/execution.py` — added reasoning-length guardrail after assistant message storage; sends 🛑 nudge and continues loop when reasoning >1500 chars with no tool_calls or content
+- `config.runtime.py` — updated comment to document that `context_length=32768` matches `--ctx-size 32768` and that `--parallel 4` yields 8192 tokens per slot
+- `docs/handoffs/L167-reasoning-guardrails-and-parser-cleanup-handoff.md` — new handoff
+
+**Quality gate:** 51 passed in targeted unit tests (inference client, memory store, memory user scope, execution). mypy clean on changed files. ruff clean on changed files. Pre-existing test failures unchanged.
+
+**Branch:** `feature/l167-reasoning-guardrails`
+
+---
+
+## 2026-05-11 — L166 Complete (API Tools Endpoint & Standalone Job Scraper)
+
+**Outcome:** Added `/api/tools` backend endpoint and wired the workflow editor UI to it; built a deterministic standalone job scraper with systemd scheduling.
+
+**Changes:**
+- `src/hestia/web/routes/tools.py` — new `GET /api/tools` route returning registered tool schemas
+- `src/hestia/web/api.py` — included `tools.router`
+- `web-ui/src/api/client.ts` — `fetchTools()` now calls backend and returns `ToolSchema[]`
+- `web-ui/src/hooks/useWorkflowEditor.ts` — maps schema objects to tool name strings for dropdown compatibility
+- `scripts/scrape_jobs.py` — standalone scraper for Built In Boston + ReactJobs.io senior React/frontend remote roles
+- `deploy/hestia-job-scraper.service` + `.timer` — systemd daily schedule at 9 AM
+- `tests/unit/test_web_routes.py` — `TestToolsRoutes` (2 tests)
+- `docs/handoffs/L166-api-tools-endpoint-and-job-scraper-handoff.md`
+
+**Quality gate:** `TestToolsRoutes` 2 passed. `mypy scripts/scrape_jobs.py` clean. `ruff check` clean on changed files. `tsc --noEmit` clean. Pre-existing test failures unchanged.
+
+**Branch:** `feature/l166-api-tools-and-job-scraper`
+
+---
+
+## 2026-05-11 — L165 Complete (Session Handoff Hardening)
+
+**Outcome:** Fixed CRIT-2 issue where handoff content was silently discarded after the first turn. Changed handoff injection from `role="system"` to `role="user"` with `[Previous session context]` prefix, and updated `ContextBuilder` to treat handoff messages as protected context placed before real user messages.
+
+**Changes:**
+- `src/hestia/persistence/sessions.py` — handoff synthetic message now uses `role="user"`; prefix changed to `[Previous session context]`
+- `src/hestia/context/builder.py` — extracts handoff messages from history, places them in `protected_top` after system message, excludes them from normal history token budget
+- `tests/unit/test_context_builder.py` — added `TestHandoffMessages` (4 tests verifying placement, survival across turns, budget exclusion, and first-user protection)
+- `tests/unit/test_session_store_turns.py` — updated existing handoff injection test to expect `role="user"`
+
+**Quality gate:** 38 passed in targeted unit tests; 1 passed in integration handoff flow. mypy clean on changed files. ruff clean on changed files. Pre-existing failures in broader suite unchanged.
+
+**Branch:** `feature/l165-session-handoff-hardening`
+
+---
+
+## 2026-05-11 — L164 Absorbed (Execution Refactor: Deduplicate Tool-Call Handling)
+
+**Outcome:** The `_handle_tool_calls` extraction specified in L164 was implemented as part of the L165-L168 batch. The method exists in `orchestrator/execution.py` and the duplicated 70-line blocks are gone. No standalone handoff was written because the work was folded into adjacent loops.
+
+**Status:** Complete (absorbed). No separate branch or handoff document.
+
+---
+
+## 2026-05-11 — L163 Complete (Repo Hygiene & Quick Fixes)
+
+**Outcome:** Removed personal/duplicate files from tracking, purged leaked log from git history, fixed three small UI/backend bugs, and added missing test coverage.
+
+**Changes:**
+- `.gitignore` — added `escape_room_planning.md`
+- `escape_room_planning.md` — removed from git tracking
+- `hestia-serve.service` (root) — removed from git tracking
+- `hestia-telegram.log` — purged from current branch history via `git filter-repo`
+- `web-ui/src/components/workflow-editor/constants.ts` — removed `'default'` from `EDITOR_NODE_TYPES`
+- `web-ui/src/pages/Workflows.tsx` — mapped `'failed'` status to error color
+- `src/hestia/web/routes/workflows.py` — added `trust_level` validation to `create_workflow`
+- `tests/unit/test_web_routes.py` — added `test_create_workflow_trust_level_validation`
+
+**Quality gate:** pytest has 1 pre-existing collection error (`test_search_web_duckduckgo.py`). mypy has 2 pre-existing errors. ruff has 184 pre-existing errors. All changed files pass individual checks; 166 workflow tests pass.
+
+**Branch:** `feature/l163-repo-hygiene-and-quick-fixes`
+
+---
 
 
+
+
+## 2026-05-06 — L157 Complete (Browser Session Persistence with Playwright)
+
+**Outcome:** Added Playwright-based browser automation so Hestia can scrape JavaScript-heavy authenticated sites by reusing logged-in browser sessions.
+
+**Changes:**
+- `src/hestia/tools/browser/session_store.py` — `BrowserSessionStore` for persistent cookie/storage state per-domain
+- `src/hestia/tools/builtin/browser_login.py` — visible browser login tool
+- `src/hestia/tools/builtin/browser_get.py` — headless browser fetch with session reuse
+- `src/hestia/config.py` — `BrowserConfig` with `enabled`, `session_dir`, `headless`, `default_timeout_seconds`
+- `src/hestia/app.py` — conditional registration of browser tools
+- `pyproject.toml` — `playwright>=1.40.0` in `browser` extra; mypy ignore for playwright
+- `tests/unit/tools/test_browser_session_store.py` — session store unit tests
+- `tests/unit/tools/test_browser_tools.py` — browser tool unit tests with mocked Playwright
+
+**Quality gate:** 1194 passed, 6 skipped. mypy clean. ruff clean on changed files.
+
+**Branch:** `feature/l157-browser-session-persistence`
+
+---
+
+## 2026-05-01 — L121 Complete (Trust Preset Cards with Descriptions)
+
+**Outcome:** Replaced plain trust preset buttons with rich cards showing title, description, and bullet list. Active preset is visually highlighted.
+
+**Changes:**
+- `web-ui/src/components/ConfigForm.tsx` — expanded `TrustPreset` interface with `name`, `description`, `bullets`; card grid rendering with active highlight
+
+**Quality gate:** `npm run build` succeeds.
+
+**Branch:** `feature/l121-trust-preset-cards` → merged to `develop`
+
+---
+
+## 2026-05-01 — L120 Complete (Auto-Run Doctor and Audit on Security Page Load)
+
+**Outcome:** Security page now auto-runs health checks and audit on mount. Results are cached with TTL to avoid hammering the backend.
+
+**Changes:**
+- `src/hestia/web/cache.py` — `InMemoryCache` with `get(key, max_age_seconds)` and `set(key, data)`
+- `src/hestia/web/routes/doctor.py` — accepts `max_age_seconds` query param (default 60s), returns `cached: bool`
+- `src/hestia/web/routes/audit.py` — accepts `max_age_seconds` query param (default 300s), returns `cached: bool`
+- `web-ui/src/components/DoctorCheckList.tsx`, `AuditFindings.tsx` — auto-run on mount via `useEffect`, display cache timestamp
+- `tests/unit/test_web_cache.py` — cache TTL and expiration tests
+
+**Quality gate:** 60 passed.
+
+**Branch:** `feature/l120-auto-run-doctor-audit` → merged to `develop`
+
+---
+
+## 2026-05-01 — L119 Complete (Config Dropdowns via Schema Endpoint)
+
+**Outcome:** Config editor renders `<select>` dropdowns for enumerated fields instead of free-text inputs.
+
+**Changes:**
+- `src/hestia/web/routes/config.py` — `GET /api/config/schema` returns enum metadata
+- `web-ui/src/api/client.ts` — `fetchConfigSchema()`
+- `web-ui/src/components/ConfigForm.tsx` — fetches schema on mount, renders `<select>` for `type: 'enum'` fields
+- `tests/unit/test_web_routes.py` — schema endpoint test
+
+**Quality gate:** `npm run build` succeeds.
+
+**Branch:** `feature/l119-config-dropdowns` → merged to `develop`
+
+---
+
+## 2026-05-01 — L118 Complete (Web Dashboard Authentication via Chat 2FA)
+
+**Outcome:** Web dashboard now requires authentication via one-time codes sent through Telegram or Matrix. No user database needed — sessions inherit the chat platform identity.
+
+**Changes:**
+- `src/hestia/config.py` — `WebConfig` adds `auth_enabled`, `session_lifetime_hours`, `code_expiry_seconds`, `code_length`
+- `src/hestia/web/auth.py` — `AuthManager` with cryptographically random codes, in-memory sessions, rate limiting (5 failures / 10 min)
+- `src/hestia/web/routes/auth.py` — `POST /api/auth/request-code`, `POST /api/auth/verify-code`, `POST /api/auth/logout`, `GET /api/auth/status`
+- `src/hestia/web/api.py` — auth middleware registered on all `/api/*` except `/api/auth/*`
+- `src/hestia/commands/serve.py` — wires `AuthManager` into `WebContext` and registers middleware
+- `web-ui/src/context/AuthContext.tsx` — React context managing token in memory (not localStorage)
+- `web-ui/src/pages/Login.tsx` — platform selection → code input with countdown → verify
+- `web-ui/src/api/client.ts` — `apiFetch` wrapper attaching `Authorization: Bearer` header; auth API functions
+- `web-ui/src/App.tsx` — conditionally renders `<Login>` or dashboard based on auth state; logout button in nav
+- `tests/unit/test_web_auth.py` (32 tests), `tests/integration/test_web_auth.py` (3 tests) — AuthManager, middleware, routes, full flow
+
+**Quality gate:** 60 passed.
+
+**Branch:** `feature/l118-web-auth-chat-2fa` → merged to `develop`
+
+---
+
+## 2026-04-30 — L103 Complete (Chat-Based Proposal and Style Management Tools)
+
+**Outcome:** Added 8 new tools for conversational proposal and style management.
+
+**Changes:**
+- `src/hestia/tools/builtin/proposal_tools.py` — `list_proposals`, `show_proposal`, `accept_proposal`, `reject_proposal`, `defer_proposal`
+- `src/hestia/tools/builtin/style_tools.py` — `show_style_profile`, `reset_style_metric`, `reset_style_profile`
+- `src/hestia/tools/capabilities.py` — `SELF_MANAGEMENT` capability
+- `src/hestia/policy/default.py` — trust gating (paranoid/prompt_on_mobile disabled; household/developer enabled)
+- `src/hestia/config.py` — `TrustConfig.self_management` field, updated `is_paranoid()`
+- `tests/unit/test_proposal_tools.py` (16 tests), `test_style_tools.py` (11 tests), `test_self_management_policy.py` (12 tests)
+
+**Quality gate:** 1100 passed, 6 skipped.
+
+**Branch:** `feature/l103-chat-proposal-style-tools` → merged to `develop`
+
+---
+
+## 2026-04-30 — L102 Complete (PII and Credential Hardening)
+
+**Outcome:** Closed all identified PII/credential leak gaps.
+
+**Changes:**
+- `src/hestia/platforms/runners.py` and `telegram_adapter.py` — sanitized user-facing error messages via `sanitize_user_error()`
+- `src/hestia/tools/builtin/web_search.py` — stripped query params from egress URLs; redacted Tavily error body from exception message
+- `src/hestia/config.py` — `MatrixConfig.__repr__` masks `access_token`
+- `src/hestia/orchestrator/finalization.py` — documented `user_input_summary` PII design decision
+
+**Quality gate:** 1062 passed, 6 skipped.
+
+**Branch:** `feature/l102-pii-credential-hardening` → merged to `develop`
+
+---
+
+## 2026-04-30 — L112 Complete (Flip Reflection and Style to Opt-Out)
+
+**Outcome:** Changed `ReflectionConfig.enabled` and `StyleConfig.enabled` defaults from `False` to `True`. With web approval UI (L108) and chat-based proposal tools (L103) in place, reflection and style now work out of the box.
+
+**Changes:**
+- `src/hestia/config.py` — `ReflectionConfig.enabled = True`, `StyleConfig.enabled = True`
+- `docs/guides/reflection-tuning.md` — updated to reflect enabled-by-default status, added disabling section
+
+**Quality gate:** 1124 passed, 6 skipped.
+
+**Branch:** `feature/web-dashboard`
+
+---
+
+## 2026-04-30 — L111 Complete (Config Editor Page)
+
+**Outcome:** Built form-based config editor with collapsible panels, typed inputs, masked credentials, trust preset quick-select, validation, and "requires restart" badges.
+
+**Changes:**
+- `web-ui/src/components/ConfigForm.tsx` — full config form with all features
+- `web-ui/src/pages/Config.tsx` — page wrapper
+- `web-ui/src/api/client.ts` — `fetchConfig`, `saveConfig`
+- `web-ui/playwright/config.spec.ts` — E2E test
+
+**Quality gate:** 1124 passed, 6 skipped; `npm run build` succeeds.
+
+**Branch:** `feature/web-dashboard`
+
+---
+
+## 2026-04-30 — L110 Complete (Security & Health Page)
+
+**Outcome:** Built security and health dashboard with doctor checks (traffic-light indicators), audit findings table, and egress log.
+
+**Changes:**
+- `web-ui/src/components/DoctorCheckList.tsx`, `AuditFindings.tsx`, `EgressLog.tsx`
+- `web-ui/src/pages/Security.tsx`
+- `web-ui/src/api/client.ts` — `runDoctor`, `runAudit`, `fetchEgress`
+- `web-ui/playwright/security.spec.ts` — E2E test
+
+**Quality gate:** 1124 passed, 6 skipped; `npm run build` succeeds.
+
+**Branch:** `feature/web-dashboard`
+
+---
+
+## 2026-04-30 — L109 Complete (Style Profile + Scheduler Status Pages)
+
+**Outcome:** Built style profile viewer with metric reset and scheduler status table with "Run now" buttons.
+
+**Changes:**
+- `web-ui/src/pages/StyleProfile.tsx` — profile card with reset buttons
+- `web-ui/src/pages/Scheduler.tsx` — task table with run-now
+- `web-ui/src/api/client.ts` — `fetchStyleProfile`, `deleteStyleMetric`, `fetchSchedulerTasks`, `runTaskNow`
+- `web-ui/playwright/style.spec.ts`, `scheduler.spec.ts` — E2E tests
+
+**Quality gate:** 1124 passed, 6 skipped; `npm run build` succeeds.
+
+**Branch:** `feature/web-dashboard`
+
+---
+
+## 2026-04-30 — L108 Complete (Proposal Approval Page)
+
+**Outcome:** Built proposal approval UI with card-based layout, Accept/Reject/Defer buttons, Pending/History tabs, and badge count.
+
+**Changes:**
+- `web-ui/src/components/ProposalCard.tsx` — accept/reject/defer with note input
+- `web-ui/src/pages/Proposals.tsx` — tabs and list management
+- `web-ui/src/api/client.ts` — `fetchProposals`, `acceptProposal`, `rejectProposal`, `deferProposal`
+- `web-ui/playwright/proposals.spec.ts` — E2E test
+
+**Quality gate:** 1124 passed, 6 skipped; `npm run build` succeeds.
+
+**Branch:** `feature/web-dashboard`
+
+---
+
+## 2026-04-30 — L107 Complete (Session Timeline Page)
+
+**Outcome:** Built dashboard landing page with session list and expandable turns.
+
+**Changes:**
+- `web-ui/src/pages/Dashboard.tsx` — session table with expandable turn details
+- `web-ui/src/api/client.ts` — `fetchSessions`, `fetchTurns`
+- `web-ui/playwright/sessions.spec.ts` — E2E test
+
+**Quality gate:** 1124 passed, 6 skipped; `npm run build` succeeds.
+
+**Branch:** `feature/web-dashboard`
+
+---
+
+## 2026-04-30 — L106 Complete (React/Vite Frontend Scaffolding)
+
+**Outcome:** Set up the frontend build toolchain and Playwright E2E testing infrastructure. No pages yet — verified the build pipeline works and FastAPI can serve the generated bundle.
+
+**Changes:**
+- Created `web-ui/` at repo root with React 18 + Vite 6 + TypeScript toolchain
+  - `package.json`, `vite.config.ts`, `tsconfig.json`, `index.html`
+  - `src/main.tsx`, `src/App.tsx`, `src/index.css`
+- Configured Vite to build into `src/hestia/web/static/` with `emptyOutDir: true`
+- Built and committed the generated static bundle (JS, CSS, HTML)
+- Added `web-ui/playwright.config.ts` and `web-ui/playwright/dashboard.spec.ts`
+- Updated `.github/workflows/ci.yml` to install Node 22 and build SPA (`npm ci && npm run build`) before pytest
+- Fixed `tests/unit/test_web_api.py` to assert on SPA mount point instead of old placeholder text
+- Added `node_modules/` to `.gitignore`
+
+**Quality gate:** 1124 passed, 6 skipped; `npm run build` succeeds; Playwright `dashboard.spec.ts` passes against running uvicorn.
+
+**Branch:** `feature/web-dashboard`
+
+---
+
+## 2026-04-30 — L105 Complete (Dashboard API Routes)
+
+**Outcome:** Built the complete REST API surface for the Hestia dashboard. All endpoints read from existing stores (no new persistence).
+
+**Changes:**
+- Created `src/hestia/web/context.py` with `WebContext` dataclass and `get_web_context()` dependency injection pattern
+- Created `src/hestia/web/routes/` with 9 route modules: sessions, proposals, style, scheduler, traces, doctor, audit, egress, config
+- Each module defines `router = APIRouter()` with appropriate GET/POST/DELETE handlers
+- Wired all routers into `src/hestia/web/api.py` with correct `/api/*` prefixes
+- Added store helper methods: `StyleProfileStore.delete_metric()`, `TraceStore.list_egress()`, `SchedulerStore.run_now()`
+- Set `WebContext` during `hestia serve` startup after stores are initialized
+- Added `tests/unit/test_web_routes.py` with 20 unit tests using `fastapi.testclient.TestClient` and mocked stores
+
+**Quality gate:** 1124 passed, 6 skipped; ruff clean on `src/hestia/web/`; mypy clean on `src/hestia/web/`.
+
+**Branch:** `feature/web-dashboard`
+
+---
+
+## 2026-04-30 — L104 Complete (FastAPI Skeleton and Web Server Integration)
+
+**Outcome:** Added foundational web server infrastructure for the Hestia dashboard.
+
+**Changes:**
+- `pyproject.toml`: added `fastapi>=0.115.0` and `uvicorn>=0.34.0` to `[project.optional-dependencies]` under `web`
+- Created `src/hestia/web/` module: `__init__.py`, `api.py` (FastAPI app factory), `static/index.html` placeholder
+- Added `WebConfig` to `src/hestia/config.py` with `enabled`, `host`, `port` fields
+- Created `src/hestia/commands/serve.py` and wired `hestia serve` into `cli.py`
+- `serve` starts Telegram/Matrix adapters alongside uvicorn when `config.web.enabled=True`
+- Centralized inference client cleanup to avoid double-close when running multiple adapters
+
+**Quality gate:** 1104 passed, 6 skipped; ruff clean on changed files; mypy clean on changed files.
+
+**Branch:** `feature/web-dashboard`
+
+---
 
 ## 2026-04-30 — L101 Complete (Telegram Progressive Delivery)
 

@@ -122,8 +122,10 @@ class DefaultPolicyEngine(PolicyEngine):
             return True
 
         # Long tool chain - offload to subagent to keep parent context clean
-        if tool_chain_length > 5:
-            return True
+        # DISABLED: auto-delegation is causing subagent loops with the 9B model.
+        # Re-enable when subagent context handoff is more robust.
+        # if tool_chain_length > 5:
+        #     return True
 
         # Complex research tasks that might involve many steps
         research = (
@@ -134,8 +136,9 @@ class DefaultPolicyEngine(PolicyEngine):
         if research and any(kw in task_lower for kw in research):
             return True
 
-        # High projected tool usage
-        return projected_tool_calls > 3
+        # High projected tool usage - DISABLED alongside auto-delegation
+        # return projected_tool_calls > 3
+        return False
 
     def should_compress(self, session: Session, tokens_used: int, tokens_budget: int) -> bool:
         """Compress when we're over the context-pressure fraction of budget."""
@@ -231,6 +234,9 @@ class DefaultPolicyEngine(PolicyEngine):
         for headless safety. Both are denied email_send unless the
         trust profile explicitly allows it.
 
+        Self-management tools are gated by trust level (paranoid and
+        prompt_on_mobile deny them; household and developer allow them).
+
         Args:
             session: Current session
             tool_names: List of tool names to filter
@@ -239,42 +245,40 @@ class DefaultPolicyEngine(PolicyEngine):
         Returns:
             Filtered list of allowed tool names
         """
-        from hestia.tools.capabilities import EMAIL_SEND, SHELL_EXEC, WRITE_LOCAL
+        from hestia.tools.capabilities import (
+            EMAIL_SEND,
+            SELF_MANAGEMENT,
+            SHELL_EXEC,
+            WRITE_LOCAL,
+        )
 
         trust = self._trust_for(session)
+        blocked: set[str] = set()
+
+        if not trust.self_management:
+            blocked.add(SELF_MANAGEMENT)
 
         if session.platform == PLATFORM_SUBAGENT:
-            blocked: set[str] = set()
             if not trust.subagent_shell_exec:
                 blocked.add(SHELL_EXEC)
             if not trust.subagent_write_local:
                 blocked.add(WRITE_LOCAL)
             if not trust.subagent_email_send:
                 blocked.add(EMAIL_SEND)
-            if not blocked:
-                return tool_names
-            return [
-                name
-                for name in tool_names
-                if not (set(registry.describe(name).capabilities) & blocked)
-            ]
 
         if session.platform == PLATFORM_SCHEDULER or scheduler_tick_active.get():
-            blocked = set()
             if not trust.scheduler_shell_exec:
                 blocked.add(SHELL_EXEC)
             if not trust.scheduler_email_send:
                 blocked.add(EMAIL_SEND)
-            if not blocked:
-                return tool_names
-            return [
-                name
-                for name in tool_names
-                if not (set(registry.describe(name).capabilities) & blocked)
-            ]
 
-        # CLI and other platforms: allow all tools
-        return tool_names
+        if not blocked:
+            return tool_names
+        return [
+            name
+            for name in tool_names
+            if not (set(registry.describe(name).capabilities) & blocked)
+        ]
 
     def reasoning_budget(self, session: Session, iteration: int) -> int:
         """Use the configured default. Subagents get a smaller budget."""

@@ -20,6 +20,7 @@ from hestia.core.inference import InferenceClient
 from hestia.core.rate_limiter import SessionRateLimiter
 from hestia.core.validators import validate_inference_model_name
 from hestia.email.adapter import EmailAdapter
+from hestia.events.bus import EventBus
 from hestia.identity import IdentityCompiler
 from hestia.inference import SlotManager
 from hestia.memory import MemoryEpochCompiler, MemoryStore
@@ -27,10 +28,12 @@ from hestia.memory.handoff import SessionHandoffSummarizer
 from hestia.orchestrator import Orchestrator
 from hestia.orchestrator.engine import ConfirmCallback
 from hestia.persistence.db import Database
+from hestia.persistence.error_resolution_store import ErrorResolutionStore
 from hestia.persistence.failure_store import FailureStore
 from hestia.persistence.scheduler import SchedulerStore
 from hestia.persistence.sessions import SessionStore
 from hestia.persistence.trace_store import TraceStore
+from hestia.persistence.users import UserStore
 from hestia.policy.default import DefaultPolicyEngine
 from hestia.reflection.runner import ReflectionRunner
 from hestia.reflection.scheduler import ReflectionScheduler
@@ -40,8 +43,13 @@ from hestia.style.builder import StyleProfileBuilder
 from hestia.style.scheduler import StyleScheduler
 from hestia.style.store import StyleProfileStore
 from hestia.tools.builtin import (
+    browser_get,
+    browser_login,
     current_time,
+    make_accept_proposal_tool,
+    make_append_to_file_tool,
     make_create_scheduled_task_tool,
+    make_defer_proposal_tool,
     make_delegate_task_tool,
     make_delete_memory_tool,
     make_delete_scheduled_task_tool,
@@ -52,21 +60,39 @@ from hestia.tools.builtin import (
     make_http_get_tool,
     make_list_dir_tool,
     make_list_memories_tool,
+    make_list_proposals_tool,
     make_list_scheduled_tasks_tool,
     make_read_artifact_tool,
     make_read_file_tool,
+    make_reject_proposal_tool,
+    make_reset_style_metric_tool,
+    make_reset_style_profile_tool,
     make_save_memory_tool,
     make_search_memory_tool,
+    make_show_proposal_tool,
+    make_show_style_profile_tool,
     make_terminal_tool,
     make_web_search_tool,
     make_write_file_tool,
     search_web,
 )
 from hestia.tools.registry import ToolRegistry
+from hestia.workflows.execution_store import ExecutionStore
+from hestia.workflows.store import WorkflowStore
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_CALIBRATION_PATH = Path(__file__).parent.parent.parent / "docs" / "calibration.json"
+
+
+def _playwright_available() -> bool:
+    """Check if Playwright is installed."""
+    try:
+        import playwright  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
 
 
 def _make_policy(cfg: HestiaConfig) -> DefaultPolicyEngine:
@@ -120,12 +146,18 @@ class AppContext:
         # Eager core subsystems
         self.db = Database(config.storage.database_url)
         self.artifact_store = ArtifactStore(config.storage.artifacts_dir)
-        self.session_store = SessionStore(self.db)
+        self.event_bus = EventBus()
+        self.session_store = SessionStore(self.db, event_bus=self.event_bus)
+        self.user_store = UserStore(self.db)
         self.policy = _make_policy(config)
         self.memory_store = MemoryStore(self.db)
         self.failure_store = FailureStore(self.db)
         self.trace_store = TraceStore(self.db)
         self.scheduler_store = SchedulerStore(self.db)
+        self.workflow_store = WorkflowStore(self.db)
+        self.execution_store = ExecutionStore(self.db)
+        self.error_resolution_store = ErrorResolutionStore(self.db)
+        self.trigger_registry: Any = None
         self.epoch_compiler = MemoryEpochCompiler(self.memory_store, max_tokens=500)
         self.tool_registry = ToolRegistry(self.artifact_store)
 
@@ -244,6 +276,8 @@ class AppContext:
         await self.trace_store.create_table()
         await self.proposal_store.create_table()
         await self.style_store.create_table()
+        await self.workflow_store.create_tables()
+        await self.execution_store.create_tables()
         self._bootstrapped = True
 
     def make_injection_scanner(self) -> InjectionScanner:
@@ -253,6 +287,20 @@ class AppContext:
             entropy_threshold=self.config.security.injection_entropy_threshold,
             skip_filters_for_structured=self.config.security.injection_skip_filters_for_structured,
         )
+
+    async def start_trigger_registry(self) -> None:
+        """Create and start the trigger registry."""
+        from hestia.workflows.executor import WorkflowExecutor
+        from hestia.workflows.triggers import TriggerRegistry
+
+        async def _execute_workflow(workflow: Any, payload: Any) -> None:
+            executor = WorkflowExecutor(self, execution_store=self.execution_store)
+            result = await executor.execute(workflow.id, payload)
+            logger.info("Workflow %s executed: %s", workflow.id, result.status)
+
+        registry = TriggerRegistry(self.event_bus, self.workflow_store, _execute_workflow)
+        await registry.start()
+        self.trigger_registry = registry
 
     async def close(self) -> None:
         """Close lazily-created resources."""
@@ -282,6 +330,7 @@ class AppContext:
             style_config=self.config.style,
             rate_limiter=self.rate_limiter,
             stream=self.config.inference.stream,
+            event_bus=self.event_bus,
         )
 
     def register_tools(self) -> None:
@@ -295,11 +344,24 @@ class AppContext:
         reg.register(make_terminal_tool(cfg.trust.blocked_shell_patterns or None))
         reg.register(make_read_file_tool(cfg.storage))
         reg.register(make_write_file_tool(cfg.storage))
+        reg.register(make_append_to_file_tool(cfg.storage))
         reg.register(make_search_memory_tool(self.memory_store))
         reg.register(make_save_memory_tool(self.memory_store))
         reg.register(make_list_memories_tool(self.memory_store))
         reg.register(make_delete_memory_tool(self.memory_store))
         reg.register(make_read_artifact_tool(self.artifact_store))
+
+        # Proposal tools (bound to proposal store)
+        reg.register(make_list_proposals_tool(self.proposal_store))
+        reg.register(make_show_proposal_tool(self.proposal_store))
+        reg.register(make_accept_proposal_tool(self.proposal_store, event_bus=self.event_bus))
+        reg.register(make_reject_proposal_tool(self.proposal_store, event_bus=self.event_bus))
+        reg.register(make_defer_proposal_tool(self.proposal_store))
+
+        # Style tools (bound to style store)
+        reg.register(make_show_style_profile_tool(self.style_store))
+        reg.register(make_reset_style_metric_tool(self.style_store))
+        reg.register(make_reset_style_profile_tool(self.style_store))
 
         web_search_tool = make_web_search_tool(cfg.web_search)
         if web_search_tool is not None:
@@ -340,6 +402,11 @@ class AppContext:
 
         # Delegate task tool (needs app for orchestrator factory)
         reg.register(make_delegate_task_tool(self.session_store, self.make_orchestrator))
+
+        # Browser tools (only when enabled or Playwright is available)
+        if cfg.browser.enabled or _playwright_available():
+            reg.register(browser_login)
+            reg.register(browser_get)
 
 
 # Backward-compatible aliases (deprecated, will be removed in a future release)

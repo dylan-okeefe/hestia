@@ -1,28 +1,26 @@
-"""Web search via DuckDuckGo HTML (no API key required).
+"""Web search via Bing HTML (no API key required).
 
-Falls back gracefully when Tavily is unavailable. Uses the DuckDuckGo HTML
-interface which returns raw, parseable HTML without JavaScript rendering.
+Uses curl_cffi with browser impersonation to bypass bot detection.
+Extracts search results from Bing's HTML response and decodes
+redirect URLs to show real destinations.
 """
 
 from __future__ import annotations
 
+import base64
 import html as html_module
 import re
 import urllib.parse
-from typing import Any
 
-from hestia.tools.builtin.http_get import SSRFSafeTransport, http_get
 from hestia.tools.capabilities import NETWORK_EGRESS
 from hestia.tools.metadata import tool
 
-# Regex-based parsing of DuckDuckGo HTML results.
-# Each result block contains: title link, URL, and snippet.
-_RESULT_RE = re.compile(
-    r'<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>(.*?)</a>'
-    r'.*?<a[^>]+class="result__url"[^>]*href="([^"]+)"[^>]*>[^<]*</a>'
-    r'.*?<a[^>]+class="result__snippet"[^>]*>(.*?)</a>',
-    re.DOTALL | re.IGNORECASE,
-)
+try:
+    from curl_cffi.requests import AsyncSession
+
+    _CURL_CFFI_AVAILABLE = True
+except ImportError:
+    _CURL_CFFI_AVAILABLE = False
 
 # Strip HTML tags
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -36,10 +34,25 @@ def _unescape(raw: str) -> str:
     return html_module.unescape(raw)
 
 
+def _decode_bing_redirect(url: str) -> str:
+    """Decode Bing's redirect URL to get the real destination."""
+    try:
+        parsed = urllib.parse.urlparse(url)
+        params = urllib.parse.parse_qs(parsed.query)
+        u = params.get("u", [""])[0]
+        if u.startswith("a1"):
+            b64 = u[2:]
+            b64 += "=" * (4 - len(b64) % 4)
+            return base64.b64decode(b64).decode("utf-8")
+    except Exception:
+        pass
+    return url
+
+
 @tool(
     name="search_web",
     public_description=(
-        "Search the web via DuckDuckGo. Returns top results with title, URL, "
+        "Search the web via Bing. Returns top results with title, URL, "
         "and snippet. Use this to find current information when you don't "
         "already have a specific URL."
     ),
@@ -62,7 +75,7 @@ def _unescape(raw: str) -> str:
     capabilities=[NETWORK_EGRESS],
 )
 async def search_web(query: str, max_results: int = 5) -> str:
-    """Search the web via DuckDuckGo HTML interface.
+    """Search the web via Bing HTML interface.
 
     Args:
         query: Search query string
@@ -71,42 +84,74 @@ async def search_web(query: str, max_results: int = 5) -> str:
     Returns:
         Formatted search results or error message
     """
+    try:
+        max_results = int(max_results)
+    except (ValueError, TypeError):
+        max_results = 5
     max_results = max(1, min(max_results, 10))
     encoded = urllib.parse.quote_plus(query)
-    url = f"https://html.duckduckgo.com/html/?q={encoded}"
+    url = f"https://www.bing.com/search?q={encoded}"
 
+    html = ""
     try:
-        html = await http_get(url, timeout_seconds=30)
+        if _CURL_CFFI_AVAILABLE:
+            async with AsyncSession() as s:
+                headers = {
+                    "User-Agent": (
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/131.0.0.0 Safari/537.36"
+                    ),
+                    "Accept": (
+                        "text/html,application/xhtml+xml,application/xml;q=0.9,"
+                        "image/webp,*/*;q=0.8"
+                    ),
+                    "Accept-Language": "en-US,en;q=0.5",
+                    "Referer": "https://www.bing.com/",
+                }
+                r = await s.get(url, headers=headers, impersonate="chrome131", timeout=30)
+                html = r.text
+        else:
+            from hestia.tools.builtin.http_get import http_get
+
+            html = await http_get(url, timeout_seconds=30)
     except Exception as e:  # noqa: BLE001 — tool boundary
         return f"Search failed: {e}"
 
-    matches = _RESULT_RE.findall(html)
-    if not matches:
+    if "captcha" in html.lower():
+        return "Search blocked by CAPTCHA. Try a more specific query or search directly on job boards."
+
+    # Parse Bing results - look for h2 > a patterns
+    blocks = re.findall(r'<h2[^>]*>.*?<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>.*?</h2>', html, re.DOTALL)
+    if not blocks:
         return "No results found."
 
     lines: list[str] = []
     seen_urls: set[str] = set()
-    for raw_redirect, raw_title, raw_url, raw_snippet in matches:
+    for raw_href, raw_title in blocks:
         if len(lines) >= max_results:
             break
 
-        # DuckDuckGo redirects through their own URL; extract the real destination
-        redirect_match = re.search(r"uddg=([^&]+)", raw_redirect)
-        if redirect_match:
-            real_url = urllib.parse.unquote(redirect_match.group(1))
-        else:
-            real_url = raw_redirect
-
-        # Skip ads (DuckDuckGo ad redirects point to y.js with ad_domain)
-        if "/y.js?" in real_url and "ad_domain" in real_url:
+        title = _unescape(_strip_tags(raw_title)).strip()
+        # Skip video results and navigation
+        if not title or "video" in title.lower() or title.lower() in ("more videos",):
             continue
+
+        real_url = _decode_bing_redirect(raw_href.replace("&amp;", "&"))
 
         if real_url in seen_urls:
             continue
         seen_urls.add(real_url)
 
-        title = _unescape(_strip_tags(raw_title))
-        snippet = _unescape(_strip_tags(raw_snippet))
+        # Try to find a snippet near this result
+        snippet = ""
+        snippet_match = re.search(
+            r'<h2[^>]*>.*?<a[^>]+href="' + re.escape(raw_href) + r'"[^>]*>.*?</a>.*?</h2>.*?<p>(.*?)</p>',
+            html,
+            re.DOTALL,
+        )
+        if snippet_match:
+            snippet = _unescape(_strip_tags(snippet_match.group(1))).strip()
 
         lines.append(f"{title}\n  {real_url}\n  {snippet}")
 

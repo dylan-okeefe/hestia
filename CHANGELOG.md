@@ -5,6 +5,61 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### User Registry & Identity
+- **User store** with `users`, `identities`, `rooms`, and `room_memberships` tables.
+- **Role-based access control** — `admin` vs `user` roles; admin-only routes gated
+  by `require_admin` dependency.
+- **User selection at login** — platform users pick their identity from a list
+  when multiple users exist.
+
+### Web Dashboard Rewrite
+- **14-page React SPA** — Dashboard, Proposals, Style, Scheduler, Security & Health,
+  Config, Workflows, Profile, Knowledge, Errors (admin), Users (admin).
+- **Authentication** — platform-based login (Telegram/Matrix), token-based sessions
+  with middleware, logout flow.
+- **Responsive design** — mobile sidebar, desktop persistent nav, collapsible sections.
+- **Dark mode** — system-preference detection with manual toggle, CSS custom properties.
+- **Shared CSS system** — `variables.css`, `utilities.css`, `components.css`;
+  inline-style count enforced under 20.
+
+### Workflow System
+- **Visual workflow editor** — React Flow-based canvas with drag-and-drop nodes
+  and connectable edges.
+- **Trigger types** — manual, schedule (cron), chat command, webhook, message,
+  email, proposal, tool error, workflow completed, session started.
+- **Node types** — Tool Call, LLM Decision, Send Message, HTTP Request, Condition,
+  Investigate, Inference.
+- **Variable interpolation** — `{{data.command}}` syntax with frontend auto-insertion.
+- **Versioning** — save multiple versions per workflow, activate a specific version.
+- **Test runs** — execute workflows manually and inspect per-node results.
+- **Execution history** — list recent runs with status, timing, and token usage.
+
+### Admin & Security
+- **Error dashboard** — persisted errors with filtering, stack-trace viewing,
+  and admin-only access.
+- **Admin users page** — list users and their roles (admin only).
+- **Trust presets** — paranoid, prompt_on_mobile, household, developer; exposed
+  in config UI with visual cards and one-click apply.
+- **Webhook HMAC verification** — per-workflow secrets, replay-attack protection
+  via nonce deduplication.
+
+### Config & Scheduler
+- **Config search** — live filter across all config keys with descriptions.
+- **Config schema API** — backend exposes field types and enum values for rich
+  form rendering.
+- **Scheduler UI** — create, edit, enable/disable, and trigger scheduled tasks
+  from the web dashboard.
+- **Cron expression presets** — common patterns (hourly, daily, weekly) selectable
+  from a dropdown.
+
+### Infrastructure
+- **FastAPI static asset serving** — production Vite builds served from
+  `src/hestia/web/static/`.
+- **Button, Toast, and FormField components** — reusable component library
+  with consistent styling.
+- **Proposals UI** — review, accept, reject, and defer agent-generated proposals
+  with reason capture.
+
 ## [0.11.0] — 2026-04-30
 
 Security hardening, structural consolidation, streaming inference, and

@@ -2,53 +2,87 @@
 
 **Orchestrator:** Kimi (self-orchestrating via subagents)
 
-**Last set by:** Kimi — 2026-04-30 (L89–L101 arc complete)
+**Last set by:** Kimi — 2026-05-20 (L192–L194 specced from release review)
 
 ---
 
 ## Current task
 
-**Status:** **IDLE — All queued work complete.**
+**Status:** RELEASE PREP — v0.12.0 target. L192–L194 specced from `release-review-may-2026.md`.
 
-The April 29 review arc (L89–L101) is fully complete on feature branches. All 13 loops have been implemented, tested, and pushed to origin.
+### Next: implement L192 (release blockers)
 
 ---
 
 ## Completed arcs
 
-### L89–L101 (April 29 review fixes and streaming feature)
+### L169–L179 (User Registry + Web UI Rewrite + Workflow + Interactive Nodes)
 | Loop | Branch | Status |
 |------|--------|--------|
-| L89 | `feature/l89-correct-italic-repl-docs` | **Complete, pushed** |
-| L90 | `feature/l90-count-body-cache-key` | **Complete, pushed** |
-| L91 | `feature/l91-for-trust-equality` | **Complete, pushed** |
-| L92 | `feature/l92-strip-reasoning-optimization` | **Complete, pushed** |
-| L93 | `feature/l93-join-overhead-warmup` | **Complete, pushed** |
-| L94 | `feature/l94-email-async-safety` | **Complete, pushed** |
-| L95 | `feature/l95-voice-split-locks` | **Complete, pushed** |
-| L96 | `feature/l96-audit-strict-doctor-overlap` | **Complete, pushed** |
-| L97 | `feature/l97-config-cli-readability` | **Complete, pushed** |
-| L98 | `feature/l98-token-batch` | **Complete, pushed** |
-| L99 | `feature/l99-streaming-inference` | **Complete, pushed** |
-| L100 | `feature/l100-orchestrator-streaming` | **Complete, pushed** |
-| L101 | `feature/l101-telegram-progressive-delivery` | **Complete, pushed** |
+| L169–L179 | `feature/l179-rooms-interactive-nodes` | **Complete** |
+
+### L180–L186 (Remediation — COMPLETE)
+| Loop | Branch | Status | Focus |
+|------|--------|--------|-------|
+| **L180** | `feature/l180-security-hardening` | **✅ Complete, merged** | Per-user auth, admin-only errors, Pydantic validation |
+| **L181** | `feature/l181-performance-cleanup` | **✅ Complete, merged** | Batch queries, TTL cleanup, connection leaks |
+| **L182** | `feature/l182-backend-bug-fixes` | **✅ Complete, merged** | Null guard, raw SQL, messages endpoint, validation |
+| **L183** | `feature/l183-text-extraction` | **✅ Complete, merged** | Centralized text catalog, 100+ string extractions |
+| **L184** | `feature/l184-shared-css-system` | **✅ Complete, merged** | 50 CSS files, design tokens, inline-style removal |
+| **L185** | `feature/l185-responsive-design` | **✅ Complete, merged** | Mobile layouts, hamburger nav, card tables |
+| **L186** | `feature/l186-dark-mode` | **✅ Complete, merged** | Dark tokens, theme toggle, OS preference |
+
+### L187–L191 (Post-Review Fixes — COMPLETE, MERGED TO DEVELOP)
+| Loop | Branch | Status | Focus |
+|------|--------|--------|-------|
+| **L187** | `feature/l187-post-review-ui-fixes-and-polish` | **✅ Merged** | 8 UI polish items |
+| **L188** | `feature/l188-error-persistence-backend` | **✅ Merged** | SQLite error_resolutions table |
+| **L189** | `feature/l189-backend-quality-and-performance` | **✅ Merged** | Typed `_memory_to_dict`, parallel fetches |
+| **L190** | `feature/l190-frontend-component-infrastructure` | **✅ Merged** | Button, Toast, FormField |
+| **L191** | `feature/l191-config-overhaul-and-rooms-migration` | **✅ Merged** | Config search, Telegram migrate-rooms |
 
 ---
 
-## What's queued (not authorized yet)
+## Release prep arcs (v0.12.0)
 
-### Merge L89–L101 to develop
-- Sequential merge: L89 → L90 → ... → L101
-- Integration testing
+### L192 — Release Blocker Fixes
+**Branch:** `feature/l192-release-blocker-fixes`  
+**Spec:** `docs/development-process/loops/L192-release-blocker-fixes.md`
 
-### Release prep → v0.12.0
-- Integration testing across all merged work
-- Release notes and version bump
+| # | Item | Severity |
+|---|------|----------|
+| 1 | Fix workflow variable interpolation syntax (`{data.x}` → `{{data.x}}`) | **RELEASE BLOCKER** |
+| 2 | Add workflow route authorization (owner/admin check) | **RELEASE BLOCKER** |
+| 3 | Scope scheduler task list to caller | **RELEASE BLOCKER** |
+| 4 | Make config page read-only with explanatory note | **RELEASE BLOCKER** |
+
+### L193 — Release Documentation
+**Branch:** `feature/l193-release-documentation`  
+**Spec:** `docs/development-process/loops/L193-release-documentation.md`
+
+| # | Item | Severity |
+|---|------|----------|
+| 5 | Populate CHANGELOG unreleased section | Must fix before tag |
+| 6 | Write v0.12.0 release notes | Must fix before tag |
+| 7 | Write v0.11.0 release notes (missing) | Must fix before tag |
+| 8 | Fix ADR count + mark ADR-007 superseded | Must fix before tag |
+
+### L194 — Release Polish
+**Branch:** `feature/l194-release-polish`  
+**Spec:** `docs/development-process/loops/L194-release-polish.md`
+
+| # | Item | Severity |
+|---|------|----------|
+| 9 | Web dashboard quickstart guide | Should do |
+| 10 | Workflow basics guide | Should do |
+| 11 | Rewrite root README.md | Should do |
+| 12 | Document webhook endpoint uniqueness | Should do |
 
 ---
 
-## Reference
+## Recommended priority order
 
-- April 29 review: [`../reviews/code-review-develop-april-29.md`](../reviews/code-review-develop-april-29.md)
-- Loop log: [`../kimi-loop-log.md`](../kimi-loop-log.md)
-- Release discipline: `.cursorrules`
+1. **L192** — Fix four P0 blockers (security + correctness)
+2. **L193** — Write CHANGELOG + release notes + fix stale docs
+3. **L194** — Add user-facing guides and polish README
+4. **Tag v0.12.0** and merge develop → main

@@ -1,0 +1,15 @@
+/* Utility visibility helpers */
+.hidden-sm { display: none; }
+@media (min-width: 768px) {
+  .hidden-sm { display: initial; }
+  .hidden-md-up { display: none; }
+}
+
+/* Container */
+.container {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding-left: var(--space-page-x);
+  padding-right: var(--space-page-x);
+}

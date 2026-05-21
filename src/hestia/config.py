@@ -144,6 +144,14 @@ class MatrixConfig(_ConfigFromEnv):
     rate_limit_edits_seconds: float = 1.5
     sync_timeout_ms: int = 30000  # Long-poll timeout for /sync
 
+    def __repr__(self) -> str:
+        fields = []
+        for k, v in self.__dict__.items():
+            if k == "access_token":
+                v = "***" if v else ""
+            fields.append(f"{k}={v!r}")
+        return f"{self.__class__.__name__}({', '.join(fields)})"
+
 
 @dataclass
 class TrustConfig(_ConfigFromEnv):
@@ -175,6 +183,9 @@ class TrustConfig(_ConfigFromEnv):
     # Allow scheduler ticks to trigger email_send.
     scheduler_email_send: bool = False
 
+    # Allow self-management tools (proposal/style) for this trust profile.
+    self_management: bool = False
+
     # Shell command patterns to block in the terminal tool (regex).
     # Defense-in-depth: these are checked before execution regardless of
     # confirmation status. Empty list means no additional blocking beyond
@@ -197,6 +208,7 @@ class TrustConfig(_ConfigFromEnv):
             and not self.subagent_write_local
             and not self.subagent_email_send
             and not self.scheduler_email_send
+            and not self.self_management
             and self.blocked_shell_patterns == []
         )
 
@@ -213,6 +225,7 @@ class TrustConfig(_ConfigFromEnv):
             scheduler_shell_exec=True,
             subagent_shell_exec=True,
             subagent_write_local=True,
+            self_management=True,
         )
 
     @classmethod
@@ -235,6 +248,7 @@ class TrustConfig(_ConfigFromEnv):
             scheduler_shell_exec=True,
             subagent_shell_exec=True,
             subagent_write_local=True,
+            self_management=True,
         )
 
     @classmethod
@@ -245,6 +259,7 @@ class TrustConfig(_ConfigFromEnv):
             scheduler_shell_exec=True,
             subagent_shell_exec=True,
             subagent_write_local=True,
+            self_management=False,
         )
 
 
@@ -354,7 +369,7 @@ class StyleConfig(_ConfigFromEnv):
 
     _ENV_PREFIX = "STYLE"
 
-    enabled: bool = False
+    enabled: bool = True
     min_turns_to_activate: int = 20
     lookback_days: int = 30
     cron: str = "15 3 * * *"
@@ -376,7 +391,7 @@ class ReflectionConfig(_ConfigFromEnv):
 
     _ENV_PREFIX = "REFLECTION"
 
-    enabled: bool = False
+    enabled: bool = True
     cron: str = "0 3 * * *"
     idle_minutes: int = 15
     lookback_turns: int = 100
@@ -410,6 +425,35 @@ class VoiceConfig(_ConfigFromEnv):
     model_cache_dir: Path = field(
         default_factory=lambda: Path.home() / ".cache" / "hestia" / "voice"
     )
+
+
+@dataclass
+class WebConfig(_ConfigFromEnv):
+    """Configuration for the web dashboard."""
+
+    _ENV_PREFIX = "WEB"
+
+    enabled: bool = False
+    host: str = "127.0.0.1"
+    port: int = 8765
+    auth_enabled: bool = True
+    session_lifetime_hours: int = 72
+    code_expiry_seconds: int = 300
+    code_length: int = 6
+
+
+@dataclass
+class BrowserConfig(_ConfigFromEnv):
+    """Configuration for browser automation tools."""
+
+    _ENV_PREFIX = "BROWSER"
+
+    enabled: bool = False
+    session_dir: Path = field(
+        default_factory=lambda: Path.home() / ".hestia" / "browser-sessions"
+    )
+    headless: bool = True
+    default_timeout_seconds: int = 30
 
 
 @dataclass
@@ -464,6 +508,7 @@ class FeatureConfig:
     style: StyleConfig = field(default_factory=StyleConfig)
     policy: PolicyConfig = field(default_factory=PolicyConfig)
     rate_limit: RateLimitConfig = field(default_factory=RateLimitConfig)
+    web: WebConfig = field(default_factory=WebConfig)
 
 
 # ---------------------------------------------------------------------------
@@ -480,6 +525,7 @@ class HestiaConfig(_ConfigFromEnv):
     core: CoreConfig = field(default_factory=CoreConfig)
     platforms: PlatformConfig = field(default_factory=PlatformConfig)
     features: FeatureConfig = field(default_factory=FeatureConfig)
+    browser: BrowserConfig = field(default_factory=BrowserConfig)
     trust: TrustConfig = field(default_factory=TrustConfig)
     trust_overrides: dict[str, TrustConfig] = field(default_factory=dict)
     system_prompt: str = "You are a helpful assistant."
@@ -493,6 +539,7 @@ class HestiaConfig(_ConfigFromEnv):
         core: CoreConfig | None = None,
         platforms: PlatformConfig | None = None,
         features: FeatureConfig | None = None,
+        browser: BrowserConfig | None = None,
         trust: TrustConfig | None = None,
         trust_overrides: dict[str, TrustConfig] | None = None,
         system_prompt: str = "You are a helpful assistant.",
@@ -517,6 +564,7 @@ class HestiaConfig(_ConfigFromEnv):
         style: StyleConfig | None = None,
         policy: PolicyConfig | None = None,
         rate_limit: RateLimitConfig | None = None,
+        web: WebConfig | None = None,
     ) -> None:
         if core is None:
             core = CoreConfig(
@@ -543,10 +591,12 @@ class HestiaConfig(_ConfigFromEnv):
                 style=style or StyleConfig(),
                 policy=policy or PolicyConfig(),
                 rate_limit=rate_limit or RateLimitConfig(),
+                web=web or WebConfig(),
             )
         self.core = core
         self.platforms = platforms
         self.features = features
+        self.browser = browser or BrowserConfig()
         self.trust = trust or TrustConfig()
         self.trust_overrides = trust_overrides if trust_overrides is not None else {}
         self.system_prompt = system_prompt
@@ -708,6 +758,15 @@ class HestiaConfig(_ConfigFromEnv):
     @rate_limit.setter
     def rate_limit(self, value: RateLimitConfig) -> None:
         self.features.rate_limit = value
+
+    @property
+    def web(self) -> WebConfig:
+        """Deprecated: use features.web instead."""
+        return self.features.web
+
+    @web.setter
+    def web(self, value: WebConfig) -> None:
+        self.features.web = value
 
     @classmethod
     def from_file(cls, path: Path) -> HestiaConfig:

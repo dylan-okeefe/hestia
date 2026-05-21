@@ -174,3 +174,112 @@ style_profiles = sa.Table(
     sa.Index("idx_style_profiles_user", "platform", "platform_user"),
     sa.Index("idx_style_profiles_updated", "updated_at"),
 )
+
+workflows = sa.Table(
+    "workflows",
+    metadata,
+    sa.Column("id", sa.String, primary_key=True),
+    sa.Column("name", sa.String, nullable=False),
+    sa.Column("description", sa.String, nullable=False, default=""),
+    sa.Column("trigger_type", sa.String, nullable=False, default="manual"),
+    sa.Column("trigger_config", sa.Text, nullable=False, default="{}"),
+    sa.Column("owner_id", sa.String, nullable=False, default=""),
+    sa.Column("trust_level", sa.String, nullable=False, default="paranoid"),
+    sa.Column("created_at", sa.DateTime, nullable=False),
+    sa.Column("updated_at", sa.DateTime, nullable=False),
+    sa.Index("idx_workflows_created", "created_at"),
+)
+
+workflow_versions = sa.Table(
+    "workflow_versions",
+    metadata,
+    sa.Column("workflow_id", sa.String, sa.ForeignKey("workflows.id", ondelete="CASCADE"), nullable=False),
+    sa.Column("version", sa.Integer, nullable=False),
+    sa.Column("nodes", sa.Text, nullable=False, default="[]"),
+    sa.Column("edges", sa.Text, nullable=False, default="[]"),
+    sa.Column("created_at", sa.DateTime, nullable=False),
+    sa.Column("is_active", sa.Boolean, nullable=False, default=False),
+    sa.PrimaryKeyConstraint("workflow_id", "version"),
+    sa.Index(
+        "ux_workflow_versions_active",
+        "workflow_id",
+        unique=True,
+        sqlite_where=sa.text("is_active = 1"),
+        postgresql_where=sa.text("is_active = 1"),
+    ),
+    sa.Index("idx_workflow_versions_workflow", "workflow_id", "version"),
+)
+
+session_handoffs = sa.Table(
+    "session_handoffs",
+    metadata,
+    sa.Column("id", sa.String, primary_key=True),
+    sa.Column("previous_session_id", sa.String, sa.ForeignKey("sessions.id"), nullable=False),
+    sa.Column("platform", sa.String, nullable=False),
+    sa.Column("platform_user", sa.String, nullable=False),
+    sa.Column("summary", sa.Text, nullable=True),
+    sa.Column("key_messages", sa.Text, nullable=False),  # JSON
+    sa.Column("artifacts", sa.Text, nullable=False),  # JSON
+    sa.Column("created_at", sa.DateTime, nullable=False),
+    sa.Index("idx_handoffs_platform_user", "platform", "platform_user", "created_at"),
+)
+
+workflow_executions = sa.Table(
+    "workflow_executions",
+    metadata,
+    sa.Column("id", sa.String, primary_key=True),
+    sa.Column("workflow_id", sa.String, sa.ForeignKey("workflows.id", ondelete="CASCADE"), nullable=False),
+    sa.Column("version", sa.Integer, nullable=False),
+    sa.Column("status", sa.String, nullable=False),
+    sa.Column("trigger_payload", sa.Text, nullable=False, default="{}"),
+    sa.Column("node_results", sa.Text, nullable=False, default="[]"),
+    sa.Column("total_elapsed_ms", sa.Integer, nullable=False, default=0),
+    sa.Column("total_prompt_tokens", sa.Integer, nullable=False, default=0),
+    sa.Column("total_completion_tokens", sa.Integer, nullable=False, default=0),
+    sa.Column("created_at", sa.DateTime, nullable=False),
+    sa.Index("idx_executions_workflow", "workflow_id", "created_at"),
+)
+
+users = sa.Table(
+    "users",
+    metadata,
+    sa.Column("id", sa.String, primary_key=True),
+    sa.Column("display_name", sa.String, nullable=False),
+    sa.Column("role", sa.String, nullable=False, default="user"),
+    sa.Column("trust_preset", sa.String, nullable=True),
+    sa.Column("notes", sa.Text, nullable=True),
+    sa.Column("created_at", sa.DateTime, nullable=False),
+    sa.Column("updated_at", sa.DateTime, nullable=False),
+)
+
+user_identities = sa.Table(
+    "user_identities",
+    metadata,
+    sa.Column("user_id", sa.String, sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+    sa.Column("platform", sa.String, nullable=False),
+    sa.Column("platform_user", sa.String, nullable=False),
+    sa.Column("verified", sa.Boolean, nullable=False, default=False),
+    sa.Column("created_at", sa.DateTime, nullable=False),
+    sa.PrimaryKeyConstraint("platform", "platform_user"),
+    sa.Index("idx_user_identities_user", "user_id"),
+)
+
+rooms = sa.Table(
+    "rooms",
+    metadata,
+    sa.Column("id", sa.String, primary_key=True),
+    sa.Column("platform", sa.String, nullable=False),
+    sa.Column("platform_room_id", sa.String, nullable=False),
+    sa.Column("display_name", sa.String, nullable=True),
+    sa.Column("created_at", sa.DateTime, nullable=False),
+    sa.UniqueConstraint("platform", "platform_room_id"),
+)
+
+room_members = sa.Table(
+    "room_members",
+    metadata,
+    sa.Column("room_id", sa.String, sa.ForeignKey("rooms.id", ondelete="CASCADE"), nullable=False),
+    sa.Column("user_id", sa.String, sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+    sa.Column("joined_at", sa.DateTime, nullable=False),
+    sa.PrimaryKeyConstraint("room_id", "user_id"),
+)

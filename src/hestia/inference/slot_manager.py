@@ -119,9 +119,16 @@ class SlotManager:
                         else:
                             await self._store.assign_slot(session.id, slot_id)
                             return SlotAssignment(slot_id=slot_id, restored_from_disk=False)
-                    except PersistenceError:
+                    except (PersistenceError, InferenceServerError) as exc:
+                        logger.warning(
+                            "Slot restore failed for session %s: %s; falling back to fresh slot",
+                            session.id,
+                            exc,
+                        )
                         self._assignments.pop(slot_id, None)
-                        raise
+                        # Clear saved path so we don't retry a broken snapshot
+                        await self._store.assign_slot(session.id, slot_id)
+                        return SlotAssignment(slot_id=slot_id, restored_from_disk=False)
 
                 return SlotAssignment(slot_id=session.slot_id, restored_from_disk=False)
 
@@ -140,9 +147,16 @@ class SlotManager:
                     await self._inference.slot_restore(slot_id, filename)
                     await self._store.assign_slot(session.id, slot_id, clear_saved_path=True)
                     return SlotAssignment(slot_id=slot_id, restored_from_disk=True)
-                except (OSError, PersistenceError, httpx.HTTPError, RuntimeError):
+                except (OSError, PersistenceError, httpx.HTTPError, RuntimeError, InferenceServerError) as exc:
+                    logger.warning(
+                        "Slot restore failed for session %s: %s; falling back to fresh slot",
+                        session.id,
+                        exc,
+                    )
                     self._assignments.pop(slot_id, None)
-                    raise
+                    # Clear saved path so we don't retry a broken snapshot
+                    await self._store.assign_slot(session.id, slot_id)
+                    return SlotAssignment(slot_id=slot_id, restored_from_disk=False)
 
             else:  # COLD
                 slot_id = await self._allocate_slot(session.id)

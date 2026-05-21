@@ -43,7 +43,8 @@ class ProposalStore:
                 "id": proposal.id, "type": proposal.type, "summary": proposal.summary,
                 "evidence": json.dumps(proposal.evidence), "action": json.dumps(proposal.action),
                 "confidence": proposal.confidence, "status": proposal.status,
-                "created_at": proposal.created_at.isoformat(), "expires_at": proposal.expires_at.isoformat(),  # noqa: E501
+                "created_at": proposal.created_at.isoformat() if proposal.created_at else None,
+                "expires_at": proposal.expires_at.isoformat() if proposal.expires_at else None,
                 "reviewed_at": proposal.reviewed_at.isoformat() if proposal.reviewed_at else None,
                 "review_note": proposal.review_note,
             })

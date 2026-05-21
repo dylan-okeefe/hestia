@@ -206,6 +206,48 @@ class TraceStore:
             )
             await conn.commit()
 
+    async def list_egress(
+        self,
+        domain: str | None = None,
+        since: datetime | None = None,
+    ) -> list[dict[str, Any]]:
+        """List individual egress events with optional filtering."""
+        clauses: list[str] = []
+        params: dict[str, Any] = {}
+
+        if domain:
+            clauses.append("domain = :domain")
+            params["domain"] = domain
+        if since:
+            clauses.append("created_at >= :since")
+            params["since"] = since.isoformat()
+
+        base_sql = (
+            "SELECT id, session_id, url, domain, status, size, created_at "
+            "FROM egress_events"
+        )
+        if clauses:
+            base_sql += " WHERE " + " AND ".join(clauses)
+        base_sql += " ORDER BY created_at DESC"
+
+        sql = sa.text(base_sql)
+
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(sql, params)
+            rows = result.fetchall()
+            return [
+                {
+                    "id": row.id,
+                    "session_id": row.session_id,
+                    "url": row.url,
+                    "domain": row.domain,
+                    "status": row.status,
+                    "size": row.size,
+                    "created_at": row.created_at,
+                }
+                for row in rows
+            ]
+
     async def egress_summary(
         self,
         since: datetime | None = None,

@@ -2,7 +2,7 @@
 
 ## What the reflection loop does
 
-When enabled, Hestia runs a background analysis during idle hours:
+Reflection is **enabled by default** in v0.11.0+. Hestia runs a background analysis during idle hours:
 
 1. **Pattern mining** — reads recent traces and looks for signals like repeated corrections, slow turns, or frequent tool chains.
 2. **Proposal generation** — turns those signals into concrete suggestions (identity updates, new tool chains, tool fixes, policy tweaks).
@@ -146,14 +146,22 @@ hestia reflection run --now
 
 If `run --now` produces no proposals even when you expect some, check:
 
-1. Is `reflection.enabled=True` in your config?
+1. Is `reflection.enabled=True` in your config? (It defaults to `True` since v0.11.0.)
 2. Are there recent traces? (`hestia status` shows trace counts.)
 3. Is the inference server running? Reflection uses the same `InferenceClient` as chat.
 4. Check logs for inference errors during pattern mining or proposal generation.
 
+## Disabling reflection
+
+If you want to turn reflection off:
+
+```python
+ReflectionConfig(enabled=False)
+```
+
 ## Quick-start config
 
-The fastest way to enable reflection:
+Reflection is enabled by default. The quick-start config (only needed if you want to customize defaults):
 
 ```python
 from hestia.config import HestiaConfig, ReflectionConfig

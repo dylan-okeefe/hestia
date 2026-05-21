@@ -1,13 +1,14 @@
 """Turn execution phase: model inference, tool dispatch, confirmation gating."""
 
 import asyncio
+import contextlib
 import json
 import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 from hestia.core.clock import utcnow
-from hestia.core.inference import InferenceClient
+from hestia.core.inference import InferenceClient, _extract_tool_calls_from_text
 from hestia.core.types import ChatResponse, Message, Session, ToolCall
 from hestia.errors import (
     EmptyResponseError,
@@ -21,6 +22,9 @@ from hestia.security import InjectionScanner
 from hestia.tools.metadata import ToolMetadata
 from hestia.tools.registry import ToolNotFoundError, ToolRegistry
 from hestia.tools.types import ToolCallResult
+
+if TYPE_CHECKING:
+    from hestia.events.bus import EventBus
 
 if TYPE_CHECKING:
     from hestia.context.builder import ContextBuilder
@@ -48,7 +52,8 @@ class TurnExecution:
         max_iterations: int = 10,
         max_tool_calls_per_turn: int = 10,
         stream: bool = False,
-    ):
+        event_bus: "EventBus | None" = None,
+    ) -> None:
         self._tools = tool_registry
         self._inference = inference_client
         self._policy = policy
@@ -59,6 +64,7 @@ class TurnExecution:
         self._max_iterations = max_iterations
         self._max_tool_calls_per_turn = max_tool_calls_per_turn
         self._stream = stream
+        self._event_bus = event_bus
 
         # Meta-tool dispatch table — adding a new meta-tool is one line.
         self._meta_tools: dict[
@@ -110,62 +116,44 @@ class TurnExecution:
             )
             await self._store.append_message(session.id, assistant_msg)
 
-            if chat_response.finish_reason == "tool_calls":
-                await transition(turn, TurnState.EXECUTING_TOOLS, "")
-
-                tool_names = [tc.name for tc in chat_response.tool_calls]
-                ctx.tool_chain.extend(tool_names)
-                logger.debug("Executing tools: %s", ", ".join(tool_names))
-                await set_typing(True)
-
-                task_desc = (ctx.user_message.content or "").strip()
-                use_policy_delegation = (
-                    "delegate_task" in self._tools.list_names()
-                    and self._policy.should_delegate(
-                        session,
-                        task_desc,
-                        turn.tool_calls_made,
-                        len(chat_response.tool_calls),
-                    )
+            # Guardrail: model is reasoning extensively but not acting
+            if (
+                chat_response.reasoning_content
+                and len(chat_response.reasoning_content) > 1500
+                and not chat_response.tool_calls
+                and not chat_response.content
+            ):
+                await ctx.respond_callback(
+                    "🛑 You have been reasoning extensively but haven't emitted a tool call. "
+                    "Please make a tool call now."
                 )
-                ctx.delegated = use_policy_delegation
-
-                if use_policy_delegation:
-                    await transition(turn, TurnState.AWAITING_SUBAGENT, "")
-                    tool_results, handles = await self._execute_policy_delegation(
-                        ctx.user_message, chat_response.tool_calls
-                    )
-                    ctx.artifact_handles.extend(handles)
-                    await transition(turn, TurnState.EXECUTING_TOOLS, "")
-                else:
-                    tool_results, handles = await self._execute_tool_calls(
-                        session, chat_response.tool_calls, ctx.allowed_tools
-                    )
-                    ctx.artifact_handles.extend(handles)
-
-                for result_msg in tool_results:
-                    await self._store.append_message(session.id, result_msg)
-
-                await transition(turn, TurnState.BUILDING_CONTEXT, "")
-
-                ctx.running_history.append(assistant_msg)
-                ctx.running_history.extend(tool_results)
-                self._builder.set_style_prefix(ctx.style_prefix)
-                ctx.build_result = await self._builder.build(
-                    session=session,
-                    history=ctx.running_history,
-                    system_prompt=ctx.system_prompt,
-                    tools=ctx.tools,
-                    new_user_message=None,
-                )
-
-                turn.tool_calls_made += len(chat_response.tool_calls)
                 turn.iterations += 1
+                continue
+
+            if chat_response.finish_reason == "tool_calls":
+                await self._handle_tool_calls(
+                    ctx, turn, chat_response, transition, set_typing, assistant_msg
+                )
                 continue
 
             elif chat_response.finish_reason in ("stop", "length"):
                 content = chat_response.content or ""
-                if not content.strip() and not chat_response.tool_calls:
+
+                # Some models occasionally emit finish_reason="stop" alongside
+                # tool_calls. If tool_calls are present, execute them and continue
+                # the loop rather than treating the turn as done.
+                if chat_response.tool_calls:
+                    logger.debug(
+                        "finish_reason=%s but tool_calls present (%d); routing to tool execution",
+                        chat_response.finish_reason,
+                        len(chat_response.tool_calls),
+                    )
+                    await self._handle_tool_calls(
+                        ctx, turn, chat_response, transition, set_typing, assistant_msg
+                    )
+                    continue
+
+                if not content.strip():
                     # Empty response — retry via policy instead of failing immediately
                     decision = self._policy.retry_after_error(
                         EmptyResponseError(
@@ -184,7 +172,12 @@ class TurnExecution:
 
                 await transition(turn, TurnState.DONE, "")
                 turn.final_response = content
-                await ctx.respond_callback(content)
+                # Surface reasoning to user (does not affect stored message or prompt)
+                if chat_response.reasoning_content:
+                    display = f"💭 {chat_response.reasoning_content}\n\n━━━\n\n{content}"
+                else:
+                    display = content
+                await ctx.respond_callback(display)
                 break
 
             else:
@@ -200,6 +193,85 @@ class TurnExecution:
             raise MaxIterationsError(self._max_iterations, turn.iterations)
 
         return content
+
+    async def _handle_tool_calls(
+        self,
+        ctx: TurnContext,
+        turn: Turn,
+        chat_response: ChatResponse,
+        transition: TransitionCallback,
+        set_typing: TypingCallback,
+        assistant_msg: Message,
+    ) -> TurnState:
+        """Dispatch tool calls, handle delegation, rebuild context, and advance the turn."""
+        await transition(turn, TurnState.EXECUTING_TOOLS, "")
+
+        tool_names = [tc.name for tc in chat_response.tool_calls]
+        ctx.tool_chain.extend(tool_names)
+        logger.debug("Executing tools: %s", ", ".join(tool_names))
+        await set_typing(True)
+
+        # Show reasoning before tool status so user can see model's thinking
+        if chat_response.reasoning_content:
+            try:
+                reasoning_display = f"💭 {chat_response.reasoning_content[:2000]}"
+                if len(chat_response.reasoning_content) > 2000:
+                    reasoning_display += "\n\n... (reasoning truncated)"
+                await ctx.respond_callback(reasoning_display)
+            except Exception:
+                pass
+
+        # Status update: tell user what we're doing (first iteration only)
+        if turn.iterations == 0:
+            status = self._format_tool_status(tool_names)
+            if status:
+                with contextlib.suppress(Exception):
+                    await ctx.respond_callback(status)  # best-effort; don't fail the turn
+
+        task_desc = (ctx.user_message.content or "").strip()
+        use_policy_delegation = (
+            "delegate_task" in self._tools.list_names()
+            and self._policy.should_delegate(
+                ctx.session,
+                task_desc,
+                turn.tool_calls_made,
+                len(chat_response.tool_calls),
+            )
+        )
+        ctx.delegated = use_policy_delegation
+
+        if use_policy_delegation:
+            await transition(turn, TurnState.AWAITING_SUBAGENT, "")
+            tool_results, handles = await self._execute_policy_delegation(
+                ctx.user_message, chat_response.tool_calls
+            )
+            ctx.artifact_handles.extend(handles)
+            await transition(turn, TurnState.EXECUTING_TOOLS, "")
+        else:
+            tool_results, handles = await self._execute_tool_calls(
+                ctx.session, chat_response.tool_calls, ctx.allowed_tools, ctx
+            )
+            ctx.artifact_handles.extend(handles)
+
+        for result_msg in tool_results:
+            await self._store.append_message(ctx.session.id, result_msg)
+
+        await transition(turn, TurnState.BUILDING_CONTEXT, "")
+
+        ctx.running_history.append(assistant_msg)
+        ctx.running_history.extend(tool_results)
+        self._builder.set_style_prefix(ctx.style_prefix)
+        ctx.build_result = await self._builder.build(
+            session=ctx.session,
+            history=ctx.running_history,
+            system_prompt=ctx.system_prompt,
+            tools=ctx.tools,
+            new_user_message=None,
+        )
+
+        turn.tool_calls_made += len(chat_response.tool_calls)
+        turn.iterations += 1
+        return TurnState.BUILDING_CONTEXT
 
     async def _run_inference_streaming(
         self, ctx: TurnContext, turn: Turn
@@ -261,9 +333,12 @@ class TurnExecution:
             try:
                 arguments = json.loads(buf["arguments"]) if buf["arguments"] else {}
             except json.JSONDecodeError as exc:
-                raise InferenceServerError(
-                    f"tool_call arguments for {buf['name']!r} are malformed JSON: {exc}"
-                ) from exc
+                logger.warning(
+                    "tool_call arguments for %r are malformed JSON (%s); treating as empty",
+                    buf["name"],
+                    exc,
+                )
+                arguments = {}
             if not isinstance(arguments, dict):
                 raise InferenceServerError(
                     f"tool_call arguments for {buf['name']!r} are not a dict: "
@@ -276,6 +351,24 @@ class TurnExecution:
                     arguments=arguments,
                 )
             )
+
+        # Fallback: Qwen3.5 in reasoning mode sometimes emits tool calls inside
+        # <think> blocks (which land in reasoning_content) but omits the structured
+        # tool_call_chunks. Parse XML-style <tool_call> tags as a safety net.
+        if not tool_calls:
+            combined = ""
+            if reasoning_content:
+                combined += reasoning_content + "\n"
+            if content:
+                combined += content + "\n"
+            if combined:
+                fallback = _extract_tool_calls_from_text(combined)
+                if fallback:
+                    tool_calls = fallback
+                    logger.info(
+                        "Recovered %d tool call(s) from reasoning/content XML fallback",
+                        len(tool_calls),
+                    )
 
         if finish_reason == "unknown" and tool_calls:
             finish_reason = "tool_calls"
@@ -291,7 +384,11 @@ class TurnExecution:
         )
 
     async def _execute_tool_calls(
-        self, session: Session, tool_calls: list[ToolCall], allowed_tools: list[str] | None = None
+        self,
+        session: Session,
+        tool_calls: list[ToolCall],
+        allowed_tools: list[str] | None = None,
+        ctx: "TurnContext | None" = None,
     ) -> tuple[list[Message], list[str]]:
         """Execute tool calls and return result messages and artifact handles.
 
@@ -350,6 +447,16 @@ class TurnExecution:
                     result = ToolCallResult.error(
                         f"Tool {tc.name} failed: {exc}", error_type=type(exc).__name__
                     )
+                    if self._event_bus is not None:
+                        await self._event_bus.publish(
+                            "tool_error",
+                            {
+                                "tool_name": tc.name,
+                                "error": str(exc),
+                                "error_type": type(exc).__name__,
+                                "platform": "orchestrator",
+                            },
+                        )
                 return idx, result
 
             for idx, result in await asyncio.gather(
@@ -370,6 +477,28 @@ class TurnExecution:
         for i, tc in enumerate(tool_calls):
             result = concurrent_results[i] if i in concurrent_results else serial_results[i]
             result = self._scan_tool_result(result)
+
+            # Circuit breaker: detect repeated empty-arg failures
+            is_empty_args = tc.arguments is None or tc.arguments == {}
+            looks_like_missing_arg_error = (
+                result.status == "error"
+                and isinstance(result.content, str)
+                and (
+                    "requires a" in result.content.lower()
+                    or "missing" in result.content.lower()
+                    or "requires" in result.content.lower()
+                )
+            )
+            if is_empty_args and looks_like_missing_arg_error and ctx is not None:
+                count = ctx.empty_tool_failure_counts.get(tc.name, 0) + 1
+                ctx.empty_tool_failure_counts[tc.name] = count
+                if count >= 3:
+                    result = ToolCallResult.error(
+                        f"🛑 CIRCUIT BREAKER: You have called {tc.name} with missing/empty arguments {count} times. "
+                        "You are stuck in a loop and cannot generate the correct JSON payload. "
+                        "STOP calling this tool. Instead, write your response as plain text for the user."
+                    )
+
             if result.artifact_handle:
                 artifact_handles.append(result.artifact_handle)
 
@@ -560,6 +689,44 @@ class TurnExecution:
 
         result = await self._tools.call(tc.name, tc.arguments or {})
         return self._scan_tool_result(result)
+
+    def _format_tool_status(self, tool_names: list[str]) -> str | None:
+        """Format a human-readable status line for the tools about to run."""
+        if not tool_names:
+            return None
+        emoji_map = {
+            "browser_get": "🌐",
+            "browser_login": "🔐",
+            "write_file": "📝",
+            "append_to_file": "📝",
+            "read_file": "📄",
+            "list_dir": "📁",
+            "terminal": "💻",
+            "search_web": "🔍",
+            "http_get": "🌐",
+            "delegate_task": "👤",
+            "list_tools": "🛠️",
+            "describe_tool": "🛠️",
+            "create_scheduled_task": "⏰",
+            "save_memory": "🧠",
+            "search_memory": "🧠",
+            "list_memories": "🧠",
+            "delete_memory": "🧠",
+            "read_artifact": "📦",
+            "current_time": "🕐",
+            "web_search": "🔍",
+            "email_search_and_read": "📧",
+            "send_email": "📧",
+            "accept_proposal": "✅",
+            "reject_proposal": "❌",
+            "show_proposal": "📋",
+            "list_proposals": "📋",
+        }
+        parts = []
+        for name in tool_names:
+            emoji = emoji_map.get(name, "🛠️")
+            parts.append(f"{emoji} {name}")
+        return "Working: " + ", ".join(parts) + "..."
 
     def _scan_tool_result(self, result: ToolCallResult) -> ToolCallResult:
         """Run injection scanner over a tool result, annotating if triggered."""

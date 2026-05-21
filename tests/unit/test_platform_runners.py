@@ -23,6 +23,10 @@ from hestia.platforms.runners import (
     run_telegram,
 )
 
+_IncomingMessageCallback = Callable[
+    [str, str, str, str | None], Coroutine[Any, Any, None]
+]
+
 
 class FakePlatform(Platform):
     """Fake platform adapter for testing."""
@@ -31,13 +35,13 @@ class FakePlatform(Platform):
         self.started = False
         self.stopped = False
         self.sent_messages: list[tuple[str, str]] = []
-        self._on_message: Callable[[str, str, str], Coroutine[Any, Any, None]] | None = None
+        self._on_message: _IncomingMessageCallback | None = None
 
     @property
     def name(self) -> str:
         return "fake"
 
-    async def start(self, on_message: Callable[[str, str, str], Coroutine[Any, Any, None]]) -> None:
+    async def start(self, on_message: _IncomingMessageCallback) -> None:
         self.started = True
         self._on_message = on_message
 
@@ -61,19 +65,27 @@ def _make_app() -> MagicMock:
     app.set_confirm_callback = MagicMock()
     app.make_orchestrator = MagicMock()
     app.session_store = MagicMock()
-    app.session_store.get_or_create_session = AsyncMock(
-        return_value=Session(
-            id="sess-1",
-            platform="fake",
-            platform_user="u1",
-            started_at=MagicMock(),
-            last_active_at=MagicMock(),
-            slot_id=None,
-            slot_saved_path=None,
-            state=MagicMock(),
-            temperature=MagicMock(),
-        )
+    _session = Session(
+        id="sess-1",
+        platform="fake",
+        platform_user="u1",
+        started_at=MagicMock(),
+        last_active_at=MagicMock(),
+        slot_id=None,
+        slot_saved_path=None,
+        state=MagicMock(),
+        temperature=MagicMock(),
     )
+    app.session_store.get_or_create_session = AsyncMock(return_value=_session)
+    app.session_store.get_or_create_session_with_handoff = AsyncMock(
+        return_value=_session
+    )
+    app.user_store = MagicMock()
+    app.user_store.get_user_by_identity = AsyncMock(return_value=None)
+    app.user_store.get_room_by_platform = AsyncMock(return_value=None)
+    app.user_store.create_room = AsyncMock()
+    app.user_store.get_room_members = AsyncMock(return_value=[])
+    app.user_store.add_room_member = AsyncMock()
     app.inference.close = AsyncMock()
     context_builder = MagicMock()
     context_builder.warm_up = AsyncMock()
@@ -283,7 +295,7 @@ class TestRunPlatformLifecycle:
 
         async def single_message_then_stop(*args: Any, **kwargs: Any) -> None:
             if adapter._on_message is not None:
-                await adapter._on_message("fake", "u1", "hello")
+                await adapter._on_message("fake", "u1", "hello", None)
             raise KeyboardInterrupt()
 
         with patch("asyncio.sleep", side_effect=single_message_then_stop):
@@ -313,7 +325,7 @@ class TestRunPlatformLifecycle:
 
         async def single_message_then_stop(*args: Any, **kwargs: Any) -> None:
             if adapter._on_message is not None:
-                await adapter._on_message("fake", "u1", "hello")
+                await adapter._on_message("fake", "u1", "hello", None)
             raise KeyboardInterrupt()
 
         with patch("asyncio.sleep", side_effect=single_message_then_stop):
@@ -325,7 +337,9 @@ class TestRunPlatformLifecycle:
                 platform_name="fake",
             )
 
-        assert any("ERROR:Turn failed" in msg for _user, msg in adapter.sent_messages)
+        assert any(
+            "ERROR:Something went wrong" in msg for _user, msg in adapter.sent_messages
+        )
 
     @pytest.mark.asyncio
     async def test_starts_scheduler_when_callback_provided(self):
@@ -428,7 +442,7 @@ class TestRunPlatformStreaming:
 
         async def single_message_then_stop(*args, **kwargs):
             if adapter._on_message is not None:
-                await adapter._on_message("fake", "u1", "hello")
+                await adapter._on_message("fake", "u1", "hello", None)
             raise KeyboardInterrupt()
 
         with patch("asyncio.sleep", side_effect=single_message_then_stop):
@@ -466,7 +480,7 @@ class TestRunPlatformStreaming:
 
         async def single_message_then_stop(*args, **kwargs):
             if adapter._on_message is not None:
-                await adapter._on_message("fake", "u1", "hello")
+                await adapter._on_message("fake", "u1", "hello", None)
             raise KeyboardInterrupt()
 
         with patch("asyncio.sleep", side_effect=single_message_then_stop):
@@ -498,7 +512,7 @@ class TestRunPlatformStreaming:
 
         async def single_message_then_stop(*args, **kwargs):
             if adapter._on_message is not None:
-                await adapter._on_message("fake", "u1", "hello")
+                await adapter._on_message("fake", "u1", "hello", None)
             raise KeyboardInterrupt()
 
         with patch("asyncio.sleep", side_effect=single_message_then_stop):
@@ -533,7 +547,7 @@ class TestRunPlatformStreaming:
 
         async def single_message_then_stop(*args, **kwargs):
             if adapter._on_message is not None:
-                await adapter._on_message("fake", "u1", "hello")
+                await adapter._on_message("fake", "u1", "hello", None)
             raise KeyboardInterrupt()
 
         with patch("asyncio.sleep", side_effect=single_message_then_stop):

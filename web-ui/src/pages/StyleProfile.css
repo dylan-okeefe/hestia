@@ -1,0 +1,45 @@
+.style-profile-page {
+  padding: var(--space-4);
+}
+
+.style-profile-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-4);
+}
+
+.style-profile-title {
+  margin: 0;
+}
+
+.style-profile-info-grid {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.style-profile-info-label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.style-profile-info-value {
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.style-profile-metric-key {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: var(--space-1);
+}
+
+.style-profile-metric-value {
+  font-size: var(--font-size-xl);
+  font-weight: 600;
+  word-break: break-word;
+}

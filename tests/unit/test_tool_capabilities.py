@@ -10,8 +10,8 @@ from hestia.tools.builtin import (
     http_get,
     make_list_dir_tool,
     make_read_file_tool,
-    make_write_file_tool,
     make_terminal_tool,
+    make_write_file_tool,
 )
 from hestia.tools.builtin.delegate_task import make_delegate_task_tool
 from hestia.tools.builtin.memory_tools import (
@@ -122,6 +122,46 @@ class TestToolCapabilities:
 
         src = inspect.getsource(make_read_artifact_tool)
         assert "READ_LOCAL" in src
+
+    def test_proposal_tools_have_self_management(self):
+        """Proposal tools have SELF_MANAGEMENT capability."""
+        import inspect
+
+        from hestia.tools.builtin.proposal_tools import (
+            make_accept_proposal_tool,
+            make_defer_proposal_tool,
+            make_list_proposals_tool,
+            make_reject_proposal_tool,
+            make_show_proposal_tool,
+        )
+
+        for factory in [
+            make_list_proposals_tool,
+            make_show_proposal_tool,
+            make_accept_proposal_tool,
+            make_reject_proposal_tool,
+            make_defer_proposal_tool,
+        ]:
+            src = inspect.getsource(factory)
+            assert "SELF_MANAGEMENT" in src
+
+    def test_style_tools_have_self_management(self):
+        """Style tools have SELF_MANAGEMENT capability."""
+        import inspect
+
+        from hestia.tools.builtin.style_tools import (
+            make_reset_style_metric_tool,
+            make_reset_style_profile_tool,
+            make_show_style_profile_tool,
+        )
+
+        for factory in [
+            make_show_style_profile_tool,
+            make_reset_style_metric_tool,
+            make_reset_style_profile_tool,
+        ]:
+            src = inspect.getsource(factory)
+            assert "SELF_MANAGEMENT" in src
 
 
 class TestToolMetadataDefaults:

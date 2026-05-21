@@ -30,6 +30,7 @@ from hestia.orchestrator.types import (
     TurnTransition,
 )
 from hestia.persistence.sessions import SessionStore
+from hestia.persistence.users import User
 from hestia.platforms.base import Platform
 from hestia.policy.engine import PolicyEngine
 from hestia.reflection.store import ProposalStore
@@ -44,6 +45,7 @@ from hestia.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
     from hestia.config import StyleConfig
+    from hestia.events.bus import EventBus
     from hestia.persistence.failure_store import FailureStore
     from hestia.persistence.trace_store import TraceStore
     from hestia.style.store import StyleProfileStore
@@ -74,6 +76,7 @@ class Orchestrator:
         style_config: "StyleConfig | None" = None,
         rate_limiter: SessionRateLimiter | None = None,
         stream: bool = False,
+        event_bus: "EventBus | None" = None,
     ):
         """Initialize the orchestrator."""
         self._inference = inference
@@ -94,6 +97,7 @@ class Orchestrator:
         self._style_config = style_config
         self._rate_limiter = rate_limiter
         self._stream = stream
+        self._event_bus = event_bus
 
         self._assembly = TurnAssembly(
             context_builder=context_builder,
@@ -117,6 +121,7 @@ class Orchestrator:
             max_iterations=max_iterations,
             max_tool_calls_per_turn=max_tool_calls_per_turn,
             stream=stream,
+            event_bus=event_bus,
         )
 
         self._finalization = TurnFinalization(
@@ -147,14 +152,19 @@ class Orchestrator:
             logger.warning("close_session called for unknown session %s", session_id)
             return
 
+        summary: str | None = None
         if self._handoff_summarizer is not None:
             try:
                 history = await self._store.get_messages(session_id)
-                await self._handoff_summarizer.summarize_and_store(session, history)
+                result = await self._handoff_summarizer.summarize_and_store(
+                    session, history
+                )
+                if result is not None:
+                    summary = result.summary
             except Exception:  # noqa: BLE001
                 logger.warning("Handoff summarizer failed for %s", session_id, exc_info=True)
 
-        await self._store.archive_session(session_id)
+        await self._store.archive_session(session_id, summary=summary)
 
     async def _set_typing(
         self, platform: Platform | None, platform_user: str | None, typing: bool
@@ -175,6 +185,7 @@ class Orchestrator:
         platform_user: str | None = None,
         voice_reply: bool = False,
         stream_callback: StreamCallback | None = None,
+        resolved_user: User | None = None,
     ) -> Turn:
         """Process a single user turn through the state machine."""
         if self._rate_limiter is not None and not self._rate_limiter.allow(session.id):
@@ -207,6 +218,7 @@ class Orchestrator:
                 session=session,
                 voice_reply=voice_reply,
                 stream_callback=stream_callback,
+                resolved_user=resolved_user,
             )
 
             try:

@@ -66,6 +66,12 @@ Before declaring a chunk done, verify:
 8. **Type safety** — `mypy` reports 0 errors in changed files.
 9. **No sync I/O in async paths** — Wrap sync calls with `asyncio.to_thread` or use async-native APIs.
 10. **No bare excepts** — Narrow exception clauses; log unexpected ones.
+11. **No leaked API keys or secrets** — Scan for hardcoded tokens, passwords, or API keys in changed files and logs. Run:
+    ```bash
+    git diff --cached -p | grep -iE "(api[_-]?key|token|secret|password|bearer)\s*[:=]\s*[\"'][a-zA-Z0-9_-]{20,}"
+    git diff --cached --name-only | xargs grep -iE "[0-9]+:[A-Za-z0-9_-]{35}" 2>/dev/null
+    ```
+    Log files (`.log`, `*.log`) must NEVER be committed — they capture runtime tokens. If found, `git rm --cached`, add `*.log` to `.gitignore`, and rotate the exposed credential immediately.
 
 See `references/review-checklist.md` for the detailed version with examples.
 
@@ -121,9 +127,10 @@ src/hestia/
 
 - **Primary development worktree:** `~/Hestia` (develop branch). All code changes, commits, and branch creation happen here.
 - **Personal runtime worktree:** `~/Hestia-runtime` (runtime branch). This is Dylan's live instance with Matrix chat configured for integration testing.
-- **Testing rule:** After implementing changes in `~/Hestia`, copy/move the relevant changed files to `~/Hestia-runtime` and run the full test suite there. Matrix integration tests only work in the runtime worktree.
-- **Preservation rule:** `~/Hestia-runtime` may have uncommitted runtime-specific customizations (e.g., DuckDuckGo fallback, Telegram HTML formatting). Never blindly overwrite files — apply fixes selectively so runtime customizations are preserved.
+- **Deployment rule:** When Dylan asks to "deploy to runtime" or "set up on Hestia-runtime", merge the development branch into a runtime-specific branch (e.g. `feature/<name>-runtime`) and check it out in `~/Hestia-runtime`. Do NOT cherry-pick or copy individual files unless explicitly instructed. The runtime should run the exact same code as the development branch.
+- **Preservation rule:** `~/Hestia-runtime` may have untracked runtime-specific files (e.g., `config.runtime.py`, `.env`, `hestia.db`, logs). These should be preserved. Only tracked files from the branch should be updated. Stash any local modifications before switching branches, then restore them if still relevant.
 - **Quality gates in runtime:** `cd ~/Hestia-runtime && uv run pytest tests/unit/ tests/integration/ -q` must pass after syncing.
+- **Restart rule:** After deploying to runtime, restart the services so the new code is loaded. Dylan typically runs: `nohup uv run --env-file .env hestia --config config.runtime.py serve > runtime-data/logs/hestia-serve.log 2>&1 &`
 
 ## When to ask Dylan vs. proceed
 
@@ -156,3 +163,16 @@ After completing a spec arc, write or update:
 - `docs/handoffs/L<NN>-<slug>-handoff.md` — technical summary
 - `docs/development-process/kimi-loop-log.md` — narrative entry at top
 - `docs/development-process/prompts/KIMI_CURRENT.md` — advance pointer or set idle
+
+## Operational Notes
+
+### Downloading models from Hugging Face
+The Hugging Face CLI tool is available as `hf` (not `huggingface-cli`):
+
+```bash
+# Download a specific file
+hf download <repo_id> <filename> --local-dir <path>
+
+# Example: download a GGUF quant
+hf download GestaltLabs/Qwen3.5-9B-NSC-ACE-SABER-GGUF Qwen3.5-9B-NSC-ACE-SABER.Q5_K_M.gguf --local-dir /home/dylan/models/qwen35-nsc-ace-saber
+```

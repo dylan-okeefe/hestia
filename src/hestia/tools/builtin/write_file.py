@@ -17,17 +17,35 @@ def make_write_file_tool(config: StorageConfig) -> Any:
     @tool(
         name="write_file",
         public_description="Write content to a file. Params: path (str), content (str).",
-
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Absolute or relative file path. Must be within allowed roots."},
+                "content": {"type": "string", "description": "Text content to write."},
+            },
+            "required": ["path", "content"],
+        },
         requires_confirmation=True,
         tags=["system", "builtin"],
         capabilities=[WRITE_LOCAL],
     )
-    async def write_file(path: str, content: str) -> str:
+    async def write_file(path: str = "", content: str = "") -> str:
         """Write content to a file at the given path.
 
         Creates parent directories if they don't exist.
         Returns confirmation with the number of bytes written.
         """
+        if not path:
+            return (
+                "Error: write_file requires a 'path' argument. "
+                "Example: {\"path\": \"/home/dylan/Documents/file.md\", \"content\": \"# Hello\"}"
+            )
+        if not content:
+            return (
+                "Error: write_file requires a 'content' argument. "
+                "Provide the full text content you want to write."
+            )
+
         # Check path sandboxing
         if error := check_path_allowed(path, allowed_roots):
             return error

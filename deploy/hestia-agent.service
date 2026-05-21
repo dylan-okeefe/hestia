@@ -1,5 +1,5 @@
 [Unit]
-Description=Hestia agent (Telegram + Scheduler)
+Description=Hestia Unified Server (Telegram + Matrix + Web Dashboard)
 After=network.target hestia-llama.service
 Requires=hestia-llama.service
 
@@ -7,7 +7,7 @@ Requires=hestia-llama.service
 Type=simple
 User=%i
 WorkingDirectory=/opt/hestia
-ExecStart=/opt/hestia/.venv/bin/hestia --config /opt/hestia/config.py telegram
+ExecStart=/opt/hestia/.venv/bin/hestia --config /opt/hestia/config.py serve
 Restart=on-failure
 RestartSec=10
 Environment=PYTHONUNBUFFERED=1

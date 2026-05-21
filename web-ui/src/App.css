@@ -1,0 +1,46 @@
+.app-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+}
+
+.nav-link {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  text-decoration: none;
+}
+
+.nav-link--active {
+  font-weight: bold;
+  text-decoration: underline;
+}
+
+.nav-logout {
+  margin-left: auto;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+}
+
+.nav-hamburger,
+.nav-close-btn {
+  background: none;
+  border: none;
+  font-size: 1.25rem;
+  cursor: pointer;
+  color: var(--color-text);
+  padding: var(--space-2);
+}
+
+@media (min-width: 768px) {
+  .nav-logout {
+    margin-left: 0;
+    margin-top: auto;
+    padding-top: var(--space-4);
+    border-top: var(--border-thin);
+  }
+}

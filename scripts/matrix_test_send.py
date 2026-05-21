@@ -45,7 +45,7 @@ async def main() -> int:
     device_id = os.environ.get("HESTIA_MATRIX_TESTER_DEVICE_ID", "hestia-e2e-tester")
 
     try:
-        from nio import AsyncClient, RoomMessageText, RoomSendResponse, SyncResponse
+        from nio import AsyncClient, RoomMessageText, RoomSendError, RoomSendResponse, SyncResponse
     except ImportError as exc:
         print(f"matrix-nio not installed: {exc}", file=sys.stderr)
         return 1
@@ -65,6 +65,27 @@ async def main() -> int:
             message_type="m.room.message",
             content={"msgtype": "m.text", "body": message},
         )
+        if isinstance(send_resp, RoomSendError) and "M_UNKNOWN_TOKEN" in str(send_resp):
+            # Token expired — try password login
+            password = os.environ.get("HESTIA_MATRIX_TESTER_LOGIN_PASSWORD", "").strip()
+            if password:
+                print("Token expired, attempting password login...")
+                login_resp = await client.login(password=password)
+                if hasattr(login_resp, "access_token"):
+                    client.access_token = login_resp.access_token
+                    print(f"Fresh token minted, retrying send...")
+                    send_resp = await client.room_send(
+                        room_id=room_id,
+                        message_type="m.room.message",
+                        content={"msgtype": "m.text", "body": message},
+                    )
+                else:
+                    print(f"Password login failed: {login_resp}", file=sys.stderr)
+                    return 1
+            else:
+                print(f"Failed to send: {send_resp}", file=sys.stderr)
+                print("Hint: set HESTIA_MATRIX_TESTER_LOGIN_PASSWORD for auto-refresh", file=sys.stderr)
+                return 1
         if not isinstance(send_resp, RoomSendResponse):
             print(f"Failed to send: {send_resp}", file=sys.stderr)
             return 1

@@ -1,0 +1,29 @@
+.syntax-help {
+  margin-top: var(--space-2);
+}
+
+.syntax-help__toggle {
+  font-size: var(--font-size-xs);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  color: var(--color-primary);
+}
+
+.syntax-help__content {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  margin-top: var(--space-1);
+  padding: var(--space-2);
+  background: var(--color-surface);
+  border-radius: var(--radius-sm);
+}
+
+.syntax-help__content p {
+  margin: 0 0 var(--space-1);
+}
+
+.syntax-help__content p:last-child {
+  margin: 0;
+}

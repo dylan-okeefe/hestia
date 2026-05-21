@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -16,6 +17,7 @@ from hestia.core.clock import utcnow
 from hestia.core.types import (
     Message,
     Session,
+    SessionHandoff,
     SessionState,
     SessionTemperature,
     ToolCall,
@@ -25,6 +27,7 @@ from hestia.persistence.db import Database
 from hestia.persistence.schema import messages, sessions
 
 if TYPE_CHECKING:
+    from hestia.events.bus import EventBus
     from hestia.orchestrator.types import Turn, TurnTransition
 
 logger = logging.getLogger(__name__)
@@ -33,6 +36,9 @@ logger = logging.getLogger(__name__)
 # append_transition. With n concurrent writers the probability of
 # surviving n retries is > 99.99% for n=5.
 _APPEND_IDX_MAX_ATTEMPTS = 5
+
+# Regex for artifact handles embedded in message content (art_ + 10 hex chars).
+_ARTIFACT_HANDLE_RE = re.compile(r"art_[a-f0-9]{10}")
 
 
 def _generate_session_id(platform: str, platform_user: str) -> str:
@@ -45,9 +51,10 @@ def _generate_session_id(platform: str, platform_user: str) -> str:
 class SessionStore:
     """Typed CRUD wrapper for session persistence."""
 
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, event_bus: EventBus | None = None) -> None:
         """Initialize with a Database instance."""
         self._db = db
+        self._event_bus = event_bus
 
     async def get_or_create_session(self, platform: str, platform_user: str) -> Session:
         """Get the user's active session, or create one atomically.
@@ -109,6 +116,15 @@ class SessionStore:
                 # We won the race (or there was no race): the row we just
                 # inserted IS the active session. Commit and return it.
                 await conn.commit()
+                if self._event_bus is not None:
+                    await self._event_bus.publish(
+                        "session_started",
+                        {
+                            "session_id": new_session.id,
+                            "platform": platform,
+                            "platform_user": platform_user,
+                        },
+                    )
                 return new_session
 
             # ON CONFLICT DO NOTHING swallowed the insert — another concurrent
@@ -180,8 +196,17 @@ class SessionStore:
             "Hestia ships dialect-aware upserts only for sqlite and postgresql."
         )
 
-    async def archive_session(self, session_id: str) -> None:
-        """Mark a session as ARCHIVED. Used when /reset creates a successor."""
+    async def archive_session(
+        self, session_id: str, summary: str | None = None
+    ) -> None:
+        """Mark a session as ARCHIVED and generate a handoff record.
+
+        Args:
+            session_id: The session to archive.
+            summary: Optional summary text from the handoff summarizer (L158).
+        """
+        session = await self.get_session(session_id)
+
         update = (
             sa.update(sessions)
             .where(sessions.c.id == session_id)
@@ -194,13 +219,21 @@ class SessionStore:
             await conn.execute(update)
             await conn.commit()
 
+        if session is not None:
+            try:
+                await self._generate_and_save_handoff(session, summary)
+            except Exception:  # noqa: BLE001 — best-effort handoff
+                logger.warning(
+                    "Failed to generate handoff for %s", session_id, exc_info=True
+                )
+
     async def create_session(
         self,
         platform: str,
         platform_user: str,
         archive_previous: Session | None = None,
     ) -> Session:
-        """Create a new session row. Optionally archives a previous session atomically.
+        """Create a new session row. Optionally archives a previous session.
 
         Used by /reset and similar flows where the caller explicitly wants a
         fresh session for an existing user.
@@ -208,9 +241,14 @@ class SessionStore:
         Args:
             platform: Platform identifier (e.g., "cli", "matrix")
             platform_user: User identifier on that platform
-            archive_previous: If provided, archive this session in the same transaction
-                so we never end up with two ACTIVE sessions for the same user.
+            archive_previous: If provided, archive this session before creating
+                the new one so we never end up with two ACTIVE sessions for the
+                same user. The partial unique index ``ux_sessions_active_user``
+                guards against races.
         """
+        if archive_previous is not None:
+            await self.archive_session(archive_previous.id)
+
         session_id = _generate_session_id(platform, platform_user)
         now = utcnow()
         new_session = Session(
@@ -238,16 +276,178 @@ class SessionStore:
         )
 
         async with self._db.engine.connect() as conn:
-            if archive_previous is not None:
-                await conn.execute(
-                    sa.update(sessions)
-                    .where(sessions.c.id == archive_previous.id)
-                    .values(state=SessionState.ARCHIVED.value, last_active_at=utcnow())
-                )
             await conn.execute(insert)
             await conn.commit()
 
+        if self._event_bus is not None:
+            await self._event_bus.publish(
+                "session_started",
+                {
+                    "session_id": new_session.id,
+                    "platform": platform,
+                    "platform_user": platform_user,
+                },
+            )
+
         return new_session
+
+    async def get_or_create_session_with_handoff(
+        self, platform: str, platform_user: str
+    ) -> Session:
+        """Get or create a session, injecting a handoff if the session is new.
+
+        After ``get_or_create_session`` returns, we check whether the session
+        already has messages. If it does not, we look for the most recent
+        handoff for this user and prepend a synthetic system message so the
+        new session retains continuity context.
+        """
+        session = await self.get_or_create_session(platform, platform_user)
+        existing = await self.get_messages(session.id)
+        if not existing:
+            handoff = await self.get_latest_handoff(platform, platform_user)
+            if handoff is not None:
+                synthetic = Message(
+                    role="user",
+                    content=self._format_handoff_message(handoff),
+                )
+                await self.append_message(session.id, synthetic)
+        return session
+
+    def _format_handoff_message(self, handoff: SessionHandoff) -> str:
+        """Build a synthetic system message from a handoff record."""
+        parts: list[str] = ["[Previous session context]"]
+        if handoff.summary:
+            parts.append(f"Summary: {handoff.summary}")
+        if handoff.key_messages:
+            parts.append("Recent messages:")
+            for msg in handoff.key_messages:
+                content = msg.get("content", "")
+                # Truncate very long messages to keep the handoff compact
+                if len(content) > 500:
+                    content = content[:500].rstrip() + "…"
+                parts.append(f"  {msg.get('role', 'unknown')}: {content}")
+        if handoff.artifacts:
+            parts.append(f"Artifacts: {', '.join(handoff.artifacts)}")
+        return "\n".join(parts)
+
+    # --- Handoff persistence ---
+
+    async def save_handoff(self, session_id: str, handoff: SessionHandoff) -> None:
+        """Persist a SessionHandoff record."""
+        from hestia.persistence.schema import session_handoffs
+
+        insert = sa.insert(session_handoffs).values(
+            id=str(uuid.uuid4()),
+            previous_session_id=handoff.previous_session_id,
+            platform=handoff.platform,
+            platform_user=handoff.platform_user,
+            summary=handoff.summary,
+            key_messages=json.dumps(handoff.key_messages),
+            artifacts=json.dumps(handoff.artifacts),
+            created_at=handoff.created_at,
+        )
+        async with self._db.engine.connect() as conn:
+            await conn.execute(insert)
+            await conn.commit()
+
+    async def get_latest_handoff(
+        self, platform: str, platform_user: str
+    ) -> SessionHandoff | None:
+        """Return the most recent handoff for a user, or None."""
+        from hestia.persistence.schema import session_handoffs
+
+        query = (
+            sa.select(session_handoffs)
+            .where(
+                sa.and_(
+                    session_handoffs.c.platform == platform,
+                    session_handoffs.c.platform_user == platform_user,
+                )
+            )
+            .order_by(session_handoffs.c.created_at.desc())
+            .limit(1)
+        )
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(query)
+            row = result.fetchone()
+            if row is None:
+                return None
+            return SessionHandoff(
+                previous_session_id=row.previous_session_id,
+                platform=row.platform,
+                platform_user=row.platform_user,
+                summary=row.summary or "",
+                key_messages=json.loads(row.key_messages) if row.key_messages else [],
+                artifacts=json.loads(row.artifacts) if row.artifacts else [],
+                created_at=row.created_at,
+            )
+
+    async def list_handoffs_for_identities(
+        self, identity_tuples: list[tuple[str, str]], limit: int = 3
+    ) -> list[dict[str, Any]]:
+        """Return recent handoffs for a list of (platform, platform_user) identities."""
+        from hestia.persistence.schema import session_handoffs
+
+        if not identity_tuples:
+            return []
+
+        conditions = [
+            sa.and_(
+                session_handoffs.c.platform == platform,
+                session_handoffs.c.platform_user == platform_user,
+            )
+            for platform, platform_user in identity_tuples
+        ]
+
+        query = (
+            sa.select(session_handoffs)
+            .where(sa.or_(*conditions))
+            .order_by(session_handoffs.c.created_at.desc())
+            .limit(limit)
+        )
+
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(query)
+            rows = result.fetchall()
+            return [
+                {
+                    "session_id": row.previous_session_id,
+                    "summary": row.summary or "",
+                    "created_at": row.created_at.isoformat() if row.created_at else None,
+                }
+                for row in rows
+            ]
+
+    def _extract_artifact_handles(self, messages: list[Message]) -> list[str]:
+        """Scan message content for artifact handle references."""
+        handles: set[str] = set()
+        for msg in messages:
+            if msg.content:
+                handles.update(_ARTIFACT_HANDLE_RE.findall(msg.content))
+        return sorted(handles)
+
+    async def _generate_and_save_handoff(
+        self, session: Session, summary: str | None = None
+    ) -> None:
+        """Capture the final state of a session and persist a handoff."""
+        messages = await self.get_messages(session.id)
+        key_messages = [
+            {"role": m.role, "content": m.content}
+            for m in messages
+            if m.role in ("user", "assistant")
+        ][-8:]
+        artifacts = self._extract_artifact_handles(messages)
+
+        handoff = SessionHandoff(
+            previous_session_id=session.id,
+            platform=session.platform,
+            platform_user=session.platform_user,
+            summary=summary or "",
+            key_messages=key_messages,
+            artifacts=artifacts,
+            created_at=utcnow(),
+        )
+        await self.save_handoff(session.id, handoff)
 
     async def get_session(self, session_id: str) -> Session | None:
         """Get a session by ID."""
@@ -337,6 +537,24 @@ class SessionStore:
                     attempt + 1,
                 )
                 await asyncio.sleep(0.001 * (2**attempt))
+
+    async def get_turn_messages(self, turn_id: str) -> dict[str, str] | None:
+        """Return debug-relevant fields for a turn."""
+        from hestia.persistence.schema import turns
+
+        query = sa.select(turns.c.session_id, turns.c.state, turns.c.error).where(
+            turns.c.id == turn_id
+        )
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(query)
+            row = result.mappings().first()
+            if row:
+                return {
+                    "session_id": row.session_id,
+                    "state": row.state,
+                    "error": row.error or "",
+                }
+            return None
 
     async def get_messages(self, session_id: str) -> list[Message]:
         """Get all messages for a session in order."""
@@ -653,20 +871,53 @@ class SessionStore:
             await conn.execute(update)
             await conn.commit()
 
-    async def list_sessions(self, limit: int = 20) -> list[Session]:
+    async def count_turns_for_session(self, session_id: str) -> int:
+        """Count turns for a session."""
+        from hestia.persistence.schema import turns
+
+        query = sa.select(sa.func.count(turns.c.id)).where(turns.c.session_id == session_id)
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(query)
+            return result.scalar_one() or 0
+
+    async def count_turns_for_sessions(self, session_ids: list[str]) -> dict[str, int]:
+        """Count turns for multiple sessions in a single query."""
+        if not session_ids:
+            return {}
+        from hestia.persistence.schema import turns
+
+        query = (
+            sa.select(turns.c.session_id, sa.func.count(turns.c.id))
+            .where(turns.c.session_id.in_(session_ids))
+            .group_by(turns.c.session_id)
+        )
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(query)
+            return {row.session_id: row[1] for row in result}
+
+    async def list_sessions(
+        self, limit: int = 20, platform: str | None = None, platform_user: str | None = None
+    ) -> list[Session]:
         """List recent sessions ordered by last activity.
 
         Args:
             limit: Maximum number of sessions to return.
+            platform: Optional platform filter.
+            platform_user: Optional platform user filter.
 
         Returns:
             List of sessions, most recently active first.
         """
-        query = (
-            sa.select(sessions)
-            .order_by(sessions.c.last_active_at.desc())
-            .limit(limit)
-        )
+        conditions = []
+        if platform is not None:
+            conditions.append(sessions.c.platform == platform)
+        if platform_user is not None:
+            conditions.append(sessions.c.platform_user == platform_user)
+
+        query = sa.select(sessions).order_by(sessions.c.last_active_at.desc()).limit(limit)
+        if conditions:
+            query = query.where(sa.and_(*conditions))
+
         async with self._db.engine.connect() as conn:
             result = await conn.execute(query)
             rows = result.fetchall()
@@ -685,6 +936,37 @@ class SessionStore:
             result = await conn.execute(query)
             rows = result.fetchall()
             return {row.state: row[1] for row in rows}
+
+    async def list_turns_with_errors(self, limit: int = 50) -> list[Turn]:
+        """List turns that have an error set, newest first."""
+        from hestia.orchestrator.types import Turn, TurnState
+        from hestia.persistence.schema import turns
+
+        query = (
+            sa.select(turns)
+            .where(turns.c.error.is_not(None))
+            .order_by(turns.c.started_at.desc())
+            .limit(limit)
+        )
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(query)
+            rows = result.fetchall()
+            return [
+                Turn(
+                    id=row.id,
+                    session_id=row.session_id,
+                    state=TurnState(row.state),
+                    user_message=None,
+                    started_at=row.started_at,
+                    completed_at=None,
+                    iterations=row.iteration,
+                    tool_calls_made=0,
+                    final_response=None,
+                    error=row.error,
+                    transitions=[],
+                )
+                for row in rows
+            ]
 
     async def turn_stats_since(self, since: datetime) -> dict[str, int]:
         """Count turns by terminal state since a given time.

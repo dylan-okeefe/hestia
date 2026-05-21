@@ -57,10 +57,18 @@ class InferenceHistoryCompressor:
         """Compress dropped messages into a short summary."""
         if not dropped:
             return ""
+        filtered = [m for m in dropped if m.role in ("user", "assistant") and m.content]
+        # Strip trailing assistant — assistant prefills are incompatible with
+        # thinking mode (server may have --reasoning-budget set globally).
+        while filtered and filtered[-1].role == "assistant":
+            filtered = filtered[:-1]
         request = [
             Message(role="system", content=self.PROMPT),
-            *(m for m in dropped if m.role in ("user", "assistant") and m.content),
+            *filtered,
         ]
+        # Hermes/Qwen template requires at least one user message
+        if not any(m.role == "user" for m in request):
+            request.append(Message(role="user", content="Summarize the above."))
         try:
             response = await self._inference.chat(
                 messages=request, tools=[], slot_id=None, reasoning_budget=0

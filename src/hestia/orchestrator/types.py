@@ -13,6 +13,7 @@ from hestia.core.types import Message
 if TYPE_CHECKING:
     from hestia.context.builder import BuildResult
     from hestia.core.types import Session, ToolSchema
+    from hestia.persistence.users import User
     from hestia.platforms.base import Platform
 
 
@@ -96,6 +97,9 @@ class TurnContext:
     # Per-turn delivery hint (set by platform adapter)
     voice_reply: bool = False
 
+    # Resolved user from identity store (set by platform runner)
+    resolved_user: User | None = None
+
     # Streaming callback (called for each content chunk)
     stream_callback: StreamCallback | None = None
 
@@ -106,3 +110,5 @@ class TurnContext:
     total_completion_tokens: int = 0
     total_reasoning_tokens: int = 0
     delegated: bool = False
+    # Circuit-breaker: count consecutive empty-arg failures per tool name
+    empty_tool_failure_counts: dict[str, int] = field(default_factory=dict)

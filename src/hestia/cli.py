@@ -95,6 +95,39 @@ async def init(app: AppContext, create_config: bool, with_soul: bool) -> None:
     await _commands.cmd_init(app, create_config, with_soul)
 
 
+@cli.command(name="migrate-users")
+@click.pass_obj
+@async_command
+async def migrate_users(app: AppContext) -> None:
+    """Migrate existing config users to the database."""
+    await _commands.cmd_migrate_users(app)
+
+
+@cli.command(name="migrate-rooms")
+@click.option(
+    "--telegram-group",
+    "telegram_groups",
+    multiple=True,
+    help="Telegram group chat ID to register as a room.",
+)
+@click.option(
+    "--auto-discover",
+    is_flag=True,
+    help="Query Telegram Bot API for group chats the bot is in.",
+)
+@click.pass_obj
+@async_command
+async def migrate_rooms(
+    app: AppContext, telegram_groups: tuple[str, ...], auto_discover: bool
+) -> None:
+    """Migrate existing group chats to the rooms table."""
+    await _commands.cmd_migrate_rooms(
+        app,
+        telegram_groups=list(telegram_groups) if telegram_groups else None,
+        auto_discover=auto_discover,
+    )
+
+
 @cli.command()
 @click.option("--new-session", is_flag=True, help="Force a new session instead of resuming")
 @click.pass_obj
@@ -286,6 +319,19 @@ def run_matrix(ctx: click.Context) -> None:
 
     try:
         asyncio.run(_run_matrix(app, app.config))
+    except KeyboardInterrupt:
+        click.echo("\nShutting down.")
+
+
+@cli.command(name="serve")
+@click.pass_context
+def serve(ctx: click.Context) -> None:
+    """Run Hestia with all configured platform adapters and web dashboard."""
+    app: AppContext = ctx.obj
+    from hestia.commands.serve import cmd_serve
+
+    try:
+        asyncio.run(cmd_serve(app, app.config))
     except KeyboardInterrupt:
         click.echo("\nShutting down.")
 

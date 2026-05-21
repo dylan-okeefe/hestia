@@ -15,6 +15,8 @@ that is not importable at module load time.
 """
 
 from hestia.runtime_context import current_session_id, current_trace_store
+from hestia.tools.builtin.browser_get import browser_get
+from hestia.tools.builtin.browser_login import browser_login
 from hestia.tools.builtin.current_time import current_time
 from hestia.tools.builtin.delegate_task import SubagentResult, make_delegate_task_tool
 from hestia.tools.builtin.email_tools import make_email_search_and_read_tool, make_email_tools
@@ -26,6 +28,13 @@ from hestia.tools.builtin.memory_tools import (
     make_save_memory_tool,
     make_search_memory_tool,
 )
+from hestia.tools.builtin.proposal_tools import (
+    make_accept_proposal_tool,
+    make_defer_proposal_tool,
+    make_list_proposals_tool,
+    make_reject_proposal_tool,
+    make_show_proposal_tool,
+)
 from hestia.tools.builtin.read_artifact import make_read_artifact_tool
 from hestia.tools.builtin.read_file import make_read_file_tool
 from hestia.tools.builtin.scheduler_tools import (
@@ -36,8 +45,14 @@ from hestia.tools.builtin.scheduler_tools import (
     make_list_scheduled_tasks_tool,
 )
 from hestia.tools.builtin.search_web import search_web
+from hestia.tools.builtin.style_tools import (
+    make_reset_style_metric_tool,
+    make_reset_style_profile_tool,
+    make_show_style_profile_tool,
+)
 from hestia.tools.builtin.terminal import make_terminal_tool
 from hestia.tools.builtin.web_search import make_web_search_tool
+from hestia.tools.builtin.append_to_file import make_append_to_file_tool
 from hestia.tools.builtin.write_file import make_write_file_tool
 from hestia.tools.capabilities import (
     EMAIL_SEND,
@@ -46,11 +61,14 @@ from hestia.tools.capabilities import (
     NETWORK_EGRESS,
     ORCHESTRATION,
     READ_LOCAL,
+    SELF_MANAGEMENT,
     SHELL_EXEC,
     WRITE_LOCAL,
 )
 
 __all__ = [
+    "browser_get",
+    "browser_login",
     "current_session_id",
     "current_trace_store",
     "current_time",
@@ -73,13 +91,23 @@ __all__ = [
     "make_web_search_tool",
     "make_email_search_and_read_tool",
     "make_email_tools",
+    "make_append_to_file_tool",
     "make_write_file_tool",
+    "make_list_proposals_tool",
+    "make_show_proposal_tool",
+    "make_accept_proposal_tool",
+    "make_reject_proposal_tool",
+    "make_defer_proposal_tool",
+    "make_show_style_profile_tool",
+    "make_reset_style_metric_tool",
+    "make_reset_style_profile_tool",
     "EMAIL_SEND",
     "MEMORY_READ",
     "MEMORY_WRITE",
     "NETWORK_EGRESS",
     "ORCHESTRATION",
     "READ_LOCAL",
+    "SELF_MANAGEMENT",
     "SHELL_EXEC",
     "SubagentResult",
     "make_terminal_tool",

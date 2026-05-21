@@ -1,0 +1,30 @@
+"""Lightweight cleanup routines for scheduler and database maintenance."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from datetime import timedelta
+
+from hestia.persistence.error_resolution_store import ErrorResolutionStore
+
+logger = logging.getLogger(__name__)
+
+
+async def run_error_resolution_cleanup(
+    store: ErrorResolutionStore,
+    *,
+    interval_days: int = 7,
+    retention_days: int = 30,
+) -> None:
+    """Background loop that cleans up old error resolution entries.
+
+    Runs indefinitely with the specified interval between cleanups.
+    """
+    while True:
+        await asyncio.sleep(timedelta(days=interval_days).total_seconds())
+        try:
+            deleted = await store.clear_old(days=retention_days)
+            logger.info("Cleaned up %d old error resolutions", deleted)
+        except Exception:
+            logger.exception("Error resolution cleanup failed")
