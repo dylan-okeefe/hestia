@@ -38,7 +38,7 @@ export function useWorkflowEditor(workflowId: string | undefined) {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [selectedExecution, setSelectedExecution] = useState<string | null>(null);
-  const [addNodeType, setAddNodeType] = useState<string>('default');
+  const [addNodeType, setAddNodeType] = useState<string>('tool_call');
   const [triggerType, setTriggerType] = useState<string>('manual');
   const [triggerConfig, setTriggerConfig] = useState<Record<string, string>>({});
   const [triggerSaving, setTriggerSaving] = useState(false);
@@ -352,6 +352,7 @@ export function useWorkflowEditor(workflowId: string | undefined) {
     pushCurrent();
     setNodes(version.nodes.map((n: WorkflowNode) => ({ ...n, data: n.data || {} })));
     setEdges(version.edges.map((e: WorkflowEdge) => ({ ...e })));
+    setSelectedNode(null);
     setIsDirty(true);
   };
 
