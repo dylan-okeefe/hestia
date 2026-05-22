@@ -39,6 +39,14 @@ async def list_users(ctx: WebContext = _CTX_DEP) -> dict[str, Any]:
                 "created_at": u.created_at.isoformat() if u.created_at else None,
                 "identity_count": len(identities),
                 "room_count": len(rooms),
+                "identities": [
+                    {
+                        "platform": i.platform,
+                        "platform_user": i.platform_user,
+                        "verified": i.verified,
+                    }
+                    for i in identities
+                ],
             }
         )
     return {"users": result}

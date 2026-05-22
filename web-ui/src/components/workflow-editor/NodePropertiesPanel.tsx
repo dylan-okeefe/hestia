@@ -237,6 +237,7 @@ export default function NodePropertiesPanel({
             <UserDropdown
               value={(selectedNode.data.target_user as string) || ''}
               onChange={(value: string) => onUpdateNodeData('target_user', value)}
+              platform={(selectedNode.data.platform as string) || undefined}
             />
             <span className="node-properties__helper">{TEXT.workflowEditor.targetUserHelper}</span>
           </div>
