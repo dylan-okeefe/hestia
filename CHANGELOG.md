@@ -5,6 +5,39 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.12.1] — 2026-05-21
+
+Workflow editor hotfix. Resolves critical UX blockers discovered immediately
+after the v0.12.0 release.
+
+### Fixed
+- **SPA routing** — FastAPI catch-all route serves `index.html` for non-API
+  paths, eliminating 404s on page refresh.
+- **Workflow editor canvas visibility** — React Flow container now fills the
+  available viewport height (`height: 100%`).
+- **Add node default type** — changed from invalid `'default'` to `'tool_call'`.
+- **View version stale selection** — loading a version now clears the selected
+  node, preventing property panel drift.
+- **Sticky toolbar** — editor toolbar stays visible while scrolling; canvas
+  scrolls internally within the remaining viewport space.
+- **Version panel sidebar** — moved from a cramped horizontal strip above the
+  canvas to a 320px sidebar inside the main editing area.
+- **Workflow name input UX** — added visible border and hover/focus highlight
+  so users can tell the field is editable.
+- **Load latest version on open** — when a workflow has no active version, the
+  editor now loads the most recent saved version instead of showing an empty
+  canvas.
+- **Test run without activation** — backend accepts an optional `version_id`;
+  frontend automatically tests the most recent version when none is active.
+- **Platform-filtered user dropdown** — `send_message` node target user is now
+  filtered by the selected platform, uses the platform-specific ID as the value,
+  and shows `"Name (ID)"` when disambiguation is needed.
+
+## [0.12.0] — 2026-05-20
+
+Major release: user registry, full web dashboard rewrite, and visual workflow
+editor.
+
 ### User Registry & Identity
 - **User store** with `users`, `identities`, `rooms`, and `room_memberships` tables.
 - **Role-based access control** — `admin` vs `user` roles; admin-only routes gated
