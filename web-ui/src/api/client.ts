@@ -384,10 +384,28 @@ export async function fetchDashboard() {
 }
 
 // Users
+export interface UserIdentity {
+  platform: string;
+  platform_user: string;
+  verified: boolean;
+}
+
+export interface User {
+  id: string;
+  display_name: string;
+  role: string;
+  trust_preset: string | null;
+  notes: string | null;
+  created_at: string;
+  identity_count: number;
+  room_count: number;
+  identities: UserIdentity[];
+}
+
 export async function fetchUsers() {
   const res = await apiFetch(`${API_BASE}/users`);
   if (!res.ok) throw new Error('Failed to fetch users');
-  return res.json() as Promise<{ users: Array<{ id: string; display_name: string; role: string; trust_preset: string | null; notes: string | null; created_at: string; identity_count: number; room_count: number }> }>;
+  return res.json() as Promise<{ users: User[] }>;
 }
 
 export async function fetchUser(userId: string) {

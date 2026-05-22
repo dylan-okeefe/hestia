@@ -41,8 +41,8 @@ describe('AdminUsers', () => {
     vi.mocked(useCurrentUser.useCurrentUser).mockReturnValue(mockAdminUser as any);
     vi.mocked(client.fetchUsers).mockResolvedValue({
       users: [
-        { id: 'u1', display_name: 'Alice', role: 'admin', trust_preset: 'developer', notes: 'Admin user', created_at: '2024-01-01T00:00:00Z', identity_count: 2, room_count: 1 },
-        { id: 'u2', display_name: 'Bob', role: 'user', trust_preset: 'household', notes: null, created_at: '2024-02-01T00:00:00Z', identity_count: 1, room_count: 0 },
+        { id: 'u1', display_name: 'Alice', role: 'admin', trust_preset: 'developer', notes: 'Admin user', created_at: '2024-01-01T00:00:00Z', identity_count: 2, room_count: 1, identities: [] },
+        { id: 'u2', display_name: 'Bob', role: 'user', trust_preset: 'household', notes: null, created_at: '2024-02-01T00:00:00Z', identity_count: 1, room_count: 0, identities: [] },
       ],
     });
   });
