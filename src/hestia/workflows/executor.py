@@ -99,9 +99,13 @@ def _resolve_inputs(
     """Resolve node inputs from upstream node outputs and node config.
 
     Upstream outputs are keyed by target_handle when present, otherwise by
-    source_node_id. Node config is merged on top as defaults.
+    source_node_id. Node config is merged on top as defaults. The original
+    trigger payload is always available under ``inputs["data"]``.
     """
     inputs: dict[str, Any] = dict(node.config)
+    trigger_payload = outputs.get("trigger")
+    if trigger_payload is not None:
+        inputs["data"] = trigger_payload
     for edge in edges:
         if edge.target_node_id != node.id:
             continue
@@ -348,20 +352,22 @@ class WorkflowExecutor:
             total_prompt_tokens += node_output.prompt_tokens
             total_completion_tokens += node_output.completion_tokens
 
-            for edge in version.edges:
-                if edge.source_node_id != node.id:
-                    continue
+            outgoing_edges = [e for e in version.edges if e.source_node_id == node.id]
+            single_edge = len(outgoing_edges) == 1
+            for edge in outgoing_edges:
                 if node.type == "condition":
                     if node_output.value and (
-                        edge.source_handle is None or edge.source_handle == "true"
+                        (single_edge and edge.source_handle is None)
+                        or edge.source_handle == "true"
                     ):
                         active_edges.add(edge.id)
                     elif not node_output.value and (
-                        edge.source_handle is None or edge.source_handle == "false"
+                        (single_edge and edge.source_handle is None)
+                        or edge.source_handle == "false"
                     ):
                         active_edges.add(edge.id)
                 elif node.type == "llm_decision":
-                    if edge.source_handle is None or edge.source_handle == str(node_output.value):
+                    if (single_edge and edge.source_handle is None) or edge.source_handle == str(node_output.value):
                         active_edges.add(edge.id)
                 else:
                     active_edges.add(edge.id)
