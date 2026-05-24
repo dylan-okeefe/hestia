@@ -4,6 +4,7 @@
   min-width: 140px;
   font-size: 0.875rem;
   position: relative;
+  padding-bottom: 1.25rem;
 }
 
 .workflow-node__label {
@@ -60,20 +61,52 @@
 
 .workflow-node__branch-container {
   position: absolute;
-  bottom: 0;
+  bottom: -6px;
   transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
 }
 
 .workflow-node__handle {
-  background: var(--color-text-secondary);
+  width: 12px !important;
+  height: 12px !important;
+  border-radius: 50% !important;
+  background: #ffffff !important;
+  border: 2px solid var(--color-text-secondary) !important;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  cursor: crosshair;
+}
+
+.workflow-node__handle:hover {
+  transform: scale(1.4);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
 }
 
 .workflow-node__handle--true {
-  background: var(--color-success);
+  background: #ffffff !important;
+  border-color: var(--color-success) !important;
 }
 
 .workflow-node__handle--false {
-  background: var(--color-danger);
+  background: #ffffff !important;
+  border-color: var(--color-danger) !important;
+}
+
+/* React Flow connection line */
+.react-flow__connection-line {
+  stroke: var(--color-primary);
+  stroke-width: 2;
+}
+
+.react-flow__edge-path {
+  stroke-width: 2;
+}
+
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: var(--color-primary);
 }
 
 .text-purple {
