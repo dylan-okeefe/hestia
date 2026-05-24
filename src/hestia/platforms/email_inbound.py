@@ -29,7 +29,7 @@ async def process_inbound_email(
         await app.event_bus.publish(
             "email_received",
             {
-                "from": sender,
+                "from_address": sender,
                 "subject": subject,
                 "body": body,
                 "platform": "email",
