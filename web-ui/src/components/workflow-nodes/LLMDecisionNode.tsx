@@ -16,6 +16,17 @@ export default function LLMDecisionNode({ data }: NodeProps) {
       <Handle type="target" position={Position.Top} className="workflow-node__handle" />
       <div className="workflow-node__label">{label}</div>
       <div className="workflow-node__snippet">🧠 {snippet || '—'}</div>
+      {branches.length === 0 && (
+        <div className="workflow-node__branch-container" style={{ left: '50%' }}>
+          <Handle
+            type="source"
+            position={Position.Bottom}
+            id="out"
+            className="workflow-node__handle"
+          />
+          <span className="workflow-node__branch-label text-purple">out</span>
+        </div>
+      )}
       {branches.map((branch, index) => {
         const left = branches.length === 1 ? '50%' : `${((index + 1) / (branches.length + 1)) * 100}%`;
         return (
@@ -24,11 +35,9 @@ export default function LLMDecisionNode({ data }: NodeProps) {
               type="source"
               position={Position.Bottom}
               id={branch}
-              className="workflow-node__handle relative"
+              className="workflow-node__handle"
             />
-            <span
-              className="workflow-node__branch-label text-purple"
-            >
+            <span className="workflow-node__branch-label text-purple">
               {branch}
             </span>
           </div>
