@@ -352,16 +352,16 @@ class WorkflowExecutor:
                 if edge.source_node_id != node.id:
                     continue
                 if node.type == "condition":
-                    if (
-                        node_output.value
-                        and edge.source_handle == "true"
-                    ) or (
-                        not node_output.value
-                        and edge.source_handle == "false"
+                    if node_output.value and (
+                        edge.source_handle is None or edge.source_handle == "true"
+                    ):
+                        active_edges.add(edge.id)
+                    elif not node_output.value and (
+                        edge.source_handle is None or edge.source_handle == "false"
                     ):
                         active_edges.add(edge.id)
                 elif node.type == "llm_decision":
-                    if edge.source_handle == str(node_output.value):
+                    if edge.source_handle is None or edge.source_handle == str(node_output.value):
                         active_edges.add(edge.id)
                 else:
                     active_edges.add(edge.id)
