@@ -107,7 +107,7 @@ export default function WorkflowEditor() {
                 case 'tool_call':
                   return { label: 'Tool Call', tool_name: '', args: {} };
                 case 'llm_decision':
-                  return { label: 'LLM Decision', prompt: '', branches: [] };
+                  return { label: 'LLM Decision', prompt: '', branches: ['yes', 'no'] };
                 case 'send_message':
                   return { label: 'Send Message', platform: '', message: '', target_user: '' };
                 case 'http_request':
