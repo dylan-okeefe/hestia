@@ -30,6 +30,7 @@ from hestia.orchestrator.engine import ConfirmCallback
 from hestia.persistence.db import Database
 from hestia.persistence.error_resolution_store import ErrorResolutionStore
 from hestia.persistence.failure_store import FailureStore
+from hestia.persistence.job_alert_store import JobAlertStore
 from hestia.persistence.scheduler import SchedulerStore
 from hestia.persistence.sessions import SessionStore
 from hestia.persistence.trace_store import TraceStore
@@ -60,13 +61,16 @@ from hestia.tools.builtin import (
     make_http_get_tool,
     make_list_dir_tool,
     make_list_memories_tool,
+    make_list_pending_alerts_tool,
     make_list_proposals_tool,
     make_list_scheduled_tasks_tool,
+    make_mark_alerts_sent_tool,
     make_read_artifact_tool,
     make_read_file_tool,
     make_reject_proposal_tool,
     make_reset_style_metric_tool,
     make_reset_style_profile_tool,
+    make_save_job_alert_tool,
     make_save_memory_tool,
     make_search_memory_tool,
     make_show_proposal_tool,
@@ -157,6 +161,7 @@ class AppContext:
         self.workflow_store = WorkflowStore(self.db)
         self.execution_store = ExecutionStore(self.db)
         self.error_resolution_store = ErrorResolutionStore(self.db)
+        self.job_alert_store = JobAlertStore(self.db)
         self.trigger_registry: Any = None
         self.epoch_compiler = MemoryEpochCompiler(self.memory_store, max_tokens=500)
         self.tool_registry = ToolRegistry(self.artifact_store)
@@ -278,6 +283,7 @@ class AppContext:
         await self.style_store.create_table()
         await self.workflow_store.create_tables()
         await self.execution_store.create_tables()
+        await self.job_alert_store.create_table()
         self._bootstrapped = True
 
     def make_injection_scanner(self) -> InjectionScanner:
@@ -349,6 +355,9 @@ class AppContext:
         reg.register(make_save_memory_tool(self.memory_store))
         reg.register(make_list_memories_tool(self.memory_store))
         reg.register(make_delete_memory_tool(self.memory_store))
+        reg.register(make_save_job_alert_tool(self.job_alert_store))
+        reg.register(make_list_pending_alerts_tool(self.job_alert_store))
+        reg.register(make_mark_alerts_sent_tool(self.job_alert_store))
         reg.register(make_read_artifact_tool(self.artifact_store))
 
         # Proposal tools (bound to proposal store)

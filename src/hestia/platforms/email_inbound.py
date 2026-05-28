@@ -61,10 +61,18 @@ async def run_email_poller(
                     limit=50,
                     unread_only=True,
                 )
+                if messages:
+                    logger.info("Email poller: %d unread message(s)", len(messages))
                 for msg in messages:
                     try:
                         full = await adapter.read_message(msg["message_id"])
                         headers = full["headers"]
+                        logger.info(
+                            "Processing email uid=%s from=%s subject=%s",
+                            msg["message_id"],
+                            headers.get("from", ""),
+                            headers.get("subject", ""),
+                        )
                         await process_inbound_email(
                             app,
                             sender=headers.get("from", ""),
@@ -72,11 +80,10 @@ async def run_email_poller(
                             body=full.get("body", ""),
                         )
                         await adapter.flag_message(msg["message_id"], "read")
-                        logger.debug(
-                            "Processed email from=%s subject=%s",
-                            headers.get("from", ""),
-                            headers.get("subject", ""),
-                        )
+                        logger.info("Marked email uid=%s as read", msg["message_id"])
+                        # Brief pause between emails to avoid overwhelming
+                        # downstream LLM inference with a burst of requests.
+                        await asyncio.sleep(2)
                     except Exception:
                         logger.exception(
                             "Failed to process email uid=%s", msg["message_id"]

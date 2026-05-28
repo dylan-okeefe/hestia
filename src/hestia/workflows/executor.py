@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import re
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -26,6 +28,64 @@ if TYPE_CHECKING:
     from hestia.workflows.execution_store import ExecutionStore
 
 logger = logging.getLogger(__name__)
+
+
+def _clean_reasoning_fallback(text: str) -> str:
+    """Strip markdown formatting from a reasoning model's final line."""
+    text = re.sub(r"^[\s*\-+•]+", "", text)
+    text = text.replace("`", "")
+    text = re.sub(r"\*\*?(.*?)\*\*?", r"\1", text)
+    text = text.strip('"\'')
+    return text.strip()
+
+
+def _extract_url_from_text(text: str) -> str | None:
+    """Extract the first URL found in text."""
+    match = re.search(r"https?://[^\s<>\"\')\]]+", text)
+    return match.group(0) if match else None
+
+
+# Patterns that indicate a URL is a job listing (not unsubscribe, home page, etc.)
+_JOB_URL_PATTERNS = [
+    re.compile(r"/jobs?/|/job/|jobListing|viewjob|job-detail|/km/|/ekm/|/clk\?", re.I),
+    re.compile(r"dice\.com/job-detail/", re.I),
+    re.compile(r"glassdoor\.com/partner/jobListing", re.I),
+    re.compile(r"indeed\.com/(?:viewjob|pagead/clk)", re.I),
+    re.compile(r"ziprecruiter\.com/(?:km/|ekm/)", re.I),
+    re.compile(r"linkedin\.com/(?:jobs/|comm/jobs/view)", re.I),
+    re.compile(r"builtin\.com/job/", re.I),
+]
+
+# Patterns that indicate a URL should be ignored
+_IGNORE_URL_PATTERNS = [
+    re.compile(r"unsubscribe|preferences|alert|notification|privacy|terms|login|signin|account", re.I),
+    re.compile(r"linkedin\.com/comm/jobs/alerts", re.I),
+    re.compile(r"linkedin\.com/comm/feed/update", re.I),
+    re.compile(r"profile-views", re.I),
+]
+
+
+def _extract_best_job_url(body: str) -> str | None:
+    """Scan email body and return the best job-listing URL."""
+    all_urls = re.findall(r"https?://[^\s<>\"\')\]]+", body)
+    candidates = []
+    for url in all_urls:
+        if any(p.search(url) for p in _IGNORE_URL_PATTERNS):
+            continue
+        # Also check URL-decoded version for embedded job paths
+        from urllib.parse import unquote
+        decoded = unquote(url)
+        score = 0
+        for pattern in _JOB_URL_PATTERNS:
+            if pattern.search(url) or pattern.search(decoded):
+                score += 1
+        if score > 0:
+            candidates.append((score, url))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    return candidates[0][1]
+
 
 _TRUST_CAPS: dict[str, set[str]] = {
     "paranoid": set(),
@@ -430,13 +490,63 @@ class WorkflowExecutor:
             response = await self._app.inference.chat(
                 messages=[Message(role="user", content=prompt)],
                 tools=None,
+                max_tokens=4096,
+                reasoning_budget=512,
             )
+            content = response.content or ""
+            if not content and response.reasoning_content:
+                # Fallback: some reasoning models (e.g. Qwen3.5-DeepSeek)
+                # put their answer in reasoning_content when the prompt is
+                # long. Extract the last non-empty line as the answer.
+                lines = [
+                    line.strip()
+                    for line in response.reasoning_content.strip().split("\n")
+                    if line.strip()
+                ]
+                if lines:
+                    content = _clean_reasoning_fallback(lines[-1])
+                    # If the cleaned line looks like it contains a URL,
+                    # try to extract just the URL.
+                    url = _extract_url_from_text(content)
+                    if url:
+                        content = url
+
+            # For extract_url node: if LLM didn't return a clean URL,
+            # scan the email body directly for job-related URLs.
+            if node.id == "extract_url":
+                url = _extract_url_from_text(content)
+                # If LLM rambled (long response), returned NONE, or gave a
+                # broken/partial URL, fall back to scanning the body.
+                use_fallback = not url or url == "NONE" or len(content) > 200
+                if use_fallback:
+                    data = inputs.get("data", {})
+                    body = data.get("body", "") if isinstance(data, dict) else ""
+                    if body:
+                        fallback = _extract_best_job_url(body)
+                        if fallback:
+                            content = fallback
+                        elif url and url != "NONE":
+                            content = url
+                        else:
+                            content = "NONE"
+                    elif url and url != "NONE":
+                        content = url
+                    else:
+                        content = "NONE"
+                else:
+                    content = url
+
             return _NodeOutput(
-                value=response.content,
+                value=content,
                 prompt_tokens=response.prompt_tokens,
                 completion_tokens=response.completion_tokens,
             )
 
         # Treat node type as a tool name by default
         result = await self._app.tool_registry.call(node.type, inputs)
-        return _NodeOutput(value=result.content)
+        value = result.content
+        if result.artifact_handle:
+            # Load full artifact content so downstream nodes get the complete data
+            full_bytes = self._app.artifact_store.fetch_content(result.artifact_handle)
+            value = full_bytes.decode("utf-8", errors="replace")
+        return _NodeOutput(value=value)

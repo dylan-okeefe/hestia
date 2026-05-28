@@ -64,7 +64,16 @@ async def browser_login(url: str) -> str:
     store = BrowserSessionStore()
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False)
+        browser = await p.chromium.launch(
+            headless=False,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--disable-features=IsolateOrigins,site-per-process",
+                "--disable-infobars",
+                "--disable-dev-shm-usage",
+                "--no-sandbox",
+            ],
+        )
         context = await browser.new_context(
             viewport=_VIEWPORT,
             user_agent=_USER_AGENT,
@@ -72,6 +81,17 @@ async def browser_login(url: str) -> str:
             timezone_id="America/New_York",
         )
         page = await context.new_page()
+
+        await page.add_init_script(
+            """
+            () => {
+                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+                window.chrome = { runtime: {} };
+                Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+            }
+            """
+        )
 
         await page.goto(url)
         await page.wait_for_load_state("domcontentloaded")

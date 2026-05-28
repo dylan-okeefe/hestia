@@ -201,7 +201,7 @@ def _extract_tool_calls_from_text(text: str) -> list[ToolCall]:
 class InferenceClient:
     """Thin, opinionated wrapper around llama.cpp HTTP server."""
 
-    def __init__(self, base_url: str, model_name: str, timeout: float = 120.0) -> None:
+    def __init__(self, base_url: str, model_name: str, timeout: float = 300.0) -> None:
         """Initialize the client.
 
         Args:
