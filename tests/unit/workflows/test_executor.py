@@ -198,7 +198,8 @@ class TestExecuteHappyPath:
         assert call_args is not None
         messages = call_args.kwargs.get("messages") or call_args.args[0]
         assert isinstance(messages[0], Message)
-        assert messages[0].content == "{'question': 'meaning of life'}"
+        expected = "{'question': 'meaning of life', 'data': {'question': 'meaning of life'}}"
+        assert messages[0].content == expected
 
 
 class TestTrustEnforcement:

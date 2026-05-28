@@ -35,6 +35,11 @@ async def test_calls_tool_by_name(app: AppContext) -> None:
             truncated=False,
         )
     )
+    app.tool_registry.describe = MagicMock(
+        return_value=MagicMock(
+            parameters_schema={"properties": {"text": {"type": "string"}}}
+        )
+    )
 
     executor = ToolCallNode()
     result = await executor.execute(app, node, {"text": "hi"})

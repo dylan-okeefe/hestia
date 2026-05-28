@@ -255,6 +255,8 @@ export function useWorkflowEditor(workflowId: string | undefined) {
         source: e.source,
         target: e.target,
         type: e.type,
+        sourceHandle: e.sourceHandle ?? undefined,
+        targetHandle: e.targetHandle ?? undefined,
       }));
       const version = await saveWorkflowVersion(workflowId, serialNodes, serialEdges);
       setVersions((vs) => [...vs, version]);

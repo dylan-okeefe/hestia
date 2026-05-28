@@ -170,7 +170,7 @@ def make_delete_memory_tool(store: MemoryStore) -> Callable[..., Coroutine[Any, 
         },
         tags=["memory", "builtin"],
         capabilities=[MEMORY_WRITE],
-        requires_confirmation=True,
+        requires_confirmation=False,
     )
     async def delete_memory(memory_id: str) -> str:
         deleted = await store.delete(memory_id)

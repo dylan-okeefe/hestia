@@ -15,12 +15,18 @@ that is not importable at module load time.
 """
 
 from hestia.runtime_context import current_session_id, current_trace_store
+from hestia.tools.builtin.append_to_file import make_append_to_file_tool
 from hestia.tools.builtin.browser_get import browser_get
 from hestia.tools.builtin.browser_login import browser_login
 from hestia.tools.builtin.current_time import current_time
 from hestia.tools.builtin.delegate_task import SubagentResult, make_delegate_task_tool
 from hestia.tools.builtin.email_tools import make_email_search_and_read_tool, make_email_tools
 from hestia.tools.builtin.http_get import http_get, make_http_get_tool
+from hestia.tools.builtin.job_alert_tools import (
+    make_list_pending_alerts_tool,
+    make_mark_alerts_sent_tool,
+    make_save_job_alert_tool,
+)
 from hestia.tools.builtin.list_dir import make_list_dir_tool
 from hestia.tools.builtin.memory_tools import (
     make_delete_memory_tool,
@@ -52,7 +58,6 @@ from hestia.tools.builtin.style_tools import (
 )
 from hestia.tools.builtin.terminal import make_terminal_tool
 from hestia.tools.builtin.web_search import make_web_search_tool
-from hestia.tools.builtin.append_to_file import make_append_to_file_tool
 from hestia.tools.builtin.write_file import make_write_file_tool
 from hestia.tools.capabilities import (
     EMAIL_SEND,
@@ -78,6 +83,9 @@ __all__ = [
     "make_delegate_task_tool",
     "make_delete_memory_tool",
     "make_list_memories_tool",
+    "make_list_pending_alerts_tool",
+    "make_mark_alerts_sent_tool",
+    "make_save_job_alert_tool",
     "make_create_scheduled_task_tool",
     "make_delete_scheduled_task_tool",
     "make_disable_scheduled_task_tool",

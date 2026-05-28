@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@openuidev/react-ui": "^0.11.6",
+    "@reactflow/node-resizer": "^2.2.14",
     "cron-parser": "^5.5.0",
     "cronstrue": "^3.14.0",
     "react": "^18.3.0",

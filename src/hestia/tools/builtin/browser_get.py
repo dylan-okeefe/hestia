@@ -55,10 +55,10 @@ def _load_session(store: BrowserSessionStore, domain: str) -> dict[str, Any] | N
     parameters_schema={
         "type": "object",
         "properties": {
-            "url": {"type": "string", "description": "Full URL to fetch (e.g. https://example.com)."},
-            "wait_for_selector": {"type": "string", "description": "Optional CSS selector to wait for before returning."},
-            "wait_seconds": {"type": "integer", "description": "Extra seconds to wait for JS hydration (default 3)."},
-            "timeout_seconds": {"type": "integer", "description": "Page load timeout in seconds (default 30)."},
+            "url": {"type": "string", "description": "Full URL to fetch."},
+            "wait_for_selector": {"type": "string", "description": "CSS selector to wait for."},
+            "wait_seconds": {"type": "integer", "description": "Extra seconds for JS hydration."},
+            "timeout_seconds": {"type": "integer", "description": "Load timeout in seconds."},
         },
         "required": ["url"],
     },
@@ -90,7 +90,16 @@ async def browser_get(
     storage_state = _load_session(store, domain)
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        browser = await p.chromium.launch(
+            headless=True,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--disable-features=IsolateOrigins,site-per-process",
+                "--disable-infobars",
+                "--disable-dev-shm-usage",
+                "--no-sandbox",
+            ],
+        )
 
         context_kwargs: dict[str, Any] = {
             "viewport": _VIEWPORT,
@@ -105,9 +114,16 @@ async def browser_get(
         context = await browser.new_context(**context_kwargs)
         page = await context.new_page()
 
-        # Mask navigator.webdriver to reduce bot detection
+        # Mask headless-detection flags
         await page.add_init_script(
-            "() => { Object.defineProperty(navigator, 'webdriver', {get: () => undefined}); }"
+            """
+            () => {
+                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+                window.chrome = { runtime: {} };
+                Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+            }
+            """
         )
 
         text = ""
@@ -127,6 +143,21 @@ async def browser_get(
                 await page.wait_for_timeout(wait_seconds * 1000)
 
             text = await _extract_text(page)
+
+            # Detect bot-protection pages and return a clear error
+            lower_text = text.lower()
+            if "cloudflare" in lower_text and (
+                "verification" in lower_text or "security" in lower_text
+            ):
+                return (
+                    f"[BLOCKED] Cloudflare verification page for {url}. "
+                    "The site is blocking automated access."
+                )
+            if "additional verification required" in lower_text:
+                return (
+                    f"[BLOCKED] Bot protection page for {url}. "
+                    "The site is blocking automated access."
+                )
 
             # Persist refreshed session state so subsequent calls stay authenticated.
             # Save both storage_state (cookies + localStorage) and cookies for
@@ -158,7 +189,7 @@ async def browser_get(
 
 async def _extract_text(page: Any) -> str:
     """Extract readable text from the page, stripping scripts/styles/modals."""
-    return await page.evaluate(
+    result = await page.evaluate(
         """() => {
             document.querySelectorAll(
                 "script, style, nav, footer, iframe, noscript, aside, " +
@@ -167,3 +198,4 @@ async def _extract_text(page: Any) -> str:
             return document.body.innerText || "";
         }"""
     )
+    return str(result) if result is not None else ""

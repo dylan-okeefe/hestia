@@ -588,7 +588,7 @@ class TestEmailReceived:
 
         await event_bus.publish(
             "email_received",
-            {"from": "alert@example.com", "subject": "Test", "body": "Hello"},
+            {"from_address": "alert@example.com", "subject": "Test", "body": "Hello"},
         )
         await asyncio.sleep(0.01)
 
@@ -618,7 +618,7 @@ class TestEmailReceived:
 
         await event_bus.publish(
             "email_received",
-            {"from": "foo@bar.com", "subject": "URGENT: Action needed", "body": "Hello"},
+            {"from_address": "foo@bar.com", "subject": "URGENT: Action needed", "body": "Hello"},
         )
         await asyncio.sleep(0.01)
 
@@ -648,7 +648,7 @@ class TestEmailReceived:
 
         await event_bus.publish(
             "email_received",
-            {"from": "other@example.com", "subject": "Test", "body": "Hello"},
+            {"from_address": "other@example.com", "subject": "Test", "body": "Hello"},
         )
         await asyncio.sleep(0.01)
 
@@ -678,7 +678,7 @@ class TestEmailReceived:
 
         await event_bus.publish(
             "email_received",
-            {"from": "anyone@example.com", "subject": "Test", "body": "Hello"},
+            {"from_address": "anyone@example.com", "subject": "Test", "body": "Hello"},
         )
         await asyncio.sleep(0.01)
 

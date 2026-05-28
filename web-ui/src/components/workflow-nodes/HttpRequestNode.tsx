@@ -1,7 +1,8 @@
 import { Handle, Position, type NodeProps } from 'reactflow';
+import { NodeResizer } from '@reactflow/node-resizer';
 import './workflow-nodes.css';
 
-export default function HttpRequestNode({ data }: NodeProps) {
+export default function HttpRequestNode({ data, selected }: NodeProps) {
   const label = (data.label as string) || 'HTTP Request';
   const method = (data.method as string) || 'GET';
   const url = (data.url as string) || '';
@@ -18,6 +19,11 @@ export default function HttpRequestNode({ data }: NodeProps) {
       data-node-type="http_request"
       className="workflow-node workflow-node--http_request"
     >
+      <NodeResizer
+        isVisible={selected}
+        minWidth={160}
+        minHeight={60}
+      />
       <Handle type="target" position={Position.Top} className="workflow-node__handle" />
       <div className="workflow-node__label">{label}</div>
       <div className="workflow-node__snippet">

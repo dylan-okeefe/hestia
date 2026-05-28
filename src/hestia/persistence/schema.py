@@ -283,3 +283,24 @@ room_members = sa.Table(
     sa.Column("joined_at", sa.DateTime, nullable=False),
     sa.PrimaryKeyConstraint("room_id", "user_id"),
 )
+
+job_alerts = sa.Table(
+    "job_alerts",
+    metadata,
+    sa.Column("id", sa.String, primary_key=True),
+    sa.Column("created_at", sa.DateTime, nullable=False),
+    sa.Column("source_email", sa.Text, nullable=False),
+    sa.Column("subject", sa.Text, nullable=False),
+    sa.Column("title", sa.Text, nullable=True),
+    sa.Column("company", sa.Text, nullable=True),
+    sa.Column("location", sa.Text, nullable=True),
+    sa.Column("remote", sa.Text, nullable=True),
+    sa.Column("match_score", sa.Integer, nullable=True),
+    sa.Column("salary", sa.Text, nullable=True),
+    sa.Column("tech_stack", sa.Text, nullable=True),
+    sa.Column("url", sa.Text, nullable=True),
+    sa.Column("summary", sa.Text, nullable=True),
+    sa.Column("digest_sent", sa.Boolean, nullable=False, default=False),
+    sa.Index("idx_job_alerts_pending", "digest_sent", "created_at"),
+    sa.Index("idx_job_alerts_created", "created_at"),
+)
