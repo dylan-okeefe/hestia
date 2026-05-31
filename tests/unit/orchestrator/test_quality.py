@@ -5,8 +5,8 @@ from datetime import datetime
 import pytest
 
 from hestia.core.types import Message, Session, SessionState, SessionTemperature, ToolCall
+from hestia.errors import EmptyResponseError, MaxIterationsError, PolicyFailureError
 from hestia.orchestrator.quality import (
-    Correction,
     DegeneratePattern,
     classify_turn,
 )
@@ -178,7 +178,9 @@ def test_read_only_streak_detected(session: Session) -> None:
         assistant = Message(
             role="assistant",
             content="",
-            tool_calls=[ToolCall(id=f"call-{i}", name="read_file", arguments={"path": "/tmp/a.txt"})],
+            tool_calls=[
+                ToolCall(id=f"call-{i}", name="read_file", arguments={"path": "/tmp/a.txt"})
+            ],
         )
         tool_result = Message(
             role="tool",
@@ -406,11 +408,10 @@ async def test_correction_count_capped_at_three() -> None:
     transition = AsyncMock()
     set_typing = AsyncMock()
 
-    with patch.object(
-        execution, "_max_iterations", 10
+    with patch.object(execution, "_max_iterations", 10), pytest.raises(
+        (EmptyResponseError, MaxIterationsError, PolicyFailureError)
     ):
-        with pytest.raises(Exception):  # MaxIterationsError or PolicyFailureError
-            await execution.run(ctx, transition, set_typing)
+        await execution.run(ctx, transition, set_typing)
 
     # correction_count should have been capped at 3
     assert ctx.correction_count == 3
