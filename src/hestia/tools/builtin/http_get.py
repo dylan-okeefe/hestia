@@ -52,24 +52,27 @@ class SSRFSafeTransport(httpx.AsyncBaseTransport):
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         hostname = request.url.host
         if hostname:
-            # Resolve at connection time — same lookup httpx will use
-            try:
-                addr_info = await asyncio.to_thread(socket.getaddrinfo, str(hostname), None)
-            except socket.gaierror as exc:
-                raise httpx.ConnectError(f"Cannot resolve hostname: {hostname}") from exc
-
-            for _family, _, _, _, sockaddr in addr_info:
-                ip = ipaddress.ip_address(sockaddr[0])
-                for blocked in _BLOCKED_RANGES:
-                    if ip in blocked:
-                        raise httpx.ConnectError(
-                            f"SSRF blocked: {hostname} resolves to {ip} (in {blocked})"
-                        )
-
+            await asyncio.to_thread(_assert_ip_allowed, str(hostname))
         return await self._inner.handle_async_request(request)
 
     async def aclose(self) -> None:
         await self._inner.aclose()
+
+
+def _assert_ip_allowed(hostname: str) -> None:
+    """Resolve hostname and raise httpx.ConnectError if any IP is blocked."""
+    try:
+        addr_info = socket.getaddrinfo(hostname, None)
+    except socket.gaierror as exc:
+        raise httpx.ConnectError(f"Cannot resolve hostname: {hostname}") from exc
+
+    for _family, _, _, _, sockaddr in addr_info:
+        ip = ipaddress.ip_address(sockaddr[0])
+        for blocked in _BLOCKED_RANGES:
+            if ip in blocked:
+                raise httpx.ConnectError(
+                    f"SSRF blocked: {hostname} resolves to {ip} (in {blocked})"
+                )
 
 
 def _is_url_safe(url: str) -> str | None:
@@ -156,6 +159,16 @@ async def _fetch_with_curl_cffi(url: str, timeout_seconds: int) -> str:
                 current_url = urljoin(current_url, location)
                 if error := _is_url_safe(current_url):
                     raise RuntimeError(f"SSRF blocked redirect: {error}")
+                parsed_redirect = urlparse(current_url)
+                if parsed_redirect.hostname:
+                    try:
+                        await asyncio.to_thread(
+                            _assert_ip_allowed, parsed_redirect.hostname
+                        )
+                    except httpx.ConnectError as exc:
+                        raise RuntimeError(
+                            f"SSRF blocked redirect: {exc}"
+                        ) from exc
                 redirects += 1
                 continue
 
