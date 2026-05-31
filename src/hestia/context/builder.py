@@ -354,12 +354,19 @@ class ContextBuilder:
         includes it has a constant length per role, so all tool-result
         messages with the same ``content`` can safely share one cache entry.
 
+        Messages with ``tool_calls`` bypass the cache entirely because
+        the serialized tool-call signature varies independently of
+        ``content``.
+
         Args:
             message: Message to count
 
         Returns:
             Token count for the rendered message dict
         """
+        if message.tool_calls:
+            tokens = await self._inference.tokenize(self._render_message(message))
+            return len(tokens)
         key = (message.role, message.content or "")
         if key in self._tokenize_cache:
             self._tokenize_cache.move_to_end(key)
@@ -391,6 +398,8 @@ class ContextBuilder:
         # Collect uncached messages and batch-tokenize them.
         uncached: list[Message] = []
         for msg in messages:
+            if msg.tool_calls:
+                continue
             key = (msg.role, msg.content or "")
             if key not in self._tokenize_cache:
                 uncached.append(msg)
@@ -408,9 +417,13 @@ class ContextBuilder:
             for msg in uncached:
                 await self._count_tokens(msg)
 
-        total = sum(
-            self._tokenize_cache[(m.role, m.content or "")] for m in messages
-        )
+        total = 0
+        for m in messages:
+            if m.tool_calls:
+                tokens = await self._inference.tokenize(self._render_message(m))
+                total += len(tokens)
+            else:
+                total += self._tokenize_cache[(m.role, m.content or "")]
 
         # Only cache single-message system prompts (the static prefix).
         if len(messages) == 1 and messages[0].role == "system":

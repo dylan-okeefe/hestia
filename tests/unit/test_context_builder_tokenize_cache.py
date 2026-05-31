@@ -5,7 +5,7 @@ from datetime import datetime
 import pytest
 
 from hestia.context.builder import ContextBuilder
-from hestia.core.types import Message, Session, SessionState, SessionTemperature
+from hestia.core.types import Message, Session, SessionState, SessionTemperature, ToolCall
 from hestia.policy.default import DefaultPolicyEngine
 
 
@@ -232,3 +232,30 @@ async def test_count_body_cache_key_collides_under_old_string_join(inference, po
     count_a = await builder._count_body(list_a)
     count_b = await builder._count_body(list_b)
     assert count_a != count_b
+
+
+@pytest.mark.asyncio
+async def test_tool_call_messages_bypass_cache(inference, policy, session):
+    """Two assistant messages with same empty content but different
+    tool_calls must have distinct counts."""
+    builder = ContextBuilder(inference, policy)
+
+    msg1 = Message(
+        role="assistant",
+        content="",
+        tool_calls=[ToolCall(id="call_1", name="foo", arguments={"x": 1})],
+    )
+    msg2 = Message(
+        role="assistant",
+        content="",
+        tool_calls=[ToolCall(id="call_2", name="bar", arguments={"y": "longer_string"})],
+    )
+
+    count1 = await builder._count_tokens(msg1)
+    count2 = await builder._count_tokens(msg2)
+
+    # The fake inference client tokenizes by character count, and the
+    # JSON-serialized tool calls differ in length, so counts must differ.
+    assert count1 != count2, (
+        "tool-call messages with different signatures must not collide in cache"
+    )
