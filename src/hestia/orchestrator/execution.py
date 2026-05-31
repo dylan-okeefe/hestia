@@ -340,10 +340,12 @@ class TurnExecution:
                 )
                 arguments = {}
             if not isinstance(arguments, dict):
-                raise InferenceServerError(
-                    f"tool_call arguments for {buf['name']!r} are not a dict: "
-                    f"{type(arguments).__name__}"
+                logger.warning(
+                    "tool_call arguments for %r are not a dict: %s",
+                    buf["name"],
+                    type(arguments).__name__,
                 )
+                continue
             tool_calls.append(
                 ToolCall(
                     id=buf["id"] or f"call_{idx}",
