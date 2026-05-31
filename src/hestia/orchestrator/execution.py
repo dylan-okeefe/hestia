@@ -619,9 +619,11 @@ class TurnExecution:
                 ctx.empty_tool_failure_counts[tc.name] = count
                 if count >= 3:
                     result = ToolCallResult.error(
-                        f"🛑 CIRCUIT BREAKER: You have called {tc.name} with missing/empty arguments {count} times. "
-                        "You are stuck in a loop and cannot generate the correct JSON payload. "
-                        "STOP calling this tool. Instead, write your response as plain text for the user."
+                        f"🛑 CIRCUIT BREAKER: You have called {tc.name} with "
+                        f"missing/empty arguments {count} times. You are stuck in a "
+                        "loop and cannot generate the correct JSON payload. "
+                        "STOP calling this tool. Instead, write your response as "
+                        "plain text for the user."
                     )
 
             # Truncate oversized tool results before re-prompting
