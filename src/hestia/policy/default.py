@@ -217,6 +217,13 @@ class DefaultPolicyEngine(PolicyEngine):
         """Return True if the trust profile auto-approves this tool."""
         trust = self._trust_for(session)
         approved = trust.auto_approve_tools
+
+        # Fail-closed: scheduler ticks never auto-approve destructive tools,
+        # even when auto_approve_tools contains a wildcard.
+        if (
+            session.platform == PLATFORM_SCHEDULER or scheduler_tick_active.get()
+        ) and tool_name in {"terminal", "write_file", "email_send"}:
+            return False
         if "*" in approved:
             return True
         return tool_name in approved
@@ -269,6 +276,8 @@ class DefaultPolicyEngine(PolicyEngine):
         if session.platform == PLATFORM_SCHEDULER or scheduler_tick_active.get():
             if not trust.scheduler_shell_exec:
                 blocked.add(SHELL_EXEC)
+            if not trust.scheduler_write_local:
+                blocked.add(WRITE_LOCAL)
             if not trust.scheduler_email_send:
                 blocked.add(EMAIL_SEND)
 

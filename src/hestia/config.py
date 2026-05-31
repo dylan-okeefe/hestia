@@ -171,6 +171,11 @@ class TrustConfig(_ConfigFromEnv):
     # model's available tool list during scheduler ticks.
     scheduler_shell_exec: bool = False
 
+    # Allow scheduler tick sessions to call WRITE_LOCAL-capable tools.
+    # When False (default), the policy engine strips write_local tools from the
+    # model's available tool list during scheduler ticks.
+    scheduler_write_local: bool = False
+
     # Allow subagent sessions to call SHELL_EXEC-capable tools.
     subagent_shell_exec: bool = False
 
@@ -204,6 +209,7 @@ class TrustConfig(_ConfigFromEnv):
         return (
             self.auto_approve_tools == []
             and not self.scheduler_shell_exec
+            and not self.scheduler_write_local
             and not self.subagent_shell_exec
             and not self.subagent_write_local
             and not self.subagent_email_send

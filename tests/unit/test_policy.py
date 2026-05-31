@@ -233,6 +233,48 @@ class TestAutoApprove:
         assert policy.auto_approve("any_tool_name", sample_session)
         assert policy.auto_approve("terminal", sample_session)
 
+    def test_scheduler_tick_auto_approve_fail_closed_paranoid(self, sample_session):
+        from hestia.config import TrustConfig
+        from hestia.policy.default import DefaultPolicyEngine
+        from hestia.runtime_context import scheduler_tick_active
+
+        policy = DefaultPolicyEngine(trust=TrustConfig.paranoid())
+        token = scheduler_tick_active.set(True)
+        try:
+            assert not policy.auto_approve("terminal", sample_session)
+            assert not policy.auto_approve("write_file", sample_session)
+            assert not policy.auto_approve("email_send", sample_session)
+        finally:
+            scheduler_tick_active.reset(token)
+
+    def test_scheduler_tick_auto_approve_fail_closed_prompt_on_mobile(self, sample_session):
+        from hestia.config import TrustConfig
+        from hestia.policy.default import DefaultPolicyEngine
+        from hestia.runtime_context import scheduler_tick_active
+
+        policy = DefaultPolicyEngine(trust=TrustConfig.prompt_on_mobile())
+        token = scheduler_tick_active.set(True)
+        try:
+            assert not policy.auto_approve("terminal", sample_session)
+            assert not policy.auto_approve("write_file", sample_session)
+            assert not policy.auto_approve("email_send", sample_session)
+        finally:
+            scheduler_tick_active.reset(token)
+
+    def test_scheduler_platform_auto_approve_fail_closed(self, sample_session):
+        from dataclasses import replace
+
+        from hestia.config import TrustConfig
+        from hestia.policy.default import DefaultPolicyEngine
+
+        policy = DefaultPolicyEngine(trust=TrustConfig.developer())
+        sched = replace(sample_session, platform="scheduler")
+        assert not policy.auto_approve("terminal", sched)
+        assert not policy.auto_approve("write_file", sched)
+        assert not policy.auto_approve("email_send", sched)
+        # Non-destructive tools are still auto-approved
+        assert policy.auto_approve("current_time", sched)
+
 
 class TestFilterToolsTrust:
     """Tests for filter_tools with TrustConfig."""
@@ -340,6 +382,45 @@ class TestFilterToolsTrust:
         sched.platform = "scheduler"
         filtered = policy.filter_tools(sched, names, reg)
         assert "terminal" in filtered
+        assert "current_time" in filtered
+
+    def test_scheduler_paranoid_blocks_write_local(self, sample_session, tmp_path):
+        from hestia.artifacts.store import ArtifactStore
+        from hestia.config import TrustConfig
+        from hestia.policy.default import DefaultPolicyEngine
+        from hestia.tools.builtin import current_time, make_write_file_tool
+        from hestia.tools.registry import ToolRegistry
+
+        policy = DefaultPolicyEngine(trust=TrustConfig.paranoid())
+        reg = ToolRegistry(ArtifactStore(tmp_path / "art"))
+        reg.register(current_time)
+        reg.register(make_write_file_tool(StorageConfig(allowed_roots=[str(tmp_path)])))
+        names = reg.list_names()
+        sched = sample_session
+        sched.platform = "scheduler"
+        filtered = policy.filter_tools(sched, names, reg)
+        assert "write_file" not in filtered
+        assert "current_time" in filtered
+
+    def test_scheduler_tick_blocks_write_local(self, sample_session, tmp_path):
+        from hestia.artifacts.store import ArtifactStore
+        from hestia.config import TrustConfig
+        from hestia.policy.default import DefaultPolicyEngine
+        from hestia.runtime_context import scheduler_tick_active
+        from hestia.tools.builtin import current_time, make_write_file_tool
+        from hestia.tools.registry import ToolRegistry
+
+        policy = DefaultPolicyEngine(trust=TrustConfig.paranoid())
+        reg = ToolRegistry(ArtifactStore(tmp_path / "art"))
+        reg.register(current_time)
+        reg.register(make_write_file_tool(StorageConfig(allowed_roots=[str(tmp_path)])))
+        names = reg.list_names()
+        token = scheduler_tick_active.set(True)
+        try:
+            filtered = policy.filter_tools(sample_session, names, reg)
+        finally:
+            scheduler_tick_active.reset(token)
+        assert "write_file" not in filtered
         assert "current_time" in filtered
 
 
