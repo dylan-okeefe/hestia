@@ -223,7 +223,10 @@ async def _http_get_impl(
         "type": "object",
         "properties": {
             "url": {"type": "string", "description": "Full URL to fetch (e.g. https://example.com)."},
-            "timeout_seconds": {"type": "integer", "description": "Request timeout in seconds (default 30)."},
+            "timeout_seconds": {
+                "type": "integer",
+                "description": "Request timeout in seconds (default 30).",
+            },
         },
         "required": ["url"],
     },
@@ -264,7 +267,10 @@ def make_http_get_tool(
             "type": "object",
             "properties": {
                 "url": {"type": "string", "description": "Full URL to fetch (e.g. https://example.com)."},
-                "timeout_seconds": {"type": "integer", "description": "Request timeout in seconds (default 30)."},
+                "timeout_seconds": {
+                    "type": "integer",
+                    "description": "Request timeout in seconds (default 30).",
+                },
             },
             "required": ["url"],
         },
