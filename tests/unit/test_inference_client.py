@@ -220,3 +220,231 @@ class TestChatStream:
         call_kwargs = client._client.stream.call_args.kwargs  # type: ignore[attr-defined]
         assert "tools" in call_kwargs["json"]
         assert call_kwargs["json"]["slot_id"] == 3
+
+
+class TestChatMalformedOutput:
+    """Tests for chat() malformed-output defense (lines 420-497)."""
+
+    @pytest.fixture
+    def client(self) -> InferenceClient:
+        return InferenceClient("http://localhost:8001", "my-model.gguf")
+
+    @pytest.fixture
+    def mock_chat_response(self) -> Any:
+        """Return a helper that patches client._request with a canned JSON response."""
+
+        def _apply(client: InferenceClient, data: dict[str, Any]) -> None:
+            mock_response = MagicMock()
+            mock_response.json.return_value = data
+            client._request = AsyncMock(return_value=mock_response)  # type: ignore[method-assign]
+
+        return _apply
+
+    @pytest.mark.asyncio
+    async def test_empty_choices_raises_inference_server_error(
+        self, client: InferenceClient, mock_chat_response: Any
+    ) -> None:
+        """Empty choices list raises InferenceServerError."""
+        mock_chat_response(client, {"choices": []})
+
+        messages = [Message(role="user", content="Hello")]
+        with pytest.raises(InferenceServerError, match="no choices"):
+            await client.chat(messages)
+
+    @pytest.mark.asyncio
+    async def test_malformed_json_args_skipped_with_warning(
+        self, client: InferenceClient, mock_chat_response: Any, capsys: Any
+    ) -> None:
+        """Malformed JSON arguments are skipped and a warning is printed."""
+        mock_chat_response(
+            client,
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": "tc1",
+                                    "function": {
+                                        "name": "test_tool",
+                                        "arguments": "not valid json",
+                                    },
+                                }
+                            ],
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ]
+            },
+        )
+
+        messages = [Message(role="user", content="Hello")]
+        response = await client.chat(messages)
+        assert response.tool_calls == []
+        captured = capsys.readouterr()
+        assert "Malformed tool_call arguments" in captured.out
+
+    @pytest.mark.asyncio
+    async def test_non_dict_args_skipped_with_warning(
+        self, client: InferenceClient, mock_chat_response: Any, capsys: Any
+    ) -> None:
+        """Non-dict arguments are skipped and a warning is printed."""
+        mock_chat_response(
+            client,
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": "tc1",
+                                    "function": {
+                                        "name": "test_tool",
+                                        "arguments": '"just a string"',
+                                    },
+                                }
+                            ],
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ]
+            },
+        )
+
+        messages = [Message(role="user", content="Hello")]
+        response = await client.chat(messages)
+        assert response.tool_calls == []
+        captured = capsys.readouterr()
+        assert "not a dict" in captured.out
+
+    @pytest.mark.asyncio
+    async def test_call_tool_unwrap_logic(
+        self, client: InferenceClient, mock_chat_response: Any
+    ) -> None:
+        """call_tool wrapper is unwrapped to the inner tool name and arguments."""
+        mock_chat_response(
+            client,
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": "tc1",
+                                    "function": {
+                                        "name": "call_tool",
+                                        "arguments": (
+                                            '{"name": "inner_tool", '
+                                            '"arguments": {"key": "val"}}'
+                                        ),
+                                    },
+                                }
+                            ],
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ]
+            },
+        )
+
+        messages = [Message(role="user", content="Hello")]
+        response = await client.chat(messages)
+        assert len(response.tool_calls) == 1
+        assert response.tool_calls[0].name == "inner_tool"
+        assert response.tool_calls[0].arguments == {"key": "val"}
+
+    @pytest.mark.asyncio
+    async def test_call_tool_unwrap_skipped_when_malformed(
+        self, client: InferenceClient, mock_chat_response: Any
+    ) -> None:
+        """call_tool with missing inner keys falls back to outer name."""
+        mock_chat_response(
+            client,
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": "tc1",
+                                    "function": {
+                                        "name": "call_tool",
+                                        "arguments": '{"other": "data"}',
+                                    },
+                                }
+                            ],
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ]
+            },
+        )
+
+        messages = [Message(role="user", content="Hello")]
+        response = await client.chat(messages)
+        assert len(response.tool_calls) == 1
+        assert response.tool_calls[0].name == "call_tool"
+        assert response.tool_calls[0].arguments == {"other": "data"}
+
+    @pytest.mark.asyncio
+    async def test_xml_fallback_extraction(
+        self, client: InferenceClient, mock_chat_response: Any
+    ) -> None:
+        """XML <tool_call> tags in content/reasoning are parsed as fallback."""
+        mock_chat_response(
+            client,
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                '<tool_call>{"name": "xml_tool", '
+                                '"arguments": {"a": 1}}</tool_call>'
+                            ),
+                            "tool_calls": [],
+                        },
+                        "finish_reason": "stop",
+                    }
+                ]
+            },
+        )
+
+        messages = [Message(role="user", content="Hello")]
+        response = await client.chat(messages)
+        assert len(response.tool_calls) == 1
+        assert response.tool_calls[0].name == "xml_tool"
+        assert response.tool_calls[0].arguments == {"a": 1}
+
+    @pytest.mark.asyncio
+    async def test_xml_fallback_from_reasoning_content(
+        self, client: InferenceClient, mock_chat_response: Any
+    ) -> None:
+        """XML <tool_call> tags in reasoning_content are parsed as fallback."""
+        mock_chat_response(
+            client,
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": "",
+                            "reasoning_content": (
+                                '<tool_call>{"name": "reason_tool", '
+                                '"arguments": {"b": 2}}</tool_call>'
+                            ),
+                            "tool_calls": [],
+                        },
+                        "finish_reason": "stop",
+                    }
+                ]
+            },
+        )
+
+        messages = [Message(role="user", content="Hello")]
+        response = await client.chat(messages)
+        assert len(response.tool_calls) == 1
+        assert response.tool_calls[0].name == "reason_tool"
+        assert response.tool_calls[0].arguments == {"b": 2}

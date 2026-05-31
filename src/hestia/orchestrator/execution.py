@@ -500,6 +500,16 @@ class TurnExecution:
                         "STOP calling this tool. Instead, write your response as plain text for the user."
                     )
 
+            # Truncate oversized tool results before re-prompting
+            max_chars = self._policy.tool_result_max_chars(tc.name)
+            if (
+                isinstance(max_chars, int)
+                and isinstance(result.content, str)
+                and len(result.content) > max_chars
+            ):
+                result.content = result.content[:max_chars] + "\n... [truncated]"
+                result.truncated = True
+
             if result.artifact_handle:
                 artifact_handles.append(result.artifact_handle)
 
@@ -531,6 +541,12 @@ class TurnExecution:
         body = result.content
         if result.status != "ok":
             body = f"[delegation error] {body}"
+
+        # Truncate oversized delegation results before re-prompting
+        max_chars = self._policy.tool_result_max_chars("delegate_task")
+        if isinstance(max_chars, int) and isinstance(body, str) and len(body) > max_chars:
+            body = body[:max_chars] + "\n... [truncated]"
+            result.truncated = True
 
         artifact_handles: list[str] = []
         if result.artifact_handle:

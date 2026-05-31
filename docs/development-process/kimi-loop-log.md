@@ -6,9 +6,9 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
-## 2026-05-30 — L195–L198 Complete (v0.12 Review Fixes)
+## 2026-05-30 — L195–L199 Complete (v0.12 Review Fixes)
 
-**Outcome:** L195 partially done by runtime agent before session. L196–L198 implemented by subagents and validated. All quality gates pass.
+**Outcome:** L195 partially done by runtime agent before session. L196–L199 implemented by subagents and validated.
 
 ### L195 — Critical & High Backend Fixes
 **Branch:** `feature/l195-critical-and-high-backend-fixes` (4 commits)
@@ -43,6 +43,14 @@
 - L5: Route-level redirect for non-admins from `/admin/users`
 
 **Quality gates:** build ✅, 128 vitest tests ✅, 10 inline styles (under 20) ✅
+### L199 — Test Backfill
+**Branch:** `feature/l199-test-backfill` (4 commits)
+- M9a: `chat()` malformed-output defense tests (7 new tests)
+- M9b: `MaxIterationsError` and per-turn tool-call cap tests
+- M9c: IPv6 SSRF and workflow-node real-blocking tests
+- M9d: `tool_result_max_chars` wired into orchestrator + test
+
+**Quality gates:** 28 passed, 1 pre-existing failure ✅, mypy ✅, ruff ✅
 ---
 
 ## 2026-05-20 — L187–L191 Complete (Post-Review Fixes + Error Persistence + Backend Quality + Component Infrastructure + Config Overhaul)
