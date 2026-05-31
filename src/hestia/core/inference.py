@@ -3,6 +3,7 @@
 import asyncio
 import dataclasses
 import json
+import logging
 import re
 import secrets
 from collections.abc import AsyncIterator
@@ -13,6 +14,8 @@ import httpx
 from hestia.core.serialization import message_to_dict
 from hestia.core.types import ChatResponse, Message, StreamDelta, ToolCall, ToolSchema
 from hestia.errors import InferenceServerError, InferenceTimeoutError
+
+logger = logging.getLogger(__name__)
 
 
 def _strip_historical_reasoning(messages: list[Message]) -> list[Message]:
@@ -438,12 +441,17 @@ class InferenceClient:
                 except json.JSONDecodeError as exc:
                     # Gracefully skip malformed tool calls instead of crashing the turn.
                     # Log for debugging; model may retry in next iteration.
-                    print(f"[WARN] Malformed tool_call arguments for {fn['name']!r}: {exc}")
+                    logger.warning(
+                        "Malformed tool_call arguments for %r: %s",
+                        fn["name"],
+                        exc,
+                    )
                     continue
                 if not isinstance(arguments, dict):
-                    print(
-                        f"[WARN] tool_call arguments for {fn['name']!r} are not a dict: "
-                        f"{type(arguments).__name__}"
+                    logger.warning(
+                        "tool_call arguments for %r are not a dict: %s",
+                        fn["name"],
+                        type(arguments).__name__,
                     )
                     continue
                 # Unwrap call_tool wrapper: if the model uses call_tool with nested name+arguments,
