@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import socket
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 
 from hestia.app import AppContext
@@ -30,13 +32,7 @@ async def test_get_request(app: AppContext) -> None:
     mock_response.text = "OK"
     mock_response.headers = {"content-type": "text/html"}
 
-    with (
-        patch("httpx.AsyncClient.request", return_value=mock_response) as mock_req,
-        patch(
-            "hestia.workflows.nodes.http_request._is_url_safe",
-            return_value=None,
-        ),
-    ):
+    with patch("httpx.AsyncClient.request", return_value=mock_response) as mock_req:
         executor = HttpRequestNode()
         result = await executor.execute(app, node, {})
 
@@ -46,7 +42,8 @@ async def test_get_request(app: AppContext) -> None:
 
 
 @pytest.mark.asyncio
-async def test_blocks_ssrf(app: AppContext) -> None:
+async def test_blocks_ssrf_via_real_transport(app: AppContext) -> None:
+    """Workflow node exercises real _is_url_safe + _BLOCKED_RANGES."""
     node = WorkflowNode(
         id="n1",
         type="http_request",
@@ -55,11 +52,11 @@ async def test_blocks_ssrf(app: AppContext) -> None:
     )
 
     with patch(
-        "hestia.workflows.nodes.http_request._is_url_safe",
-        return_value="blocked",
+        "socket.getaddrinfo",
+        return_value=[(socket.AF_INET, 0, 0, "", ("127.0.0.1", 0))],
     ):
         executor = HttpRequestNode()
-        with pytest.raises(ValueError, match="SSRF"):
+        with pytest.raises(httpx.ConnectError, match="SSRF blocked"):
             await executor.execute(app, node, {})
 
 
