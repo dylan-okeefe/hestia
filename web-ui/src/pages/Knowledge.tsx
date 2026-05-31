@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { fetchUserSessions, fetchStyleProfile, fetchMemoriesForUser, fetchHandoffs, deleteMemory } from '../api/client';
+import { useAuth } from '../context/AuthContext';
 import { useCurrentUser } from '../hooks/useCurrentUser';
 import PageCard from '../components/layout/PageCard';
 import EmptyState from '../components/layout/EmptyState';
@@ -32,6 +33,7 @@ interface Handoff {
 }
 
 export default function Knowledge() {
+  const { logout } = useAuth();
   const { user, isLoading: userLoading, error: userError } = useCurrentUser();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [style, setStyle] = useState<Record<string, unknown>>({});
@@ -116,7 +118,7 @@ export default function Knowledge() {
       <div className="knowledge-page">
         <ErrorState
           message={userError}
-          onRetry={userError.includes('Not authenticated') ? () => { window.location.href = '/login'; } : () => window.location.reload()}
+          onRetry={userError.includes('Not authenticated') ? () => { logout(); window.location.href = '/'; } : () => window.location.reload()}
         />
       </div>
     );

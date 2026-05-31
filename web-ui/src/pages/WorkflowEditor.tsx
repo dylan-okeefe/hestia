@@ -21,6 +21,7 @@ import TriggerConfigPanel from '../components/workflow-editor/TriggerConfigPanel
 import ExecutionHistoryPanel from '../components/workflow-editor/ExecutionHistoryPanel';
 import VersionPanel from '../components/workflow-editor/VersionPanel';
 import { useWorkflowEditor } from '../hooks/useWorkflowEditor';
+import ErrorState from '../components/layout/ErrorState';
 import './WorkflowEditor.css';
 
 export default function WorkflowEditor() {
@@ -84,6 +85,16 @@ export default function WorkflowEditor() {
     return (
       <div className="workflow-editor__loading">
         <p>Loading workflow…</p>
+      </div>
+    );
+  }
+
+  if (editor.error) {
+    return (
+      <div className="workflow-editor">
+        <div className="workflow-editor__loading">
+          <ErrorState message={editor.error} onRetry={() => window.location.reload()} />
+        </div>
       </div>
     );
   }
