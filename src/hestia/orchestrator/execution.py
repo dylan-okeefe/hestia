@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 from hestia.core.clock import utcnow
 from hestia.core.inference import InferenceClient, _extract_tool_calls_from_text
+from hestia.core.json_repair import repair_json
 from hestia.core.types import ChatResponse, Message, Session, ToolCall
 from hestia.errors import (
     EmptyResponseError,
@@ -333,12 +334,20 @@ class TurnExecution:
             try:
                 arguments = json.loads(buf["arguments"]) if buf["arguments"] else {}
             except json.JSONDecodeError as exc:
-                logger.warning(
-                    "tool_call arguments for %r are malformed JSON (%s); treating as empty",
-                    buf["name"],
-                    exc,
-                )
-                arguments = {}
+                repaired = repair_json(buf["arguments"]) if buf["arguments"] else None
+                if repaired is not None:
+                    logger.info(
+                        "Repaired malformed tool_call arguments for %r in streaming path",
+                        buf["name"],
+                    )
+                    arguments = json.loads(repaired)
+                else:
+                    logger.warning(
+                        "tool_call arguments for %r are malformed JSON (%s); treating as empty",
+                        buf["name"],
+                        exc,
+                    )
+                    arguments = {}
             if not isinstance(arguments, dict):
                 raise InferenceServerError(
                     f"tool_call arguments for {buf['name']!r} are not a dict: "
