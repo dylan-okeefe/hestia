@@ -339,7 +339,11 @@ class AppContext:
         reg = self.tool_registry
 
         reg.register(current_time)
-        reg.register(make_http_get_tool(cfg.use_curl_cffi_fallback))
+        reg.register(
+            make_http_get_tool(
+                cfg.use_curl_cffi_fallback, cfg.security.egress_audit_enabled
+            )
+        )
         reg.register(make_list_dir_tool(cfg.storage))
         reg.register(make_terminal_tool(cfg.trust.blocked_shell_patterns or None))
         reg.register(make_read_file_tool(cfg.storage))
@@ -363,7 +367,9 @@ class AppContext:
         reg.register(make_reset_style_metric_tool(self.style_store))
         reg.register(make_reset_style_profile_tool(self.style_store))
 
-        web_search_tool = make_web_search_tool(cfg.web_search)
+        web_search_tool = make_web_search_tool(
+            cfg.web_search, cfg.security.egress_audit_enabled
+        )
         if web_search_tool is not None:
             reg.register(web_search_tool)
         else:
