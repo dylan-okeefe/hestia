@@ -58,6 +58,8 @@ from hestia.tools.builtin import (
     make_email_search_and_read_tool,
     make_email_tools,
     make_enable_scheduled_task_tool,
+    make_glob_tool,
+    make_grep_tool,
     make_http_get_tool,
     make_list_dir_tool,
     make_list_memories_tool,
@@ -347,6 +349,8 @@ class AppContext:
         reg.register(make_write_file_tool(cfg.storage, cfg.trust.write_guard_enabled))
         reg.register(make_append_to_file_tool(cfg.storage))
         reg.register(make_edit_file_tool(cfg.storage))
+        reg.register(make_glob_tool(cfg.storage))
+        reg.register(make_grep_tool(cfg.storage))
         reg.register(make_search_memory_tool(self.memory_store))
         reg.register(make_save_memory_tool(self.memory_store))
         reg.register(make_list_memories_tool(self.memory_store))

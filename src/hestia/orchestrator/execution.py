@@ -704,6 +704,8 @@ class TurnExecution:
             "list_dir": "📁",
             "terminal": "💻",
             "search_web": "🔍",
+            "glob": "🔍",
+            "grep": "🔍",
             "http_get": "🌐",
             "delegate_task": "👤",
             "list_tools": "🛠️",
