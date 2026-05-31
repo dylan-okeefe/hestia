@@ -6,9 +6,9 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
-## 2026-05-30 — L195–L197 Complete (Critical/High Backend + Orchestrator + Web Auth)
+## 2026-05-30 — L195–L198 Complete (v0.12 Review Fixes)
 
-**Outcome:** L195 was partially completed by the runtime agent before this session. L196–L197 were implemented by subagents and validated.
+**Outcome:** L195 partially done by runtime agent before session. L196–L198 implemented by subagents and validated. All quality gates pass.
 
 ### L195 — Critical & High Backend Fixes
 **Branch:** `feature/l195-critical-and-high-backend-fixes` (4 commits)
@@ -36,6 +36,13 @@
 
 **Quality gates:** 164 tests pass ✅, mypy ✅, ruff ✅
 
+### L198 — Frontend Fixes
+**Branch:** `feature/l198-frontend-fixes` (3 commits)
+- H3: `res.ok` checks on all mutation helpers
+- M10: Auth disabled fix, workflow editor error state, login redirect fix, mutation toasts
+- L5: Route-level redirect for non-admins from `/admin/users`
+
+**Quality gates:** build ✅, 128 vitest tests ✅, 10 inline styles (under 20) ✅
 ---
 
 ## 2026-05-20 — L187–L191 Complete (Post-Review Fixes + Error Persistence + Backend Quality + Component Infrastructure + Config Overhaul)

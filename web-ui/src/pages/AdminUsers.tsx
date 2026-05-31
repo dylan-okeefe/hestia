@@ -94,49 +94,62 @@ export default function AdminUsers() {
       notes: form.notes || null,
       trust_preset: form.trust_preset,
     };
-    if (editingUser) {
-      if (
-        editingUser.id === currentUser?.id &&
-        editingUser.role === 'admin' &&
-        form.role !== 'admin' &&
-        !confirmRoleChange
-      ) {
-        setConfirmRoleChange(true);
+    try {
+      if (editingUser) {
+        if (
+          editingUser.id === currentUser?.id &&
+          editingUser.role === 'admin' &&
+          form.role !== 'admin' &&
+          !confirmRoleChange
+        ) {
+          setConfirmRoleChange(true);
+          return;
+        }
+        await updateMut.mutateAsync({ id: editingUser.id, payload });
+        addToast({ message: 'User updated', type: 'success', duration: 3000 });
+      } else {
+        const created = await createMut.mutateAsync(payload as { display_name: string; role: string; notes?: string; trust_preset?: string });
+        addToast({ message: 'User created', type: 'success', duration: 3000 });
+        setModalOpen(false);
+        if (created?.id) {
+          setShowAddIdentity(created.id);
+        }
+        refetch();
         return;
       }
-      await updateMut.mutateAsync({ id: editingUser.id, payload });
-      addToast({ message: 'User updated', type: 'success', duration: 3000 });
-    } else {
-      const created = await createMut.mutateAsync(payload as { display_name: string; role: string; notes?: string; trust_preset?: string });
-      addToast({ message: 'User created', type: 'success', duration: 3000 });
       setModalOpen(false);
-      if (created?.id) {
-        setShowAddIdentity(created.id);
-      }
       refetch();
-      return;
+    } catch (err: any) {
+      addToast({ message: err.message || 'Save failed', type: 'error', duration: 5000 });
     }
-    setModalOpen(false);
-    refetch();
   };
 
   const handleDelete = async (id: string) => {
-    await deleteMut.mutateAsync(id);
-    addToast({ message: 'User deleted', type: 'success', duration: 3000 });
-    setConfirmDelete(null);
-    refetch();
+    try {
+      await deleteMut.mutateAsync(id);
+      addToast({ message: 'User deleted', type: 'success', duration: 3000 });
+      setConfirmDelete(null);
+      refetch();
+    } catch (err: any) {
+      addToast({ message: err.message || 'Delete failed', type: 'error', duration: 5000 });
+    }
   };
 
   const handleAddIdentity = async () => {
     if (!showAddIdentity) return;
-    await addIdentityMut.mutateAsync({
-      userId: showAddIdentity,
-      platform: identityForm.platform,
-      platformUser: identityForm.platform_user,
-    });
-    setShowAddIdentity(null);
-    setIdentityForm({ platform: 'telegram', platform_user: '' });
-    refetch();
+    try {
+      await addIdentityMut.mutateAsync({
+        userId: showAddIdentity,
+        platform: identityForm.platform,
+        platformUser: identityForm.platform_user,
+      });
+      addToast({ message: 'Identity added', type: 'success', duration: 3000 });
+      setShowAddIdentity(null);
+      setIdentityForm({ platform: 'telegram', platform_user: '' });
+      refetch();
+    } catch (err: any) {
+      addToast({ message: err.message || 'Failed to add identity', type: 'error', duration: 5000 });
+    }
   };
 
   if (userLoading) {
