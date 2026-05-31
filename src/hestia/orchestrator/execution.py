@@ -12,7 +12,6 @@ from hestia.core.inference import InferenceClient, _extract_tool_calls_from_text
 from hestia.core.types import ChatResponse, Message, Session, ToolCall
 from hestia.errors import (
     EmptyResponseError,
-    InferenceServerError,
     MaxIterationsError,
     PolicyFailureError,
 )
