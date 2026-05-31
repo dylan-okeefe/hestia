@@ -40,6 +40,7 @@ from hestia.runtime_context import (
     current_platform_user,
     current_session_id,
     current_trace_store,
+    current_turn_id,
 )
 from hestia.security import InjectionScanner
 from hestia.tools.checkpoint import CheckpointManager
@@ -209,10 +210,12 @@ class Orchestrator:
         trace_token: Any = None
         if self._trace_store is not None:
             trace_token = current_trace_store.set(self._trace_store)
+        turn_token = current_turn_id.set("")
 
         try:
             turn = self._create_turn(session.id, user_message)
             await self._persist_turn(turn)
+            current_turn_id.set(turn.id)
 
             if self._checkpoint_manager is not None:
                 scope = self._checkpoint_scope or [str(Path.cwd())]
@@ -269,6 +272,7 @@ class Orchestrator:
             current_platform_user.reset(platform_user_token)
             if trace_token is not None:
                 current_trace_store.reset(trace_token)
+            current_turn_id.reset(turn_token)
 
     def _create_turn(self, session_id: str, user_message: Message) -> Turn:
         return Turn(
