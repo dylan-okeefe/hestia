@@ -15,11 +15,15 @@ that is not importable at module load time.
 """
 
 from hestia.runtime_context import current_session_id, current_trace_store
+from hestia.tools.builtin.append_to_file import make_append_to_file_tool
 from hestia.tools.builtin.browser_get import browser_get
 from hestia.tools.builtin.browser_login import browser_login
 from hestia.tools.builtin.current_time import current_time
 from hestia.tools.builtin.delegate_task import SubagentResult, make_delegate_task_tool
+from hestia.tools.builtin.edit_file import make_edit_file_tool
 from hestia.tools.builtin.email_tools import make_email_search_and_read_tool, make_email_tools
+from hestia.tools.builtin.glob import make_glob_tool
+from hestia.tools.builtin.grep import make_grep_tool
 from hestia.tools.builtin.http_get import http_get, make_http_get_tool
 from hestia.tools.builtin.list_dir import make_list_dir_tool
 from hestia.tools.builtin.memory_tools import (
@@ -52,9 +56,9 @@ from hestia.tools.builtin.style_tools import (
 )
 from hestia.tools.builtin.terminal import make_terminal_tool
 from hestia.tools.builtin.web_search import make_web_search_tool
-from hestia.tools.builtin.append_to_file import make_append_to_file_tool
 from hestia.tools.builtin.write_file import make_write_file_tool
 from hestia.tools.capabilities import (
+    EDIT_FILE,
     EMAIL_SEND,
     MEMORY_READ,
     MEMORY_WRITE,
@@ -93,6 +97,9 @@ __all__ = [
     "make_email_tools",
     "make_append_to_file_tool",
     "make_write_file_tool",
+    "make_edit_file_tool",
+    "make_glob_tool",
+    "make_grep_tool",
     "make_list_proposals_tool",
     "make_show_proposal_tool",
     "make_accept_proposal_tool",
@@ -101,6 +108,7 @@ __all__ = [
     "make_show_style_profile_tool",
     "make_reset_style_metric_tool",
     "make_reset_style_profile_tool",
+    "EDIT_FILE",
     "EMAIL_SEND",
     "MEMORY_READ",
     "MEMORY_WRITE",

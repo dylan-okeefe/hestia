@@ -253,6 +253,7 @@ class DefaultPolicyEngine(PolicyEngine):
             Filtered list of allowed tool names
         """
         from hestia.tools.capabilities import (
+            EDIT_FILE,
             EMAIL_SEND,
             SELF_MANAGEMENT,
             SHELL_EXEC,
@@ -270,6 +271,7 @@ class DefaultPolicyEngine(PolicyEngine):
                 blocked.add(SHELL_EXEC)
             if not trust.subagent_write_local:
                 blocked.add(WRITE_LOCAL)
+                blocked.add(EDIT_FILE)
             if not trust.subagent_email_send:
                 blocked.add(EMAIL_SEND)
 
