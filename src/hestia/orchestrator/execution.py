@@ -16,6 +16,7 @@ from hestia.errors import (
     MaxIterationsError,
     PolicyFailureError,
 )
+from hestia.orchestrator.quality import Correction, classify_turn
 from hestia.orchestrator.types import TransitionCallback, Turn, TurnContext, TurnState
 from hestia.policy.engine import PolicyEngine, RetryAction
 from hestia.security import InjectionScanner
@@ -134,6 +135,9 @@ class TurnExecution:
                 await self._handle_tool_calls(
                     ctx, turn, chat_response, transition, set_typing, assistant_msg
                 )
+                await self._classify_and_maybe_correct(
+                    ctx, turn, assistant_msg, history_includes_current=True
+                )
                 continue
 
             elif chat_response.finish_reason in ("stop", "length"):
@@ -151,10 +155,18 @@ class TurnExecution:
                     await self._handle_tool_calls(
                         ctx, turn, chat_response, transition, set_typing, assistant_msg
                     )
+                    await self._classify_and_maybe_correct(
+                        ctx, turn, assistant_msg, history_includes_current=True
+                    )
                     continue
 
                 if not content.strip():
                     # Empty response — retry via policy instead of failing immediately
+                    if await self._classify_and_maybe_correct(
+                        ctx, turn, assistant_msg, history_includes_current=False
+                    ):
+                        turn.iterations += 1
+                        continue
                     decision = self._policy.retry_after_error(
                         EmptyResponseError(
                             f"Model returned finish_reason={chat_response.finish_reason!r} "
@@ -165,6 +177,12 @@ class TurnExecution:
                     if decision.action == RetryAction.FAIL:
                         raise PolicyFailureError(decision.reason)
                     await transition(turn, TurnState.RETRYING, "")
+                    turn.iterations += 1
+                    continue
+
+                if await self._classify_and_maybe_correct(
+                    ctx, turn, assistant_msg, history_includes_current=False
+                ):
                     turn.iterations += 1
                     continue
 
@@ -181,6 +199,11 @@ class TurnExecution:
                 break
 
             else:
+                if await self._classify_and_maybe_correct(
+                    ctx, turn, assistant_msg, history_includes_current=False
+                ):
+                    turn.iterations += 1
+                    continue
                 decision = self._policy.retry_after_error(
                     Exception(f"Unexpected finish_reason: {chat_response.finish_reason}"),
                     turn.iterations,
@@ -193,6 +216,56 @@ class TurnExecution:
             raise MaxIterationsError(self._max_iterations, turn.iterations)
 
         return content
+
+    async def _classify_and_maybe_correct(
+        self,
+        ctx: TurnContext,
+        turn: Turn,
+        assistant_msg: Message,
+        *,
+        history_includes_current: bool = False,
+    ) -> bool:
+        """Classify the turn and, if degenerate, inject a tailored correction.
+
+        Returns ``True`` when a correction was injected and the caller should
+        continue to the next iteration.
+        """
+        history = (
+            ctx.running_history
+            if history_includes_current
+            else list(ctx.running_history) + [assistant_msg]
+        )
+        correction = classify_turn(
+            turn, assistant_msg, history, ctx.allowed_tools or []
+        )
+        if correction is not None and ctx.correction_count < 3:
+            await self._inject_correction(ctx, turn, correction)
+            ctx.correction_count += 1
+            return True
+        return False
+
+    async def _inject_correction(
+        self,
+        ctx: TurnContext,
+        turn: Turn,
+        correction: Correction,
+    ) -> None:
+        """Append a correction message to the session and rebuild context."""
+        msg = Message(
+            role="user",
+            content=correction.message,
+            created_at=utcnow(),
+        )
+        await self._store.append_message(ctx.session.id, msg)
+        ctx.running_history.append(msg)
+        self._builder.set_style_prefix(ctx.style_prefix)
+        ctx.build_result = await self._builder.build(
+            session=ctx.session,
+            history=ctx.running_history,
+            system_prompt=ctx.system_prompt,
+            tools=ctx.tools,
+            new_user_message=None,
+        )
 
     async def _handle_tool_calls(
         self,
