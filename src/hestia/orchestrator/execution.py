@@ -15,6 +15,7 @@ from hestia.errors import (
     InferenceServerError,
     MaxIterationsError,
     PolicyFailureError,
+    ThinkingBudgetExceededError,
 )
 from hestia.orchestrator.types import TransitionCallback, Turn, TurnContext, TurnState
 from hestia.policy.engine import PolicyEngine, RetryAction
@@ -294,6 +295,21 @@ class TurnExecution:
             slot_id=ctx.slot_id,
             reasoning_budget=turn.reasoning_budget,
         ):
+            if delta.reasoning_content and not turn.thinking_aborted:
+                thinking_chars = sum(len(p) for p in reasoning_parts) + len(delta.reasoning_content)
+                # Rough token estimate: 4 characters per token
+                if thinking_chars > turn.reasoning_budget * 4:
+                    logger.warning(
+                        "Thinking budget exceeded (%d chars ≈ %d tokens > %d budget)",
+                        thinking_chars,
+                        thinking_chars // 4,
+                        turn.reasoning_budget,
+                    )
+                    raise ThinkingBudgetExceededError(
+                        f"Thinking budget exceeded ({thinking_chars // 4} tokens > "
+                        f"{turn.reasoning_budget})"
+                    )
+
             if delta.content:
                 content_parts.append(delta.content)
                 await ctx.stream_callback(delta.content)
