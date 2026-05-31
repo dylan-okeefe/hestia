@@ -112,3 +112,5 @@ class TurnContext:
     delegated: bool = False
     # Circuit-breaker: count consecutive empty-arg failures per tool name
     empty_tool_failure_counts: dict[str, int] = field(default_factory=dict)
+    # Quality monitor: how many corrections have been injected this turn
+    correction_count: int = 0
