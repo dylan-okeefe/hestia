@@ -97,6 +97,8 @@ class StorageConfig(_ConfigFromEnv):
     database_url: str = "sqlite+aiosqlite:///hestia.db"
     artifacts_dir: Path = field(default_factory=lambda: Path("artifacts"))
     allowed_roots: list[str] = field(default_factory=list)
+    checkpoint_scope: list[str] = field(default_factory=list)
+    """Paths to snapshot at turn start. Empty list defaults to cwd."""
 
 
 @dataclass
@@ -194,6 +196,10 @@ class TrustConfig(_ConfigFromEnv):
 
     # Active trust preset name (paranoid, household, developer, etc.)
     preset: str | None = None
+
+    # Per-turn file checkpointing (safety net for unattended coding runs)
+    checkpoint_on_edit: bool = True
+    auto_rollback_on_failure: bool = False
 
     def is_paranoid(self) -> bool:
         """Return True when this config matches the strictest trust posture.

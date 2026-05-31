@@ -10,6 +10,7 @@ from hestia.core.types import Message, Session
 from hestia.errors import ContextTooLargeError, HestiaError, PersistenceError, classify_error
 from hestia.orchestrator.types import TransitionCallback, Turn, TurnContext, TurnState
 from hestia.persistence.failure_store import FailureBundle
+from hestia.tools.checkpoint import CheckpointManager
 
 if TYPE_CHECKING:
     from hestia.inference.slot_manager import SlotManager
@@ -35,6 +36,8 @@ class TurnFinalization:
         handoff_summarizer: "SessionHandoffSummarizer | None" = None,
         policy: "PolicyEngine | None" = None,
         session_store: "SessionStore | None" = None,
+        checkpoint_manager: CheckpointManager | None = None,
+        auto_rollback_on_failure: bool = False,
     ):
         self._slot_manager = slot_manager
         self._failure_store = failure_store
@@ -42,6 +45,8 @@ class TurnFinalization:
         self._handoff_summarizer = handoff_summarizer
         self._policy = policy
         self._store = session_store
+        self._checkpoint_manager = checkpoint_manager
+        self._auto_rollback_on_failure = auto_rollback_on_failure
 
     @staticmethod
     def sanitize_user_error(error: Exception) -> str:
@@ -147,6 +152,8 @@ class TurnFinalization:
                 logger.error("Failed to record trace: %s", trace_err)
 
         turn.artifact_handles = list(ctx.artifact_handles)
+
+        self._handle_checkpoint(turn)
 
     async def handle_context_too_large(
         self,
@@ -334,6 +341,21 @@ class TurnFinalization:
             slot_snapshot=slot_snapshot,
             trace_id=trace_id,
         )
+
+    def _handle_checkpoint(self, turn: Turn) -> None:
+        """Discard or restore the turn's checkpoint based on outcome."""
+        if self._checkpoint_manager is None:
+            return
+
+        if turn.state == TurnState.DONE:
+            self._checkpoint_manager.discard(turn.id)
+        elif turn.state == TurnState.FAILED and self._auto_rollback_on_failure:
+            try:
+                self._checkpoint_manager.restore(turn.id)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Checkpoint restore failed for turn %s: %s", turn.id, exc)
+            finally:
+                self._checkpoint_manager.discard(turn.id)
 
     async def summarize_handoff(self, session: Session) -> None:
         """Generate and store a handoff summary for the session (best-effort).

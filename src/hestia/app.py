@@ -76,6 +76,7 @@ from hestia.tools.builtin import (
     make_write_file_tool,
     search_web,
 )
+from hestia.tools.checkpoint import CheckpointManager
 from hestia.tools.registry import ToolRegistry
 from hestia.workflows.execution_store import ExecutionStore
 from hestia.workflows.store import WorkflowStore
@@ -311,6 +312,12 @@ class AppContext:
 
     def make_orchestrator(self) -> Orchestrator:
         """Create an Orchestrator with the current app context."""
+        checkpoint_manager: CheckpointManager | None = None
+        if self.config.trust.checkpoint_on_edit:
+            checkpoint_manager = CheckpointManager()
+
+        checkpoint_scope = self.config.storage.checkpoint_scope or None
+
         return Orchestrator(
             inference=self.inference,
             session_store=self.session_store,
@@ -331,6 +338,9 @@ class AppContext:
             rate_limiter=self.rate_limiter,
             stream=self.config.inference.stream,
             event_bus=self.event_bus,
+            checkpoint_manager=checkpoint_manager,
+            checkpoint_scope=checkpoint_scope,
+            auto_rollback_on_failure=self.config.trust.auto_rollback_on_failure,
         )
 
     def register_tools(self) -> None:
