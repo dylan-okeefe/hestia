@@ -94,16 +94,42 @@ class TurnExecution:
             await set_typing(True)
 
             turn.reasoning_budget = self._policy.reasoning_budget(session, turn.iterations)
+            if turn.thinking_aborted:
+                turn.reasoning_budget = 0
 
-            if ctx.stream_callback is not None and self._stream:
-                chat_response = await self._run_inference_streaming(ctx, turn)
-            else:
-                chat_response = await self._inference.chat(
-                    messages=ctx.build_result.messages,
-                    tools=ctx.tools,
-                    slot_id=ctx.slot_id,
-                    reasoning_budget=turn.reasoning_budget,
+            try:
+                if ctx.stream_callback is not None and self._stream:
+                    chat_response = await self._run_inference_streaming(ctx, turn)
+                else:
+                    chat_response = await self._inference.chat(
+                        messages=ctx.build_result.messages,
+                        tools=ctx.tools,
+                        slot_id=ctx.slot_id,
+                        reasoning_budget=turn.reasoning_budget,
+                    )
+            except ThinkingBudgetExceededError:
+                await transition(turn, TurnState.RETRYING, "")
+                turn.thinking_aborted = True
+                nudge = Message(
+                    role="system",
+                    content=(
+                        "You have been thinking for a long time. "
+                        "Stop deliberating and use your tools to complete the task."
+                    ),
+                    created_at=utcnow(),
                 )
+                await self._store.append_message(session.id, nudge)
+                ctx.running_history.append(nudge)
+                self._builder.set_style_prefix(ctx.style_prefix)
+                ctx.build_result = await self._builder.build(
+                    session=ctx.session,
+                    history=ctx.running_history,
+                    system_prompt=ctx.system_prompt,
+                    tools=ctx.tools,
+                    new_user_message=None,
+                )
+                turn.iterations += 1
+                continue
 
             ctx.total_prompt_tokens += getattr(chat_response, "prompt_tokens", 0) or 0
             ctx.total_completion_tokens += getattr(chat_response, "completion_tokens", 0) or 0
