@@ -139,10 +139,13 @@ async def test_per_turn_tool_call_cap_enforced():
         requires_confirmation=False, ordering="concurrent"
     )
 
+    policy = MagicMock()
+    policy.tool_result_max_chars.return_value = 8000
+
     execution = TurnExecution(
         tool_registry=registry,
         inference_client=MagicMock(),
-        policy=MagicMock(),
+        policy=policy,
         context_builder=MagicMock(),
         session_store=MagicMock(),
         max_tool_calls_per_turn=2,
@@ -183,3 +186,49 @@ async def test_per_turn_tool_call_cap_enforced():
         assert result_messages[2].content == "ok"
         assert result_messages[3].content == "ok"
         assert artifact_handles == []
+
+
+@pytest.mark.asyncio
+async def test_tool_result_truncated_before_reprompting():
+    """A 50 KB tool result is clipped before being added to result messages."""
+    registry = MagicMock()
+    registry.describe.return_value = MagicMock(
+        requires_confirmation=False, ordering="concurrent"
+    )
+
+    policy = MagicMock()
+    policy.tool_result_max_chars.return_value = 100
+
+    execution = TurnExecution(
+        tool_registry=registry,
+        inference_client=MagicMock(),
+        policy=policy,
+        context_builder=MagicMock(),
+        session_store=MagicMock(),
+    )
+
+    huge_content = "x" * 50_000
+    tool_calls = [
+        ToolCall(id="tc1", name="big_tool", arguments={}),
+    ]
+
+    with patch.object(
+        execution, "_dispatch_tool_call", new_callable=AsyncMock
+    ) as mock_dispatch:
+        mock_dispatch.return_value = ToolCallResult(
+            status="ok",
+            content=huge_content,
+            artifact_handle=None,
+            truncated=False,
+        )
+
+        result_messages, _artifact_handles = await execution._execute_tool_calls(
+            _make_session(), tool_calls
+        )
+
+        assert len(result_messages) == 1
+        msg = result_messages[0]
+        assert len(msg.content) < len(huge_content)
+        assert msg.content.endswith("\n... [truncated]")
+        assert msg.content.startswith("x" * 100)
+        policy.tool_result_max_chars.assert_called_once_with("big_tool")
