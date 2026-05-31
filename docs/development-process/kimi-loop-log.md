@@ -6,6 +6,30 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-05-30 — L195–L196 Complete (Critical/High Backend + Orchestrator Robustness)
+
+**Outcome:** L195 was partially completed by the runtime agent before this session. L196 was implemented by a subagent and validated.
+
+### L195 — Critical & High Backend Fixes
+**Branch:** `feature/l195-critical-and-high-backend-fixes` (4 commits)
+- C1: Token-count cache bypasses on tool-call messages (fixes collision on `("assistant", "")`)
+- H2: curl_cffi redirect loop now resolves + checks IP against `_BLOCKED_RANGES`
+- H1: `scheduler_write_local` trust field added; scheduler ticks fail-closed on write_file
+- M2: `egress_audit_enabled` now honored in both http_get and web_search `_record_egress`
+
+**Quality gates:** pytest 1454 passed (15 failed, 7 errors — all pre-existing on develop) ✅, mypy ✅, ruff baseline maintained ✅
+
+### L196 — Orchestrator & Inference Robustness
+**Branch:** `feature/l196-orchestrator-and-inference-robustness` (5 commits)
+- M1: Streaming path now skips malformed JSON args (matches non-streaming `chat()`)
+- M6: `IllegalTransitionError` routes to `FAILED` state with user notice
+- M7: `print()` replaced with `logger.warning()` in inference tool-call parsing
+- L4: Defensive `.get()` access in inference tool-call parsing
+
+**Quality gates:** relevant tests pass ✅, mypy 0 errors ✅, ruff 0 new issues ✅
+
+---
+
 ## 2026-05-20 — L187–L191 Complete (Post-Review Fixes + Error Persistence + Backend Quality + Component Infrastructure + Config Overhaul)
 
 **Outcome:** All five loops from the post-UI-rewrite review are complete. L187 was done by the runtime Hestia instance. L188–L191 were done manually, with significant branch-interference challenges from the runtime worktree auto-committing to `feature/l187-post-review-ui-fixes-and-polish`.
