@@ -3,6 +3,7 @@
 import asyncio
 import dataclasses
 import json
+import logging
 import re
 import secrets
 from collections.abc import AsyncIterator
@@ -13,6 +14,8 @@ import httpx
 from hestia.core.serialization import message_to_dict
 from hestia.core.types import ChatResponse, Message, StreamDelta, ToolCall, ToolSchema
 from hestia.errors import InferenceServerError, InferenceTimeoutError
+
+logger = logging.getLogger(__name__)
 
 
 def _strip_historical_reasoning(messages: list[Message]) -> list[Message]:
@@ -423,51 +426,60 @@ class InferenceClient:
         if not choices:
             raise InferenceServerError("inference returned no choices")
         choice = choices[0]
-        message = choice["message"]
+        message = choice.get("message") or {}
 
         tool_calls: list[ToolCall] = []
-        raw_tool_calls = message.get("tool_calls", [])
-        if raw_tool_calls:
-            for tc in raw_tool_calls:
-                fn = tc["function"]
-                # Models occasionally emit tool_call arguments as a JSON scalar (string,
-                # number, null) instead of an object. ``**arguments`` would then raise
-                # TypeError downstream without naming the tool. Validate here.
-                try:
-                    arguments = json.loads(fn["arguments"])
-                except json.JSONDecodeError as exc:
-                    # Gracefully skip malformed tool calls instead of crashing the turn.
-                    # Log for debugging; model may retry in next iteration.
-                    print(f"[WARN] Malformed tool_call arguments for {fn['name']!r}: {exc}")
-                    continue
-                if not isinstance(arguments, dict):
-                    print(
-                        f"[WARN] tool_call arguments for {fn['name']!r} are not a dict: "
-                        f"{type(arguments).__name__}"
-                    )
-                    continue
-                # Unwrap call_tool wrapper: if the model uses call_tool with nested name+arguments,
-                # extract the inner tool call directly.
-                if fn["name"] == "call_tool" and "name" in arguments and "arguments" in arguments:
-                    inner_name = arguments["name"]
-                    inner_args = arguments["arguments"]
-                    if isinstance(inner_name, str) and isinstance(inner_args, dict):
-                        tool_calls.append(
-                            ToolCall(
-                                id=tc["id"],
-                                name=inner_name,
-                                arguments=inner_args,
-                            )
-                        )
-                        continue
-                tool_calls.append(
-                    ToolCall(
-                        id=tc["id"],
-                        name=fn["name"],
-                        arguments=arguments,
-                    )
+        raw_tool_calls = message.get("tool_calls") or []
+        for tc in raw_tool_calls:
+            fn = tc.get("function")
+            if not fn:
+                continue
+            name = fn.get("name")
+            arguments_raw = fn.get("arguments")
+            # Models occasionally emit tool_call arguments as a JSON scalar (string,
+            # number, null) instead of an object. ``**arguments`` would then raise
+            # TypeError downstream without naming the tool. Validate here.
+            try:
+                arguments = json.loads(arguments_raw) if arguments_raw is not None else {}
+            except json.JSONDecodeError as exc:
+                # Gracefully skip malformed tool calls instead of crashing the turn.
+                # Log for debugging; model may retry in next iteration.
+                logger.warning(
+                    "Malformed tool_call arguments for %r: %s",
+                    name,
+                    exc,
                 )
-        else:
+                continue
+            if not isinstance(arguments, dict):
+                logger.warning(
+                    "tool_call arguments for %r are not a dict: %s",
+                    name,
+                    type(arguments).__name__,
+                )
+                continue
+            # Unwrap call_tool wrapper: if the model uses call_tool with nested name+arguments,
+            # extract the inner tool call directly.
+            if name == "call_tool" and "name" in arguments and "arguments" in arguments:
+                inner_name = arguments["name"]
+                inner_args = arguments["arguments"]
+                if isinstance(inner_name, str) and isinstance(inner_args, dict):
+                    tool_calls.append(
+                        ToolCall(
+                            id=tc.get("id") or f"call_{len(tool_calls)}",
+                            name=inner_name,
+                            arguments=inner_args,
+                        )
+                    )
+                    continue
+            tool_calls.append(
+                ToolCall(
+                    id=tc.get("id") or f"call_{len(tool_calls)}",
+                    name=name,
+                    arguments=arguments,
+                )
+            )
+
+        if not raw_tool_calls:
             # Fallback: Qwen3.5 in reasoning mode sometimes emits tool calls inside
             # <think> blocks (which land in reasoning_content) but omits the structured
             # tool_calls JSON. Parse XML-style <tool_call> tags as a safety net.

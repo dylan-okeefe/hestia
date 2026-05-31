@@ -234,8 +234,24 @@ class Orchestrator:
                     ctx, exc, trace_record_id, self._safe_transition
                 )
 
-            except IllegalTransitionError:
-                raise
+            except IllegalTransitionError as exc:
+                await self._set_typing(platform, platform_user, False)
+                logger.error("Illegal transition: %s", exc)
+                if turn.state not in (TurnState.DONE, TurnState.FAILED):
+                    turn.state = TurnState.FAILED
+                    turn.error = str(exc)
+                    if self._store is not None:
+                        await self._store.update_turn(turn)
+                try:
+                    await ctx.respond_callback(
+                        "An internal error occurred and the turn could not complete. "
+                        "Please try again."
+                    )
+                except Exception as notify_err:  # noqa: BLE001
+                    logger.warning(
+                        "Failed to send illegal transition notification: %s",
+                        notify_err,
+                    )
 
             except Exception as e:  # noqa: BLE001 — turn boundary safety net
                 await self._set_typing(platform, platform_user, False)

@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from hestia.core.types import ChatResponse, Message
+from hestia.errors import IllegalTransitionError
 from hestia.orchestrator.engine import Orchestrator
 from hestia.orchestrator.types import TurnState
 
@@ -271,3 +272,66 @@ async def test_post_done_respond_callback_error_no_illegal_transition() -> None:
         assert respond_callback.call_count == 2
         assert "Hello, world!" in respond_callback.call_args_list[0][0][0]
         assert "Error delivering response" in respond_callback.call_args_list[1][0][0]
+
+
+@pytest.mark.asyncio
+async def test_illegal_transition_results_in_failed_and_user_notice():
+    """IllegalTransitionError during turn processing results in FAILED and a user message.
+
+    Before the fix the engine re-raised IllegalTransitionError, leaving the turn
+    in a non-terminal state (outcome="partial") and the user saw nothing.
+    """
+    mock_inference = MagicMock()
+    mock_session_store = MagicMock()
+    mock_context_builder = MagicMock()
+    mock_tool_registry = MagicMock()
+    mock_policy = MagicMock()
+
+    # Raise IllegalTransitionError early, before any state transitions occur.
+    mock_context_builder.build = AsyncMock(
+        side_effect=IllegalTransitionError("cannot transition from received to awaiting_model")
+    )
+
+    mock_session = MagicMock()
+    mock_session.id = "test-session-id"
+    mock_session.slot_id = None
+
+    mock_turn = MagicMock()
+    mock_turn.id = "test-turn-id"
+    mock_turn.iterations = 0
+    mock_turn.tool_calls_made = 0
+    mock_turn.transitions = []
+    mock_turn.state = TurnState.RECEIVED
+
+    mock_session_store.insert_turn = AsyncMock(return_value=None)
+    mock_session_store.update_turn = AsyncMock(return_value=None)
+    mock_session_store.append_transition = AsyncMock(return_value=None)
+    mock_session_store.append_message = AsyncMock(return_value=None)
+    mock_session_store.get_messages = AsyncMock(return_value=[])
+
+    orchestrator = Orchestrator(
+        inference=mock_inference,
+        session_store=mock_session_store,
+        context_builder=mock_context_builder,
+        tool_registry=mock_tool_registry,
+        policy=mock_policy,
+        confirm_callback=None,
+    )
+
+    with (
+        patch.object(orchestrator, "_create_turn", return_value=mock_turn),
+        patch.object(orchestrator, "_persist_turn", AsyncMock()),
+    ):
+        user_message = Message(role="user", content="hi")
+        respond_callback = AsyncMock()
+
+        turn = await orchestrator.process_turn(
+            session=mock_session,
+            user_message=user_message,
+            respond_callback=respond_callback,
+        )
+
+        assert turn.state == TurnState.FAILED
+        respond_callback.assert_called_once()
+        assert "internal error" in respond_callback.call_args[0][0].lower()
+        assert "try again" in respond_callback.call_args[0][0].lower()
