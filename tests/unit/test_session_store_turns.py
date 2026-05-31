@@ -404,6 +404,7 @@ class TestSessionHandoff:
 
         assert len(messages) == 1
         assert messages[0].role == "user"
+        assert messages[0].is_handoff
         assert "[Previous session context]" in messages[0].content
         assert "Prior context" in messages[0].content
         assert "Hello" in messages[0].content

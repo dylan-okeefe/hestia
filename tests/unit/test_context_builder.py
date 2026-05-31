@@ -353,7 +353,7 @@ class TestHandoffMessages:
         builder = ContextBuilder(fake_client, policy, body_factor=1.0)
 
         history = [
-            Message(role="user", content="[Previous session context]\nSummary: old stuff"),
+            Message(role="user", content="[Previous session context]\nSummary: old stuff", is_handoff=True),
             Message(role="user", content="Real user message"),
             Message(role="assistant", content="Assistant reply"),
         ]
@@ -365,7 +365,7 @@ class TestHandoffMessages:
 
         assert result.messages[0].role == "system"
         assert result.messages[1].role == "user"
-        assert "[Previous session context]" in result.messages[1].content
+        assert result.messages[1].is_handoff
         assert result.messages[2].role == "user"
         assert result.messages[2].content == "Real user message"
         assert result.messages[3].role == "assistant"
@@ -379,7 +379,7 @@ class TestHandoffMessages:
 
         # Turn 1: history has handoff + first real user message
         history_turn_1 = [
-            Message(role="user", content="[Previous session context]\nSummary: old stuff"),
+            Message(role="user", content="[Previous session context]\nSummary: old stuff", is_handoff=True),
             Message(role="user", content="Hello"),
         ]
         result_1 = await builder.build(
@@ -390,7 +390,7 @@ class TestHandoffMessages:
             new_user_message=Message(role="user", content="How are you?"),
         )
         assert any(
-            m.role == "user" and "[Previous session context]" in m.content
+            m.role == "user" and m.is_handoff
             for m in result_1.messages
         )
 
@@ -407,7 +407,7 @@ class TestHandoffMessages:
             new_user_message=Message(role="user", content="What's new?"),
         )
         assert any(
-            m.role == "user" and "[Previous session context]" in m.content
+            m.role == "user" and m.is_handoff
             for m in result_2.messages
         )
 
@@ -425,7 +425,7 @@ class TestHandoffMessages:
         builder = ContextBuilder(fake_client, small_policy, body_factor=1.0)
 
         history = [
-            Message(role="user", content="[Previous session context]\nSummary: old stuff"),
+            Message(role="user", content="[Previous session context]\nSummary: old stuff", is_handoff=True),
             *[Message(role="user", content="x" * 500) for _ in range(20)],
         ]
         new_msg = Message(role="user", content="New")
@@ -436,7 +436,7 @@ class TestHandoffMessages:
 
         # Handoff should be present even when normal history is truncated
         assert any(
-            m.role == "user" and "[Previous session context]" in m.content
+            m.role == "user" and m.is_handoff
             for m in result.messages
         )
         # Some normal history should have been truncated to fit budget
@@ -450,7 +450,7 @@ class TestHandoffMessages:
         builder = ContextBuilder(fake_client, policy, body_factor=1.0)
 
         history = [
-            Message(role="user", content="[Previous session context]\nSummary: old stuff"),
+            Message(role="user", content="[Previous session context]\nSummary: old stuff", is_handoff=True),
             Message(role="user", content="FIRST REAL USER"),
             *[Message(role="user", content="x" * 100) for _ in range(50)],
         ]

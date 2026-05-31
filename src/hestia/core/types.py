@@ -34,6 +34,7 @@ class Message:
     tool_call_id: str | None = None
     reasoning_content: str | None = None
     created_at: datetime = field(default_factory=_utc_now)
+    is_handoff: bool = False
 
 
 class SessionState(Enum):

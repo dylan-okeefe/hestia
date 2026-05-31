@@ -249,7 +249,7 @@ class ContextBuilder:
         # before real user messages, and excluded from normal history token budget.
         handoff_msgs = [
             msg for msg in history
-            if msg.role == "user" and msg.content.startswith("[Previous session context]")
+            if msg.role == "user" and msg.is_handoff
         ]
         handoff_ids = {id(msg) for msg in handoff_msgs}
         history = [msg for msg in history if id(msg) not in handoff_ids]
