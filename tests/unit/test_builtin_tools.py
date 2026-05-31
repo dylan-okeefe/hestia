@@ -9,6 +9,9 @@ import pytest
 from hestia.artifacts.store import ArtifactStore
 from hestia.config import StorageConfig
 from hestia.tools.builtin.current_time import current_time
+from hestia.tools.builtin.edit_file import make_edit_file_tool
+from hestia.tools.builtin.glob import make_glob_tool
+from hestia.tools.builtin.grep import make_grep_tool
 from hestia.tools.builtin.http_get import SSRFSafeTransport, _is_url_safe, http_get
 from hestia.tools.builtin.list_dir import make_list_dir_tool
 from hestia.tools.builtin.read_artifact import make_read_artifact_tool
@@ -103,6 +106,60 @@ class TestReadFile:
         assert "Binary file" in result
 
 
+class TestEditFile:
+    """Tests for edit_file tool."""
+
+    @pytest.mark.asyncio
+    async def test_edit_file_exact_match_once(self, tmp_path):
+        """Exact match once → success with diff preview."""
+        edit_file = make_edit_file_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
+        target = tmp_path / "test.txt"
+        target.write_text("hello world")
+
+        result = await edit_file(str(target), "hello world", "hello universe")
+
+        assert target.read_text() == "hello universe"
+        assert "Edited" in result
+        assert "- hello world" in result
+        assert "+ hello universe" in result
+
+    @pytest.mark.asyncio
+    async def test_edit_file_zero_matches(self, tmp_path):
+        """Zero matches → error."""
+        edit_file = make_edit_file_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
+        target = tmp_path / "test.txt"
+        target.write_text("hello world")
+
+        result = await edit_file(str(target), "not present", "replacement")
+
+        assert "Error:" in result
+        assert "not found" in result
+        assert target.read_text() == "hello world"
+
+    @pytest.mark.asyncio
+    async def test_edit_file_multiple_matches(self, tmp_path):
+        """Multiple matches → error."""
+        edit_file = make_edit_file_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
+        target = tmp_path / "test.txt"
+        target.write_text("abc abc abc")
+
+        result = await edit_file(str(target), "abc", "xyz")
+
+        assert "Error:" in result
+        assert "found 3 occurrences" in result
+        assert target.read_text() == "abc abc abc"
+
+    @pytest.mark.asyncio
+    async def test_edit_file_missing_file(self, tmp_path):
+        """File does not exist → error."""
+        edit_file = make_edit_file_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
+        target = tmp_path / "missing.txt"
+
+        result = await edit_file(str(target), "old", "new")
+
+        assert "File not found" in result
+
+
 class TestWriteFile:
     """Tests for write_file tool."""
 
@@ -126,6 +183,35 @@ class TestWriteFile:
 
         assert target.exists()
         assert target.read_text() == "Nested content"
+
+    @pytest.mark.asyncio
+    async def test_write_guard_blocks_existing_file(self, tmp_path):
+        """write_file on existing path → error with edit_file hint."""
+        write_file = make_write_file_tool(
+            StorageConfig(allowed_roots=[str(tmp_path)]), write_guard_enabled=True
+        )
+        target = tmp_path / "existing.txt"
+        target.write_text("original")
+
+        result = await write_file(str(target), "new content")
+
+        assert "already exists" in result
+        assert "edit_file(path=..., old_string=..., new_string=...)" in result
+        assert target.read_text() == "original"
+
+    @pytest.mark.asyncio
+    async def test_write_guard_disabled_allows_overwrite(self, tmp_path):
+        """write_guard disabled → allows overwrite."""
+        write_file = make_write_file_tool(
+            StorageConfig(allowed_roots=[str(tmp_path)]), write_guard_enabled=False
+        )
+        target = tmp_path / "existing.txt"
+        target.write_text("original")
+
+        result = await write_file(str(target), "new content")
+
+        assert target.read_text() == "new content"
+        assert "new content" in result or "bytes" in result
 
 
 class TestListDir:
@@ -277,6 +363,86 @@ class TestTerminal:
         result = await terminal("echo hello")
         assert "BLOCKED" not in result
         assert "hello" in result
+
+
+class TestGlob:
+    """Tests for glob tool."""
+
+    @pytest.mark.asyncio
+    async def test_glob_returns_matching_files(self, tmp_path):
+        """glob returns files matching pattern."""
+        glob = make_glob_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
+        (tmp_path / "a.py").write_text("x")
+        (tmp_path / "b.py").write_text("x")
+        (tmp_path / "c.txt").write_text("x")
+
+        result = await glob("*.py", str(tmp_path))
+
+        assert "a.py" in result
+        assert "b.py" in result
+        assert "c.txt" not in result
+
+    @pytest.mark.asyncio
+    async def test_glob_no_matches(self, tmp_path):
+        """glob returns message when no matches."""
+        glob = make_glob_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
+        result = await glob("*.nomatch", str(tmp_path))
+        assert "No matches" in result
+
+    @pytest.mark.asyncio
+    async def test_glob_truncation(self, tmp_path):
+        """glob truncates when results exceed limit."""
+        glob = make_glob_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
+        for i in range(105):
+            (tmp_path / f"file{i:03d}.py").write_text("x")
+
+        result = await glob("*.py", str(tmp_path))
+
+        assert "truncated" in result
+
+
+class TestGrep:
+    """Tests for grep tool."""
+
+    @pytest.mark.asyncio
+    async def test_grep_returns_matching_lines(self, tmp_path):
+        """grep returns lines matching regex."""
+        grep = make_grep_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
+        (tmp_path / "a.py").write_text("def foo():\n    pass\n")
+        (tmp_path / "b.py").write_text("def bar():\n    return 1\n")
+        (tmp_path / "c.txt").write_text("hello world\n")
+
+        result = await grep(r"^def ", str(tmp_path))
+
+        assert "a.py:1:def foo():" in result
+        assert "b.py:1:def bar():" in result
+        assert "hello" not in result
+
+    @pytest.mark.asyncio
+    async def test_grep_with_include_filter(self, tmp_path):
+        """grep respects include filter."""
+        grep = make_grep_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
+        (tmp_path / "a.py").write_text("target\n")
+        (tmp_path / "b.js").write_text("target\n")
+
+        result = await grep("target", str(tmp_path), include=[".py"])
+
+        assert "a.py" in result
+        assert "b.js" not in result
+
+    @pytest.mark.asyncio
+    async def test_grep_no_matches(self, tmp_path):
+        """grep returns message when no matches."""
+        grep = make_grep_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
+        result = await grep("nomatch12345", str(tmp_path))
+        assert "No matches" in result
+
+    @pytest.mark.asyncio
+    async def test_grep_invalid_pattern(self, tmp_path):
+        """grep returns error for invalid regex."""
+        grep = make_grep_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
+        result = await grep("[invalid", str(tmp_path))
+        assert "Invalid regex" in result
 
 
 class TestHttpGet:

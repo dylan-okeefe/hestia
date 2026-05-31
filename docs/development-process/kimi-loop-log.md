@@ -6,6 +6,111 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+<<<<<<< HEAD
+## 2026-05-30 — L195–L199 Complete (v0.12 Review Fixes)
+
+**Outcome:** L195 partially done by runtime agent before session. L196–L199 implemented by subagents and validated.
+=======
+## 2026-05-31 — L195–L205 Complete (v0.12 Review + Coding Harness)
+
+**Outcome:** All 11 specced loops implemented and validated by subagents. L206 (Matrix auth) remains deferred.
+>>>>>>> feature/l205-checkpoint-and-rollback
+
+### L195 — Critical & High Backend Fixes
+**Branch:** `feature/l195-critical-and-high-backend-fixes` (4 commits)
+- C1: Token-count cache bypasses on tool-call messages
+- H2: curl_cffi redirect loop now resolves + checks IP against `_BLOCKED_RANGES`
+- H1: `scheduler_write_local` trust field added; scheduler ticks fail-closed on write_file
+- M2: `egress_audit_enabled` now honored in both http_get and web_search
+
+<<<<<<< HEAD
+**Quality gates:** pytest 1454 passed (15 failed, 7 errors — all pre-existing) ✅, mypy ✅, ruff ✅
+
+=======
+>>>>>>> feature/l205-checkpoint-and-rollback
+### L196 — Orchestrator & Inference Robustness
+**Branch:** `feature/l196-orchestrator-and-inference-robustness` (5 commits)
+- M1: Streaming path now skips malformed JSON args
+- M6: `IllegalTransitionError` routes to `FAILED` state with user notice
+- M7: `print()` replaced with `logger.warning()` in inference
+- L4: Defensive `.get()` access in inference tool-call parsing
+
+<<<<<<< HEAD
+**Quality gates:** relevant tests pass ✅, mypy ✅, ruff ✅
+
+=======
+>>>>>>> feature/l205-checkpoint-and-rollback
+### L197 — Web & Auth Hardening
+**Branch:** `feature/l197-web-and-auth-hardening` (4 commits)
+- M3: Webhook strict endpoint match + replay window + header strip
+- M8: AuthManager prunes expired pending codes and sessions
+- M5: Memory search fail-closed when `platform_user` unresolved
+
+<<<<<<< HEAD
+**Quality gates:** 164 tests pass ✅, mypy ✅, ruff ✅
+
+=======
+>>>>>>> feature/l205-checkpoint-and-rollback
+### L198 — Frontend Fixes
+**Branch:** `feature/l198-frontend-fixes` (3 commits)
+- H3: `res.ok` checks on all mutation helpers
+- M10: Auth disabled fix, workflow editor error state, login redirect fix, mutation toasts
+- L5: Route-level redirect for non-admins from `/admin/users`
+
+<<<<<<< HEAD
+**Quality gates:** build ✅, 128 vitest tests ✅, 10 inline styles (under 20) ✅
+=======
+>>>>>>> feature/l205-checkpoint-and-rollback
+### L199 — Test Backfill
+**Branch:** `feature/l199-test-backfill` (4 commits)
+- M9a: `chat()` malformed-output defense tests (7 new tests)
+- M9b: `MaxIterationsError` and per-turn tool-call cap tests
+- M9c: IPv6 SSRF and workflow-node real-blocking tests
+- M9d: `tool_result_max_chars` wired into orchestrator + test
+
+<<<<<<< HEAD
+**Quality gates:** 28 passed, 1 pre-existing failure ✅, mypy ✅, ruff ✅
+=======
+### L200 — Docs & Polish
+**Branch:** `feature/l200-docs-and-polish` (4 commits)
+- L6: README license/platform, env-var precedence, ADR-012, DECISIONS index
+- L1: Structured `is_handoff` flag on `Message` + migration
+- L2: Terminal blocked-pattern documentation
+- L3: Injection scanner guide wording
+
+### L201 — edit_file Tool + Write Guard
+**Branch:** `feature/l201-edit-file-tool-and-write-guard` (3 commits)
+- edit_file with exact-once str-replace + diff preview
+- write-on-existing guard with edit_file fallback hint
+- glob/grep search builtins (100-match cap)
+
+### L202 — JSON Repair + Search Tools
+**Branch:** `feature/l202-json-repair-and-search-tools` (2 commits)
+- `repair_json()` utility (trailing commas, quotes, braces, fenced blocks)
+- Wired into inference parsing + streaming accumulator
+
+### L203 — Quality Monitor
+**Branch:** `feature/l203-quality-monitor` (4 commits)
+- 6-pattern degenerate classifier (empty, hallucinated, repeated, patch-failed, read-only streak, greeting)
+- Correction injection into execution loop with cap at 3
+- 15 behavioral tests
+
+### L204 — Thinking Budget Abort
+**Branch:** `feature/l204-thinking-budget-abort` (3 commits)
+- `ThinkingBudgetExceededError` + mid-stream counter
+- Commit nudge injection on abort, `reasoning_budget=0` on retry
+- 6 streaming behavioral tests
+
+### L205 — Checkpoint & Rollback
+**Branch:** `feature/l205-checkpoint-and-rollback` (4 commits)
+- Git-aware `CheckpointManager` (stash → file-copy fallback)
+- Wired into turn lifecycle (create on start, discard on DONE, restore on FAILED)
+- `rollback_turn` builtin tool
+- 8 checkpoint tests
+
+>>>>>>> feature/l205-checkpoint-and-rollback
+---
+
 ## 2026-05-20 — L187–L191 Complete (Post-Review Fixes + Error Persistence + Backend Quality + Component Infrastructure + Config Overhaul)
 
 **Outcome:** All five loops from the post-UI-rewrite review are complete. L187 was done by the runtime Hestia instance. L188–L191 were done manually, with significant branch-interference challenges from the runtime worktree auto-committing to `feature/l187-post-review-ui-fixes-and-polish`.

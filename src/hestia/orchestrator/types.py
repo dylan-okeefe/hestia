@@ -56,6 +56,7 @@ class Turn:
     final_response: str | None = None  # populated on DONE
     error: str | None = None  # populated on FAILED
     reasoning_budget: int = 2048  # reasoning tokens budgeted for this turn
+    thinking_aborted: bool = False  # mid-stream thinking budget was exceeded once
     transitions: list[TurnTransition] = field(default_factory=list)
     # Artifact handles produced by tool calls during this turn. Populated by
     # the orchestrator engine; consumed by the delegate_task tool so a
@@ -112,3 +113,5 @@ class TurnContext:
     delegated: bool = False
     # Circuit-breaker: count consecutive empty-arg failures per tool name
     empty_tool_failure_counts: dict[str, int] = field(default_factory=dict)
+    # Quality monitor: how many corrections have been injected this turn
+    correction_count: int = 0

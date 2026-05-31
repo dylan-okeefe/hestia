@@ -9,13 +9,15 @@ from typing import TYPE_CHECKING, Any
 
 from hestia.core.clock import utcnow
 from hestia.core.inference import InferenceClient, _extract_tool_calls_from_text
+from hestia.core.json_repair import repair_json
 from hestia.core.types import ChatResponse, Message, Session, ToolCall
 from hestia.errors import (
     EmptyResponseError,
-    InferenceServerError,
     MaxIterationsError,
     PolicyFailureError,
+    ThinkingBudgetExceededError,
 )
+from hestia.orchestrator.quality import Correction, classify_turn
 from hestia.orchestrator.types import TransitionCallback, Turn, TurnContext, TurnState
 from hestia.policy.engine import PolicyEngine, RetryAction
 from hestia.security import InjectionScanner
@@ -93,16 +95,42 @@ class TurnExecution:
             await set_typing(True)
 
             turn.reasoning_budget = self._policy.reasoning_budget(session, turn.iterations)
+            if turn.thinking_aborted:
+                turn.reasoning_budget = 0
 
-            if ctx.stream_callback is not None and self._stream:
-                chat_response = await self._run_inference_streaming(ctx, turn)
-            else:
-                chat_response = await self._inference.chat(
-                    messages=ctx.build_result.messages,
-                    tools=ctx.tools,
-                    slot_id=ctx.slot_id,
-                    reasoning_budget=turn.reasoning_budget,
+            try:
+                if ctx.stream_callback is not None and self._stream:
+                    chat_response = await self._run_inference_streaming(ctx, turn)
+                else:
+                    chat_response = await self._inference.chat(
+                        messages=ctx.build_result.messages,
+                        tools=ctx.tools,
+                        slot_id=ctx.slot_id,
+                        reasoning_budget=turn.reasoning_budget,
+                    )
+            except ThinkingBudgetExceededError:
+                await transition(turn, TurnState.RETRYING, "")
+                turn.thinking_aborted = True
+                nudge = Message(
+                    role="system",
+                    content=(
+                        "You have been thinking for a long time. "
+                        "Stop deliberating and use your tools to complete the task."
+                    ),
+                    created_at=utcnow(),
                 )
+                await self._store.append_message(session.id, nudge)
+                ctx.running_history.append(nudge)
+                self._builder.set_style_prefix(ctx.style_prefix)
+                ctx.build_result = await self._builder.build(
+                    session=ctx.session,
+                    history=ctx.running_history,
+                    system_prompt=ctx.system_prompt,
+                    tools=ctx.tools,
+                    new_user_message=None,
+                )
+                turn.iterations += 1
+                continue
 
             ctx.total_prompt_tokens += getattr(chat_response, "prompt_tokens", 0) or 0
             ctx.total_completion_tokens += getattr(chat_response, "completion_tokens", 0) or 0
@@ -134,6 +162,9 @@ class TurnExecution:
                 await self._handle_tool_calls(
                     ctx, turn, chat_response, transition, set_typing, assistant_msg
                 )
+                await self._classify_and_maybe_correct(
+                    ctx, turn, assistant_msg, history_includes_current=True
+                )
                 continue
 
             elif chat_response.finish_reason in ("stop", "length"):
@@ -151,10 +182,18 @@ class TurnExecution:
                     await self._handle_tool_calls(
                         ctx, turn, chat_response, transition, set_typing, assistant_msg
                     )
+                    await self._classify_and_maybe_correct(
+                        ctx, turn, assistant_msg, history_includes_current=True
+                    )
                     continue
 
                 if not content.strip():
                     # Empty response — retry via policy instead of failing immediately
+                    if await self._classify_and_maybe_correct(
+                        ctx, turn, assistant_msg, history_includes_current=False
+                    ):
+                        turn.iterations += 1
+                        continue
                     decision = self._policy.retry_after_error(
                         EmptyResponseError(
                             f"Model returned finish_reason={chat_response.finish_reason!r} "
@@ -165,6 +204,12 @@ class TurnExecution:
                     if decision.action == RetryAction.FAIL:
                         raise PolicyFailureError(decision.reason)
                     await transition(turn, TurnState.RETRYING, "")
+                    turn.iterations += 1
+                    continue
+
+                if await self._classify_and_maybe_correct(
+                    ctx, turn, assistant_msg, history_includes_current=False
+                ):
                     turn.iterations += 1
                     continue
 
@@ -181,6 +226,11 @@ class TurnExecution:
                 break
 
             else:
+                if await self._classify_and_maybe_correct(
+                    ctx, turn, assistant_msg, history_includes_current=False
+                ):
+                    turn.iterations += 1
+                    continue
                 decision = self._policy.retry_after_error(
                     Exception(f"Unexpected finish_reason: {chat_response.finish_reason}"),
                     turn.iterations,
@@ -193,6 +243,56 @@ class TurnExecution:
             raise MaxIterationsError(self._max_iterations, turn.iterations)
 
         return content
+
+    async def _classify_and_maybe_correct(
+        self,
+        ctx: TurnContext,
+        turn: Turn,
+        assistant_msg: Message,
+        *,
+        history_includes_current: bool = False,
+    ) -> bool:
+        """Classify the turn and, if degenerate, inject a tailored correction.
+
+        Returns ``True`` when a correction was injected and the caller should
+        continue to the next iteration.
+        """
+        history = (
+            ctx.running_history
+            if history_includes_current
+            else list(ctx.running_history) + [assistant_msg]
+        )
+        correction = classify_turn(
+            turn, assistant_msg, history, ctx.allowed_tools or []
+        )
+        if correction is not None and ctx.correction_count < 3:
+            await self._inject_correction(ctx, turn, correction)
+            ctx.correction_count += 1
+            return True
+        return False
+
+    async def _inject_correction(
+        self,
+        ctx: TurnContext,
+        turn: Turn,
+        correction: Correction,
+    ) -> None:
+        """Append a correction message to the session and rebuild context."""
+        msg = Message(
+            role="user",
+            content=correction.message,
+            created_at=utcnow(),
+        )
+        await self._store.append_message(ctx.session.id, msg)
+        ctx.running_history.append(msg)
+        self._builder.set_style_prefix(ctx.style_prefix)
+        ctx.build_result = await self._builder.build(
+            session=ctx.session,
+            history=ctx.running_history,
+            system_prompt=ctx.system_prompt,
+            tools=ctx.tools,
+            new_user_message=None,
+        )
 
     async def _handle_tool_calls(
         self,
@@ -294,6 +394,21 @@ class TurnExecution:
             slot_id=ctx.slot_id,
             reasoning_budget=turn.reasoning_budget,
         ):
+            if delta.reasoning_content and not turn.thinking_aborted:
+                thinking_chars = sum(len(p) for p in reasoning_parts) + len(delta.reasoning_content)
+                # Rough token estimate: 4 characters per token
+                if thinking_chars > turn.reasoning_budget * 4:
+                    logger.warning(
+                        "Thinking budget exceeded (%d chars ≈ %d tokens > %d budget)",
+                        thinking_chars,
+                        thinking_chars // 4,
+                        turn.reasoning_budget,
+                    )
+                    raise ThinkingBudgetExceededError(
+                        f"Thinking budget exceeded ({thinking_chars // 4} tokens > "
+                        f"{turn.reasoning_budget})"
+                    )
+
             if delta.content:
                 content_parts.append(delta.content)
                 await ctx.stream_callback(delta.content)
@@ -333,17 +448,27 @@ class TurnExecution:
             try:
                 arguments = json.loads(buf["arguments"]) if buf["arguments"] else {}
             except json.JSONDecodeError as exc:
-                logger.warning(
-                    "tool_call arguments for %r are malformed JSON (%s); treating as empty",
-                    buf["name"],
-                    exc,
-                )
-                arguments = {}
+                repaired = repair_json(buf["arguments"]) if buf["arguments"] else None
+                if repaired is not None:
+                    logger.info(
+                        "Repaired malformed tool_call arguments for %r in streaming path",
+                        buf["name"],
+                    )
+                    arguments = json.loads(repaired)
+                else:
+                    logger.warning(
+                        "tool_call arguments for %r are malformed JSON (%s); treating as empty",
+                        buf["name"],
+                        exc,
+                    )
+                    arguments = {}
             if not isinstance(arguments, dict):
-                raise InferenceServerError(
-                    f"tool_call arguments for {buf['name']!r} are not a dict: "
-                    f"{type(arguments).__name__}"
+                logger.warning(
+                    "tool_call arguments for %r are not a dict: %s",
+                    buf["name"],
+                    type(arguments).__name__,
                 )
+                continue
             tool_calls.append(
                 ToolCall(
                     id=buf["id"] or f"call_{idx}",
@@ -499,6 +624,16 @@ class TurnExecution:
                         "STOP calling this tool. Instead, write your response as plain text for the user."
                     )
 
+            # Truncate oversized tool results before re-prompting
+            max_chars = self._policy.tool_result_max_chars(tc.name)
+            if (
+                isinstance(max_chars, int)
+                and isinstance(result.content, str)
+                and len(result.content) > max_chars
+            ):
+                result.content = result.content[:max_chars] + "\n... [truncated]"
+                result.truncated = True
+
             if result.artifact_handle:
                 artifact_handles.append(result.artifact_handle)
 
@@ -530,6 +665,12 @@ class TurnExecution:
         body = result.content
         if result.status != "ok":
             body = f"[delegation error] {body}"
+
+        # Truncate oversized delegation results before re-prompting
+        max_chars = self._policy.tool_result_max_chars("delegate_task")
+        if isinstance(max_chars, int) and isinstance(body, str) and len(body) > max_chars:
+            body = body[:max_chars] + "\n... [truncated]"
+            result.truncated = True
 
         artifact_handles: list[str] = []
         if result.artifact_handle:
@@ -699,10 +840,13 @@ class TurnExecution:
             "browser_login": "🔐",
             "write_file": "📝",
             "append_to_file": "📝",
+            "edit_file": "📝",
             "read_file": "📄",
             "list_dir": "📁",
             "terminal": "💻",
             "search_web": "🔍",
+            "glob": "🔍",
+            "grep": "🔍",
             "http_get": "🌐",
             "delegate_task": "👤",
             "list_tools": "🛠️",

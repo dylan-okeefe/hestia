@@ -47,6 +47,7 @@ messages = sa.Table(
     sa.Column("tool_calls", sa.Text, nullable=True),  # JSON
     sa.Column("tool_call_id", sa.String, nullable=True),
     sa.Column("reasoning_content", sa.Text, nullable=True),  # stored but stripped on send
+    sa.Column("is_handoff", sa.Boolean, nullable=False, default=False),
     sa.Column("created_at", sa.DateTime, nullable=False),
     sa.PrimaryKeyConstraint("session_id", "idx"),
 )

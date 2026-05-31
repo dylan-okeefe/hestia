@@ -52,24 +52,27 @@ class SSRFSafeTransport(httpx.AsyncBaseTransport):
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         hostname = request.url.host
         if hostname:
-            # Resolve at connection time — same lookup httpx will use
-            try:
-                addr_info = await asyncio.to_thread(socket.getaddrinfo, str(hostname), None)
-            except socket.gaierror as exc:
-                raise httpx.ConnectError(f"Cannot resolve hostname: {hostname}") from exc
-
-            for _family, _, _, _, sockaddr in addr_info:
-                ip = ipaddress.ip_address(sockaddr[0])
-                for blocked in _BLOCKED_RANGES:
-                    if ip in blocked:
-                        raise httpx.ConnectError(
-                            f"SSRF blocked: {hostname} resolves to {ip} (in {blocked})"
-                        )
-
+            await asyncio.to_thread(_assert_ip_allowed, str(hostname))
         return await self._inner.handle_async_request(request)
 
     async def aclose(self) -> None:
         await self._inner.aclose()
+
+
+def _assert_ip_allowed(hostname: str) -> None:
+    """Resolve hostname and raise httpx.ConnectError if any IP is blocked."""
+    try:
+        addr_info = socket.getaddrinfo(hostname, None)
+    except socket.gaierror as exc:
+        raise httpx.ConnectError(f"Cannot resolve hostname: {hostname}") from exc
+
+    for _family, _, _, _, sockaddr in addr_info:
+        ip = ipaddress.ip_address(sockaddr[0])
+        for blocked in _BLOCKED_RANGES:
+            if ip in blocked:
+                raise httpx.ConnectError(
+                    f"SSRF blocked: {hostname} resolves to {ip} (in {blocked})"
+                )
 
 
 def _is_url_safe(url: str) -> str | None:
@@ -118,7 +121,9 @@ async def _fetch_with_httpx(url: str, timeout_seconds: int) -> httpx.Response:
         return await client.get(url)
 
 
-async def _fetch_with_curl_cffi(url: str, timeout_seconds: int) -> str:
+async def _fetch_with_curl_cffi(
+    url: str, timeout_seconds: int, egress_audit_enabled: bool = True
+) -> str:
     """Fetch using curl_cffi with browser TLS/HTTP fingerprint impersonation.
 
     curl_cffi does not support custom transports, so SSRF protection here is
@@ -140,9 +145,10 @@ async def _fetch_with_curl_cffi(url: str, timeout_seconds: int) -> str:
                 allow_redirects=False,
                 impersonate="chrome131",
             )
-            await _record_egress(
-                str(current_url), response.status_code, len(response.content)
-            )
+            if egress_audit_enabled:
+                await _record_egress(
+                    str(current_url), response.status_code, len(response.content)
+                )
 
             if response.status_code in (301, 302, 303, 307, 308):
                 location = response.headers.get("location")
@@ -156,6 +162,16 @@ async def _fetch_with_curl_cffi(url: str, timeout_seconds: int) -> str:
                 current_url = urljoin(current_url, location)
                 if error := _is_url_safe(current_url):
                     raise RuntimeError(f"SSRF blocked redirect: {error}")
+                parsed_redirect = urlparse(current_url)
+                if parsed_redirect.hostname:
+                    try:
+                        await asyncio.to_thread(
+                            _assert_ip_allowed, parsed_redirect.hostname
+                        )
+                    except httpx.ConnectError as exc:
+                        raise RuntimeError(
+                            f"SSRF blocked redirect: {exc}"
+                        ) from exc
                 redirects += 1
                 continue
 
@@ -165,19 +181,26 @@ async def _fetch_with_curl_cffi(url: str, timeout_seconds: int) -> str:
     raise RuntimeError(f"Too many redirects (>{max_redirects})")
 
 
-async def _http_get_impl(url: str, timeout_seconds: int, use_curl_cffi: bool) -> str:
+async def _http_get_impl(
+    url: str, timeout_seconds: int, use_curl_cffi: bool, egress_audit_enabled: bool = True
+) -> str:
     """Fetch a URL and return its text content."""
     # SSRF pre-flight check (user-friendly errors)
     if error := _is_url_safe(url):
         return error
 
     response = await _fetch_with_httpx(url, timeout_seconds)
-    await _record_egress(str(response.url), response.status_code, len(response.content))
+    if egress_audit_enabled:
+        await _record_egress(
+            str(response.url), response.status_code, len(response.content)
+        )
 
     if response.status_code == 403 and use_curl_cffi and _CURL_CFFI_AVAILABLE:
         logger.debug("HTTP 403 from %s; retrying with curl_cffi impersonation", url)
         try:
-            return await _fetch_with_curl_cffi(url, timeout_seconds)
+            return await _fetch_with_curl_cffi(
+                url, timeout_seconds, egress_audit_enabled=egress_audit_enabled
+            )
         except Exception as exc:  # noqa: BLE001 — tool boundary
             logger.debug("curl_cffi fallback failed: %s", exc)
             # Fall through to return the original 403 error
@@ -221,7 +244,10 @@ async def http_get(url: str, timeout_seconds: int = 30) -> str:
     return await _http_get_impl(url, timeout_seconds, use_curl_cffi=False)
 
 
-def make_http_get_tool(use_curl_cffi_fallback: bool = False) -> Callable[..., Any]:
+def make_http_get_tool(
+    use_curl_cffi_fallback: bool = False,
+    egress_audit_enabled: bool = True,
+) -> Callable[..., Any]:
     """Factory for http_get with configurable curl_cffi fallback."""
 
     @tool(
@@ -248,17 +274,25 @@ def make_http_get_tool(use_curl_cffi_fallback: bool = False) -> Callable[..., An
     )
     async def http_get(url: str, timeout_seconds: int = 30) -> str:
         """Fetch a URL and return its text content."""
-        return await _http_get_impl(url, timeout_seconds, use_curl_cffi=use_curl_cffi_fallback)
+        return await _http_get_impl(
+            url,
+            timeout_seconds,
+            use_curl_cffi=use_curl_cffi_fallback,
+            egress_audit_enabled=egress_audit_enabled,
+        )
 
     return http_get
 
 
-async def _record_egress(url: str, status: int, size: int) -> None:
+async def _record_egress(url: str, status: int, size: int, enabled: bool = True) -> None:
     """Best-effort egress logging via the current trace store.
 
     Query parameters are stripped before storage to avoid persisting
     API keys or tokens that may appear in URLs.
     """
+    if not enabled:
+        return
+
     from urllib.parse import urlparse, urlunparse
 
     trace_store = current_trace_store.get()

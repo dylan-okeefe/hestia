@@ -21,18 +21,31 @@ class TestMemoryStore:
     @pytest.mark.asyncio
     async def test_save_and_search(self, memory_store):
         """Can save a memory and find it via search."""
-        await memory_store.save("The capital of France is Paris", tags=["geography"])
-        results = await memory_store.search("Paris")
+        await memory_store.save(
+            "The capital of France is Paris",
+            tags=["geography"],
+            platform="cli",
+            platform_user="test",
+        )
+        results = await memory_store.search("Paris", platform="cli", platform_user="test")
         assert len(results) == 1
         assert "Paris" in results[0].content
 
     @pytest.mark.asyncio
     async def test_search_returns_relevant_results(self, memory_store):
         """Search ranks relevant results higher."""
-        await memory_store.save("Python is a programming language")
-        await memory_store.save("The python snake is found in Asia")
-        await memory_store.save("JavaScript is also a programming language")
-        results = await memory_store.search("programming language")
+        await memory_store.save(
+            "Python is a programming language", platform="cli", platform_user="test"
+        )
+        await memory_store.save(
+            "The python snake is found in Asia", platform="cli", platform_user="test"
+        )
+        await memory_store.save(
+            "JavaScript is also a programming language", platform="cli", platform_user="test"
+        )
+        results = await memory_store.search(
+            "programming language", platform="cli", platform_user="test"
+        )
         assert len(results) >= 2
         # Both programming-related results should be returned
         contents = [r.content for r in results]
@@ -42,8 +55,10 @@ class TestMemoryStore:
     @pytest.mark.asyncio
     async def test_search_no_results(self, memory_store):
         """Search returns empty list when nothing matches."""
-        await memory_store.save("The sky is blue")
-        results = await memory_store.search("quantum computing")
+        await memory_store.save("The sky is blue", platform="cli", platform_user="test")
+        results = await memory_store.search(
+            "quantum computing", platform="cli", platform_user="test"
+        )
         assert results == []
 
     @pytest.mark.asyncio
@@ -97,8 +112,12 @@ class TestMemoryStore:
     async def test_search_limit(self, memory_store):
         """Search respects the limit parameter."""
         for i in range(10):
-            await memory_store.save(f"Python tip number {i}")
-        results = await memory_store.search("Python", limit=3)
+            await memory_store.save(
+                f"Python tip number {i}", platform="cli", platform_user="test"
+            )
+        results = await memory_store.search(
+            "Python", limit=3, platform="cli", platform_user="test"
+        )
         assert len(results) == 3
 
     @pytest.mark.asyncio
@@ -121,11 +140,15 @@ class TestMemoryStore:
     @pytest.mark.asyncio
     async def test_search_fts5_syntax_and(self, memory_store):
         """FTS5 AND syntax works for search."""
-        await memory_store.save("Python programming language")
-        await memory_store.save("Python snake")
-        await memory_store.save("Java programming")
+        await memory_store.save(
+            "Python programming language", platform="cli", platform_user="test"
+        )
+        await memory_store.save("Python snake", platform="cli", platform_user="test")
+        await memory_store.save("Java programming", platform="cli", platform_user="test")
         # AND requires both terms
-        results = await memory_store.search("Python AND programming")
+        results = await memory_store.search(
+            "Python AND programming", platform="cli", platform_user="test"
+        )
         assert len(results) == 1
         assert "Python" in results[0].content
         assert "programming" in results[0].content
@@ -133,18 +156,26 @@ class TestMemoryStore:
     @pytest.mark.asyncio
     async def test_search_fts5_syntax_not(self, memory_store):
         """FTS5 NOT syntax works for search."""
-        await memory_store.save("Python programming")
-        await memory_store.save("Python snake")
-        results = await memory_store.search("Python NOT snake")
+        await memory_store.save("Python programming", platform="cli", platform_user="test")
+        await memory_store.save("Python snake", platform="cli", platform_user="test")
+        results = await memory_store.search(
+            "Python NOT snake", platform="cli", platform_user="test"
+        )
         assert len(results) == 1
         assert "programming" in results[0].content
 
     @pytest.mark.asyncio
     async def test_search_fts5_phrase(self, memory_store):
         """FTS5 phrase search works."""
-        await memory_store.save("machine learning is great")
-        await memory_store.save("learning machine design")
-        results = await memory_store.search('"machine learning"')
+        await memory_store.save(
+            "machine learning is great", platform="cli", platform_user="test"
+        )
+        await memory_store.save(
+            "learning machine design", platform="cli", platform_user="test"
+        )
+        results = await memory_store.search(
+            '"machine learning"', platform="cli", platform_user="test"
+        )
         assert len(results) == 1
         assert "machine learning" in results[0].content
 

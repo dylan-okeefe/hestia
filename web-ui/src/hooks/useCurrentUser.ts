@@ -30,6 +30,10 @@ export function useCurrentUser() {
     try {
       const userId = auth.userId;
       if (!userId) {
+        if (!auth.authEnabled) {
+          setUser(null);
+          return;
+        }
         setError('Not authenticated. Please log in again.');
         setUser(null);
         return;
@@ -42,7 +46,7 @@ export function useCurrentUser() {
     } finally {
       setIsLoading(false);
     }
-  }, [auth.userId]);
+  }, [auth.userId, auth.authEnabled]);
 
   useEffect(() => {
     load();

@@ -8,6 +8,7 @@ based on session context (e.g., subagents may be denied shell_exec).
 # Filesystem operations
 READ_LOCAL = "read_local"
 WRITE_LOCAL = "write_local"
+EDIT_FILE = "edit_file"
 
 # Code execution
 SHELL_EXEC = "shell_exec"

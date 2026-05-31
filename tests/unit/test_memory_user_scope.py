@@ -154,8 +154,8 @@ class TestMemoryUserScope:
         assert "Partial identity context" in caplog.text
 
     @pytest.mark.asyncio
-    async def test_search_partial_identity_context_warns_and_unscopes(self, memory_store, caplog):
-        """M2: partial identity context logs warning and falls back to unscoped."""
+    async def test_search_partial_identity_context_returns_empty(self, memory_store, caplog):
+        """M5: partial identity context returns empty list (fail-closed)."""
         import logging
 
         await memory_store.save(content="Scoped note", platform="cli", platform_user="test")
@@ -164,9 +164,19 @@ class TestMemoryUserScope:
         with caplog.at_level(logging.WARNING):
             results = await memory_store.search("note", platform="cli", platform_user=None)
 
-        # Partial scope → unscoped → finds both rows
-        assert len(results) == 2
+        # Partial scope → fail-closed → returns empty
+        assert results == []
         assert "Partial identity context" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_search_unscoped_returns_empty(self, memory_store):
+        """M5: search without platform_user returns empty list, not all memories."""
+        await memory_store.save(content="Alice private", platform="cli", platform_user="alice")
+        await memory_store.save(content="Bob private", platform="cli", platform_user="bob")
+
+        # Unscoped search should return empty, not all memories
+        results = await memory_store.search("private")
+        assert results == []
 
 
 class TestMemoryToolsUserScope:
@@ -389,10 +399,11 @@ class TestMemoryFTS5Migration:
         await store.create_table()
 
         # Verify old data is preserved with NULL platform/platform_user
-        results = await store.search("Legacy")
-        assert len(results) == 1
-        assert results[0].platform is None
-        assert results[0].platform_user is None
+        # (unscoped search is now fail-closed, so verify via get)
+        mem = await store.get("mem_old")
+        assert mem is not None
+        assert mem.platform is None
+        assert mem.platform_user is None
 
         # Verify new saves include platform/platform_user
         mem = await store.save(content="New memory", platform="cli", platform_user="test")
