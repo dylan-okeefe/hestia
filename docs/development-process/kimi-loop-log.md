@@ -6,27 +6,35 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
-## 2026-05-30 — L195–L196 Complete (Critical/High Backend + Orchestrator Robustness)
+## 2026-05-30 — L195–L197 Complete (Critical/High Backend + Orchestrator + Web Auth)
 
-**Outcome:** L195 was partially completed by the runtime agent before this session. L196 was implemented by a subagent and validated.
+**Outcome:** L195 was partially completed by the runtime agent before this session. L196–L197 were implemented by subagents and validated.
 
 ### L195 — Critical & High Backend Fixes
 **Branch:** `feature/l195-critical-and-high-backend-fixes` (4 commits)
-- C1: Token-count cache bypasses on tool-call messages (fixes collision on `("assistant", "")`)
+- C1: Token-count cache bypasses on tool-call messages
 - H2: curl_cffi redirect loop now resolves + checks IP against `_BLOCKED_RANGES`
 - H1: `scheduler_write_local` trust field added; scheduler ticks fail-closed on write_file
-- M2: `egress_audit_enabled` now honored in both http_get and web_search `_record_egress`
+- M2: `egress_audit_enabled` now honored in both http_get and web_search
 
-**Quality gates:** pytest 1454 passed (15 failed, 7 errors — all pre-existing on develop) ✅, mypy ✅, ruff baseline maintained ✅
+**Quality gates:** pytest 1454 passed (15 failed, 7 errors — all pre-existing) ✅, mypy ✅, ruff ✅
 
 ### L196 — Orchestrator & Inference Robustness
 **Branch:** `feature/l196-orchestrator-and-inference-robustness` (5 commits)
-- M1: Streaming path now skips malformed JSON args (matches non-streaming `chat()`)
+- M1: Streaming path now skips malformed JSON args
 - M6: `IllegalTransitionError` routes to `FAILED` state with user notice
-- M7: `print()` replaced with `logger.warning()` in inference tool-call parsing
+- M7: `print()` replaced with `logger.warning()` in inference
 - L4: Defensive `.get()` access in inference tool-call parsing
 
-**Quality gates:** relevant tests pass ✅, mypy 0 errors ✅, ruff 0 new issues ✅
+**Quality gates:** relevant tests pass ✅, mypy ✅, ruff ✅
+
+### L197 — Web & Auth Hardening
+**Branch:** `feature/l197-web-and-auth-hardening` (4 commits)
+- M3: Webhook strict endpoint match + replay window + header strip
+- M8: AuthManager prunes expired pending codes and sessions
+- M5: Memory search fail-closed when `platform_user` unresolved
+
+**Quality gates:** 164 tests pass ✅, mypy ✅, ruff ✅
 
 ---
 

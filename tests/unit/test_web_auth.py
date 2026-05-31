@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Any
+
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -322,6 +322,34 @@ class TestAuthManager:
         auth_manager._code_request_limits["old"] = [now - timedelta(minutes=10)]
         # Recent code request entry
         auth_manager._code_request_limits["recent"] = [now - timedelta(minutes=2)]
+        # Expired pending code
+        auth_manager._pending_codes["expired"] = PendingCode(
+            platform="telegram",
+            platform_user="12345",
+            created_at=now - timedelta(seconds=600),
+            expires_at=now - timedelta(seconds=1),
+        )
+        # Valid pending code
+        auth_manager._pending_codes["valid"] = PendingCode(
+            platform="telegram",
+            platform_user="12345",
+            created_at=now,
+            expires_at=now + timedelta(seconds=300),
+        )
+        # Expired session
+        auth_manager._sessions["expired_token"] = WebSession(
+            platform="telegram",
+            platform_user="12345",
+            created_at=now - timedelta(hours=73),
+            expires_at=now - timedelta(hours=1),
+        )
+        # Valid session
+        auth_manager._sessions["valid_token"] = WebSession(
+            platform="telegram",
+            platform_user="12345",
+            created_at=now,
+            expires_at=now + timedelta(hours=1),
+        )
 
         auth_manager._cleanup_stale_entries()
 
@@ -329,6 +357,10 @@ class TestAuthManager:
         assert "recent" in auth_manager._rate_limits
         assert "old" not in auth_manager._code_request_limits
         assert "recent" in auth_manager._code_request_limits
+        assert "expired" not in auth_manager._pending_codes
+        assert "valid" in auth_manager._pending_codes
+        assert "expired_token" not in auth_manager._sessions
+        assert "valid_token" in auth_manager._sessions
 
 
 class TestAuthMiddleware:
