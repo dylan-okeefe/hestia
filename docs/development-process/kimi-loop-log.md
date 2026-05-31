@@ -6,6 +6,21 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-05-30 — L195 Complete (Critical & High Backend Fixes)
+
+**Outcome:** All four items from the v0.12 deep review critical/high section are implemented and committed. Work was partially completed by the runtime agent before this session started.
+
+### L195 — Critical & High Backend Fixes
+**Branch:** `feature/l195-critical-and-high-backend-fixes` (4 commits)
+- C1: Token-count cache bypasses on tool-call messages (fixes collision on `("assistant", "")`)
+- H2: curl_cffi redirect loop now resolves + checks IP against `_BLOCKED_RANGES`
+- H1: `scheduler_write_local` trust field added; scheduler ticks fail-closed on write_file
+- M2: `egress_audit_enabled` now honored in both http_get and web_search `_record_egress`
+
+**Quality gates:** pytest 1454 passed (15 failed, 7 errors — all pre-existing on develop) ✅, mypy ✅, ruff baseline maintained ✅
+
+---
+
 ## 2026-05-20 — L187–L191 Complete (Post-Review Fixes + Error Persistence + Backend Quality + Component Infrastructure + Config Overhaul)
 
 **Outcome:** All five loops from the post-UI-rewrite review are complete. L187 was done by the runtime Hestia instance. L188–L191 were done manually, with significant branch-interference challenges from the runtime worktree auto-committing to `feature/l187-post-review-ui-fixes-and-polish`.
