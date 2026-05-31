@@ -344,7 +344,7 @@ class AppContext:
         reg.register(make_list_dir_tool(cfg.storage))
         reg.register(make_terminal_tool(cfg.trust.blocked_shell_patterns or None))
         reg.register(make_read_file_tool(cfg.storage))
-        reg.register(make_write_file_tool(cfg.storage))
+        reg.register(make_write_file_tool(cfg.storage, cfg.trust.write_guard_enabled))
         reg.register(make_append_to_file_tool(cfg.storage))
         reg.register(make_edit_file_tool(cfg.storage))
         reg.register(make_search_memory_tool(self.memory_store))

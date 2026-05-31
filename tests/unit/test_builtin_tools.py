@@ -182,6 +182,35 @@ class TestWriteFile:
         assert target.exists()
         assert target.read_text() == "Nested content"
 
+    @pytest.mark.asyncio
+    async def test_write_guard_blocks_existing_file(self, tmp_path):
+        """write_file on existing path → error with edit_file hint."""
+        write_file = make_write_file_tool(
+            StorageConfig(allowed_roots=[str(tmp_path)]), write_guard_enabled=True
+        )
+        target = tmp_path / "existing.txt"
+        target.write_text("original")
+
+        result = await write_file(str(target), "new content")
+
+        assert "already exists" in result
+        assert "edit_file(path=..., old_string=..., new_string=...)" in result
+        assert target.read_text() == "original"
+
+    @pytest.mark.asyncio
+    async def test_write_guard_disabled_allows_overwrite(self, tmp_path):
+        """write_guard disabled → allows overwrite."""
+        write_file = make_write_file_tool(
+            StorageConfig(allowed_roots=[str(tmp_path)]), write_guard_enabled=False
+        )
+        target = tmp_path / "existing.txt"
+        target.write_text("original")
+
+        result = await write_file(str(target), "new content")
+
+        assert target.read_text() == "new content"
+        assert "new content" in result or "bytes" in result
+
 
 class TestListDir:
     """Tests for list_dir tool."""

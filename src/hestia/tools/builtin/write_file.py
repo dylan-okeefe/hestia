@@ -10,7 +10,9 @@ from hestia.tools.capabilities import WRITE_LOCAL
 from hestia.tools.metadata import tool
 
 
-def make_write_file_tool(config: StorageConfig) -> Any:
+def make_write_file_tool(
+    config: StorageConfig, write_guard_enabled: bool = True
+) -> Any:
     """Create a write_file tool with path sandboxing."""
     allowed_roots = config.allowed_roots
 
@@ -20,7 +22,10 @@ def make_write_file_tool(config: StorageConfig) -> Any:
         parameters_schema={
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Absolute or relative file path. Must be within allowed roots."},
+                "path": {
+                    "type": "string",
+                    "description": "Absolute or relative file path. Must be within allowed roots.",
+                },
                 "content": {"type": "string", "description": "Text content to write."},
             },
             "required": ["path", "content"],
@@ -33,6 +38,7 @@ def make_write_file_tool(config: StorageConfig) -> Any:
         """Write content to a file at the given path.
 
         Creates parent directories if they don't exist.
+        Refuses to overwrite existing files when write_guard is enabled.
         Returns confirmation with the number of bytes written.
         """
         if not path:
@@ -51,6 +57,12 @@ def make_write_file_tool(config: StorageConfig) -> Any:
             return error
 
         target = Path(path)
+        if write_guard_enabled and await asyncio.to_thread(target.exists):
+            return (
+                f"File {path} already exists. "
+                "Use edit_file(path=..., old_string=..., new_string=...) instead."
+            )
+
         await asyncio.to_thread(target.parent.mkdir, parents=True, exist_ok=True)
         await asyncio.to_thread(target.write_text, content, encoding="utf-8")
         return f"Wrote {len(content)} bytes to {path}"

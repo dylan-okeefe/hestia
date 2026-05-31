@@ -192,6 +192,10 @@ class TrustConfig(_ConfigFromEnv):
     # the tool's built-in defaults.
     blocked_shell_patterns: list[str] = field(default_factory=list)
 
+    # When True, write_file refuses to overwrite existing files and
+    # suggests using edit_file instead.
+    write_guard_enabled: bool = True
+
     # Active trust preset name (paranoid, household, developer, etc.)
     preset: str | None = None
 
@@ -249,6 +253,7 @@ class TrustConfig(_ConfigFromEnv):
             subagent_shell_exec=True,
             subagent_write_local=True,
             self_management=True,
+            write_guard_enabled=False,
         )
 
     @classmethod
