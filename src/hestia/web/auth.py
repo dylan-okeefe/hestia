@@ -121,6 +121,14 @@ class AuthManager:
             ]
             if not self._code_request_limits[ip]:
                 del self._code_request_limits[ip]
+        # Clean up expired pending codes
+        for code, pending in list(self._pending_codes.items()):
+            if pending.expires_at < now:
+                del self._pending_codes[code]
+        # Clean up expired sessions
+        for token, session in list(self._sessions.items()):
+            if session.expires_at < now:
+                del self._sessions[token]
 
     def check_code_request_limit(self, ip: str) -> bool:
         """Check whether the IP has exceeded code request rate limit.
