@@ -699,6 +699,7 @@ class TurnExecution:
             "browser_login": "🔐",
             "write_file": "📝",
             "append_to_file": "📝",
+            "edit_file": "📝",
             "read_file": "📄",
             "list_dir": "📁",
             "terminal": "💻",

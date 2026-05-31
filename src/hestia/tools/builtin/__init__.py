@@ -53,8 +53,10 @@ from hestia.tools.builtin.style_tools import (
 from hestia.tools.builtin.terminal import make_terminal_tool
 from hestia.tools.builtin.web_search import make_web_search_tool
 from hestia.tools.builtin.append_to_file import make_append_to_file_tool
+from hestia.tools.builtin.edit_file import make_edit_file_tool
 from hestia.tools.builtin.write_file import make_write_file_tool
 from hestia.tools.capabilities import (
+    EDIT_FILE,
     EMAIL_SEND,
     MEMORY_READ,
     MEMORY_WRITE,
@@ -93,6 +95,7 @@ __all__ = [
     "make_email_tools",
     "make_append_to_file_tool",
     "make_write_file_tool",
+    "make_edit_file_tool",
     "make_list_proposals_tool",
     "make_show_proposal_tool",
     "make_accept_proposal_tool",
@@ -101,6 +104,7 @@ __all__ = [
     "make_show_style_profile_tool",
     "make_reset_style_metric_tool",
     "make_reset_style_profile_tool",
+    "EDIT_FILE",
     "EMAIL_SEND",
     "MEMORY_READ",
     "MEMORY_WRITE",

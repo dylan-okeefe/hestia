@@ -9,6 +9,7 @@ import pytest
 from hestia.artifacts.store import ArtifactStore
 from hestia.config import StorageConfig
 from hestia.tools.builtin.current_time import current_time
+from hestia.tools.builtin.edit_file import make_edit_file_tool
 from hestia.tools.builtin.http_get import SSRFSafeTransport, _is_url_safe, http_get
 from hestia.tools.builtin.list_dir import make_list_dir_tool
 from hestia.tools.builtin.read_artifact import make_read_artifact_tool
@@ -101,6 +102,60 @@ class TestReadFile:
 
         result = await read_file(str(test_file))
         assert "Binary file" in result
+
+
+class TestEditFile:
+    """Tests for edit_file tool."""
+
+    @pytest.mark.asyncio
+    async def test_edit_file_exact_match_once(self, tmp_path):
+        """Exact match once → success with diff preview."""
+        edit_file = make_edit_file_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
+        target = tmp_path / "test.txt"
+        target.write_text("hello world")
+
+        result = await edit_file(str(target), "hello world", "hello universe")
+
+        assert target.read_text() == "hello universe"
+        assert "Edited" in result
+        assert "- hello world" in result
+        assert "+ hello universe" in result
+
+    @pytest.mark.asyncio
+    async def test_edit_file_zero_matches(self, tmp_path):
+        """Zero matches → error."""
+        edit_file = make_edit_file_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
+        target = tmp_path / "test.txt"
+        target.write_text("hello world")
+
+        result = await edit_file(str(target), "not present", "replacement")
+
+        assert "Error:" in result
+        assert "not found" in result
+        assert target.read_text() == "hello world"
+
+    @pytest.mark.asyncio
+    async def test_edit_file_multiple_matches(self, tmp_path):
+        """Multiple matches → error."""
+        edit_file = make_edit_file_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
+        target = tmp_path / "test.txt"
+        target.write_text("abc abc abc")
+
+        result = await edit_file(str(target), "abc", "xyz")
+
+        assert "Error:" in result
+        assert "found 3 occurrences" in result
+        assert target.read_text() == "abc abc abc"
+
+    @pytest.mark.asyncio
+    async def test_edit_file_missing_file(self, tmp_path):
+        """File does not exist → error."""
+        edit_file = make_edit_file_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
+        target = tmp_path / "missing.txt"
+
+        result = await edit_file(str(target), "old", "new")
+
+        assert "File not found" in result
 
 
 class TestWriteFile:
