@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ToastProvider } from './hooks/useToast';
 import ToastContainer from './components/ToastContainer';
@@ -82,7 +82,7 @@ function AppContent() {
             <Route path="/profile" element={<Profile />} />
             <Route path="/knowledge" element={<Knowledge />} />
             <Route path="/sessions/:id" element={<SessionDetail />} />
-            <Route path="/admin/users" element={<AdminUsers />} />
+            <Route path="/admin/users" element={isAdmin ? <AdminUsers /> : <Navigate to="/" replace />} />
             <Route path="/errors" element={<ErrorDashboard />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
