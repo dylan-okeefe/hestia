@@ -28,6 +28,14 @@ function getHeaders(extra: Record<string, string> = {}): Record<string, string> 
   return headers;
 }
 
+async function checkOk(res: Response): Promise<Response> {
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`HTTP ${res.status}: ${text}`);
+  }
+  return res;
+}
+
 async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
   const res = await fetch(input, {
     ...init,
@@ -98,23 +106,29 @@ export async function fetchProposals(status = 'pending') {
 }
 
 export async function acceptProposal(id: string, note?: string) {
-  return apiFetch(`${API_BASE}/proposals/${id}/accept`, {
+  const res = await apiFetch(`${API_BASE}/proposals/${id}/accept`, {
     method: 'POST',
     body: JSON.stringify({ note }),
     headers: { 'Content-Type': 'application/json' },
   });
+  await checkOk(res);
+  return res.json();
 }
 
 export async function rejectProposal(id: string, note: string) {
-  return apiFetch(`${API_BASE}/proposals/${id}/reject`, {
+  const res = await apiFetch(`${API_BASE}/proposals/${id}/reject`, {
     method: 'POST',
     body: JSON.stringify({ note }),
     headers: { 'Content-Type': 'application/json' },
   });
+  await checkOk(res);
+  return res.json();
 }
 
 export async function deferProposal(id: string) {
-  return apiFetch(`${API_BASE}/proposals/${id}/defer`, { method: 'POST' });
+  const res = await apiFetch(`${API_BASE}/proposals/${id}/defer`, { method: 'POST' });
+  await checkOk(res);
+  return res.json();
 }
 
 export async function fetchStyleProfile(platform: string, user: string) {
@@ -124,9 +138,11 @@ export async function fetchStyleProfile(platform: string, user: string) {
 }
 
 export async function deleteStyleMetric(platform: string, user: string, metric: string) {
-  return apiFetch(`${API_BASE}/style/${encodeURIComponent(platform)}/${encodeURIComponent(user)}/${encodeURIComponent(metric)}`, {
+  const res = await apiFetch(`${API_BASE}/style/${encodeURIComponent(platform)}/${encodeURIComponent(user)}/${encodeURIComponent(metric)}`, {
     method: 'DELETE',
   });
+  await checkOk(res);
+  return res.json();
 }
 
 export async function fetchSchedulerTasks() {
@@ -162,7 +178,9 @@ export async function deleteTask(id: string) {
 }
 
 export async function runTaskNow(id: string) {
-  return apiFetch(`${API_BASE}/scheduler/tasks/${id}/run`, { method: 'POST' });
+  const res = await apiFetch(`${API_BASE}/scheduler/tasks/${id}/run`, { method: 'POST' });
+  await checkOk(res);
+  return res.json();
 }
 
 export async function runDoctor() {
@@ -199,11 +217,13 @@ export async function fetchConfigSchema() {
 }
 
 export async function saveConfig(config: object) {
-  return apiFetch(`${API_BASE}/config`, {
+  const res = await apiFetch(`${API_BASE}/config`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(config),
   });
+  await checkOk(res);
+  return res.json();
 }
 
 export interface Workflow {
