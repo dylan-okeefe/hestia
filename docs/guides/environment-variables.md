@@ -1,13 +1,15 @@
 # Environment Variables Reference
 
-Hestia reads configuration from three layers (highest precedence first):
+Hestia configuration is loaded from **`config.py`** by default.  CLI flags
+(`--config`, `--db-path`, `--inference-url`, etc.) override individual fields
+after the file is loaded.
 
-1. **CLI flags** (e.g. `--config`, `--new-session`)
-2. **Environment variables** (this document)
-3. **`config.py`** fields
-
-Most config classes support `from_env()` — fields are mapped automatically
-using the pattern `HESTIA_{PREFIX}_{FIELD_NAME_UPPER}`.
+Most config classes also expose a `from_env()` classmethod that builds an
+instance from environment variables using the pattern
+`HESTIA_{PREFIX}_{FIELD_NAME_UPPER}`.  This is **not** called automatically
+by the CLI startup path (`cli.py` uses `from_file()` / `default()`), so env
+vars are only active when you explicitly invoke `from_env()` in your own
+entry-point or wrapper script.
 
 ## Special / Hand-picked Variables
 

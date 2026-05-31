@@ -12,7 +12,7 @@ references the old one rather than editing history.
 | [ADR-004](adr/ADR-004-persistence-is-sqlalchemy-core-async-with-sqlite-default-postgres-via-url-override.md) | Persistence is SQLAlchemy Core async with SQLite default, Postgres via URL override | Accepted |
 | [ADR-005](adr/ADR-005-subagents-run-in-the-same-process.md) | Subagents run in the same process | Accepted |
 | [ADR-006](adr/ADR-006-search-is-fts-only-at-first.md) | Search is FTS-only at first | Accepted |
-| [ADR-007](adr/ADR-007-no-web-ui-in-v1.md) | No web UI in v1 | Accepted |
+| [ADR-007](adr/ADR-007-no-web-ui-in-v1.md) | No web UI in v1 | Superseded |
 | [ADR-008](adr/ADR-008-license-is-apache-2-0.md) | License is Apache 2.0 | Accepted |
 | [ADR-009](adr/ADR-009-count-request-correction-factor-measured-but-high-variance-superseded.md) | count_request correction factor measured but high variance [SUPERSEDED] | Superseded |
 | [ADR-010](adr/ADR-010-handoff-docs-live-in-docs-handoffs-inside-the-repo.md) | Handoff docs live in `docs/handoffs/` inside the repo | Accepted |
@@ -39,6 +39,12 @@ references the old one rather than editing history.
 | [ADR-031](adr/ADR-031-capability-labels-and-session-aware-tool-filtering.md) | Capability labels and session-aware tool filtering | Accepted |
 | [ADR-032](adr/ADR-032-typed-failure-bundles.md) | Typed failure bundles | Accepted |
 | [ADR-033](adr/ADR-033-matrix-adapter-with-room-based-session-mapping-and-allowlist.md) | Matrix adapter with room-based session mapping and allowlist | Accepted |
+| [ADR-034](adr/ADR-034-web-dashboard-authentication-via-chat-2fa.md) | Web Dashboard Authentication via Chat 2FA | Accepted |
+| [ADR-035](adr/ADR-035-in-memory-cache-for-lightweight-api-results.md) | In-Memory Cache for Lightweight API Results | Accepted |
+| [ADR-036](adr/ADR-036-config-schema-endpoint-for-ui-driven-form-rendering.md) | Config Schema Endpoint for UI-Driven Form Rendering | Accepted |
+| [ADR-037](adr/ADR-037-openui-deferred-for-l169-frontend.md) | OpenUI deferred for L169 frontend pages | Accepted |
+| [ADR-038](adr/ADR-038-user-registry-schema.md) | User registry uses four-table schema with separate rooms | Accepted |
+| [ADR-039](adr/ADR-039-group-chat-sender-resolution.md) | Group chats resolve individual sender separately from room | Accepted |
 
 ---
 
