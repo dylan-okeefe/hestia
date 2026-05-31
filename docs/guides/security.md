@@ -2,7 +2,7 @@
 
 ## Prompt-Injection Scanner
 
-Hestia includes a lightweight prompt-injection scanner that inspects tool results before they are added to the model context. The scanner is **non-blocking by design** — when it detects suspicious content it annotates the result rather than refusing it.
+Hestia includes a lightweight prompt-injection scanner that inspects tool results before they are added to the model context. The scanner is **non-blocking by design** — when it detects suspicious content it annotates the result rather than refusing it. It is a heuristic defense-in-depth measure, not a guarantee: payloads hidden in JSON, base64, or other structured encodings can bypass detection because the entropy check is skipped for structured content, and regex patterns can be evaded with trivial obfuscation.
 
 ### What the scanner checks for
 
@@ -14,7 +14,7 @@ The scanner runs two heuristics over every tool result:
    - `role-prefix` — The words `system:` or `assistant:` at the start of a line (gated to content ≥ 40 characters to avoid false positives in YAML / JSON config snippets)
    - `chat-template-token` — Chat-template control tokens such as `<|im_start|>`, `<|im_end|>`, `<|system|>`, `<|assistant|>`, and `<|user|>`
 
-2. **Entropy heuristic** — For content longer than 500 bytes, the scanner computes the Shannon entropy of the UTF-8 byte stream. If the entropy exceeds the configured `entropy_threshold` (default 5.5), the content is flagged as "high-entropy". The check is skipped for obviously structured data (JSON, base64 blobs, CSS/HTML) so that legitimate tool outputs are not falsely annotated.
+2. **Entropy heuristic** — For content longer than 500 bytes, the scanner computes the Shannon entropy of the UTF-8 byte stream. If the entropy exceeds the configured `entropy_threshold` (default 5.5), the content is flagged as "high-entropy". The check is skipped for obviously structured data (JSON, base64 blobs, CSS/HTML) so that legitimate tool outputs are not falsely annotated. **This means encoded or structured payloads can dodge entropy detection entirely.**
 
 Empirical entropy baselines:
 
