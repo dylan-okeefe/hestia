@@ -41,6 +41,7 @@ from hestia.tools.builtin.proposal_tools import (
 )
 from hestia.tools.builtin.read_artifact import make_read_artifact_tool
 from hestia.tools.builtin.read_file import make_read_file_tool
+from hestia.tools.builtin.rollback import make_rollback_turn_tool
 from hestia.tools.builtin.scheduler_tools import (
     make_create_scheduled_task_tool,
     make_delete_scheduled_task_tool,
@@ -96,6 +97,7 @@ __all__ = [
     "make_email_search_and_read_tool",
     "make_email_tools",
     "make_append_to_file_tool",
+    "make_rollback_turn_tool",
     "make_write_file_tool",
     "make_edit_file_tool",
     "make_glob_tool",

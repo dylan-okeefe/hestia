@@ -2,6 +2,7 @@
 
 import logging
 import uuid
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from hestia.context.builder import ContextBuilder
@@ -39,8 +40,10 @@ from hestia.runtime_context import (
     current_platform_user,
     current_session_id,
     current_trace_store,
+    current_turn_id,
 )
 from hestia.security import InjectionScanner
+from hestia.tools.checkpoint import CheckpointManager
 from hestia.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
@@ -77,6 +80,9 @@ class Orchestrator:
         rate_limiter: SessionRateLimiter | None = None,
         stream: bool = False,
         event_bus: "EventBus | None" = None,
+        checkpoint_manager: CheckpointManager | None = None,
+        checkpoint_scope: list[str] | None = None,
+        auto_rollback_on_failure: bool = False,
     ):
         """Initialize the orchestrator."""
         self._inference = inference
@@ -98,6 +104,9 @@ class Orchestrator:
         self._rate_limiter = rate_limiter
         self._stream = stream
         self._event_bus = event_bus
+        self._checkpoint_manager = checkpoint_manager
+        self._checkpoint_scope = checkpoint_scope
+        self._auto_rollback_on_failure = auto_rollback_on_failure
 
         self._assembly = TurnAssembly(
             context_builder=context_builder,
@@ -131,6 +140,8 @@ class Orchestrator:
             handoff_summarizer=handoff_summarizer,
             policy=policy,
             session_store=session_store,
+            checkpoint_manager=checkpoint_manager,
+            auto_rollback_on_failure=auto_rollback_on_failure,
         )
 
     async def recover_stale_turns(self) -> int:
@@ -199,10 +210,17 @@ class Orchestrator:
         trace_token: Any = None
         if self._trace_store is not None:
             trace_token = current_trace_store.set(self._trace_store)
+        turn_token = current_turn_id.set("")
 
         try:
             turn = self._create_turn(session.id, user_message)
             await self._persist_turn(turn)
+            current_turn_id.set(turn.id)
+
+            if self._checkpoint_manager is not None:
+                scope = self._checkpoint_scope or [str(Path.cwd())]
+                self._checkpoint_manager.create(turn.id, scope)
+
             await self._set_typing(platform, platform_user, True)
 
             turn_start_time = utcnow()
@@ -270,6 +288,7 @@ class Orchestrator:
             current_platform_user.reset(platform_user_token)
             if trace_token is not None:
                 current_trace_store.reset(trace_token)
+            current_turn_id.reset(turn_token)
 
     def _create_turn(self, session_id: str, user_message: Message) -> Turn:
         return Turn(

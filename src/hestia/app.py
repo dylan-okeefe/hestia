@@ -70,6 +70,7 @@ from hestia.tools.builtin import (
     make_reject_proposal_tool,
     make_reset_style_metric_tool,
     make_reset_style_profile_tool,
+    make_rollback_turn_tool,
     make_save_memory_tool,
     make_search_memory_tool,
     make_show_proposal_tool,
@@ -79,6 +80,7 @@ from hestia.tools.builtin import (
     make_write_file_tool,
     search_web,
 )
+from hestia.tools.checkpoint import CheckpointManager
 from hestia.tools.registry import ToolRegistry
 from hestia.workflows.execution_store import ExecutionStore
 from hestia.workflows.store import WorkflowStore
@@ -163,6 +165,7 @@ class AppContext:
         self.trigger_registry: Any = None
         self.epoch_compiler = MemoryEpochCompiler(self.memory_store, max_tokens=500)
         self.tool_registry = ToolRegistry(self.artifact_store)
+        self.checkpoint_manager = CheckpointManager()
 
         # Eager feature subsystems (lightweight; always available for status queries)
         self.proposal_store = ProposalStore(self.db)
@@ -314,6 +317,12 @@ class AppContext:
 
     def make_orchestrator(self) -> Orchestrator:
         """Create an Orchestrator with the current app context."""
+        checkpoint_manager: CheckpointManager | None = None
+        if self.config.trust.checkpoint_on_edit:
+            checkpoint_manager = self.checkpoint_manager
+
+        checkpoint_scope = self.config.storage.checkpoint_scope or None
+
         return Orchestrator(
             inference=self.inference,
             session_store=self.session_store,
@@ -334,6 +343,9 @@ class AppContext:
             rate_limiter=self.rate_limiter,
             stream=self.config.inference.stream,
             event_bus=self.event_bus,
+            checkpoint_manager=checkpoint_manager,
+            checkpoint_scope=checkpoint_scope,
+            auto_rollback_on_failure=self.config.trust.auto_rollback_on_failure,
         )
 
     def register_tools(self) -> None:
@@ -355,6 +367,7 @@ class AppContext:
         reg.register(make_edit_file_tool(cfg.storage))
         reg.register(make_glob_tool(cfg.storage))
         reg.register(make_grep_tool(cfg.storage))
+        reg.register(make_rollback_turn_tool(self.checkpoint_manager))
         reg.register(make_search_memory_tool(self.memory_store))
         reg.register(make_save_memory_tool(self.memory_store))
         reg.register(make_list_memories_tool(self.memory_store))

@@ -22,6 +22,9 @@ current_platform_user: ContextVar[str | None] = ContextVar("current_platform_use
 # Current session ID set by Orchestrator.process_turn for tool egress logging
 current_session_id: ContextVar[str | None] = ContextVar("current_session_id", default=None)
 
+# Current turn ID set by Orchestrator.process_turn for checkpoint rollback
+current_turn_id: ContextVar[str | None] = ContextVar("current_turn_id", default=None)
+
 # Current TraceStore set by Orchestrator.process_turn for tool egress logging
 current_trace_store: ContextVar[TraceStore | None] = ContextVar(
     "current_trace_store", default=None
