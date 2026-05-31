@@ -6,11 +6,12 @@ import json
 import logging
 import re
 import secrets
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 import httpx
 
+from hestia.core.json_repair import repair_json
 from hestia.core.serialization import message_to_dict
 from hestia.core.types import ChatResponse, Message, StreamDelta, ToolCall, ToolSchema
 from hestia.errors import InferenceServerError, InferenceTimeoutError
@@ -53,7 +54,13 @@ def _parse_json_tool_calls(text: str) -> list[ToolCall]:
         try:
             data = json.loads(payload)
         except json.JSONDecodeError:
-            continue
+            repaired = repair_json(payload)
+            if repaired is None:
+                continue
+            try:
+                data = json.loads(repaired)
+            except json.JSONDecodeError:
+                continue
 
         name = data.get("name") or data.get("function", {}).get("name")
         arguments = data.get("arguments") or data.get("function", {}).get("arguments")
@@ -178,23 +185,54 @@ def _parse_glm_xml_tool_calls(text: str) -> list[ToolCall]:
     return tool_calls
 
 
+def _parse_bare_json_tool_calls(text: str) -> list[ToolCall]:
+    """Format 4: bare JSON objects with name and arguments keys."""
+    tool_calls: list[ToolCall] = []
+    for match in re.finditer(r"\{\s*[\'\"]?name[\'\"]?\s*:", text):
+        start = match.start()
+        payload = repair_json(text[start:])
+        if payload is None:
+            continue
+        try:
+            data = json.loads(payload)
+        except json.JSONDecodeError:
+            continue
+
+        name = data.get("name") or data.get("function", {}).get("name")
+        arguments = data.get("arguments") or data.get("function", {}).get("arguments")
+        if name and isinstance(arguments, dict):
+            tool_calls.append(
+                ToolCall(
+                    id="tc_bare_" + secrets.token_hex(8),
+                    name=name,
+                    arguments=arguments,
+                )
+            )
+    return tool_calls
+
+
 def _extract_tool_calls_from_text(text: str) -> list[ToolCall]:
-    """Parse XML-style <tool_call> blocks from model text/reasoning.
+    """Parse XML-style <tool_call> blocks and bare JSON objects from model text/reasoning.
 
     Qwen3.5 in reasoning mode occasionally emits tool calls inside its
     <think> block (which lands in ``reasoning_content``) but fails to
     output the structured ``tool_calls`` JSON. This fallback extracts
     them so the turn can continue instead of appearing to hang.
 
-    Supports three formats:
+    Supports four formats:
     1. JSON object: ``<tool_call>{"name": "...", "arguments": {...}}</tool_call>``
     2. Ad-hoc XML: ``<tool_call>\n<function=name>\n<parameter=key>\nvalue\n...``
     3. GLM XML: ``<tool_call>func_name\n<arg_key>k</arg_key>\n<arg_value>v</arg_value>\n...``
+    4. Bare JSON: ``{"name": "...", "arguments": {...}}`` (outside XML tags)
     """
-    if "<tool_call>" not in text:
-        return []
+    parsers: list[Callable[[str], list[ToolCall]]] = []
+    if "<tool_call>" in text:
+        parsers.extend(
+            [_parse_json_tool_calls, _parse_adhoc_xml_tool_calls, _parse_glm_xml_tool_calls]
+        )
+    parsers.append(_parse_bare_json_tool_calls)
 
-    for parser in (_parse_json_tool_calls, _parse_adhoc_xml_tool_calls, _parse_glm_xml_tool_calls):
+    for parser in parsers:
         results = parser(text)
         if results:
             return results
@@ -442,14 +480,21 @@ class InferenceClient:
             try:
                 arguments = json.loads(arguments_raw) if arguments_raw is not None else {}
             except json.JSONDecodeError as exc:
-                # Gracefully skip malformed tool calls instead of crashing the turn.
-                # Log for debugging; model may retry in next iteration.
-                logger.warning(
-                    "Malformed tool_call arguments for %r: %s",
-                    name,
-                    exc,
-                )
-                continue
+                repaired = repair_json(arguments_raw) if arguments_raw is not None else None
+                if repaired is not None:
+                    logger.info(
+                        "Repaired malformed tool_call arguments for %r", name
+                    )
+                    arguments = json.loads(repaired)
+                else:
+                    # Gracefully skip malformed tool calls instead of crashing the turn.
+                    # Log for debugging; model may retry in next iteration.
+                    logger.warning(
+                        "Malformed tool_call arguments for %r: %s",
+                        name,
+                        exc,
+                    )
+                    continue
             if not isinstance(arguments, dict):
                 logger.warning(
                     "tool_call arguments for %r are not a dict: %s",
