@@ -4,7 +4,7 @@ import pytest
 
 from hestia.memory.store import MemoryStore
 from hestia.persistence.db import Database
-from hestia.runtime_context import current_session_id
+from hestia.runtime_context import current_platform, current_platform_user, current_session_id
 from hestia.tools.builtin.memory_tools import (
     make_list_memories_tool,
     make_save_memory_tool,
@@ -26,7 +26,13 @@ class TestSearchMemoryTool:
         save_tool = make_save_memory_tool(store)
         list_tool = make_list_memories_tool(store)
 
+        platform_token = current_platform.set("test")
+        platform_user_token = current_platform_user.set("test_user")
+
         yield store, search_tool, save_tool, list_tool
+
+        current_platform.reset(platform_token)
+        current_platform_user.reset(platform_user_token)
         await db.close()
 
     @pytest.mark.asyncio

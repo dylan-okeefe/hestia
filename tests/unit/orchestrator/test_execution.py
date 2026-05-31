@@ -90,11 +90,13 @@ async def test_max_iterations_error_raised(make_chat_response):
     store = MagicMock()
     store.append_message = AsyncMock()
 
+    builder = MagicMock()
+    builder.build = AsyncMock(return_value=MagicMock(messages=[]))
     execution = TurnExecution(
         tool_registry=MagicMock(),
         inference_client=MagicMock(),
         policy=MagicMock(),
-        context_builder=MagicMock(),
+        context_builder=builder,
         session_store=store,
         max_iterations=2,
     )

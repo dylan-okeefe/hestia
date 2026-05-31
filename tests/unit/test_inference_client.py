@@ -253,9 +253,9 @@ class TestChatMalformedOutput:
 
     @pytest.mark.asyncio
     async def test_malformed_json_args_skipped_with_warning(
-        self, client: InferenceClient, mock_chat_response: Any, capsys: Any
+        self, client: InferenceClient, mock_chat_response: Any, caplog: Any
     ) -> None:
-        """Malformed JSON arguments are skipped and a warning is printed."""
+        """Malformed JSON arguments are skipped and a warning is logged."""
         mock_chat_response(
             client,
             {
@@ -282,14 +282,13 @@ class TestChatMalformedOutput:
         messages = [Message(role="user", content="Hello")]
         response = await client.chat(messages)
         assert response.tool_calls == []
-        captured = capsys.readouterr()
-        assert "Malformed tool_call arguments" in captured.out
+        assert any("Malformed tool_call arguments" in r.message for r in caplog.records)
 
     @pytest.mark.asyncio
     async def test_non_dict_args_skipped_with_warning(
-        self, client: InferenceClient, mock_chat_response: Any, capsys: Any
+        self, client: InferenceClient, mock_chat_response: Any, caplog: Any
     ) -> None:
-        """Non-dict arguments are skipped and a warning is printed."""
+        """Non-dict arguments are skipped and a warning is logged."""
         mock_chat_response(
             client,
             {
@@ -316,8 +315,7 @@ class TestChatMalformedOutput:
         messages = [Message(role="user", content="Hello")]
         response = await client.chat(messages)
         assert response.tool_calls == []
-        captured = capsys.readouterr()
-        assert "not a dict" in captured.out
+        assert any("not a dict" in r.message for r in caplog.records)
 
     @pytest.mark.asyncio
     async def test_call_tool_unwrap_logic(
