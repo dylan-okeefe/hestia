@@ -51,17 +51,17 @@ class TestBrowserLogin:
     @pytest.mark.asyncio
     async def test_import_error_when_playwright_not_installed(self):
         """ImportError returns installation instructions."""
-        # Ensure playwright is not available in sys.modules
-        with patch.dict(sys.modules, {}, clear=False):
-            for key in list(sys.modules):
-                if key.startswith("playwright"):
-                    del sys.modules[key]
+        import builtins
 
-            import importlib
+        original_import = builtins.__import__
 
-            login_module = importlib.import_module("hestia.tools.builtin.browser_login")
-            importlib.reload(login_module)
-            result = await login_module.browser_login("https://example.com/login")
+        def _block_playwright(name: str, *args: object, **kwargs: object) -> object:
+            if name == "playwright.async_api":
+                raise ImportError("No module named 'playwright.async_api'")
+            return original_import(name, *args, **kwargs)
+
+        with patch.object(builtins, "__import__", _block_playwright):
+            result = await browser_login("https://example.com/login")
         assert "Playwright is not installed" in result
 
     @pytest.mark.asyncio
@@ -123,16 +123,17 @@ class TestBrowserGet:
     @pytest.mark.asyncio
     async def test_import_error_when_playwright_not_installed(self):
         """ImportError returns installation instructions."""
-        with patch.dict(sys.modules, {}, clear=False):
-            for key in list(sys.modules):
-                if key.startswith("playwright"):
-                    del sys.modules[key]
+        import builtins
 
-            import importlib
+        original_import = builtins.__import__
 
-            get_module = importlib.import_module("hestia.tools.builtin.browser_get")
-            importlib.reload(get_module)
-            result = await get_module.browser_get("https://example.com/page")
+        def _block_playwright(name: str, *args: object, **kwargs: object) -> object:
+            if name == "playwright.async_api":
+                raise ImportError("No module named 'playwright.async_api'")
+            return original_import(name, *args, **kwargs)
+
+        with patch.object(builtins, "__import__", _block_playwright):
+            result = await browser_get("https://example.com/page")
         assert "Playwright is not installed" in result
 
     @pytest.mark.asyncio
