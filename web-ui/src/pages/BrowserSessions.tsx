@@ -78,8 +78,8 @@ export default function BrowserSessions() {
   };
 
   const handleReauth = (session: BrowserSession) => {
-    const url = encodeURIComponent(session.health_check_url);
-    navigate(`/browser-sessions/stream?domain=${encodeURIComponent(session.domain)}&url=${url}`);
+    const targetUrl = session.health_check_url || `https://${session.domain}/`;
+    navigate(`/browser-sessions/stream?domain=${encodeURIComponent(session.domain)}&url=${encodeURIComponent(targetUrl)}`);
   };
 
   return (
