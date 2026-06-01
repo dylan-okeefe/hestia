@@ -13,6 +13,7 @@ from hestia.persistence.trace_store import TraceStore
 from hestia.persistence.users import UserStore
 from hestia.reflection.store import ProposalStore
 from hestia.style.store import StyleProfileStore
+from hestia.tools.browser.session_store import BrowserSessionStore
 from hestia.web.auth import AuthManager
 from hestia.workflows.execution_store import ExecutionStore
 from hestia.workflows.store import WorkflowStore
@@ -36,6 +37,7 @@ class WebContext:
     error_resolution_store: ErrorResolutionStore | None = field(default=None)
     auth_manager: AuthManager | None = field(default=None)
     trigger_registry: TriggerRegistry | None = field(default=None)
+    browser_session_store: BrowserSessionStore | None = field(default=None)
 
 
 # Global singleton — adequate for single-worker uvicorn but will break

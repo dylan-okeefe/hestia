@@ -51,6 +51,7 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
             tasks.append(asyncio.create_task(run_matrix(app, config, adapter=matrix_adapter)))
 
         if config.web.enabled:
+            from hestia.tools.browser.session_store import BrowserSessionStore
             from hestia.web.api import create_web_app
             from hestia.web.auth import AuthManager, add_auth_middleware
             from hestia.web.context import WebContext, set_web_context
@@ -74,6 +75,7 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
                     auth_manager=auth_manager,
                     trigger_registry=app.trigger_registry,
                     user_store=app.user_store,
+                    browser_session_store=BrowserSessionStore(),
                 )
             )
             add_auth_middleware(web_app, auth_manager, config.web)
