@@ -143,7 +143,7 @@ config = HestiaConfig(
     # Web search disabled (no Tavily key in .env). To enable:
     #   web_search=WebSearchConfig(provider="tavily", api_key=os.environ["TAVILY_API_KEY"])
     web_search=WebSearchConfig(),
-    web=WebConfig(enabled=True, auth_enabled=True),
+    web=WebConfig(enabled=True, auth_enabled=True, host="0.0.0.0"),
     # Injection scanner on, default threshold 5.5. Egress audit logs every
     # outbound network call to runtime-data/logs/egress.jsonl.
     security=SecurityConfig(),

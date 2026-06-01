@@ -44,6 +44,7 @@ export default function BrowserStream() {
   const stopMut = useApiMutation(stopBrowserStream);
 
   const startTimeRef = useRef<number | null>(null);
+  const autoStartedRef = useRef(false);
 
   const clearTimer = useCallback(() => {
     if (timerRef.current) {
@@ -155,6 +156,13 @@ export default function BrowserStream() {
       clearTimer();
     };
   }, [closeWs, clearTimer]);
+
+  useEffect(() => {
+    if (!session && url.trim() && !autoStartedRef.current && !startMut.isPending) {
+      autoStartedRef.current = true;
+      handleStart();
+    }
+  }, [session, url, startMut.isPending]);
 
   useEffect(() => {
     if (timedOut) {
