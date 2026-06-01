@@ -162,7 +162,7 @@ export default function BrowserSessions() {
                         Check Now
                       </button>
                       <button onClick={() => handleReauth(s)}>
-                        Re-authenticate
+                        Authenticate
                       </button>
                       <button
                         onClick={() => handleDelete(s.domain)}
