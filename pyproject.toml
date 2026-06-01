@@ -36,6 +36,7 @@ browser = [
 web = [
     "fastapi>=0.115.0",
     "uvicorn>=0.34.0",
+    "websockets>=14.0",
 ]
 
 [project.scripts]
@@ -55,6 +56,7 @@ dev = [
     "ruff>=0.15.10",
     "types-croniter>=6.2.2.20260408",
     "uvicorn>=0.46.0",
+    "websockets>=14.0",
 ]
 
 [tool.ruff]
