@@ -140,6 +140,7 @@ export default function BrowserStream() {
   };
 
   const handleDone = async () => {
+    const domain = session?.domain;
     try {
       await stopMut.mutateAsync(undefined as unknown as string);
       addToast({ message: 'Session saved', type: 'success', duration: 3000 });
@@ -148,7 +149,7 @@ export default function BrowserStream() {
     } finally {
       closeWs();
       clearTimer();
-      navigate('/browser-sessions');
+      navigate('/browser-sessions', { state: domain ? { checkedDomain: domain } : undefined });
     }
   };
 

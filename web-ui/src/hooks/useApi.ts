@@ -8,11 +8,7 @@ export interface UseApiQueryResult<T> {
   refetch: () => void;
 }
 
-export function useApiQuery<T>(
-  key: string,
-  fetcher: () => Promise<T>,
-  refetchIntervalMs?: number
-): UseApiQueryResult<T> {
+export function useApiQuery<T>(key: string, fetcher: () => Promise<T>): UseApiQueryResult<T> {
   const [data, setData] = useState<T | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(true);
   const [isError, setIsError] = useState(false);
@@ -40,12 +36,6 @@ export function useApiQuery<T>(
   useEffect(() => {
     execute();
   }, [execute]);
-
-  useEffect(() => {
-    if (!refetchIntervalMs || refetchIntervalMs <= 0) return;
-    const id = setInterval(execute, refetchIntervalMs);
-    return () => clearInterval(id);
-  }, [execute, refetchIntervalMs]);
 
   const refetch = useCallback(() => {
     execute();
