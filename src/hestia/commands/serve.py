@@ -54,12 +54,14 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
             from hestia.tools.browser.session_store import BrowserSessionStore
             from hestia.web.api import create_web_app
             from hestia.web.auth import AuthManager, add_auth_middleware
+            from hestia.web.browser_stream import SessionStreamManager
             from hestia.web.context import WebContext, set_web_context
 
             web_app = create_web_app()
             auth_manager = AuthManager(
                 adapters=adapters, config=config.web, user_store=app.user_store
             )
+            browser_session_store = BrowserSessionStore()
             set_web_context(
                 WebContext(
                     session_store=app.session_store,
@@ -75,7 +77,8 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
                     auth_manager=auth_manager,
                     trigger_registry=app.trigger_registry,
                     user_store=app.user_store,
-                    browser_session_store=BrowserSessionStore(),
+                    browser_session_store=browser_session_store,
+                    stream_manager=SessionStreamManager(browser_session_store),
                 )
             )
             add_auth_middleware(web_app, auth_manager, config.web)

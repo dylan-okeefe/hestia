@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 from hestia.tools.browser.session_store import BrowserSessionStore
+from hestia.web.context import WebContext, get_web_context
 
 router = APIRouter()
+_CTX_DEP = Depends(get_web_context)
 
 
 class BrowserSessionOut(BaseModel):
@@ -49,9 +52,13 @@ def _session_to_out(
 
 
 @router.get("/browser-sessions")
-async def list_browser_sessions() -> dict[str, Any]:
+async def list_browser_sessions(ctx: WebContext = _CTX_DEP) -> dict[str, Any]:
     """List all browser sessions with metadata."""
-    store = BrowserSessionStore()
+    store = ctx.browser_session_store
+    if store is None:
+        raise HTTPException(
+            status_code=503, detail="Browser session store not available"
+        )
     sessions = store.list_sessions()
     return {
         "sessions": [
@@ -61,18 +68,126 @@ async def list_browser_sessions() -> dict[str, Any]:
 
 
 @router.delete("/browser-sessions/{domain}")
-async def delete_browser_session(domain: str) -> None:
+async def delete_browser_session(
+    domain: str, ctx: WebContext = _CTX_DEP
+) -> None:
     """Delete a browser session for the given domain."""
-    store = BrowserSessionStore()
+    store = ctx.browser_session_store
+    if store is None:
+        raise HTTPException(
+            status_code=503, detail="Browser session store not available"
+        )
     store.clear(domain)
 
 
 @router.post("/browser-sessions/{domain}/check")
-async def check_browser_session(domain: str) -> dict[str, str]:
+async def check_browser_session(
+    domain: str, ctx: WebContext = _CTX_DEP
+) -> dict[str, str]:
     """Run a health check on the browser session for the given domain."""
-    store = BrowserSessionStore()
+    store = ctx.browser_session_store
+    if store is None:
+        raise HTTPException(
+            status_code=503, detail="Browser session store not available"
+        )
     try:
         status = await store.check_health(domain)
     except ValueError as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc
     return {"domain": domain, "status": status}
+
+
+class StartBrowserSessionRequest(BaseModel):
+    """Request body to start a browser streaming session."""
+
+    url: str
+
+
+@router.post("/browser-sessions/start")
+async def start_browser_session(
+    body: StartBrowserSessionRequest, ctx: WebContext = _CTX_DEP
+) -> dict[str, Any]:
+    """Start a new browser streaming session."""
+    manager = ctx.stream_manager
+    if manager is None:
+        raise HTTPException(
+            status_code=503, detail="Stream manager not available"
+        )
+    if manager.is_active():
+        active_id = manager.get_session_id()
+        raise HTTPException(
+            status_code=409,
+            detail={"error": "Session already active", "session_id": active_id},
+        )
+
+    session_id = await manager.start(body.url)
+    domain = manager._session.domain if manager._session else ""
+    return {
+        "session_id": session_id,
+        "domain": domain,
+        "ws_url": f"/api/browser-session/stream/{session_id}",
+    }
+
+
+@router.post("/browser-sessions/stop")
+async def stop_browser_session(
+    ctx: WebContext = _CTX_DEP,
+) -> dict[str, Any]:
+    """Stop the active browser streaming session."""
+    manager = ctx.stream_manager
+    if manager is None:
+        raise HTTPException(
+            status_code=503, detail="Stream manager not available"
+        )
+    if not manager.is_active():
+        raise HTTPException(status_code=404, detail="No active session")
+
+    session_id = manager.get_session_id()
+    if session_id is None:
+        raise HTTPException(status_code=404, detail="No active session")
+    summary = await manager.stop(session_id)
+    return summary
+
+
+@router.websocket("/browser-session/stream/{session_id}")
+async def browser_stream_ws(
+    websocket: WebSocket, session_id: str
+) -> None:
+    """WebSocket endpoint for bidirectional browser stream."""
+    # Auth check before accept
+    auth_header = websocket.headers.get("Authorization", "")
+    token: str | None = None
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:]
+    else:
+        token = websocket.query_params.get("token")
+
+    ctx = get_web_context()
+    if ctx.auth_manager is not None:
+        status, _ = ctx.auth_manager.validate_token(token or "")
+        if status != "valid":
+            await websocket.close(
+                code=1008, reason="Authentication required"
+            )
+            return
+
+    manager = ctx.stream_manager
+    if manager is None or manager.get_session_id() != session_id:
+        await websocket.close(code=4004, reason="Session not found")
+        return
+
+    await websocket.accept()
+
+    session = manager._session
+    assert session is not None
+    session.ws_clients.add(websocket)
+
+    try:
+        while True:
+            message = await websocket.receive_text()
+            event = json.loads(message)
+            await manager.forward_input(session_id, event)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        session.ws_clients.discard(websocket)
