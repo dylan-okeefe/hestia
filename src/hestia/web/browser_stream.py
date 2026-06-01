@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 
 from fastapi import WebSocket
 
-from hestia.tools.browser.session_store import BrowserSessionStore
+from hestia.tools.browser.session_store import BrowserSessionStore, normalize_domain
 
 logger = logging.getLogger(__name__)
 
@@ -59,9 +59,7 @@ class SessionStreamManager:
                 raise RuntimeError("Session already active")
 
             parsed = urlparse(url)
-            domain = parsed.hostname or ""
-            if domain.startswith("www."):
-                domain = domain[4:]
+            domain = normalize_domain(parsed.hostname or "")
 
             session_id = str(uuid.uuid4())
             playwright = None
