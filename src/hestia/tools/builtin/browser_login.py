@@ -149,4 +149,8 @@ async def browser_login(url: str) -> str:
             pass
 
     cookie_count = len(cookies) if isinstance(cookies, list) else 0
-    return f"Session saved for {domain}. {cookie_count} cookies stored."
+    return (
+        f"Session saved for {domain}. {cookie_count} cookies stored.\n\n"
+        "You can also manage this session (and re-authenticate later) "
+        "from the Browser Sessions page on the Hestia dashboard."
+    )

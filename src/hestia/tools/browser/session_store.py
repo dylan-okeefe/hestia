@@ -2,8 +2,24 @@
 
 import json
 import shutil
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
+
+
+@dataclass
+class SessionMetadata:
+    """Per-domain browser session metadata."""
+
+    domain: str
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    last_saved: datetime | None = None
+    last_used: datetime | None = None
+    last_health_check: datetime | None = None
+    health_status: str = "unknown"  # "healthy", "stale", "expired", "unknown"
+    health_check_url: str = ""
+    cookie_count: int = 0
 
 
 class BrowserSessionStore:
@@ -51,9 +67,74 @@ class BrowserSessionStore:
                 return path
         return None
 
+    def _metadata_path(self, domain: str) -> Path:
+        """Return the path to the metadata.json file for a domain."""
+        return self._session_dir(domain) / "metadata.json"
+
+    def _serialize_datetime(self, dt: datetime | None) -> str | None:
+        """Serialize a datetime to ISO8601 string."""
+        if dt is None:
+            return None
+        return dt.isoformat()
+
+    def _deserialize_datetime(self, value: str | None) -> datetime | None:
+        """Deserialize an ISO8601 string to datetime."""
+        if value is None:
+            return None
+        # Handle both 'Z' suffix and '+00:00'
+        value = value.replace("Z", "+00:00")
+        return datetime.fromisoformat(value)
+
+    def save_metadata(self, domain: str, metadata: SessionMetadata) -> None:
+        """Save metadata to JSON file."""
+        data = asdict(metadata)
+        data["created_at"] = self._serialize_datetime(data["created_at"])
+        data["last_saved"] = self._serialize_datetime(data["last_saved"])
+        data["last_used"] = self._serialize_datetime(data["last_used"])
+        data["last_health_check"] = self._serialize_datetime(data["last_health_check"])
+        path = self._metadata_path(domain)
+        path.write_text(json.dumps(data, indent=2))
+
+    def load_metadata(self, domain: str) -> SessionMetadata | None:
+        """Load metadata from JSON file, returning None if missing."""
+        path = self._metadata_path(domain)
+        if not path.exists():
+            return None
+        try:
+            data = json.loads(path.read_text())
+            return SessionMetadata(
+                domain=data["domain"],
+                created_at=(
+                    self._deserialize_datetime(data.get("created_at"))
+                    or datetime.now(UTC)
+                ),
+                last_saved=self._deserialize_datetime(data.get("last_saved")),
+                last_used=self._deserialize_datetime(data.get("last_used")),
+                last_health_check=self._deserialize_datetime(data.get("last_health_check")),
+                health_status=data.get("health_status", "unknown"),
+                health_check_url=data.get("health_check_url", ""),
+                cookie_count=data.get("cookie_count", 0),
+            )
+        except (json.JSONDecodeError, KeyError, TypeError):
+            return None
+
+    def update_metadata(self, domain: str, **kwargs: Any) -> SessionMetadata | None:
+        """Load metadata, update fields, and save back."""
+        metadata = self.load_metadata(domain)
+        if metadata is None:
+            metadata = SessionMetadata(domain=domain)
+        for key, value in kwargs.items():
+            if hasattr(metadata, key):
+                setattr(metadata, key, value)
+        self.save_metadata(domain, metadata)
+        return metadata
+
     def save_cookies(self, domain: str, cookies: list[dict[str, Any]]) -> None:
         path = self._session_dir(domain) / "cookies.json"
         path.write_text(json.dumps(cookies, indent=2))
+        self.update_metadata(
+            domain, last_saved=datetime.now(UTC), cookie_count=len(cookies)
+        )
 
     def load_cookies(self, domain: str) -> list[dict[str, Any]]:
         # Try exact domain first, then www variant for backward compatibility.
@@ -72,6 +153,10 @@ class BrowserSessionStore:
     def save_storage(self, domain: str, storage_state: dict[str, Any]) -> None:
         path = self._session_dir(domain) / "storage_state.json"
         path.write_text(json.dumps(storage_state, indent=2))
+        cookie_count = len(storage_state.get("cookies", []))
+        self.update_metadata(
+            domain, last_saved=datetime.now(UTC), cookie_count=cookie_count
+        )
 
     def load_storage(self, domain: str) -> dict[str, Any] | None:
         # Try exact domain first, then www variant for backward compatibility.
@@ -90,5 +175,101 @@ class BrowserSessionStore:
     def list_domains(self) -> list[str]:
         return [d.name.replace("_", ".") for d in self.base_dir.iterdir() if d.is_dir()]
 
+    def list_sessions(self) -> list[SessionMetadata]:
+        """Return metadata for all domains that have session data."""
+        sessions = []
+        for d in self.base_dir.iterdir():
+            if d.is_dir() and self._has_session_data(d):
+                domain = d.name.replace("_", ".")
+                metadata = self.load_metadata(domain)
+                if metadata is None:
+                    metadata = SessionMetadata(domain=domain)
+                sessions.append(metadata)
+        return sessions
+
     def clear(self, domain: str) -> None:
         shutil.rmtree(self._session_dir(domain), ignore_errors=True)
+
+    async def check_health(self, domain: str, timeout_seconds: int = 30) -> str:
+        """Run a health check on the stored session for a domain.
+
+        Launches a headless browser with the stored session, navigates to the
+        health_check_url (default https://domain/), and checks whether the
+        session is still authenticated.
+
+        Rate-limited to once per hour per domain.
+
+        Returns "healthy" or "expired".
+        """
+        try:
+            from playwright.async_api import async_playwright
+        except ImportError:
+            return "unknown"
+
+        metadata = self.load_metadata(domain)
+        if metadata is None:
+            metadata = SessionMetadata(domain=domain)
+
+        # Rate limiting: enforce minimum 1 hour between checks
+        if metadata.last_health_check is not None:
+            elapsed = datetime.now(UTC) - metadata.last_health_check
+            if elapsed.total_seconds() < 3600:
+                raise ValueError(
+                    f"Health check for {domain} rate-limited. "
+                    f"Wait {3600 - int(elapsed.total_seconds())}s before next check."
+                )
+
+        health_check_url = metadata.health_check_url or f"https://{domain}/"
+        storage_state = self.load_storage(domain)
+        if storage_state is None:
+            cookies = self.load_cookies(domain)
+            if cookies:
+                storage_state = {"cookies": cookies, "origins": []}
+
+        status = "unknown"
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            context_kwargs: dict[str, Any] = {}
+            if storage_state is not None:
+                context_kwargs["storage_state"] = storage_state
+            context = await browser.new_context(**context_kwargs)
+            page = await context.new_page()
+            try:
+                await page.goto(
+                    health_check_url,
+                    timeout=timeout_seconds * 1000,
+                    wait_until="domcontentloaded",
+                )
+                url = page.url
+                title = await page.title()
+
+                # Detect login redirects
+                login_in_path = any(
+                    path in url.lower()
+                    for path in ("/login", "/signin", "/auth")
+                )
+                login_in_title = any(
+                    phrase in title.lower()
+                    for phrase in ("sign in", "log in", "login")
+                )
+                status = "expired" if login_in_path or login_in_title else "healthy"
+
+                # Save refreshed cookies/storage_state
+                try:
+                    refreshed_storage = await context.storage_state()
+                    self.save_storage(domain, refreshed_storage)
+                    refreshed_cookies = await context.cookies()
+                    self.save_cookies(domain, refreshed_cookies)
+                except Exception:
+                    pass
+
+            except Exception:
+                status = "expired"
+            finally:
+                await context.close()
+                await browser.close()
+
+        metadata.last_health_check = datetime.now(UTC)
+        metadata.health_status = status
+        self.save_metadata(domain, metadata)
+        return status

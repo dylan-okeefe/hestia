@@ -1,6 +1,7 @@
 """HTTP GET via Playwright with persistent session support."""
 
 import logging
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
@@ -88,6 +89,7 @@ async def browser_get(
     domain = _normalize_domain(parsed.hostname)
     store = BrowserSessionStore()
     storage_state = _load_session(store, domain)
+    store.update_metadata(domain, last_used=datetime.now(UTC))
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
@@ -181,7 +183,7 @@ async def browser_get(
 
 async def _extract_text(page: Any) -> str:
     """Extract readable text from the page, stripping scripts/styles/modals."""
-    return await page.evaluate(
+    result = await page.evaluate(
         """() => {
             document.querySelectorAll(
                 "script, style, nav, footer, iframe, noscript, aside, " +
@@ -190,3 +192,4 @@ async def _extract_text(page: Any) -> str:
             return document.body.innerText || "";
         }"""
     )
+    return str(result)

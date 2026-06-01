@@ -6,15 +6,57 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
-<<<<<<< HEAD
-## 2026-05-30 — L195–L199 Complete (v0.12 Review Fixes)
+## 2026-05-31 — L207–L211 Complete (Browser Session Dashboard)
 
-**Outcome:** L195 partially done by runtime agent before session. L196–L199 implemented by subagents and validated.
-=======
+**Outcome:** All 5 loops of the browser session management feature implemented and validated. Replaces RDP-based `browser_login` with a web dashboard flow.
+
+### L207 — Browser Session Metadata, Health Checks, and REST API
+**Branch:** `feature/l207-l211-browser-session-dashboard`
+- Extended `BrowserSessionStore` with `SessionMetadata` tracking
+- Added async `check_health()` using Playwright to detect login redirects
+- Added REST endpoints: list, delete, check
+- `browser_get` updates `last_used` timestamp
+
+**Quality gates:** 28 passed ✅, mypy ✅, ruff ✅
+
+### L208 — Browser Session List Dashboard Page
+- `BrowserSessions.tsx` with status table and action buttons
+- API client functions wired to L207 backend
+- Route and navigation link added
+- Playwright E2E tests: 3 passed
+
+**Quality gates:** TypeScript compiles ✅, inline styles 10 (< 20) ✅, ruff ✅
+
+### L209 — CDP Screencast Browser Streaming Backend
+- `SessionStreamManager` with Playwright CDP `Page.startScreencast`
+- WebSocket endpoint for bidirectional frame streaming + input forwarding
+- REST control endpoints for start/stop
+- Auto-timeout after 10 minutes
+- Mock-based tests: 16 passed
+
+**Quality gates:** 16 passed ✅, mypy ✅, ruff ✅
+
+### L210 — Browser Session Stream Dashboard Page
+- `BrowserStream.tsx` with canvas rendering WebSocket JPEG frames
+- Mouse/keyboard input forwarding scaled to 1920×1080
+- Mobile text-input fallback
+- Timer and auto-timeout UI
+- Playwright E2E tests: 3 passed
+
+**Quality gates:** TypeScript compiles ✅, inline styles 10 (< 20) ✅, ruff ✅
+
+### L211 — Integration, Auth, and Polish
+- Admin-only guards on all browser session endpoints (`require_admin`)
+- WebSocket validates admin role before accepting (code 1008)
+- Dashboard nav and routes gated to `isAdmin`
+- `browser_login` tool mentions dashboard
+- Ported runtime patches: `inference.py` reasoning_format removal, `finalization.py` InferenceServerError catch
+
+**Quality gates:** pytest 1556 passed, 15 failed + 7 errors (all pre-existing) ✅, mypy ✅, ruff ✅, web-ui build ✅, inline styles 10 (under 20) ✅
+
 ## 2026-05-31 — L195–L205 Complete (v0.12 Review + Coding Harness)
 
 **Outcome:** All 11 specced loops implemented and validated by subagents. L206 (Matrix auth) remains deferred.
->>>>>>> feature/l205-checkpoint-and-rollback
 
 ### L195 — Critical & High Backend Fixes
 **Branch:** `feature/l195-critical-and-high-backend-fixes` (4 commits)
@@ -23,11 +65,8 @@
 - H1: `scheduler_write_local` trust field added; scheduler ticks fail-closed on write_file
 - M2: `egress_audit_enabled` now honored in both http_get and web_search
 
-<<<<<<< HEAD
 **Quality gates:** pytest 1454 passed (15 failed, 7 errors — all pre-existing) ✅, mypy ✅, ruff ✅
 
-=======
->>>>>>> feature/l205-checkpoint-and-rollback
 ### L196 — Orchestrator & Inference Robustness
 **Branch:** `feature/l196-orchestrator-and-inference-robustness` (5 commits)
 - M1: Streaming path now skips malformed JSON args
@@ -35,32 +74,23 @@
 - M7: `print()` replaced with `logger.warning()` in inference
 - L4: Defensive `.get()` access in inference tool-call parsing
 
-<<<<<<< HEAD
 **Quality gates:** relevant tests pass ✅, mypy ✅, ruff ✅
 
-=======
->>>>>>> feature/l205-checkpoint-and-rollback
 ### L197 — Web & Auth Hardening
 **Branch:** `feature/l197-web-and-auth-hardening` (4 commits)
 - M3: Webhook strict endpoint match + replay window + header strip
 - M8: AuthManager prunes expired pending codes and sessions
 - M5: Memory search fail-closed when `platform_user` unresolved
 
-<<<<<<< HEAD
 **Quality gates:** 164 tests pass ✅, mypy ✅, ruff ✅
 
-=======
->>>>>>> feature/l205-checkpoint-and-rollback
 ### L198 — Frontend Fixes
 **Branch:** `feature/l198-frontend-fixes` (3 commits)
 - H3: `res.ok` checks on all mutation helpers
 - M10: Auth disabled fix, workflow editor error state, login redirect fix, mutation toasts
 - L5: Route-level redirect for non-admins from `/admin/users`
 
-<<<<<<< HEAD
 **Quality gates:** build ✅, 128 vitest tests ✅, 10 inline styles (under 20) ✅
-=======
->>>>>>> feature/l205-checkpoint-and-rollback
 ### L199 — Test Backfill
 **Branch:** `feature/l199-test-backfill` (4 commits)
 - M9a: `chat()` malformed-output defense tests (7 new tests)
@@ -68,9 +98,8 @@
 - M9c: IPv6 SSRF and workflow-node real-blocking tests
 - M9d: `tool_result_max_chars` wired into orchestrator + test
 
-<<<<<<< HEAD
 **Quality gates:** 28 passed, 1 pre-existing failure ✅, mypy ✅, ruff ✅
-=======
+
 ### L200 — Docs & Polish
 **Branch:** `feature/l200-docs-and-polish` (4 commits)
 - L6: README license/platform, env-var precedence, ADR-012, DECISIONS index
@@ -107,8 +136,6 @@
 - Wired into turn lifecycle (create on start, discard on DONE, restore on FAILED)
 - `rollback_turn` builtin tool
 - 8 checkpoint tests
-
->>>>>>> feature/l205-checkpoint-and-rollback
 ---
 
 ## 2026-05-20 — L187–L191 Complete (Post-Review Fixes + Error Persistence + Backend Quality + Component Infrastructure + Config Overhaul)

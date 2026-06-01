@@ -7,7 +7,13 @@ from typing import TYPE_CHECKING, Any
 
 from hestia.core.clock import utcnow
 from hestia.core.types import Message, Session
-from hestia.errors import ContextTooLargeError, HestiaError, PersistenceError, classify_error
+from hestia.errors import (
+    ContextTooLargeError,
+    HestiaError,
+    InferenceServerError,
+    PersistenceError,
+    classify_error,
+)
 from hestia.orchestrator.types import TransitionCallback, Turn, TurnContext, TurnState
 from hestia.persistence.failure_store import FailureBundle
 from hestia.tools.checkpoint import CheckpointManager
@@ -97,7 +103,7 @@ class TurnFinalization:
         if turn.state == TurnState.DONE and self._slot_manager is not None:
             try:
                 await self._slot_manager.save(session)
-            except (OSError, PersistenceError) as e:
+            except (OSError, PersistenceError, InferenceServerError) as e:
                 logger.warning("Failed to save slot for session %s: %s", session.id, e)
 
         turn_end_time = utcnow()

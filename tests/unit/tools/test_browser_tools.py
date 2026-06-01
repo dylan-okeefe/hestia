@@ -299,3 +299,107 @@ class TestBrowserGet:
 
         assert "Error fetching" in result
         assert "Network error" in result
+
+
+class TestBrowserSessionHealthCheck:
+    """Tests for BrowserSessionStore.check_health."""
+
+    @pytest.mark.asyncio
+    async def test_check_health_healthy_page(self, mock_playwright, tmp_path):
+        """Healthy page returns 'healthy'."""
+        from hestia.tools.browser.session_store import BrowserSessionStore
+
+        mock_page = AsyncMock()
+        mock_page.goto = AsyncMock()
+        mock_page.title = AsyncMock(return_value="Dashboard")
+        mock_page.url = "https://example.com/dashboard"
+
+        mock_context = AsyncMock()
+        mock_context.new_page = AsyncMock(return_value=mock_page)
+        mock_context.storage_state = AsyncMock(return_value={"cookies": [], "origins": []})
+        mock_context.cookies = AsyncMock(return_value=[])
+
+        mock_browser = AsyncMock()
+        mock_browser.new_context = AsyncMock(return_value=mock_context)
+
+        mock_playwright_instance = AsyncMock()
+        mock_playwright_instance.chromium = AsyncMock()
+        mock_playwright_instance.chromium.launch = AsyncMock(return_value=mock_browser)
+
+        mock_playwright.async_playwright = MagicMock(
+            return_value=MockAsyncContextManager(mock_playwright_instance)
+        )
+
+        store = BrowserSessionStore(base_dir=tmp_path)
+        store.save_cookies("example.com", [{"name": "session", "value": "abc"}])
+
+        status = await store.check_health("example.com")
+        assert status == "healthy"
+
+    @pytest.mark.asyncio
+    async def test_check_health_login_redirect(self, mock_playwright, tmp_path):
+        """Redirect to login page returns 'expired'."""
+        from hestia.tools.browser.session_store import BrowserSessionStore
+
+        mock_page = AsyncMock()
+        mock_page.goto = AsyncMock()
+        mock_page.title = AsyncMock(return_value="Sign in to Example")
+        mock_page.url = "https://example.com/login"
+
+        mock_context = AsyncMock()
+        mock_context.new_page = AsyncMock(return_value=mock_page)
+        mock_context.storage_state = AsyncMock(return_value={"cookies": [], "origins": []})
+        mock_context.cookies = AsyncMock(return_value=[])
+
+        mock_browser = AsyncMock()
+        mock_browser.new_context = AsyncMock(return_value=mock_context)
+
+        mock_playwright_instance = AsyncMock()
+        mock_playwright_instance.chromium = AsyncMock()
+        mock_playwright_instance.chromium.launch = AsyncMock(return_value=mock_browser)
+
+        mock_playwright.async_playwright = MagicMock(
+            return_value=MockAsyncContextManager(mock_playwright_instance)
+        )
+
+        store = BrowserSessionStore(base_dir=tmp_path)
+        store.save_cookies("example.com", [{"name": "session", "value": "abc"}])
+
+        status = await store.check_health("example.com")
+        assert status == "expired"
+
+    @pytest.mark.asyncio
+    async def test_check_health_rate_limit(self, mock_playwright, tmp_path):
+        """Calling check_health too soon raises ValueError."""
+        from hestia.tools.browser.session_store import BrowserSessionStore
+
+        mock_page = AsyncMock()
+        mock_page.goto = AsyncMock()
+        mock_page.title = AsyncMock(return_value="Dashboard")
+        mock_page.url = "https://example.com/dashboard"
+
+        mock_context = AsyncMock()
+        mock_context.new_page = AsyncMock(return_value=mock_page)
+        mock_context.storage_state = AsyncMock(return_value={"cookies": [], "origins": []})
+        mock_context.cookies = AsyncMock(return_value=[])
+
+        mock_browser = AsyncMock()
+        mock_browser.new_context = AsyncMock(return_value=mock_context)
+
+        mock_playwright_instance = AsyncMock()
+        mock_playwright_instance.chromium = AsyncMock()
+        mock_playwright_instance.chromium.launch = AsyncMock(return_value=mock_browser)
+
+        mock_playwright.async_playwright = MagicMock(
+            return_value=MockAsyncContextManager(mock_playwright_instance)
+        )
+
+        store = BrowserSessionStore(base_dir=tmp_path)
+        store.save_cookies("example.com", [{"name": "session", "value": "abc"}])
+
+        # First check should succeed
+        await store.check_health("example.com")
+
+        # Second check immediately after should be rate-limited
+        with pytest.raises(ValueError, match="rate-limited"):
+            await store.check_health("example.com")

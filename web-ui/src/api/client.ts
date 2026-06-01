@@ -564,6 +564,68 @@ export async function debugError(id: string) {
   return res.json() as Promise<{ prompt: string }>;
 }
 
+// Browser Sessions
+export interface BrowserSession {
+  domain: string;
+  has_cookies: boolean;
+  has_storage_state: boolean;
+  cookie_count: number;
+  last_saved: string | null;
+  last_used: string | null;
+  last_health_check: string | null;
+  health_status: string;
+  health_check_url: string;
+}
+
+export async function fetchBrowserSessions(): Promise<BrowserSession[]> {
+  const res = await apiFetch(`${API_BASE}/browser-sessions`);
+  if (!res.ok) throw new Error('Failed to fetch browser sessions');
+  const data = await res.json();
+  return data.sessions;
+}
+
+export async function deleteBrowserSession(domain: string): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/browser-sessions/${encodeURIComponent(domain)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error('Failed to delete session');
+}
+
+export async function checkBrowserSession(domain: string): Promise<{ domain: string; status: string }> {
+  const res = await apiFetch(`${API_BASE}/browser-sessions/${encodeURIComponent(domain)}/check`, {
+    method: 'POST',
+  });
+  if (res.status === 429) throw new Error('Rate limited — try again later');
+  if (!res.ok) throw new Error('Health check failed');
+  return res.json();
+}
+
+export interface StreamSession {
+  session_id: string;
+  domain: string;
+  ws_url: string;
+}
+
+export async function startBrowserStream(url: string): Promise<StreamSession> {
+  const res = await apiFetch(`${API_BASE}/browser-sessions/start`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url }),
+  });
+  if (res.status === 409) {
+    const data = await res.json();
+    throw new Error(`Session already active: ${data.session_id}`);
+  }
+  if (!res.ok) throw new Error('Failed to start browser stream');
+  return res.json();
+}
+
+export async function stopBrowserStream(): Promise<{ domain: string; cookie_count: number; saved: boolean }> {
+  const res = await apiFetch(`${API_BASE}/browser-sessions/stop`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to stop browser stream');
+  return res.json();
+}
+
 // Handoffs
 export async function fetchHandoffs(userId: string) {
   const res = await apiFetch(`${API_BASE}/users/${encodeURIComponent(userId)}/handoffs`);
