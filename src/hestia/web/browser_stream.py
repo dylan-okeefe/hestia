@@ -251,6 +251,7 @@ class SessionStreamManager:
         try:
             if event_type == "click":
                 await session.page.mouse.click(x, y)
+                await self._broadcast_input_mode(session)
             elif event_type == "mousemove":
                 await session.page.mouse.move(x, y)
             elif event_type == "keydown":
@@ -268,3 +269,22 @@ class SessionStreamManager:
                 await session.page.mouse.wheel(delta_x, delta_y)
         except Exception:
             logger.exception("Failed to forward input event")
+
+    async def _broadcast_input_mode(self, session: _StreamSession) -> None:
+        """Check if the focused element is a password input and notify clients."""
+        try:
+            is_password = await session.page.evaluate(
+                "() => document.activeElement && document.activeElement.type === 'password'"
+            )
+            mode = "password" if is_password else "text"
+            msg = f'{{"type": "input_mode", "mode": "{mode}"}}'
+            disconnected: set[WebSocket] = set()
+            for ws in list(session.ws_clients):
+                try:
+                    await ws.send_text(msg)
+                except Exception:
+                    disconnected.add(ws)
+            if disconnected:
+                session.ws_clients -= disconnected
+        except Exception:
+            logger.exception("Failed to broadcast input mode")
