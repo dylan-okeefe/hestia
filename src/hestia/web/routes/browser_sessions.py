@@ -195,10 +195,12 @@ async def browser_stream_ws(
 
     manager = ctx.stream_manager
     if manager is None or manager.get_session_id() != session_id:
+        logger.warning("WS rejected: session %s not found (active=%s)", session_id, manager.get_session_id() if manager else None)
         await websocket.close(code=4004, reason="Session not found")
         return
 
     await websocket.accept()
+    logger.info("WS accepted for session %s", session_id)
 
     stream_session = manager._session
     assert stream_session is not None
@@ -207,9 +209,11 @@ async def browser_stream_ws(
     try:
         while True:
             message = await websocket.receive_text()
+            logger.debug("WS received message for session %s", session_id)
             event = json.loads(message)
             await manager.forward_input(session_id, event)
     except WebSocketDisconnect:
-        pass
+        logger.info("WS client disconnected for session %s", session_id)
     finally:
         stream_session.ws_clients.discard(websocket)
+        logger.info("WS client removed for session %s", session_id)

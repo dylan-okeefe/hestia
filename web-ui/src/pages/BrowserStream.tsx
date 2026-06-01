@@ -86,9 +86,15 @@ export default function BrowserStream() {
     const ws = new WebSocket(fullUrl);
     ws.binaryType = 'blob';
 
-    ws.onopen = () => setConnected(true);
-    ws.onclose = () => setConnected(false);
-    ws.onerror = (err) => console.error('WebSocket error:', err);
+    ws.onopen = () => {
+      console.log('[ws] open');
+      setConnected(true);
+    };
+    ws.onclose = (e) => {
+      console.log('[ws] close', e.code, e.reason);
+      setConnected(false);
+    };
+    ws.onerror = (err) => console.error('[ws] error', err);
     ws.onmessage = (event) => {
       if (typeof event.data === 'string') {
         try {

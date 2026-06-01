@@ -138,6 +138,11 @@ class SessionStreamManager:
             logger.exception("Failed to decode screencast frame")
             return
 
+        if not session.ws_clients:
+            logger.debug("No WS clients for session %s, skipping frame", session.session_id)
+        else:
+            logger.debug("Broadcasting frame to %d clients for session %s", len(session.ws_clients), session.session_id)
+
         disconnected: set[WebSocket] = set()
         for ws in list(session.ws_clients):
             try:
