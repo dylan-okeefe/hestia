@@ -206,7 +206,23 @@ export const mockExecutions = {
   ],
 };
 
+export const mockBrowserSessions = {
+  sessions: [],
+};
+
 export async function mockApis(page: Page) {
+  await page.route('/api/browser-sessions**', async (route) => {
+    const url = route.request().url();
+    const method = route.request().method();
+    if (url.includes('/check')) {
+      await route.fulfill({ json: { domain: 'example.com', status: 'healthy' } });
+    } else if (method === 'DELETE') {
+      await route.fulfill({ status: 204 });
+    } else {
+      await route.fulfill({ json: mockBrowserSessions });
+    }
+  });
+
   await page.route('/api/sessions**', async (route) => {
     const url = route.request().url();
     if (url.includes('/turns')) {
