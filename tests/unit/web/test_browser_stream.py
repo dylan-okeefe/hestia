@@ -324,7 +324,15 @@ class TestWebSocketEndpoint:
     @pytest.fixture
     def client(self, manager: SessionStreamManager) -> TestClient:
         auth_manager = MagicMock()
-        auth_manager.validate_token = MagicMock(return_value=("valid", MagicMock()))
+        web_session = MagicMock()
+        web_session.user_id = "admin-user-id"
+        auth_manager.validate_token = MagicMock(return_value=("valid", web_session))
+
+        mock_user = MagicMock()
+        mock_user.role = "admin"
+
+        user_store = AsyncMock()
+        user_store.get_user = AsyncMock(return_value=mock_user)
 
         mock_app = MagicMock()
         mock_app.config = MagicMock()
@@ -341,7 +349,7 @@ class TestWebSocketEndpoint:
             error_resolution_store=AsyncMock(),
             app=mock_app,
             auth_manager=auth_manager,
-            user_store=AsyncMock(),
+            user_store=user_store,
             browser_session_store=manager._store,
             stream_manager=manager,
         )

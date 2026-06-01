@@ -58,7 +58,7 @@ function AppContent() {
             {navLink('Proposals', '/proposals')}
             {navLink('Style', '/style')}
             {navLink('Scheduler', '/scheduler')}
-            {navLink('Browser', '/browser-sessions')}
+            {auth.authenticated && isAdmin && navLink('Browser', '/browser-sessions')}
             {navLink('Security & Health', '/security')}
             {navLink('Config', '/config')}
             {navLink('Workflows', '/workflows')}
@@ -79,8 +79,8 @@ function AppContent() {
             <Route path="/style" element={<StyleProfile />} />
             <Route path="/scheduler" element={<Scheduler />} />
             <Route path="/security" element={<Security />} />
-            <Route path="/browser-sessions" element={<BrowserSessions />} />
-            <Route path="/browser-sessions/stream" element={<BrowserStream />} />
+            <Route path="/browser-sessions" element={isAdmin ? <BrowserSessions /> : <Navigate to="/" replace />} />
+            <Route path="/browser-sessions/stream" element={isAdmin ? <BrowserStream /> : <Navigate to="/" replace />} />
             <Route path="/config" element={<Config />} />
             <Route path="/workflows" element={<Workflows />} />
             <Route path="/workflows/:id" element={<WorkflowEditor />} />

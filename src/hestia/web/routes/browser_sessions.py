@@ -5,11 +5,12 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 from hestia.tools.browser.session_store import BrowserSessionStore
 from hestia.web.context import WebContext, get_web_context
+from hestia.web.dependencies import require_admin
 
 router = APIRouter()
 _CTX_DEP = Depends(get_web_context)
@@ -52,8 +53,11 @@ def _session_to_out(
 
 
 @router.get("/browser-sessions")
-async def list_browser_sessions(ctx: WebContext = _CTX_DEP) -> dict[str, Any]:
+async def list_browser_sessions(
+    request: Request, ctx: WebContext = _CTX_DEP
+) -> dict[str, Any]:
     """List all browser sessions with metadata."""
+    await require_admin(request, ctx)
     store = ctx.browser_session_store
     if store is None:
         raise HTTPException(
@@ -69,9 +73,10 @@ async def list_browser_sessions(ctx: WebContext = _CTX_DEP) -> dict[str, Any]:
 
 @router.delete("/browser-sessions/{domain}")
 async def delete_browser_session(
-    domain: str, ctx: WebContext = _CTX_DEP
+    request: Request, domain: str, ctx: WebContext = _CTX_DEP
 ) -> None:
     """Delete a browser session for the given domain."""
+    await require_admin(request, ctx)
     store = ctx.browser_session_store
     if store is None:
         raise HTTPException(
@@ -82,9 +87,10 @@ async def delete_browser_session(
 
 @router.post("/browser-sessions/{domain}/check")
 async def check_browser_session(
-    domain: str, ctx: WebContext = _CTX_DEP
+    request: Request, domain: str, ctx: WebContext = _CTX_DEP
 ) -> dict[str, str]:
     """Run a health check on the browser session for the given domain."""
+    await require_admin(request, ctx)
     store = ctx.browser_session_store
     if store is None:
         raise HTTPException(
@@ -105,9 +111,12 @@ class StartBrowserSessionRequest(BaseModel):
 
 @router.post("/browser-sessions/start")
 async def start_browser_session(
-    body: StartBrowserSessionRequest, ctx: WebContext = _CTX_DEP
+    request: Request,
+    body: StartBrowserSessionRequest,
+    ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """Start a new browser streaming session."""
+    await require_admin(request, ctx)
     manager = ctx.stream_manager
     if manager is None:
         raise HTTPException(
@@ -131,9 +140,11 @@ async def start_browser_session(
 
 @router.post("/browser-sessions/stop")
 async def stop_browser_session(
+    request: Request,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """Stop the active browser streaming session."""
+    await require_admin(request, ctx)
     manager = ctx.stream_manager
     if manager is None:
         raise HTTPException(
@@ -164,12 +175,21 @@ async def browser_stream_ws(
 
     ctx = get_web_context()
     if ctx.auth_manager is not None:
-        status, _ = ctx.auth_manager.validate_token(token or "")
+        status, web_session = ctx.auth_manager.validate_token(token or "")
         if status != "valid":
             await websocket.close(
                 code=1008, reason="Authentication required"
             )
             return
+        if web_session is not None:
+            user_id = web_session.user_id
+            if user_id is not None:
+                user = await ctx.user_store.get_user(user_id)
+                if user is None or user.role != "admin":
+                    await websocket.close(
+                        code=1008, reason="Admin access required"
+                    )
+                    return
 
     manager = ctx.stream_manager
     if manager is None or manager.get_session_id() != session_id:
@@ -178,9 +198,9 @@ async def browser_stream_ws(
 
     await websocket.accept()
 
-    session = manager._session
-    assert session is not None
-    session.ws_clients.add(websocket)
+    stream_session = manager._session
+    assert stream_session is not None
+    stream_session.ws_clients.add(websocket)
 
     try:
         while True:
@@ -190,4 +210,4 @@ async def browser_stream_ws(
     except WebSocketDisconnect:
         pass
     finally:
-        session.ws_clients.discard(websocket)
+        stream_session.ws_clients.discard(websocket)
