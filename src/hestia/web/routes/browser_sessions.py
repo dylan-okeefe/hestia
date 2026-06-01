@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
-from hestia.tools.browser.session_store import BrowserSessionStore
+from hestia.tools.browser.session_store import BrowserSessionStore, normalize_domain
 from hestia.web.context import WebContext, get_web_context
 from hestia.web.dependencies import require_admin
 
@@ -82,6 +82,7 @@ async def delete_browser_session(
         raise HTTPException(
             status_code=503, detail="Browser session store not available"
         )
+    domain = normalize_domain(domain)
     store.clear(domain)
 
 
@@ -96,6 +97,7 @@ async def check_browser_session(
         raise HTTPException(
             status_code=503, detail="Browser session store not available"
         )
+    domain = normalize_domain(domain)
     try:
         status = await store.check_health(domain)
     except ValueError as exc:

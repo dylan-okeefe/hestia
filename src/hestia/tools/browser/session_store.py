@@ -7,6 +7,39 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
+# Known country-code second-level domains (eTLD patterns)
+_KNOWN_CC_SLD = {
+    "co.uk",
+    "com.au",
+    "org.uk",
+    "net.au",
+    "co.nz",
+    "com.br",
+    "co.jp",
+    "com.cn",
+    "co.in",
+    "com.mx",
+    "co.za",
+}
+
+
+def normalize_domain(hostname: str) -> str:
+    """Return the registerable domain (eTLD+1) for a hostname.
+
+    Strips subdomains so that ``www.indeed.com``, ``login.indeed.com``,
+    and ``indeed.com`` all map to ``indeed.com``.
+    """
+    host = hostname.lower().strip()
+    if not host:
+        return host
+    parts = host.split(".")
+    if len(parts) <= 2:
+        return host
+    etld = f"{parts[-2]}.{parts[-1]}"
+    if etld in _KNOWN_CC_SLD:
+        return f"{parts[-3]}.{etld}"
+    return etld
+
 
 @dataclass
 class SessionMetadata:
