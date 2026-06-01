@@ -582,6 +582,32 @@ export async function checkBrowserSession(domain: string): Promise<{ domain: str
   return res.json();
 }
 
+export interface StreamSession {
+  session_id: string;
+  domain: string;
+  ws_url: string;
+}
+
+export async function startBrowserStream(url: string): Promise<StreamSession> {
+  const res = await apiFetch(`${API_BASE}/browser-sessions/start`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url }),
+  });
+  if (res.status === 409) {
+    const data = await res.json();
+    throw new Error(`Session already active: ${data.session_id}`);
+  }
+  if (!res.ok) throw new Error('Failed to start browser stream');
+  return res.json();
+}
+
+export async function stopBrowserStream(): Promise<{ domain: string; cookie_count: number; saved: boolean }> {
+  const res = await apiFetch(`${API_BASE}/browser-sessions/stop`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to stop browser stream');
+  return res.json();
+}
+
 // Handoffs
 export async function fetchHandoffs(userId: string) {
   const res = await apiFetch(`${API_BASE}/users/${encodeURIComponent(userId)}/handoffs`);

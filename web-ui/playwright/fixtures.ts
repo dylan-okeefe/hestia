@@ -216,6 +216,16 @@ export async function mockApis(page: Page) {
     const method = route.request().method();
     if (url.includes('/check')) {
       await route.fulfill({ json: { domain: 'example.com', status: 'healthy' } });
+    } else if (url.includes('/start')) {
+      await route.fulfill({
+        json: {
+          session_id: 'test-session-001',
+          domain: 'example.com',
+          ws_url: '/api/browser-session/stream/test-session-001',
+        },
+      });
+    } else if (url.includes('/stop')) {
+      await route.fulfill({ json: { domain: 'example.com', cookie_count: 14, saved: true } });
     } else if (method === 'DELETE') {
       await route.fulfill({ status: 204 });
     } else {
