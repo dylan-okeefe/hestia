@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate, useSearchParams, useBlocker } from 'react-router-dom';
-import type { BlockerFunction } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { startBrowserStream, stopBrowserStream, getAuthToken } from '../api/client';
 import { useApiMutation } from '../hooks/useApi';
 import { useToast } from '../hooks/useToast';
@@ -141,6 +140,7 @@ export default function BrowserStream() {
 
   const handleDone = async () => {
     const domain = session?.domain;
+    stoppingRef.current = true;
     try {
       await stopMut.mutateAsync(undefined as unknown as string);
       addToast({ message: 'Session saved', type: 'success', duration: 3000 });
@@ -154,6 +154,7 @@ export default function BrowserStream() {
   };
 
   const handleCancel = async () => {
+    stoppingRef.current = true;
     try {
       await stopMut.mutateAsync(undefined as unknown as string);
     } catch {
@@ -215,14 +216,6 @@ export default function BrowserStream() {
     window.addEventListener('beforeunload', onBeforeUnload);
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [session]);
-
-  const blocker = useBlocker(
-    useCallback<BlockerFunction>(
-      ({ currentLocation, nextLocation }) =>
-        session !== null && currentLocation.pathname !== nextLocation.pathname,
-      [session]
-    )
-  );
 
   const sendWsMessage = useCallback((msg: object) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -353,33 +346,6 @@ export default function BrowserStream() {
         </button>
       </div>
 
-      {blocker.state === 'blocked' && (
-        <div className="modal-overlay">
-          <div className="modal-dialog">
-            <h3 className="modal-title">Leave page?</h3>
-            <p className="modal-body">A browser session is still active. Leaving will stop and save the session.</p>
-            <div className="modal-actions">
-              <button onClick={() => blocker.reset?.()} className="btn-secondary">
-                Stay
-              </button>
-              <button
-                onClick={async () => {
-                  stoppingRef.current = true;
-                  try {
-                    await stopBrowserStream();
-                  } catch {
-                    // ignore
-                  }
-                  blocker.proceed?.();
-                }}
-                className="btn-primary"
-              >
-                Leave &amp; Save
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
