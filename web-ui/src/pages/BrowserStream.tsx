@@ -40,6 +40,7 @@ export default function BrowserStream() {
   const [countdown, setCountdown] = useState(SESSION_TIMEOUT_MS);
   const [timedOut, setTimedOut] = useState(false);
   const [mobileText, setMobileText] = useState('');
+  const [inputMode, setInputMode] = useState<'text' | 'password'>('text');
 
   const startMut = useApiMutation(startBrowserStream);
   const stopMut = useApiMutation(stopBrowserStream);
@@ -90,6 +91,17 @@ export default function BrowserStream() {
     ws.onclose = () => setConnected(false);
     ws.onerror = (err) => console.error('WebSocket error:', err);
     ws.onmessage = (event) => {
+      if (typeof event.data === 'string') {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === 'input_mode' && (msg.mode === 'text' || msg.mode === 'password')) {
+            setInputMode(msg.mode);
+          }
+        } catch {
+          // ignore non-JSON text messages
+        }
+        return;
+      }
       if (event.data instanceof Blob) {
         const blobUrl = URL.createObjectURL(event.data);
         const img = new Image();
@@ -305,10 +317,10 @@ export default function BrowserStream() {
         <div className="row-md">
           <input
             id="mobile-text"
-            type="text"
+            type={inputMode}
             value={mobileText}
             onChange={(e) => setMobileText(e.target.value)}
-            placeholder="Type here and press Enter…"
+            placeholder={inputMode === 'password' ? 'Password…' : 'Type here and press Enter…'}
             className="form-input"
           />
           <button type="submit" disabled={!mobileText.trim()}>

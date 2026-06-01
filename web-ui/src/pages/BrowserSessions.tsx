@@ -49,7 +49,7 @@ export default function BrowserSessions() {
     isError,
     error,
     refetch,
-  } = useApiQuery<BrowserSession[]>('browser-sessions', fetchBrowserSessions);
+  } = useApiQuery<BrowserSession[]>('browser-sessions', fetchBrowserSessions, 5000);
 
   const checkMut = useApiMutation(checkBrowserSession);
   const deleteMut = useApiMutation(deleteBrowserSession);
