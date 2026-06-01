@@ -1,4 +1,5 @@
-import { useNavigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useApiQuery, useApiMutation } from '../hooks/useApi';
 import { useToast } from '../hooks/useToast';
 import {
@@ -42,6 +43,7 @@ function statusLabel(status: string): string {
 
 export default function BrowserSessions() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { addToast } = useToast();
   const {
     data: sessions,
@@ -49,7 +51,16 @@ export default function BrowserSessions() {
     isError,
     error,
     refetch,
-  } = useApiQuery<BrowserSession[]>('browser-sessions', fetchBrowserSessions, 5000);
+  } = useApiQuery<BrowserSession[]>('browser-sessions', fetchBrowserSessions);
+
+  useEffect(() => {
+    const state = location.state as { checkedDomain?: string } | null;
+    const domain = state?.checkedDomain;
+    if (domain) {
+      handleCheck(domain);
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state]);
 
   const checkMut = useApiMutation(checkBrowserSession);
   const deleteMut = useApiMutation(deleteBrowserSession);
