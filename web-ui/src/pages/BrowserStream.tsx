@@ -177,6 +177,20 @@ export default function BrowserStream() {
   }, [closeWs, clearTimer, session]);
 
   useEffect(() => {
+    autoStartedRef.current = false;
+  }, []);
+
+  useEffect(() => {
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) {
+        autoStartedRef.current = false;
+      }
+    };
+    window.addEventListener('pageshow', onPageShow);
+    return () => window.removeEventListener('pageshow', onPageShow);
+  }, []);
+
+  useEffect(() => {
     if (!session && url.trim() && !autoStartedRef.current && !startMut.isPending) {
       autoStartedRef.current = true;
       handleStart();
