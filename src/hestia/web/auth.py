@@ -297,11 +297,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if not self.web_config.auth_enabled:
             return await call_next(request)
 
-        # WebSocket routes handle auth inside the endpoint (browsers can't
-        # set custom headers on WebSocket connections).
-        if request.headers.get("upgrade", "").lower() == "websocket":
-            return await call_next(request)
-
         auth_header = request.headers.get("Authorization", "")
         if not auth_header.startswith("Bearer "):
             return JSONResponse(
