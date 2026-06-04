@@ -82,7 +82,6 @@ from hestia.tools.builtin import (
     make_terminal_tool,
     make_web_search_tool,
     make_write_file_tool,
-    search_web,
 )
 from hestia.tools.checkpoint import CheckpointManager
 from hestia.tools.registry import ToolRegistry
@@ -400,8 +399,6 @@ class AppContext:
         )
         if web_search_tool is not None:
             reg.register(web_search_tool)
-        else:
-            reg.register(search_web)
 
         for email_tool in make_email_tools(cfg.email, adapter=self.email_adapter):
             reg.register(email_tool)

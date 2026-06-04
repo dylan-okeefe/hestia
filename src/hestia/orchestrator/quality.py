@@ -37,7 +37,6 @@ _READ_ONLY_TOOLS = {
     "browser_login",
     "describe_tool",
     "list_tools",
-    "search_web",
     "web_search",
     "http_get",
     "current_time",

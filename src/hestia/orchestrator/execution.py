@@ -846,7 +846,6 @@ class TurnExecution:
             "read_file": "📄",
             "list_dir": "📁",
             "terminal": "💻",
-            "search_web": "🔍",
             "glob": "🔍",
             "grep": "🔍",
             "http_get": "🌐",

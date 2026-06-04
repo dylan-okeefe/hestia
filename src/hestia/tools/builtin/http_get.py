@@ -225,7 +225,7 @@ async def _http_get_impl(
         "calling REST APIs, or searching via raw-HTML-friendly engines like "
         "DuckDuckGo (html.duckduckgo.com/html/?q=...). DOES NOT work on "
         "JavaScript-heavy sites like Google Search, Google Maps, or Yelp. "
-        "For general web searches, use the search_web tool instead. "
+        "For general web searches, use the web_search tool instead. "
         "Params: url (str), timeout_seconds (int, default 30)."
     ),
     parameters_schema={
