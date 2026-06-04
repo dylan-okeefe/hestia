@@ -14,6 +14,7 @@ import ReactFlow, {
   type EdgeChange,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
+import '@reactflow/node-resizer/dist/style.css';
 import { nodeTypesMap } from '../components/workflow-editor/constants';
 import EditorToolbar from '../components/workflow-editor/EditorToolbar';
 import NodePropertiesPanel from '../components/workflow-editor/NodePropertiesPanel';
@@ -32,11 +33,33 @@ export default function WorkflowEditor() {
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
-      const hasStructural = changes.some((c: NodeChange) => c.type === 'remove' || c.type === 'add');
+      const hasStructural = changes.some(
+        (c: NodeChange) => c.type === 'remove' || c.type === 'add'
+      );
       if (hasStructural) {
         editor.pushCurrent();
       }
-      editor.setNodes((nds: Node[]) => applyNodeChanges(changes, nds));
+      editor.setNodes((nds: Node[]) => {
+        const updated = applyNodeChanges(changes, nds);
+        // Persist dimension changes to node.data so they survive save/load
+        return updated.map((n) => {
+          const dimChange = changes.find(
+            (c): c is NodeChange & { type: 'dimensions'; dimensions?: { width: number; height: number }; id: string } =>
+              c.type === 'dimensions' && 'id' in c && c.id === n.id
+          );
+          if (dimChange?.dimensions && n.data) {
+            return {
+              ...n,
+              data: {
+                ...n.data,
+                width: dimChange.dimensions.width,
+                height: dimChange.dimensions.height,
+              },
+            };
+          }
+          return n;
+        });
+      });
     },
     [editor]
   );
@@ -118,7 +141,7 @@ export default function WorkflowEditor() {
                 case 'tool_call':
                   return { label: 'Tool Call', tool_name: '', args: {} };
                 case 'llm_decision':
-                  return { label: 'LLM Decision', prompt: '', branches: [] };
+                  return { label: 'LLM Decision', prompt: '', branches: ['yes', 'no'] };
                 case 'send_message':
                   return { label: 'Send Message', platform: '', message: '', target_user: '' };
                 case 'http_request':
@@ -153,14 +176,6 @@ export default function WorkflowEditor() {
         onUndo={editor.handleUndo}
         onRedo={editor.handleRedo}
       />
-      {editor.showVersions && (
-        <VersionPanel
-          versions={editor.versions}
-          activeVersionId={editor.activeVersionId}
-          onView={editor.handleViewVersion}
-          onActivate={editor.handleActivateVersion}
-        />
-      )}
       <ExecutionHistoryPanel
         show={editor.showHistory}
         executions={editor.executions}
@@ -187,6 +202,14 @@ export default function WorkflowEditor() {
         webhookSecret={editor.webhookSecret}
       />
       <div className="workflow-editor__main">
+        {editor.showVersions && (
+          <VersionPanel
+            versions={editor.versions}
+            activeVersionId={editor.activeVersionId}
+            onView={editor.handleViewVersion}
+            onActivate={editor.handleActivateVersion}
+          />
+        )}
         <div className="workflow-canvas-container" tabIndex={0} data-testid="reactflow-wrapper">
           <div className="workflow-canvas">
             <ReactFlow

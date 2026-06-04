@@ -130,7 +130,8 @@ src/hestia/
 - **Deployment rule:** When Dylan asks to "deploy to runtime" or "set up on Hestia-runtime", merge the development branch into a runtime-specific branch (e.g. `feature/<name>-runtime`) and check it out in `~/Hestia-runtime`. Do NOT cherry-pick or copy individual files unless explicitly instructed. The runtime should run the exact same code as the development branch.
 - **Preservation rule:** `~/Hestia-runtime` may have untracked runtime-specific files (e.g., `config.runtime.py`, `.env`, `hestia.db`, logs). These should be preserved. Only tracked files from the branch should be updated. Stash any local modifications before switching branches, then restore them if still relevant.
 - **Quality gates in runtime:** `cd ~/Hestia-runtime && uv run pytest tests/unit/ tests/integration/ -q` must pass after syncing.
-- **Restart rule:** After deploying to runtime, restart the services so the new code is loaded. Dylan typically runs: `nohup uv run --env-file .env hestia --config config.runtime.py serve > runtime-data/logs/hestia-serve.log 2>&1 &`
+- **Restart rule (MANDATORY):** After deploying to runtime, restart the services so the new code is loaded. Dylan typically runs: `nohup uv run --env-file .env hestia --config config.runtime.py serve > runtime-data/logs/hestia-serve.log 2>&1 &`
+- **Immediate runtime application rule (MANDATORY):** Every code change — especially debugging, hotfixes, and UI tweaks — must be immediately applied to the runtime worktree (`~/Hestia-runtime`) and the services restarted. Do not wait for Dylan to ask. Do not batch multiple changes before restarting. Apply and restart after every single fix.
 
 ## When to ask Dylan vs. proceed
 

@@ -50,6 +50,15 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
             adapters["matrix"] = matrix_adapter
             tasks.append(asyncio.create_task(run_matrix(app, config, adapter=matrix_adapter)))
 
+        if config.email.imap_host:
+            from hestia.email.adapter import EmailAdapter
+            from hestia.platforms.email_inbound import run_email_poller
+
+            email_adapter = EmailAdapter(config.email)
+            tasks.append(
+                asyncio.create_task(run_email_poller(app, email_adapter))
+            )
+
         if config.web.enabled:
             from hestia.tools.browser.session_store import BrowserSessionStore
             from hestia.web.api import create_web_app

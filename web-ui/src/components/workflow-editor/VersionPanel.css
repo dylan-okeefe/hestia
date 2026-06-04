@@ -1,9 +1,12 @@
 .version-panel {
-  border-top: var(--border-thin);
+  width: 320px;
+  min-width: 260px;
+  max-width: 400px;
+  border-right: var(--border-thin);
   padding: var(--space-4);
-  max-height: 40vh;
   overflow-y: auto;
   background: var(--color-surface);
+  flex-shrink: 0;
 }
 
 .version-panel__table {
