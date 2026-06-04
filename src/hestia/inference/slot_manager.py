@@ -211,6 +211,9 @@ class SlotManager:
         if victim_session_id is None:
             raise RuntimeError("No LRU victim available — slot pool exhausted")
         victim_slot_id = await self._evict_session_locked(victim_session_id)
+        # Another coroutine may have taken the freed slot during I/O.
+        if victim_slot_id in self._assignments:
+            return await self._allocate_slot(session_id)
         self._assignments[victim_slot_id] = session_id
         return victim_slot_id
 
@@ -226,22 +229,31 @@ class SlotManager:
         slot_id = session.slot_id
         saved_path = self._slot_path_for(session_id)
 
-        # Release the lock before slow HTTP I/O so other acquire() calls
-        # are not stalled.
-        self._lock.release()
+        # Remove from assignments BEFORE releasing lock so no other coroutine
+        # can pick this same victim while we perform slow I/O.
+        del self._assignments[slot_id]
+
+        released = False
         try:
+            # Release the lock before slow HTTP I/O so other acquire() calls
+            # are not stalled.
+            self._lock.release()
+            released = True
             await self._inference.slot_save(slot_id, saved_path.name)
             await self._inference.slot_erase(slot_id)
-        except InferenceServerError:
-            # Re-acquire the lock before re-raising so callers can safely
-            # continue with lock held.
-            await self._lock.acquire()
-            raise
+        except Exception as exc:
+            # Continue despite I/O error — victim is already excluded from the
+            # pool, which prevents the double-eviction race.
+            logger.warning(
+                "slot_save/slot_erase failed for session %s slot %d: %s",
+                session_id,
+                slot_id,
+                exc,
+            )
         finally:
-            # Ensure we hold the lock on exit regardless of success/failure.
-            # If we already re-acquired in the except block, locked() is True
-            # and this acquire() is skipped. asyncio.Lock is NOT reentrant.
-            if not self._lock.locked():
+            # Re-acquire the lock if we released it.  We must always hold the
+            # lock on exit so callers can safely update _assignments.
+            if released:
                 await self._lock.acquire()
 
         # Lock is held again — update state.
@@ -250,7 +262,6 @@ class SlotManager:
             demote_to=SessionTemperature.WARM,
             saved_path=saved_path.name,
         )
-        del self._assignments[slot_id]
         logger.info("Evicted session %s from slot %d", session_id, slot_id)
         return slot_id
 
