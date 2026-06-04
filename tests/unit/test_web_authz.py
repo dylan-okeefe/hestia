@@ -315,3 +315,605 @@ class TestErrorsAuth:
             headers={"Authorization": "Bearer token_user_a"},
         )
         assert response.status_code == 403
+
+
+class TestTracesAuth:
+    """Authorization tests for /api/traces and /api/failures endpoints."""
+
+    def test_list_traces_no_auth_returns_401(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Unauthenticated requests to /traces return 401."""
+        response = auth_client.get("/api/traces")
+        assert response.status_code == 401
+
+    def test_list_traces_with_session_id_other_user_returns_403(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Accessing traces for another user's session returns 403."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.session_store.get_session = AsyncMock(
+            return_value=MagicMock(
+                id="s1",
+                platform="cli",
+                platform_user="user_b",
+            )
+        )
+
+        response = auth_client.get(
+            "/api/traces?session_id=s1",
+            headers={"Authorization": "Bearer token_user_a"},
+        )
+        assert response.status_code == 403
+
+    def test_list_traces_with_session_id_owner_returns_200(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Accessing traces for the caller's own session returns 200."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.session_store.get_session = AsyncMock(
+            return_value=MagicMock(
+                id="s1",
+                platform="cli",
+                platform_user="user_a",
+            )
+        )
+        ctx.trace_store.list_recent = AsyncMock(return_value=[])
+
+        response = auth_client.get(
+            "/api/traces?session_id=s1",
+            headers={"Authorization": "Bearer token_user_a"},
+        )
+        assert response.status_code == 200
+
+    def test_list_traces_admin_can_access(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Admin can access all traces."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.trace_store.list_recent = AsyncMock(return_value=[])
+
+        response = auth_client.get(
+            "/api/traces",
+            headers={"Authorization": "Bearer token_admin"},
+        )
+        assert response.status_code == 200
+
+    def test_list_failures_no_auth_returns_401(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Unauthenticated requests to /failures return 401."""
+        response = auth_client.get("/api/failures")
+        assert response.status_code == 401
+
+    def test_list_failures_with_session_id_other_user_returns_403(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Accessing failures for another user's session returns 403."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.session_store.get_session = AsyncMock(
+            return_value=MagicMock(
+                id="s1",
+                platform="cli",
+                platform_user="user_b",
+            )
+        )
+
+        response = auth_client.get(
+            "/api/failures?session_id=s1",
+            headers={"Authorization": "Bearer token_user_a"},
+        )
+        assert response.status_code == 403
+
+    def test_list_failures_admin_can_access(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Admin can access all failures."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.failure_store.list_recent = AsyncMock(return_value=[])
+
+        response = auth_client.get(
+            "/api/failures",
+            headers={"Authorization": "Bearer token_admin"},
+        )
+        assert response.status_code == 200
+
+
+class TestStyleAuth:
+    """Authorization tests for /api/style endpoints."""
+
+    def test_get_style_other_user_returns_403(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Accessing another user's style profile returns 403."""
+        response = auth_client.get(
+            "/api/style/cli/user_b",
+            headers={"Authorization": "Bearer token_user_a"},
+        )
+        assert response.status_code == 403
+
+    def test_get_style_owner_returns_200(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Accessing the caller's own style profile returns 200."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.style_store.get_profile_dict = AsyncMock(return_value={})
+
+        response = auth_client.get(
+            "/api/style/cli/user_a",
+            headers={"Authorization": "Bearer token_user_a"},
+        )
+        assert response.status_code == 200
+
+    def test_delete_style_other_user_returns_403(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Deleting another user's style metric returns 403."""
+        response = auth_client.delete(
+            "/api/style/cli/user_b/metric",
+            headers={"Authorization": "Bearer token_user_a"},
+        )
+        assert response.status_code == 403
+
+    def test_style_admin_can_access(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Admin can access any style profile."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.style_store.get_profile_dict = AsyncMock(return_value={})
+
+        response = auth_client.get(
+            "/api/style/cli/user_b",
+            headers={"Authorization": "Bearer token_admin"},
+        )
+        assert response.status_code == 200
+
+
+class TestEgressAuth:
+    """Authorization tests for /api/egress endpoints."""
+
+    def test_list_egress_no_auth_returns_401(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Unauthenticated requests to /egress return 401."""
+        response = auth_client.get("/api/egress")
+        assert response.status_code == 401
+
+    def test_list_egress_owner_returns_200(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Authenticated user can access their own egress."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.session_store.list_sessions = AsyncMock(return_value=[])
+        ctx.trace_store.list_egress = AsyncMock(return_value=[])
+
+        response = auth_client.get(
+            "/api/egress",
+            headers={"Authorization": "Bearer token_user_a"},
+        )
+        assert response.status_code == 200
+
+    def test_list_egress_admin_can_access(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Admin can access all egress."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.trace_store.list_egress = AsyncMock(return_value=[])
+
+        response = auth_client.get(
+            "/api/egress",
+            headers={"Authorization": "Bearer token_admin"},
+        )
+        assert response.status_code == 200
+
+
+class TestUsersAuth:
+    """Authorization tests for /api/users and /api/rooms endpoints."""
+
+    def test_list_users_non_admin_returns_403(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Non-admin users cannot list all users."""
+        response = auth_client.get(
+            "/api/users",
+            headers={"Authorization": "Bearer token_user_a"},
+        )
+        assert response.status_code == 403
+
+    def test_list_users_admin_can_access(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Admin can list all users."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.user_store.list_users = AsyncMock(return_value=[])
+
+        response = auth_client.get(
+            "/api/users",
+            headers={"Authorization": "Bearer token_admin"},
+        )
+        assert response.status_code == 200
+
+    def test_get_user_other_user_returns_403(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Accessing another user's profile returns 403."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.user_store.get_user = AsyncMock(
+            side_effect=lambda uid: MagicMock(
+                id=uid,
+                role="admin" if uid == "admin-id" else "user",
+            )
+        )
+        ctx.user_store.get_identities = AsyncMock(return_value=[])
+
+        response = auth_client.get(
+            "/api/users/user-b-id",
+            headers={"Authorization": "Bearer token_user_a"},
+        )
+        assert response.status_code == 403
+
+    def test_get_user_owner_can_access(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Users can access their own profile."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.user_store.get_user = AsyncMock(
+            side_effect=lambda uid: MagicMock(
+                id=uid,
+                role="admin" if uid == "admin-id" else "user",
+            )
+        )
+        ctx.user_store.get_identities = AsyncMock(return_value=[])
+
+        response = auth_client.get(
+            "/api/users/user-a-id",
+            headers={"Authorization": "Bearer token_user_a"},
+        )
+        assert response.status_code == 200
+
+    def test_get_user_admin_can_access(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Admin can access any user profile."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.user_store.get_user = AsyncMock(
+            side_effect=lambda uid: MagicMock(
+                id=uid,
+                role="admin" if uid == "admin-id" else "user",
+            )
+        )
+        ctx.user_store.get_identities = AsyncMock(return_value=[])
+
+        response = auth_client.get(
+            "/api/users/user-b-id",
+            headers={"Authorization": "Bearer token_admin"},
+        )
+        assert response.status_code == 200
+
+    def test_get_handoffs_other_user_returns_403(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Accessing another user's handoffs returns 403."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.user_store.get_user = AsyncMock(
+            side_effect=lambda uid: MagicMock(
+                id=uid,
+                role="admin" if uid == "admin-id" else "user",
+            )
+        )
+        ctx.user_store.get_identities = AsyncMock(return_value=[])
+
+        response = auth_client.get(
+            "/api/users/user-b-id/handoffs",
+            headers={"Authorization": "Bearer token_user_a"},
+        )
+        assert response.status_code == 403
+
+    def test_get_handoffs_owner_can_access(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Users can access their own handoffs."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.user_store.get_user = AsyncMock(
+            side_effect=lambda uid: MagicMock(
+                id=uid,
+                role="admin" if uid == "admin-id" else "user",
+            )
+        )
+        ctx.user_store.get_identities = AsyncMock(return_value=[])
+        ctx.session_store.list_handoffs_for_identities = AsyncMock(return_value=[])
+
+        response = auth_client.get(
+            "/api/users/user-a-id/handoffs",
+            headers={"Authorization": "Bearer token_user_a"},
+        )
+        assert response.status_code == 200
+
+    def test_get_handoffs_admin_can_access(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Admin can access any user's handoffs."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.user_store.get_user = AsyncMock(
+            side_effect=lambda uid: MagicMock(
+                id=uid,
+                role="admin" if uid == "admin-id" else "user",
+            )
+        )
+        ctx.user_store.get_identities = AsyncMock(return_value=[])
+        ctx.session_store.list_handoffs_for_identities = AsyncMock(return_value=[])
+
+        response = auth_client.get(
+            "/api/users/user-b-id/handoffs",
+            headers={"Authorization": "Bearer token_admin"},
+        )
+        assert response.status_code == 200
+
+    def test_list_rooms_non_admin_filters_to_own(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Non-admin users see only their own rooms."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.user_store.get_user_rooms = AsyncMock(return_value=[])
+
+        response = auth_client.get(
+            "/api/rooms",
+            headers={"Authorization": "Bearer token_user_a"},
+        )
+        assert response.status_code == 200
+
+    def test_get_room_non_member_returns_403(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Non-members cannot access a room."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.user_store.get_room = AsyncMock(
+            return_value=MagicMock(
+                id="r1",
+                platform="cli",
+                platform_room_id="room1",
+                display_name="Room 1",
+            )
+        )
+        ctx.user_store.get_room_members = AsyncMock(
+            return_value=[MagicMock(id="user-b-id")]
+        )
+
+        response = auth_client.get(
+            "/api/rooms/r1",
+            headers={"Authorization": "Bearer token_user_a"},
+        )
+        assert response.status_code == 403
+
+    def test_get_room_member_can_access(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Room members can access a room."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.user_store.get_room = AsyncMock(
+            return_value=MagicMock(
+                id="r1",
+                platform="cli",
+                platform_room_id="room1",
+                display_name="Room 1",
+            )
+        )
+        ctx.user_store.get_room_members = AsyncMock(
+            return_value=[MagicMock(id="user-a-id")]
+        )
+
+        response = auth_client.get(
+            "/api/rooms/r1",
+            headers={"Authorization": "Bearer token_user_a"},
+        )
+        assert response.status_code == 200
+
+    def test_list_room_members_non_member_returns_403(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Non-members cannot list room members."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.user_store.get_room = AsyncMock(
+            return_value=MagicMock(
+                id="r1",
+                platform="cli",
+                platform_room_id="room1",
+                display_name="Room 1",
+            )
+        )
+        ctx.user_store.get_room_members = AsyncMock(
+            return_value=[MagicMock(id="user-b-id")]
+        )
+
+        response = auth_client.get(
+            "/api/rooms/r1/members",
+            headers={"Authorization": "Bearer token_user_a"},
+        )
+        assert response.status_code == 403
+
+
+class TestProposalsAuth:
+    """Authorization tests for /api/proposals endpoints."""
+
+    def test_list_proposals_non_admin_returns_403(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Non-admin users cannot list proposals."""
+        response = auth_client.get(
+            "/api/proposals",
+            headers={"Authorization": "Bearer token_user_a"},
+        )
+        assert response.status_code == 403
+
+    def test_accept_proposal_non_admin_returns_403(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Non-admin users cannot accept proposals."""
+        response = auth_client.post(
+            "/api/proposals/p1/accept",
+            headers={"Authorization": "Bearer token_user_a"},
+        )
+        assert response.status_code == 403
+
+    def test_reject_proposal_non_admin_returns_403(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Non-admin users cannot reject proposals."""
+        response = auth_client.post(
+            "/api/proposals/p1/reject",
+            json={"note": ""},
+            headers={"Authorization": "Bearer token_user_a"},
+        )
+        assert response.status_code == 403
+
+    def test_defer_proposal_non_admin_returns_403(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Non-admin users cannot defer proposals."""
+        response = auth_client.post(
+            "/api/proposals/p1/defer",
+            headers={"Authorization": "Bearer token_user_a"},
+        )
+        assert response.status_code == 403
+
+    def test_proposals_admin_can_access(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Admin can access proposals."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.proposal_store.list_by_status = AsyncMock(return_value=[])
+
+        response = auth_client.get(
+            "/api/proposals",
+            headers={"Authorization": "Bearer token_admin"},
+        )
+        assert response.status_code == 200
+
+
+class TestRequireOwnerFailOpen:
+    """Tests for the H5 fail-open RequireOwner fix."""
+
+    def test_require_owner_raises_401_when_auth_enabled_and_no_platform_user(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """RequireOwner raises 401 when auth is enabled and platform_user is missing."""
+        response = auth_client.get("/api/style/cli/someuser")
+        assert response.status_code == 401
+
+
+class TestWorkflowsAuth:
+    """Authorization tests for /api/workflows endpoints."""
+
+    def test_get_workflow_other_owner_returns_403(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Accessing another user's workflow returns 403."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.workflow_store.get_workflow = AsyncMock(
+            return_value=MagicMock(
+                id="wf1",
+                name="Workflow 1",
+                trigger_type="manual",
+                trigger_config={},
+                owner_id="user_b",
+                trust_level="paranoid",
+            )
+        )
+
+        response = auth_client.get(
+            "/api/workflows/wf1",
+            headers={"Authorization": "Bearer token_user_a"},
+        )
+        assert response.status_code == 403
+
+    def test_get_workflow_admin_can_access(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Admin can access any workflow."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.workflow_store.get_workflow = AsyncMock(
+            return_value=MagicMock(
+                id="wf1",
+                name="Workflow 1",
+                trigger_type="manual",
+                trigger_config={},
+                owner_id="user_b",
+                trust_level="paranoid",
+            )
+        )
+        ctx.workflow_store.get_active_version = AsyncMock(return_value=None)
+
+        response = auth_client.get(
+            "/api/workflows/wf1",
+            headers={"Authorization": "Bearer token_admin"},
+        )
+        assert response.status_code == 200

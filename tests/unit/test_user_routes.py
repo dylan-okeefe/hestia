@@ -141,8 +141,11 @@ class TestUserRoutes:
     """Tests for /api/users endpoints."""
 
     def test_list_users(self, client: TestClient, auth_manager: AuthManager, user_store: MagicMock) -> None:
-        """GET /api/users returns all users."""
-        token = _user_session(auth_manager)
+        """GET /api/users returns all users (admin only)."""
+        token = _admin_session(auth_manager)
+        user_store.get_user = AsyncMock(
+            return_value=MagicMock(id="admin-1", display_name="Admin", role="admin")
+        )
         user_store.list_users = AsyncMock(
             return_value=[
                 MagicMock(
@@ -556,9 +559,12 @@ class TestRoomRoutes:
     """Tests for /api/rooms endpoints."""
 
     def test_list_rooms(self, client: TestClient, auth_manager: AuthManager, user_store: MagicMock) -> None:
-        """GET /api/rooms returns all rooms."""
+        """GET /api/rooms returns rooms for the caller."""
         token = _user_session(auth_manager)
-        user_store.list_rooms = AsyncMock(
+        user_store.get_user = AsyncMock(
+            return_value=MagicMock(id="user-1", display_name="User", role="user")
+        )
+        user_store.get_user_rooms = AsyncMock(
             return_value=[
                 MagicMock(
                     id="r1",
@@ -579,6 +585,9 @@ class TestRoomRoutes:
     def test_get_room(self, client: TestClient, auth_manager: AuthManager, user_store: MagicMock) -> None:
         """GET /api/rooms/{id} returns room with members."""
         token = _user_session(auth_manager)
+        user_store.get_user = AsyncMock(
+            return_value=MagicMock(id="user-1", display_name="User", role="user")
+        )
         user_store.get_room = AsyncMock(
             return_value=MagicMock(
                 id="r1",
@@ -590,7 +599,7 @@ class TestRoomRoutes:
         )
         user_store.get_room_members = AsyncMock(
             return_value=[
-                MagicMock(id="u1", display_name="Alice", role="admin")
+                MagicMock(id="user-1", display_name="Alice", role="admin")
             ]
         )
 
@@ -651,6 +660,9 @@ class TestRoomRoutes:
     def test_list_room_members(self, client: TestClient, auth_manager: AuthManager, user_store: MagicMock) -> None:
         """GET /api/rooms/{id}/members returns members."""
         token = _user_session(auth_manager)
+        user_store.get_user = AsyncMock(
+            return_value=MagicMock(id="user-1", display_name="User", role="user")
+        )
         user_store.get_room = AsyncMock(
             return_value=MagicMock(
                 id="r1",
@@ -662,7 +674,7 @@ class TestRoomRoutes:
         )
         user_store.get_room_members = AsyncMock(
             return_value=[
-                MagicMock(id="u1", display_name="Alice", role="admin")
+                MagicMock(id="user-1", display_name="Alice", role="admin")
             ]
         )
 
