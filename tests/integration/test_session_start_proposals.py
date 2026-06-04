@@ -112,6 +112,7 @@ class TestSessionStartProposals:
             temperature=SessionTemperature.COLD,
         )
         import sqlalchemy as sa
+
         from hestia.persistence.schema import sessions
 
         async with db.engine.connect() as conn:
@@ -195,6 +196,7 @@ class TestSessionStartProposals:
             temperature=SessionTemperature.COLD,
         )
         import sqlalchemy as sa
+
         from hestia.persistence.schema import sessions
 
         async with db.engine.connect() as conn:
@@ -275,6 +277,7 @@ class TestSessionStartProposals:
             temperature=SessionTemperature.COLD,
         )
         import sqlalchemy as sa
+
         from hestia.persistence.schema import sessions
 
         async with db.engine.connect() as conn:

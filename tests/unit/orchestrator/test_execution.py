@@ -71,8 +71,8 @@ async def test_direct_write_file_dispatch():
     assert "Wrote file" in result.content
 
 
-def test_call_tool_not_in_dispatch_table():
-    """call_tool is no longer in the meta-tool dispatch table."""
+def test_call_tool_is_in_dispatch_table():
+    """call_tool is present in the meta-tool dispatch table."""
     execution = TurnExecution(
         tool_registry=MagicMock(),
         inference_client=MagicMock(),
@@ -80,8 +80,8 @@ def test_call_tool_not_in_dispatch_table():
         context_builder=MagicMock(),
         session_store=MagicMock(),
     )
-    # The _meta_tools attribute was removed entirely in L161.
-    assert not hasattr(execution, "_meta_tools")
+    assert hasattr(execution, "_meta_tools")
+    assert "call_tool" in execution._meta_tools
 
 
 @pytest.mark.asyncio

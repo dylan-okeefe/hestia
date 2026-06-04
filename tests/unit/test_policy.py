@@ -155,7 +155,7 @@ class TestFilterTools:
         from dataclasses import replace
 
         from hestia.artifacts.store import ArtifactStore
-        from hestia.tools.builtin import current_time, make_write_file_tool, make_terminal_tool
+        from hestia.tools.builtin import current_time, make_terminal_tool, make_write_file_tool
         terminal = make_terminal_tool()
         from hestia.tools.registry import ToolRegistry
 
@@ -285,7 +285,7 @@ class TestFilterToolsTrust:
         from hestia.artifacts.store import ArtifactStore
         from hestia.config import TrustConfig
         from hestia.policy.default import DefaultPolicyEngine
-        from hestia.tools.builtin import current_time, make_write_file_tool, make_terminal_tool
+        from hestia.tools.builtin import current_time, make_terminal_tool, make_write_file_tool
         terminal = make_terminal_tool()
         from hestia.tools.registry import ToolRegistry
 
@@ -307,7 +307,7 @@ class TestFilterToolsTrust:
         from hestia.artifacts.store import ArtifactStore
         from hestia.config import TrustConfig
         from hestia.policy.default import DefaultPolicyEngine
-        from hestia.tools.builtin import current_time, make_write_file_tool, make_terminal_tool
+        from hestia.tools.builtin import current_time, make_terminal_tool, make_write_file_tool
         terminal = make_terminal_tool()
         from hestia.tools.registry import ToolRegistry
 
@@ -329,7 +329,7 @@ class TestFilterToolsTrust:
         from hestia.artifacts.store import ArtifactStore
         from hestia.config import TrustConfig
         from hestia.policy.default import DefaultPolicyEngine
-        from hestia.tools.builtin import current_time, make_write_file_tool, make_terminal_tool
+        from hestia.tools.builtin import current_time, make_terminal_tool, make_write_file_tool
         terminal = make_terminal_tool()
         from hestia.tools.registry import ToolRegistry
 

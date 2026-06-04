@@ -46,7 +46,9 @@ from hestia.persistence.sessions import SessionStore
 from hestia.persistence.trace_store import TraceStore
 from hestia.platforms.matrix_adapter import MatrixAdapter
 from hestia.tools.builtin import current_time, http_get, make_terminal_tool
+
 terminal = make_terminal_tool()
+from hestia.config import StorageConfig
 from hestia.tools.builtin.list_dir import make_list_dir_tool
 from hestia.tools.builtin.memory_tools import (
     make_list_memories_tool,
@@ -57,7 +59,6 @@ from hestia.tools.builtin.read_artifact import make_read_artifact_tool
 from hestia.tools.builtin.read_file import make_read_file_tool
 from hestia.tools.builtin.write_file import make_write_file_tool
 from hestia.tools.registry import ToolRegistry
-from hestia.config import StorageConfig
 
 E2E_MEMORY_TAG = "e2e_hestia_l12"
 
@@ -216,7 +217,7 @@ async def _collect_conversation(
                                 and event.event_id not in seen_event_ids
                             ):
                                 record.bot_messages.append(event.body.strip())
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
             return record
 

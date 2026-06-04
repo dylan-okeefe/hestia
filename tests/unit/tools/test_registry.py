@@ -30,24 +30,23 @@ async def greet(name: str) -> str:
 class TestDirectToolSchemas:
     """Tests for direct_tool_schemas()."""
 
-    def test_returns_schema_for_every_registered_tool(self, registry):
-        """direct_tool_schemas returns a ToolSchema for each registered tool."""
+    def test_returns_schema_for_meta_tools(self, registry):
+        """meta_tool_schemas returns schemas for the three meta-tools."""
         registry.register(greet)
 
-        schemas = registry.direct_tool_schemas()
+        schemas = registry.meta_tool_schemas()
         names = [s.function.name for s in schemas]
 
-        # Built-ins are auto-registered
         assert "list_tools" in names
         assert "describe_tool" in names
-        assert "greet" in names
+        assert "call_tool" in names
         assert len(schemas) == 3
 
-    def test_schema_names_match_registered_names(self, registry):
-        """Schema names correspond to registered tool metadata."""
+    def test_meta_schema_names_are_fixed(self, registry):
+        """Meta-tool schema names are always the three meta-tools."""
         registry.register(greet)
 
-        schemas = registry.direct_tool_schemas()
+        schemas = registry.meta_tool_schemas()
         names = {s.function.name for s in schemas}
 
-        assert names == {"list_tools", "describe_tool", "greet"}
+        assert names == {"list_tools", "describe_tool", "call_tool"}

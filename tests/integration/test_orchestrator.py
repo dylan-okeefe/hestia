@@ -454,9 +454,11 @@ async def test_two_tool_chain_time_and_file_count(
     assert turn.state == TurnState.DONE
     assert turn.iterations == 2  # two tool-call iterations, then final
     assert turn.tool_calls_made == 2
-    assert len(response_capture) == 1
-    assert "Tokyo" in response_capture[0]
-    assert "12" in response_capture[0] or "files" in response_capture[0]
+    # Response capture includes progress messages + final response
+    assert len(response_capture) >= 1
+    final_response = response_capture[-1]
+    assert "Tokyo" in final_response
+    assert "12" in final_response or "files" in final_response
 
     # Verify the tool calls actually executed (check message history)
     messages = await store.get_messages(session.id)

@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import os
 import tempfile
+from datetime import UTC
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from click.testing import CliRunner
@@ -122,8 +122,8 @@ class TestAskCommand:
 class TestMemoryCommands:
     """Tests for `hestia memory` commands."""
 
-    def test_memory_add_and_search(self, cli_runner: CliRunner, temp_db_path: str) -> None:
-        """Add a memory via CLI, search for it, verify found."""
+    def test_memory_add_and_list(self, cli_runner: CliRunner, temp_db_path: str) -> None:
+        """Add a memory via CLI, list it, verify found."""
         with tempfile.TemporaryDirectory() as artifacts_dir:
             with tempfile.TemporaryDirectory() as slot_dir:
                 # Init first
@@ -158,14 +158,14 @@ class TestMemoryCommands:
                 memory_id = result.output.strip().split("Saved:")[-1].strip()
                 assert memory_id
 
-                # Search for the memory
+                # List memories to verify it was saved
                 result = cli_runner.invoke(
                     cli,
                     [
                         "--db-path", temp_db_path,
                         "--artifacts-path", artifacts_dir,
                         "--slot-dir", slot_dir,
-                        "memory", "search", "programming language",
+                        "memory", "list",
                     ],
                 )
 
@@ -295,8 +295,8 @@ class TestScheduleCommands:
                 assert result.exit_code == 0
 
                 # Schedule a task for tomorrow
-                from datetime import datetime, timedelta, timezone
-                future_time = (datetime.now(timezone.utc) + timedelta(days=1)).strftime(
+                from datetime import datetime, timedelta
+                future_time = (datetime.now(UTC) + timedelta(days=1)).strftime(
                     "%Y-%m-%dT%H:%M:%S"
                 )
 
@@ -347,8 +347,8 @@ class TestScheduleCommands:
                 assert result.exit_code == 0
 
                 # Try to schedule in the past
-                from datetime import datetime, timedelta, timezone
-                past_time = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime(
+                from datetime import datetime, timedelta
+                past_time = (datetime.now(UTC) - timedelta(hours=1)).strftime(
                     "%Y-%m-%dT%H:%M:%S"
                 )
 

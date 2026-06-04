@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from playwright_stealth import Stealth
+from playwright_stealth import Stealth  # type: ignore[import-not-found]
 
 STEALTH_VIEWPORT = {"width": 1920, "height": 1080}
 

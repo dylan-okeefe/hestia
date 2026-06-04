@@ -3,6 +3,7 @@
 import httpx
 import pytest
 import respx
+
 from hestia.config import WebSearchConfig
 from hestia.persistence.db import Database
 from hestia.persistence.trace_store import TraceStore

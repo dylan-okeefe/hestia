@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
 import time
@@ -68,7 +67,7 @@ _IGNORE_URL_PATTERNS = [
 def _extract_best_job_url(body: str) -> str | None:
     """Scan email body and return the best job-listing URL."""
     all_urls = re.findall(r"https?://[^\s<>\"\')\]]+", body)
-    candidates = []
+    candidates: list[tuple[int, str]] = []
     for url in all_urls:
         if any(p.search(url) for p in _IGNORE_URL_PATTERNS):
             continue
@@ -419,9 +418,7 @@ class WorkflowExecutor:
                     if node_output.value and (
                         (single_edge and edge.source_handle is None)
                         or edge.source_handle == "true"
-                    ):
-                        active_edges.add(edge.id)
-                    elif not node_output.value and (
+                    ) or not node_output.value and (
                         (single_edge and edge.source_handle is None)
                         or edge.source_handle == "false"
                     ):
@@ -534,6 +531,7 @@ class WorkflowExecutor:
                     else:
                         content = "NONE"
                 else:
+                    assert url is not None
                     content = url
 
             return _NodeOutput(

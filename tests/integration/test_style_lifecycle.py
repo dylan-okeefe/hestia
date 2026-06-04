@@ -10,9 +10,9 @@ import sqlalchemy as sa
 from hestia.config import StyleConfig
 from hestia.core.clock import utcnow
 from hestia.core.types import SessionState, SessionTemperature
-from hestia.persistence.db import Database
-from hestia.persistence.schema import sessions, turns, messages, traces
 from hestia.memory.store import MemoryStore
+from hestia.persistence.db import Database
+from hestia.persistence.schema import messages, sessions, traces, turns
 from hestia.style.builder import StyleProfileBuilder
 from hestia.style.context import format_style_prefix_from_data
 from hestia.style.scheduler import StyleScheduler
