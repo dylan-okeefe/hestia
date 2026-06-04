@@ -21,6 +21,11 @@ async def _require_workflow_access(
     """Raise 403 if caller is not the workflow owner and not an admin."""
     caller_platform_user = getattr(request.state, "platform_user", None)
     if caller_platform_user is None:
+        auth_enabled = getattr(
+            ctx.app.config.features.web, "auth_enabled", True
+        )
+        if auth_enabled:
+            raise HTTPException(status_code=401, detail="Not authenticated")
         return
     if caller_platform_user == workflow.owner_id:
         return
