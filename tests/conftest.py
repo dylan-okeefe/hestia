@@ -20,6 +20,14 @@ def _allow_dummy_model_for_tests() -> None:
     os.environ.setdefault("HESTIA_ALLOW_DUMMY_MODEL", "1")
 
 
+@pytest.fixture(autouse=True)
+def _clear_webhook_seen_cache() -> None:
+    """Clear the webhook replay-protection cache before every test."""
+    from hestia.web.routes.webhooks import _seen_signatures
+
+    _seen_signatures.clear()
+
+
 @pytest.fixture
 def make_chat_response():
     """Factory for creating real ChatResponse dataclasses in tests."""

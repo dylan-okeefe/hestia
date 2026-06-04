@@ -268,8 +268,9 @@ class TestWebhookHMAC:
     def test_replay_attack_same_signature_twice(
         self, client: TestClient, mock_app: MagicMock
     ) -> None:
-        """Same valid signature sent twice — both succeed (timestamp is still valid)."""
+        """Same valid signature sent twice — second request is rejected."""
         from hestia.web import context as ctx_mod
+        from hestia.web.routes import webhooks as webhooks_mod
         from hestia.workflows.models import Workflow
 
         ctx = ctx_mod._ctx
@@ -284,21 +285,37 @@ class TestWebhookHMAC:
         )
         ctx.workflow_store.list_workflows = AsyncMock(return_value=[wf])
 
+        # Clear the seen-signatures cache so this test is independent
+        webhooks_mod._seen_signatures.clear()
+
         payload = {"key": "value"}
         body_bytes = json.dumps(payload).encode()
         signature, timestamp = _sign("super-secret", body_bytes)
 
-        for _ in range(2):
-            response = client.post(
-                "/api/webhooks/deploy",
-                content=body_bytes,
-                headers={
-                    "X-Webhook-Signature": signature,
-                    "X-Webhook-Timestamp": str(timestamp),
-                    "Content-Type": "application/json",
-                },
-            )
-            assert response.status_code == 202
+        response = client.post(
+            "/api/webhooks/deploy",
+            content=body_bytes,
+            headers={
+                "X-Webhook-Signature": signature,
+                "X-Webhook-Timestamp": str(timestamp),
+                "Content-Type": "application/json",
+            },
+        )
+        assert response.status_code == 202
+        assert response.json()["received"] is True
+        mock_event_bus.publish.assert_awaited_once()
+
+        response = client.post(
+            "/api/webhooks/deploy",
+            content=body_bytes,
+            headers={
+                "X-Webhook-Signature": signature,
+                "X-Webhook-Timestamp": str(timestamp),
+                "Content-Type": "application/json",
+            },
+        )
+        assert response.status_code == 409
+        assert "duplicate" in response.json()["detail"].lower()
 
     def test_replay_with_stale_timestamp_returns_401(
         self, client: TestClient, mock_app: MagicMock
