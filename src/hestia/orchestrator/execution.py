@@ -834,7 +834,7 @@ class TurnExecution:
             return confirm_result
 
         result = await self._tools.call(tc.name, tc.arguments or {})
-        return self._scan_tool_result(result)
+        return result
 
     def _format_tool_status(self, tool_names: list[str]) -> str | None:
         """Format a human-readable status line for the tools about to run."""
