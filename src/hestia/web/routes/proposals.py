@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from hestia.reflection.types import ProposalStatus
 from hestia.web.context import WebContext, get_web_context
+from hestia.web.dependencies import require_admin
 
 router = APIRouter()
 
@@ -23,10 +24,12 @@ class RejectBody(BaseModel):
 
 @router.get("")
 async def list_proposals(
+    request: Request,
     status: ProposalStatus | None = None,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """List proposals by status."""
+    await require_admin(request, ctx)
     proposals = await ctx.proposal_store.list_by_status(status=status)
     return {
         "proposals": [
@@ -51,9 +54,11 @@ async def list_proposals(
 @router.post("/{proposal_id}/accept")
 async def accept_proposal(
     proposal_id: str,
+    request: Request,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """Accept a proposal."""
+    await require_admin(request, ctx)
     proposal = await ctx.proposal_store.get(proposal_id)
     ok = await ctx.proposal_store.update_status(proposal_id, "accepted")
     if not ok:
@@ -74,9 +79,11 @@ async def accept_proposal(
 async def reject_proposal(
     proposal_id: str,
     body: RejectBody,
+    request: Request,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """Reject a proposal."""
+    await require_admin(request, ctx)
     proposal = await ctx.proposal_store.get(proposal_id)
     ok = await ctx.proposal_store.update_status(proposal_id, "rejected", review_note=body.note)
     if not ok:
@@ -96,9 +103,11 @@ async def reject_proposal(
 @router.post("/{proposal_id}/defer")
 async def defer_proposal(
     proposal_id: str,
+    request: Request,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """Defer a proposal."""
+    await require_admin(request, ctx)
     ok = await ctx.proposal_store.update_status(proposal_id, "deferred")
     if not ok:
         raise HTTPException(status_code=404, detail="Proposal not found")
