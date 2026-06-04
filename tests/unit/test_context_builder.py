@@ -343,6 +343,19 @@ class TestFromCalibrationFile:
         assert builder._body_factor == 1.0
         assert builder._meta_tool_overhead == 0
 
+    @pytest.mark.asyncio
+    async def test_zero_body_factor_guarded(self, tmp_path, fake_client, policy):
+        """Guards against body_factor == 0 to prevent ZeroDivision."""
+        import json
+
+        cal_path = tmp_path / "calibration.json"
+        cal_path.write_text(json.dumps({"body_factor": 0, "meta_tool_overhead_tokens": 50}))
+
+        builder = ContextBuilder.from_calibration_file(fake_client, policy, cal_path)
+
+        assert builder._body_factor == 1.0
+        assert builder._meta_tool_overhead == 50
+
 
 class TestHandoffMessages:
     """Tests for session handoff message handling (L165)."""

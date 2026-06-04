@@ -2,11 +2,14 @@
 
 import asyncio
 import json
+import logging
 from collections import OrderedDict
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from hestia.context.compressed_summary_strategy import CompressedSummaryStrategy
 from hestia.context.compressor import HistoryCompressor
@@ -34,6 +37,9 @@ class BuildResult:
     truncated_count: int  # how many historical messages got dropped
     kept_first_user: bool  # sanity flag for the Qwen template requirement
     memory_epoch_included: bool  # whether memory epoch was included
+
+
+_DEFAULT_CALIBRATION_PATH = Path(__file__).parent.parent.parent / "docs" / "calibration.json"
 
 
 @lru_cache(maxsize=8)
@@ -157,7 +163,7 @@ class ContextBuilder:
         Returns:
             ContextBuilder with loaded calibration values
         """
-        path = calibration_path or Path("docs/calibration.json")
+        path = calibration_path or _DEFAULT_CALIBRATION_PATH
         if path.exists():
             data = _load_calibration(path)
             body_factor = data.get("body_factor", 1.0)
@@ -165,6 +171,11 @@ class ContextBuilder:
         else:
             body_factor = 1.0
             meta_tool_overhead = 0
+            logger.warning("Calibration file not found at %s — using defaults", path)
+
+        if body_factor == 0:
+            logger.warning("Calibration body_factor is 0 — using 1.0 to avoid ZeroDivision")
+            body_factor = 1.0
 
         return cls(inference_client, policy, body_factor, meta_tool_overhead)
 
@@ -443,7 +454,10 @@ class ContextBuilder:
         Returns:
             Corrected token count
         """
-        corrected = int(body_count / self._body_factor)
+        if self._body_factor == 0:
+            corrected = body_count
+        else:
+            corrected = int(body_count / self._body_factor)
         if has_tools:
             corrected += self._meta_tool_overhead
         return corrected
