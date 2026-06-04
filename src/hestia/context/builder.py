@@ -9,8 +9,6 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger(__name__)
-
 from hestia.context.compressed_summary_strategy import CompressedSummaryStrategy
 from hestia.context.compressor import HistoryCompressor
 from hestia.context.history_window_selector import HistoryWindowSelector
@@ -19,6 +17,8 @@ from hestia.core.serialization import message_to_dict
 from hestia.core.types import Message, Session, ToolSchema
 from hestia.errors import ContextTooLargeError
 from hestia.policy.engine import PolicyEngine
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -454,10 +454,7 @@ class ContextBuilder:
         Returns:
             Corrected token count
         """
-        if self._body_factor == 0:
-            corrected = body_count
-        else:
-            corrected = int(body_count / self._body_factor)
+        corrected = body_count if self._body_factor == 0 else int(body_count / self._body_factor)
         if has_tools:
             corrected += self._meta_tool_overhead
         return corrected

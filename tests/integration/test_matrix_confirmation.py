@@ -46,7 +46,7 @@ def _make_session(session_id: str = "test_session") -> Session:
 class FakePolicy:
     """Minimal fake policy for confirmation tests."""
 
-    def auto_approve(self, tool_name, session):
+    def auto_approve(self, tool_name, session, registry=None):
         return False
 
     def filter_tools(self, session, tool_names, registry):

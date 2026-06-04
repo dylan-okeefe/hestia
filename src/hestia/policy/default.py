@@ -133,12 +133,9 @@ class DefaultPolicyEngine(PolicyEngine):
             if self._config.research_keywords is None
             else self._config.research_keywords
         )
-        if research and any(kw in task_lower for kw in research):
-            return True
-
         # High projected tool usage - DISABLED alongside auto-delegation
         # return projected_tool_calls > 3
-        return False
+        return bool(research and any(kw in task_lower for kw in research))
 
     def should_compress(self, session: Session, tokens_used: int, tokens_budget: int) -> bool:
         """Compress when we're over the context-pressure fraction of budget."""
