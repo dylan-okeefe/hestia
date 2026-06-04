@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 
 export interface UndoRedoState<T> {
-  push: () => void;
+  push: (explicitState?: T) => void;
   undo: () => T | undefined;
   redo: () => T | undefined;
   canUndo: boolean;
@@ -17,8 +17,8 @@ export function useUndoRedo<T>(getCurrent: () => T): UndoRedoState<T> {
   pastRef.current = past;
   futureRef.current = future;
 
-  const push = useCallback(() => {
-    const current = getCurrent();
+  const push = useCallback((explicitState?: T) => {
+    const current = explicitState ?? getCurrent();
     setPast((p) => [...p.slice(-49), current]);
     setFuture([]);
   }, [getCurrent]);

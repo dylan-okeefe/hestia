@@ -69,10 +69,44 @@ export function useWorkflowEditor(workflowId: string | undefined) {
   const getCurrentGraph = useCallback(() => ({ nodes: nodesRef.current, edges: edgesRef.current }), []);
   const { push, undo, redo, canUndo, canRedo } = useUndoRedo(getCurrentGraph);
 
-  const pushCurrent = useCallback(() => {
-    push();
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSnapshotRef = useRef<{ nodes: Node[]; edges: Edge[] } | null>(null);
+
+  const pushCurrent = useCallback((explicitState?: { nodes: Node[]; edges: Edge[] }) => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+    const snapshot = pendingSnapshotRef.current;
+    pendingSnapshotRef.current = null;
+    if (snapshot) {
+      push(snapshot);
+    }
+    if (explicitState) {
+      push(explicitState);
+    } else {
+      push();
+    }
     setIsDirty(true);
   }, [push]);
+
+  const pushCurrentDebounced = useCallback(() => {
+    if (!pendingSnapshotRef.current) {
+      pendingSnapshotRef.current = getCurrentGraph();
+    }
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = setTimeout(() => {
+      debounceTimerRef.current = null;
+      const snapshot = pendingSnapshotRef.current;
+      pendingSnapshotRef.current = null;
+      if (snapshot) {
+        push(snapshot);
+        setIsDirty(true);
+      }
+    }, 500);
+  }, [push, getCurrentGraph]);
 
   const handleUndo = useCallback(() => {
     const state = undo();
@@ -361,7 +395,7 @@ export function useWorkflowEditor(workflowId: string | undefined) {
 
   const updateSelectedNodeData = (key: string, value: unknown) => {
     if (!selectedNode) return;
-    pushCurrent();
+    pushCurrentDebounced();
     setNodes((nds: Node[]) =>
       nds.map((n) => (n.id === selectedNode.id ? { ...n, data: { ...n.data, [key]: value } } : n))
     );
