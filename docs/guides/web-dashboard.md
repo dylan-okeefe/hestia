@@ -1,6 +1,6 @@
 # Web Dashboard Quickstart
 
-Hestia ships a React-based web dashboard for administration and monitoring. It runs on the same port as the API (default `8000`) and is served as a static SPA.
+Hestia ships a React-based web dashboard for administration and monitoring. It runs on the same port as the API (default `8765`) and is served as a static SPA.
 
 ## Access
 

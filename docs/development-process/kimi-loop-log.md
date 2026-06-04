@@ -6,6 +6,50 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-06-03 — L212–L215 Complete (Security & Robustness Arc)
+
+**Outcome:** Closed authorization gaps, fixed SlotManager eviction race, added webhook replay protection, cleaned up backend inconsistencies, and hardened web UI state management.
+
+### L212 — Authorization Hardening
+**Branch:** `feature/l212-authorization-hardening`
+- Closed IDOR gaps in read endpoints (traces, style, egress, users, proposals)
+- Fixed fail-open `RequireOwner` when auth is enabled and `platform_user` is `None`
+- Added persistence filters for trace and failure stores
+- Expanded authz contract tests from 6 → 41
+
+**Quality gates:** pytest 1605 passed, mypy clean, ruff clean
+
+### L213 — Concurrency & Replay Protection
+**Branch:** `feature/l213-concurrency-replay-protection`
+- Fixed SlotManager double-eviction race by removing victim from `_assignments` before I/O
+- Added bounded LRU signature cache for webhook replay protection (1000 entries)
+- Added `test_concurrent_acquire_no_double_eviction` and updated webhook replay test
+
+**Quality gates:** pytest 1691 passed, 6 skipped, mypy clean, ruff clean
+
+### L214 — Backend Cleanup & Correctness
+**Branch:** `feature/l214-backend-cleanup`
+- Keyed auto-approve fail-closed on capabilities via registry
+- Normalized IPv4-mapped IPv6 in SSRF checks, added CGNAT, `is_global` guard
+- Resolved calibration path from package root, guarded `body_factor == 0`
+- Deleted dead code under `web/routes/` (6 files + nodes/ directory)
+- Made `web_search` canonical, removed `search_web` duplicate
+- Capped reasoning text to 2000 chars on done path
+- Removed duplicate injection scan from `_dispatch_tool_call`
+
+**Quality gates:** pytest 1695 passed, 6 skipped, mypy clean, ruff clean on changed files
+
+### L215 — Web UI Robustness
+**Branch:** `feature/l215-web-ui-robustness`
+- Split load-error vs action-error state in `useWorkflowEditor`; toasts for transient failures
+- Added AbortController guard to prevent stale workflow load responses
+- Fixed browser stream session leak on timeout (`stopBrowserStream()` before navigate)
+- Added mounted-ref guard in `useApiQuery` to prevent setState-after-unmount
+- Added 30-second global fetch timeout with AbortSignal support
+- Clear stale token when `/auth/status` returns `authenticated:false`
+
+**Quality gates:** web-ui build ✅, vitest 128 passed, backend pytest 1695 passed
+
 ## 2026-05-31 — L207–L211 Complete (Browser Session Dashboard)
 
 **Outcome:** All 5 loops of the browser session management feature implemented and validated. Replaces RDP-based `browser_login` with a web dashboard flow.
