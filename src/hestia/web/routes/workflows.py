@@ -372,19 +372,31 @@ async def test_run_workflow(
     payload: dict[str, Any] | None = None,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
-    """Execute a test run of a workflow and return the execution result."""
+    """Execute a test run of a workflow and return the execution result.
+
+    If ``version_id`` is provided in the payload, that specific version is
+    executed instead of the active version.
+    """
     workflow = await ctx.workflow_store.get_workflow(workflow_id)
     if workflow is None:
         raise HTTPException(status_code=404, detail="Workflow not found")
 
     await _require_workflow_access(request, ctx, workflow)
 
-    version = await ctx.workflow_store.get_active_version(workflow_id)
-    if version is None:
-        raise HTTPException(status_code=400, detail="No active version")
+    payload = payload or {}
+    version_id = payload.pop("version_id", None)
+
+    if version_id is None:
+        version = await ctx.workflow_store.get_active_version(workflow_id)
+        if version is None:
+            raise HTTPException(status_code=400, detail="No active version")
 
     executor = WorkflowExecutor(ctx.app, execution_store=ctx.execution_store)
-    result = await executor.execute(workflow_id, trigger_payload=payload or {})
+    result = await executor.execute(
+        workflow_id,
+        trigger_payload=payload,
+        version_id=version_id,
+    )
 
     return {
         "status": result.status,

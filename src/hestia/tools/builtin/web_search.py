@@ -38,6 +38,7 @@ async def _tavily_search(
     search_depth: str,
     time_range: str | None,
     timeout_seconds: int,
+    egress_audit_enabled: bool = True,
 ) -> list[dict[str, Any]]:
     # Send the API key as ``Authorization: Bearer ...`` instead of embedding it in
     # the request body. The body ends up in proxy/HTTP-debug logs (including httpx's
@@ -65,11 +66,12 @@ async def _tavily_search(
         try:
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            await _record_egress(
-                _strip_query_params(str(exc.request.url)),
-                exc.response.status_code if exc.response else None,
-                0,
-            )
+            if egress_audit_enabled:
+                await _record_egress(
+                    _strip_query_params(str(exc.request.url)),
+                    exc.response.status_code if exc.response else None,
+                    0,
+                )
             if exc.response is not None:
                 logger.debug("Tavily error response body: %s", exc.response.text)
             raise WebSearchError(
@@ -77,9 +79,12 @@ async def _tavily_search(
                 if exc.response is not None
                 else "Tavily request failed"
             ) from exc
-        await _record_egress(
-            _strip_query_params(str(response.url)), response.status_code, len(response.content)
-        )
+        if egress_audit_enabled:
+            await _record_egress(
+                _strip_query_params(str(response.url)),
+                response.status_code,
+                len(response.content),
+            )
         data = response.json()
 
     results = data.get("results") or []
@@ -102,7 +107,9 @@ def _format_results(results: list[dict[str, Any]]) -> str:
     return "\n\n".join(lines)
 
 
-def make_web_search_tool(config: WebSearchConfig) -> Any:
+def make_web_search_tool(
+    config: WebSearchConfig, egress_audit_enabled: bool = True
+) -> Any:
     """Build the web_search tool bound to the configured provider.
 
     Returns None if config.provider is empty or config.api_key is missing —
@@ -169,6 +176,7 @@ def make_web_search_tool(config: WebSearchConfig) -> Any:
                 search_depth=config.search_depth,
                 time_range=effective_time,
                 timeout_seconds=30,
+                egress_audit_enabled=egress_audit_enabled,
             )
         except WebSearchError as exc:
             return f"Web search failed: {exc}"
@@ -179,8 +187,10 @@ def make_web_search_tool(config: WebSearchConfig) -> Any:
     return web_search
 
 
-async def _record_egress(url: str, status: int | None, size: int) -> None:
+async def _record_egress(url: str, status: int | None, size: int, enabled: bool = True) -> None:
     """Best-effort egress logging via the current trace store."""
+    if not enabled:
+        return
     trace_store = current_trace_store.get()
     session_id = current_session_id.get()
     if trace_store is not None and session_id is not None:

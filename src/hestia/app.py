@@ -30,6 +30,7 @@ from hestia.orchestrator.engine import ConfirmCallback
 from hestia.persistence.db import Database
 from hestia.persistence.error_resolution_store import ErrorResolutionStore
 from hestia.persistence.failure_store import FailureStore
+from hestia.persistence.job_alert_store import JobAlertStore
 from hestia.persistence.scheduler import SchedulerStore
 from hestia.persistence.sessions import SessionStore
 from hestia.persistence.trace_store import TraceStore
@@ -54,19 +55,26 @@ from hestia.tools.builtin import (
     make_delete_memory_tool,
     make_delete_scheduled_task_tool,
     make_disable_scheduled_task_tool,
+    make_edit_file_tool,
     make_email_search_and_read_tool,
     make_email_tools,
     make_enable_scheduled_task_tool,
+    make_glob_tool,
+    make_grep_tool,
     make_http_get_tool,
     make_list_dir_tool,
     make_list_memories_tool,
+    make_list_pending_alerts_tool,
     make_list_proposals_tool,
     make_list_scheduled_tasks_tool,
+    make_mark_alerts_sent_tool,
     make_read_artifact_tool,
     make_read_file_tool,
     make_reject_proposal_tool,
     make_reset_style_metric_tool,
     make_reset_style_profile_tool,
+    make_rollback_turn_tool,
+    make_save_job_alert_tool,
     make_save_memory_tool,
     make_search_memory_tool,
     make_show_proposal_tool,
@@ -76,6 +84,7 @@ from hestia.tools.builtin import (
     make_write_file_tool,
     search_web,
 )
+from hestia.tools.checkpoint import CheckpointManager
 from hestia.tools.registry import ToolRegistry
 from hestia.workflows.execution_store import ExecutionStore
 from hestia.workflows.store import WorkflowStore
@@ -157,9 +166,11 @@ class AppContext:
         self.workflow_store = WorkflowStore(self.db)
         self.execution_store = ExecutionStore(self.db)
         self.error_resolution_store = ErrorResolutionStore(self.db)
+        self.job_alert_store = JobAlertStore(self.db)
         self.trigger_registry: Any = None
         self.epoch_compiler = MemoryEpochCompiler(self.memory_store, max_tokens=500)
         self.tool_registry = ToolRegistry(self.artifact_store)
+        self.checkpoint_manager = CheckpointManager()
 
         # Eager feature subsystems (lightweight; always available for status queries)
         self.proposal_store = ProposalStore(self.db)
@@ -278,6 +289,7 @@ class AppContext:
         await self.style_store.create_table()
         await self.workflow_store.create_tables()
         await self.execution_store.create_tables()
+        await self.job_alert_store.create_table()
         self._bootstrapped = True
 
     def make_injection_scanner(self) -> InjectionScanner:
@@ -311,6 +323,12 @@ class AppContext:
 
     def make_orchestrator(self) -> Orchestrator:
         """Create an Orchestrator with the current app context."""
+        checkpoint_manager: CheckpointManager | None = None
+        if self.config.trust.checkpoint_on_edit:
+            checkpoint_manager = self.checkpoint_manager
+
+        checkpoint_scope = self.config.storage.checkpoint_scope or None
+
         return Orchestrator(
             inference=self.inference,
             session_store=self.session_store,
@@ -331,6 +349,9 @@ class AppContext:
             rate_limiter=self.rate_limiter,
             stream=self.config.inference.stream,
             event_bus=self.event_bus,
+            checkpoint_manager=checkpoint_manager,
+            checkpoint_scope=checkpoint_scope,
+            auto_rollback_on_failure=self.config.trust.auto_rollback_on_failure,
         )
 
     def register_tools(self) -> None:
@@ -339,16 +360,27 @@ class AppContext:
         reg = self.tool_registry
 
         reg.register(current_time)
-        reg.register(make_http_get_tool(cfg.use_curl_cffi_fallback))
+        reg.register(
+            make_http_get_tool(
+                cfg.use_curl_cffi_fallback, cfg.security.egress_audit_enabled
+            )
+        )
         reg.register(make_list_dir_tool(cfg.storage))
         reg.register(make_terminal_tool(cfg.trust.blocked_shell_patterns or None))
         reg.register(make_read_file_tool(cfg.storage))
-        reg.register(make_write_file_tool(cfg.storage))
+        reg.register(make_write_file_tool(cfg.storage, cfg.trust.write_guard_enabled))
         reg.register(make_append_to_file_tool(cfg.storage))
+        reg.register(make_edit_file_tool(cfg.storage))
+        reg.register(make_glob_tool(cfg.storage))
+        reg.register(make_grep_tool(cfg.storage))
+        reg.register(make_rollback_turn_tool(self.checkpoint_manager))
         reg.register(make_search_memory_tool(self.memory_store))
         reg.register(make_save_memory_tool(self.memory_store))
         reg.register(make_list_memories_tool(self.memory_store))
         reg.register(make_delete_memory_tool(self.memory_store))
+        reg.register(make_save_job_alert_tool(self.job_alert_store))
+        reg.register(make_list_pending_alerts_tool(self.job_alert_store))
+        reg.register(make_mark_alerts_sent_tool(self.job_alert_store))
         reg.register(make_read_artifact_tool(self.artifact_store))
 
         # Proposal tools (bound to proposal store)
@@ -363,7 +395,9 @@ class AppContext:
         reg.register(make_reset_style_metric_tool(self.style_store))
         reg.register(make_reset_style_profile_tool(self.style_store))
 
-        web_search_tool = make_web_search_tool(cfg.web_search)
+        web_search_tool = make_web_search_tool(
+            cfg.web_search, cfg.security.egress_audit_enabled
+        )
         if web_search_tool is not None:
             reg.register(web_search_tool)
         else:

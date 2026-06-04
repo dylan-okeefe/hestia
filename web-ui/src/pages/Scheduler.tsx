@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useApiQuery, useApiMutation } from '../hooks/useApi';
+import { useToast } from '../hooks/useToast';
 import {
   fetchSchedulerTasks,
   createTask,
@@ -38,6 +39,7 @@ function getTaskName(task: Task): string {
 }
 
 export default function Scheduler() {
+  const { addToast } = useToast();
   const {
     data,
     isLoading,
@@ -88,25 +90,41 @@ export default function Scheduler() {
       cron_expression: form.cron_expression || undefined,
       enabled: form.enabled,
     };
-    if (editingTask) {
-      await updateMut.mutateAsync({ id: editingTask.id, payload });
-    } else {
-      await createMut.mutateAsync(payload);
+    try {
+      if (editingTask) {
+        await updateMut.mutateAsync({ id: editingTask.id, payload });
+        addToast({ message: 'Task updated', type: 'success', duration: 3000 });
+      } else {
+        await createMut.mutateAsync(payload);
+        addToast({ message: 'Task created', type: 'success', duration: 3000 });
+      }
+      setModalOpen(false);
+      refetch();
+    } catch (err: any) {
+      addToast({ message: err.message || 'Save failed', type: 'error', duration: 5000 });
     }
-    setModalOpen(false);
-    refetch();
   };
 
   const handleDelete = async (id: string) => {
-    await deleteMut.mutateAsync(id);
-    setConfirmDelete(null);
-    refetch();
+    try {
+      await deleteMut.mutateAsync(id);
+      addToast({ message: 'Task deleted', type: 'success', duration: 3000 });
+      setConfirmDelete(null);
+      refetch();
+    } catch (err: any) {
+      addToast({ message: err.message || 'Delete failed', type: 'error', duration: 5000 });
+    }
   };
 
   const handleRun = async (id: string) => {
-    await runMut.mutateAsync(id);
-    setConfirmRun(null);
-    refetch();
+    try {
+      await runMut.mutateAsync(id);
+      addToast({ message: 'Task triggered', type: 'success', duration: 3000 });
+      setConfirmRun(null);
+      refetch();
+    } catch (err: any) {
+      addToast({ message: err.message || 'Run failed', type: 'error', duration: 5000 });
+    }
   };
 
   return (

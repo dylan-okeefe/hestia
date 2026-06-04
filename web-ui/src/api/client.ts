@@ -28,6 +28,14 @@ function getHeaders(extra: Record<string, string> = {}): Record<string, string> 
   return headers;
 }
 
+async function checkOk(res: Response): Promise<Response> {
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`HTTP ${res.status}: ${text}`);
+  }
+  return res;
+}
+
 async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
   const res = await fetch(input, {
     ...init,
@@ -98,23 +106,29 @@ export async function fetchProposals(status = 'pending') {
 }
 
 export async function acceptProposal(id: string, note?: string) {
-  return apiFetch(`${API_BASE}/proposals/${id}/accept`, {
+  const res = await apiFetch(`${API_BASE}/proposals/${id}/accept`, {
     method: 'POST',
     body: JSON.stringify({ note }),
     headers: { 'Content-Type': 'application/json' },
   });
+  await checkOk(res);
+  return res.json();
 }
 
 export async function rejectProposal(id: string, note: string) {
-  return apiFetch(`${API_BASE}/proposals/${id}/reject`, {
+  const res = await apiFetch(`${API_BASE}/proposals/${id}/reject`, {
     method: 'POST',
     body: JSON.stringify({ note }),
     headers: { 'Content-Type': 'application/json' },
   });
+  await checkOk(res);
+  return res.json();
 }
 
 export async function deferProposal(id: string) {
-  return apiFetch(`${API_BASE}/proposals/${id}/defer`, { method: 'POST' });
+  const res = await apiFetch(`${API_BASE}/proposals/${id}/defer`, { method: 'POST' });
+  await checkOk(res);
+  return res.json();
 }
 
 export async function fetchStyleProfile(platform: string, user: string) {
@@ -124,9 +138,11 @@ export async function fetchStyleProfile(platform: string, user: string) {
 }
 
 export async function deleteStyleMetric(platform: string, user: string, metric: string) {
-  return apiFetch(`${API_BASE}/style/${encodeURIComponent(platform)}/${encodeURIComponent(user)}/${encodeURIComponent(metric)}`, {
+  const res = await apiFetch(`${API_BASE}/style/${encodeURIComponent(platform)}/${encodeURIComponent(user)}/${encodeURIComponent(metric)}`, {
     method: 'DELETE',
   });
+  await checkOk(res);
+  return res.json();
 }
 
 export async function fetchSchedulerTasks() {
@@ -162,7 +178,9 @@ export async function deleteTask(id: string) {
 }
 
 export async function runTaskNow(id: string) {
-  return apiFetch(`${API_BASE}/scheduler/tasks/${id}/run`, { method: 'POST' });
+  const res = await apiFetch(`${API_BASE}/scheduler/tasks/${id}/run`, { method: 'POST' });
+  await checkOk(res);
+  return res.json();
 }
 
 export async function runDoctor() {
@@ -199,11 +217,13 @@ export async function fetchConfigSchema() {
 }
 
 export async function saveConfig(config: object) {
-  return apiFetch(`${API_BASE}/config`, {
+  const res = await apiFetch(`${API_BASE}/config`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(config),
   });
+  await checkOk(res);
+  return res.json();
 }
 
 export interface Workflow {
@@ -384,10 +404,28 @@ export async function fetchDashboard() {
 }
 
 // Users
+export interface UserIdentity {
+  platform: string;
+  platform_user: string;
+  verified: boolean;
+}
+
+export interface User {
+  id: string;
+  display_name: string;
+  role: string;
+  trust_preset: string | null;
+  notes: string | null;
+  created_at: string;
+  identity_count: number;
+  room_count: number;
+  identities: UserIdentity[];
+}
+
 export async function fetchUsers() {
   const res = await apiFetch(`${API_BASE}/users`);
   if (!res.ok) throw new Error('Failed to fetch users');
-  return res.json() as Promise<{ users: Array<{ id: string; display_name: string; role: string; trust_preset: string | null; notes: string | null; created_at: string; identity_count: number; room_count: number }> }>;
+  return res.json() as Promise<{ users: User[] }>;
 }
 
 export async function fetchUser(userId: string) {
@@ -524,6 +562,68 @@ export async function debugError(id: string) {
   const res = await apiFetch(`${API_BASE}/errors/${encodeURIComponent(id)}/debug`, { method: 'POST' });
   if (!res.ok) throw new Error('Failed to fetch debug prompt');
   return res.json() as Promise<{ prompt: string }>;
+}
+
+// Browser Sessions
+export interface BrowserSession {
+  domain: string;
+  has_cookies: boolean;
+  has_storage_state: boolean;
+  cookie_count: number;
+  last_saved: string | null;
+  last_used: string | null;
+  last_health_check: string | null;
+  health_status: string;
+  health_check_url: string;
+}
+
+export async function fetchBrowserSessions(): Promise<BrowserSession[]> {
+  const res = await apiFetch(`${API_BASE}/browser-sessions`);
+  if (!res.ok) throw new Error('Failed to fetch browser sessions');
+  const data = await res.json();
+  return data.sessions;
+}
+
+export async function deleteBrowserSession(domain: string): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/browser-sessions/${encodeURIComponent(domain)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error('Failed to delete session');
+}
+
+export async function checkBrowserSession(domain: string): Promise<{ domain: string; status: string }> {
+  const res = await apiFetch(`${API_BASE}/browser-sessions/${encodeURIComponent(domain)}/check`, {
+    method: 'POST',
+  });
+  if (res.status === 429) throw new Error('Rate limited — try again later');
+  if (!res.ok) throw new Error('Health check failed');
+  return res.json();
+}
+
+export interface StreamSession {
+  session_id: string;
+  domain: string;
+  ws_url: string;
+}
+
+export async function startBrowserStream(url: string): Promise<StreamSession> {
+  const res = await apiFetch(`${API_BASE}/browser-sessions/start`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url }),
+  });
+  if (res.status === 409) {
+    const data = await res.json();
+    throw new Error(`Session already active: ${data.session_id}`);
+  }
+  if (!res.ok) throw new Error('Failed to start browser stream');
+  return res.json();
+}
+
+export async function stopBrowserStream(): Promise<{ domain: string; cookie_count: number; saved: boolean }> {
+  const res = await apiFetch(`${API_BASE}/browser-sessions/stop`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to stop browser stream');
+  return res.json();
 }
 
 // Handoffs

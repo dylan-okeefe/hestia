@@ -3,16 +3,20 @@
 import asyncio
 import dataclasses
 import json
+import logging
 import re
 import secrets
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 import httpx
 
+from hestia.core.json_repair import repair_json
 from hestia.core.serialization import message_to_dict
 from hestia.core.types import ChatResponse, Message, StreamDelta, ToolCall, ToolSchema
 from hestia.errors import InferenceServerError, InferenceTimeoutError
+
+logger = logging.getLogger(__name__)
 
 
 def _strip_historical_reasoning(messages: list[Message]) -> list[Message]:
@@ -50,7 +54,13 @@ def _parse_json_tool_calls(text: str) -> list[ToolCall]:
         try:
             data = json.loads(payload)
         except json.JSONDecodeError:
-            continue
+            repaired = repair_json(payload)
+            if repaired is None:
+                continue
+            try:
+                data = json.loads(repaired)
+            except json.JSONDecodeError:
+                continue
 
         name = data.get("name") or data.get("function", {}).get("name")
         arguments = data.get("arguments") or data.get("function", {}).get("arguments")
@@ -175,23 +185,54 @@ def _parse_glm_xml_tool_calls(text: str) -> list[ToolCall]:
     return tool_calls
 
 
+def _parse_bare_json_tool_calls(text: str) -> list[ToolCall]:
+    """Format 4: bare JSON objects with name and arguments keys."""
+    tool_calls: list[ToolCall] = []
+    for match in re.finditer(r"\{\s*[\'\"]?name[\'\"]?\s*:", text):
+        start = match.start()
+        payload = repair_json(text[start:])
+        if payload is None:
+            continue
+        try:
+            data = json.loads(payload)
+        except json.JSONDecodeError:
+            continue
+
+        name = data.get("name") or data.get("function", {}).get("name")
+        arguments = data.get("arguments") or data.get("function", {}).get("arguments")
+        if name and isinstance(arguments, dict):
+            tool_calls.append(
+                ToolCall(
+                    id="tc_bare_" + secrets.token_hex(8),
+                    name=name,
+                    arguments=arguments,
+                )
+            )
+    return tool_calls
+
+
 def _extract_tool_calls_from_text(text: str) -> list[ToolCall]:
-    """Parse XML-style <tool_call> blocks from model text/reasoning.
+    """Parse XML-style <tool_call> blocks and bare JSON objects from model text/reasoning.
 
     Qwen3.5 in reasoning mode occasionally emits tool calls inside its
     <think> block (which lands in ``reasoning_content``) but fails to
     output the structured ``tool_calls`` JSON. This fallback extracts
     them so the turn can continue instead of appearing to hang.
 
-    Supports three formats:
+    Supports four formats:
     1. JSON object: ``<tool_call>{"name": "...", "arguments": {...}}</tool_call>``
     2. Ad-hoc XML: ``<tool_call>\n<function=name>\n<parameter=key>\nvalue\n...``
     3. GLM XML: ``<tool_call>func_name\n<arg_key>k</arg_key>\n<arg_value>v</arg_value>\n...``
+    4. Bare JSON: ``{"name": "...", "arguments": {...}}`` (outside XML tags)
     """
-    if "<tool_call>" not in text:
-        return []
+    parsers: list[Callable[[str], list[ToolCall]]] = []
+    if "<tool_call>" in text:
+        parsers.extend(
+            [_parse_json_tool_calls, _parse_adhoc_xml_tool_calls, _parse_glm_xml_tool_calls]
+        )
+    parsers.append(_parse_bare_json_tool_calls)
 
-    for parser in (_parse_json_tool_calls, _parse_adhoc_xml_tool_calls, _parse_glm_xml_tool_calls):
+    for parser in parsers:
         results = parser(text)
         if results:
             return results
@@ -201,7 +242,7 @@ def _extract_tool_calls_from_text(text: str) -> list[ToolCall]:
 class InferenceClient:
     """Thin, opinionated wrapper around llama.cpp HTTP server."""
 
-    def __init__(self, base_url: str, model_name: str, timeout: float = 120.0) -> None:
+    def __init__(self, base_url: str, model_name: str, timeout: float = 300.0) -> None:
         """Initialize the client.
 
         Args:
@@ -397,8 +438,6 @@ class InferenceClient:
             "messages": [message_to_dict(m) for m in clean_messages],
             "max_tokens": max_tokens,
             "temperature": temperature,
-            "reasoning_format": "deepseek",
-            "reasoning_budget": reasoning_budget,
         }
 
         if tools:
@@ -423,51 +462,67 @@ class InferenceClient:
         if not choices:
             raise InferenceServerError("inference returned no choices")
         choice = choices[0]
-        message = choice["message"]
+        message = choice.get("message") or {}
 
         tool_calls: list[ToolCall] = []
-        raw_tool_calls = message.get("tool_calls", [])
-        if raw_tool_calls:
-            for tc in raw_tool_calls:
-                fn = tc["function"]
-                # Models occasionally emit tool_call arguments as a JSON scalar (string,
-                # number, null) instead of an object. ``**arguments`` would then raise
-                # TypeError downstream without naming the tool. Validate here.
-                try:
-                    arguments = json.loads(fn["arguments"])
-                except json.JSONDecodeError as exc:
+        raw_tool_calls = message.get("tool_calls") or []
+        for tc in raw_tool_calls:
+            fn = tc.get("function")
+            if not fn:
+                continue
+            name = fn.get("name")
+            arguments_raw = fn.get("arguments")
+            # Models occasionally emit tool_call arguments as a JSON scalar (string,
+            # number, null) instead of an object. ``**arguments`` would then raise
+            # TypeError downstream without naming the tool. Validate here.
+            try:
+                arguments = json.loads(arguments_raw) if arguments_raw is not None else {}
+            except json.JSONDecodeError as exc:
+                repaired = repair_json(arguments_raw) if arguments_raw is not None else None
+                if repaired is not None:
+                    logger.info(
+                        "Repaired malformed tool_call arguments for %r", name
+                    )
+                    arguments = json.loads(repaired)
+                else:
                     # Gracefully skip malformed tool calls instead of crashing the turn.
                     # Log for debugging; model may retry in next iteration.
-                    print(f"[WARN] Malformed tool_call arguments for {fn['name']!r}: {exc}")
-                    continue
-                if not isinstance(arguments, dict):
-                    print(
-                        f"[WARN] tool_call arguments for {fn['name']!r} are not a dict: "
-                        f"{type(arguments).__name__}"
+                    logger.warning(
+                        "Malformed tool_call arguments for %r: %s",
+                        name,
+                        exc,
                     )
                     continue
-                # Unwrap call_tool wrapper: if the model uses call_tool with nested name+arguments,
-                # extract the inner tool call directly.
-                if fn["name"] == "call_tool" and "name" in arguments and "arguments" in arguments:
-                    inner_name = arguments["name"]
-                    inner_args = arguments["arguments"]
-                    if isinstance(inner_name, str) and isinstance(inner_args, dict):
-                        tool_calls.append(
-                            ToolCall(
-                                id=tc["id"],
-                                name=inner_name,
-                                arguments=inner_args,
-                            )
-                        )
-                        continue
-                tool_calls.append(
-                    ToolCall(
-                        id=tc["id"],
-                        name=fn["name"],
-                        arguments=arguments,
-                    )
+            if not isinstance(arguments, dict):
+                logger.warning(
+                    "tool_call arguments for %r are not a dict: %s",
+                    name,
+                    type(arguments).__name__,
                 )
-        else:
+                continue
+            # Unwrap call_tool wrapper: if the model uses call_tool with nested name+arguments,
+            # extract the inner tool call directly.
+            if name == "call_tool" and "name" in arguments and "arguments" in arguments:
+                inner_name = arguments["name"]
+                inner_args = arguments["arguments"]
+                if isinstance(inner_name, str) and isinstance(inner_args, dict):
+                    tool_calls.append(
+                        ToolCall(
+                            id=tc.get("id") or f"call_{len(tool_calls)}",
+                            name=inner_name,
+                            arguments=inner_args,
+                        )
+                    )
+                    continue
+            tool_calls.append(
+                ToolCall(
+                    id=tc.get("id") or f"call_{len(tool_calls)}",
+                    name=name,
+                    arguments=arguments,
+                )
+            )
+
+        if not raw_tool_calls:
             # Fallback: Qwen3.5 in reasoning mode sometimes emits tool calls inside
             # <think> blocks (which land in reasoning_content) but omits the structured
             # tool_calls JSON. Parse XML-style <tool_call> tags as a safety net.
@@ -523,8 +578,6 @@ class InferenceClient:
             "stream": True,
             "max_tokens": max_tokens,
             "temperature": temperature,
-            "reasoning_format": "deepseek",
-            "reasoning_budget": reasoning_budget,
         }
 
         if tools:

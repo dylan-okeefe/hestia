@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 from hestia.app import AppContext
@@ -61,14 +62,37 @@ class LLMDecisionNode:
             tools=None,
         )
 
-        branch = response.content.strip()
+        branch = (response.content or "").strip()
+        if not branch and response.reasoning_content:
+            # Fallback for reasoning models that put the answer in
+            # reasoning_content instead of content.
+            lines = [
+                line.strip()
+                for line in response.reasoning_content.strip().split("\n")
+                if line.strip()
+            ]
+            if lines:
+                raw = lines[-1]
+                # Strip markdown formatting
+                raw = re.sub(r"^[\s*\-+•]+", "", raw)
+                raw = raw.replace("`", "")
+                raw = re.sub(r"\*\*?(.*?)\*\*?", r"\1", raw)
+                raw = raw.strip('"\'')
+                branch = raw.strip()
         if branches and branch not in branches:
-            logger.warning(
-                "LLM returned unrecognized branch %r for node %s; allowed: %s",
-                branch,
-                node.id,
-                branches,
-            )
+            # Try to find an allowed branch anywhere in the reasoning
+            if response.reasoning_content:
+                for b in branches:
+                    if re.search(rf"\b{re.escape(b)}\b", response.reasoning_content):
+                        branch = b
+                        break
+            if branch not in branches:
+                logger.warning(
+                    "LLM returned unrecognized branch %r for node %s; allowed: %s",
+                    branch,
+                    node.id,
+                    branches,
+                )
 
         return ChatResponse(
             content=branch,

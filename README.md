@@ -5,7 +5,7 @@ A personal AI assistant that runs locally. Hestia connects to your chat platform
 ## Features
 
 - **Local inference** — runs on your own hardware via llama.cpp
-- **Multi-platform** — Telegram, Matrix, CLI, Discord (voice)
+- **Multi-platform** — Telegram, Matrix, CLI
 - **Workflows** — visual workflow editor with triggers and nodes
 - **Web dashboard** — admin UI with auth, dark mode, responsive design
 - **User registry** — multi-user support with roles and trust levels
@@ -31,4 +31,4 @@ See [docs/guides/runtime-setup.md](docs/guides/runtime-setup.md) for detailed se
 
 ## License
 
-MIT
+Apache-2.0

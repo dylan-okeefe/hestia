@@ -12,14 +12,16 @@ from hestia.tools.metadata import tool
 
 logger = logging.getLogger(__name__)
 
-# Default patterns that are blocked regardless of config. These are
-# defense-in-depth rails, not a security boundary — the trust system
-# and confirmation callback remain the primary controls.
+# Default patterns that are blocked regardless of config. These are weak
+# defense-in-depth heuristics, not a security boundary — a determined actor
+# can bypass them with trivial obfuscation (e.g. `r\m`, variable expansion,
+# or targeting `/etc` instead of `/`). The trust system and confirmation
+# callback remain the primary controls.
 _DEFAULT_BLOCKED_PATTERNS = [
     r">\s*/dev/[sh]d[a-z]",  # redirect to block device
     r"dd\s+if=.*of=/dev/[sh]d",  # disk overwrite
     r":\s*\(\s*\)\s*\{\s*:\s*\|\s*:&\s*\};\s*:",  # fork bomb
-    r"rm\s+-[rf].*/\s*(;|$|\|)",  # rm -rf /
+    r"rm\s+-[rf].*/\*?\s*(;|$|\|)",  # rm -rf / or rm -rf /*
     r"mkfs\.[a-z0-9]+\s+/dev/[sh]d",  # filesystem creation on raw disk
 ]
 
@@ -31,6 +33,7 @@ def make_terminal_tool(blocked_patterns: list[str] | None = None) -> Any:
         blocked_patterns: Regex patterns that, if matched anywhere in the
             command string, cause the tool to return an error without execution.
             Defaults to a small set of catastrophically dangerous patterns.
+            These are weak heuristics, not a security boundary.
     """
     patterns = [_re_compile(p) for p in (blocked_patterns or _DEFAULT_BLOCKED_PATTERNS)]
 

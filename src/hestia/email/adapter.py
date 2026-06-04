@@ -185,7 +185,7 @@ class EmailAdapter:
         return m.group(1) if m else addr.strip()
 
     def _extract_body(
-        self, msg: email.message.Message, max_chars: int = 8000
+        self, msg: email.message.Message, max_chars: int = 1500
     ) -> tuple[str, list[dict[str, str]]]:
         """Extract plain-text body and attachment metadata from a message.
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
 
@@ -134,6 +134,7 @@ class TestReflectionScheduler:
         )
         # Insert directly via session store's db
         import sqlalchemy as sa
+
         from hestia.persistence.schema import sessions
 
         async with db.engine.connect() as conn:

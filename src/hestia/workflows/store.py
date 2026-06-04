@@ -198,6 +198,24 @@ class WorkflowStore:
         )
         return version
 
+    async def get_version(self, workflow_id: str, version: int) -> WorkflowVersion | None:
+        """Get a specific version for a workflow."""
+        query = (
+            sa.select(workflow_versions)
+            .where(
+                sa.and_(
+                    workflow_versions.c.workflow_id == workflow_id,
+                    workflow_versions.c.version == version,
+                )
+            )
+        )
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(query)
+            row = result.fetchone()
+            if row is None:
+                return None
+            return self._row_to_version(row)
+
     async def get_active_version(self, workflow_id: str) -> WorkflowVersion | None:
         """Get the active version for a workflow."""
         query = (

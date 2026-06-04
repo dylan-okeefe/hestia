@@ -67,6 +67,7 @@ export default function EditorToolbar({
         }}
         className="editor-toolbar__name-input"
         aria-label="Workflow name"
+        placeholder="Workflow name"
       />
       {isDirty && (
         <span className="editor-toolbar__unsaved" aria-label="Unsaved changes">
@@ -101,7 +102,11 @@ export default function EditorToolbar({
       <button onClick={onActivate} disabled={!activeVersionId}>
         Activate Version
       </button>
-      <button onClick={onTestRun} disabled={testing}>
+      <button
+        onClick={onTestRun}
+        disabled={testing}
+        title={activeVersionId ? 'Run the active workflow version' : 'Run the most recent saved version'}
+      >
         {testing ? 'Running…' : 'Test Run'}
       </button>
       <button onClick={onToggleHistory}>

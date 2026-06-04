@@ -79,6 +79,12 @@ class EmptyResponseError(HestiaError):
     pass
 
 
+class ThinkingBudgetExceededError(HestiaError):
+    """Model exceeded the configured reasoning/thinking token budget mid-stream."""
+
+    pass
+
+
 class ExperimentalFeatureError(HestiaError):
     """Raised when an experimental feature is used without opt-in."""
 

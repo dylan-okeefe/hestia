@@ -5,12 +5,12 @@ import pytest
 from helpers import FakeInferenceClient, FakePolicyEngine
 
 from hestia.artifacts.store import ArtifactStore
+from hestia.config import StorageConfig
 from hestia.context.builder import ContextBuilder
 from hestia.memory.store import MemoryStore
 from hestia.persistence.db import Database
 from hestia.persistence.sessions import SessionStore
 from hestia.tools.registry import ToolRegistry
-from hestia.config import StorageConfig
 
 
 @pytest.fixture

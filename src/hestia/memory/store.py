@@ -318,41 +318,31 @@ class MemoryStore:
 
         params: dict[str, Any] = {"limit": limit}
 
+        if platform is None or platform_user is None:
+            # Fail closed: unscoped queries are not allowed
+            return []
+
         if self._fts5_available:
             params["query"] = _sanitize_fts5_query(query)
-            if platform is not None and platform_user is not None:
-                sql = sa.text(
-                    "SELECT id, content, tags, session_id, created_at, platform, platform_user "
-                    "FROM memory WHERE memory MATCH :query "
-                    "AND platform = :platform AND platform_user = :platform_user "
-                    "ORDER BY rank LIMIT :limit"
-                )
-                params["platform"] = platform
-                params["platform_user"] = platform_user
-            else:
-                sql = sa.text(
-                    "SELECT id, content, tags, session_id, created_at, platform, platform_user "
-                    "FROM memory WHERE memory MATCH :query "
-                    "ORDER BY rank LIMIT :limit"
-                )
+            sql = sa.text(
+                "SELECT id, content, tags, session_id, created_at, platform, platform_user "
+                "FROM memory WHERE memory MATCH :query "
+                "AND platform = :platform AND platform_user = :platform_user "
+                "ORDER BY rank LIMIT :limit"
+            )
+            params["platform"] = platform
+            params["platform_user"] = platform_user
         else:
             # LIKE fallback for SQLite builds without FTS5
             params["query"] = f"%{query}%"
-            if platform is not None and platform_user is not None:
-                sql = sa.text(
-                    "SELECT id, content, tags, session_id, created_at, platform, platform_user "
-                    "FROM memory WHERE content LIKE :query "
-                    "AND platform = :platform AND platform_user = :platform_user "
-                    "ORDER BY created_at DESC LIMIT :limit"
-                )
-                params["platform"] = platform
-                params["platform_user"] = platform_user
-            else:
-                sql = sa.text(
-                    "SELECT id, content, tags, session_id, created_at, platform, platform_user "
-                    "FROM memory WHERE content LIKE :query "
-                    "ORDER BY created_at DESC LIMIT :limit"
-                )
+            sql = sa.text(
+                "SELECT id, content, tags, session_id, created_at, platform, platform_user "
+                "FROM memory WHERE content LIKE :query "
+                "AND platform = :platform AND platform_user = :platform_user "
+                "ORDER BY created_at DESC LIMIT :limit"
+            )
+            params["platform"] = platform
+            params["platform_user"] = platform_user
 
         async with self._db.engine.connect() as conn:
             result = await conn.execute(sql, params)

@@ -47,6 +47,7 @@ messages = sa.Table(
     sa.Column("tool_calls", sa.Text, nullable=True),  # JSON
     sa.Column("tool_call_id", sa.String, nullable=True),
     sa.Column("reasoning_content", sa.Text, nullable=True),  # stored but stripped on send
+    sa.Column("is_handoff", sa.Boolean, nullable=False, default=False),
     sa.Column("created_at", sa.DateTime, nullable=False),
     sa.PrimaryKeyConstraint("session_id", "idx"),
 )
@@ -282,4 +283,25 @@ room_members = sa.Table(
     sa.Column("user_id", sa.String, sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
     sa.Column("joined_at", sa.DateTime, nullable=False),
     sa.PrimaryKeyConstraint("room_id", "user_id"),
+)
+
+job_alerts = sa.Table(
+    "job_alerts",
+    metadata,
+    sa.Column("id", sa.String, primary_key=True),
+    sa.Column("created_at", sa.DateTime, nullable=False),
+    sa.Column("source_email", sa.Text, nullable=False),
+    sa.Column("subject", sa.Text, nullable=False),
+    sa.Column("title", sa.Text, nullable=True),
+    sa.Column("company", sa.Text, nullable=True),
+    sa.Column("location", sa.Text, nullable=True),
+    sa.Column("remote", sa.Text, nullable=True),
+    sa.Column("match_score", sa.Integer, nullable=True),
+    sa.Column("salary", sa.Text, nullable=True),
+    sa.Column("tech_stack", sa.Text, nullable=True),
+    sa.Column("url", sa.Text, nullable=True),
+    sa.Column("summary", sa.Text, nullable=True),
+    sa.Column("digest_sent", sa.Boolean, nullable=False, default=False),
+    sa.Index("idx_job_alerts_pending", "digest_sent", "created_at"),
+    sa.Index("idx_job_alerts_created", "created_at"),
 )

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -11,7 +10,7 @@ from fastapi.testclient import TestClient
 from hestia.config import WebConfig
 from hestia.persistence.users import UserStore
 from hestia.web.api import create_web_app
-from hestia.web.auth import AuthManager, AuthMiddleware, WebSession
+from hestia.web.auth import AuthManager, AuthMiddleware
 from hestia.web.context import WebContext, set_web_context
 
 

@@ -378,8 +378,8 @@ async def test_evict_by_id(store, slot_dir):
 
 
 @pytest.mark.asyncio
-async def test_acquire_warm_rolls_back_assignment_on_restore_failure(store, slot_dir):
-    """If slot_restore raises during WARM acquire, the assignment map rolls back."""
+async def test_acquire_warm_gracefully_handles_restore_failure(store, slot_dir):
+    """If slot_restore raises during WARM acquire, falls back to fresh slot."""
 
     class FailingRestoreInference(FakeInferenceClient):
         async def slot_restore(self, slot_id: int, filename: str) -> None:
@@ -403,14 +403,14 @@ async def test_acquire_warm_rolls_back_assignment_on_restore_failure(store, slot
     )
     session = await store.get_session(session.id)
 
-    # acquire should raise and leave _assignments empty
-    with pytest.raises(RuntimeError, match="Corrupt save file"):
-        await manager.acquire(session)
+    # acquire should gracefully fallback (not raise)
+    assignment = await manager.acquire(session)
 
-    assert manager._assignments == {}
-    # SessionStore should still show WARM
+    assert assignment.slot_id == 0
+    assert assignment.restored_from_disk is False
+    # SessionStore should now show HOT with the assigned slot
     refetched = await store.get_session(session.id)
-    assert refetched.temperature == SessionTemperature.WARM
+    assert refetched.temperature == SessionTemperature.HOT
 
 
 @pytest.mark.asyncio

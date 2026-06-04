@@ -61,21 +61,15 @@ def mock_context_builder():
 
 
 @pytest.fixture
-def mock_inference():
+def mock_inference(make_chat_response):
     inference = AsyncMock()
 
-    def _make_response(finish_reason, tool_calls=None, content=""):
-        return MagicMock(
-            content=content,
-            tool_calls=tool_calls or [],
-            finish_reason=finish_reason,
-            prompt_tokens=0,
-            completion_tokens=0,
-        )
-
     inference.chat.side_effect = [
-        _make_response("tool_calls", [ToolCall(id="tc1", name="test_tool", arguments={})]),
-        _make_response("stop", content="Done."),
+        make_chat_response(
+            finish_reason="tool_calls",
+            tool_calls=[ToolCall(id="tc1", name="test_tool", arguments={})],
+        ),
+        make_chat_response(finish_reason="stop", content="Done."),
     ]
     return inference
 

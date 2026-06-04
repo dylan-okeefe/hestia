@@ -1163,7 +1163,11 @@ class TestWorkflowsRoutes:
             assert data["total_elapsed_ms"] == 100
             assert data["total_prompt_tokens"] == 50
             assert data["total_completion_tokens"] == 25
-            instance.execute.assert_awaited_once_with("wf1", trigger_payload={"key": "value"})
+            instance.execute.assert_awaited_once_with(
+                "wf1",
+                trigger_payload={"key": "value"},
+                version_id=None,
+            )
 
     def test_test_run_workflow_not_found(self, client: TestClient, mock_app: MagicMock) -> None:
         """POST test-run returns 404 when workflow missing."""
@@ -1240,6 +1244,7 @@ class TestWorkflowsRoutes:
         import hashlib
         import hmac
         import json
+        import time
 
         from hestia.web import context as ctx_mod
         from hestia.workflows.models import Workflow
@@ -1258,12 +1263,18 @@ class TestWorkflowsRoutes:
 
         payload = {"key": "value"}
         body_bytes = json.dumps(payload).encode()
-        signature = hmac.new(b"super-secret", body_bytes, hashlib.sha256).hexdigest()
+        timestamp = int(time.time())
+        sig_payload = f"{timestamp}.".encode() + body_bytes
+        signature = hmac.new(b"super-secret", sig_payload, hashlib.sha256).hexdigest()
 
         response = client.post(
             "/api/webhooks/deploy",
             content=body_bytes,
-            headers={"X-Webhook-Signature": signature, "Content-Type": "application/json"},
+            headers={
+                "X-Webhook-Signature": signature,
+                "X-Webhook-Timestamp": str(timestamp),
+                "Content-Type": "application/json",
+            },
         )
         assert response.status_code == 202
         data = response.json()
@@ -1282,6 +1293,7 @@ class TestWorkflowsRoutes:
         import hashlib
         import hmac
         import json
+        import time
 
         from fastapi.testclient import TestClient
 
@@ -1327,12 +1339,18 @@ class TestWorkflowsRoutes:
 
         payload = {"key": "value"}
         body_bytes = json.dumps(payload).encode()
-        signature = hmac.new(b"super-secret", body_bytes, hashlib.sha256).hexdigest()
+        timestamp = int(time.time())
+        sig_payload = f"{timestamp}.".encode() + body_bytes
+        signature = hmac.new(b"super-secret", sig_payload, hashlib.sha256).hexdigest()
 
         response = client.post(
             "/api/webhooks/deploy",
             content=body_bytes,
-            headers={"X-Webhook-Signature": signature, "Content-Type": "application/json"},
+            headers={
+                "X-Webhook-Signature": signature,
+                "X-Webhook-Timestamp": str(timestamp),
+                "Content-Type": "application/json",
+            },
         )
         assert response.status_code == 202
         data = response.json()

@@ -97,6 +97,8 @@ class StorageConfig(_ConfigFromEnv):
     database_url: str = "sqlite+aiosqlite:///hestia.db"
     artifacts_dir: Path = field(default_factory=lambda: Path("artifacts"))
     allowed_roots: list[str] = field(default_factory=list)
+    checkpoint_scope: list[str] = field(default_factory=list)
+    """Paths to snapshot at turn start. Empty list defaults to cwd."""
 
 
 @dataclass
@@ -171,6 +173,11 @@ class TrustConfig(_ConfigFromEnv):
     # model's available tool list during scheduler ticks.
     scheduler_shell_exec: bool = False
 
+    # Allow scheduler tick sessions to call WRITE_LOCAL-capable tools.
+    # When False (default), the policy engine strips write_local tools from the
+    # model's available tool list during scheduler ticks.
+    scheduler_write_local: bool = False
+
     # Allow subagent sessions to call SHELL_EXEC-capable tools.
     subagent_shell_exec: bool = False
 
@@ -192,8 +199,16 @@ class TrustConfig(_ConfigFromEnv):
     # the tool's built-in defaults.
     blocked_shell_patterns: list[str] = field(default_factory=list)
 
+    # When True, write_file refuses to overwrite existing files and
+    # suggests using edit_file instead.
+    write_guard_enabled: bool = True
+
     # Active trust preset name (paranoid, household, developer, etc.)
     preset: str | None = None
+
+    # Per-turn file checkpointing (safety net for unattended coding runs)
+    checkpoint_on_edit: bool = True
+    auto_rollback_on_failure: bool = False
 
     def is_paranoid(self) -> bool:
         """Return True when this config matches the strictest trust posture.
@@ -204,6 +219,7 @@ class TrustConfig(_ConfigFromEnv):
         return (
             self.auto_approve_tools == []
             and not self.scheduler_shell_exec
+            and not self.scheduler_write_local
             and not self.subagent_shell_exec
             and not self.subagent_write_local
             and not self.subagent_email_send
@@ -249,6 +265,7 @@ class TrustConfig(_ConfigFromEnv):
             subagent_shell_exec=True,
             subagent_write_local=True,
             self_management=True,
+            write_guard_enabled=False,
         )
 
     @classmethod

@@ -13,7 +13,7 @@ Open `http://<host>:<port>` in your browser. If authentication is enabled, you w
 3. Hestia sends a one-time code to your chat platform.
 4. Enter the code to complete login.
 
-The first user to log in automatically becomes an admin. Subsequent users receive the `user` role by default.
+The first admin is assigned by running `hestia migrate-users` (users in the legacy config with `is_admin=True` are promoted). Subsequent users receive the `user` role by default.
 
 ## Pages
 

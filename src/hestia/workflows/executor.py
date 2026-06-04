@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -26,6 +27,67 @@ if TYPE_CHECKING:
     from hestia.workflows.execution_store import ExecutionStore
 
 logger = logging.getLogger(__name__)
+
+
+def _clean_reasoning_fallback(text: str) -> str:
+    """Strip markdown formatting from a reasoning model's final line."""
+    text = re.sub(r"^[\s*\-+•]+", "", text)
+    text = text.replace("`", "")
+    text = re.sub(r"\*\*?(.*?)\*\*?", r"\1", text)
+    text = text.strip('"\'')
+    return text.strip()
+
+
+def _extract_url_from_text(text: str) -> str | None:
+    """Extract the first URL found in text."""
+    match = re.search(r"https?://[^\s<>\"\')\]]+", text)
+    return match.group(0) if match else None
+
+
+# Patterns that indicate a URL is a job listing (not unsubscribe, home page, etc.)
+_JOB_URL_PATTERNS = [
+    re.compile(r"/jobs?/|/job/|jobListing|viewjob|job-detail|/km/|/ekm/|/clk\?", re.I),
+    re.compile(r"dice\.com/job-detail/", re.I),
+    re.compile(r"glassdoor\.com/partner/jobListing", re.I),
+    re.compile(r"indeed\.com/(?:viewjob|pagead/clk)", re.I),
+    re.compile(r"ziprecruiter\.com/(?:km/|ekm/)", re.I),
+    re.compile(r"linkedin\.com/(?:jobs/|comm/jobs/view)", re.I),
+    re.compile(r"builtin\.com/job/", re.I),
+]
+
+# Patterns that indicate a URL should be ignored
+_IGNORE_URL_PATTERNS = [
+    re.compile(
+        r"unsubscribe|preferences|alert|notification|privacy|terms|login|signin|account",
+        re.I,
+    ),
+    re.compile(r"linkedin\.com/comm/jobs/alerts", re.I),
+    re.compile(r"linkedin\.com/comm/feed/update", re.I),
+    re.compile(r"profile-views", re.I),
+]
+
+
+def _extract_best_job_url(body: str) -> str | None:
+    """Scan email body and return the best job-listing URL."""
+    all_urls: list[str] = re.findall(r"https?://[^\s<>\"\')\]]+", body)
+    candidates: list[tuple[int, str]] = []
+    for url in all_urls:
+        if any(p.search(url) for p in _IGNORE_URL_PATTERNS):
+            continue
+        # Also check URL-decoded version for embedded job paths
+        from urllib.parse import unquote
+        decoded = unquote(url)
+        score = 0
+        for pattern in _JOB_URL_PATTERNS:
+            if pattern.search(url) or pattern.search(decoded):
+                score += 1
+        if score > 0:
+            candidates.append((score, url))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    return candidates[0][1]
+
 
 _TRUST_CAPS: dict[str, set[str]] = {
     "paranoid": set(),
@@ -99,9 +161,13 @@ def _resolve_inputs(
     """Resolve node inputs from upstream node outputs and node config.
 
     Upstream outputs are keyed by target_handle when present, otherwise by
-    source_node_id. Node config is merged on top as defaults.
+    source_node_id. Node config is merged on top as defaults. The original
+    trigger payload is always available under ``inputs["data"]``.
     """
     inputs: dict[str, Any] = dict(node.config)
+    trigger_payload = outputs.get("trigger")
+    if trigger_payload is not None:
+        inputs["data"] = trigger_payload
     for edge in edges:
         if edge.target_node_id != node.id:
             continue
@@ -138,16 +204,23 @@ class WorkflowExecutor:
         self._workflow_store = workflow_store
         self._execution_store = execution_store
 
-    async def execute(self, workflow_id: str, trigger_payload: Any) -> ExecutionResult:
+    async def execute(
+        self,
+        workflow_id: str,
+        trigger_payload: Any,
+        version_id: str | None = None,
+    ) -> ExecutionResult:
         """Execute a workflow by its ID.
 
-        Loads the workflow and its active version, topologically sorts the nodes,
-        and executes them in dependency order with trust checks and fail-fast
-        semantics.
+        Loads the workflow and its active version (or a specific version if
+        version_id is provided), topologically sorts the nodes, and executes
+        them in dependency order with trust checks and fail-fast semantics.
 
         Args:
             workflow_id: The unique identifier of the workflow.
             trigger_payload: The payload that triggered the workflow execution.
+            version_id: Optional ``{workflow_id}:{version}`` string to execute
+                a specific version instead of the active one.
 
         Returns:
             ExecutionResult containing the status and results of all nodes.
@@ -173,24 +246,67 @@ class WorkflowExecutor:
                 )
             return result
 
-        version = await store.get_active_version(workflow_id)
-        if version is None:
-            result = ExecutionResult(
-                workflow_id=workflow_id,
-                status="failed",
-                node_results=[
-                    NodeResult(
-                        node_id="",
-                        status="failed",
-                        error=f"No active version for workflow: {workflow_id}",
-                    )
-                ],
-            )
-            if self._execution_store is not None:
-                await self._execution_store.save_execution(
-                    result, workflow_id, 0, trigger_payload
+        if version_id is not None:
+            if ":" in version_id:
+                _, version_str = version_id.rsplit(":", 1)
+            else:
+                version_str = version_id
+            try:
+                version_num = int(version_str)
+            except ValueError:
+                result = ExecutionResult(
+                    workflow_id=workflow_id,
+                    status="failed",
+                    node_results=[
+                        NodeResult(
+                            node_id="",
+                            status="failed",
+                            error=f"Invalid version ID: {version_id}",
+                        )
+                    ],
                 )
-            return result
+                if self._execution_store is not None:
+                    await self._execution_store.save_execution(
+                        result, workflow_id, 0, trigger_payload
+                    )
+                return result
+            version = await store.get_version(workflow_id, version_num)
+            if version is None:
+                result = ExecutionResult(
+                    workflow_id=workflow_id,
+                    status="failed",
+                    node_results=[
+                        NodeResult(
+                            node_id="",
+                            status="failed",
+                            error=f"Version not found: {version_id}",
+                        )
+                    ],
+                )
+                if self._execution_store is not None:
+                    await self._execution_store.save_execution(
+                        result, workflow_id, 0, trigger_payload
+                    )
+                return result
+        else:
+            version = await store.get_active_version(workflow_id)
+            if version is None:
+                result = ExecutionResult(
+                    workflow_id=workflow_id,
+                    status="failed",
+                    node_results=[
+                        NodeResult(
+                            node_id="",
+                            status="failed",
+                            error=f"No active version for workflow: {workflow_id}",
+                        )
+                    ],
+                )
+                if self._execution_store is not None:
+                    await self._execution_store.save_execution(
+                        result, workflow_id, 0, trigger_payload
+                    )
+                return result
 
         node_results: list[NodeResult] = []
         outputs: dict[str, Any] = {"trigger": trigger_payload}
@@ -298,20 +414,22 @@ class WorkflowExecutor:
             total_prompt_tokens += node_output.prompt_tokens
             total_completion_tokens += node_output.completion_tokens
 
-            for edge in version.edges:
-                if edge.source_node_id != node.id:
-                    continue
+            outgoing_edges = [e for e in version.edges if e.source_node_id == node.id]
+            single_edge = len(outgoing_edges) == 1
+            for edge in outgoing_edges:
                 if node.type == "condition":
-                    if (
-                        node_output.value
-                        and edge.source_handle == "true"
-                    ) or (
-                        not node_output.value
-                        and edge.source_handle == "false"
+                    if node_output.value and (
+                        (single_edge and edge.source_handle is None)
+                        or edge.source_handle == "true"
+):
+                        active_edges.add(edge.id)
+                    elif not node_output.value and (
+                        (single_edge and edge.source_handle is None)
+                        or edge.source_handle == "false"
                     ):
                         active_edges.add(edge.id)
                 elif node.type == "llm_decision":
-                    if edge.source_handle == str(node_output.value):
+                    if (single_edge and edge.source_handle is None) or edge.source_handle == str(node_output.value):
                         active_edges.add(edge.id)
                 else:
                     active_edges.add(edge.id)
@@ -374,13 +492,64 @@ class WorkflowExecutor:
             response = await self._app.inference.chat(
                 messages=[Message(role="user", content=prompt)],
                 tools=None,
+                max_tokens=4096,
+                reasoning_budget=512,
             )
+            content = response.content or ""
+            if not content and response.reasoning_content:
+                # Fallback: some reasoning models (e.g. Qwen3.5-DeepSeek)
+                # put their answer in reasoning_content when the prompt is
+                # long. Extract the last non-empty line as the answer.
+                lines = [
+                    line.strip()
+                    for line in response.reasoning_content.strip().split("\n")
+                    if line.strip()
+                ]
+                if lines:
+                    content = _clean_reasoning_fallback(lines[-1])
+                    # If the cleaned line looks like it contains a URL,
+                    # try to extract just the URL.
+                    url = _extract_url_from_text(content)
+                    if url:
+                        content = url
+
+            # For extract_url node: if LLM didn't return a clean URL,
+            # scan the email body directly for job-related URLs.
+            if node.id == "extract_url":
+                url = _extract_url_from_text(content)
+                # If LLM rambled (long response), returned NONE, or gave a
+                # broken/partial URL, fall back to scanning the body.
+                use_fallback = not url or url == "NONE" or len(content) > 200
+                if use_fallback:
+                    data = inputs.get("data", {})
+                    body = data.get("body", "") if isinstance(data, dict) else ""
+                    if body:
+                        fallback = _extract_best_job_url(body)
+                        if fallback:
+                            content = fallback
+                        elif url and url != "NONE":
+                            content = url
+                        else:
+                            content = "NONE"
+                    elif url and url != "NONE":
+                        content = url
+                    else:
+                        content = "NONE"
+                else:
+                    assert url is not None
+                    content = url
+
             return _NodeOutput(
-                value=response.content,
+                value=content,
                 prompt_tokens=response.prompt_tokens,
                 completion_tokens=response.completion_tokens,
             )
 
         # Treat node type as a tool name by default
         result = await self._app.tool_registry.call(node.type, inputs)
-        return _NodeOutput(value=result.content)
+        value = result.content
+        if result.artifact_handle:
+            # Load full artifact content so downstream nodes get the complete data
+            full_bytes = self._app.artifact_store.fetch_content(result.artifact_handle)
+            value = full_bytes.decode("utf-8", errors="replace")
+        return _NodeOutput(value=value)

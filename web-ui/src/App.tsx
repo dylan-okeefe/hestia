@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ToastProvider } from './hooks/useToast';
 import ToastContainer from './components/ToastContainer';
@@ -9,6 +9,8 @@ import Proposals from './pages/Proposals';
 import StyleProfile from './pages/StyleProfile';
 import Scheduler from './pages/Scheduler';
 import Security from './pages/Security';
+import BrowserSessions from './pages/BrowserSessions';
+import BrowserStream from './pages/BrowserStream';
 import Config from './pages/Config';
 import Workflows from './pages/Workflows';
 import WorkflowEditor from './pages/WorkflowEditor';
@@ -56,6 +58,7 @@ function AppContent() {
             {navLink('Proposals', '/proposals')}
             {navLink('Style', '/style')}
             {navLink('Scheduler', '/scheduler')}
+            {auth.authenticated && isAdmin && navLink('Browser', '/browser-sessions')}
             {navLink('Security & Health', '/security')}
             {navLink('Config', '/config')}
             {navLink('Workflows', '/workflows')}
@@ -76,13 +79,15 @@ function AppContent() {
             <Route path="/style" element={<StyleProfile />} />
             <Route path="/scheduler" element={<Scheduler />} />
             <Route path="/security" element={<Security />} />
+            <Route path="/browser-sessions" element={isAdmin ? <BrowserSessions /> : <Navigate to="/" replace />} />
+            <Route path="/browser-sessions/stream" element={isAdmin ? <BrowserStream /> : <Navigate to="/" replace />} />
             <Route path="/config" element={<Config />} />
             <Route path="/workflows" element={<Workflows />} />
             <Route path="/workflows/:id" element={<WorkflowEditor />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/knowledge" element={<Knowledge />} />
             <Route path="/sessions/:id" element={<SessionDetail />} />
-            <Route path="/admin/users" element={<AdminUsers />} />
+            <Route path="/admin/users" element={isAdmin ? <AdminUsers /> : <Navigate to="/" replace />} />
             <Route path="/errors" element={<ErrorDashboard />} />
             <Route path="*" element={<NotFound />} />
           </Routes>

@@ -232,7 +232,7 @@ class TriggerRegistry:
         if not isinstance(payload, dict):
             return False
         if from_address is not None:
-            payload_from = payload.get("from")
+            payload_from = payload.get("from_address")
             if not isinstance(payload_from, str) or from_address not in payload_from:
                 return False
         if subject_contains is not None:

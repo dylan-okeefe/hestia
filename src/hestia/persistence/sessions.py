@@ -309,6 +309,7 @@ class SessionStore:
                 synthetic = Message(
                     role="user",
                     content=self._format_handoff_message(handoff),
+                    is_handoff=True,
                 )
                 await self.append_message(session.id, synthetic)
         return session
@@ -516,6 +517,7 @@ class SessionStore:
                         tool_calls=tool_calls_json,
                         tool_call_id=msg.tool_call_id,
                         reasoning_content=msg.reasoning_content,
+                        is_handoff=msg.is_handoff,
                         created_at=msg.created_at if msg.created_at else utcnow(),
                     )
                     await conn.execute(insert)
@@ -686,6 +688,7 @@ class SessionStore:
             tool_calls=tool_calls,
             tool_call_id=row.tool_call_id,
             reasoning_content=row.reasoning_content,
+            is_handoff=bool(row.is_handoff),
             created_at=row.created_at,
         )
 

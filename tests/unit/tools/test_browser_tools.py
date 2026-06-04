@@ -51,17 +51,17 @@ class TestBrowserLogin:
     @pytest.mark.asyncio
     async def test_import_error_when_playwright_not_installed(self):
         """ImportError returns installation instructions."""
-        # Ensure playwright is not available in sys.modules
-        with patch.dict(sys.modules, {}, clear=False):
-            for key in list(sys.modules):
-                if key.startswith("playwright"):
-                    del sys.modules[key]
+        import builtins
 
-            import importlib
+        original_import = builtins.__import__
 
-            login_module = importlib.import_module("hestia.tools.builtin.browser_login")
-            importlib.reload(login_module)
-            result = await login_module.browser_login("https://example.com/login")
+        def _block_playwright(name: str, *args: object, **kwargs: object) -> object:
+            if name == "playwright.async_api":
+                raise ImportError("No module named 'playwright.async_api'")
+            return original_import(name, *args, **kwargs)
+
+        with patch.object(builtins, "__import__", _block_playwright):
+            result = await browser_login("https://example.com/login")
         assert "Playwright is not installed" in result
 
     @pytest.mark.asyncio
@@ -123,16 +123,17 @@ class TestBrowserGet:
     @pytest.mark.asyncio
     async def test_import_error_when_playwright_not_installed(self):
         """ImportError returns installation instructions."""
-        with patch.dict(sys.modules, {}, clear=False):
-            for key in list(sys.modules):
-                if key.startswith("playwright"):
-                    del sys.modules[key]
+        import builtins
 
-            import importlib
+        original_import = builtins.__import__
 
-            get_module = importlib.import_module("hestia.tools.builtin.browser_get")
-            importlib.reload(get_module)
-            result = await get_module.browser_get("https://example.com/page")
+        def _block_playwright(name: str, *args: object, **kwargs: object) -> object:
+            if name == "playwright.async_api":
+                raise ImportError("No module named 'playwright.async_api'")
+            return original_import(name, *args, **kwargs)
+
+        with patch.object(builtins, "__import__", _block_playwright):
+            result = await browser_get("https://example.com/page")
         assert "Playwright is not installed" in result
 
     @pytest.mark.asyncio
@@ -299,3 +300,107 @@ class TestBrowserGet:
 
         assert "Error fetching" in result
         assert "Network error" in result
+
+
+class TestBrowserSessionHealthCheck:
+    """Tests for BrowserSessionStore.check_health."""
+
+    @pytest.mark.asyncio
+    async def test_check_health_healthy_page(self, mock_playwright, tmp_path):
+        """Healthy page returns 'healthy'."""
+        from hestia.tools.browser.session_store import BrowserSessionStore
+
+        mock_page = AsyncMock()
+        mock_page.goto = AsyncMock()
+        mock_page.title = AsyncMock(return_value="Dashboard")
+        mock_page.url = "https://example.com/dashboard"
+
+        mock_context = AsyncMock()
+        mock_context.new_page = AsyncMock(return_value=mock_page)
+        mock_context.storage_state = AsyncMock(return_value={"cookies": [], "origins": []})
+        mock_context.cookies = AsyncMock(return_value=[])
+
+        mock_browser = AsyncMock()
+        mock_browser.new_context = AsyncMock(return_value=mock_context)
+
+        mock_playwright_instance = AsyncMock()
+        mock_playwright_instance.chromium = AsyncMock()
+        mock_playwright_instance.chromium.launch = AsyncMock(return_value=mock_browser)
+
+        mock_playwright.async_playwright = MagicMock(
+            return_value=MockAsyncContextManager(mock_playwright_instance)
+        )
+
+        store = BrowserSessionStore(base_dir=tmp_path)
+        store.save_cookies("example.com", [{"name": "session", "value": "abc"}])
+
+        status = await store.check_health("example.com")
+        assert status == "healthy"
+
+    @pytest.mark.asyncio
+    async def test_check_health_login_redirect(self, mock_playwright, tmp_path):
+        """Redirect to login page returns 'expired'."""
+        from hestia.tools.browser.session_store import BrowserSessionStore
+
+        mock_page = AsyncMock()
+        mock_page.goto = AsyncMock()
+        mock_page.title = AsyncMock(return_value="Sign in to Example")
+        mock_page.url = "https://example.com/login"
+
+        mock_context = AsyncMock()
+        mock_context.new_page = AsyncMock(return_value=mock_page)
+        mock_context.storage_state = AsyncMock(return_value={"cookies": [], "origins": []})
+        mock_context.cookies = AsyncMock(return_value=[])
+
+        mock_browser = AsyncMock()
+        mock_browser.new_context = AsyncMock(return_value=mock_context)
+
+        mock_playwright_instance = AsyncMock()
+        mock_playwright_instance.chromium = AsyncMock()
+        mock_playwright_instance.chromium.launch = AsyncMock(return_value=mock_browser)
+
+        mock_playwright.async_playwright = MagicMock(
+            return_value=MockAsyncContextManager(mock_playwright_instance)
+        )
+
+        store = BrowserSessionStore(base_dir=tmp_path)
+        store.save_cookies("example.com", [{"name": "session", "value": "abc"}])
+
+        status = await store.check_health("example.com")
+        assert status == "expired"
+
+    @pytest.mark.asyncio
+    async def test_check_health_rate_limit(self, mock_playwright, tmp_path):
+        """Calling check_health too soon raises ValueError."""
+        from hestia.tools.browser.session_store import BrowserSessionStore
+
+        mock_page = AsyncMock()
+        mock_page.goto = AsyncMock()
+        mock_page.title = AsyncMock(return_value="Dashboard")
+        mock_page.url = "https://example.com/dashboard"
+
+        mock_context = AsyncMock()
+        mock_context.new_page = AsyncMock(return_value=mock_page)
+        mock_context.storage_state = AsyncMock(return_value={"cookies": [], "origins": []})
+        mock_context.cookies = AsyncMock(return_value=[])
+
+        mock_browser = AsyncMock()
+        mock_browser.new_context = AsyncMock(return_value=mock_context)
+
+        mock_playwright_instance = AsyncMock()
+        mock_playwright_instance.chromium = AsyncMock()
+        mock_playwright_instance.chromium.launch = AsyncMock(return_value=mock_browser)
+
+        mock_playwright.async_playwright = MagicMock(
+            return_value=MockAsyncContextManager(mock_playwright_instance)
+        )
+
+        store = BrowserSessionStore(base_dir=tmp_path)
+        store.save_cookies("example.com", [{"name": "session", "value": "abc"}])
+
+        # First check should succeed
+        await store.check_health("example.com")
+
+        # Second check immediately after should be rate-limited
+        with pytest.raises(ValueError, match="rate-limited"):
+            await store.check_health("example.com")

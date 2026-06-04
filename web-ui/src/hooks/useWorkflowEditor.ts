@@ -38,7 +38,7 @@ export function useWorkflowEditor(workflowId: string | undefined) {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [selectedExecution, setSelectedExecution] = useState<string | null>(null);
-  const [addNodeType, setAddNodeType] = useState<string>('default');
+  const [addNodeType, setAddNodeType] = useState<string>('tool_call');
   const [triggerType, setTriggerType] = useState<string>('manual');
   const [triggerConfig, setTriggerConfig] = useState<Record<string, string>>({});
   const [triggerSaving, setTriggerSaving] = useState(false);
@@ -121,6 +121,10 @@ export function useWorkflowEditor(workflowId: string | undefined) {
           setActiveVersionId(active.id);
           setNodes(active.nodes.map((n: WorkflowNode) => ({ ...n, data: n.data || {} })));
           setEdges(active.edges.map((e: WorkflowEdge) => ({ ...e })));
+        } else if (vs.versions.length > 0) {
+          const latest = vs.versions[vs.versions.length - 1];
+          setNodes(latest.nodes.map((n: WorkflowNode) => ({ ...n, data: n.data || {} })));
+          setEdges(latest.edges.map((e: WorkflowEdge) => ({ ...e })));
         }
         setLoading(false);
       })
@@ -251,6 +255,8 @@ export function useWorkflowEditor(workflowId: string | undefined) {
         source: e.source,
         target: e.target,
         type: e.type,
+        sourceHandle: e.sourceHandle ?? undefined,
+        targetHandle: e.targetHandle ?? undefined,
       }));
       const version = await saveWorkflowVersion(workflowId, serialNodes, serialEdges);
       setVersions((vs) => [...vs, version]);
@@ -296,7 +302,15 @@ export function useWorkflowEditor(workflowId: string | undefined) {
     setTestResult(null);
     setTestError(null);
     try {
-      const result = await testRunWorkflow(workflowId);
+      let versionId: string | undefined;
+      if (!activeVersionId && versions.length > 0) {
+        const latest = versions[versions.length - 1];
+        versionId = latest.id;
+      }
+      const result = await testRunWorkflow(
+        workflowId,
+        versionId ? { version_id: versionId } : undefined
+      );
       setTestResult(result);
       setError(null);
       await loadExecutions();
@@ -352,6 +366,7 @@ export function useWorkflowEditor(workflowId: string | undefined) {
     pushCurrent();
     setNodes(version.nodes.map((n: WorkflowNode) => ({ ...n, data: n.data || {} })));
     setEdges(version.edges.map((e: WorkflowEdge) => ({ ...e })));
+    setSelectedNode(null);
     setIsDirty(true);
   };
 

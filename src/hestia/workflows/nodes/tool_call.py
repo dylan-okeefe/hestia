@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from hestia.app import AppContext
+from hestia.workflows.interpolation import interpolate
 from hestia.workflows.models import WorkflowNode
 
 
@@ -34,5 +35,24 @@ class ToolCallNode:
         if not tool_name:
             raise ValueError("ToolCallNode requires 'tool_name' in config")
 
-        result = await app.tool_registry.call(tool_name, inputs)
+        # Interpolate {{...}} templates in string inputs so that config
+        # values like "{{data.from_address}}" resolve to actual values.
+        resolved = {
+            k: interpolate(v, inputs) if isinstance(v, str) else v
+            for k, v in inputs.items()
+        }
+
+        # Filter inputs to only include keys the tool accepts
+        try:
+            meta = app.tool_registry.describe(tool_name)
+            allowed = set(meta.parameters_schema.get("properties", {}).keys())
+            tool_inputs = {k: v for k, v in resolved.items() if k in allowed}
+        except Exception:
+            # If describe fails or schema is unavailable, strip known meta keys
+            tool_inputs = {k: v for k, v in resolved.items() if k != "tool_name"}
+
+        result = await app.tool_registry.call(tool_name, tool_inputs)
+        if result.artifact_handle:
+            full_bytes = app.artifact_store.fetch_content(result.artifact_handle)
+            return full_bytes.decode("utf-8", errors="replace")
         return result.content

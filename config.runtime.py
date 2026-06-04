@@ -87,11 +87,11 @@ _DB_PATH = _ROOT / "hestia.db"
 config = HestiaConfig(
     inference=InferenceConfig(
         base_url="http://127.0.0.1:8001",
-        model_name="Qwen3.5-9B-DeepSeek-V4-Flash-Q4_K_M.gguf",
-        # Must match llama-server's --ctx-size (see deploy/hestia-llama.service).
-        # With --parallel 4, each slot gets context_length / 4 = 8192 tokens.
+        model_name="Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+        # Must match llama-server's per-slot context: --ctx-size / --parallel.
+        # With -c 131072 -np 2, each slot gets 131072 / 2 = 65536 tokens.
         # The policy engine uses this value for context-window budgeting.
-        context_length=32768,
+        context_length=65536,
         default_reasoning_budget=2048,
         max_tokens=4096,
         stream=True,
@@ -143,7 +143,7 @@ config = HestiaConfig(
     # Web search disabled (no Tavily key in .env). To enable:
     #   web_search=WebSearchConfig(provider="tavily", api_key=os.environ["TAVILY_API_KEY"])
     web_search=WebSearchConfig(),
-    web=WebConfig(enabled=True, auth_enabled=True),
+    web=WebConfig(enabled=True, auth_enabled=True, host="0.0.0.0"),
     # Injection scanner on, default threshold 5.5. Egress audit logs every
     # outbound network call to runtime-data/logs/egress.jsonl.
     security=SecurityConfig(),

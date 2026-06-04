@@ -63,3 +63,6 @@ escape_room_planning.md
 docs/development-process/hestia-project-briefing.md
 docs/development-process/prompts/opus-full-repo-review.md
 docs/development-process/reviews/smallcode-littlecoder-review.md
+
+# Local research clones
+.harness-research/
