@@ -219,7 +219,10 @@ class TurnExecution:
                 turn.final_response = content
                 # Surface reasoning to user (does not affect stored message or prompt)
                 if chat_response.reasoning_content:
-                    display = f"💭 {chat_response.reasoning_content}\n\n━━━\n\n{content}"
+                    reasoning_text = chat_response.reasoning_content[:2000]
+                    if len(chat_response.reasoning_content) > 2000:
+                        reasoning_text += "\n\n... (reasoning truncated)"
+                    display = f"💭 {reasoning_text}\n\n━━━\n\n{content}"
                 else:
                     display = content
                 await ctx.respond_callback(display)
