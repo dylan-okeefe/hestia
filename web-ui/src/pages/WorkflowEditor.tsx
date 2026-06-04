@@ -295,17 +295,25 @@ export default function WorkflowEditor() {
           </div>
         </div>
         {editor.selectedNode && (
-          <NodePropertiesPanel
-            selectedNode={editor.selectedNode}
-            nodes={editor.nodes}
-            edges={editor.edges}
-            onDeleteNode={editor.handleDeleteNode}
-            onUpdateNodeData={editor.updateSelectedNodeData}
-            onChangeNodeType={editor.handleChangeNodeType}
-            tools={editor.tools}
-            toolSchemas={editor.toolSchemas}
-            triggerType={editor.triggerType}
-          />
+          <>
+            <div
+              className="node-properties__drawer-backdrop"
+              onClick={() => editor.setSelectedNode(null)}
+              aria-hidden="true"
+            />
+            <NodePropertiesPanel
+              selectedNode={editor.selectedNode}
+              nodes={editor.nodes}
+              edges={editor.edges}
+              onDeleteNode={editor.handleDeleteNode}
+              onUpdateNodeData={editor.updateSelectedNodeData}
+              onChangeNodeType={editor.handleChangeNodeType}
+              onClose={() => editor.setSelectedNode(null)}
+              tools={editor.tools}
+              toolSchemas={editor.toolSchemas}
+              triggerType={editor.triggerType}
+            />
+          </>
         )}
       </div>
     </div>

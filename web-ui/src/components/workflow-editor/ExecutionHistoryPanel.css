@@ -69,3 +69,23 @@
   gap: var(--space-4);
   margin-bottom: var(--space-2);
 }
+
+@media (max-width: 767px) {
+  .execution-history-panel {
+    max-height: none;
+    padding: var(--space-2);
+  }
+
+  .execution-history-panel__table {
+    font-size: var(--font-size-xs);
+  }
+
+  .execution-history-panel__detail-table {
+    font-size: 0.75rem;
+  }
+
+  .execution-history-panel__test-meta {
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+}

@@ -9,6 +9,17 @@
   flex-shrink: 0;
 }
 
+@media (max-width: 767px) {
+  .version-panel {
+    width: 100%;
+    min-width: auto;
+    max-width: none;
+    border-right: none;
+    border-bottom: var(--border-thin);
+    max-height: 40vh;
+  }
+}
+
 .version-panel__table {
   width: 100%;
   border-collapse: collapse;
