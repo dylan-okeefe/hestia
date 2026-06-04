@@ -12,6 +12,7 @@ import ReactFlow, {
   type Edge,
   type NodeChange,
   type EdgeChange,
+  type ReactFlowInstance,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import '@reactflow/node-resizer/dist/style.css';
@@ -25,11 +26,56 @@ import { useWorkflowEditor } from '../hooks/useWorkflowEditor';
 import ErrorState from '../components/layout/ErrorState';
 import './WorkflowEditor.css';
 
+function computeNodePosition(
+  existingNodes: Node[],
+  selectedNode: Node | null,
+  canvasWidth: number,
+  canvasHeight: number,
+  viewport: { x: number; y: number; zoom: number }
+): { x: number; y: number } {
+  const GRID_X = 180;
+  const GRID_Y = 80;
+
+  const centerX = (canvasWidth / 2 - viewport.x) / viewport.zoom;
+  const centerY = (canvasHeight / 2 - viewport.y) / viewport.zoom;
+
+  const baseX = selectedNode ? selectedNode.position.x + 150 : centerX - 75;
+  const baseY = selectedNode ? selectedNode.position.y + 50 : centerY - 25;
+
+  const occupied = new Set<string>();
+  for (const n of existingNodes) {
+    const gx = Math.round(n.position.x / GRID_X);
+    const gy = Math.round(n.position.y / GRID_Y);
+    occupied.add(`${gx},${gy}`);
+  }
+
+  const baseGx = Math.round(baseX / GRID_X);
+  const baseGy = Math.round(baseY / GRID_Y);
+
+  for (let r = 0; r < 20; r++) {
+    for (let dx = -r; dx <= r; dx++) {
+      for (let dy = -r; dy <= r; dy++) {
+        if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+        const gx = baseGx + dx;
+        const gy = baseGy + dy;
+        if (!occupied.has(`${gx},${gy}`)) {
+          return { x: gx * GRID_X, y: gy * GRID_Y };
+        }
+      }
+    }
+  }
+
+  return { x: baseX, y: baseY };
+}
+
 export default function WorkflowEditor() {
   const { id } = useParams<{ id: string }>();
   const editor = useWorkflowEditor(id);
   const selectedNodeRef = useRef(editor.selectedNode);
   selectedNodeRef.current = editor.selectedNode;
+  const canvasContainerRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef({ x: 0, y: 0, zoom: 1 });
+  const reactFlowInstanceRef = useRef<ReactFlowInstance | null>(null);
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
@@ -132,10 +178,19 @@ export default function WorkflowEditor() {
         addNodeType={editor.addNodeType}
         onAddNodeTypeChange={editor.setAddNodeType}
         onAddNode={() => {
+          const container = canvasContainerRef.current;
+          const rect = container?.getBoundingClientRect();
+          const pos = computeNodePosition(
+            editor.nodes,
+            editor.selectedNode,
+            rect?.width ?? 800,
+            rect?.height ?? 600,
+            viewportRef.current
+          );
           const newNode: Node = {
             id: `node_${Date.now()}`,
             type: editor.addNodeType,
-            position: { x: Math.random() * 200 + 50, y: Math.random() * 200 + 50 },
+            position: pos,
             data: (() => {
               switch (editor.addNodeType) {
                 case 'tool_call':
@@ -157,6 +212,7 @@ export default function WorkflowEditor() {
           };
           editor.pushCurrent();
           editor.setNodes((nds: Node[]) => [...nds, newNode]);
+          editor.setSelectedNode(newNode);
         }}
         onSave={editor.handleSave}
         onSaveAndActivate={editor.handleSaveAndActivate}
@@ -210,7 +266,7 @@ export default function WorkflowEditor() {
             onActivate={editor.handleActivateVersion}
           />
         )}
-        <div className="workflow-canvas-container" tabIndex={0} data-testid="reactflow-wrapper">
+        <div ref={canvasContainerRef} className="workflow-canvas-container" tabIndex={0} data-testid="reactflow-wrapper">
           <div className="workflow-canvas">
             <ReactFlow
             nodes={editor.nodes}
@@ -222,6 +278,13 @@ export default function WorkflowEditor() {
             onPaneClick={onPaneClick}
             onNodesDelete={onNodesDelete}
             onNodeDragStop={onNodeDragStop}
+            onInit={(instance: ReactFlowInstance) => {
+              reactFlowInstanceRef.current = instance;
+              viewportRef.current = instance.getViewport();
+            }}
+            onMoveEnd={(_event, viewport) => {
+              viewportRef.current = viewport;
+            }}
             nodeTypes={nodeTypesMap}
             fitView
           >
