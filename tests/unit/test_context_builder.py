@@ -269,20 +269,22 @@ class TestTokenBudgeting:
 
     @pytest.mark.asyncio
     async def test_body_factor_applied(self, fake_client, policy, sample_session):
-        """Body factor corrects the count."""
-        # With factor 2.0, count should be halved
-        builder = ContextBuilder(fake_client, policy, body_factor=2.0)
+        """Body factor corrects the count downward."""
+        builder_1 = ContextBuilder(fake_client, policy, body_factor=1.0)
+        builder_2 = ContextBuilder(fake_client, policy, body_factor=2.0)
 
         history = [Message(role="user", content="Test")]
         new_msg = Message(role="user", content="New")
 
-        result = await builder.build(
+        result_1 = await builder_1.build(
+            sample_session, history, "System", [], new_user_message=new_msg
+        )
+        result_2 = await builder_2.build(
             sample_session, history, "System", [], new_user_message=new_msg
         )
 
-        # Should be able to fit more with higher body factor
-        # (counts appear smaller)
-        assert result.tokens_used >= 0
+        # Higher body factor should report fewer tokens used
+        assert result_2.tokens_used < result_1.tokens_used
 
 
 class TestEdgeCases:

@@ -234,3 +234,198 @@ async def test_tool_result_truncated_before_reprompting():
         assert msg.content.endswith("\n... [truncated]")
         assert msg.content.startswith("x" * 100)
         policy.tool_result_max_chars.assert_called_once_with("big_tool")
+
+
+@pytest.mark.asyncio
+async def test_finish_reason_stop_with_tool_calls_routes_to_tools(make_chat_response):
+    """finish_reason='stop' alongside tool_calls executes tools and continues loop."""
+    store = MagicMock()
+    store.append_message = AsyncMock()
+
+    builder = MagicMock()
+    builder.build = AsyncMock(return_value=MagicMock(messages=[]))
+
+    execution = TurnExecution(
+        tool_registry=MagicMock(),
+        inference_client=MagicMock(),
+        policy=MagicMock(),
+        context_builder=builder,
+        session_store=store,
+        max_iterations=1,
+    )
+
+    execution._inference.chat = AsyncMock(
+        return_value=make_chat_response(
+            finish_reason="stop",
+            tool_calls=[ToolCall(id="tc1", name="test_tool", arguments={})],
+            content="",
+        )
+    )
+
+    ctx = TurnContext(
+        turn=_make_turn(),
+        user_message=Message(role="user", content="hello"),
+        system_prompt="",
+        respond_callback=AsyncMock(),
+        session=_make_session(),
+        build_result=MagicMock(messages=[]),
+    )
+
+    with patch.object(
+        execution, "_handle_tool_calls", new_callable=AsyncMock
+    ) as mock_handle:
+        async def _side_effect(*args, **kwargs):
+            ctx.turn.iterations += 1
+            return TurnState.BUILDING_CONTEXT
+
+        mock_handle.side_effect = _side_effect
+        with pytest.raises(MaxIterationsError):
+            await execution.run(ctx, AsyncMock(), AsyncMock())
+
+    mock_handle.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_reasoning_guardrail_nudge(make_chat_response):
+    """When model reasons >1500 chars without acting, nudge is sent and loop continues."""
+    store = MagicMock()
+    store.append_message = AsyncMock()
+
+    builder = MagicMock()
+    builder.build = AsyncMock(return_value=MagicMock(messages=[]))
+
+    execution = TurnExecution(
+        tool_registry=MagicMock(),
+        inference_client=MagicMock(),
+        policy=MagicMock(),
+        context_builder=builder,
+        session_store=store,
+        max_iterations=3,
+    )
+
+    execution._inference.chat = AsyncMock(
+        return_value=make_chat_response(
+            finish_reason="stop",
+            reasoning_content="x" * 1600,
+            content="",
+        )
+    )
+
+    respond_callback = AsyncMock()
+    ctx = TurnContext(
+        turn=_make_turn(),
+        user_message=Message(role="user", content="hello"),
+        system_prompt="",
+        respond_callback=respond_callback,
+        session=_make_session(),
+        build_result=MagicMock(messages=[]),
+    )
+
+    with pytest.raises(MaxIterationsError):
+        await execution.run(ctx, AsyncMock(), AsyncMock())
+
+    # Should have sent the reasoning guardrail nudge at least once
+    assert respond_callback.await_count >= 1
+    nudge_text = respond_callback.await_args_list[0][0][0]
+    assert "reasoning extensively" in nudge_text
+    # Iterations should have advanced
+    assert ctx.turn.iterations >= 1
+
+
+@pytest.mark.asyncio
+async def test_streaming_repair_json():
+    """Streaming path repairs malformed JSON tool call arguments via repair_json."""
+    from hestia.core.types import StreamDelta
+
+    execution = TurnExecution(
+        tool_registry=MagicMock(),
+        inference_client=MagicMock(),
+        policy=MagicMock(),
+        context_builder=MagicMock(),
+        session_store=MagicMock(),
+        stream=True,
+    )
+
+    delta = StreamDelta(
+        content="",
+        tool_call_chunks=[
+            {
+                "index": 0,
+                "id": "tc1",
+                "function": {
+                    "name": "test_tool",
+                    "arguments": '{"key": "value",}',  # trailing comma
+                },
+            }
+        ],
+        finish_reason="tool_calls",
+    )
+
+    async def _async_iter():
+        yield delta
+
+    async def _mock_chat_stream(*args, **kwargs):
+        yield delta
+
+    execution._inference.chat_stream = _mock_chat_stream
+
+    ctx = TurnContext(
+        turn=_make_turn(),
+        user_message=Message(role="user", content="hello"),
+        system_prompt="",
+        respond_callback=AsyncMock(),
+        session=_make_session(),
+        build_result=MagicMock(messages=[]),
+        stream_callback=AsyncMock(),
+    )
+
+    result = await execution._run_inference_streaming(ctx, ctx.turn)
+
+    assert len(result.tool_calls) == 1
+    assert result.tool_calls[0].arguments == {"key": "value"}
+
+
+@pytest.mark.asyncio
+async def test_scan_tool_result_wiring():
+    """Tool results are passed through _scan_tool_result during reassembly."""
+    registry = MagicMock()
+    registry.describe.return_value = MagicMock(
+        requires_confirmation=False, ordering="concurrent"
+    )
+
+    policy = MagicMock()
+    policy.tool_result_max_chars.return_value = 8000
+
+    scanner = MagicMock()
+    scanner.scan.return_value = MagicMock(triggered=True, reasons=["test reason"])
+    scanner.wrap.return_value = "[SCANNED] wrapped content"
+
+    execution = TurnExecution(
+        tool_registry=registry,
+        inference_client=MagicMock(),
+        policy=policy,
+        context_builder=MagicMock(),
+        session_store=MagicMock(),
+        injection_scanner=scanner,
+    )
+
+    tool_calls = [ToolCall(id="tc1", name="tool_a", arguments={})]
+
+    with patch.object(
+        execution, "_dispatch_tool_call", new_callable=AsyncMock
+    ) as mock_dispatch:
+        mock_dispatch.return_value = ToolCallResult(
+            status="ok",
+            content="suspicious content",
+            artifact_handle=None,
+            truncated=False,
+        )
+
+        result_messages, _ = await execution._execute_tool_calls(
+            _make_session(), tool_calls
+        )
+
+        assert len(result_messages) == 1
+        assert result_messages[0].content == "[SCANNED] wrapped content"
+        scanner.scan.assert_called_once_with("suspicious content")
+        scanner.wrap.assert_called_once()

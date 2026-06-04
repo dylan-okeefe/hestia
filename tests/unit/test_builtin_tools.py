@@ -450,20 +450,37 @@ class TestHttpGet:
     @pytest.mark.asyncio
     async def test_http_get_fetches_url(self):
         """Can fetch a URL and return text content."""
-        mock_response = AsyncMock()
-        mock_response.text = "Test response content"
-        mock_response.raise_for_status = lambda: None  # sync method
-
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
-        mock_client.get = AsyncMock(return_value=mock_response)
-
-        with patch("httpx.AsyncClient", return_value=mock_client):
+        with patch(
+            "hestia.tools.builtin.http_get._fetch_with_httpx", new_callable=AsyncMock
+        ) as mock_fetch:
+            mock_fetch.return_value = httpx.Response(
+                200, text="Test response content", request=httpx.Request("GET", "http://1.1.1.1/test")
+            )
             result = await http_get("http://1.1.1.1/test")
 
         assert result == "Test response content"
-        mock_client.get.assert_called_once_with("http://1.1.1.1/test")
+        mock_fetch.assert_awaited_once_with("http://1.1.1.1/test", 30)
+
+    @pytest.mark.asyncio
+    async def test_http_get_uses_ssrf_transport(self):
+        """http_get instantiates AsyncClient with SSRFSafeTransport."""
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_instance = AsyncMock()
+            mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+            mock_instance.__aexit__ = AsyncMock(return_value=None)
+            mock_instance.get = AsyncMock(
+                return_value=httpx.Response(
+                    200, text="ok", request=httpx.Request("GET", "http://example.com/")
+                )
+            )
+            mock_client_class.return_value = mock_instance
+
+            await http_get("http://example.com/")
+
+        mock_client_class.assert_called_once()
+        call_kwargs = mock_client_class.call_args.kwargs
+        assert "transport" in call_kwargs
+        assert isinstance(call_kwargs["transport"], SSRFSafeTransport)
 
     def test_preflight_blocks_invalid_schemes(self):
         """Pre-flight check blocks invalid schemes and missing hostnames."""

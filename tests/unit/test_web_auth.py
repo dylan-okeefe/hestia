@@ -156,7 +156,7 @@ class TestAuthManager:
         assert session.platform == "telegram"
         assert session.platform_user == "12345"
         assert code not in auth_manager._pending_codes
-        assert len(auth_manager._sessions) == 1
+        assert auth_manager.get_session(token) is not None
 
     def test_validate_code_invalid(self, auth_manager: AuthManager) -> None:
         import asyncio
@@ -257,7 +257,7 @@ class TestAuthManager:
             expires_at=datetime.now(UTC) - timedelta(hours=1),
         )
         assert auth_manager.get_session(token) is None
-        assert token not in auth_manager._sessions
+        assert auth_manager.get_session(token) is None
 
     def test_remove_session(self, auth_manager: AuthManager) -> None:
         token = "test_token"
@@ -733,5 +733,4 @@ class TestAuthRoutes:
         )
 
         response = client.get("/api/sessions", headers={"Authorization": "Bearer test_token"})
-        # Should pass auth but may 200 or 500 depending on store mocks
-        assert response.status_code in (200, 500)
+        assert response.status_code == 200

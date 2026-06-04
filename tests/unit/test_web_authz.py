@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from hestia.config import WebConfig
+from hestia.config import HestiaConfig, WebConfig
 from hestia.web.api import create_web_app
 from hestia.web.auth import AuthMiddleware, WebSession
 from hestia.web.context import WebContext, set_web_context
@@ -26,38 +26,7 @@ def _clear_web_context() -> None:
 def mock_app() -> MagicMock:
     """Provide a mocked AppContext with auth enabled."""
     mock = MagicMock()
-    mock.config = MagicMock()
-    mock.config.telegram = MagicMock(bot_token="", allowed_users=[])
-    mock.config.matrix = MagicMock(
-        homeserver="", user_id="", access_token="", allowed_rooms=[]
-    )
-    mock.config.email = MagicMock(
-        imap_host="", username="", password="", password_env=""
-    )
-    mock.config.storage = MagicMock(allowed_roots=["."])
-    mock.config.inference = MagicMock(base_url="")
-    mock.config.security = MagicMock(injection_scanner_enabled=False)
-    mock.config.web_search = MagicMock()
-    mock.config.trust = MagicMock(preset=None)
-    mock.config.rate_limit = MagicMock()
-    mock.config.features = MagicMock()
-    mock.config.features.web = MagicMock(
-        enabled=True,
-        host="127.0.0.1",
-        port=8080,
-        auth_enabled=True,
-        session_lifetime_hours=72,
-        code_expiry_seconds=300,
-        code_length=6,
-    )
-    mock.config.features.rate_limit = MagicMock()
-    mock.config.features.policy = MagicMock()
-    mock.config.features.style = MagicMock()
-    mock.config.features.reflection = MagicMock()
-    mock.config.features.compression = MagicMock()
-    mock.config.features.handoff = MagicMock()
-    mock.config.features.security = MagicMock()
-    mock.config.features.web_search = MagicMock()
+    mock.config = HestiaConfig.default()
     mock.tool_registry = MagicMock()
     mock.tool_registry.list_names.return_value = []
     mock.event_bus = AsyncMock()
@@ -915,5 +884,116 @@ class TestWorkflowsAuth:
         response = auth_client.get(
             "/api/workflows/wf1",
             headers={"Authorization": "Bearer token_admin"},
+        )
+        assert response.status_code == 200
+
+
+class TestBrowserSessionsAuth:
+    """Authorization tests for /api/browser-sessions endpoints."""
+
+    def test_list_browser_sessions_non_admin_returns_403(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Non-admin users cannot list browser sessions."""
+        response = auth_client.get(
+            "/api/browser-sessions",
+            headers={"Authorization": "Bearer token_user_a"},
+        )
+        assert response.status_code == 403
+
+    def test_list_browser_sessions_admin_can_access(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Admin can list browser sessions."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.browser_session_store = MagicMock()
+        ctx.browser_session_store.list_sessions.return_value = []
+
+        response = auth_client.get(
+            "/api/browser-sessions",
+            headers={"Authorization": "Bearer token_admin"},
+        )
+        assert response.status_code == 200
+
+    def test_delete_browser_session_non_admin_returns_403(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Non-admin users cannot delete browser sessions."""
+        response = auth_client.delete(
+            "/api/browser-sessions/example.com",
+            headers={"Authorization": "Bearer token_user_a"},
+        )
+        assert response.status_code == 403
+
+
+class TestConfigAuth:
+    """Authorization tests for /api/config endpoints."""
+
+    def test_get_config_no_auth_returns_401(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Unauthenticated requests to /config return 401."""
+        response = auth_client.get("/api/config")
+        assert response.status_code == 401
+
+    def test_get_config_schema_no_auth_returns_401(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Unauthenticated requests to /config/schema return 401."""
+        response = auth_client.get("/api/config/schema")
+        assert response.status_code == 401
+
+    def test_get_config_with_auth_returns_200(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Authenticated requests to /config return 200."""
+        response = auth_client.get(
+            "/api/config",
+            headers={"Authorization": "Bearer token_user_a"},
+        )
+        assert response.status_code == 200
+
+
+class TestDoctorAuth:
+    """Authorization tests for /api/doctor endpoints."""
+
+    def test_get_doctor_no_auth_returns_401(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Unauthenticated requests to /doctor return 401."""
+        response = auth_client.get("/api/doctor")
+        assert response.status_code == 401
+
+    def test_get_doctor_with_auth_returns_200(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Authenticated requests to /doctor return 200."""
+        response = auth_client.get(
+            "/api/doctor",
+            headers={"Authorization": "Bearer token_user_a"},
+        )
+        assert response.status_code == 200
+
+
+class TestToolsAuth:
+    """Authorization tests for /api/tools endpoints."""
+
+    def test_list_tools_no_auth_returns_401(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Unauthenticated requests to /tools return 401."""
+        response = auth_client.get("/api/tools")
+        assert response.status_code == 401
+
+    def test_list_tools_with_auth_returns_200(
+        self, auth_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Authenticated requests to /tools return 200."""
+        response = auth_client.get(
+            "/api/tools",
+            headers={"Authorization": "Bearer token_user_a"},
         )
         assert response.status_code == 200
