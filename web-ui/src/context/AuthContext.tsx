@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
-import { fetchAuthStatus, setAuthToken, clearAuthToken } from '../api/client';
+import { fetchAuthStatus, setAuthToken, clearAuthToken, logout as clientLogout } from '../api/client';
 
 interface AuthState {
   authenticated: boolean;
@@ -51,8 +51,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
         return;
       }
+      if (!data.authenticated) {
+        clientLogout().catch(() => {});
+        clearAuthToken();
+        setAuth({
+          authenticated: false,
+          authEnabled: true,
+          platform: null,
+          platformUser: null,
+          userId: null,
+          availablePlatforms: data.available_platforms || [],
+        });
+        return;
+      }
       setAuth({
-        authenticated: data.authenticated,
+        authenticated: true,
         authEnabled: true,
         platform: data.platform || null,
         platformUser: data.platform_user || null,
@@ -81,6 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   const logout = useCallback(() => {
+    clientLogout().catch(() => {});
     clearAuthToken();
     setAuth({
       authenticated: false,
