@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 import time
+from collections import OrderedDict
 from datetime import UTC, datetime
 from typing import Any
 
@@ -19,6 +20,10 @@ _CTX_DEP = Depends(get_web_context)
 
 # Replay window in seconds (±5 minutes)
 _WEBHOOK_REPLAY_WINDOW = 300
+
+# Bounded LRU cache of recently-seen signature digests
+_WEBHOOK_SEEN_MAX_SIZE = 1000
+_seen_signatures: OrderedDict[str, None] = OrderedDict()
 
 
 @router.post("/webhooks/{endpoint}", status_code=202)
@@ -83,6 +88,13 @@ async def receive_webhook(
 
     if not valid:
         raise HTTPException(status_code=401, detail="Invalid webhook signature")
+
+    # Replay protection: reject duplicate signatures
+    if signature in _seen_signatures:
+        raise HTTPException(status_code=409, detail="Duplicate webhook signature")
+    _seen_signatures[signature] = None
+    if len(_seen_signatures) > _WEBHOOK_SEEN_MAX_SIZE:
+        _seen_signatures.popitem(last=False)
 
     try:
         body = json.loads(body_bytes)
