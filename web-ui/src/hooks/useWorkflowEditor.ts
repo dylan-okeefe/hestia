@@ -17,6 +17,7 @@ import {
   type ExecutionRecord,
   type ToolSchema,
 } from '../api/client';
+import { useToast } from './useToast';
 import { useUndoRedo } from './useUndoRedo';
 
 export function useWorkflowEditor(workflowId: string | undefined) {
@@ -48,6 +49,8 @@ export function useWorkflowEditor(workflowId: string | undefined) {
   const [tools, setTools] = useState<string[]>([]);
   const [platforms, setPlatforms] = useState<string[]>([]);
   const [isDirty, setIsDirty] = useState(false);
+
+  const { addToast } = useToast();
 
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
@@ -106,8 +109,15 @@ export function useWorkflowEditor(workflowId: string | undefined) {
   useEffect(() => {
     if (!workflowId) return;
 
-    Promise.all([fetchWorkflow(workflowId), fetchWorkflowVersions(workflowId)])
+    const abortController = new AbortController();
+    let stale = false;
+
+    Promise.all([
+      fetchWorkflow(workflowId),
+      fetchWorkflowVersions(workflowId),
+    ])
       .then(([wf, vs]) => {
+        if (stale) return;
         setWorkflowName(wf.name);
         setTriggerType(wf.trigger_type || 'manual');
         setTriggerConfig((wf.trigger_config || {}) as Record<string, string>);
@@ -127,27 +137,40 @@ export function useWorkflowEditor(workflowId: string | undefined) {
           setEdges(latest.edges.map((e: WorkflowEdge) => ({ ...e })));
         }
         setLoading(false);
+        setError(null);
       })
       .catch((err: Error) => {
+        if (stale) return;
         setError(err.message);
         setLoading(false);
       });
 
     fetchTools()
       .then((data) => {
+        if (stale) return;
         setToolSchemas(data.tools || []);
         setTools((data.tools || []).map((t) => t.name));
       })
       .catch(() => {
+        if (stale) return;
         setToolSchemas([]);
         setTools([]);
       });
 
     fetchAuthStatus()
-      .then((data) => setPlatforms(data.available_platforms || []))
-      .catch(() => setPlatforms([]));
+      .then((data) => {
+        if (!stale) setPlatforms(data.available_platforms || []);
+      })
+      .catch(() => {
+        if (!stale) setPlatforms([]);
+      });
 
     loadExecutions();
+
+    return () => {
+      stale = true;
+      abortController.abort();
+    };
   }, [workflowId, loadExecutions]);
 
   useEffect(() => {
@@ -184,9 +207,8 @@ export function useWorkflowEditor(workflowId: string | undefined) {
       const version = await saveWorkflowVersion(workflowId, serialNodes, serialEdges);
       setVersions((vs) => [...vs, version]);
       setIsDirty(false);
-      setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Save failed');
+      addToast({ message: err instanceof Error ? err.message : 'Save failed', type: 'error', duration: 5000 });
     } finally {
       setSaving(false);
     }
@@ -289,7 +311,7 @@ export function useWorkflowEditor(workflowId: string | undefined) {
         )
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Activation failed');
+      addToast({ message: err instanceof Error ? err.message : 'Activation failed', type: 'error', duration: 5000 });
     }
   };
 
@@ -312,11 +334,10 @@ export function useWorkflowEditor(workflowId: string | undefined) {
         versionId ? { version_id: versionId } : undefined
       );
       setTestResult(result);
-      setError(null);
       await loadExecutions();
     } catch (err) {
       setTestError(err instanceof Error ? err.message : 'Test run failed');
-      setError(err instanceof Error ? err.message : 'Test run failed');
+      addToast({ message: err instanceof Error ? err.message : 'Test run failed', type: 'error', duration: 5000 });
     } finally {
       setTesting(false);
     }
@@ -327,9 +348,8 @@ export function useWorkflowEditor(workflowId: string | undefined) {
     setTriggerSaving(true);
     try {
       await updateWorkflow(workflowId, { trigger_type: triggerType, trigger_config: triggerConfig });
-      setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save trigger');
+      addToast({ message: err instanceof Error ? err.message : 'Failed to save trigger', type: 'error', duration: 5000 });
     } finally {
       setTriggerSaving(false);
     }
@@ -383,9 +403,8 @@ export function useWorkflowEditor(workflowId: string | undefined) {
           v.id === versionId ? { ...v, activated_at: new Date().toISOString() } : { ...v, activated_at: null }
         )
       );
-      setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Activation failed');
+      addToast({ message: err instanceof Error ? err.message : 'Activation failed', type: 'error', duration: 5000 });
     }
   };
 
@@ -393,9 +412,8 @@ export function useWorkflowEditor(workflowId: string | undefined) {
     if (!workflowId) return;
     try {
       await updateWorkflow(workflowId, { name: workflowName });
-      setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to rename workflow');
+      addToast({ message: err instanceof Error ? err.message : 'Failed to rename workflow', type: 'error', duration: 5000 });
     }
   };
 

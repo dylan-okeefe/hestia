@@ -208,6 +208,7 @@ export default function BrowserStream() {
     if (timedOut) {
       addToast({ message: 'Session timed out', type: 'warning', duration: 5000 });
       closeWs();
+      stopBrowserStream().catch(() => {});
       navigate('/browser-sessions');
     }
   }, [timedOut, closeWs, navigate, addToast]);
