@@ -37,15 +37,28 @@ async function checkOk(res: Response): Promise<Response> {
 }
 
 async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
-  const res = await fetch(input, {
-    ...init,
-    headers: getHeaders((init?.headers as Record<string, string>) || {}),
-  });
-  if (res.status === 401) {
-    clearAuthToken();
-    window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+  const signal = init?.signal;
+  if (signal) {
+    signal.addEventListener('abort', () => controller.abort(), { once: true });
   }
-  return res;
+
+  try {
+    const res = await fetch(input, {
+      ...init,
+      signal: controller.signal,
+      headers: getHeaders((init?.headers as Record<string, string>) || {}),
+    });
+    if (res.status === 401) {
+      clearAuthToken();
+      window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+    }
+    return res;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export async function fetchAuthStatus() {

@@ -15,6 +15,14 @@ export function useApiQuery<T>(key: string, fetcher: () => Promise<T>): UseApiQu
   const [error, setError] = useState<Error | null>(null);
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const execute = useCallback(async () => {
     setIsLoading(true);
@@ -22,14 +30,20 @@ export function useApiQuery<T>(key: string, fetcher: () => Promise<T>): UseApiQu
     setError(null);
     try {
       const result = await fetcherRef.current();
-      setData(result);
+      if (mountedRef.current) {
+        setData(result);
+      }
     } catch (err: any) {
       const e = err instanceof Error ? err : new Error(String(err));
       console.error(`[useApiQuery ${key}]`, e);
-      setIsError(true);
-      setError(e);
+      if (mountedRef.current) {
+        setIsError(true);
+        setError(e);
+      }
     } finally {
-      setIsLoading(false);
+      if (mountedRef.current) {
+        setIsLoading(false);
+      }
     }
   }, [key]);
 
