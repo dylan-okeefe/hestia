@@ -213,17 +213,38 @@ class DefaultPolicyEngine(PolicyEngine):
             return self._trust
         return self._trust_overrides.get(key, self._trust)
 
-    def auto_approve(self, tool_name: str, session: Session) -> bool:
+    def auto_approve(
+        self,
+        tool_name: str,
+        session: Session,
+        registry: "ToolRegistry | None" = None,
+    ) -> bool:
         """Return True if the trust profile auto-approves this tool."""
         trust = self._trust_for(session)
         approved = trust.auto_approve_tools
 
         # Fail-closed: scheduler ticks never auto-approve destructive tools,
         # even when auto_approve_tools contains a wildcard.
-        if (
-            session.platform == PLATFORM_SCHEDULER or scheduler_tick_active.get()
-        ) and tool_name in {"terminal", "write_file", "email_send"}:
-            return False
+        if session.platform == PLATFORM_SCHEDULER or scheduler_tick_active.get():
+            from hestia.tools.capabilities import (
+                EDIT_FILE,
+                EMAIL_SEND,
+                SHELL_EXEC,
+                WRITE_LOCAL,
+            )
+
+            blocked = {SHELL_EXEC, WRITE_LOCAL, EDIT_FILE, EMAIL_SEND}
+            if registry is not None:
+                try:
+                    tool_caps = set(registry.describe(tool_name).capabilities)
+                    if tool_caps & blocked:
+                        return False
+                except Exception:  # noqa: BLE001
+                    pass
+            # Fallback: hardcoded names for backward compatibility when
+            # registry is unavailable.
+            if tool_name in {"terminal", "write_file", "email_send"}:
+                return False
         if "*" in approved:
             return True
         return tool_name in approved

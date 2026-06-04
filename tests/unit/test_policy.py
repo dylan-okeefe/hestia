@@ -275,6 +275,36 @@ class TestAutoApprove:
         # Non-destructive tools are still auto-approved
         assert policy.auto_approve("current_time", sched)
 
+    def test_scheduler_tick_blocks_by_capability(self, sample_session):
+        from hestia.config import TrustConfig
+        from hestia.policy.default import DefaultPolicyEngine
+        from hestia.runtime_context import scheduler_tick_active
+        from hestia.tools.capabilities import EDIT_FILE, SHELL_EXEC
+
+        policy = DefaultPolicyEngine(trust=TrustConfig.developer())
+
+        class _MockMeta:
+            def __init__(self, caps):
+                self.capabilities = caps
+
+        class _MockReg:
+            def describe(self, name):
+                mapping = {
+                    "edit_file": _MockMeta([EDIT_FILE]),
+                    "my_shell": _MockMeta([SHELL_EXEC]),
+                    "current_time": _MockMeta([]),
+                }
+                return mapping[name]
+
+        registry = _MockReg()
+        token = scheduler_tick_active.set(True)
+        try:
+            assert not policy.auto_approve("edit_file", sample_session, registry)
+            assert not policy.auto_approve("my_shell", sample_session, registry)
+            assert policy.auto_approve("current_time", sample_session, registry)
+        finally:
+            scheduler_tick_active.reset(token)
+
 
 class TestFilterToolsTrust:
     """Tests for filter_tools with TrustConfig."""

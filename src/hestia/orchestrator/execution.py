@@ -707,7 +707,7 @@ class TurnExecution:
         if not tool.requires_confirmation:
             return None
 
-        if self._policy.auto_approve(tool_name, session):
+        if self._policy.auto_approve(tool_name, session, self._tools):
             # Trust profile auto-approves this tool for this session context.
             return None
 
