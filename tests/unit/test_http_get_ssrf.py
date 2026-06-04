@@ -95,6 +95,7 @@ class TestSSRFSafeTransport:
         blocked_urls = [
             "http://127.0.0.1/secret",
             "http://10.0.0.1/internal",
+            "http://100.64.0.1/internal",  # CGNAT
             "http://192.168.1.1/router",
             "http://172.16.0.1/internal",
             "http://169.254.169.254/latest/meta-data/",

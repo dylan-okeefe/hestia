@@ -28,6 +28,7 @@ except ImportError:
 _BLOCKED_RANGES = [
     ipaddress.ip_network("0.0.0.0/8"),  # current network
     ipaddress.ip_network("10.0.0.0/8"),  # private class A
+    ipaddress.ip_network("100.64.0.0/10"),  # CGNAT
     ipaddress.ip_network("127.0.0.0/8"),  # loopback
     ipaddress.ip_network("169.254.0.0/16"),  # link-local / cloud metadata
     ipaddress.ip_network("172.16.0.0/12"),  # private class B
@@ -68,6 +69,14 @@ def _assert_ip_allowed(hostname: str) -> None:
 
     for _family, _, _, _, sockaddr in addr_info:
         ip = ipaddress.ip_address(sockaddr[0])
+        # Normalize IPv4-mapped IPv6 addresses to their IPv4 form
+        if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+            ip = ip.ipv4_mapped
+        # Broader guard: reject any non-global address
+        if not ip.is_global:
+            raise httpx.ConnectError(
+                f"SSRF blocked: {hostname} resolves to {ip} (non-global)"
+            )
         for blocked in _BLOCKED_RANGES:
             if ip in blocked:
                 raise httpx.ConnectError(

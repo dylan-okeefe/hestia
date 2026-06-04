@@ -60,7 +60,7 @@ async def test_ssrf_transport_allows_public_ipv6():
 
     with patch(
         "socket.getaddrinfo",
-        return_value=[(socket.AF_INET6, 0, 0, "", ("2001:db8::1", 0))],
+        return_value=[(socket.AF_INET6, 0, 0, "", ("2001:4860:4860::8888", 0))],
     ):
         await transport.handle_async_request(request)
 
@@ -78,3 +78,29 @@ def test_blocked_ranges_include_ipv6():
     assert ipaddress.ip_address("::1") in ipaddress.ip_network("::1/128")
     assert ipaddress.ip_address("fe80::1") in ipaddress.ip_network("fe80::/10")
     assert ipaddress.ip_address("fc00::1") in ipaddress.ip_network("fc00::/7")
+
+
+@pytest.mark.asyncio
+async def test_ssrf_transport_blocks_ipv4_mapped_ipv6_loopback():
+    """IPv4-mapped IPv6 loopback (::ffff:127.0.0.1) is blocked."""
+    transport = SSRFSafeTransport()
+    request = httpx.Request("GET", "http://example.com")
+
+    with patch(
+        "socket.getaddrinfo",
+        return_value=[(socket.AF_INET6, 0, 0, "", ("::ffff:127.0.0.1", 0))],
+    ), pytest.raises(httpx.ConnectError, match="SSRF blocked"):
+        await transport.handle_async_request(request)
+
+
+@pytest.mark.asyncio
+async def test_ssrf_transport_blocks_ipv4_mapped_ipv6_metadata():
+    """IPv4-mapped IPv6 metadata endpoint (::ffff:169.254.169.254) is blocked."""
+    transport = SSRFSafeTransport()
+    request = httpx.Request("GET", "http://example.com")
+
+    with patch(
+        "socket.getaddrinfo",
+        return_value=[(socket.AF_INET6, 0, 0, "", ("::ffff:169.254.169.254", 0))],
+    ), pytest.raises(httpx.ConnectError, match="SSRF blocked"):
+        await transport.handle_async_request(request)
