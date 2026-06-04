@@ -57,7 +57,10 @@ _JOB_URL_PATTERNS = [
 
 # Patterns that indicate a URL should be ignored
 _IGNORE_URL_PATTERNS = [
-    re.compile(r"unsubscribe|preferences|alert|notification|privacy|terms|login|signin|account", re.I),
+    re.compile(
+        r"unsubscribe|preferences|alert|notification|privacy|terms|login|signin|account",
+        re.I,
+    ),
     re.compile(r"linkedin\.com/comm/jobs/alerts", re.I),
     re.compile(r"linkedin\.com/comm/feed/update", re.I),
     re.compile(r"profile-views", re.I),
@@ -66,7 +69,7 @@ _IGNORE_URL_PATTERNS = [
 
 def _extract_best_job_url(body: str) -> str | None:
     """Scan email body and return the best job-listing URL."""
-    all_urls = re.findall(r"https?://[^\s<>\"\')\]]+", body)
+    all_urls: list[str] = re.findall(r"https?://[^\s<>\"\')\]]+", body)
     candidates: list[tuple[int, str]] = []
     for url in all_urls:
         if any(p.search(url) for p in _IGNORE_URL_PATTERNS):
@@ -418,7 +421,9 @@ class WorkflowExecutor:
                     if node_output.value and (
                         (single_edge and edge.source_handle is None)
                         or edge.source_handle == "true"
-                    ) or not node_output.value and (
+):
+                        active_edges.add(edge.id)
+                    elif not node_output.value and (
                         (single_edge and edge.source_handle is None)
                         or edge.source_handle == "false"
                     ):

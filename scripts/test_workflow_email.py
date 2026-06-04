@@ -11,7 +11,6 @@ If no UID is provided, lists recent emails with their UIDs.
 
 import asyncio
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -111,7 +110,8 @@ def print_result(result):
     print("=" * 60)
     print(f"Status: {result.status}")
     print(f"Elapsed: {result.total_elapsed_ms}ms")
-    print(f"Tokens: {result.total_prompt_tokens} prompt / {result.total_completion_tokens} completion")
+    print(f"Tokens: {result.total_prompt_tokens} prompt / "
+          f"{result.total_completion_tokens} completion")
     print("=" * 60)
     for nr in result.node_results:
         print()

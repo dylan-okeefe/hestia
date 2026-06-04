@@ -22,7 +22,6 @@ Examples:
 import asyncio
 import sys
 from pathlib import Path
-from urllib.parse import urlparse
 
 try:
     from playwright.async_api import async_playwright
@@ -85,7 +84,8 @@ async def warmup_session(domain: str, start_url: str) -> None:
         text = await page.evaluate("() => document.body.innerText || ''")
         title = await page.title()
         print(f"Page title: {title}")
-        if "Cloudflare" in text or "Verification" in text or "security verification" in text.lower():
+        if ("Cloudflare" in text or "Verification" in text
+                or "security verification" in text.lower()):
             print("WARNING: Cloudflare challenge still present. Waiting another 15s...")
             await page.wait_for_timeout(15000)
             text = await page.evaluate("() => document.body.innerText || ''")
