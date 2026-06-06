@@ -282,7 +282,7 @@ export async function mockApis(page: Page) {
   });
 
   await page.route('/api/auth/status', async (route) => {
-    await route.fulfill({ json: { auth_enabled: false, authenticated: false, available_platforms: ['cli', 'discord', 'telegram', 'matrix'] } });
+    await route.fulfill({ json: { auth_enabled: false, authenticated: false, available_platforms: ['cli', 'telegram', 'matrix'] } });
   });
 
   await page.route('/api/tools', async (route) => {

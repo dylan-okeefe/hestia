@@ -2849,3 +2849,57 @@ Plus `chore: bump version to 0.4.1`, `docs: L22 handoff report`.
 **Context:** Quiet default for `scripts/kimi-run-current.sh`, `.kimi-done` contract, this log file created.
 
 **Next:** Run `./scripts/kimi-run-current.sh` (optional: `> .kimi-output.log 2>&1`), then Cursor reviews and appends the next section above this one.
+
+## 2026-06-04 — L212-L217: Security Hardening + Polish Arc
+
+Comprehensive review remediation based on Opus/Copilot audit.
+Goal: clean up before public release (r/LocalLLM, r/LocalLLama post).
+
+### L212 — Authorization Hardening
+- Closed IDOR gaps in traces, failures, style, egress, users, rooms, proposals
+- Hardened RequireOwner/require_admin against fail-open when auth enabled
+- Added 41 authz contract tests
+- Branch: `feature/l212-authorization-hardening`
+
+### L213 — Concurrency & Replay Protection
+- Fixed SlotManager double-eviction race (remove victim before I/O)
+- Added webhook replay protection via bounded LRU signature cache
+- Branch: `feature/l213-concurrency-replay-protection`
+
+### L214 — Backend Cleanup & Correctness
+- Capability-based auto_approve fail-closed (M1)
+- SSRF IPv4-mapped IPv6 + CGNAT fix (M2)
+- Package-relative calibration path + body_factor==0 guard (M3)
+- Deleted dead code under web/routes/ (M4)
+- Deduplicated web_search/search_web tools (M5)
+- Capped reasoning text to 2000 chars on done path (M6)
+- Removed duplicate injection scan (Low)
+- Branch: `feature/l214-backend-cleanup`
+
+### L215 — Web UI Robustness
+- Split WorkflowEditor load-error vs action-error state (toasts for transient)
+- Fixed browser stream leak on timeout
+- Added AbortController race guard in useWorkflowEditor
+- Added mounted guard + 30s timeout in useApi/apiFetch
+- Clear stale token when server reports authenticated:false
+- Branch: `feature/l215-web-ui-robustness`
+
+### L216 — Documentation & Test Backfill
+- Rewrote environment-variables.md to match actual config.py
+- Fixed stale claims in v0.12.0 release notes
+- Fixed web-dashboard port (8000 → 8765)
+- Backfilled TurnExecution quant-model branch tests
+- Fixed SSRF transport test patch
+- Strengthened brittle assertions
+- Branch: `feature/l216-docs-test-backfill`
+
+### L217 — Workflow Builder UX Polish
+- Debounced undo snapshots (500ms)
+- Predictable node placement with collision detection
+- Mobile responsive layout with properties drawer
+- Execution output expand/collapse/raw/copy
+- History table filtering by status, date, node name
+- Branch: `feature/l217-workflow-ux-polish`
+
+### Test count
+1709 passed, 6 skipped, 1 pre-existing flaky failure (test_doctor_check)

@@ -8,7 +8,7 @@ interface PlatformDropdownProps {
   includeEmpty?: boolean;
 }
 
-const STATIC_PLATFORMS = ['cli', 'matrix', 'telegram', 'email', 'discord'];
+const STATIC_PLATFORMS = ['cli', 'matrix', 'telegram', 'email'];
 
 export default function PlatformDropdown({ value, onChange, includeEmpty = false }: PlatformDropdownProps) {
   const [platforms, setPlatforms] = useState<string[]>([]);

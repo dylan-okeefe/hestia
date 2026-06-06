@@ -131,7 +131,7 @@ class TestAuthManager:
         with pytest.raises(ValueError, match="not configured"):
             import asyncio
 
-            asyncio.run(auth_manager.request_code("discord"))
+            asyncio.run(auth_manager.request_code("unknown_platform"))
 
     def test_request_code_multiple_users(self, auth_manager: AuthManager) -> None:
         auth_manager.adapters["telegram"]._config.allowed_users = ["123", "456"]
@@ -576,7 +576,7 @@ class TestAuthRoutes:
         assert data["expires_in"] == 300
 
     def test_request_code_missing_platform(self, client: TestClient) -> None:
-        response = client.post("/api/auth/request-code", json={"platform": "discord"})
+        response = client.post("/api/auth/request-code", json={"platform": "unknown_platform"})
         assert response.status_code == 400
         assert "not configured" in response.json()["detail"]
 

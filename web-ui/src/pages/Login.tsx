@@ -34,7 +34,7 @@ const roleBadgeColor = (role: string) => {
 const platformHelperText: Record<string, string> = {
   matrix: 'A verification code will be sent to your Matrix DM.',
   telegram: 'A verification code will be sent via Telegram.',
-  discord: 'A verification code will be sent via Discord DM.',
+
   email: 'A verification code will be sent to your email address.',
   cli: 'Check your terminal for the verification code.',
 };
