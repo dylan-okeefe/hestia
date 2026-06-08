@@ -141,7 +141,7 @@ async def test_voice_message_full_pipeline(
 
         # Assert session was retrieved
         mock_session_store.get_or_create_session_with_handoff.assert_called_once_with(
-            "telegram", "12345"
+            "telegram", "12345", title=None
         )
 
         # Assert orchestrator was called with the transcript

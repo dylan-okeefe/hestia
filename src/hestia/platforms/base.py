@@ -6,9 +6,10 @@ from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 
 # Callback type for incoming messages from the platform
-IncomingMessageCallback = Callable[[str, str, str, str | None], Awaitable[None]]
-# (platform_name, platform_user, message_text, sender_platform_user) -> None
+IncomingMessageCallback = Callable[[str, str, str, str | None, str | None], Awaitable[None]]
+# (platform_name, platform_user, message_text, sender_platform_user, session_title) -> None
 # sender_platform_user is the individual sender's platform ID in group chats; None in private chats.
+# session_title is an optional display name for the conversation (e.g., Telegram group title).
 
 
 class Platform(ABC):

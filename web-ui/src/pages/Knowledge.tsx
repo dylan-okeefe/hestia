@@ -15,6 +15,7 @@ interface Session {
   id: string;
   platform: string;
   platform_user: string;
+  title: string | null;
   started_at: string;
   message_count?: number;
 }
@@ -199,6 +200,7 @@ export default function Knowledge() {
             <thead>
               <tr>
                 <th>Session</th>
+                <th>Title</th>
                 <th>Platform</th>
                 <th>Start</th>
                 <th>Messages</th>
@@ -208,6 +210,7 @@ export default function Knowledge() {
               {sessions.map((s) => (
                 <tr key={s.id} onClick={() => window.location.href = `/sessions/${s.id}`}>
                   <td className="knowledge-table__mono"><a href={`/sessions/${s.id}`} className="no-underline">{s.id.slice(0, 8)}…</a></td>
+                  <td>{s.title ?? '—'}</td>
                   <td>{s.platform}</td>
                   <td>{formatDate(s.started_at)}</td>
                   <td>{s.message_count ?? '—'}</td>

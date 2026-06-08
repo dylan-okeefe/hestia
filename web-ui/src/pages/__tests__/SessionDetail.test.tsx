@@ -15,6 +15,7 @@ vi.mock('../../api/client', async () => {
           id: 's1',
           platform: 'cli',
           platform_user: 'u1',
+          title: null,
           started_at: '2024-01-01T12:00:00Z',
         },
         turns: [
@@ -98,6 +99,7 @@ describe('SessionDetail', () => {
         id: 's2',
         platform: 'matrix',
         platform_user: 'u2',
+        title: null,
         started_at: '2024-01-01T12:00:00Z',
       },
       turns: [],

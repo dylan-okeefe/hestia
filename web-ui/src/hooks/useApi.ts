@@ -5,7 +5,7 @@ export interface UseApiQueryResult<T> {
   isLoading: boolean;
   isError: boolean;
   error: Error | null;
-  refetch: () => void;
+  refetch: () => Promise<T>;
 }
 
 export function useApiQuery<T>(key: string, fetcher: () => Promise<T>): UseApiQueryResult<T> {
@@ -16,6 +16,7 @@ export function useApiQuery<T>(key: string, fetcher: () => Promise<T>): UseApiQu
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
   const mountedRef = useRef(true);
+  const requestIdRef = useRef(0);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -24,24 +25,27 @@ export function useApiQuery<T>(key: string, fetcher: () => Promise<T>): UseApiQu
     };
   }, []);
 
-  const execute = useCallback(async () => {
+  const execute = useCallback(async (): Promise<T> => {
+    const requestId = ++requestIdRef.current;
     setIsLoading(true);
     setIsError(false);
     setError(null);
     try {
       const result = await fetcherRef.current();
-      if (mountedRef.current) {
+      if (mountedRef.current && requestId === requestIdRef.current) {
         setData(result);
       }
+      return result;
     } catch (err: any) {
       const e = err instanceof Error ? err : new Error(String(err));
       console.error(`[useApiQuery ${key}]`, e);
-      if (mountedRef.current) {
+      if (mountedRef.current && requestId === requestIdRef.current) {
         setIsError(true);
         setError(e);
       }
+      throw e;
     } finally {
-      if (mountedRef.current) {
+      if (mountedRef.current && requestId === requestIdRef.current) {
         setIsLoading(false);
       }
     }
@@ -52,7 +56,7 @@ export function useApiQuery<T>(key: string, fetcher: () => Promise<T>): UseApiQu
   }, [execute]);
 
   const refetch = useCallback(() => {
-    execute();
+    return execute();
   }, [execute]);
 
   return { data, isLoading, isError, error, refetch };

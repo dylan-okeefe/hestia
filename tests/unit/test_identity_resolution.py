@@ -160,7 +160,7 @@ class TestGroupChatResolution:
 
         async def single_message_then_stop(*args, **kwargs):
             if adapter._on_message is not None:
-                await adapter._on_message("fake", "room_1", "hello", "alice_123")
+                await adapter._on_message("fake", "room_1", "hello", "alice_123", None)
             raise KeyboardInterrupt()
 
         with patch("asyncio.sleep", side_effect=single_message_then_stop):
@@ -212,7 +212,7 @@ class TestGroupChatResolution:
 
         async def single_message_then_stop(*args, **kwargs):
             if adapter._on_message is not None:
-                await adapter._on_message("fake", "bob_123", "hello", None)
+                await adapter._on_message("fake", "bob_123", "hello", None, None)
             raise KeyboardInterrupt()
 
         with patch("asyncio.sleep", side_effect=single_message_then_stop):
@@ -263,7 +263,7 @@ class TestGroupChatResolution:
 
         async def single_message_then_stop(*args, **kwargs):
             if adapter._on_message is not None:
-                await adapter._on_message("fake", "room_2", "hello", "carol_123")
+                await adapter._on_message("fake", "room_2", "hello", "carol_123", None)
             raise KeyboardInterrupt()
 
         with patch("asyncio.sleep", side_effect=single_message_then_stop):
@@ -316,7 +316,7 @@ class TestGroupChatResolution:
 
         async def single_message_then_stop(*args, **kwargs):
             if adapter._on_message is not None:
-                await adapter._on_message("fake", "room_3", "hello", "unknown_123")
+                await adapter._on_message("fake", "room_3", "hello", "unknown_123", None)
             raise KeyboardInterrupt()
 
         with patch("asyncio.sleep", side_effect=single_message_then_stop):

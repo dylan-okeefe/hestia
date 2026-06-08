@@ -21,6 +21,7 @@ async def cmd_history_list(app: AppContext, limit: int, output_json: bool) -> No
                 "id": s.id,
                 "platform": s.platform,
                 "platform_user": s.platform_user,
+                "title": s.title,
                 "started_at": s.started_at.isoformat() if s.started_at else None,
                 "last_active_at": s.last_active_at.isoformat() if s.last_active_at else None,
                 "state": s.state.value,
@@ -34,16 +35,17 @@ async def cmd_history_list(app: AppContext, limit: int, output_json: bool) -> No
         click.echo("No sessions found.")
         return
 
-    click.echo(f"{'ID':<30} {'Platform':<12} {'User':<20} {'Last Active':<25} {'State'}")
-    click.echo("-" * 95)
+    click.echo(f"{'ID':<30} {'Platform':<12} {'User':<20} {'Title':<20} {'Last Active':<25} {'State'}")
+    click.echo("-" * 120)
     for s in session_list:
         last_active = (
             s.last_active_at.strftime("%Y-%m-%d %H:%M:%S")
             if s.last_active_at
             else "N/A"
         )
+        title = s.title or "—"
         click.echo(
-            f"{s.id:<30} {s.platform:<12} {s.platform_user:<20} {last_active:<25} {s.state.value}"
+            f"{s.id:<30} {s.platform:<12} {s.platform_user:<20} {title:<20} {last_active:<25} {s.state.value}"
         )
 
 
@@ -64,6 +66,7 @@ async def cmd_history_show(
                 "id": session.id,
                 "platform": session.platform,
                 "platform_user": session.platform_user,
+                "title": session.title,
                 "started_at": session.started_at.isoformat() if session.started_at else None,
                 "state": session.state.value,
             },
@@ -80,8 +83,9 @@ async def cmd_history_show(
         click.echo(json.dumps(data, indent=2))
         return
 
+    title_display = f" | Title: {session.title}" if session.title else ""
     click.echo(
-        f"Session: {session.id} | Platform: {session.platform} | User: {session.platform_user}"
+        f"Session: {session.id} | Platform: {session.platform} | User: {session.platform_user}{title_display}"
     )
     click.echo("=" * 60)
 

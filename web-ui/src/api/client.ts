@@ -546,7 +546,7 @@ export async function fetchSessionMessages(sessionId: string) {
   const res = await apiFetch(`${API_BASE}/sessions/${encodeURIComponent(sessionId)}/messages`);
   if (!res.ok) throw new Error('Failed to fetch session messages');
   return res.json() as Promise<{
-    session: { id: string; platform: string; platform_user: string; started_at: string | null };
+    session: { id: string; platform: string; platform_user: string; title: string | null; started_at: string | null };
     turns: Array<{ id: string; state: string | null; started_at: string | null; iterations: number; error: string | null }>;
     messages: Array<{ role: string; content: string; created_at: string | null }>;
   }>;
