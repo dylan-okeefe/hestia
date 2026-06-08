@@ -408,7 +408,7 @@ Write `.kimi-done` (do **not** commit):
 
 ```
 HESTIA_KIMI_DONE=1
-SPEC=docs/development-process/loops/kimi-L19-slot-save-and-ctx-alignment-v0.2.2.md
+SPEC=docs/development-process/loops/L019-slot-save-and-ctx-alignment-v0.2.2.md
 LOOP=L19
 BRANCH=develop
 PYTEST_BASELINE=<from §-1>

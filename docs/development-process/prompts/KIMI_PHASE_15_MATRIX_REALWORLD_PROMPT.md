@@ -2,7 +2,7 @@
 
 **Target branch:** `feature/l10-matrix-realworld-runtime` from latest **`develop`**.
 
-**Executor spec:** [`../orchestration/loops/kimi-L10-matrix-realworld-runtime-testing.md`](../orchestration/loops/kimi-L10-matrix-realworld-runtime-testing.md) — complete **Part A** and **Part B** only (optional **B4** if time). **Do not** implement the old monolithic Part C/D here; those moved to **L11–L14** — see [`KIMI_LOOPS_L10_L14.md`](KIMI_LOOPS_L10_L14.md).
+**Executor spec:** [`../orchestration/loops/L010-matrix-realworld-runtime-testing.md`](../orchestration/loops/L010-matrix-realworld-runtime-testing.md) — complete **Part A** and **Part B** only (optional **B4** if time). **Do not** implement the old monolithic Part C/D here; those moved to **L11–L14** — see [`KIMI_LOOPS_L10_L14.md`](KIMI_LOOPS_L10_L14.md).
 
 **Read first:** `docs/HANDOFF_STATE.md`, `docs/design/matrix-integration.md`, `src/hestia/orchestrator/engine.py`, `src/hestia/orchestrator/transitions.py`, `src/hestia/platforms/matrix_adapter.py`.
 

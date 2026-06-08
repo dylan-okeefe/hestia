@@ -10,9 +10,9 @@ This handoff covers the three mini-loops that refined security tuning, email per
 
 ## Specs
 
-- `docs/development-process/loops/kimi-L33a-injection-scanner-tuning.md`
-- `docs/development-process/loops/kimi-L33b-email-session-reuse.md`
-- `docs/development-process/loops/kimi-L33c-skills-flag-and-polish.md`
+- `docs/development-process/loops/L033a-injection-scanner-tuning.md`
+- `docs/development-process/loops/L033b-email-session-reuse.md`
+- `docs/development-process/loops/L033c-skills-flag-and-polish.md`
 
 ## Files changed
 

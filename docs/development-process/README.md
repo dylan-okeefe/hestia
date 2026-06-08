@@ -10,7 +10,7 @@ Hestia was built incrementally using a three-tool loop:
 
 - **Cursor** (or Claude/Cowork) — code review, prompt authoring, per-loop merge
   decisions and orchestration.
-- **Kimi** — autonomous executor. Reads a single loop spec (`loops/kimi-L*.md`),
+- **Kimi** — autonomous executor. Reads a single loop spec (`loops/L*.md`),
   implements every section, runs tests, commits, signals completion via a
   `.kimi-done` artifact.
 - **Dylan (human)** — direction, secrets, final pass before public push and
@@ -26,7 +26,7 @@ feature arcs.
 
 | Path | What |
 |------|------|
-| `loops/kimi-L*.md` | One spec per loop. Names the sections to implement, sketches code, lists tests, and defines the `.kimi-done` contract. Immutable once the loop is merged. |
+| `loops/L*.md` | One spec per loop. Names the sections to implement, sketches code, lists tests, and defines the `.kimi-done` contract. Immutable once the loop is merged. |
 | `kimi-phase-queue.md` | Top-level ordering of all loops. |
 | `kimi-loop-log.md` | Per-loop narrative: what Kimi did, what Cursor reviewed, what was merged. Newest entries at the top. |
 | `prompts/KIMI_*.md` | Earlier prompt formats (pre-loop-spec era), kept for reference. |

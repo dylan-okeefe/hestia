@@ -196,7 +196,7 @@ Write a ~40-line README that:
 1. Names the directory and explains it is **historical**, not current operating documentation.
 2. Briefly describes the Cursor + Kimi + human workflow.
 3. Links to the two persistent design ADRs (`docs/adr/`) for the actual current architecture.
-4. Mentions that loop specs (`loops/kimi-L*.md`) are immutable historical artifacts of how each phase was scoped and reviewed.
+4. Mentions that loop specs (`loops/L*.md`) are immutable historical artifacts of how each phase was scoped and reviewed.
 5. Notes that the older handoff state files were archived **out of repo** in L16 (do not link to vault path; just say "to a private archive outside this repository").
 
 Suggested content:
@@ -214,7 +214,7 @@ Hestia was built incrementally using a three-tool loop:
 
 - **Cursor** (or Claude/Cowork) — code review, prompt authoring, per-loop merge
   decisions and orchestration.
-- **Kimi** — autonomous executor. Reads a single loop spec (`loops/kimi-L*.md`),
+- **Kimi** — autonomous executor. Reads a single loop spec (`loops/L*.md`),
   implements every section, runs tests, commits, signals completion via a
   `.kimi-done` artifact.
 - **Dylan (human)** — direction, secrets, final pass before public push and
@@ -229,7 +229,7 @@ release); the patch loop `L18` produced `v0.2.1`.
 
 | Path | What |
 |------|------|
-| `loops/kimi-L*.md` | One spec per loop. Names the sections to implement, sketches code, lists tests, and defines the `.kimi-done` contract. Immutable once the loop is merged. |
+| `loops/L*.md` | One spec per loop. Names the sections to implement, sketches code, lists tests, and defines the `.kimi-done` contract. Immutable once the loop is merged. |
 | `kimi-phase-queue.md` | Top-level ordering of all loops. |
 | `kimi-loop-log.md` | Per-loop narrative: what Kimi did, what Cursor reviewed, what was merged. Newest entries at the top. |
 | `prompts/KIMI_*.md` | Earlier prompt formats (pre-loop-spec era), kept for reference. |
@@ -288,8 +288,8 @@ rg -l 'docs/orchestration/|docs/prompts/|docs/reviews/|docs/design/kimi-hestia-p
 
 Update or remove every reference in:
 - `docs/HANDOFF_STATE.md` — file is **gone** (deleted in L16). If any other doc still links to it, leave the broken link or note it; do not recreate the file.
-- `docs/development-process/kimi-phase-queue.md` itself — paths in its tables now need updating to `loops/kimi-L*.md` (relative to its new location, paths inside the dir are unchanged).
-- `docs/development-process/loops/kimi-L*.md` — many of these reference each other. Since they all moved together, intra-directory paths still work. Fix only the ones that reference *external* paths (e.g. `../HANDOFF_STATE.md`, `../../scripts/kimi-run-current.sh`).
+- `docs/development-process/kimi-phase-queue.md` itself — paths in its tables now need updating to `loops/L*.md` (relative to its new location, paths inside the dir are unchanged).
+- `docs/development-process/loops/L*.md` — many of these reference each other. Since they all moved together, intra-directory paths still work. Fix only the ones that reference *external* paths (e.g. `../HANDOFF_STATE.md`, `../../scripts/kimi-run-current.sh`).
 - `scripts/kimi-run-current.sh` — references `docs/development-process/prompts/KIMI_CURRENT.md`.
 - `.cursorrules` — references `docs/development-process/kimi-phase-queue.md`, `docs/development-process/prompts/KIMI_CURRENT.md`, `docs/development-process/loops/kimi-`, etc. Update all paths.
 - `.cursor/rules/*.mdc` if any exist — check and update.
@@ -549,7 +549,7 @@ Write `.kimi-done` (do **not** commit it):
 
 ```text
 HESTIA_KIMI_DONE=1
-SPEC=docs/development-process/loops/kimi-L18-post-public-cleanup-v0.2.1.md
+SPEC=docs/development-process/loops/L018-post-public-cleanup-v0.2.1.md
 LOOP=L18
 BRANCH=develop
 PYTEST_BASELINE=<count from §-1>
