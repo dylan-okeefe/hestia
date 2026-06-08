@@ -24,7 +24,7 @@ from hestia.platforms.runners import (
 )
 
 _IncomingMessageCallback = Callable[
-    [str, str, str, str | None], Coroutine[Any, Any, None]
+    [str, str, str, str | None, str | None], Coroutine[Any, Any, None]
 ]
 
 
@@ -295,7 +295,7 @@ class TestRunPlatformLifecycle:
 
         async def single_message_then_stop(*args: Any, **kwargs: Any) -> None:
             if adapter._on_message is not None:
-                await adapter._on_message("fake", "u1", "hello", None)
+                await adapter._on_message("fake", "u1", "hello", None, None)
             raise KeyboardInterrupt()
 
         with patch("asyncio.sleep", side_effect=single_message_then_stop):
@@ -325,7 +325,7 @@ class TestRunPlatformLifecycle:
 
         async def single_message_then_stop(*args: Any, **kwargs: Any) -> None:
             if adapter._on_message is not None:
-                await adapter._on_message("fake", "u1", "hello", None)
+                await adapter._on_message("fake", "u1", "hello", None, None)
             raise KeyboardInterrupt()
 
         with patch("asyncio.sleep", side_effect=single_message_then_stop):
@@ -442,7 +442,7 @@ class TestRunPlatformStreaming:
 
         async def single_message_then_stop(*args, **kwargs):
             if adapter._on_message is not None:
-                await adapter._on_message("fake", "u1", "hello", None)
+                await adapter._on_message("fake", "u1", "hello", None, None)
             raise KeyboardInterrupt()
 
         with patch("asyncio.sleep", side_effect=single_message_then_stop):
@@ -480,7 +480,7 @@ class TestRunPlatformStreaming:
 
         async def single_message_then_stop(*args, **kwargs):
             if adapter._on_message is not None:
-                await adapter._on_message("fake", "u1", "hello", None)
+                await adapter._on_message("fake", "u1", "hello", None, None)
             raise KeyboardInterrupt()
 
         with patch("asyncio.sleep", side_effect=single_message_then_stop):
@@ -512,7 +512,7 @@ class TestRunPlatformStreaming:
 
         async def single_message_then_stop(*args, **kwargs):
             if adapter._on_message is not None:
-                await adapter._on_message("fake", "u1", "hello", None)
+                await adapter._on_message("fake", "u1", "hello", None, None)
             raise KeyboardInterrupt()
 
         with patch("asyncio.sleep", side_effect=single_message_then_stop):
@@ -547,7 +547,7 @@ class TestRunPlatformStreaming:
 
         async def single_message_then_stop(*args, **kwargs):
             if adapter._on_message is not None:
-                await adapter._on_message("fake", "u1", "hello", None)
+                await adapter._on_message("fake", "u1", "hello", None, None)
             raise KeyboardInterrupt()
 
         with patch("asyncio.sleep", side_effect=single_message_then_stop):

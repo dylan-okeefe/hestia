@@ -207,7 +207,8 @@ async def test_full_slot_lifecycle_through_orchestrator(
     )
 
     assert turn_a1.state == TurnState.DONE
-    assert "time" in responses_capture_a[0].lower()
+    # Progress message may precede the final response
+    assert any("time" in r.lower() for r in responses_capture_a)
 
     # Session A should be HOT with slot 0
     session_a = await store.get_session(session_a.id)

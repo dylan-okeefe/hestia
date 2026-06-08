@@ -104,6 +104,7 @@ async def get_session_messages(
             "id": session.id,
             "platform": session.platform,
             "platform_user": session.platform_user,
+            "title": session.title,
             "started_at": session.started_at.isoformat() if session.started_at else None,
         },
         "turns": [

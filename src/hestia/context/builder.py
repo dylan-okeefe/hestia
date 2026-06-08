@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 from collections import OrderedDict
 from dataclasses import dataclass
 from functools import lru_cache
@@ -16,6 +17,8 @@ from hestia.core.serialization import message_to_dict
 from hestia.core.types import Message, Session, ToolSchema
 from hestia.errors import ContextTooLargeError
 from hestia.policy.engine import PolicyEngine
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -34,6 +37,9 @@ class BuildResult:
     truncated_count: int  # how many historical messages got dropped
     kept_first_user: bool  # sanity flag for the Qwen template requirement
     memory_epoch_included: bool  # whether memory epoch was included
+
+
+_DEFAULT_CALIBRATION_PATH = Path(__file__).parent.parent.parent / "docs" / "calibration.json"
 
 
 @lru_cache(maxsize=8)
@@ -157,7 +163,7 @@ class ContextBuilder:
         Returns:
             ContextBuilder with loaded calibration values
         """
-        path = calibration_path or Path("docs/calibration.json")
+        path = calibration_path or _DEFAULT_CALIBRATION_PATH
         if path.exists():
             data = _load_calibration(path)
             body_factor = data.get("body_factor", 1.0)
@@ -165,6 +171,11 @@ class ContextBuilder:
         else:
             body_factor = 1.0
             meta_tool_overhead = 0
+            logger.warning("Calibration file not found at %s — using defaults", path)
+
+        if body_factor == 0:
+            logger.warning("Calibration body_factor is 0 — using 1.0 to avoid ZeroDivision")
+            body_factor = 1.0
 
         return cls(inference_client, policy, body_factor, meta_tool_overhead)
 
@@ -249,7 +260,7 @@ class ContextBuilder:
         # before real user messages, and excluded from normal history token budget.
         handoff_msgs = [
             msg for msg in history
-            if msg.role == "user" and msg.content.startswith("[Previous session context]")
+            if msg.role == "user" and msg.is_handoff
         ]
         handoff_ids = {id(msg) for msg in handoff_msgs}
         history = [msg for msg in history if id(msg) not in handoff_ids]
@@ -354,12 +365,19 @@ class ContextBuilder:
         includes it has a constant length per role, so all tool-result
         messages with the same ``content`` can safely share one cache entry.
 
+        Messages with ``tool_calls`` bypass the cache entirely because
+        the serialized tool-call signature varies independently of
+        ``content``.
+
         Args:
             message: Message to count
 
         Returns:
             Token count for the rendered message dict
         """
+        if message.tool_calls:
+            tokens = await self._inference.tokenize(self._render_message(message))
+            return len(tokens)
         key = (message.role, message.content or "")
         if key in self._tokenize_cache:
             self._tokenize_cache.move_to_end(key)
@@ -391,6 +409,8 @@ class ContextBuilder:
         # Collect uncached messages and batch-tokenize them.
         uncached: list[Message] = []
         for msg in messages:
+            if msg.tool_calls:
+                continue
             key = (msg.role, msg.content or "")
             if key not in self._tokenize_cache:
                 uncached.append(msg)
@@ -408,9 +428,13 @@ class ContextBuilder:
             for msg in uncached:
                 await self._count_tokens(msg)
 
-        total = sum(
-            self._tokenize_cache[(m.role, m.content or "")] for m in messages
-        )
+        total = 0
+        for m in messages:
+            if m.tool_calls:
+                tokens = await self._inference.tokenize(self._render_message(m))
+                total += len(tokens)
+            else:
+                total += self._tokenize_cache[(m.role, m.content or "")]
 
         # Only cache single-message system prompts (the static prefix).
         if len(messages) == 1 and messages[0].role == "system":
@@ -430,7 +454,7 @@ class ContextBuilder:
         Returns:
             Corrected token count
         """
-        corrected = int(body_count / self._body_factor)
+        corrected = body_count if self._body_factor == 0 else int(body_count / self._body_factor)
         if has_tools:
             corrected += self._meta_tool_overhead
         return corrected

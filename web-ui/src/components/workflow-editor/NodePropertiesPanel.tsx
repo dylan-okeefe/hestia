@@ -21,6 +21,7 @@ interface NodePropertiesPanelProps {
   onDeleteNode: (nodeId: string) => void;
   onUpdateNodeData: (key: string, value: unknown) => void;
   onChangeNodeType: (type: string) => void;
+  onClose?: () => void;
   tools: string[];
   toolSchemas: ToolSchema[];
   triggerType: string;
@@ -33,6 +34,7 @@ export default function NodePropertiesPanel({
   onDeleteNode,
   onUpdateNodeData,
   onChangeNodeType,
+  onClose,
   tools,
   toolSchemas,
   triggerType,
@@ -78,12 +80,23 @@ export default function NodePropertiesPanel({
     <div key={selectedNode.id} className="node-properties">
       <div className="node-properties__header">
         <h3>{TEXT.workflowEditor.propertiesTitle}</h3>
-        <button
-          onClick={() => onDeleteNode(selectedNode.id)}
-          className="node-properties__delete-btn"
-        >
-          {TEXT.workflowEditor.deleteNode}
-        </button>
+        <div className="node-properties__header-actions">
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="node-properties__drawer-close"
+              aria-label="Close properties panel"
+            >
+              ✕
+            </button>
+          )}
+          <button
+            onClick={() => onDeleteNode(selectedNode.id)}
+            className="node-properties__delete-btn"
+          >
+            {TEXT.workflowEditor.deleteNode}
+          </button>
+        </div>
       </div>
 
       <div className="node-properties__section">

@@ -439,12 +439,14 @@ class TelegramAdapter(Platform):
                 # Don't route workflow replies to the orchestrator
                 return
 
+        session_title = chat.title if in_group else None
         if self._on_message is not None:
             await self._on_message(
                 self.name,
                 platform_user,
                 update.effective_message.text,
                 sender_platform_user,
+                session_title,
             )
 
     async def _handle_voice_message(self, update: Update, context: Any) -> None:
@@ -476,118 +478,124 @@ class TelegramAdapter(Platform):
             return
 
         assert message.voice is not None
+        _user_key = str(user_id)
+        await self.set_typing(_user_key, True)
 
-        # 1. Download the .ogg file
         try:
-            voice_file = await message.voice.get_file()
-            with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as ogg:
-                await voice_file.download_to_drive(ogg.name)
-                ogg_path = ogg.name
-        except Exception as e:  # noqa: BLE001 — voice download boundary
-            logger.warning("Failed to download voice message: %s", e)
-            await message.reply_text("Sorry, I couldn't download that voice message.")
-            return
-
-        # 2. Convert .ogg/opus to PCM 16kHz mono via ffmpeg
-        try:
-            pcm_bytes = await self._ogg_to_pcm(ogg_path, sample_rate=16000)
-        except Exception as e:  # noqa: BLE001 — audio conversion boundary
-            logger.warning("Failed to convert voice message to PCM: %s", e)
-            await message.reply_text("Sorry, I couldn't process that audio format.")
-            return
-        finally:
-            with contextlib.suppress(OSError):
-                os.unlink(ogg_path)
-
-        # Guard against sub-word Whisper hallucinations on accidental tap-and-release
-        _min_mono16_bytes = 8_000  # ~0.25 s at 16 kHz mono 16-bit
-        if len(pcm_bytes) < _min_mono16_bytes:
-            await message.reply_text("I didn't catch that — could you speak a little longer?")
-            return
-
-        # 3. Transcribe
-        try:
-            pipeline = await get_voice_pipeline(self._voice_config)
-            transcript = await pipeline.transcribe(pcm_bytes, sample_rate=16000)
-        except Exception as e:  # noqa: BLE001 — STT boundary
-            logger.warning("STT failed for voice message: %s", e)
-            await message.reply_text("Sorry, I couldn't understand that audio.")
-            return
-
-        if not transcript.strip():
-            await message.reply_text("Sorry, I didn't catch anything in that message.")
-            return
-
-        # 4. Feed to orchestrator as a normal text turn
-        # In groups, use chat ID as session key so replies stay in the group
-        if in_group:
-            assert chat is not None
-            platform_user = str(chat.id)
-            _sender_platform_user = str(user_id)
-        else:
-            platform_user = str(user_id)
-            _sender_platform_user = None
-        session = await self._session_store.get_or_create_session_with_handoff(
-            "telegram", platform_user
-        )
-        user_message = HestiaMessage(role="user", content=transcript)
-
-        async def respond_voice(response_text: str) -> None:
-            """Synthesize the response and send it as a voice message."""
-            # 5. Synthesize → assemble .ogg/opus
-            audio_chunks: list[bytes] = []
+            # 1. Download the .ogg file
             try:
-                async for chunk in pipeline.synthesize(response_text):
-                    audio_chunks.append(chunk)
-            except Exception as synth_err:  # noqa: BLE001 — TTS boundary
-                logger.warning("TTS failed for voice reply: %s", synth_err)
-                _prefix = "(Voice synthesis failed; sending text instead)"
-                _text = f"{_prefix}\n\n{_md_to_tg_html(response_text)}"
-                await message.reply_text(_text, parse_mode="HTML")
+                voice_file = await message.voice.get_file()
+                with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as ogg:
+                    await voice_file.download_to_drive(ogg.name)
+                    ogg_path = ogg.name
+            except Exception as e:  # noqa: BLE001 — voice download boundary
+                logger.warning("Failed to download voice message: %s", e)
+                await message.reply_text("Sorry, I couldn't download that voice message.")
                 return
 
+            # 2. Convert .ogg/opus to PCM 16kHz mono via ffmpeg
             try:
-                full_audio_ogg = await self._pcm_chunks_to_ogg_opus(audio_chunks)
-            except Exception as enc_err:  # noqa: BLE001 — audio encoding boundary
-                logger.warning("OGG encoding failed for voice reply: %s", enc_err)
-                _prefix = "(Voice encoding failed; sending text instead)"
-                _text = f"{_prefix}\n\n{_md_to_tg_html(response_text)}"
-                await message.reply_text(_text, parse_mode="HTML")
+                pcm_bytes = await self._ogg_to_pcm(ogg_path, sample_rate=16000)
+            except Exception as e:  # noqa: BLE001 — audio conversion boundary
+                logger.warning("Failed to convert voice message to PCM: %s", e)
+                await message.reply_text("Sorry, I couldn't process that audio format.")
+                return
+            finally:
+                with contextlib.suppress(OSError):
+                    os.unlink(ogg_path)
+
+            # Guard against sub-word Whisper hallucinations on accidental tap-and-release
+            _min_mono16_bytes = 8_000  # ~0.25 s at 16 kHz mono 16-bit
+            if len(pcm_bytes) < _min_mono16_bytes:
+                await message.reply_text("I didn't catch that — could you speak a little longer?")
                 return
 
-            # 6. Telegram voice note limit handling (1 MB)
-            if len(full_audio_ogg) > 1_000_000:
-                total_pcm = b"".join(audio_chunks)
-                duration_seconds = len(total_pcm) / (_TTS_SAMPLE_RATE * 2)
-                try:
-                    truncated_ogg = await self._truncate_ogg_to_size(
-                        full_audio_ogg, 1_000_000, duration_seconds
-                    )
-                except Exception as trunc_err:  # noqa: BLE001 — best-effort truncation
-                    logger.warning("OGG truncation failed: %s", trunc_err)
-                    truncated_ogg = full_audio_ogg
-                await message.reply_voice(voice=io.BytesIO(truncated_ogg))
-                await message.reply_text(
-                    "(Voice reply truncated to fit Telegram's 1MB limit. "
-                    "Full text:)\n\n" + _md_to_tg_html(response_text),
-                    parse_mode="HTML",
-                )
+            # 3. Transcribe
+            try:
+                pipeline = await get_voice_pipeline(self._voice_config)
+                transcript = await pipeline.transcribe(pcm_bytes, sample_rate=16000)
+            except Exception as e:  # noqa: BLE001 — STT boundary
+                logger.warning("STT failed for voice message: %s", e)
+                await message.reply_text("Sorry, I couldn't understand that audio.")
+                return
+
+            if not transcript.strip():
+                await message.reply_text("Sorry, I didn't catch anything in that message.")
+                return
+
+            # 4. Feed to orchestrator as a normal text turn
+            # In groups, use chat ID as session key so replies stay in the group
+            if in_group:
+                assert chat is not None
+                platform_user = str(chat.id)
+                _sender_platform_user = str(user_id)
             else:
-                await message.reply_voice(voice=io.BytesIO(full_audio_ogg))
-
-        try:
-            await self._orchestrator.process_turn(
-                session=session,
-                user_message=user_message,
-                respond_callback=respond_voice,
-                system_prompt=self._system_prompt,
-                platform=self,
-                platform_user=platform_user,
-                voice_reply=True,
+                platform_user = str(user_id)
+                _sender_platform_user = None
+            session_title = chat.title if in_group else None
+            session = await self._session_store.get_or_create_session_with_handoff(
+                "telegram", platform_user, title=session_title
             )
-        except Exception as e:  # noqa: BLE001 — turn boundary
-            logger.exception("Turn failed for voice message from %s", user_id)
-            await message.reply_text(sanitize_user_error(e))
+            user_message = HestiaMessage(role="user", content=transcript)
+
+            async def respond_voice(response_text: str) -> None:
+                """Synthesize the response and send it as a voice message."""
+                # 5. Synthesize → assemble .ogg/opus
+                audio_chunks: list[bytes] = []
+                try:
+                    async for chunk in pipeline.synthesize(response_text):
+                        audio_chunks.append(chunk)
+                except Exception as synth_err:  # noqa: BLE001 — TTS boundary
+                    logger.warning("TTS failed for voice reply: %s", synth_err)
+                    _prefix = "(Voice synthesis failed; sending text instead)"
+                    _text = f"{_prefix}\n\n{_md_to_tg_html(response_text)}"
+                    await message.reply_text(_text, parse_mode="HTML")
+                    return
+
+                try:
+                    full_audio_ogg = await self._pcm_chunks_to_ogg_opus(audio_chunks)
+                except Exception as enc_err:  # noqa: BLE001 — audio encoding boundary
+                    logger.warning("OGG encoding failed for voice reply: %s", enc_err)
+                    _prefix = "(Voice encoding failed; sending text instead)"
+                    _text = f"{_prefix}\n\n{_md_to_tg_html(response_text)}"
+                    await message.reply_text(_text, parse_mode="HTML")
+                    return
+
+                # 6. Telegram voice note limit handling (1 MB)
+                if len(full_audio_ogg) > 1_000_000:
+                    total_pcm = b"".join(audio_chunks)
+                    duration_seconds = len(total_pcm) / (_TTS_SAMPLE_RATE * 2)
+                    try:
+                        truncated_ogg = await self._truncate_ogg_to_size(
+                            full_audio_ogg, 1_000_000, duration_seconds
+                        )
+                    except Exception as trunc_err:  # noqa: BLE001 — best-effort truncation
+                        logger.warning("OGG truncation failed: %s", trunc_err)
+                        truncated_ogg = full_audio_ogg
+                    await message.reply_voice(voice=io.BytesIO(truncated_ogg))
+                    await message.reply_text(
+                        "(Voice reply truncated to fit Telegram's 1MB limit. "
+                        "Full text:)\n\n" + _md_to_tg_html(response_text),
+                        parse_mode="HTML",
+                    )
+                else:
+                    await message.reply_voice(voice=io.BytesIO(full_audio_ogg))
+
+            try:
+                await self._orchestrator.process_turn(
+                    session=session,
+                    user_message=user_message,
+                    respond_callback=respond_voice,
+                    system_prompt=self._system_prompt,
+                    platform=self,
+                    platform_user=platform_user,
+                    voice_reply=True,
+                )
+            except Exception as e:  # noqa: BLE001 — turn boundary
+                logger.exception("Turn failed for voice message from %s", user_id)
+                await message.reply_text(sanitize_user_error(e))
+        finally:
+            await self.set_typing(_user_key, False)
 
     async def _handle_callback_query(self, update: Update, context: Any) -> None:
         """Handle inline-keyboard button presses for confirmations and workflow responses."""

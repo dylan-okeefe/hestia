@@ -1,9 +1,10 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
-import { fetchAuthStatus, setAuthToken, clearAuthToken } from '../api/client';
+import { fetchAuthStatus, setAuthToken, clearAuthToken, logout as clientLogout } from '../api/client';
 
 interface AuthState {
   authenticated: boolean;
   authEnabled: boolean;
+  debugLogin: boolean;
   platform: string | null;
   platformUser: string | null;
   userId: string | null;
@@ -30,6 +31,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [auth, setAuth] = useState<AuthState>({
     authenticated: false,
     authEnabled: true,
+    debugLogin: false,
     platform: null,
     platformUser: null,
     userId: null,
@@ -44,6 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setAuth({
           authenticated: true,
           authEnabled: false,
+          debugLogin: false,
           platform: null,
           platformUser: null,
           userId: null,
@@ -51,9 +54,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
         return;
       }
+      if (!data.authenticated) {
+        clientLogout().catch(() => {});
+        clearAuthToken();
+        setAuth({
+          authenticated: false,
+          authEnabled: true,
+          debugLogin: data.debug_login || false,
+          platform: null,
+          platformUser: null,
+          userId: null,
+          availablePlatforms: data.available_platforms || [],
+        });
+        return;
+      }
       setAuth({
-        authenticated: data.authenticated,
+        authenticated: true,
         authEnabled: true,
+        debugLogin: data.debug_login || false,
         platform: data.platform || null,
         platformUser: data.platform_user || null,
         userId: data.user_id || null,
@@ -63,6 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAuth({
         authenticated: false,
         authEnabled: true,
+        debugLogin: false,
         platform: null,
         platformUser: null,
         userId: null,
@@ -81,10 +100,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   const logout = useCallback(() => {
+    clientLogout().catch(() => {});
     clearAuthToken();
     setAuth({
       authenticated: false,
       authEnabled: true,
+      debugLogin: auth.debugLogin,
       platform: null,
       platformUser: null,
       userId: null,

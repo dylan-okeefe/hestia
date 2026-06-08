@@ -14,10 +14,10 @@
   of what state it was in and what transitions it took.
 
 - **Decision:**
-  1. Model the turn lifecycle as an explicit state machine with 10
+  1. Model the turn lifecycle as an explicit state machine with 9
      states (`RECEIVED`, `BUILDING_CONTEXT`, `AWAITING_MODEL`,
      `EXECUTING_TOOLS`, `AWAITING_USER`, `AWAITING_SUBAGENT`,
-     `COMPRESSING`, `RETRYING`, `DONE`, `FAILED`) and a static
+     `RETRYING`, `DONE`, `FAILED`) and a static
      `ALLOWED_TRANSITIONS` table. `assert_transition` raises
      `IllegalTransitionError` on any invalid move. Every transition is
      persisted as a `TurnTransition` row linked to the parent `Turn`.
@@ -38,9 +38,11 @@
     which makes post-mortem debugging tractable.
   - Illegal transitions (e.g., skipping `BUILDING_CONTEXT`) fail loudly
     at the source rather than corrupt state silently.
-  - The `AWAITING_SUBAGENT` and `COMPRESSING` states are reserved but
-    have no transitions wired yet — they'll light up in Phase 3 without
-    requiring a schema migration.
+  - The `AWAITING_SUBAGENT` state is fully wired:
+    `EXECUTING_TOOLS` → `AWAITING_SUBAGENT` when delegation is initiated,
+    and `AWAITING_SUBAGENT` → `EXECUTING_TOOLS` or `FAILED` when the
+    subagent returns or errors.  The `COMPRESSING` state was removed in
+    favour of background compression inside `BUILDING_CONTEXT`.
   - `requires_confirmation=True` is enforced in the orchestrator on both
     the `call_tool` meta-tool path (which is what models actually use)
     and the direct-tool dispatch path. If `confirm_callback` is `None`

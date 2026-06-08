@@ -20,7 +20,11 @@ _TRUST_PRESETS = {"paranoid", "household", "developer"}
 
 
 @router.get("/users")
-async def list_users(ctx: WebContext = _CTX_DEP) -> dict[str, Any]:
+async def list_users(
+    request: Request,
+    ctx: WebContext = _CTX_DEP,
+) -> dict[str, Any]:
+    await require_admin(request, ctx)
     users = await ctx.user_store.list_users()
     user_ids = [u.id for u in users]
     identities_map = await ctx.user_store.get_identities_for_users(user_ids)
@@ -94,10 +98,21 @@ async def create_user(
 
 
 @router.get("/users/{user_id}")
-async def get_user(user_id: str, ctx: WebContext = _CTX_DEP) -> dict[str, Any]:
+async def get_user(
+    user_id: str,
+    request: Request,
+    ctx: WebContext = _CTX_DEP,
+) -> dict[str, Any]:
     user = await ctx.user_store.get_user(user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
+
+    caller_user_id = getattr(request.state, "user_id", None)
+    if caller_user_id is not None and caller_user_id == user_id:
+        pass  # owner
+    else:
+        await require_admin(request, ctx)
+
     identities = await ctx.user_store.get_identities(user_id)
     return {
         "id": user.id,
@@ -216,12 +231,19 @@ async def remove_identity(
 @router.get("/users/{user_id}/handoffs")
 async def get_user_handoffs(
     user_id: str,
+    request: Request,
     ctx: WebContext = _CTX_DEP,
 ) -> list[dict[str, Any]]:
     """Return the last 3 handoff summaries for a user's platform identities."""
     user = await ctx.user_store.get_user(user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
+
+    caller_user_id = getattr(request.state, "user_id", None)
+    if caller_user_id is not None and caller_user_id == user_id:
+        pass  # owner
+    else:
+        await require_admin(request, ctx)
 
     identities = await ctx.user_store.get_identities(user_id)
     identity_tuples = [
@@ -238,8 +260,23 @@ async def get_user_handoffs(
 
 
 @router.get("/rooms")
-async def list_rooms(ctx: WebContext = _CTX_DEP) -> dict[str, Any]:
-    rooms = await ctx.user_store.list_rooms()
+async def list_rooms(
+    request: Request,
+    ctx: WebContext = _CTX_DEP,
+) -> dict[str, Any]:
+    caller_user_id = getattr(request.state, "user_id", None)
+    caller_role = None
+    if caller_user_id is not None:
+        user = await ctx.user_store.get_user(caller_user_id)
+        if user is not None:
+            caller_role = user.role
+
+    if caller_role == "admin":
+        rooms = await ctx.user_store.list_rooms()
+    else:
+        if caller_user_id is None:
+            raise HTTPException(status_code=401, detail="Not authenticated")
+        rooms = await ctx.user_store.get_user_rooms(caller_user_id)
     return {
         "rooms": [
             {
@@ -255,10 +292,30 @@ async def list_rooms(ctx: WebContext = _CTX_DEP) -> dict[str, Any]:
 
 
 @router.get("/rooms/{room_id}")
-async def get_room(room_id: str, ctx: WebContext = _CTX_DEP) -> dict[str, Any]:
+async def get_room(
+    room_id: str,
+    request: Request,
+    ctx: WebContext = _CTX_DEP,
+) -> dict[str, Any]:
     room = await ctx.user_store.get_room(room_id)
     if room is None:
         raise HTTPException(status_code=404, detail="Room not found")
+
+    caller_user_id = getattr(request.state, "user_id", None)
+    caller_role = None
+    if caller_user_id is not None:
+        user = await ctx.user_store.get_user(caller_user_id)
+        if user is not None:
+            caller_role = user.role
+
+    if caller_role != "admin":
+        if caller_user_id is None:
+            raise HTTPException(status_code=401, detail="Not authenticated")
+        members = await ctx.user_store.get_room_members(room_id)
+        member_ids = {m.id for m in members}
+        if caller_user_id not in member_ids:
+            raise HTTPException(status_code=403, detail="Access denied")
+
     members = await ctx.user_store.get_room_members(room_id)
     return {
         "id": room.id,
@@ -295,11 +352,29 @@ async def update_room(
 
 @router.get("/rooms/{room_id}/members")
 async def list_room_members(
-    room_id: str, ctx: WebContext = _CTX_DEP
+    room_id: str,
+    request: Request,
+    ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     room = await ctx.user_store.get_room(room_id)
     if room is None:
         raise HTTPException(status_code=404, detail="Room not found")
+
+    caller_user_id = getattr(request.state, "user_id", None)
+    caller_role = None
+    if caller_user_id is not None:
+        user = await ctx.user_store.get_user(caller_user_id)
+        if user is not None:
+            caller_role = user.role
+
+    if caller_role != "admin":
+        if caller_user_id is None:
+            raise HTTPException(status_code=401, detail="Not authenticated")
+        members = await ctx.user_store.get_room_members(room_id)
+        member_ids = {m.id for m in members}
+        if caller_user_id not in member_ids:
+            raise HTTPException(status_code=403, detail="Access denied")
+
     members = await ctx.user_store.get_room_members(room_id)
     return {
         "members": [

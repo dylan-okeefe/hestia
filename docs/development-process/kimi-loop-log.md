@@ -6,6 +6,182 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-06-03 — L212–L215 Complete (Security & Robustness Arc)
+
+**Outcome:** Closed authorization gaps, fixed SlotManager eviction race, added webhook replay protection, cleaned up backend inconsistencies, and hardened web UI state management.
+
+### L212 — Authorization Hardening
+**Branch:** `feature/l212-authorization-hardening`
+- Closed IDOR gaps in read endpoints (traces, style, egress, users, proposals)
+- Fixed fail-open `RequireOwner` when auth is enabled and `platform_user` is `None`
+- Added persistence filters for trace and failure stores
+- Expanded authz contract tests from 6 → 41
+
+**Quality gates:** pytest 1605 passed, mypy clean, ruff clean
+
+### L213 — Concurrency & Replay Protection
+**Branch:** `feature/l213-concurrency-replay-protection`
+- Fixed SlotManager double-eviction race by removing victim from `_assignments` before I/O
+- Added bounded LRU signature cache for webhook replay protection (1000 entries)
+- Added `test_concurrent_acquire_no_double_eviction` and updated webhook replay test
+
+**Quality gates:** pytest 1691 passed, 6 skipped, mypy clean, ruff clean
+
+### L214 — Backend Cleanup & Correctness
+**Branch:** `feature/l214-backend-cleanup`
+- Keyed auto-approve fail-closed on capabilities via registry
+- Normalized IPv4-mapped IPv6 in SSRF checks, added CGNAT, `is_global` guard
+- Resolved calibration path from package root, guarded `body_factor == 0`
+- Deleted dead code under `web/routes/` (6 files + nodes/ directory)
+- Made `web_search` canonical, removed `search_web` duplicate
+- Capped reasoning text to 2000 chars on done path
+- Removed duplicate injection scan from `_dispatch_tool_call`
+
+**Quality gates:** pytest 1695 passed, 6 skipped, mypy clean, ruff clean on changed files
+
+### L215 — Web UI Robustness
+**Branch:** `feature/l215-web-ui-robustness`
+- Split load-error vs action-error state in `useWorkflowEditor`; toasts for transient failures
+- Added AbortController guard to prevent stale workflow load responses
+- Fixed browser stream session leak on timeout (`stopBrowserStream()` before navigate)
+- Added mounted-ref guard in `useApiQuery` to prevent setState-after-unmount
+- Added 30-second global fetch timeout with AbortSignal support
+- Clear stale token when `/auth/status` returns `authenticated:false`
+
+**Quality gates:** web-ui build ✅, vitest 128 passed, backend pytest 1695 passed
+
+## 2026-05-31 — L207–L211 Complete (Browser Session Dashboard)
+
+**Outcome:** All 5 loops of the browser session management feature implemented and validated. Replaces RDP-based `browser_login` with a web dashboard flow.
+
+### L207 — Browser Session Metadata, Health Checks, and REST API
+**Branch:** `feature/l207-l211-browser-session-dashboard`
+- Extended `BrowserSessionStore` with `SessionMetadata` tracking
+- Added async `check_health()` using Playwright to detect login redirects
+- Added REST endpoints: list, delete, check
+- `browser_get` updates `last_used` timestamp
+
+**Quality gates:** 28 passed ✅, mypy ✅, ruff ✅
+
+### L208 — Browser Session List Dashboard Page
+- `BrowserSessions.tsx` with status table and action buttons
+- API client functions wired to L207 backend
+- Route and navigation link added
+- Playwright E2E tests: 3 passed
+
+**Quality gates:** TypeScript compiles ✅, inline styles 10 (< 20) ✅, ruff ✅
+
+### L209 — CDP Screencast Browser Streaming Backend
+- `SessionStreamManager` with Playwright CDP `Page.startScreencast`
+- WebSocket endpoint for bidirectional frame streaming + input forwarding
+- REST control endpoints for start/stop
+- Auto-timeout after 10 minutes
+- Mock-based tests: 16 passed
+
+**Quality gates:** 16 passed ✅, mypy ✅, ruff ✅
+
+### L210 — Browser Session Stream Dashboard Page
+- `BrowserStream.tsx` with canvas rendering WebSocket JPEG frames
+- Mouse/keyboard input forwarding scaled to 1920×1080
+- Mobile text-input fallback
+- Timer and auto-timeout UI
+- Playwright E2E tests: 3 passed
+
+**Quality gates:** TypeScript compiles ✅, inline styles 10 (< 20) ✅, ruff ✅
+
+### L211 — Integration, Auth, and Polish
+- Admin-only guards on all browser session endpoints (`require_admin`)
+- WebSocket validates admin role before accepting (code 1008)
+- Dashboard nav and routes gated to `isAdmin`
+- `browser_login` tool mentions dashboard
+- Ported runtime patches: `inference.py` reasoning_format removal, `finalization.py` InferenceServerError catch
+
+**Quality gates:** pytest 1556 passed, 15 failed + 7 errors (all pre-existing) ✅, mypy ✅, ruff ✅, web-ui build ✅, inline styles 10 (under 20) ✅
+
+## 2026-05-31 — L195–L205 Complete (v0.12 Review + Coding Harness)
+
+**Outcome:** All 11 specced loops implemented and validated by subagents. L206 (Matrix auth) remains deferred.
+
+### L195 — Critical & High Backend Fixes
+**Branch:** `feature/l195-critical-and-high-backend-fixes` (4 commits)
+- C1: Token-count cache bypasses on tool-call messages
+- H2: curl_cffi redirect loop now resolves + checks IP against `_BLOCKED_RANGES`
+- H1: `scheduler_write_local` trust field added; scheduler ticks fail-closed on write_file
+- M2: `egress_audit_enabled` now honored in both http_get and web_search
+
+**Quality gates:** pytest 1454 passed (15 failed, 7 errors — all pre-existing) ✅, mypy ✅, ruff ✅
+
+### L196 — Orchestrator & Inference Robustness
+**Branch:** `feature/l196-orchestrator-and-inference-robustness` (5 commits)
+- M1: Streaming path now skips malformed JSON args
+- M6: `IllegalTransitionError` routes to `FAILED` state with user notice
+- M7: `print()` replaced with `logger.warning()` in inference
+- L4: Defensive `.get()` access in inference tool-call parsing
+
+**Quality gates:** relevant tests pass ✅, mypy ✅, ruff ✅
+
+### L197 — Web & Auth Hardening
+**Branch:** `feature/l197-web-and-auth-hardening` (4 commits)
+- M3: Webhook strict endpoint match + replay window + header strip
+- M8: AuthManager prunes expired pending codes and sessions
+- M5: Memory search fail-closed when `platform_user` unresolved
+
+**Quality gates:** 164 tests pass ✅, mypy ✅, ruff ✅
+
+### L198 — Frontend Fixes
+**Branch:** `feature/l198-frontend-fixes` (3 commits)
+- H3: `res.ok` checks on all mutation helpers
+- M10: Auth disabled fix, workflow editor error state, login redirect fix, mutation toasts
+- L5: Route-level redirect for non-admins from `/admin/users`
+
+**Quality gates:** build ✅, 128 vitest tests ✅, 10 inline styles (under 20) ✅
+### L199 — Test Backfill
+**Branch:** `feature/l199-test-backfill` (4 commits)
+- M9a: `chat()` malformed-output defense tests (7 new tests)
+- M9b: `MaxIterationsError` and per-turn tool-call cap tests
+- M9c: IPv6 SSRF and workflow-node real-blocking tests
+- M9d: `tool_result_max_chars` wired into orchestrator + test
+
+**Quality gates:** 28 passed, 1 pre-existing failure ✅, mypy ✅, ruff ✅
+
+### L200 — Docs & Polish
+**Branch:** `feature/l200-docs-and-polish` (4 commits)
+- L6: README license/platform, env-var precedence, ADR-012, DECISIONS index
+- L1: Structured `is_handoff` flag on `Message` + migration
+- L2: Terminal blocked-pattern documentation
+- L3: Injection scanner guide wording
+
+### L201 — edit_file Tool + Write Guard
+**Branch:** `feature/l201-edit-file-tool-and-write-guard` (3 commits)
+- edit_file with exact-once str-replace + diff preview
+- write-on-existing guard with edit_file fallback hint
+- glob/grep search builtins (100-match cap)
+
+### L202 — JSON Repair + Search Tools
+**Branch:** `feature/l202-json-repair-and-search-tools` (2 commits)
+- `repair_json()` utility (trailing commas, quotes, braces, fenced blocks)
+- Wired into inference parsing + streaming accumulator
+
+### L203 — Quality Monitor
+**Branch:** `feature/l203-quality-monitor` (4 commits)
+- 6-pattern degenerate classifier (empty, hallucinated, repeated, patch-failed, read-only streak, greeting)
+- Correction injection into execution loop with cap at 3
+- 15 behavioral tests
+
+### L204 — Thinking Budget Abort
+**Branch:** `feature/l204-thinking-budget-abort` (3 commits)
+- `ThinkingBudgetExceededError` + mid-stream counter
+- Commit nudge injection on abort, `reasoning_budget=0` on retry
+- 6 streaming behavioral tests
+
+### L205 — Checkpoint & Rollback
+**Branch:** `feature/l205-checkpoint-and-rollback` (4 commits)
+- Git-aware `CheckpointManager` (stash → file-copy fallback)
+- Wired into turn lifecycle (create on start, discard on DONE, restore on FAILED)
+- `rollback_turn` builtin tool
+- 8 checkpoint tests
+---
+
 ## 2026-05-20 — L187–L191 Complete (Post-Review Fixes + Error Persistence + Backend Quality + Component Infrastructure + Config Overhaul)
 
 **Outcome:** All five loops from the post-UI-rewrite review are complete. L187 was done by the runtime Hestia instance. L188–L191 were done manually, with significant branch-interference challenges from the runtime worktree auto-committing to `feature/l187-post-review-ui-fixes-and-polish`.
@@ -883,7 +1059,7 @@ and merged to `develop`.
 classes extracted: `TurnAssembly` (126 lines), `TurnExecution` (430 lines),
 `TurnFinalization` (328 lines).
 
-**Scope authorization:** `docs/development-process/kimi-loops/L56-orchestrator-decomposition.md`
+**Scope authorization:** `docs/development-process/loops/kimi-L56-orchestrator-decomposition.md`
 
 **Implementation pattern:** Sequential subagent delegation, one phase per
 subagent. Each subagent extracted its phase and left thin proxy methods in
@@ -911,7 +1087,7 @@ until v0.11 release-prep.
 
 **Outcome:** All 5 sections completed and merged to `develop`.
 
-**Scope authorization:** `docs/development-process/kimi-loops/L55-code-cleanup-release-prep.md`
+**Scope authorization:** `docs/development-process/loops/kimi-L55-code-cleanup-release-prep.md`
 
 **Implementation pattern:** Sequential subagent delegation with review between
 each chunk. Each subagent got 1 section (or 2 small related sections) to stay
@@ -936,7 +1112,7 @@ well under the 100-step limit.
 **Outcome:** All 10 sections from the v0.10.0 pre-release evaluation fixed and
 merged to `develop`.
 
-**Scope authorization:** `docs/development-process/kimi-loops/L54-async-safety-and-small-bugs.md`
+**Scope authorization:** `docs/development-process/loops/kimi-L54-async-safety-and-small-bugs.md`
 
 **Implementation pattern:** Spec-driven with subagent delegation. The first
 subagent (coder) implemented sections 1–9 and started section 10 before hitting
@@ -966,7 +1142,7 @@ order), ran quality gates, and committed the remainder.
 
 **Outcome:** `ContextBuilder.build` thinned from ~215 lines to 78 lines.
 
-**Scope authorization:** `docs/development-process/kimi-loops/L52-context-builder-decomposition.md`
+**Scope authorization:** `docs/development-process/loops/kimi-L52-context-builder-decomposition.md`
 
 **Extracted:**
 - `HistoryWindowSelector` — `src/hestia/context/history_window_selector.py` (99 lines)
@@ -983,7 +1159,7 @@ order), ran quality gates, and committed the remainder.
 
 **Outcome:** `src/hestia/commands.py` (1112 lines) split into `src/hestia/commands/` package (9 modules).
 
-**Scope authorization:** `docs/development-process/kimi-loops/L50-commands-split.md`
+**Scope authorization:** `docs/development-process/loops/kimi-L50-commands-split.md`
 
 **Quality gate:**
 - Tests: 830 passed, 1 failed (pre-existing voice pipeline test)
@@ -996,7 +1172,7 @@ order), ran quality gates, and committed the remainder.
 
 **Outcome:** `process_turn` reduced from ~390 lines to 98 lines.
 
-**Scope authorization:** `docs/development-process/kimi-loops/L49-orchestrator-extract-methods.md`
+**Scope authorization:** `docs/development-process/loops/kimi-L49-orchestrator-extract-methods.md`
 
 **Extracted:** `_prepare_turn_context`, `_run_inference_loop`, `_handle_context_too_large`, `_handle_unexpected_error`, `_record_failure_if_enabled`, `_finalize_turn`, `_safe_transition`.
 
@@ -1011,7 +1187,7 @@ order), ran quality gates, and committed the remainder.
 
 **Outcome:** `_ConfigFromEnv` mixin applied to all config classes; tool factory signatures normalized.
 
-**Scope authorization:** `docs/development-process/kimi-loops/L48-config-consistency.md`
+**Scope authorization:** `docs/development-process/loops/kimi-L48-config-consistency.md`
 
 **Quality gate:**
 - Tests: 36 passed (config tests)
@@ -1024,7 +1200,7 @@ order), ran quality gates, and committed the remainder.
 
 **Outcome:** Four new test files and four modified test files; all green.
 
-**Scope authorization:** `docs/development-process/kimi-loops/L51-missing-test-coverage.md`
+**Scope authorization:** `docs/development-process/loops/kimi-L51-missing-test-coverage.md`
 
 **New test files:**
 - `tests/unit/test_platform_runners.py` — platform routing, lifecycle, signal handling (16 tests)
@@ -1059,7 +1235,7 @@ order), ran quality gates, and committed the remainder.
 `_ConfigFromEnv` mixin; tool factory signatures normalized; validation hardened.
 Do not merge to `develop` until release-prep sequence.
 
-**Scope authorization:** `docs/development-process/kimi-loops/L48-config-consistency.md`
+**Scope authorization:** `docs/development-process/loops/kimi-L48-config-consistency.md`
 
 **Key changes:**
 - `_ConfigFromEnv` mixin with `from_env_dict(prefix, environ)` using dataclass introspection.
@@ -1119,7 +1295,7 @@ circular imports (`cli.py` imports `_cmd_*` from `hestia.commands`; tests import
 `HistoryWindowSelector` and `CompressedSummaryStrategy` extracted as dedicated
 classes with full unit-test coverage. All existing context-builder tests pass.
 
-**Scope authorization:** `docs/development-process/kimi-loops/L52-context-builder-decomposition.md`
+**Scope authorization:** `docs/development-process/loops/kimi-L52-context-builder-decomposition.md`
 
 **Files changed:**
 - `src/hestia/context/history_window_selector.py` — new; truncation/selection logic
@@ -1265,7 +1441,7 @@ annotated. Don't re-tag `v0.8.0` — it's already pushed.
 ## 2026-04-19 — Loop: L43 blocked — idle pending Dylan-side prereqs
 
 **Status:** L43 cannot start. Kimi verified the five prereqs listed in
-`docs/development-process/kimi-loops/L43-voice-phase-b-calls.md`; none are
+`docs/development-process/loops/kimi-L43-voice-phase-b-calls.md`; none are
 present on disk.
 
 **Missing:**
@@ -1611,7 +1787,7 @@ and relaunch.
 
 These are intentionally NOT merged to develop. Per the new `.cursorrules` rule, they wait until a v0.8.1 release-prep doc names them in scope.
 
-- **Track 4 (L40)** — Copilot cleanup backlog spec. Six items: sequential tool dispatch, `should_evict_slot` stub, `for_trust` identity comparison, EmailAdapter bare excepts, `prompt_on_mobile` docstring drift, three open `# TODO(L*)` markers. Spec lives at `docs/development-process/kimi-loops/L40-copilot-cleanup-backlog.md`.
+- **Track 4 (L40)** — Copilot cleanup backlog spec. Six items: sequential tool dispatch, `should_evict_slot` stub, `for_trust` identity comparison, EmailAdapter bare excepts, `prompt_on_mobile` docstring drift, three open `# TODO(L*)` markers. Spec lives at `docs/development-process/loops/kimi-L40-copilot-cleanup-backlog.md`.
 - **Track 5 (L41-L43)** — Voice adapter arc. Three specs:
   - **L41** shared infrastructure (pipeline, VAD, VoiceConfig, `hestia[voice]` extra, voice-setup.md docs).
   - **L42** Phase A: Telegram bot voice messages (forks from L41 branch).
@@ -1853,8 +2029,8 @@ All five drift sites in `_cmd_policy_show` (in `src/hestia/app.py`) are now wire
 **Cursor actions:**
 
 1. Reset local `main` to `origin/main` (was 155 ahead from the prior local merge that Dylan never pushed). Deleted local `v0.8.0` tag (was on the un-pushed `c95814f`). The `chore(release): v0.8.0` commit (`d9b889d`) stays on develop and will be re-tagged at the post-L35d tip.
-2. Wrote four L35 mini-loop specs (`kimi-loops/L35a-*.md`, `L35b-*.md`, `L35c-*.md`, `L35d-*.md`).
-3. Wrote three overnight specs (`kimi-loops/L36-app-commands-split.md`, `L37-code-cleanup-sweep.md`, `L38-delegation-and-disable-persistence.md`).
+2. Wrote four L35 mini-loop specs (`loops/kimi-L35a-*.md`, `L35b-*.md`, `L35c-*.md`, `L35d-*.md`).
+3. Wrote three overnight specs (`loops/kimi-L36-app-commands-split.md`, `L37-code-cleanup-sweep.md`, `L38-delegation-and-disable-persistence.md`).
 4. Renamed the original Cursor-only release spec to `_superseded-L35-release-v0.8.0.md` for history.
 5. Updated `kimi-phase-queue.md` table; documented L39 + L40 as deferred until post-dogfooding (per the pre-release plan's own dependency note).
 6. Pointed `KIMI_CURRENT.md` at L35a.
@@ -2487,7 +2663,7 @@ Plus `chore: bump version to 0.4.1`, `docs: L22 handoff report`.
 
 **Git:** Fast-forward `feature/l15-security-hardening` → `develop` (tip `a5468d5`).
 
-**Queue:** `KIMI_CURRENT.md` → **L16** [`L16-pre-public-cleanup.md`](kimi-loops/L16-pre-public-cleanup.md); **`## Review carry-forward`** filled with lazy import note and pre-existing ruff debt.
+**Queue:** `KIMI_CURRENT.md` → **L16** [`L16-pre-public-cleanup.md`](loops/kimi-L16-pre-public-cleanup.md); **`## Review carry-forward`** filled with lazy import note and pre-existing ruff debt.
 
 ---
 
@@ -2511,7 +2687,7 @@ Plus `chore: bump version to 0.4.1`, `docs: L22 handoff report`.
 
 **Git:** Fast-forward `feature/l13-scheduler-matrix-cron` → `develop`.
 
-**Queue:** `KIMI_CURRENT.md` → **L14** [`L14-docs-runtime-manual-smoke.md`](kimi-loops/L14-docs-runtime-manual-smoke.md); **`## Review carry-forward`** filled from L13 handoff.
+**Queue:** `KIMI_CURRENT.md` → **L14** [`L14-docs-runtime-manual-smoke.md`](loops/kimi-L14-docs-runtime-manual-smoke.md); **`## Review carry-forward`** filled from L13 handoff.
 
 ---
 
@@ -2525,7 +2701,7 @@ Plus `chore: bump version to 0.4.1`, `docs: L22 handoff report`.
 
 **Git:** Fast-forward `feature/l12-matrix-e2e-two-user` → `develop`.
 
-**Queue:** `KIMI_CURRENT.md` → **L13** [`L13-scheduler-matrix-cron.md`](kimi-loops/L13-scheduler-matrix-cron.md); **`## Review carry-forward`** filled from L12 handoff.
+**Queue:** `KIMI_CURRENT.md` → **L13** [`L13-scheduler-matrix-cron.md`](loops/kimi-L13-scheduler-matrix-cron.md); **`## Review carry-forward`** filled from L12 handoff.
 
 ---
 
@@ -2537,7 +2713,7 @@ Plus `chore: bump version to 0.4.1`, `docs: L22 handoff report`.
 
 **Git:** Fast-forward merge `feature/l11-test-tools-memory-mock` → `develop` (tip **`51749a2`** includes handoff + `.cursorrules` clarification: **do not use Cursor `Await` on the shell task as Kimi completion** — poll `.kimi-done`).
 
-**Queue:** `KIMI_CURRENT.md` → **L12** [`kimi-loops/L12-matrix-e2e-two-user.md`](kimi-loops/L12-matrix-e2e-two-user.md); **`## Review carry-forward`** on L12 filled from L11 handoff (orchestrator semantics noise, optional runtime Matrix parity, aiosqlite warnings).
+**Queue:** `KIMI_CURRENT.md` → **L12** [`loops/kimi-L12-matrix-e2e-two-user.md`](loops/kimi-L12-matrix-e2e-two-user.md); **`## Review carry-forward`** on L12 filled from L11 handoff (orchestrator semantics noise, optional runtime Matrix parity, aiosqlite warnings).
 
 ---
 
@@ -2554,7 +2730,7 @@ Plus `chore: bump version to 0.4.1`, `docs: L22 handoff report`.
 - **`IllegalTransitionError`** (`done` → `failed`) when user already saw a final assistant message — orchestrator marks **`DONE`** then **`respond_callback`** (or nearby) throws; outer **`except`** attempts **`FAILED`** from a terminal state.
 - Model answered “what time is it?” without **`current_time`** — policy allows tools on **`matrix`**; needs tests / nudges.
 
-**Artifacts:** New loop spec [`kimi-loops/L10-matrix-realworld-runtime-testing.md`](kimi-loops/L10-matrix-realworld-runtime-testing.md), Kimi prompt [`prompts/KIMI_PHASE_15_MATRIX_REALWORLD_PROMPT.md`](prompts/KIMI_PHASE_15_MATRIX_REALWORLD_PROMPT.md), queue row **10**, `KIMI_CURRENT.md` → L10, `HANDOFF_STATE.md` updated.
+**Artifacts:** New loop spec [`loops/kimi-L10-matrix-realworld-runtime-testing.md`](loops/kimi-L10-matrix-realworld-runtime-testing.md), Kimi prompt [`prompts/KIMI_PHASE_15_MATRIX_REALWORLD_PROMPT.md`](prompts/KIMI_PHASE_15_MATRIX_REALWORLD_PROMPT.md), queue row **10**, `KIMI_CURRENT.md` → L10, `HANDOFF_STATE.md` updated.
 
 **Process:** L10 Part D instructs Kimi to add **`docs/runtime-feature-testing.md`** — workflow for extra git worktrees per feature branch so **`~/Hestia-runtime`** stays stable.
 
@@ -2664,7 +2840,7 @@ Plus `chore: bump version to 0.4.1`, `docs: L22 handoff report`.
 
 **Git:** Kimi had branched `265003b` from **`e0c71c7`**, skipping two local orchestration commits (`5082255`, `a8b793a`). **Recovery:** `git checkout develop`, merged `feature/phase-7-cleanup` (fast-forward to `265003b`), **cherry-pick** `5082255` `a8b793a` onto `develop` → commits **`6c40e7f`**, **`53f490a`**. Resolved `docs/HANDOFF_STATE.md` stash conflict manually.
 
-**Next pointer:** `KIMI_CURRENT.md` → **L01 Matrix** (`kimi-loops/L01-matrix-adapter.md` + `matrix-integration.md`). Branch to create: `feature/matrix-adapter`.
+**Next pointer:** `KIMI_CURRENT.md` → **L01 Matrix** (`loops/kimi-L01-matrix-adapter.md` + `matrix-integration.md`). Branch to create: `feature/matrix-adapter`.
 
 ---
 
@@ -2673,3 +2849,57 @@ Plus `chore: bump version to 0.4.1`, `docs: L22 handoff report`.
 **Context:** Quiet default for `scripts/kimi-run-current.sh`, `.kimi-done` contract, this log file created.
 
 **Next:** Run `./scripts/kimi-run-current.sh` (optional: `> .kimi-output.log 2>&1`), then Cursor reviews and appends the next section above this one.
+
+## 2026-06-04 — L212-L217: Security Hardening + Polish Arc
+
+Comprehensive review remediation based on Opus/Copilot audit.
+Goal: clean up before public release (r/LocalLLM, r/LocalLLama post).
+
+### L212 — Authorization Hardening
+- Closed IDOR gaps in traces, failures, style, egress, users, rooms, proposals
+- Hardened RequireOwner/require_admin against fail-open when auth enabled
+- Added 41 authz contract tests
+- Branch: `feature/l212-authorization-hardening`
+
+### L213 — Concurrency & Replay Protection
+- Fixed SlotManager double-eviction race (remove victim before I/O)
+- Added webhook replay protection via bounded LRU signature cache
+- Branch: `feature/l213-concurrency-replay-protection`
+
+### L214 — Backend Cleanup & Correctness
+- Capability-based auto_approve fail-closed (M1)
+- SSRF IPv4-mapped IPv6 + CGNAT fix (M2)
+- Package-relative calibration path + body_factor==0 guard (M3)
+- Deleted dead code under web/routes/ (M4)
+- Deduplicated web_search/search_web tools (M5)
+- Capped reasoning text to 2000 chars on done path (M6)
+- Removed duplicate injection scan (Low)
+- Branch: `feature/l214-backend-cleanup`
+
+### L215 — Web UI Robustness
+- Split WorkflowEditor load-error vs action-error state (toasts for transient)
+- Fixed browser stream leak on timeout
+- Added AbortController race guard in useWorkflowEditor
+- Added mounted guard + 30s timeout in useApi/apiFetch
+- Clear stale token when server reports authenticated:false
+- Branch: `feature/l215-web-ui-robustness`
+
+### L216 — Documentation & Test Backfill
+- Rewrote environment-variables.md to match actual config.py
+- Fixed stale claims in v0.12.0 release notes
+- Fixed web-dashboard port (8000 → 8765)
+- Backfilled TurnExecution quant-model branch tests
+- Fixed SSRF transport test patch
+- Strengthened brittle assertions
+- Branch: `feature/l216-docs-test-backfill`
+
+### L217 — Workflow Builder UX Polish
+- Debounced undo snapshots (500ms)
+- Predictable node placement with collision detection
+- Mobile responsive layout with properties drawer
+- Execution output expand/collapse/raw/copy
+- History table filtering by status, date, node name
+- Branch: `feature/l217-workflow-ux-polish`
+
+### Test count
+1709 passed, 6 skipped, 1 pre-existing flaky failure (test_doctor_check)

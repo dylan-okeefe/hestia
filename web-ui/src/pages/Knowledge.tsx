@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { fetchUserSessions, fetchStyleProfile, fetchMemoriesForUser, fetchHandoffs, deleteMemory } from '../api/client';
+import { useAuth } from '../context/AuthContext';
 import { useCurrentUser } from '../hooks/useCurrentUser';
 import PageCard from '../components/layout/PageCard';
 import EmptyState from '../components/layout/EmptyState';
@@ -14,6 +15,7 @@ interface Session {
   id: string;
   platform: string;
   platform_user: string;
+  title: string | null;
   started_at: string;
   message_count?: number;
 }
@@ -32,6 +34,7 @@ interface Handoff {
 }
 
 export default function Knowledge() {
+  const { logout } = useAuth();
   const { user, isLoading: userLoading, error: userError } = useCurrentUser();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [style, setStyle] = useState<Record<string, unknown>>({});
@@ -116,7 +119,7 @@ export default function Knowledge() {
       <div className="knowledge-page">
         <ErrorState
           message={userError}
-          onRetry={userError.includes('Not authenticated') ? () => { window.location.href = '/login'; } : () => window.location.reload()}
+          onRetry={userError.includes('Not authenticated') ? () => { logout(); window.location.href = '/'; } : () => window.location.reload()}
         />
       </div>
     );
@@ -197,6 +200,7 @@ export default function Knowledge() {
             <thead>
               <tr>
                 <th>Session</th>
+                <th>Title</th>
                 <th>Platform</th>
                 <th>Start</th>
                 <th>Messages</th>
@@ -206,6 +210,7 @@ export default function Knowledge() {
               {sessions.map((s) => (
                 <tr key={s.id} onClick={() => window.location.href = `/sessions/${s.id}`}>
                   <td className="knowledge-table__mono"><a href={`/sessions/${s.id}`} className="no-underline">{s.id.slice(0, 8)}…</a></td>
+                  <td>{s.title ?? '—'}</td>
                   <td>{s.platform}</td>
                   <td>{formatDate(s.started_at)}</td>
                   <td>{s.message_count ?? '—'}</td>

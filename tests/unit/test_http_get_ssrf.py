@@ -95,6 +95,7 @@ class TestSSRFSafeTransport:
         blocked_urls = [
             "http://127.0.0.1/secret",
             "http://10.0.0.1/internal",
+            "http://100.64.0.1/internal",  # CGNAT
             "http://192.168.1.1/router",
             "http://172.16.0.1/internal",
             "http://169.254.169.254/latest/meta-data/",
@@ -117,3 +118,61 @@ class TestSSRFSafeTransport:
             request = httpx.Request("GET", "http://evil.example.com/")
             with pytest.raises(httpx.ConnectError, match="SSRF blocked"):
                 await transport.handle_async_request(request)
+
+
+class TestCurlCffiRedirectSSRF:
+    """Tests for SSRF protection in curl_cffi redirect loop."""
+
+    @pytest.mark.asyncio
+    async def test_curl_cffi_redirect_to_private_ip_blocked(self):
+        """A redirect to a private IP is blocked in the curl_cffi fallback."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from hestia.tools.builtin.http_get import _fetch_with_curl_cffi
+
+        mock_response = MagicMock()
+        mock_response.status_code = 302
+        mock_response.headers = {"location": "http://127.0.0.1/secret"}
+        mock_response.content = b""
+
+        mock_session = AsyncMock()
+        mock_session.get = AsyncMock(return_value=mock_response)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        with (
+            patch(
+                "hestia.tools.builtin.http_get.CurlCffiSession",
+                return_value=mock_session,
+            ),
+            patch("hestia.tools.builtin.http_get._CURL_CFFI_AVAILABLE", True),
+            pytest.raises(RuntimeError, match="SSRF blocked"),
+        ):
+            await _fetch_with_curl_cffi("http://example.com/", 30)
+
+    @pytest.mark.asyncio
+    async def test_curl_cffi_redirect_to_ipv6_loopback_blocked(self):
+        """A redirect to IPv6 loopback is blocked in the curl_cffi fallback."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from hestia.tools.builtin.http_get import _fetch_with_curl_cffi
+
+        mock_response = MagicMock()
+        mock_response.status_code = 302
+        mock_response.headers = {"location": "http://[::1]/secret"}
+        mock_response.content = b""
+
+        mock_session = AsyncMock()
+        mock_session.get = AsyncMock(return_value=mock_response)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        with (
+            patch(
+                "hestia.tools.builtin.http_get.CurlCffiSession",
+                return_value=mock_session,
+            ),
+            patch("hestia.tools.builtin.http_get._CURL_CFFI_AVAILABLE", True),
+            pytest.raises(RuntimeError, match="SSRF blocked"),
+        ):
+            await _fetch_with_curl_cffi("http://example.com/", 30)

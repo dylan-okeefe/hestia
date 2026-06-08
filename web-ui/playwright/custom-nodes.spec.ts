@@ -42,10 +42,10 @@ test('adds a send_message node and shows its properties', async ({ page }) => {
   await expect(page.locator('label:has-text("Message")')).toBeVisible();
   await expect(page.locator('label:has-text("Target User")')).toBeVisible();
 
-  await page.locator('select[aria-label="Platform"]').selectOption('discord');
+  await page.locator('select[aria-label="Platform"]').selectOption('telegram');
   await page.locator('.react-flow__pane').click();
   await node.click();
-  await expect(page.locator('select[aria-label="Platform"]')).toHaveValue('discord');
+  await expect(page.locator('select[aria-label="Platform"]')).toHaveValue('telegram');
 });
 
 test('adds an http_request node and shows its properties', async ({ page }) => {

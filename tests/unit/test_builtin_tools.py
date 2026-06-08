@@ -1,6 +1,5 @@
 """Unit tests for built-in tools."""
 
-import socket
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -9,6 +8,9 @@ import pytest
 from hestia.artifacts.store import ArtifactStore
 from hestia.config import StorageConfig
 from hestia.tools.builtin.current_time import current_time
+from hestia.tools.builtin.edit_file import make_edit_file_tool
+from hestia.tools.builtin.glob import make_glob_tool
+from hestia.tools.builtin.grep import make_grep_tool
 from hestia.tools.builtin.http_get import SSRFSafeTransport, _is_url_safe, http_get
 from hestia.tools.builtin.list_dir import make_list_dir_tool
 from hestia.tools.builtin.read_artifact import make_read_artifact_tool
@@ -103,6 +105,60 @@ class TestReadFile:
         assert "Binary file" in result
 
 
+class TestEditFile:
+    """Tests for edit_file tool."""
+
+    @pytest.mark.asyncio
+    async def test_edit_file_exact_match_once(self, tmp_path):
+        """Exact match once → success with diff preview."""
+        edit_file = make_edit_file_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
+        target = tmp_path / "test.txt"
+        target.write_text("hello world")
+
+        result = await edit_file(str(target), "hello world", "hello universe")
+
+        assert target.read_text() == "hello universe"
+        assert "Edited" in result
+        assert "- hello world" in result
+        assert "+ hello universe" in result
+
+    @pytest.mark.asyncio
+    async def test_edit_file_zero_matches(self, tmp_path):
+        """Zero matches → error."""
+        edit_file = make_edit_file_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
+        target = tmp_path / "test.txt"
+        target.write_text("hello world")
+
+        result = await edit_file(str(target), "not present", "replacement")
+
+        assert "Error:" in result
+        assert "not found" in result
+        assert target.read_text() == "hello world"
+
+    @pytest.mark.asyncio
+    async def test_edit_file_multiple_matches(self, tmp_path):
+        """Multiple matches → error."""
+        edit_file = make_edit_file_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
+        target = tmp_path / "test.txt"
+        target.write_text("abc abc abc")
+
+        result = await edit_file(str(target), "abc", "xyz")
+
+        assert "Error:" in result
+        assert "found 3 occurrences" in result
+        assert target.read_text() == "abc abc abc"
+
+    @pytest.mark.asyncio
+    async def test_edit_file_missing_file(self, tmp_path):
+        """File does not exist → error."""
+        edit_file = make_edit_file_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
+        target = tmp_path / "missing.txt"
+
+        result = await edit_file(str(target), "old", "new")
+
+        assert "File not found" in result
+
+
 class TestWriteFile:
     """Tests for write_file tool."""
 
@@ -126,6 +182,35 @@ class TestWriteFile:
 
         assert target.exists()
         assert target.read_text() == "Nested content"
+
+    @pytest.mark.asyncio
+    async def test_write_guard_blocks_existing_file(self, tmp_path):
+        """write_file on existing path → error with edit_file hint."""
+        write_file = make_write_file_tool(
+            StorageConfig(allowed_roots=[str(tmp_path)]), write_guard_enabled=True
+        )
+        target = tmp_path / "existing.txt"
+        target.write_text("original")
+
+        result = await write_file(str(target), "new content")
+
+        assert "already exists" in result
+        assert "edit_file(path=..., old_string=..., new_string=...)" in result
+        assert target.read_text() == "original"
+
+    @pytest.mark.asyncio
+    async def test_write_guard_disabled_allows_overwrite(self, tmp_path):
+        """write_guard disabled → allows overwrite."""
+        write_file = make_write_file_tool(
+            StorageConfig(allowed_roots=[str(tmp_path)]), write_guard_enabled=False
+        )
+        target = tmp_path / "existing.txt"
+        target.write_text("original")
+
+        result = await write_file(str(target), "new content")
+
+        assert target.read_text() == "new content"
+        assert "new content" in result or "bytes" in result
 
 
 class TestListDir:
@@ -279,26 +364,123 @@ class TestTerminal:
         assert "hello" in result
 
 
+class TestGlob:
+    """Tests for glob tool."""
+
+    @pytest.mark.asyncio
+    async def test_glob_returns_matching_files(self, tmp_path):
+        """glob returns files matching pattern."""
+        glob = make_glob_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
+        (tmp_path / "a.py").write_text("x")
+        (tmp_path / "b.py").write_text("x")
+        (tmp_path / "c.txt").write_text("x")
+
+        result = await glob("*.py", str(tmp_path))
+
+        assert "a.py" in result
+        assert "b.py" in result
+        assert "c.txt" not in result
+
+    @pytest.mark.asyncio
+    async def test_glob_no_matches(self, tmp_path):
+        """glob returns message when no matches."""
+        glob = make_glob_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
+        result = await glob("*.nomatch", str(tmp_path))
+        assert "No matches" in result
+
+    @pytest.mark.asyncio
+    async def test_glob_truncation(self, tmp_path):
+        """glob truncates when results exceed limit."""
+        glob = make_glob_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
+        for i in range(105):
+            (tmp_path / f"file{i:03d}.py").write_text("x")
+
+        result = await glob("*.py", str(tmp_path))
+
+        assert "truncated" in result
+
+
+class TestGrep:
+    """Tests for grep tool."""
+
+    @pytest.mark.asyncio
+    async def test_grep_returns_matching_lines(self, tmp_path):
+        """grep returns lines matching regex."""
+        grep = make_grep_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
+        (tmp_path / "a.py").write_text("def foo():\n    pass\n")
+        (tmp_path / "b.py").write_text("def bar():\n    return 1\n")
+        (tmp_path / "c.txt").write_text("hello world\n")
+
+        result = await grep(r"^def ", str(tmp_path))
+
+        assert "a.py:1:def foo():" in result
+        assert "b.py:1:def bar():" in result
+        assert "hello" not in result
+
+    @pytest.mark.asyncio
+    async def test_grep_with_include_filter(self, tmp_path):
+        """grep respects include filter."""
+        grep = make_grep_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
+        (tmp_path / "a.py").write_text("target\n")
+        (tmp_path / "b.js").write_text("target\n")
+
+        result = await grep("target", str(tmp_path), include=[".py"])
+
+        assert "a.py" in result
+        assert "b.js" not in result
+
+    @pytest.mark.asyncio
+    async def test_grep_no_matches(self, tmp_path):
+        """grep returns message when no matches."""
+        grep = make_grep_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
+        result = await grep("nomatch12345", str(tmp_path))
+        assert "No matches" in result
+
+    @pytest.mark.asyncio
+    async def test_grep_invalid_pattern(self, tmp_path):
+        """grep returns error for invalid regex."""
+        grep = make_grep_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
+        result = await grep("[invalid", str(tmp_path))
+        assert "Invalid regex" in result
+
+
 class TestHttpGet:
     """Tests for http_get tool."""
 
     @pytest.mark.asyncio
     async def test_http_get_fetches_url(self):
         """Can fetch a URL and return text content."""
-        mock_response = AsyncMock()
-        mock_response.text = "Test response content"
-        mock_response.raise_for_status = lambda: None  # sync method
-
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
-        mock_client.get = AsyncMock(return_value=mock_response)
-
-        with patch("httpx.AsyncClient", return_value=mock_client):
+        with patch(
+            "hestia.tools.builtin.http_get._fetch_with_httpx", new_callable=AsyncMock
+        ) as mock_fetch:
+            mock_fetch.return_value = httpx.Response(
+                200, text="Test response content", request=httpx.Request("GET", "http://1.1.1.1/test")
+            )
             result = await http_get("http://1.1.1.1/test")
 
         assert result == "Test response content"
-        mock_client.get.assert_called_once_with("http://1.1.1.1/test")
+        mock_fetch.assert_awaited_once_with("http://1.1.1.1/test", 30)
+
+    @pytest.mark.asyncio
+    async def test_http_get_uses_ssrf_transport(self):
+        """http_get instantiates AsyncClient with SSRFSafeTransport."""
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_instance = AsyncMock()
+            mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+            mock_instance.__aexit__ = AsyncMock(return_value=None)
+            mock_instance.get = AsyncMock(
+                return_value=httpx.Response(
+                    200, text="ok", request=httpx.Request("GET", "http://example.com/")
+                )
+            )
+            mock_client_class.return_value = mock_instance
+
+            await http_get("http://example.com/")
+
+        mock_client_class.assert_called_once()
+        call_kwargs = mock_client_class.call_args.kwargs
+        assert "transport" in call_kwargs
+        assert isinstance(call_kwargs["transport"], SSRFSafeTransport)
 
     def test_preflight_blocks_invalid_schemes(self):
         """Pre-flight check blocks invalid schemes and missing hostnames."""
@@ -314,15 +496,14 @@ class TestHttpGet:
         assert _is_url_safe("http://127.0.0.1/secret") is None
 
     @pytest.mark.asyncio
-    async def test_transport_uses_asyncio_to_thread_for_getaddrinfo(self):
-        """SSRFSafeTransport calls socket.getaddrinfo via asyncio.to_thread."""
+    async def test_transport_uses_asyncio_to_thread_for_assert_ip_allowed(self):
+        """SSRFSafeTransport calls _assert_ip_allowed via asyncio.to_thread."""
+        from hestia.tools.builtin.http_get import _assert_ip_allowed
+
         transport = SSRFSafeTransport()
         request = httpx.Request("GET", "http://example.com/")
 
         with patch("asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
-            mock_to_thread.return_value = [
-                (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("93.184.216.34", 0))
-            ]
             # We need the inner transport to not actually make a request
             with patch.object(
                 transport._inner, "handle_async_request", new_callable=AsyncMock
@@ -331,5 +512,5 @@ class TestHttpGet:
                 await transport.handle_async_request(request)
 
         mock_to_thread.assert_awaited_once()
-        assert mock_to_thread.call_args[0][0] == socket.getaddrinfo
+        assert mock_to_thread.call_args[0][0] == _assert_ip_allowed
         assert mock_to_thread.call_args[0][1] == "example.com"

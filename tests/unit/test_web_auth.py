@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -132,7 +131,7 @@ class TestAuthManager:
         with pytest.raises(ValueError, match="not configured"):
             import asyncio
 
-            asyncio.run(auth_manager.request_code("discord"))
+            asyncio.run(auth_manager.request_code("unknown_platform"))
 
     def test_request_code_multiple_users(self, auth_manager: AuthManager) -> None:
         auth_manager.adapters["telegram"]._config.allowed_users = ["123", "456"]
@@ -157,7 +156,7 @@ class TestAuthManager:
         assert session.platform == "telegram"
         assert session.platform_user == "12345"
         assert code not in auth_manager._pending_codes
-        assert len(auth_manager._sessions) == 1
+        assert auth_manager.get_session(token) is not None
 
     def test_validate_code_invalid(self, auth_manager: AuthManager) -> None:
         import asyncio
@@ -258,7 +257,7 @@ class TestAuthManager:
             expires_at=datetime.now(UTC) - timedelta(hours=1),
         )
         assert auth_manager.get_session(token) is None
-        assert token not in auth_manager._sessions
+        assert auth_manager.get_session(token) is None
 
     def test_remove_session(self, auth_manager: AuthManager) -> None:
         token = "test_token"
@@ -322,6 +321,34 @@ class TestAuthManager:
         auth_manager._code_request_limits["old"] = [now - timedelta(minutes=10)]
         # Recent code request entry
         auth_manager._code_request_limits["recent"] = [now - timedelta(minutes=2)]
+        # Expired pending code
+        auth_manager._pending_codes["expired"] = PendingCode(
+            platform="telegram",
+            platform_user="12345",
+            created_at=now - timedelta(seconds=600),
+            expires_at=now - timedelta(seconds=1),
+        )
+        # Valid pending code
+        auth_manager._pending_codes["valid"] = PendingCode(
+            platform="telegram",
+            platform_user="12345",
+            created_at=now,
+            expires_at=now + timedelta(seconds=300),
+        )
+        # Expired session
+        auth_manager._sessions["expired_token"] = WebSession(
+            platform="telegram",
+            platform_user="12345",
+            created_at=now - timedelta(hours=73),
+            expires_at=now - timedelta(hours=1),
+        )
+        # Valid session
+        auth_manager._sessions["valid_token"] = WebSession(
+            platform="telegram",
+            platform_user="12345",
+            created_at=now,
+            expires_at=now + timedelta(hours=1),
+        )
 
         auth_manager._cleanup_stale_entries()
 
@@ -329,6 +356,10 @@ class TestAuthManager:
         assert "recent" in auth_manager._rate_limits
         assert "old" not in auth_manager._code_request_limits
         assert "recent" in auth_manager._code_request_limits
+        assert "expired" not in auth_manager._pending_codes
+        assert "valid" in auth_manager._pending_codes
+        assert "expired_token" not in auth_manager._sessions
+        assert "valid_token" in auth_manager._sessions
 
 
 class TestAuthMiddleware:
@@ -545,7 +576,7 @@ class TestAuthRoutes:
         assert data["expires_in"] == 300
 
     def test_request_code_missing_platform(self, client: TestClient) -> None:
-        response = client.post("/api/auth/request-code", json={"platform": "discord"})
+        response = client.post("/api/auth/request-code", json={"platform": "unknown_platform"})
         assert response.status_code == 400
         assert "not configured" in response.json()["detail"]
 
@@ -702,5 +733,4 @@ class TestAuthRoutes:
         )
 
         response = client.get("/api/sessions", headers={"Authorization": "Bearer test_token"})
-        # Should pass auth but may 200 or 500 depending on store mocks
-        assert response.status_code in (200, 500)
+        assert response.status_code == 200

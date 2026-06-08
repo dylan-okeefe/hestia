@@ -1,0 +1,51 @@
+.browser-sessions-page {
+  padding: var(--space-4);
+}
+
+.browser-sessions-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-4);
+}
+
+.browser-sessions-title {
+  margin: 0;
+}
+
+.browser-sessions-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.status-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.status-dot--healthy {
+  background: var(--color-success);
+}
+
+.status-dot--stale {
+  background: var(--color-warning);
+}
+
+.status-dot--expired {
+  background: var(--color-danger);
+}
+
+.status-dot--unknown {
+  background: var(--color-text-muted);
+}
+
+.browser-sessions-actions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}

@@ -38,9 +38,25 @@
 }
 
 @media (max-width: 767px) {
+  .workflow-editor {
+    height: auto;
+    min-height: calc(100vh - 60px);
+    overflow: auto;
+  }
+
+  .workflow-editor__main {
+    flex-direction: column;
+    overflow: visible;
+    min-height: 0;
+  }
+
   .workflow-canvas-container {
     -webkit-overflow-scrolling: touch;
+    order: -1;
+    min-height: 50vh;
+    flex: none;
   }
+
   .workflow-canvas {
     min-width: 600px;
     min-height: 400px;

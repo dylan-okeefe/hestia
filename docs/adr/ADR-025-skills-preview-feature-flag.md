@@ -2,7 +2,12 @@
 
 ## Status
 
-Accepted (v0.7.11)
+Superseded (v0.11.0)
+
+The skills framework was removed entirely in v0.11.0 (see CHANGELOG). The
+`@skill` decorator, `SkillRegistry`, CLI commands, and database table were
+deleted as dead weight. This ADR is preserved as a historical record of the
+preview-gate decision, but the feature it gated no longer exists.
 
 ## Context
 

@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
 
-from hestia.web.auth import AuthManager, WebSession
 from hestia.config import WebConfig
+from hestia.web.auth import AuthManager, WebSession
 
 
 @pytest.fixture

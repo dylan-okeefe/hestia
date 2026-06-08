@@ -70,20 +70,32 @@ export default function ErrorDashboard() {
   }, {});
 
   const handleResolve = async (id: string) => {
-    await resolveMut.mutateAsync(id);
-    addToast({ message: 'Error resolved', type: 'success', duration: 3000 });
-    refetch();
+    try {
+      await resolveMut.mutateAsync(id);
+      addToast({ message: 'Error resolved', type: 'success', duration: 3000 });
+      refetch();
+    } catch (err: any) {
+      addToast({ message: err.message || 'Failed to resolve error', type: 'error', duration: 5000 });
+    }
   };
 
   const handleIgnore = async (id: string) => {
-    await ignoreMut.mutateAsync(id);
-    addToast({ message: 'Error ignored', type: 'info', duration: 3000 });
-    refetch();
+    try {
+      await ignoreMut.mutateAsync(id);
+      addToast({ message: 'Error ignored', type: 'info', duration: 3000 });
+      refetch();
+    } catch (err: any) {
+      addToast({ message: err.message || 'Failed to ignore error', type: 'error', duration: 5000 });
+    }
   };
 
   const handleDebug = async (id: string) => {
-    const result = await debugMut.mutateAsync(id);
-    setDebugModal({ id, prompt: result.prompt });
+    try {
+      const result = await debugMut.mutateAsync(id);
+      setDebugModal({ id, prompt: result.prompt });
+    } catch (err: any) {
+      addToast({ message: err.message || 'Failed to fetch debug prompt', type: 'error', duration: 5000 });
+    }
   };
 
   return (

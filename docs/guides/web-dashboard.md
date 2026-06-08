@@ -1,6 +1,6 @@
 # Web Dashboard Quickstart
 
-Hestia ships a React-based web dashboard for administration and monitoring. It runs on the same port as the API (default `8000`) and is served as a static SPA.
+Hestia ships a React-based web dashboard for administration and monitoring. It runs on the same port as the API (default `8765`) and is served as a static SPA.
 
 ## Access
 
@@ -8,17 +8,24 @@ Open `http://<host>:<port>` in your browser. If authentication is enabled, you w
 
 ## Login
 
-1. Choose your platform (Telegram or Matrix).
-2. Enter your platform username.
+1. Select your user from the list (if multiple users exist).
+2. Choose your platform (Telegram or Matrix).
 3. Hestia sends a one-time code to your chat platform.
 4. Enter the code to complete login.
 
-The first user to log in automatically becomes an admin. Subsequent users receive the `user` role by default.
+For local development, set `web.debug_login=True` in your config to skip code
+verification — selecting a user logs you in immediately.
+
+The first admin is assigned by running `hestia migrate-users` (users in the legacy config with `is_admin=True` are promoted). Subsequent users receive the `user` role by default.
 
 ## Pages
 
 ### Dashboard
 Overview of the system: active workflow count, recent executions, pending proposals, and connected platforms.
+
+### Sessions
+Browse active and archived chat sessions. View per-session turn history,
+messages, and metadata. Telegram group chats display their title.
 
 ### Proposals
 Review agent-generated proposals. Accept, reject, or defer each proposal with an optional reason.
@@ -45,6 +52,12 @@ In the editor:
 - Set the trigger type and config in the top panel.
 - Save versions and activate one to make it live.
 - Use **Test Run** to execute the workflow manually.
+- Inspect execution history with per-node output drill-down.
+
+### Browser Sessions *(admin only)*
+Manage persistent browser sessions per-domain. Stream a headless or headed
+browser to authenticate with JavaScript-heavy sites, run health checks, and
+delete stale sessions.
 
 ### Profile
 View your user profile and knowledge base entries.

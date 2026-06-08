@@ -421,7 +421,7 @@ class WorkflowExecutor:
                     if node_output.value and (
                         (single_edge and edge.source_handle is None)
                         or edge.source_handle == "true"
-                    ):
+):
                         active_edges.add(edge.id)
                     elif not node_output.value and (
                         (single_edge and edge.source_handle is None)

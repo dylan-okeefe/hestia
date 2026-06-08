@@ -14,7 +14,12 @@ async def require_admin(
     """Raise 401/403 if the caller is not an admin."""
     user_id = getattr(request.state, "user_id", None)
     if user_id is None:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+        auth_enabled = getattr(
+            ctx.app.config.features.web, "auth_enabled", True
+        )
+        if auth_enabled:
+            raise HTTPException(status_code=401, detail="Not authenticated")
+        return
 
     user = await ctx.user_store.get_user(user_id)
     if user is None or user.role != "admin":
@@ -40,6 +45,11 @@ class RequireOwner:
         """Raise 403 if the caller does not own the resource (unless admin)."""
         caller_platform_user = getattr(request.state, "platform_user", None)
         if caller_platform_user is None:
+            auth_enabled = getattr(
+                ctx.app.config.features.web, "auth_enabled", True
+            )
+            if auth_enabled:
+                raise HTTPException(status_code=401, detail="Not authenticated")
             return
         if caller_platform_user == self.resource_platform_user:
             return

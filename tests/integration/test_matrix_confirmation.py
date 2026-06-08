@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from nio import RoomSendResponse
 
-from hestia.config import MatrixConfig
+from hestia.config import MatrixConfig, StorageConfig
 from hestia.context.builder import ContextBuilder
 from hestia.core.types import (
     ChatResponse,
@@ -23,11 +23,10 @@ from hestia.core.types import (
     ToolCall,
 )
 from hestia.orchestrator import Orchestrator, TurnState
-from hestia.platforms.matrix_adapter import MatrixAdapter
 from hestia.persistence.db import Database
 from hestia.persistence.sessions import SessionStore
+from hestia.platforms.matrix_adapter import MatrixAdapter
 from hestia.tools.registry import ToolRegistry
-from hestia.config import StorageConfig
 
 
 def _make_session(session_id: str = "test_session") -> Session:
@@ -47,7 +46,7 @@ def _make_session(session_id: str = "test_session") -> Session:
 class FakePolicy:
     """Minimal fake policy for confirmation tests."""
 
-    def auto_approve(self, tool_name, session):
+    def auto_approve(self, tool_name, session, registry=None):
         return False
 
     def filter_tools(self, session, tool_names, registry):
@@ -105,11 +104,12 @@ async def _make_orchestrator(approve: bool):
     store = SessionStore(db)
 
     registry = ToolRegistry("/tmp/artifacts")
+    import os
+    import tempfile
+
     from hestia.tools.builtin.write_file import make_write_file_tool
 
-    import os
-
-    sandbox = "/tmp/sandbox_matrix_confirm"
+    sandbox = tempfile.mkdtemp(prefix="sandbox_matrix_confirm_")
     os.makedirs(sandbox, exist_ok=True)
     registry.register(make_write_file_tool(StorageConfig(allowed_roots=[sandbox])))
 
@@ -134,6 +134,7 @@ async def _make_orchestrator(approve: bool):
             "!room:matrix.org", tool_name, arguments
         )
 
+    test_file_path = os.path.join(sandbox, "test.txt")
     responses = [
         ChatResponse(
             content="",
@@ -144,7 +145,7 @@ async def _make_orchestrator(approve: bool):
                     name="call_tool",
                     arguments={
                         "name": "write_file",
-                        "arguments": {"path": "/tmp/sandbox_matrix_confirm/test.txt", "content": "hello"},
+                        "arguments": {"path": test_file_path, "content": "hello"},
                     },
                 )
             ],

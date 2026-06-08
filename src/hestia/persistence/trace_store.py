@@ -106,7 +106,11 @@ class TraceStore:
             await conn.commit()
 
     async def list_recent(
-        self, limit: int = 20, outcome: str | None = None, session_id: str | None = None
+        self,
+        limit: int = 20,
+        outcome: str | None = None,
+        session_id: str | None = None,
+        session_ids: list[str] | None = None,
     ) -> list[TraceRecord]:
         """List recent traces with optional outcome and session filters."""
         clauses: list[str] = []
@@ -118,6 +122,9 @@ class TraceStore:
         if session_id:
             clauses.append("session_id = :session_id")
             params["session_id"] = session_id
+        if session_ids:
+            clauses.append("session_id IN :session_ids")
+            params["session_ids"] = tuple(session_ids)
 
         base_sql = (
             "SELECT id, session_id, turn_id, started_at, ended_at, "
@@ -210,6 +217,7 @@ class TraceStore:
         self,
         domain: str | None = None,
         since: datetime | None = None,
+        session_ids: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """List individual egress events with optional filtering."""
         clauses: list[str] = []
@@ -221,6 +229,9 @@ class TraceStore:
         if since:
             clauses.append("created_at >= :since")
             params["since"] = since.isoformat()
+        if session_ids:
+            clauses.append("session_id IN :session_ids")
+            params["session_ids"] = tuple(session_ids)
 
         base_sql = (
             "SELECT id, session_id, url, domain, status, size, created_at "

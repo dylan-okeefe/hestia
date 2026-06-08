@@ -27,7 +27,6 @@ def make_app(tmp_path):
     def _factory(cfg=None):
         from hestia.app import AppContext
         from hestia.config import HestiaConfig
-        from hestia.persistence.db import Database
         if cfg is None:
             cfg = HestiaConfig.default()
         cfg.storage.database_url = f"sqlite+aiosqlite:///{tmp_path}/test.db"

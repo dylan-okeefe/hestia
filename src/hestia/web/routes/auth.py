@@ -108,6 +108,44 @@ async def verify_code(
     }
 
 
+@router.post("/debug-login")
+async def debug_login(
+    body: dict[str, Any],
+    auth_manager: AuthManager = _AUTH_DEP,
+) -> dict[str, Any]:
+    """Bypass code verification and create a session directly for a user.
+
+    Only available when web.debug_login is enabled.
+    """
+    if not auth_manager.config.debug_login:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Debug login is not enabled",
+        )
+
+    user_id = body.get("user_id")
+    if not user_id or not isinstance(user_id, str):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Field 'user_id' is required",
+        )
+
+    result = await auth_manager.debug_login(user_id)
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User has no identities",
+        )
+
+    token, session = result
+    return {
+        "token": token,
+        "platform": session.platform,
+        "platform_user": session.platform_user,
+        "expires_at": session.expires_at.isoformat(),
+    }
+
+
 @router.post("/logout")
 async def logout(
     request: Request,
@@ -164,6 +202,7 @@ async def auth_status(
             return {
                 "authenticated": True,
                 "auth_enabled": True,
+                "debug_login": auth_manager.config.debug_login,
                 "platform": session.platform,
                 "platform_user": session.platform_user,
                 "user_id": session.user_id,
@@ -172,5 +211,6 @@ async def auth_status(
     return {
         "authenticated": False,
         "auth_enabled": True,
+        "debug_login": auth_manager.config.debug_login,
         "available_platforms": list(auth_manager.adapters.keys()),
     }

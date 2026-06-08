@@ -58,3 +58,11 @@ node_modules/
 # Log files containing potential secrets
 *.log
 escape_room_planning.md
+
+# Local-only docs (not for repo)
+docs/development-process/hestia-project-briefing.md
+docs/development-process/prompts/opus-full-repo-review.md
+docs/development-process/reviews/smallcode-littlecoder-review.md
+
+# Local research clones
+.harness-research/

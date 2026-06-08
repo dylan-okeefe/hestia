@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from hestia.web.routes import (
     audit,
     auth,
+    browser_sessions,
     config,
     doctor,
     egress,
@@ -56,6 +57,7 @@ def create_web_app() -> FastAPI:
     app.include_router(webhooks.router, prefix="/api")
     app.include_router(workflows.router, prefix="/api")
     app.include_router(memory.router, prefix="/api")
+    app.include_router(browser_sessions.router, prefix="/api")
 
     app.mount("/assets", StaticFiles(directory=str(_web_static / "assets")), name="assets")
 

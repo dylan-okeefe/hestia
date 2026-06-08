@@ -3,6 +3,7 @@
 import httpx
 import pytest
 import respx
+
 from hestia.config import WebSearchConfig
 from hestia.persistence.db import Database
 from hestia.persistence.trace_store import TraceStore
@@ -135,3 +136,63 @@ class TestWebSearchEgress:
         assert rows[0]["domain"] == "api.tavily.com"
         assert rows[0]["total_requests"] == 1
         assert rows[0]["failure_count"] == 1
+
+
+class TestEgressAuditDisabled:
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_http_get_skips_audit_when_disabled(self, trace_store):
+        from hestia.tools.builtin.http_get import make_http_get_tool
+
+        route = respx.get("https://example.com/page").mock(
+            return_value=httpx.Response(200, text="ok")
+        )
+
+        tool = make_http_get_tool(egress_audit_enabled=False)
+        session_id = "sess-disabled"
+        token_store = current_trace_store.set(trace_store)
+        token_session = current_session_id.set(session_id)
+        try:
+            result = await tool("https://example.com/page")
+        finally:
+            current_session_id.reset(token_session)
+            current_trace_store.reset(token_store)
+
+        assert result == "ok"
+        assert route.called
+
+        rows = await trace_store.egress_summary()
+        assert len(rows) == 0
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_web_search_skips_audit_when_disabled(self, trace_store):
+        route = respx.post("https://api.tavily.com/search").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {"title": "Test", "url": "https://example.com", "content": "hello"}
+                    ]
+                },
+            )
+        )
+
+        cfg = WebSearchConfig(provider="tavily", api_key="test-key")
+        tool = make_web_search_tool(cfg, egress_audit_enabled=False)
+        assert tool is not None
+
+        session_id = "sess-ws-disabled"
+        token_store = current_trace_store.set(trace_store)
+        token_session = current_session_id.set(session_id)
+        try:
+            result = await tool(query="test")
+        finally:
+            current_session_id.reset(token_session)
+            current_trace_store.reset(token_store)
+
+        assert "Test" in result
+        assert route.called
+
+        rows = await trace_store.egress_summary()
+        assert len(rows) == 0

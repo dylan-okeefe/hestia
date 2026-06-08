@@ -6,7 +6,7 @@ Docs-only loop. No production code changes. README, deployment documentation, em
 
 ## Spec
 
-- `docs/development-process/kimi-loops/L34-public-release-polish.md`
+- `docs/development-process/loops/kimi-L34-public-release-polish.md`
 
 ## Files changed
 

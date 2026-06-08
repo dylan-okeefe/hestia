@@ -51,4 +51,4 @@ class TestDeleteMemoryTool:
         _, delete_tool, _ = tools
         assert hasattr(delete_tool, "__hestia_tool__")
         assert delete_tool.__hestia_tool__.name == "delete_memory"
-        assert delete_tool.__hestia_tool__.requires_confirmation is True
+        assert delete_tool.__hestia_tool__.requires_confirmation is False

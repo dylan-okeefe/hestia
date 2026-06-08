@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { fetchRooms, updateUser, addIdentity, removeIdentity, fetchConfig } from '../api/client';
 import { useApiQuery } from '../hooks/useApi';
+import { useAuth } from '../context/AuthContext';
 import { useCurrentUser } from '../hooks/useCurrentUser';
 import PageCard from '../components/layout/PageCard';
 import EmptyState from '../components/layout/EmptyState';
@@ -24,6 +25,7 @@ const roleBadgeColor = (role: string) => {
 };
 
 export default function Profile() {
+  const { logout } = useAuth();
   const { user, isLoading: userLoading, error: userError, refetch } = useCurrentUser();
   const {
     data: roomsData,
@@ -137,7 +139,7 @@ export default function Profile() {
       <div className="profile-page">
         <ErrorState
           message={userError}
-          onRetry={userError.includes('Not authenticated') ? () => { window.location.href = '/login'; } : refetch}
+          onRetry={userError.includes('Not authenticated') ? () => { logout(); window.location.href = '/'; } : refetch}
         />
       </div>
     );

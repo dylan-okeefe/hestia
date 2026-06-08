@@ -49,7 +49,7 @@ class FakePolicy:
     def reasoning_budget(self, session, iteration):
         return 2048
 
-    def auto_approve(self, tool_name, session):
+    def auto_approve(self, tool_name, session, registry=None):
         return False
 
 
@@ -112,6 +112,7 @@ class TestSessionStartProposals:
             temperature=SessionTemperature.COLD,
         )
         import sqlalchemy as sa
+
         from hestia.persistence.schema import sessions
 
         async with db.engine.connect() as conn:
@@ -195,6 +196,7 @@ class TestSessionStartProposals:
             temperature=SessionTemperature.COLD,
         )
         import sqlalchemy as sa
+
         from hestia.persistence.schema import sessions
 
         async with db.engine.connect() as conn:
@@ -275,6 +277,7 @@ class TestSessionStartProposals:
             temperature=SessionTemperature.COLD,
         )
         import sqlalchemy as sa
+
         from hestia.persistence.schema import sessions
 
         async with db.engine.connect() as conn:

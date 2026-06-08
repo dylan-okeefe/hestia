@@ -93,12 +93,22 @@ class PolicyEngine(ABC):
         ...
 
     @abstractmethod
-    def auto_approve(self, tool_name: str, session: Session) -> bool:
+    def auto_approve(
+        self,
+        tool_name: str,
+        session: Session,
+        registry: "ToolRegistry | None" = None,
+    ) -> bool:
         """Whether a tool with requires_confirmation=True may run without
         a confirm_callback in the current session context.
 
         Returns True iff the trust profile has marked this tool as
         auto-approved for headless execution.
+
+        Args:
+            tool_name: Name of the tool to check.
+            session: Current session.
+            registry: Optional tool registry for capability-based checks.
         """
         ...
 

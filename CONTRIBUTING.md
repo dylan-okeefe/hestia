@@ -55,4 +55,4 @@ Open a GitHub issue with:
 
 ## Design decisions
 
-Major changes should include an ADR in `docs/adr/`. Read `docs/DECISIONS.md` for existing decisions.
+Major changes should include an ADR in `docs/adr/`. Browse existing ADRs for precedent and formatting.

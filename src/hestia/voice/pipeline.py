@@ -49,7 +49,12 @@ class VoicePipeline:
         return await asyncio.to_thread(self._transcribe_sync, wav)
 
     def _transcribe_sync(self, wav: io.BytesIO) -> str:
-        segments, _info = self._whisper_model.transcribe(wav)  # type: ignore[attr-defined]
+        segments, _info = self._whisper_model.transcribe(  # type: ignore[attr-defined]
+            wav,
+            language=self.config.stt_language,
+            beam_size=self.config.stt_beam_size,
+            vad_filter=self.config.stt_vad_filter,
+        )
         return "".join(seg.text for seg in segments).strip()
 
     async def synthesize(self, text: str) -> AsyncIterator[bytes]:

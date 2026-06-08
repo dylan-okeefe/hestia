@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -45,8 +44,8 @@ def _session(
         id=session_id,
         platform="test",
         platform_user="user",
-        started_at=datetime.now(timezone.utc),
-        last_active_at=last_active_at or datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
+        last_active_at=last_active_at or datetime.now(UTC),
         slot_id=slot_id,
         slot_saved_path=slot_saved_path,
         state="ACTIVE",

@@ -5,16 +5,14 @@ Mocks python-telegram-bot, the voice pipeline, and ffmpeg subprocesses.
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from telegram import Bot, Message, Update, User, Voice
-from telegram.ext import Application, MessageHandler, filters
+from telegram import Message, Update, User, Voice
+from telegram.ext import Application
 
 from hestia.config import TelegramConfig, VoiceConfig
-from hestia.core.types import Message as HestiaMessage
 from hestia.platforms.telegram_adapter import TelegramAdapter
 
 
@@ -131,34 +129,32 @@ async def test_voice_message_full_pipeline(
                 )
             )
         ),
+    ), patch(
+        "hestia.platforms.telegram_adapter.get_voice_pipeline",
+        AsyncMock(return_value=stub_pipeline),
+    ), patch(
+        "hestia.platforms.telegram_adapter.asyncio.create_subprocess_exec",
+        side_effect=_fake_create_subprocess,
     ):
-        with patch(
-            "hestia.platforms.telegram_adapter.get_voice_pipeline",
-            AsyncMock(return_value=stub_pipeline),
-        ):
-            with patch(
-                "hestia.platforms.telegram_adapter.asyncio.create_subprocess_exec",
-                side_effect=_fake_create_subprocess,
-            ):
-                await adapter.start(lambda p, u, t: None)
-                await adapter._handle_voice_message(mock_update, None)
+        await adapter.start(lambda p, u, t: None)
+        await adapter._handle_voice_message(mock_update, None)
 
-                # Assert session was retrieved
-                mock_session_store.get_or_create_session_with_handoff.assert_called_once_with(
-                    "telegram", "12345"
-                )
+        # Assert session was retrieved
+        mock_session_store.get_or_create_session_with_handoff.assert_called_once_with(
+            "telegram", "12345", title=None
+        )
 
-                # Assert orchestrator was called with the transcript
-                assert mock_orchestrator.process_turn.call_count == 1
-                call_kwargs = mock_orchestrator.process_turn.call_args[1]
-                assert call_kwargs["session"] == mock_session
-                assert call_kwargs["user_message"].content == "what is the weather"
-                assert call_kwargs["system_prompt"] == "You are helpful."
-                assert call_kwargs["voice_reply"] is True
+        # Assert orchestrator was called with the transcript
+        assert mock_orchestrator.process_turn.call_count == 1
+        call_kwargs = mock_orchestrator.process_turn.call_args[1]
+        assert call_kwargs["session"] == mock_session
+        assert call_kwargs["user_message"].content == "what is the weather"
+        assert call_kwargs["system_prompt"] == "You are helpful."
+        assert call_kwargs["voice_reply"] is True
 
-                # Extract the respond callback and invoke it to exercise TTS path
-                respond_callback = call_kwargs["respond_callback"]
-                await respond_callback("It is sunny today.")
+        # Extract the respond callback and invoke it to exercise TTS path
+        respond_callback = call_kwargs["respond_callback"]
+        await respond_callback("It is sunny today.")
 
     # Assert synthesize was called with the response text
     assert stub_pipeline.synthesize_calls == ["It is sunny today."]
@@ -218,21 +214,19 @@ async def test_voice_message_truncation_when_over_1mb(
                 )
             )
         ),
+    ), patch(
+        "hestia.platforms.telegram_adapter.get_voice_pipeline",
+        AsyncMock(return_value=stub_pipeline),
+    ), patch(
+        "hestia.platforms.telegram_adapter.asyncio.create_subprocess_exec",
+        side_effect=_fake_create_subprocess,
     ):
-        with patch(
-            "hestia.platforms.telegram_adapter.get_voice_pipeline",
-            AsyncMock(return_value=stub_pipeline),
-        ):
-            with patch(
-                "hestia.platforms.telegram_adapter.asyncio.create_subprocess_exec",
-                side_effect=_fake_create_subprocess,
-            ):
-                await adapter.start(lambda p, u, t: None)
-                await adapter._handle_voice_message(mock_update, None)
+        await adapter.start(lambda p, u, t: None)
+        await adapter._handle_voice_message(mock_update, None)
 
-                # Invoke respond callback to trigger truncation path
-                respond_callback = mock_orchestrator.process_turn.call_args[1]["respond_callback"]
-                await respond_callback("A very long response that exceeds one megabyte.")
+        # Invoke respond callback to trigger truncation path
+        respond_callback = mock_orchestrator.process_turn.call_args[1]["respond_callback"]
+        await respond_callback("A very long response that exceeds one megabyte.")
 
     # Assert both voice and text fallback were sent
     assert mock_update.effective_message.reply_voice.call_count == 1
@@ -293,17 +287,15 @@ async def test_voice_message_stt_failure(
                 )
             )
         ),
+    ), patch(
+        "hestia.platforms.telegram_adapter.get_voice_pipeline",
+        AsyncMock(side_effect=RuntimeError("STT model not found")),
+    ), patch(
+        "hestia.platforms.telegram_adapter.asyncio.create_subprocess_exec",
+        return_value=_mock_ffmpeg_process(stdout=b"\x00" * 10_000),
     ):
-        with patch(
-            "hestia.platforms.telegram_adapter.get_voice_pipeline",
-            AsyncMock(side_effect=RuntimeError("STT model not found")),
-        ):
-            with patch(
-                "hestia.platforms.telegram_adapter.asyncio.create_subprocess_exec",
-                return_value=_mock_ffmpeg_process(stdout=b"\x00" * 10_000),
-            ):
-                await adapter.start(lambda p, u, t: None)
-                await adapter._handle_voice_message(mock_update, None)
+        await adapter.start(lambda p, u, t: None)
+        await adapter._handle_voice_message(mock_update, None)
 
     mock_orchestrator.process_turn.assert_not_called()
     mock_update.effective_message.reply_text.assert_called_once()

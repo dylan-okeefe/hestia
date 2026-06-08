@@ -16,6 +16,7 @@ sessions = sa.Table(
     sa.Column("slot_saved_path", sa.String, nullable=True),
     sa.Column("state", sa.String, nullable=False),  # active/idle/archived
     sa.Column("temperature", sa.String, nullable=False),  # hot/warm/cold
+    sa.Column("title", sa.String, nullable=True),
     sa.Index("idx_sessions_platform_user", "platform", "platform_user", "state"),
     # Partial unique index: at most one ACTIVE session per (platform, platform_user).
     # Backs the INSERT ... ON CONFLICT DO NOTHING upsert in
@@ -47,6 +48,7 @@ messages = sa.Table(
     sa.Column("tool_calls", sa.Text, nullable=True),  # JSON
     sa.Column("tool_call_id", sa.String, nullable=True),
     sa.Column("reasoning_content", sa.Text, nullable=True),  # stored but stripped on send
+    sa.Column("is_handoff", sa.Boolean, nullable=False, default=False),
     sa.Column("created_at", sa.DateTime, nullable=False),
     sa.PrimaryKeyConstraint("session_id", "idx"),
 )

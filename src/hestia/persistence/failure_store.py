@@ -106,27 +106,37 @@ class FailureStore:
             await conn.commit()
 
     async def list_recent(
-        self, limit: int = 20, failure_class: str | None = None
+        self,
+        limit: int = 20,
+        failure_class: str | None = None,
+        session_id: str | None = None,
+        session_ids: list[str] | None = None,
     ) -> list[FailureBundle]:
         """List recent failure bundles with optional filter."""
+        clauses: list[str] = []
+        params: dict[str, Any] = {"limit": limit}
+
         if failure_class:
-            sql = sa.text(
-                "SELECT id, session_id, turn_id, failure_class, severity, "
-                "error_message, tool_chain, created_at, request_summary, "
-                "policy_snapshot, slot_snapshot, trace_id "
-                "FROM failure_bundles WHERE failure_class = :fc "
-                "ORDER BY created_at DESC LIMIT :limit"
-            )
-            params = {"fc": failure_class, "limit": limit}
-        else:
-            sql = sa.text(
-                "SELECT id, session_id, turn_id, failure_class, severity, "
-                "error_message, tool_chain, created_at, request_summary, "
-                "policy_snapshot, slot_snapshot, trace_id "
-                "FROM failure_bundles "
-                "ORDER BY created_at DESC LIMIT :limit"
-            )
-            params = {"limit": limit}
+            clauses.append("failure_class = :fc")
+            params["fc"] = failure_class
+        if session_id:
+            clauses.append("session_id = :session_id")
+            params["session_id"] = session_id
+        if session_ids:
+            clauses.append("session_id IN :session_ids")
+            params["session_ids"] = tuple(session_ids)
+
+        base_sql = (
+            "SELECT id, session_id, turn_id, failure_class, severity, "
+            "error_message, tool_chain, created_at, request_summary, "
+            "policy_snapshot, slot_snapshot, trace_id "
+            "FROM failure_bundles"
+        )
+        if clauses:
+            base_sql += " WHERE " + " AND ".join(clauses)
+        base_sql += " ORDER BY created_at DESC LIMIT :limit"
+
+        sql = sa.text(base_sql)
 
         async with self._db.engine.connect() as conn:
             result = await conn.execute(sql, params)

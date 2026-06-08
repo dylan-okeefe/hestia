@@ -166,7 +166,7 @@ class TestMatrixConfirmation:
         adapter._on_message = on_message_mock
         await adapter._handle_room_message(mock_room, mock_event)
 
-        on_message_mock.assert_called_once_with("matrix", "!room:matrix.org", "Hello bot")
+        on_message_mock.assert_called_once_with("matrix", "!room:matrix.org", "Hello bot", None, None)
 
     @pytest.mark.asyncio
     async def test_request_confirmation_raises_when_not_started(self, adapter):

@@ -330,6 +330,7 @@ class MatrixAdapter(Platform):
             room.room_id,
             body.strip(),
             None,
+            None,
         )
 
     @staticmethod

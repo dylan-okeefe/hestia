@@ -56,7 +56,7 @@ class _MinimalPolicyEngine(PolicyEngine):
     def filter_tools(self, session, tool_names, registry):
         return tool_names
 
-    def auto_approve(self, tool_name: str, session) -> bool:
+    def auto_approve(self, tool_name: str, session, registry=None) -> bool:
         return False
 
     def reasoning_budget(self, session, iteration: int) -> int:

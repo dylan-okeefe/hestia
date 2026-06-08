@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { fetchAvailableUsers, requestCode, verifyCode } from '../api/client';
+import { fetchAvailableUsers, requestCode, verifyCode, debugLogin } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import PageCard from '../components/layout/PageCard';
 import EmptyState from '../components/layout/EmptyState';
@@ -34,13 +34,13 @@ const roleBadgeColor = (role: string) => {
 const platformHelperText: Record<string, string> = {
   matrix: 'A verification code will be sent to your Matrix DM.',
   telegram: 'A verification code will be sent via Telegram.',
-  discord: 'A verification code will be sent via Discord DM.',
+
   email: 'A verification code will be sent to your email address.',
   cli: 'Check your terminal for the verification code.',
 };
 
 export default function Login() {
-  const { login } = useAuth();
+  const { auth, login } = useAuth();
   const [phase, setPhase] = useState<'select-user' | 'select-platform' | 'input'>('select-user');
   const [availableUsers, setAvailableUsers] = useState<AvailableUser[]>([]);
   const [selectedUser, setSelectedUser] = useState<AvailableUser | null>(null);
@@ -94,8 +94,17 @@ export default function Login() {
     }, 1000);
   };
 
-  const handleSelectUser = (user: AvailableUser) => {
+  const handleSelectUser = async (user: AvailableUser) => {
     setSelectedUser(user);
+    if (auth.debugLogin) {
+      try {
+        const data = await debugLogin(user.user_id);
+        login(data.token);
+      } catch (err) {
+        setError((err as Error).message);
+      }
+      return;
+    }
     setPhase('select-platform');
   };
 

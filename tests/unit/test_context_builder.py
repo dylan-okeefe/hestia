@@ -269,20 +269,22 @@ class TestTokenBudgeting:
 
     @pytest.mark.asyncio
     async def test_body_factor_applied(self, fake_client, policy, sample_session):
-        """Body factor corrects the count."""
-        # With factor 2.0, count should be halved
-        builder = ContextBuilder(fake_client, policy, body_factor=2.0)
+        """Body factor corrects the count downward."""
+        builder_1 = ContextBuilder(fake_client, policy, body_factor=1.0)
+        builder_2 = ContextBuilder(fake_client, policy, body_factor=2.0)
 
         history = [Message(role="user", content="Test")]
         new_msg = Message(role="user", content="New")
 
-        result = await builder.build(
+        result_1 = await builder_1.build(
+            sample_session, history, "System", [], new_user_message=new_msg
+        )
+        result_2 = await builder_2.build(
             sample_session, history, "System", [], new_user_message=new_msg
         )
 
-        # Should be able to fit more with higher body factor
-        # (counts appear smaller)
-        assert result.tokens_used >= 0
+        # Higher body factor should report fewer tokens used
+        assert result_2.tokens_used < result_1.tokens_used
 
 
 class TestEdgeCases:
@@ -343,6 +345,19 @@ class TestFromCalibrationFile:
         assert builder._body_factor == 1.0
         assert builder._meta_tool_overhead == 0
 
+    @pytest.mark.asyncio
+    async def test_zero_body_factor_guarded(self, tmp_path, fake_client, policy):
+        """Guards against body_factor == 0 to prevent ZeroDivision."""
+        import json
+
+        cal_path = tmp_path / "calibration.json"
+        cal_path.write_text(json.dumps({"body_factor": 0, "meta_tool_overhead_tokens": 50}))
+
+        builder = ContextBuilder.from_calibration_file(fake_client, policy, cal_path)
+
+        assert builder._body_factor == 1.0
+        assert builder._meta_tool_overhead == 50
+
 
 class TestHandoffMessages:
     """Tests for session handoff message handling (L165)."""
@@ -353,7 +368,7 @@ class TestHandoffMessages:
         builder = ContextBuilder(fake_client, policy, body_factor=1.0)
 
         history = [
-            Message(role="user", content="[Previous session context]\nSummary: old stuff"),
+            Message(role="user", content="[Previous session context]\nSummary: old stuff", is_handoff=True),
             Message(role="user", content="Real user message"),
             Message(role="assistant", content="Assistant reply"),
         ]
@@ -365,7 +380,7 @@ class TestHandoffMessages:
 
         assert result.messages[0].role == "system"
         assert result.messages[1].role == "user"
-        assert "[Previous session context]" in result.messages[1].content
+        assert result.messages[1].is_handoff
         assert result.messages[2].role == "user"
         assert result.messages[2].content == "Real user message"
         assert result.messages[3].role == "assistant"
@@ -379,7 +394,7 @@ class TestHandoffMessages:
 
         # Turn 1: history has handoff + first real user message
         history_turn_1 = [
-            Message(role="user", content="[Previous session context]\nSummary: old stuff"),
+            Message(role="user", content="[Previous session context]\nSummary: old stuff", is_handoff=True),
             Message(role="user", content="Hello"),
         ]
         result_1 = await builder.build(
@@ -390,7 +405,7 @@ class TestHandoffMessages:
             new_user_message=Message(role="user", content="How are you?"),
         )
         assert any(
-            m.role == "user" and "[Previous session context]" in m.content
+            m.role == "user" and m.is_handoff
             for m in result_1.messages
         )
 
@@ -407,7 +422,7 @@ class TestHandoffMessages:
             new_user_message=Message(role="user", content="What's new?"),
         )
         assert any(
-            m.role == "user" and "[Previous session context]" in m.content
+            m.role == "user" and m.is_handoff
             for m in result_2.messages
         )
 
@@ -425,7 +440,7 @@ class TestHandoffMessages:
         builder = ContextBuilder(fake_client, small_policy, body_factor=1.0)
 
         history = [
-            Message(role="user", content="[Previous session context]\nSummary: old stuff"),
+            Message(role="user", content="[Previous session context]\nSummary: old stuff", is_handoff=True),
             *[Message(role="user", content="x" * 500) for _ in range(20)],
         ]
         new_msg = Message(role="user", content="New")
@@ -436,7 +451,7 @@ class TestHandoffMessages:
 
         # Handoff should be present even when normal history is truncated
         assert any(
-            m.role == "user" and "[Previous session context]" in m.content
+            m.role == "user" and m.is_handoff
             for m in result.messages
         )
         # Some normal history should have been truncated to fit budget
@@ -450,7 +465,7 @@ class TestHandoffMessages:
         builder = ContextBuilder(fake_client, policy, body_factor=1.0)
 
         history = [
-            Message(role="user", content="[Previous session context]\nSummary: old stuff"),
+            Message(role="user", content="[Previous session context]\nSummary: old stuff", is_handoff=True),
             Message(role="user", content="FIRST REAL USER"),
             *[Message(role="user", content="x" * 100) for _ in range(50)],
         ]

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import time
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -13,6 +14,15 @@ from fastapi.testclient import TestClient
 from hestia.web.api import create_web_app
 from hestia.web.context import WebContext, set_web_context
 from hestia.workflows.models import Workflow
+
+
+def _sign(secret: str, body_bytes: bytes, timestamp: int | None = None) -> tuple[str, int]:
+    """Compute webhook signature over timestamp.body."""
+    if timestamp is None:
+        timestamp = int(time.time())
+    payload = f"{timestamp}.".encode() + body_bytes
+    signature = hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
+    return signature, timestamp
 
 
 @pytest.fixture(autouse=True)
@@ -103,19 +113,23 @@ class TestWebhookHMAC:
 
         payload = {"key": "value"}
         body_bytes = json.dumps(payload).encode()
-        signature = hmac.new(b"super-secret", body_bytes, hashlib.sha256).hexdigest()
+        signature, timestamp = _sign("super-secret", body_bytes)
 
         response = client.post(
             "/api/webhooks/deploy",
             content=body_bytes,
-            headers={"X-Webhook-Signature": signature, "Content-Type": "application/json"},
+            headers={
+                "X-Webhook-Signature": signature,
+                "X-Webhook-Timestamp": str(timestamp),
+                "Content-Type": "application/json",
+            },
         )
         assert response.status_code == 202
         assert response.json()["received"] is True
         mock_event_bus.publish.assert_awaited_once()
 
-    def test_missing_header_returns_401(self, client: TestClient, mock_app: MagicMock) -> None:
-        """A request without the X-Webhook-Signature header is rejected."""
+    def test_missing_timestamp_returns_401(self, client: TestClient, mock_app: MagicMock) -> None:
+        """A request without the X-Webhook-Timestamp header is rejected."""
         from hestia.web import context as ctx_mod
 
         ctx = ctx_mod._ctx
@@ -131,6 +145,30 @@ class TestWebhookHMAC:
         response = client.post("/api/webhooks/deploy", json={"key": "value"})
         assert response.status_code == 401
         assert "Missing" in response.json()["detail"]
+        assert "Timestamp" in response.json()["detail"]
+
+    def test_missing_signature_returns_401(self, client: TestClient, mock_app: MagicMock) -> None:
+        """A request without the X-Webhook-Signature header is rejected."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        wf = Workflow(
+            id="wf1",
+            name="Hook",
+            trigger_type="webhook",
+            trigger_config={"endpoint": "deploy", "secret": "super-secret"},
+        )
+        ctx.workflow_store.list_workflows = AsyncMock(return_value=[wf])
+
+        response = client.post(
+            "/api/webhooks/deploy",
+            json={"key": "value"},
+            headers={"X-Webhook-Timestamp": str(int(time.time()))},
+        )
+        assert response.status_code == 401
+        assert "Missing" in response.json()["detail"]
+        assert "Signature" in response.json()["detail"]
 
     def test_invalid_signature_returns_401(self, client: TestClient, mock_app: MagicMock) -> None:
         """A request with an incorrect HMAC signature is rejected."""
@@ -149,7 +187,10 @@ class TestWebhookHMAC:
         response = client.post(
             "/api/webhooks/deploy",
             json={"key": "value"},
-            headers={"X-Webhook-Signature": "bad-signature"},
+            headers={
+                "X-Webhook-Signature": "bad-signature",
+                "X-Webhook-Timestamp": str(int(time.time())),
+            },
         )
         assert response.status_code == 401
         assert "Invalid" in response.json()["detail"]
@@ -183,11 +224,14 @@ class TestWebhookHMAC:
         ctx.workflow_store.list_workflows = AsyncMock(return_value=[wf])
 
         body_bytes = b""
-        signature = hmac.new(b"super-secret", body_bytes, hashlib.sha256).hexdigest()
+        signature, timestamp = _sign("super-secret", body_bytes)
         response = client.post(
             "/api/webhooks/deploy",
             content=body_bytes,
-            headers={"X-Webhook-Signature": signature},
+            headers={
+                "X-Webhook-Signature": signature,
+                "X-Webhook-Timestamp": str(timestamp),
+            },
         )
         assert response.status_code == 202
 
@@ -209,18 +253,154 @@ class TestWebhookHMAC:
         ctx.workflow_store.list_workflows = AsyncMock(return_value=[wf])
 
         body_bytes = b"plain text payload"
-        signature = hmac.new(b"super-secret", body_bytes, hashlib.sha256).hexdigest()
+        signature, timestamp = _sign("super-secret", body_bytes)
         response = client.post(
             "/api/webhooks/deploy",
             content=body_bytes,
-            headers={"X-Webhook-Signature": signature, "Content-Type": "text/plain"},
+            headers={
+                "X-Webhook-Signature": signature,
+                "X-Webhook-Timestamp": str(timestamp),
+                "Content-Type": "text/plain",
+            },
         )
         assert response.status_code == 202
 
     def test_replay_attack_same_signature_twice(
         self, client: TestClient, mock_app: MagicMock
     ) -> None:
-        """Same valid signature sent twice — both succeed (no nonce in v1)."""
+        """Same valid signature sent twice — second request is rejected."""
+        from hestia.web import context as ctx_mod
+        from hestia.web.routes import webhooks as webhooks_mod
+        from hestia.workflows.models import Workflow
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        mock_event_bus = AsyncMock()
+        mock_app.event_bus = mock_event_bus
+        wf = Workflow(
+            id="wf1",
+            name="Hook",
+            trigger_type="webhook",
+            trigger_config={"endpoint": "deploy", "secret": "super-secret"},
+        )
+        ctx.workflow_store.list_workflows = AsyncMock(return_value=[wf])
+
+        # Clear the seen-signatures cache so this test is independent
+        webhooks_mod._seen_signatures.clear()
+
+        payload = {"key": "value"}
+        body_bytes = json.dumps(payload).encode()
+        signature, timestamp = _sign("super-secret", body_bytes)
+
+        response = client.post(
+            "/api/webhooks/deploy",
+            content=body_bytes,
+            headers={
+                "X-Webhook-Signature": signature,
+                "X-Webhook-Timestamp": str(timestamp),
+                "Content-Type": "application/json",
+            },
+        )
+        assert response.status_code == 202
+        assert response.json()["received"] is True
+        mock_event_bus.publish.assert_awaited_once()
+
+        response = client.post(
+            "/api/webhooks/deploy",
+            content=body_bytes,
+            headers={
+                "X-Webhook-Signature": signature,
+                "X-Webhook-Timestamp": str(timestamp),
+                "Content-Type": "application/json",
+            },
+        )
+        assert response.status_code == 409
+        assert "duplicate" in response.json()["detail"].lower()
+
+    def test_replay_with_stale_timestamp_returns_401(
+        self, client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """A replay with a timestamp outside the ±5-minute window is rejected."""
+        from hestia.web import context as ctx_mod
+        from hestia.workflows.models import Workflow
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        wf = Workflow(
+            id="wf1",
+            name="Hook",
+            trigger_type="webhook",
+            trigger_config={"endpoint": "deploy", "secret": "super-secret"},
+        )
+        ctx.workflow_store.list_workflows = AsyncMock(return_value=[wf])
+
+        payload = {"key": "value"}
+        body_bytes = json.dumps(payload).encode()
+        stale_timestamp = int(time.time()) - 400
+        signature, _ = _sign("super-secret", body_bytes, stale_timestamp)
+
+        response = client.post(
+            "/api/webhooks/deploy",
+            content=body_bytes,
+            headers={
+                "X-Webhook-Signature": signature,
+                "X-Webhook-Timestamp": str(stale_timestamp),
+                "Content-Type": "application/json",
+            },
+        )
+        assert response.status_code == 401
+        assert "replay" in response.json()["detail"].lower()
+
+    def test_no_wildcard_match(self, client: TestClient, mock_app: MagicMock) -> None:
+        """A workflow without an explicit endpoint does NOT match arbitrary paths."""
+        from hestia.web import context as ctx_mod
+        from hestia.workflows.models import Workflow
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        wf = Workflow(
+            id="wf1",
+            name="Hook",
+            trigger_type="webhook",
+            trigger_config={"secret": "super-secret"},
+        )
+        ctx.workflow_store.list_workflows = AsyncMock(return_value=[wf])
+
+        response = client.post("/api/webhooks/arbitrary", json={"key": "value"})
+        assert response.status_code == 404
+
+    def test_secretless_workflow_returns_401(
+        self, client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """A workflow with no configured secret is un-triggerable (fail-closed)."""
+        from hestia.web import context as ctx_mod
+        from hestia.workflows.models import Workflow
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        wf = Workflow(
+            id="wf1",
+            name="Hook",
+            trigger_type="webhook",
+            trigger_config={"endpoint": "deploy"},
+        )
+        ctx.workflow_store.list_workflows = AsyncMock(return_value=[wf])
+
+        response = client.post(
+            "/api/webhooks/deploy",
+            json={"key": "value"},
+            headers={
+                "X-Webhook-Timestamp": str(int(time.time())),
+                "X-Webhook-Signature": "abc123",
+            },
+        )
+        assert response.status_code == 401
+        assert "secret" in response.json()["detail"].lower()
+
+    def test_auth_headers_stripped_from_event(
+        self, client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """Sensitive auth headers are not published in the event payload."""
         from hestia.web import context as ctx_mod
         from hestia.workflows.models import Workflow
 
@@ -238,15 +418,26 @@ class TestWebhookHMAC:
 
         payload = {"key": "value"}
         body_bytes = json.dumps(payload).encode()
-        signature = hmac.new(b"super-secret", body_bytes, hashlib.sha256).hexdigest()
+        signature, timestamp = _sign("super-secret", body_bytes)
 
-        for _ in range(2):
-            response = client.post(
-                "/api/webhooks/deploy",
-                content=body_bytes,
-                headers={"X-Webhook-Signature": signature, "Content-Type": "application/json"},
-            )
-            assert response.status_code == 202
+        response = client.post(
+            "/api/webhooks/deploy",
+            content=body_bytes,
+            headers={
+                "X-Webhook-Signature": signature,
+                "X-Webhook-Timestamp": str(timestamp),
+                "Content-Type": "application/json",
+                "Authorization": "Bearer secret-token",
+                "Cookie": "session=abc",
+            },
+        )
+        assert response.status_code == 202
+        call_args = mock_event_bus.publish.call_args
+        published_headers = call_args[0][1]["headers"]
+        assert "x-webhook-signature" not in {k.lower() for k in published_headers}
+        assert "authorization" not in {k.lower() for k in published_headers}
+        assert "cookie" not in {k.lower() for k in published_headers}
+        assert "content-type" in {k.lower() for k in published_headers}
 
 
 class TestAutoGenerateSecret:

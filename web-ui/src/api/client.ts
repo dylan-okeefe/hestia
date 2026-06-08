@@ -28,22 +28,43 @@ function getHeaders(extra: Record<string, string> = {}): Record<string, string> 
   return headers;
 }
 
-async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
-  const res = await fetch(input, {
-    ...init,
-    headers: getHeaders((init?.headers as Record<string, string>) || {}),
-  });
-  if (res.status === 401) {
-    clearAuthToken();
-    window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+async function checkOk(res: Response): Promise<Response> {
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`HTTP ${res.status}: ${text}`);
   }
   return res;
+}
+
+async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+  const signal = init?.signal;
+  if (signal) {
+    signal.addEventListener('abort', () => controller.abort(), { once: true });
+  }
+
+  try {
+    const res = await fetch(input, {
+      ...init,
+      signal: controller.signal,
+      headers: getHeaders((init?.headers as Record<string, string>) || {}),
+    });
+    if (res.status === 401) {
+      clearAuthToken();
+      window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+    }
+    return res;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export async function fetchAuthStatus() {
   const res = await apiFetch(`${API_BASE}/auth/status`);
   if (!res.ok) throw new Error('Failed to fetch auth status');
-  return res.json() as Promise<{ auth_enabled: boolean; authenticated: boolean; platform?: string; platform_user?: string; user_id?: string; available_platforms?: string[] }>;
+  return res.json() as Promise<{ auth_enabled: boolean; authenticated: boolean; debug_login?: boolean; platform?: string; platform_user?: string; user_id?: string; available_platforms?: string[] }>;
 }
 
 export async function fetchAvailableUsers() {
@@ -78,6 +99,16 @@ export async function logout() {
   return res.json();
 }
 
+export async function debugLogin(userId: string): Promise<{ token: string; platform: string; platform_user: string; expires_at: string }> {
+  const res = await apiFetch(`${API_BASE}/auth/debug-login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: userId }),
+  });
+  if (!res.ok) throw new Error('Debug login failed');
+  return res.json();
+}
+
 export async function fetchSessions(limit = 50) {
   const res = await apiFetch(`${API_BASE}/sessions?limit=${limit}`);
   if (!res.ok) throw new Error('Failed to fetch sessions');
@@ -98,23 +129,29 @@ export async function fetchProposals(status = 'pending') {
 }
 
 export async function acceptProposal(id: string, note?: string) {
-  return apiFetch(`${API_BASE}/proposals/${id}/accept`, {
+  const res = await apiFetch(`${API_BASE}/proposals/${id}/accept`, {
     method: 'POST',
     body: JSON.stringify({ note }),
     headers: { 'Content-Type': 'application/json' },
   });
+  await checkOk(res);
+  return res.json();
 }
 
 export async function rejectProposal(id: string, note: string) {
-  return apiFetch(`${API_BASE}/proposals/${id}/reject`, {
+  const res = await apiFetch(`${API_BASE}/proposals/${id}/reject`, {
     method: 'POST',
     body: JSON.stringify({ note }),
     headers: { 'Content-Type': 'application/json' },
   });
+  await checkOk(res);
+  return res.json();
 }
 
 export async function deferProposal(id: string) {
-  return apiFetch(`${API_BASE}/proposals/${id}/defer`, { method: 'POST' });
+  const res = await apiFetch(`${API_BASE}/proposals/${id}/defer`, { method: 'POST' });
+  await checkOk(res);
+  return res.json();
 }
 
 export async function fetchStyleProfile(platform: string, user: string) {
@@ -124,9 +161,11 @@ export async function fetchStyleProfile(platform: string, user: string) {
 }
 
 export async function deleteStyleMetric(platform: string, user: string, metric: string) {
-  return apiFetch(`${API_BASE}/style/${encodeURIComponent(platform)}/${encodeURIComponent(user)}/${encodeURIComponent(metric)}`, {
+  const res = await apiFetch(`${API_BASE}/style/${encodeURIComponent(platform)}/${encodeURIComponent(user)}/${encodeURIComponent(metric)}`, {
     method: 'DELETE',
   });
+  await checkOk(res);
+  return res.json();
 }
 
 export async function fetchSchedulerTasks() {
@@ -162,7 +201,9 @@ export async function deleteTask(id: string) {
 }
 
 export async function runTaskNow(id: string) {
-  return apiFetch(`${API_BASE}/scheduler/tasks/${id}/run`, { method: 'POST' });
+  const res = await apiFetch(`${API_BASE}/scheduler/tasks/${id}/run`, { method: 'POST' });
+  await checkOk(res);
+  return res.json();
 }
 
 export async function runDoctor() {
@@ -199,11 +240,13 @@ export async function fetchConfigSchema() {
 }
 
 export async function saveConfig(config: object) {
-  return apiFetch(`${API_BASE}/config`, {
+  const res = await apiFetch(`${API_BASE}/config`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(config),
   });
+  await checkOk(res);
+  return res.json();
 }
 
 export interface Workflow {
@@ -503,7 +546,7 @@ export async function fetchSessionMessages(sessionId: string) {
   const res = await apiFetch(`${API_BASE}/sessions/${encodeURIComponent(sessionId)}/messages`);
   if (!res.ok) throw new Error('Failed to fetch session messages');
   return res.json() as Promise<{
-    session: { id: string; platform: string; platform_user: string; started_at: string | null };
+    session: { id: string; platform: string; platform_user: string; title: string | null; started_at: string | null };
     turns: Array<{ id: string; state: string | null; started_at: string | null; iterations: number; error: string | null }>;
     messages: Array<{ role: string; content: string; created_at: string | null }>;
   }>;
@@ -542,6 +585,78 @@ export async function debugError(id: string) {
   const res = await apiFetch(`${API_BASE}/errors/${encodeURIComponent(id)}/debug`, { method: 'POST' });
   if (!res.ok) throw new Error('Failed to fetch debug prompt');
   return res.json() as Promise<{ prompt: string }>;
+}
+
+// Browser Sessions
+export interface BrowserSession {
+  domain: string;
+  has_cookies: boolean;
+  has_storage_state: boolean;
+  cookie_count: number;
+  last_saved: string | null;
+  last_used: string | null;
+  last_health_check: string | null;
+  health_status: string;
+  health_check_url: string;
+}
+
+export async function fetchBrowserSessions(): Promise<BrowserSession[]> {
+  const res = await apiFetch(`${API_BASE}/browser-sessions`);
+  if (!res.ok) throw new Error('Failed to fetch browser sessions');
+  const data = await res.json();
+  return data.sessions;
+}
+
+export async function deleteBrowserSession(domain: string): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/browser-sessions/${encodeURIComponent(domain)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error('Failed to delete session');
+}
+
+export async function checkBrowserSession(domain: string): Promise<{ domain: string; status: string }> {
+  const res = await apiFetch(`${API_BASE}/browser-sessions/${encodeURIComponent(domain)}/check`, {
+    method: 'POST',
+  });
+  if (res.status === 429) throw new Error('Rate limited — try again later');
+  if (!res.ok) throw new Error('Health check failed');
+  return res.json();
+}
+
+export interface StreamSession {
+  session_id: string;
+  domain: string;
+  ws_url: string;
+}
+
+export async function startBrowserStream(payload: { url: string; headed?: boolean }): Promise<StreamSession> {
+  const res = await apiFetch(`${API_BASE}/browser-sessions/start`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (res.status === 409) {
+    const data = await res.json();
+    throw new Error(`Session already active: ${data.session_id}`);
+  }
+  if (!res.ok) throw new Error('Failed to start browser stream');
+  return res.json();
+}
+
+export async function stopBrowserStream(): Promise<{ domain: string; cookie_count: number; saved: boolean }> {
+  const res = await apiFetch(`${API_BASE}/browser-sessions/stop`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to stop browser stream');
+  return res.json();
+}
+
+export async function headedLoginBrowserSession(url: string): Promise<{ message: string }> {
+  const res = await apiFetch(`${API_BASE}/browser-sessions/headed-login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url }),
+  });
+  if (!res.ok) throw new Error('Failed to launch headed browser');
+  return res.json();
 }
 
 // Handoffs

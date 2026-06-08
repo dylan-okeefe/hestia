@@ -378,8 +378,8 @@ async def test_evict_by_id(store, slot_dir):
 
 
 @pytest.mark.asyncio
-async def test_acquire_warm_rolls_back_assignment_on_restore_failure(store, slot_dir):
-    """If slot_restore raises during WARM acquire, the assignment map rolls back."""
+async def test_acquire_warm_gracefully_handles_restore_failure(store, slot_dir):
+    """If slot_restore raises during WARM acquire, falls back to fresh slot."""
 
     class FailingRestoreInference(FakeInferenceClient):
         async def slot_restore(self, slot_id: int, filename: str) -> None:
@@ -403,14 +403,14 @@ async def test_acquire_warm_rolls_back_assignment_on_restore_failure(store, slot
     )
     session = await store.get_session(session.id)
 
-    # acquire should raise and leave _assignments empty
-    with pytest.raises(RuntimeError, match="Corrupt save file"):
-        await manager.acquire(session)
+    # acquire should gracefully fallback (not raise)
+    assignment = await manager.acquire(session)
 
-    assert manager._assignments == {}
-    # SessionStore should still show WARM
+    assert assignment.slot_id == 0
+    assert assignment.restored_from_disk is False
+    # SessionStore should now show HOT with the assigned slot
     refetched = await store.get_session(session.id)
-    assert refetched.temperature == SessionTemperature.WARM
+    assert refetched.temperature == SessionTemperature.HOT
 
 
 @pytest.mark.asyncio
@@ -578,3 +578,65 @@ async def test_save_sanitizes_matrix_room_id_in_filename(store, slot_dir):
 
     fetched = await store.get_session(session.id)
     assert fetched.slot_saved_path == filename
+
+
+@pytest.mark.asyncio
+async def test_concurrent_acquire_no_double_eviction(store, slot_dir):
+    """When pool is full, concurrent acquires should not double-evict."""
+    import asyncio
+
+    class SlowEvictionInference(FakeInferenceClient):
+        def __init__(self):
+            super().__init__()
+            self.save_started = asyncio.Event()
+            self.save_continue = asyncio.Event()
+
+        async def slot_save(self, slot_id: int, filename: str) -> None:
+            self.save_started.set()
+            await self.save_continue.wait()
+            await super().slot_save(slot_id, filename)
+
+    inference = SlowEvictionInference()
+    manager = SlotManager(
+        inference=inference,
+        session_store=store,
+        slot_dir=slot_dir,
+        pool_size=1,
+    )
+
+    # Acquire session A
+    session_a = await store.get_or_create_session("cli", "user1")
+    await manager.acquire(session_a)
+
+    # Create sessions B and C
+    session_b = await store.get_or_create_session("cli", "user2")
+    session_c = await store.get_or_create_session("cli", "user3")
+
+    # Start concurrent acquires for B and C
+    task_b = asyncio.create_task(manager.acquire(session_b))
+    task_c = asyncio.create_task(manager.acquire(session_c))
+
+    # Wait until eviction I/O starts
+    await inference.save_started.wait()
+
+    # Allow the eviction to complete
+    inference.save_continue.set()
+
+    # Both tasks should complete without error
+    assignment_b = await task_b
+    assignment_c = await task_c
+
+    # Both should have been assigned slot 0 (one after the other)
+    assert assignment_b.slot_id == 0
+    assert assignment_c.slot_id == 0
+
+    # The original victim (A) must have been saved exactly once — no
+    # double-eviction of the same session.
+    a_filename = manager._slot_path_for(session_a.id).name
+    save_calls_for_a = [
+        c for c in inference.calls
+        if c[0] == "slot_save" and c[1][1] == a_filename
+    ]
+    assert len(save_calls_for_a) == 1
+
+    # No KeyError / exception should have occurred (test passes if we get here)

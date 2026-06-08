@@ -8,9 +8,8 @@ from __future__ import annotations
 
 import json
 import re
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
-
 
 # Canned responses for common test patterns
 CANNED_RESPONSES: list[tuple[re.Pattern, dict[str, Any]]] = [
