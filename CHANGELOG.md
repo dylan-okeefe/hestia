@@ -5,6 +5,8 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-06-06
+
 ### Browser Sessions
 - **Browser session dashboard** — list, manage, and authenticate persistent
   browser sessions per-domain via the web UI.
