@@ -28,6 +28,7 @@ interface SessionInfo {
   id: string;
   platform: string;
   platform_user: string;
+  title: string | null;
   started_at: string | null;
 }
 
@@ -108,6 +109,8 @@ export default function SessionDetail() {
             <div>{session.platform}</div>
             <div className="session-detail-grid__label">{TEXT.sessionDetail.userLabel}</div>
             <div>{session.platform_user}</div>
+            <div className="session-detail-grid__label">Title</div>
+            <div>{session.title ?? '—'}</div>
             <div className="session-detail-grid__label">{TEXT.sessionDetail.startedLabel}</div>
             <div>{formatDate(session.started_at)}</div>
             <div className="session-detail-grid__label">{TEXT.sessionDetail.messagesLabel}</div>

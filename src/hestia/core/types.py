@@ -66,6 +66,7 @@ class Session:
     slot_saved_path: str | None
     state: SessionState
     temperature: SessionTemperature
+    title: str | None = None
 
 
 @dataclass

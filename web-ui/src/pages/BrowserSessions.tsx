@@ -6,6 +6,7 @@ import {
   fetchBrowserSessions,
   deleteBrowserSession,
   checkBrowserSession,
+  headedLoginBrowserSession,
   type BrowserSession,
 } from '../api/client';
 import PageCard from '../components/layout/PageCard';
@@ -64,6 +65,7 @@ export default function BrowserSessions() {
 
   const checkMut = useApiMutation(checkBrowserSession);
   const deleteMut = useApiMutation(deleteBrowserSession);
+  const headedLoginMut = useApiMutation(headedLoginBrowserSession);
 
   const handleCheck = async (domain: string) => {
     try {
@@ -91,6 +93,21 @@ export default function BrowserSessions() {
   const handleReauth = (session: BrowserSession) => {
     const targetUrl = session.health_check_url || `https://${session.domain}/`;
     navigate(`/browser-sessions/stream?domain=${encodeURIComponent(session.domain)}&url=${encodeURIComponent(targetUrl)}`);
+  };
+
+  const handleHeadedReauth = (session: BrowserSession) => {
+    const targetUrl = session.health_check_url || `https://${session.domain}/`;
+    navigate(`/browser-sessions/stream?domain=${encodeURIComponent(session.domain)}&url=${encodeURIComponent(targetUrl)}&headed=true`);
+  };
+
+  const handleHeadedLogin = async (session: BrowserSession) => {
+    const targetUrl = session.health_check_url || `https://${session.domain}/`;
+    try {
+      const result = await headedLoginMut.mutateAsync(targetUrl);
+      addToast({ message: result.message, type: 'success', duration: 5000 });
+    } catch (err: any) {
+      addToast({ message: err.message || 'Failed to launch headed browser', type: 'error', duration: 5000 });
+    }
   };
 
   return (
@@ -163,6 +180,19 @@ export default function BrowserSessions() {
                       </button>
                       <button onClick={() => handleReauth(s)}>
                         Authenticate
+                      </button>
+                      <button
+                        onClick={() => handleHeadedReauth(s)}
+                        title="Stream a real browser window for sites that block headless browsers"
+                      >
+                        Headed Stream
+                      </button>
+                      <button
+                        onClick={() => handleHeadedLogin(s)}
+                        disabled={headedLoginMut.isPending}
+                        title="Opens a real browser window on the server"
+                      >
+                        {headedLoginMut.isPending ? 'Launching…' : 'Headed Login'}
                       </button>
                       <button
                         onClick={() => handleDelete(s.domain)}

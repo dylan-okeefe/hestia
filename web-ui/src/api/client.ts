@@ -64,7 +64,7 @@ async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
 export async function fetchAuthStatus() {
   const res = await apiFetch(`${API_BASE}/auth/status`);
   if (!res.ok) throw new Error('Failed to fetch auth status');
-  return res.json() as Promise<{ auth_enabled: boolean; authenticated: boolean; platform?: string; platform_user?: string; user_id?: string; available_platforms?: string[] }>;
+  return res.json() as Promise<{ auth_enabled: boolean; authenticated: boolean; debug_login?: boolean; platform?: string; platform_user?: string; user_id?: string; available_platforms?: string[] }>;
 }
 
 export async function fetchAvailableUsers() {
@@ -96,6 +96,16 @@ export async function verifyCode(code: string) {
 export async function logout() {
   const res = await apiFetch(`${API_BASE}/auth/logout`, { method: 'POST' });
   if (!res.ok) throw new Error('Failed to logout');
+  return res.json();
+}
+
+export async function debugLogin(userId: string): Promise<{ token: string; platform: string; platform_user: string; expires_at: string }> {
+  const res = await apiFetch(`${API_BASE}/auth/debug-login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: userId }),
+  });
+  if (!res.ok) throw new Error('Debug login failed');
   return res.json();
 }
 
@@ -536,7 +546,7 @@ export async function fetchSessionMessages(sessionId: string) {
   const res = await apiFetch(`${API_BASE}/sessions/${encodeURIComponent(sessionId)}/messages`);
   if (!res.ok) throw new Error('Failed to fetch session messages');
   return res.json() as Promise<{
-    session: { id: string; platform: string; platform_user: string; started_at: string | null };
+    session: { id: string; platform: string; platform_user: string; title: string | null; started_at: string | null };
     turns: Array<{ id: string; state: string | null; started_at: string | null; iterations: number; error: string | null }>;
     messages: Array<{ role: string; content: string; created_at: string | null }>;
   }>;
@@ -619,11 +629,11 @@ export interface StreamSession {
   ws_url: string;
 }
 
-export async function startBrowserStream(url: string): Promise<StreamSession> {
+export async function startBrowserStream(payload: { url: string; headed?: boolean }): Promise<StreamSession> {
   const res = await apiFetch(`${API_BASE}/browser-sessions/start`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url }),
+    body: JSON.stringify(payload),
   });
   if (res.status === 409) {
     const data = await res.json();
@@ -636,6 +646,16 @@ export async function startBrowserStream(url: string): Promise<StreamSession> {
 export async function stopBrowserStream(): Promise<{ domain: string; cookie_count: number; saved: boolean }> {
   const res = await apiFetch(`${API_BASE}/browser-sessions/stop`, { method: 'POST' });
   if (!res.ok) throw new Error('Failed to stop browser stream');
+  return res.json();
+}
+
+export async function headedLoginBrowserSession(url: string): Promise<{ message: string }> {
+  const res = await apiFetch(`${API_BASE}/browser-sessions/headed-login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url }),
+  });
+  if (!res.ok) throw new Error('Failed to launch headed browser');
   return res.json();
 }
 

@@ -16,6 +16,7 @@ sessions = sa.Table(
     sa.Column("slot_saved_path", sa.String, nullable=True),
     sa.Column("state", sa.String, nullable=False),  # active/idle/archived
     sa.Column("temperature", sa.String, nullable=False),  # hot/warm/cold
+    sa.Column("title", sa.String, nullable=True),
     sa.Index("idx_sessions_platform_user", "platform", "platform_user", "state"),
     # Partial unique index: at most one ACTIVE session per (platform, platform_user).
     # Backs the INSERT ... ON CONFLICT DO NOTHING upsert in

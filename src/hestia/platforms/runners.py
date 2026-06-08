@@ -139,17 +139,20 @@ async def run_platform(
         platform_user: str,
         text: str,
         sender_platform_user: str | None = None,
+        session_title: str | None = None,
     ) -> None:
         """Handle incoming platform message."""
         token = user_context_var.set(platform_user) if user_context_var is not None else None
         try:
             if platform_user not in user_sessions:
                 session = await app.session_store.get_or_create_session_with_handoff(
-                    platform_name, platform_user
+                    platform_name, platform_user, title=session_title
                 )
                 user_sessions[platform_user] = session
             else:
                 session = user_sessions[platform_user]
+                if session_title is not None:
+                    await app.session_store.update_session_title(session.id, session_title)
 
             user_message = Message(role="user", content=text)
 

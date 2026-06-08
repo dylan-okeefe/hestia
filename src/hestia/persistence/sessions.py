@@ -56,7 +56,9 @@ class SessionStore:
         self._db = db
         self._event_bus = event_bus
 
-    async def get_or_create_session(self, platform: str, platform_user: str) -> Session:
+    async def get_or_create_session(
+        self, platform: str, platform_user: str, title: str | None = None
+    ) -> Session:
         """Get the user's active session, or create one atomically.
 
         TOCTOU-safe: the prior implementation issued a SELECT-then-INSERT pair
@@ -94,6 +96,7 @@ class SessionStore:
             slot_saved_path=None,
             state=SessionState.ACTIVE,
             temperature=SessionTemperature.COLD,
+            title=title,
         )
         values = {
             "id": new_session.id,
@@ -105,6 +108,7 @@ class SessionStore:
             "slot_saved_path": new_session.slot_saved_path,
             "state": new_session.state.value,
             "temperature": new_session.temperature.value,
+            "title": new_session.title,
         }
 
         async with self._db.engine.connect() as conn:
@@ -232,6 +236,7 @@ class SessionStore:
         platform: str,
         platform_user: str,
         archive_previous: Session | None = None,
+        title: str | None = None,
     ) -> Session:
         """Create a new session row. Optionally archives a previous session.
 
@@ -261,6 +266,7 @@ class SessionStore:
             slot_saved_path=None,
             state=SessionState.ACTIVE,
             temperature=SessionTemperature.COLD,
+            title=title,
         )
 
         insert = sa.insert(sessions).values(
@@ -273,6 +279,7 @@ class SessionStore:
             slot_saved_path=new_session.slot_saved_path,
             state=new_session.state.value,
             temperature=new_session.temperature.value,
+            title=new_session.title,
         )
 
         async with self._db.engine.connect() as conn:
@@ -292,7 +299,7 @@ class SessionStore:
         return new_session
 
     async def get_or_create_session_with_handoff(
-        self, platform: str, platform_user: str
+        self, platform: str, platform_user: str, title: str | None = None
     ) -> Session:
         """Get or create a session, injecting a handoff if the session is new.
 
@@ -301,7 +308,7 @@ class SessionStore:
         handoff for this user and prepend a synthetic system message so the
         new session retains continuity context.
         """
-        session = await self.get_or_create_session(platform, platform_user)
+        session = await self.get_or_create_session(platform, platform_user, title=title)
         existing = await self.get_messages(session.id)
         if not existing:
             handoff = await self.get_latest_handoff(platform, platform_user)
@@ -651,6 +658,19 @@ class SessionStore:
             await conn.execute(update)
             await conn.commit()
 
+    async def update_session_title(self, session_id: str, title: str | None) -> None:
+        """Update the display title for a session."""
+        if title is None:
+            return
+        update = (
+            sa.update(sessions)
+            .where(sessions.c.id == session_id)
+            .values(title=title)
+        )
+        async with self._db.engine.connect() as conn:
+            await conn.execute(update)
+            await conn.commit()
+
     def _row_to_session(self, row: Any) -> Session:
         """Convert a database row to a Session dataclass."""
         return Session(
@@ -663,6 +683,7 @@ class SessionStore:
             slot_saved_path=row.slot_saved_path,
             state=SessionState(row.state),
             temperature=SessionTemperature(row.temperature),
+            title=row.title if hasattr(row, "title") else None,
         )
 
     def _row_to_message(self, row: Any) -> Message:

@@ -29,7 +29,7 @@ function AppContent() {
 
   const isAdmin = currentUser?.role === 'admin';
 
-  if (loading || userLoading) {
+  if (loading || userLoading || (auth.authenticated && auth.authEnabled && !currentUser)) {
     return (
       <div className="app-loading">
         <p>Loading…</p>

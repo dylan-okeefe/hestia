@@ -439,12 +439,14 @@ class TelegramAdapter(Platform):
                 # Don't route workflow replies to the orchestrator
                 return
 
+        session_title = chat.title if in_group else None
         if self._on_message is not None:
             await self._on_message(
                 self.name,
                 platform_user,
                 update.effective_message.text,
                 sender_platform_user,
+                session_title,
             )
 
     async def _handle_voice_message(self, update: Update, context: Any) -> None:
@@ -530,8 +532,9 @@ class TelegramAdapter(Platform):
             else:
                 platform_user = str(user_id)
                 _sender_platform_user = None
+            session_title = chat.title if in_group else None
             session = await self._session_store.get_or_create_session_with_handoff(
-                "telegram", platform_user
+                "telegram", platform_user, title=session_title
             )
             user_message = HestiaMessage(role="user", content=transcript)
 

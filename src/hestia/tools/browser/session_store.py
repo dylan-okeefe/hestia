@@ -7,6 +7,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
+from hestia.tools.browser.stealth import (
+    STEALTH_LAUNCH_ARGS,
+    apply_stealth_async,
+    stealth_context_kwargs,
+)
+
 # Known country-code second-level domains (eTLD patterns)
 _KNOWN_CC_SLD = {
     "co.uk",
@@ -206,19 +212,62 @@ class BrowserSessionStore:
         return None
 
     def list_domains(self) -> list[str]:
-        return [d.name.replace("_", ".") for d in self.base_dir.iterdir() if d.is_dir()]
-
-    def list_sessions(self) -> list[SessionMetadata]:
-        """Return metadata for all domains that have session data."""
-        sessions = []
+        """Return normalized, deduplicated domains that have session data."""
+        domains: set[str] = set()
         for d in self.base_dir.iterdir():
             if d.is_dir() and self._has_session_data(d):
-                domain = d.name.replace("_", ".")
-                metadata = self.load_metadata(domain)
+                raw = d.name.replace("_", ".")
+                domains.add(normalize_domain(raw))
+        return sorted(domains)
+
+    def list_sessions(self) -> list[SessionMetadata]:
+        """Return metadata for all domains that have session data.
+
+        Normalizes domain names and merges metadata for directories that
+        map to the same normalized domain (e.g. ``www.indeed.com`` and
+        ``indeed.com``).
+        """
+        by_domain: dict[str, SessionMetadata] = {}
+        for d in self.base_dir.iterdir():
+            if d.is_dir() and self._has_session_data(d):
+                raw = d.name.replace("_", ".")
+                domain = normalize_domain(raw)
+                metadata = self.load_metadata(raw)
                 if metadata is None:
                     metadata = SessionMetadata(domain=domain)
-                sessions.append(metadata)
-        return sessions
+                else:
+                    metadata.domain = domain
+
+                existing = by_domain.get(domain)
+                if existing is None:
+                    by_domain[domain] = metadata
+                else:
+                    # Merge: keep the most recent timestamps
+                    if metadata.last_saved and (
+                        existing.last_saved is None
+                        or metadata.last_saved > existing.last_saved
+                    ):
+                        existing.last_saved = metadata.last_saved
+                    if metadata.last_used and (
+                        existing.last_used is None
+                        or metadata.last_used > existing.last_used
+                    ):
+                        existing.last_used = metadata.last_used
+                    if metadata.last_health_check and (
+                        existing.last_health_check is None
+                        or metadata.last_health_check > existing.last_health_check
+                    ):
+                        existing.last_health_check = metadata.last_health_check
+                    # Keep the healthiest status
+                    if metadata.health_status == "healthy":
+                        existing.health_status = "healthy"
+                    elif metadata.health_status != "unknown" and existing.health_status == "unknown":
+                        existing.health_status = metadata.health_status
+                    if metadata.health_check_url:
+                        existing.health_check_url = metadata.health_check_url
+                    if metadata.cookie_count > existing.cookie_count:
+                        existing.cookie_count = metadata.cookie_count
+        return list(by_domain.values())
 
     def clear(self, domain: str) -> None:
         shutil.rmtree(self._session_dir(domain), ignore_errors=True)
@@ -261,12 +310,15 @@ class BrowserSessionStore:
 
         status = "unknown"
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            context_kwargs: dict[str, Any] = {}
-            if storage_state is not None:
-                context_kwargs["storage_state"] = storage_state
-            context = await browser.new_context(**context_kwargs)
+            browser = await p.chromium.launch(
+                headless=True,
+                args=STEALTH_LAUNCH_ARGS,
+            )
+            context = await browser.new_context(
+                **stealth_context_kwargs(storage_state)
+            )
             page = await context.new_page()
+            await apply_stealth_async(page)
             try:
                 await page.goto(
                     health_check_url,

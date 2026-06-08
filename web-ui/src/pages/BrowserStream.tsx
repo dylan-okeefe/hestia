@@ -33,6 +33,7 @@ export default function BrowserStream() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [url, setUrl] = useState(searchParams.get('url') || '');
+  const [headed, setHeaded] = useState(searchParams.get('headed') === 'true');
   const [session, setSession] = useState<{ session_id: string; domain: string; ws_url: string } | null>(null);
   const [connected, setConnected] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -47,6 +48,8 @@ export default function BrowserStream() {
   const startTimeRef = useRef<number | null>(null);
   const autoStartedRef = useRef(false);
   const stoppingRef = useRef(false);
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
 
   const clearTimer = useCallback(() => {
     if (timerRef.current) {
@@ -133,7 +136,7 @@ export default function BrowserStream() {
   const handleStart = async () => {
     if (!url.trim()) return;
     try {
-      const data = await startMut.mutateAsync(url.trim());
+      const data = await startMut.mutateAsync({ url: url.trim(), headed });
       setSession(data);
       setConnected(false);
       setTimedOut(false);
@@ -176,12 +179,13 @@ export default function BrowserStream() {
     return () => {
       closeWs();
       clearTimer();
-      if (session && !stoppingRef.current) {
+      if (sessionRef.current && !stoppingRef.current) {
         stoppingRef.current = true;
         stopBrowserStream().catch(() => {});
       }
     };
-  }, [closeWs, clearTimer, session]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     autoStartedRef.current = false;
@@ -291,6 +295,15 @@ export default function BrowserStream() {
               className="form-input"
               disabled={startMut.isPending}
             />
+            <label className="form-row">
+              <input
+                type="checkbox"
+                checked={headed}
+                onChange={(e) => setHeaded(e.target.checked)}
+                disabled={startMut.isPending}
+              />
+              <span className="text-small">Headed browser (use real browser window for bot-blocking sites)</span>
+            </label>
             <button onClick={handleStart} disabled={startMut.isPending || !url.trim()}>
               {startMut.isPending ? 'Starting…' : 'Start Session'}
             </button>

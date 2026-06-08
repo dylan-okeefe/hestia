@@ -125,13 +125,30 @@ src/hestia/
 
 ## Worktree discipline
 
-- **Primary development worktree:** `~/Hestia` (develop branch). All code changes, commits, and branch creation happen here.
+- **Primary development worktree:** `~/Hestia` (develop branch). All feature work, spec-driven arcs, commits, and branch creation happen here.
 - **Personal runtime worktree:** `~/Hestia-runtime` (runtime branch). This is Dylan's live instance with Matrix chat configured for integration testing.
-- **Deployment rule:** When Dylan asks to "deploy to runtime" or "set up on Hestia-runtime", merge the development branch into a runtime-specific branch (e.g. `feature/<name>-runtime`) and check it out in `~/Hestia-runtime`. Do NOT cherry-pick or copy individual files unless explicitly instructed. The runtime should run the exact same code as the development branch.
-- **Preservation rule:** `~/Hestia-runtime` may have untracked runtime-specific files (e.g., `config.runtime.py`, `.env`, `hestia.db`, logs). These should be preserved. Only tracked files from the branch should be updated. Stash any local modifications before switching branches, then restore them if still relevant.
-- **Quality gates in runtime:** `cd ~/Hestia-runtime && uv run pytest tests/unit/ tests/integration/ -q` must pass after syncing.
-- **Restart rule (MANDATORY):** After deploying to runtime, restart the services so the new code is loaded. Dylan typically runs: `nohup uv run --env-file .env hestia --config config.runtime.py serve > runtime-data/logs/hestia-serve.log 2>&1 &`
-- **Immediate runtime application rule (MANDATORY):** Every code change — especially debugging, hotfixes, and UI tweaks — must be immediately applied to the runtime worktree (`~/Hestia-runtime`) and the services restarted. Do not wait for Dylan to ask. Do not batch multiple changes before restarting. Apply and restart after every single fix.
+
+### Feature work flow
+
+Feature work is developed in `~/Hestia` first. When the feature is complete and quality gates pass, deploy it to `~/Hestia-runtime` by merging/copying the changes and restarting the service. Do NOT cherry-pick or copy individual files unless explicitly instructed. The runtime should run the exact same code as the development branch.
+
+### Live debugging / hotfix flow
+
+When Dylan reports a bug he is experiencing in the live instance (e.g. "the Check Now button doesn't update", "refresh boots me to main page"), **work directly in `~/Hestia-runtime` first**. Apply the fix there, rebuild the frontend if needed, run tests, and restart the service immediately. Do not wait for Dylan to ask. Do not batch multiple changes before restarting.
+
+After the fix is verified in `~/Hestia-runtime`, mirror it back to `~/Hestia` so the development branch stays in sync. The sync back to `~/Hestia` can happen after the runtime fix is confirmed working — do not block the hotfix on the reverse sync.
+
+### Preservation rule
+
+`~/Hestia-runtime` may have untracked runtime-specific files (e.g., `config.runtime.py`, `.env`, `hestia.db`, logs). These should be preserved. Only tracked files from the branch should be updated. Stash any local modifications before switching branches, then restore them if still relevant.
+
+### Quality gates in runtime
+
+`cd ~/Hestia-runtime && uv run pytest tests/unit/ tests/integration/ -q` must pass after syncing.
+
+### Restart rule (MANDATORY)
+
+After deploying to runtime, restart the services so the new code is loaded. Dylan typically runs: `nohup uv run --env-file .env hestia --config config.runtime.py serve > runtime-data/logs/hestia-serve.log 2>&1 &`
 
 ## When to ask Dylan vs. proceed
 
