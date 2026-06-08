@@ -61,9 +61,9 @@
 
 ## Queued next
 
-- **L45c** — Multi-user docs and hardening (`docs/development-process/loops/kimi-L45c-multi-user-docs-and-hardening.md`)
+- **L45c** — Multi-user docs and hardening (`docs/development-process/loops/L045c-multi-user-docs-and-hardening.md`)
 
 ## Reference
 
-- Loop spec: `docs/development-process/loops/kimi-L45b-memory-user-scope-migration.md`
+- Loop spec: `docs/development-process/loops/L045b-memory-user-scope-migration.md`
 - Feature branch: `feature/l45b-memory-user-scope-migration`

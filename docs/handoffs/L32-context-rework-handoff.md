@@ -10,9 +10,9 @@ This handoff covers the three mini-loops that refactored `ContextBuilder`:
 
 ## Specs
 
-- `docs/development-process/loops/kimi-L32a-delete-dead-types.md`
-- `docs/development-process/loops/kimi-L32b-context-prefix-registry.md`
-- `docs/development-process/loops/kimi-L32c-context-tokenize-cache.md`
+- `docs/development-process/loops/L032a-delete-dead-types.md`
+- `docs/development-process/loops/L032b-context-prefix-registry.md`
+- `docs/development-process/loops/L032c-context-tokenize-cache.md`
 
 ## Files changed
 

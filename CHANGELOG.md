@@ -603,7 +603,7 @@ maintainable surface.
 ### Known issues — deferred to v0.8.1+
 
 The following non-blocking findings from the public Copilot review have
-been triaged into a backlog (`docs/development-process/loops/kimi-L40-copilot-cleanup-backlog.md`)
+been triaged into a backlog (`docs/development-process/loops/L040-copilot-cleanup-backlog.md`)
 and will land on feature branches before the next release prep merges
 them to `develop`:
 

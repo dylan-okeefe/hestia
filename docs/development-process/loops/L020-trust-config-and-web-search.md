@@ -788,7 +788,7 @@ Write `.kimi-done` (do **not** commit):
 
 ```
 HESTIA_KIMI_DONE=1
-SPEC=docs/development-process/loops/kimi-L20-trust-config-and-web-search.md
+SPEC=docs/development-process/loops/L020-trust-config-and-web-search.md
 LOOP=L20
 BRANCH=feature/l20-trust-config-and-web-search
 PYTEST_BASELINE=<from §-1>
