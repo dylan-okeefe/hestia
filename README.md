@@ -22,14 +22,14 @@ as the inference backend.
 - Token-budget-aware context building with per-message caching
 - Configurable model, context length, and reasoning budget
 
-### Web Dashboard (React + FastAPI)
+### [Web Dashboard](docs/guides/web-dashboard.md) (React + FastAPI)
 - **14-page admin SPA** — Dashboard, Sessions, Proposals, Style Profile, Scheduler,
   Security & Health, Config, Workflows, Profile, Knowledge, Error Log, Admin Users
 - **Authentication** — platform-based 2FA (code via Telegram/Matrix), token sessions,
   role-based access control (admin / user)
 - **Responsive design** — mobile sidebar, desktop persistent nav, dark mode
 
-### Workflows
+### [Workflows](docs/guides/workflows.md)
 - **Visual workflow editor** — React Flow canvas with drag-and-drop nodes and edges
 - **Triggers** — manual, schedule (cron), chat command, webhook, email, message,
   proposal, tool error, workflow completed, session started
@@ -38,7 +38,7 @@ as the inference backend.
 - **Versioning** — save multiple versions, activate specific versions, test runs
 - **Variable interpolation** — `{{data.field}}` syntax with frontend auto-insertion
 
-### Browser Sessions
+### [Browser Sessions](docs/guides/browser-sessions.md)
 - **Persistent browser automation** — cookies and localStorage per-domain via Playwright
 - **Headless streaming** — interact with sites via CDP screencast in the web UI
 - **Headed fallback** — real browser window for bot-blocking sites (Indeed, LinkedIn)
@@ -59,7 +59,7 @@ as the inference backend.
   activity window)
 - **Proposals** — agent-generated improvement suggestions with accept/reject/defer lifecycle
 
-### Security
+### [Security](docs/guides/security.md)
 - **Trust presets** — paranoid, household, developer, prompt_on_mobile; gate destructive
   tools per context
 - **Prompt-injection scanner** — regex + entropy heuristics with structured-content bypass
@@ -90,7 +90,7 @@ including llama.cpp configuration, systemd services, and platform secrets.
 ## Documentation
 
 - **[User Guides](docs/guides/)** — setup, platforms, security, voice, email, browser
-  sessions, workflows, multi-user
+  sessions, workflows, multi-user, custom tools
 - **[Architecture Decisions](docs/adr/)** — 39 ADRs covering design rationale
 - **[Changelog](CHANGELOG.md)** — version history
 - **[Release Notes](docs/releases/)** — human-facing release summaries

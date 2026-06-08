@@ -6,16 +6,9 @@ This directory contains all documentation for the Hestia project.
 
 Getting Hestia running and keeping it healthy:
 
-- **[Runtime setup](guides/runtime-setup.md)** — Install deps, start llama.cpp, and run your first turn.
+- **[Guides](guides/)** — Step-by-step walkthroughs for setup, voice, email, multi-user,
+  security, browser sessions, workflows, the web dashboard, and custom tools.
 - **[Environment variables](guides/environment-variables.md)** — Full reference for every `HESTIA_*` env var.
-- **[Web dashboard](guides/web-dashboard.md)** — Authentication, navigation, and feature overview for the React admin UI.
-- **[Workflows](guides/workflows.md)** — Build, version, and run automated task pipelines.
-- **[Browser sessions](guides/browser-sessions.md)** — Warm up Cloudflare-protected sites, manage authenticated logins, and stream browsers from the dashboard.
-- **[Voice setup](guides/voice-setup.md)** — Enable Telegram voice messages (STT + TTS).
-- **[Email setup](guides/email-setup.md)** — Connect IMAP/SMTP so Hestia can read and draft mail.
-- **[Multi-user setup](guides/multi-user-setup.md)** — Run Hestia for more than one person safely.
-- **[Security](guides/security.md)** — Threat model, trust presets, and hardening checklist.
-- **[Custom tools](guides/custom-tools.md)** — Write your own tools with the `@tool` decorator.
 - **[Deploy](deploy/)** — systemd service templates, install script, and config examples.
 
 ## For contributors
