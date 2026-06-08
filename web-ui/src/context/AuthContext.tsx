@@ -4,6 +4,7 @@ import { fetchAuthStatus, setAuthToken, clearAuthToken, logout as clientLogout }
 interface AuthState {
   authenticated: boolean;
   authEnabled: boolean;
+  debugLogin: boolean;
   platform: string | null;
   platformUser: string | null;
   userId: string | null;
@@ -30,6 +31,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [auth, setAuth] = useState<AuthState>({
     authenticated: false,
     authEnabled: true,
+    debugLogin: false,
     platform: null,
     platformUser: null,
     userId: null,
@@ -44,6 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setAuth({
           authenticated: true,
           authEnabled: false,
+          debugLogin: false,
           platform: null,
           platformUser: null,
           userId: null,
@@ -57,6 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setAuth({
           authenticated: false,
           authEnabled: true,
+          debugLogin: data.debug_login || false,
           platform: null,
           platformUser: null,
           userId: null,
@@ -67,6 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAuth({
         authenticated: true,
         authEnabled: true,
+        debugLogin: data.debug_login || false,
         platform: data.platform || null,
         platformUser: data.platform_user || null,
         userId: data.user_id || null,
@@ -76,6 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAuth({
         authenticated: false,
         authEnabled: true,
+        debugLogin: false,
         platform: null,
         platformUser: null,
         userId: null,
@@ -99,6 +105,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuth({
       authenticated: false,
       authEnabled: true,
+      debugLogin: auth.debugLogin,
       platform: null,
       platformUser: null,
       userId: null,

@@ -15,6 +15,11 @@ from urllib.parse import urlparse
 from fastapi import WebSocket
 
 from hestia.tools.browser.session_store import BrowserSessionStore, normalize_domain
+from hestia.tools.browser.stealth import (
+    STEALTH_LAUNCH_ARGS,
+    apply_stealth_async,
+    stealth_context_kwargs,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -52,14 +57,25 @@ class SessionStreamManager:
         """Return the active session ID, or None."""
         return self._session.session_id if self._session is not None else None
 
-    async def start(self, url: str) -> str:
-        """Launch browser, navigate to URL, start screencast. Returns session_id."""
+    async def start(self, url: str, headed: bool = False) -> str:
+        """Launch browser, navigate to URL, start screencast. Returns session_id.
+
+        Args:
+            url: The URL to navigate to.
+            headed: If True, launch a visible browser window (headless=False).
+                This evades bot detection on sites that block headless browsers
+                while still streaming the screen via CDP screencast.
+        """
         async with self._lock:
             if self._session is not None:
                 raise RuntimeError("Session already active")
 
+            if not url.startswith(("http://", "https://")):
+                url = f"https://{url}"
             parsed = urlparse(url)
             domain = normalize_domain(parsed.hostname or "")
+            if not domain:
+                raise ValueError(f"Invalid URL: {url}")
 
             session_id = str(uuid.uuid4())
             playwright = None
@@ -71,22 +87,22 @@ class SessionStreamManager:
                 from playwright.async_api import async_playwright
 
                 playwright = await async_playwright().start()
-                browser = await playwright.chromium.launch(headless=True)
+                browser = await playwright.chromium.launch(
+                    headless=not headed,
+                    args=STEALTH_LAUNCH_ARGS,
+                )
 
-                context_kwargs: dict[str, Any] = {"viewport": _VIEWPORT}
                 storage_state = self._store.load_storage(domain)
-                if storage_state is not None:
-                    context_kwargs["storage_state"] = storage_state
-                else:
+                if storage_state is None:
                     cookies = self._store.load_cookies(domain)
                     if cookies:
-                        context_kwargs["storage_state"] = {
-                            "cookies": cookies,
-                            "origins": [],
-                        }
+                        storage_state = {"cookies": cookies, "origins": []}
 
-                context = await browser.new_context(**context_kwargs)
+                context = await browser.new_context(
+                    **stealth_context_kwargs(storage_state)
+                )
                 page = await context.new_page()
+                await apply_stealth_async(page)
                 await page.goto(url, wait_until="domcontentloaded")
 
                 cdp_session = await page.context.new_cdp_session(page)

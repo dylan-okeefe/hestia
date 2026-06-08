@@ -25,6 +25,7 @@ vi.mock('../../context/AuthContext', () => ({
     auth: {
       authenticated: true,
       authEnabled: true,
+      debugLogin: false,
       platform: 'telegram',
       platformUser: '12345',
       userId: 'user-1',
@@ -68,6 +69,7 @@ describe('useCurrentUser', () => {
       auth: {
         authenticated: true,
         authEnabled: true,
+        debugLogin: false,
         platform: 'telegram',
         platformUser: '12345',
         userId: null,

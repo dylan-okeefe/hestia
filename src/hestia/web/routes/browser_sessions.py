@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any
@@ -14,6 +15,16 @@ from pydantic import BaseModel
 from hestia.tools.browser.session_store import BrowserSessionStore, normalize_domain
 from hestia.web.context import WebContext, get_web_context
 from hestia.web.dependencies import require_admin
+
+
+async def _run_headed_login(url: str) -> None:
+    """Run the headed browser login tool in the background."""
+    from hestia.tools.builtin.browser_login import browser_login
+    try:
+        result = await browser_login(url)
+        logger.info("Headed login completed: %s", result)
+    except Exception:
+        logger.exception("Headed login failed for %s", url)
 
 router = APIRouter()
 _CTX_DEP = Depends(get_web_context)
@@ -112,6 +123,7 @@ class StartBrowserSessionRequest(BaseModel):
     """Request body to start a browser streaming session."""
 
     url: str
+    headed: bool = False
 
 
 @router.post("/browser-sessions/start")
@@ -134,7 +146,7 @@ async def start_browser_session(
             detail={"error": "Session already active", "session_id": active_id},
         )
 
-    session_id = await manager.start(body.url)
+    session_id = await manager.start(body.url, headed=body.headed)
     domain = manager._session.domain if manager._session else ""
     return {
         "session_id": session_id,
@@ -163,6 +175,29 @@ async def stop_browser_session(
         raise HTTPException(status_code=404, detail="No active session")
     summary = await manager.stop(session_id)
     return summary
+
+
+@router.post("/browser-sessions/headed-login")
+async def headed_browser_login(
+    request: Request,
+    body: StartBrowserSessionRequest,
+    ctx: WebContext = _CTX_DEP,
+) -> dict[str, str]:
+    """Launch a headed (visible) browser for manual login.
+
+    Runs in the background so the HTTP response returns immediately.
+    The user must log in and close the browser window on the server
+    to save the session.
+    """
+    await require_admin(request, ctx)
+    parsed = normalize_domain(body.url)
+    if not parsed:
+        raise HTTPException(status_code=400, detail="Invalid URL")
+    asyncio.create_task(_run_headed_login(body.url))
+    return {
+        "message": f"Headed browser launched for {body.url}. "
+        "Log in and close the window to save the session."
+    }
 
 
 @router.websocket("/browser-session/stream/{session_id}")

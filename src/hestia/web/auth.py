@@ -199,6 +199,39 @@ class AuthManager:
             self._rate_limits[ip] = RateLimitWindow()
         self._rate_limits[ip].record()
 
+    async def debug_login(self, user_id: str) -> tuple[str, WebSession] | None:
+        """Create a session directly for a user without code verification.
+
+        Used when web.debug_login is enabled. Looks up the user's first
+        identity and creates a session token immediately.
+
+        Returns (token, WebSession) on success, or None if the user has
+        no identities.
+        """
+        self._cleanup_stale_entries()
+
+        if self._user_store is None:
+            return None
+
+        identities = await self._user_store.get_identities(user_id)
+        if not identities:
+            return None
+
+        identity = identities[0]
+        token = secrets.token_urlsafe(32)
+        now = datetime.now(UTC)
+        expires_at = now + timedelta(hours=self.config.session_lifetime_hours)
+
+        session = WebSession(
+            platform=identity.platform,
+            platform_user=identity.platform_user,
+            created_at=now,
+            expires_at=expires_at,
+            user_id=user_id,
+        )
+        self._sessions[token] = session
+        return (token, session)
+
     async def validate_code(self, code: str, ip: str) -> tuple[str, WebSession] | None:
         """Validate a one-time code and create a session if valid.
 

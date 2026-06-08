@@ -6,6 +6,11 @@ from typing import Any
 from urllib.parse import urlparse
 
 from hestia.tools.browser.session_store import BrowserSessionStore
+from hestia.tools.browser.stealth import (
+    STEALTH_LAUNCH_ARGS,
+    apply_stealth_async,
+    stealth_context_kwargs,
+)
 from hestia.tools.capabilities import NETWORK_EGRESS
 from hestia.tools.metadata import tool
 
@@ -94,39 +99,14 @@ async def browser_get(
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--disable-features=IsolateOrigins,site-per-process",
-                "--disable-infobars",
-                "--disable-dev-shm-usage",
-                "--no-sandbox",
-            ],
+            args=STEALTH_LAUNCH_ARGS,
         )
 
-        context_kwargs: dict[str, Any] = {
-            "viewport": _VIEWPORT,
-            "user_agent": _USER_AGENT,
-            "locale": "en-US",
-            "timezone_id": "America/New_York",
-        }
-        if storage_state is not None:
-            context_kwargs["storage_state"] = storage_state
-            logger.debug("Loaded stored session for %s", domain)
-
-        context = await browser.new_context(**context_kwargs)
+        context = await browser.new_context(
+            **stealth_context_kwargs(storage_state)
+        )
         page = await context.new_page()
-
-        # Mask headless-detection flags
-        await page.add_init_script(
-            """
-            () => {
-                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-                Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
-                window.chrome = { runtime: {} };
-                Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
-            }
-            """
-        )
+        await apply_stealth_async(page)
 
         text = ""
         try:
