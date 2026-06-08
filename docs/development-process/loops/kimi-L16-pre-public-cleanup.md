@@ -45,7 +45,7 @@ git checkout -b feature/l16-pre-public-cleanup
 2. `git rm` the files from the repo.
 3. Also remove any references to `HANDOFF_STATE.md` or `docs/handoffs/` from other docs that are staying in the repo (e.g. the `.cursorrules` or orchestration docs — but those are internal too and may also be cleaned). Leave the `docs/orchestration/` directory as-is (it documents the build process, which is interesting for contributors).
 
-**Also remove:** `docs/orchestration/kimi-loop-log.md` and `docs/orchestration/kimi-phase-queue.md` — these are internal orchestration state. Move them to the vault archive alongside the handoffs. Keep `docs/orchestration/kimi-loops/` directory (the specs themselves document design decisions and are useful history).
+**Also remove:** `docs/orchestration/kimi-loop-log.md` and `docs/orchestration/kimi-phase-queue.md` — these are internal orchestration state. Move them to the vault archive alongside the handoffs. Keep `docs/orchestration/loops/kimi-` directory (the specs themselves document design decisions and are useful history).
 
 **Actually, reconsider:** The entire `docs/orchestration/` tree is internal scaffolding: loop specs, queue files, log files. Move the whole directory to the vault archive. The design documents in `docs/design/` are the useful ones.
 

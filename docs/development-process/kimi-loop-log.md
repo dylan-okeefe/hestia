@@ -1059,7 +1059,7 @@ and merged to `develop`.
 classes extracted: `TurnAssembly` (126 lines), `TurnExecution` (430 lines),
 `TurnFinalization` (328 lines).
 
-**Scope authorization:** `docs/development-process/kimi-loops/L56-orchestrator-decomposition.md`
+**Scope authorization:** `docs/development-process/loops/kimi-L56-orchestrator-decomposition.md`
 
 **Implementation pattern:** Sequential subagent delegation, one phase per
 subagent. Each subagent extracted its phase and left thin proxy methods in
@@ -1087,7 +1087,7 @@ until v0.11 release-prep.
 
 **Outcome:** All 5 sections completed and merged to `develop`.
 
-**Scope authorization:** `docs/development-process/kimi-loops/L55-code-cleanup-release-prep.md`
+**Scope authorization:** `docs/development-process/loops/kimi-L55-code-cleanup-release-prep.md`
 
 **Implementation pattern:** Sequential subagent delegation with review between
 each chunk. Each subagent got 1 section (or 2 small related sections) to stay
@@ -1112,7 +1112,7 @@ well under the 100-step limit.
 **Outcome:** All 10 sections from the v0.10.0 pre-release evaluation fixed and
 merged to `develop`.
 
-**Scope authorization:** `docs/development-process/kimi-loops/L54-async-safety-and-small-bugs.md`
+**Scope authorization:** `docs/development-process/loops/kimi-L54-async-safety-and-small-bugs.md`
 
 **Implementation pattern:** Spec-driven with subagent delegation. The first
 subagent (coder) implemented sections 1–9 and started section 10 before hitting
@@ -1142,7 +1142,7 @@ order), ran quality gates, and committed the remainder.
 
 **Outcome:** `ContextBuilder.build` thinned from ~215 lines to 78 lines.
 
-**Scope authorization:** `docs/development-process/kimi-loops/L52-context-builder-decomposition.md`
+**Scope authorization:** `docs/development-process/loops/kimi-L52-context-builder-decomposition.md`
 
 **Extracted:**
 - `HistoryWindowSelector` — `src/hestia/context/history_window_selector.py` (99 lines)
@@ -1159,7 +1159,7 @@ order), ran quality gates, and committed the remainder.
 
 **Outcome:** `src/hestia/commands.py` (1112 lines) split into `src/hestia/commands/` package (9 modules).
 
-**Scope authorization:** `docs/development-process/kimi-loops/L50-commands-split.md`
+**Scope authorization:** `docs/development-process/loops/kimi-L50-commands-split.md`
 
 **Quality gate:**
 - Tests: 830 passed, 1 failed (pre-existing voice pipeline test)
@@ -1172,7 +1172,7 @@ order), ran quality gates, and committed the remainder.
 
 **Outcome:** `process_turn` reduced from ~390 lines to 98 lines.
 
-**Scope authorization:** `docs/development-process/kimi-loops/L49-orchestrator-extract-methods.md`
+**Scope authorization:** `docs/development-process/loops/kimi-L49-orchestrator-extract-methods.md`
 
 **Extracted:** `_prepare_turn_context`, `_run_inference_loop`, `_handle_context_too_large`, `_handle_unexpected_error`, `_record_failure_if_enabled`, `_finalize_turn`, `_safe_transition`.
 
@@ -1187,7 +1187,7 @@ order), ran quality gates, and committed the remainder.
 
 **Outcome:** `_ConfigFromEnv` mixin applied to all config classes; tool factory signatures normalized.
 
-**Scope authorization:** `docs/development-process/kimi-loops/L48-config-consistency.md`
+**Scope authorization:** `docs/development-process/loops/kimi-L48-config-consistency.md`
 
 **Quality gate:**
 - Tests: 36 passed (config tests)
@@ -1200,7 +1200,7 @@ order), ran quality gates, and committed the remainder.
 
 **Outcome:** Four new test files and four modified test files; all green.
 
-**Scope authorization:** `docs/development-process/kimi-loops/L51-missing-test-coverage.md`
+**Scope authorization:** `docs/development-process/loops/kimi-L51-missing-test-coverage.md`
 
 **New test files:**
 - `tests/unit/test_platform_runners.py` — platform routing, lifecycle, signal handling (16 tests)
@@ -1235,7 +1235,7 @@ order), ran quality gates, and committed the remainder.
 `_ConfigFromEnv` mixin; tool factory signatures normalized; validation hardened.
 Do not merge to `develop` until release-prep sequence.
 
-**Scope authorization:** `docs/development-process/kimi-loops/L48-config-consistency.md`
+**Scope authorization:** `docs/development-process/loops/kimi-L48-config-consistency.md`
 
 **Key changes:**
 - `_ConfigFromEnv` mixin with `from_env_dict(prefix, environ)` using dataclass introspection.
@@ -1295,7 +1295,7 @@ circular imports (`cli.py` imports `_cmd_*` from `hestia.commands`; tests import
 `HistoryWindowSelector` and `CompressedSummaryStrategy` extracted as dedicated
 classes with full unit-test coverage. All existing context-builder tests pass.
 
-**Scope authorization:** `docs/development-process/kimi-loops/L52-context-builder-decomposition.md`
+**Scope authorization:** `docs/development-process/loops/kimi-L52-context-builder-decomposition.md`
 
 **Files changed:**
 - `src/hestia/context/history_window_selector.py` — new; truncation/selection logic
@@ -1441,7 +1441,7 @@ annotated. Don't re-tag `v0.8.0` — it's already pushed.
 ## 2026-04-19 — Loop: L43 blocked — idle pending Dylan-side prereqs
 
 **Status:** L43 cannot start. Kimi verified the five prereqs listed in
-`docs/development-process/kimi-loops/L43-voice-phase-b-calls.md`; none are
+`docs/development-process/loops/kimi-L43-voice-phase-b-calls.md`; none are
 present on disk.
 
 **Missing:**
@@ -1787,7 +1787,7 @@ and relaunch.
 
 These are intentionally NOT merged to develop. Per the new `.cursorrules` rule, they wait until a v0.8.1 release-prep doc names them in scope.
 
-- **Track 4 (L40)** — Copilot cleanup backlog spec. Six items: sequential tool dispatch, `should_evict_slot` stub, `for_trust` identity comparison, EmailAdapter bare excepts, `prompt_on_mobile` docstring drift, three open `# TODO(L*)` markers. Spec lives at `docs/development-process/kimi-loops/L40-copilot-cleanup-backlog.md`.
+- **Track 4 (L40)** — Copilot cleanup backlog spec. Six items: sequential tool dispatch, `should_evict_slot` stub, `for_trust` identity comparison, EmailAdapter bare excepts, `prompt_on_mobile` docstring drift, three open `# TODO(L*)` markers. Spec lives at `docs/development-process/loops/kimi-L40-copilot-cleanup-backlog.md`.
 - **Track 5 (L41-L43)** — Voice adapter arc. Three specs:
   - **L41** shared infrastructure (pipeline, VAD, VoiceConfig, `hestia[voice]` extra, voice-setup.md docs).
   - **L42** Phase A: Telegram bot voice messages (forks from L41 branch).
@@ -2029,8 +2029,8 @@ All five drift sites in `_cmd_policy_show` (in `src/hestia/app.py`) are now wire
 **Cursor actions:**
 
 1. Reset local `main` to `origin/main` (was 155 ahead from the prior local merge that Dylan never pushed). Deleted local `v0.8.0` tag (was on the un-pushed `c95814f`). The `chore(release): v0.8.0` commit (`d9b889d`) stays on develop and will be re-tagged at the post-L35d tip.
-2. Wrote four L35 mini-loop specs (`kimi-loops/L35a-*.md`, `L35b-*.md`, `L35c-*.md`, `L35d-*.md`).
-3. Wrote three overnight specs (`kimi-loops/L36-app-commands-split.md`, `L37-code-cleanup-sweep.md`, `L38-delegation-and-disable-persistence.md`).
+2. Wrote four L35 mini-loop specs (`loops/kimi-L35a-*.md`, `L35b-*.md`, `L35c-*.md`, `L35d-*.md`).
+3. Wrote three overnight specs (`loops/kimi-L36-app-commands-split.md`, `L37-code-cleanup-sweep.md`, `L38-delegation-and-disable-persistence.md`).
 4. Renamed the original Cursor-only release spec to `_superseded-L35-release-v0.8.0.md` for history.
 5. Updated `kimi-phase-queue.md` table; documented L39 + L40 as deferred until post-dogfooding (per the pre-release plan's own dependency note).
 6. Pointed `KIMI_CURRENT.md` at L35a.
@@ -2663,7 +2663,7 @@ Plus `chore: bump version to 0.4.1`, `docs: L22 handoff report`.
 
 **Git:** Fast-forward `feature/l15-security-hardening` → `develop` (tip `a5468d5`).
 
-**Queue:** `KIMI_CURRENT.md` → **L16** [`L16-pre-public-cleanup.md`](kimi-loops/L16-pre-public-cleanup.md); **`## Review carry-forward`** filled with lazy import note and pre-existing ruff debt.
+**Queue:** `KIMI_CURRENT.md` → **L16** [`L16-pre-public-cleanup.md`](loops/kimi-L16-pre-public-cleanup.md); **`## Review carry-forward`** filled with lazy import note and pre-existing ruff debt.
 
 ---
 
@@ -2687,7 +2687,7 @@ Plus `chore: bump version to 0.4.1`, `docs: L22 handoff report`.
 
 **Git:** Fast-forward `feature/l13-scheduler-matrix-cron` → `develop`.
 
-**Queue:** `KIMI_CURRENT.md` → **L14** [`L14-docs-runtime-manual-smoke.md`](kimi-loops/L14-docs-runtime-manual-smoke.md); **`## Review carry-forward`** filled from L13 handoff.
+**Queue:** `KIMI_CURRENT.md` → **L14** [`L14-docs-runtime-manual-smoke.md`](loops/kimi-L14-docs-runtime-manual-smoke.md); **`## Review carry-forward`** filled from L13 handoff.
 
 ---
 
@@ -2701,7 +2701,7 @@ Plus `chore: bump version to 0.4.1`, `docs: L22 handoff report`.
 
 **Git:** Fast-forward `feature/l12-matrix-e2e-two-user` → `develop`.
 
-**Queue:** `KIMI_CURRENT.md` → **L13** [`L13-scheduler-matrix-cron.md`](kimi-loops/L13-scheduler-matrix-cron.md); **`## Review carry-forward`** filled from L12 handoff.
+**Queue:** `KIMI_CURRENT.md` → **L13** [`L13-scheduler-matrix-cron.md`](loops/kimi-L13-scheduler-matrix-cron.md); **`## Review carry-forward`** filled from L12 handoff.
 
 ---
 
@@ -2713,7 +2713,7 @@ Plus `chore: bump version to 0.4.1`, `docs: L22 handoff report`.
 
 **Git:** Fast-forward merge `feature/l11-test-tools-memory-mock` → `develop` (tip **`51749a2`** includes handoff + `.cursorrules` clarification: **do not use Cursor `Await` on the shell task as Kimi completion** — poll `.kimi-done`).
 
-**Queue:** `KIMI_CURRENT.md` → **L12** [`kimi-loops/L12-matrix-e2e-two-user.md`](kimi-loops/L12-matrix-e2e-two-user.md); **`## Review carry-forward`** on L12 filled from L11 handoff (orchestrator semantics noise, optional runtime Matrix parity, aiosqlite warnings).
+**Queue:** `KIMI_CURRENT.md` → **L12** [`loops/kimi-L12-matrix-e2e-two-user.md`](loops/kimi-L12-matrix-e2e-two-user.md); **`## Review carry-forward`** on L12 filled from L11 handoff (orchestrator semantics noise, optional runtime Matrix parity, aiosqlite warnings).
 
 ---
 
@@ -2730,7 +2730,7 @@ Plus `chore: bump version to 0.4.1`, `docs: L22 handoff report`.
 - **`IllegalTransitionError`** (`done` → `failed`) when user already saw a final assistant message — orchestrator marks **`DONE`** then **`respond_callback`** (or nearby) throws; outer **`except`** attempts **`FAILED`** from a terminal state.
 - Model answered “what time is it?” without **`current_time`** — policy allows tools on **`matrix`**; needs tests / nudges.
 
-**Artifacts:** New loop spec [`kimi-loops/L10-matrix-realworld-runtime-testing.md`](kimi-loops/L10-matrix-realworld-runtime-testing.md), Kimi prompt [`prompts/KIMI_PHASE_15_MATRIX_REALWORLD_PROMPT.md`](prompts/KIMI_PHASE_15_MATRIX_REALWORLD_PROMPT.md), queue row **10**, `KIMI_CURRENT.md` → L10, `HANDOFF_STATE.md` updated.
+**Artifacts:** New loop spec [`loops/kimi-L10-matrix-realworld-runtime-testing.md`](loops/kimi-L10-matrix-realworld-runtime-testing.md), Kimi prompt [`prompts/KIMI_PHASE_15_MATRIX_REALWORLD_PROMPT.md`](prompts/KIMI_PHASE_15_MATRIX_REALWORLD_PROMPT.md), queue row **10**, `KIMI_CURRENT.md` → L10, `HANDOFF_STATE.md` updated.
 
 **Process:** L10 Part D instructs Kimi to add **`docs/runtime-feature-testing.md`** — workflow for extra git worktrees per feature branch so **`~/Hestia-runtime`** stays stable.
 
@@ -2840,7 +2840,7 @@ Plus `chore: bump version to 0.4.1`, `docs: L22 handoff report`.
 
 **Git:** Kimi had branched `265003b` from **`e0c71c7`**, skipping two local orchestration commits (`5082255`, `a8b793a`). **Recovery:** `git checkout develop`, merged `feature/phase-7-cleanup` (fast-forward to `265003b`), **cherry-pick** `5082255` `a8b793a` onto `develop` → commits **`6c40e7f`**, **`53f490a`**. Resolved `docs/HANDOFF_STATE.md` stash conflict manually.
 
-**Next pointer:** `KIMI_CURRENT.md` → **L01 Matrix** (`kimi-loops/L01-matrix-adapter.md` + `matrix-integration.md`). Branch to create: `feature/matrix-adapter`.
+**Next pointer:** `KIMI_CURRENT.md` → **L01 Matrix** (`loops/kimi-L01-matrix-adapter.md` + `matrix-integration.md`). Branch to create: `feature/matrix-adapter`.
 
 ---
 

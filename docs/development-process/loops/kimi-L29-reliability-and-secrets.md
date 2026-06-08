@@ -163,10 +163,10 @@ uv lock
 uv run pytest tests/unit/ tests/integration/ -q
 uv run mypy src/hestia
 uv run ruff check src/hestia tests
-git grep -n "docs/development-process/decisions" -- ':!docs/development-process/kimi-loops/' ':!docs/development-process/kimi-loop-log.md'
+git grep -n "docs/development-process/decisions" -- ':!docs/development-process/loops/kimi-' ':!docs/development-process/kimi-loop-log.md'
 ```
 
-The last command must return **no matches** outside the kimi-loops/log files (which are historical and immutable).
+The last command must return **no matches** outside the loops/kimi-log files (which are historical and immutable).
 
 ---
 

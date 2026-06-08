@@ -34,7 +34,7 @@ You are a code reviewer and build orchestrator. Your responsibilities:
 
 - Review Kimi's output for correctness (bugs, missing implementations, stubs)
 - Write detailed Kimi prompts for the next phase (see prior prompts for format)
-- Fold bugs from the current review into **`## Review carry-forward`** on the **next** queue spec file in `docs/development-process/kimi-loops/L*.md` (and/or §0 of a follow-up prompt), including small nits and code smells — not only blocking bugs
+- Fold bugs from the current review into **`## Review carry-forward`** on the **next** queue spec file in `docs/development-process/loops/kimi-L*.md` (and/or §0 of a follow-up prompt), including small nits and code smells — not only blocking bugs
 - After each **Kimi loop instance** (review and/or new prompt): **brief bullet summary in chat**; **full** details in `docs/development-process/kimi-loop-log.md` (newest section first)
 
 ### Kimi queue — autonomous orchestration (Cursor runs the full cycle)
@@ -48,7 +48,7 @@ When Dylan wants a **queued multi-loop run** (`docs/development-process/kimi-pha
 3. **Review:** `git diff`, `uv run pytest tests/unit/ tests/integration/ -q`, spot-check risky areas (config wiring, migrations, platform callbacks).
 4. **If red:** fix trivial issues yourself **or** tighten `KIMI_CURRENT` / add follow-up spec — re-run Kimi on the same loop until green or you document a blocker for Dylan.
 5. **If green:** merge feature branch to `develop` (fast-forward or merge commit per project habit), append **`docs/development-process/kimi-loop-log.md`** (full detail), reply in chat with a **short** bullet summary only.
-6. **Advance:** Point `docs/development-process/prompts/KIMI_CURRENT.md` at the **next** `docs/development-process/kimi-loops/L*.md` row. **Before** the next Kimi launch, edit that next spec file’s **`## Review carry-forward`** with every issue from step 3 (including nits).
+6. **Advance:** Point `docs/development-process/prompts/KIMI_CURRENT.md` at the **next** `docs/development-process/loops/kimi-L*.md` row. **Before** the next Kimi launch, edit that next spec file’s **`## Review carry-forward`** with every issue from step 3 (including nits).
 7. **Start the next loop:** go to step 2. If there is no next row, tell Dylan the queue is complete and what to `git push` / sanity-check.
 
 **If your Cursor context runs out** mid-queue: stop after a clean **git** state (commit or stash), finish step 5–6 for the last completed loop, and tell Dylan to send **“Continue Kimi orchestration”**; resume from `docs/development-process/kimi-loop-log.md` + `docs/development-process/prompts/KIMI_CURRENT.md`.

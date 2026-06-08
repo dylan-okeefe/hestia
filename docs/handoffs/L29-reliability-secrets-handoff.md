@@ -73,7 +73,7 @@ New tests:
 - [ ] `uv run pytest tests/unit/ tests/integration/ -q` → 673 passed / 6 skipped / 0 failed
 - [ ] `uv run mypy src/hestia` → 0 errors
 - [ ] `uv run ruff check src/hestia tests` → ≤ 243 errors
-- [ ] `git grep -n "docs/development-process/decisions" -- ':!docs/development-process/kimi-loops/' ':!docs/development-process/kimi-loop-log.md'` → no matches
+- [ ] `git grep -n "docs/development-process/decisions" -- ':!docs/development-process/loops/kimi-' ':!docs/development-process/kimi-loop-log.md'` → no matches
 - [ ] `hestia reflection status` shows scheduler health on a fresh install
 - [ ] `hestia style show` shows no failure section when clean
 

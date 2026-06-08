@@ -71,5 +71,5 @@
 
 ## Reference
 
-- Loop spec: `docs/development-process/kimi-loops/L45c-multi-user-docs-and-hardening.md`
+- Loop spec: `docs/development-process/loops/kimi-L45c-multi-user-docs-and-hardening.md`
 - Feature branch: `feature/l45c-multi-user-docs-and-hardening`

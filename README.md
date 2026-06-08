@@ -1,17 +1,81 @@
 # Hestia
 
-A personal AI assistant that runs locally. Hestia connects to your chat platforms (Telegram, Matrix), manages scheduled tasks, executes workflows, and provides a web dashboard for administration.
+A local-first personal AI assistant that runs on your own hardware. Hestia connects
+to your chat platforms, manages scheduled tasks, executes workflows, operates a
+real browser for authenticated sites, and provides a full web dashboard for
+administration — all without sending your data to third-party AI services.
+
+Built for Ubuntu + NVIDIA RTX-class GPUs with [llama.cpp](https://github.com/ggerganov/llama.cpp)
+as the inference backend.
 
 ## Features
 
-- **Local inference** — runs on your own hardware via llama.cpp
-- **Multi-platform** — Telegram, Matrix, CLI
-- **Workflows** — visual workflow editor with triggers and nodes
-- **Web dashboard** — admin UI with auth, dark mode, responsive design
-- **User registry** — multi-user support with roles and trust levels
-- **Memory** — long-term searchable memory with FTS5
-- **Scheduler** — cron-based recurring tasks
-- **Trust system** — paranoid to developer presets for tool approval
+### Chat Platforms
+- **Telegram** — text, voice messages (STT/TTS), inline-keyboard confirmations
+- **Matrix** — room-based sessions, reply-pattern confirmations
+- **Email** — IMAP read/search/draft + SMTP send with HTML sanitization
+- **CLI** — interactive terminal chat with session history
+
+### Local Inference
+- llama.cpp backend with KV-cache slot management (HOT/WARM/COLD temperature states)
+- Streaming inference with progressive delivery to Telegram
+- Token-budget-aware context building with per-message caching
+- Configurable model, context length, and reasoning budget
+
+### Web Dashboard (React + FastAPI)
+- **14-page admin SPA** — Dashboard, Sessions, Proposals, Style Profile, Scheduler,
+  Security & Health, Config, Workflows, Profile, Knowledge, Error Log, Admin Users
+- **Authentication** — platform-based 2FA (code via Telegram/Matrix), token sessions,
+  role-based access control (admin / user)
+- **Responsive design** — mobile sidebar, desktop persistent nav, dark mode
+
+### Workflows
+- **Visual workflow editor** — React Flow canvas with drag-and-drop nodes and edges
+- **Triggers** — manual, schedule (cron), chat command, webhook, email, message,
+  proposal, tool error, workflow completed, session started
+- **Node types** — Tool Call, LLM Decision, Send Message, HTTP Request, Condition,
+  Investigate, Inference
+- **Versioning** — save multiple versions, activate specific versions, test runs
+- **Variable interpolation** — `{{data.field}}` syntax with frontend auto-insertion
+
+### Browser Sessions
+- **Persistent browser automation** — cookies and localStorage per-domain via Playwright
+- **Headless streaming** — interact with sites via CDP screencast in the web UI
+- **Headed fallback** — real browser window for bot-blocking sites (Indeed, LinkedIn)
+- **Anti-detection** — playwright-stealth with WebGL spoofing, UA override, navigator masking
+- **Session health checks** — verify stored sessions are still authenticated
+
+### Memory & Context
+- **Long-term memory** — SQLite FTS5 full-text search with BM25 ranking
+- **Memory epochs** — 30-day rolling summaries injected into context
+- **Per-user memory scoping** — isolated memory per identity, fail-closed when identity
+  is missing
+- **Handoff summaries** — automatic session-close summaries for conversation continuity
+
+### Background Systems
+- **Scheduler** — cron-based recurring tasks with web UI management
+- **Reflection loop** — three-pass pattern mining → proposal generation → queue write
+- **Style profile** — per-user interaction-style learning (length, formality, topics,
+  activity window)
+- **Proposals** — agent-generated improvement suggestions with accept/reject/defer lifecycle
+
+### Security
+- **Trust presets** — paranoid, household, developer, prompt_on_mobile; gate destructive
+  tools per context
+- **Prompt-injection scanner** — regex + entropy heuristics with structured-content bypass
+- **Egress audit** — logs every outbound HTTP request with anomaly detection
+- **SSRF protection** — URL validation with IPv4-mapped-IPv6 normalization and CGNAT blocking
+- **Path sandboxing** — `allowed_roots` restricts file tool access
+- **Webhook HMAC verification** — per-workflow secrets with replay-attack protection
+
+### Tools (20+ built-ins)
+`read_file`, `write_file`, `edit_file`, `append_to_file`, `list_dir`, `glob`, `grep`,
+`terminal`, `http_get`, `web_search`, `browser_get`, `browser_login`, `email_list`,
+`email_read`, `email_search`, `email_draft`, `email_send`, `email_move`, `email_flag`,
+`save_memory`, `search_memory`, `list_memories`, `delete_memory`, `delegate_task`,
+`current_time`, `read_artifact`, `scheduler_add`, `scheduler_list`, `scheduler_run`,
+`rollback`, `proposal_accept`, `proposal_reject`, `proposal_defer`, `style_reset`,
+`job_alert_save`, `job_alert_list`, `job_alert_delete`
 
 ## Quick Start
 
@@ -20,14 +84,41 @@ pip install hestia
 hestia --config config.py serve
 ```
 
-See [docs/guides/runtime-setup.md](docs/guides/runtime-setup.md) for detailed setup.
+See [docs/guides/runtime-setup.md](docs/guides/runtime-setup.md) for detailed setup
+including llama.cpp configuration, systemd services, and platform secrets.
 
 ## Documentation
 
-- [User Guides](docs/guides/) — setup, platforms, security, voice, email, workflows
-- [Architecture Decisions](docs/adr/) — design rationale
-- [Changelog](CHANGELOG.md) — version history
-- [Release Notes](docs/releases/) — human-facing release summaries
+- **[User Guides](docs/guides/)** — setup, platforms, security, voice, email, browser
+  sessions, workflows, multi-user
+- **[Architecture Decisions](docs/adr/)** — 39 ADRs covering design rationale
+- **[Changelog](CHANGELOG.md)** — version history
+- **[Release Notes](docs/releases/)** — human-facing release summaries
+- **[Security](SECURITY.md)** — threat model and responsible disclosure
+
+## Architecture
+
+```
+src/hestia/
+  cli.py              # CLI entry point
+  config.py           # HestiaConfig typed dataclass
+  core/               # Types, inference client, serialization
+  context/            # ContextBuilder with prefix layers and tokenize cache
+  orchestrator/       # Turn state machine, tool dispatch, streaming
+  inference/          # SlotManager for llama.cpp KV-cache lifecycle
+  scheduler/          # Background cron task loop
+  tools/              # Tool registry + 20+ built-ins
+  artifacts/          # Artifact storage
+  persistence/        # Database layer (SQLite/PostgreSQL)
+  platforms/          # Platform ABC + Telegram, Matrix, Email, CLI adapters
+  policy/             # Policy engine with trust presets and capability labels
+  web/                # FastAPI routes, auth middleware, static assets
+  voice/              # STT/TTS pipeline (faster-whisper + Piper)
+  email/              # IMAP/SMTP adapter
+  reflection/         # Background analysis and proposal generation
+  style/              # Per-user interaction-style learning
+  security/           # Injection scanner, egress audit
+```
 
 ## License
 

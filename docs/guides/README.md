@@ -10,9 +10,10 @@ These guides walk through setup, configuration, and day-to-day operation of Hest
 4. **[Email setup](email-setup.md)** — Connect IMAP/SMTP so Hestia can read and draft mail.
 5. **[Multi-user setup](multi-user-setup.md)** — Run Hestia for more than one person safely.
 6. **[Browser sessions](browser-sessions.md)** — Warm up Cloudflare-protected sites and manage authenticated logins.
-7. **[Security](security.md)** — Threat model, trust presets, and hardening checklist.
-7. **[Reflection tuning](reflection-tuning.md)** — Configure the background analysis loop.
-8. **[Telegram conversation audit](telegram-conversation-audit.md)** — Review and export chat history.
+7. **[Workflows](workflows.md)** — Build and run automated task pipelines.
+8. **[Security](security.md)** — Threat model, trust presets, and hardening checklist.
+9. **[Reflection tuning](reflection-tuning.md)** — Configure the background analysis loop.
+10. **[Telegram conversation audit](telegram-conversation-audit.md)** — Review and export chat history.
 
 ## Also available
 

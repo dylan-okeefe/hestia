@@ -2,7 +2,7 @@
 
 **Status:** complete
 **Branch:** `feature/l31-engine-cleanup`
-**Spec:** [`../development-process/kimi-loops/L31-engine-cleanup.md`](../development-process/kimi-loops/L31-engine-cleanup.md)
+**Spec:** [`../development-process/loops/kimi-L31-engine-cleanup.md`](../development-process/loops/kimi-L31-engine-cleanup.md)
 
 ## What shipped
 

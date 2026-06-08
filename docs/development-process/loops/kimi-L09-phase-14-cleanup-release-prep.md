@@ -146,7 +146,7 @@ Add a new version section for `v0.1.0` (move items from `[Unreleased]` as approp
 
 ```text
 HESTIA_KIMI_DONE=1
-SPEC=docs/development-process/kimi-loops/L09-phase-14-cleanup-release-prep.md
+SPEC=docs/development-process/loops/kimi-L09-phase-14-cleanup-release-prep.md
 BRANCH=feature/phase-14-cleanup-release-prep
 PYTEST=<last line of pytest -q>
 GIT_HEAD=<git rev-parse HEAD>

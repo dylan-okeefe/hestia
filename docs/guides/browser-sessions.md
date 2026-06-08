@@ -4,12 +4,43 @@ Hestia uses Playwright to browse JavaScript-heavy sites (LinkedIn, Indeed, ZipRe
 
 ---
 
-## Two kinds of sessions
+## Three ways to manage sessions
 
-| Type | Tool | When to use |
-|------|------|-------------|
+| Type | Interface | When to use |
+|------|-----------|-------------|
+| **Web dashboard** | Browser Sessions page | The easiest path. Stream a headless or headed browser from the web UI, log in interactively, and save the session with one click. |
 | **Anonymous warmup** | `scripts/warmup_site_session.py` | Public sites that show a Cloudflare challenge but don't require login (Indeed, ZipRecruiter, Built In). |
-| **Authenticated login** | `browser_login` | Sites where you have an account and need to be logged in (LinkedIn messaging, Gmail). |
+| **Authenticated login** | `browser_login` tool | Sites where you have an account and need to be logged in (LinkedIn messaging, Gmail). Opens a visible browser window on the server. |
+
+---
+
+## Web dashboard (recommended)
+
+Navigate to **Browser Sessions** in the web dashboard.
+
+### For most sites (headless)
+1. Click **+ New Session**.
+2. Enter the URL (e.g. `https://linkedin.com/login`).
+3. Click **Start Session**.
+4. Interact with the site through the streamed browser window: click, type,
+   scroll. Password fields are automatically detected and masked on mobile.
+5. Click **Done** to save cookies and storage state.
+
+### For bot-blocking sites (headed)
+Sites like Indeed that detect headless browsers:
+1. Click **+ New Session**.
+2. Check **Headed browser** before starting.
+3. This launches a real browser window on the server with full anti-detection.
+4. Interact through the stream exactly like the headless path.
+5. Click **Done** to save.
+
+### Manage existing sessions
+- **Authenticate** — re-open a saved session to refresh cookies.
+- **Headed Stream** — same as Authenticate but with `headless=False`.
+- **Headed Login** — opens a real browser window on the server display without
+  streaming (useful as a fallback).
+- **Check Now** — verify the session is still authenticated.
+- **Delete** — remove stored cookies and metadata.
 
 ---
 

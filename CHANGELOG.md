@@ -5,6 +5,87 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Browser Sessions
+- **Browser session dashboard** — list, manage, and authenticate persistent
+  browser sessions per-domain via the web UI.
+- **CDP screencast streaming** — interact with a headless browser through the
+  web dashboard (click, type, scroll) with live screen capture via Chrome
+  DevTools Protocol.
+- **Headed browser streaming** — launch a real browser window (`headless=False`)
+  for bot-blocking sites while still streaming the screen to the web UI.
+- **playwright-stealth integration** — comprehensive anti-detection evasions
+  (WebGL spoofing, navigator masking, automation flag removal) for all browser
+  automation paths.
+- **Session health checks** — one-click verification that stored sessions are
+  still authenticated, with honest status reporting.
+- **Domain normalization** — `www.example.com` and `example.com` deduplicated
+  to a single canonical session.
+
+### Workflow System
+- **Email-triggered workflows** — incoming IMAP emails can trigger workflow
+  executions via the scheduler daemon.
+- **Test-run any version** — execute inactive workflow versions manually for
+  validation before activation.
+- **Execution output drill-down** — inspect per-node results, token usage, and
+  timing in the workflow editor.
+- **Platform-filtered user dropdown** — `send_message` nodes target users by
+  their platform-specific ID with disambiguation.
+- **Mobile responsive layout** — properties drawer, viewport-aware node placement,
+  and sticky toolbar for smaller screens.
+- **Undo snapshot debouncing** — 500ms debounce prevents excessive version
+  snapshots during rapid edits.
+
+### Tools
+- **`edit_file`** — str-replace semantics for surgical file modifications.
+- **`glob` and `grep`** — filesystem search builtins.
+- **Write-guard** — `write_file` refuses to overwrite existing files and
+  suggests `edit_file` instead.
+- **`rollback_turn`** — per-turn checkpointing with create/restore/discard
+  lifecycle.
+- **`repair_json`** — recovers malformed tool-call arguments before giving up.
+
+### Orchestrator & Inference
+- **Quality monitor** — degenerate-pattern classification (repetition, circular
+  reasoning) with automatic correction injection.
+- **Thinking-budget abort** — mid-stream cancellation when reasoning exceeds
+  budget, with a commit nudge to the model.
+- **Streaming inference hardening** — defensive dict access, malformed-argument
+  handling aligned between streaming and chat paths.
+- **Reasoning text cap** — hard limit of 2000 chars on the done path to prevent
+  context overflow.
+- **Tool-result truncation** — `tool_result_max_chars` enforced with explicit
+  truncation markers.
+
+### Security
+- **SSRF hardening** — IPv4-mapped-IPv6 normalization, CGNAT blocking,
+  `is_global` guard for curl_cffi redirects.
+- **Webhook replay protection** — bounded LRU signature cache with strict
+  endpoint matching.
+- **Slot-manager race fix** — prevent double-eviction by removing the victim
+  before I/O.
+- **Auth middleware skip for WebSocket upgrades** — fixes streaming auth
+  handshake.
+
+### Web Dashboard
+- **Session titles** — Telegram group chats display their title in the session
+  list and detail view.
+- **Debug login** — `web.debug_login` config option bypasses code verification
+  for development; user selection still required.
+- **Auth race fixes** — prevent redirect to landing during auth state hydration.
+- **Global fetch timeout** — 30s API timeout prevents hung mutations.
+- **Dark mode** — CSS custom property system with system-preference detection.
+- **Shared CSS system** — `variables.css`, `utilities.css`, `components.css`
+  with inline-style count enforced under 20.
+
+### Platforms
+- **Telegram typing indicator** — shown while processing voice messages.
+- **Email inbound poller** — background task for email-triggered workflows.
+
+### Cleanup
+- **Dead code removal** — deleted abandoned Discord voice adapter references,
+  deprecated web route modules (`execution_store`, `response_store`, `triggers`,
+  `nodes`), and consolidated `web_search` as canonical over `search_web`.
+
 ## [0.12.2] — 2026-05-27
 
 Job workflow reliability patch. Fixes artifact passing, URL extraction, browser
@@ -520,7 +601,7 @@ maintainable surface.
 ### Known issues — deferred to v0.8.1+
 
 The following non-blocking findings from the public Copilot review have
-been triaged into a backlog (`docs/development-process/kimi-loops/L40-copilot-cleanup-backlog.md`)
+been triaged into a backlog (`docs/development-process/loops/kimi-L40-copilot-cleanup-backlog.md`)
 and will land on feature branches before the next release prep merges
 them to `develop`:
 

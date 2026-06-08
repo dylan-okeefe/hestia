@@ -156,7 +156,7 @@ Two options were considered: delete entirely vs. move-with-README. Hestia is exp
 From `docs/orchestration/`:
 - `kimi-loop-log.md`
 - `kimi-phase-queue.md`
-- `kimi-loops/` (whole directory: `L01-…` through `L18-…`)
+- `loops/kimi-` (whole directory: `L01-…` through `L18-…`)
 - `runtime-feature-testing.md` — **stays in `docs/`**, this is operator documentation, not AI process. Move it to `docs/testing/runtime-feature-testing.md` or just leave it in `docs/runtime-feature-testing.md`.
 
 From `docs/prompts/`:
@@ -179,7 +179,7 @@ docs/development-process/
 ├── README.md                           # NEW — explains the directory
 ├── kimi-loop-log.md                    # from docs/orchestration/
 ├── kimi-phase-queue.md                 # from docs/orchestration/
-├── kimi-loops/                         # from docs/orchestration/kimi-loops/
+├── loops/kimi-                         # from docs/orchestration/loops/kimi-
 │   └── L01-…L18-….md
 ├── prompts/                            # from docs/prompts/
 │   └── KIMI_*.md (all of them)
@@ -196,7 +196,7 @@ Write a ~40-line README that:
 1. Names the directory and explains it is **historical**, not current operating documentation.
 2. Briefly describes the Cursor + Kimi + human workflow.
 3. Links to the two persistent design ADRs (`docs/adr/`) for the actual current architecture.
-4. Mentions that loop specs (`kimi-loops/L*.md`) are immutable historical artifacts of how each phase was scoped and reviewed.
+4. Mentions that loop specs (`loops/kimi-L*.md`) are immutable historical artifacts of how each phase was scoped and reviewed.
 5. Notes that the older handoff state files were archived **out of repo** in L16 (do not link to vault path; just say "to a private archive outside this repository").
 
 Suggested content:
@@ -214,7 +214,7 @@ Hestia was built incrementally using a three-tool loop:
 
 - **Cursor** (or Claude/Cowork) — code review, prompt authoring, per-loop merge
   decisions and orchestration.
-- **Kimi** — autonomous executor. Reads a single loop spec (`kimi-loops/L*.md`),
+- **Kimi** — autonomous executor. Reads a single loop spec (`loops/kimi-L*.md`),
   implements every section, runs tests, commits, signals completion via a
   `.kimi-done` artifact.
 - **Dylan (human)** — direction, secrets, final pass before public push and
@@ -229,7 +229,7 @@ release); the patch loop `L18` produced `v0.2.1`.
 
 | Path | What |
 |------|------|
-| `kimi-loops/L*.md` | One spec per loop. Names the sections to implement, sketches code, lists tests, and defines the `.kimi-done` contract. Immutable once the loop is merged. |
+| `loops/kimi-L*.md` | One spec per loop. Names the sections to implement, sketches code, lists tests, and defines the `.kimi-done` contract. Immutable once the loop is merged. |
 | `kimi-phase-queue.md` | Top-level ordering of all loops. |
 | `kimi-loop-log.md` | Per-loop narrative: what Kimi did, what Cursor reviewed, what was merged. Newest entries at the top. |
 | `prompts/KIMI_*.md` | Earlier prompt formats (pre-loop-spec era), kept for reference. |
@@ -259,7 +259,7 @@ mkdir -p docs/development-process/reviews
 
 git mv docs/orchestration/kimi-loop-log.md   docs/development-process/
 git mv docs/orchestration/kimi-phase-queue.md docs/development-process/
-git mv docs/orchestration/kimi-loops/*       docs/development-process/kimi-loops/
+git mv docs/orchestration/loops/kimi-*       docs/development-process/loops/kimi-
 git mv docs/orchestration/runtime-feature-testing.md docs/runtime-feature-testing.md
 
 git mv docs/prompts/*.md   docs/development-process/prompts/
@@ -288,10 +288,10 @@ rg -l 'docs/orchestration/|docs/prompts/|docs/reviews/|docs/design/kimi-hestia-p
 
 Update or remove every reference in:
 - `docs/HANDOFF_STATE.md` — file is **gone** (deleted in L16). If any other doc still links to it, leave the broken link or note it; do not recreate the file.
-- `docs/development-process/kimi-phase-queue.md` itself — paths in its tables now need updating to `kimi-loops/L*.md` (relative to its new location, paths inside the dir are unchanged).
-- `docs/development-process/kimi-loops/L*.md` — many of these reference each other. Since they all moved together, intra-directory paths still work. Fix only the ones that reference *external* paths (e.g. `../HANDOFF_STATE.md`, `../../scripts/kimi-run-current.sh`).
+- `docs/development-process/kimi-phase-queue.md` itself — paths in its tables now need updating to `loops/kimi-L*.md` (relative to its new location, paths inside the dir are unchanged).
+- `docs/development-process/loops/kimi-L*.md` — many of these reference each other. Since they all moved together, intra-directory paths still work. Fix only the ones that reference *external* paths (e.g. `../HANDOFF_STATE.md`, `../../scripts/kimi-run-current.sh`).
 - `scripts/kimi-run-current.sh` — references `docs/development-process/prompts/KIMI_CURRENT.md`.
-- `.cursorrules` — references `docs/development-process/kimi-phase-queue.md`, `docs/development-process/prompts/KIMI_CURRENT.md`, `docs/development-process/kimi-loops/`, etc. Update all paths.
+- `.cursorrules` — references `docs/development-process/kimi-phase-queue.md`, `docs/development-process/prompts/KIMI_CURRENT.md`, `docs/development-process/loops/kimi-`, etc. Update all paths.
 - `.cursor/rules/*.mdc` if any exist — check and update.
 - `README.md` — should not reference any of these paths directly. Verify with grep.
 - `CHANGELOG.md` — may have changelog entries that reference loop specs by old path; update or leave (changelog history is immutable in spirit).
@@ -310,7 +310,7 @@ When idle (no loop in flight), it contains only this notice. See
 [`../kimi-loop-log.md`](../kimi-loop-log.md) for the historical record.
 
 If you are restarting Kimi-driven development, write a new loop spec in
-[`../kimi-loops/`](../kimi-loops/) and update this file to point at it.
+[`../loops/kimi-`](../loops/kimi-) and update this file to point at it.
 ```
 
 ### Update the script (if kept in `scripts/`)
@@ -549,7 +549,7 @@ Write `.kimi-done` (do **not** commit it):
 
 ```text
 HESTIA_KIMI_DONE=1
-SPEC=docs/development-process/kimi-loops/L18-post-public-cleanup-v0.2.1.md
+SPEC=docs/development-process/loops/kimi-L18-post-public-cleanup-v0.2.1.md
 LOOP=L18
 BRANCH=develop
 PYTEST_BASELINE=<count from §-1>

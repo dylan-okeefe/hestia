@@ -2,7 +2,7 @@
 
 **Status:** complete
 **Branch:** `feature/l49-orchestrator-extract-methods`
-**Spec:** [`../development-process/kimi-loops/L49-orchestrator-extract-methods.md`](../development-process/kimi-loops/L49-orchestrator-extract-methods.md)
+**Spec:** [`../development-process/loops/kimi-L49-orchestrator-extract-methods.md`](../development-process/loops/kimi-L49-orchestrator-extract-methods.md)
 
 ## What shipped
 
