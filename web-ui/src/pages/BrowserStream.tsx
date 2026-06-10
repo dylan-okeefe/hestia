@@ -47,6 +47,7 @@ export default function BrowserStream() {
 
   const startTimeRef = useRef<number | null>(null);
   const autoStartedRef = useRef(false);
+  const shouldAutoStartRef = useRef(!!searchParams.get('url'));
   const stoppingRef = useRef(false);
   const sessionRef = useRef(session);
   sessionRef.current = session;
@@ -202,8 +203,9 @@ export default function BrowserStream() {
   }, []);
 
   useEffect(() => {
-    if (!session && url.trim() && !autoStartedRef.current && !startMut.isPending) {
+    if (!session && url.trim() && !autoStartedRef.current && !startMut.isPending && shouldAutoStartRef.current) {
       autoStartedRef.current = true;
+      shouldAutoStartRef.current = false;
       handleStart();
     }
   }, [session, url, startMut.isPending]);

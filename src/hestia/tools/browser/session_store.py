@@ -323,7 +323,7 @@ class BrowserSessionStore:
                 await page.goto(
                     health_check_url,
                     timeout=timeout_seconds * 1000,
-                    wait_until="domcontentloaded",
+                    wait_until="networkidle",
                 )
                 url = page.url
                 title = await page.title()
