@@ -130,11 +130,13 @@ src/hestia/
 
 ### Feature work flow
 
-Feature work is developed in `~/Hestia` first. When the feature is complete and quality gates pass, deploy it to `~/Hestia-runtime` by merging/copying the changes and restarting the service. Do NOT cherry-pick or copy individual files unless explicitly instructed. The runtime should run the exact same code as the development branch.
+Feature work is developed in `~/Hestia` first. When the feature is complete and quality gates pass, deploy it to `~/Hestia-runtime` by merging/copying the changes and **restarting the service**. Do NOT cherry-pick or copy individual files unless explicitly instructed. The runtime should run the exact same code as the development branch.
+
+**Why restart is required:** Hestia runs as a systemd service (`hestia-serve.service`) that spawns multiple long-lived tasks (Telegram/Matrix pollers, scheduler, web server). There is no hot-reload mechanism — uvicorn's `--reload` only watches the web server process and would leave the platform adapters and scheduler running stale code. Always restart the service after any code change.
 
 ### Live debugging / hotfix flow
 
-When Dylan reports a bug he is experiencing in the live instance (e.g. "the Check Now button doesn't update", "refresh boots me to main page"), **work directly in `~/Hestia-runtime` first**. Apply the fix there, rebuild the frontend if needed, run tests, and restart the service immediately. Do not wait for Dylan to ask. Do not batch multiple changes before restarting.
+When Dylan reports a bug he is experiencing in the live instance (e.g. "the Check Now button doesn't update", "refresh boots me to main page"), **work directly in `~/Hestia-runtime` first**. Apply the fix there, rebuild the frontend if needed, run tests, and **restart the service immediately**. Do not wait for Dylan to ask. Do not batch multiple changes before restarting.
 
 After the fix is verified in `~/Hestia-runtime`, mirror it back to `~/Hestia` so the development branch stays in sync. The sync back to `~/Hestia` can happen after the runtime fix is confirmed working — do not block the hotfix on the reverse sync.
 

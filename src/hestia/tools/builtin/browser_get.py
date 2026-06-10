@@ -113,7 +113,7 @@ async def browser_get(
             await page.goto(
                 url,
                 timeout=timeout_seconds * 1000,
-                wait_until="domcontentloaded",
+                wait_until="networkidle",
             )
 
             if wait_for_selector:
