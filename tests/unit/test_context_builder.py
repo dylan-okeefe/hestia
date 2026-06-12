@@ -524,8 +524,42 @@ class TestContextHygiene:
         assert collapsed[1] == assistant_msg
         assert collapsed[2] == tool_msg
         assert collapsed[3].role == "user"
-        assert "repetitions were removed" in collapsed[3].content
+        assert "repeated calls to list_tools" in collapsed[3].content
+        assert "Do NOT call list_tools again" in collapsed[3].content
         assert collapsed[3].correction is True
+
+    def test_collapse_loops_collapses_identical_calls_despite_different_content(
+        self, fake_client, policy
+    ):
+        """Loops are defined by repeated actions; filler content should not prevent collapse."""
+        builder = ContextBuilder(fake_client, policy, body_factor=1.0)
+
+        history = [
+            Message(role="user", content="Do something"),
+            Message(
+                role="assistant",
+                content="Let me get to work.",
+                tool_calls=[ToolCall(id="call_1", name="list_tools", arguments={})],
+            ),
+            Message(role="tool", content="tools list", tool_call_id="call_1"),
+            Message(
+                role="assistant",
+                content="",
+                tool_calls=[ToolCall(id="call_2", name="list_tools", arguments={})],
+            ),
+            Message(role="tool", content="tools list", tool_call_id="call_2"),
+            Message(
+                role="assistant",
+                content="I'll check the tools.",
+                tool_calls=[ToolCall(id="call_3", name="list_tools", arguments={})],
+            ),
+            Message(role="tool", content="tools list", tool_call_id="call_3"),
+        ]
+
+        collapsed = builder._collapse_loops(history)
+        assert len(collapsed) == 4
+        assert collapsed[3].role == "user"
+        assert "Do NOT call list_tools again" in collapsed[3].content
 
     def test_collapse_loops_does_not_collapse_different_pairs(self, fake_client, policy):
         """Non-identical assistant/tool pairs are preserved."""

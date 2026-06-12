@@ -17,7 +17,7 @@ from hestia.errors import (
     PolicyFailureError,
     ThinkingBudgetExceededError,
 )
-from hestia.orchestrator.quality import Correction, classify_turn
+from hestia.orchestrator.quality import Correction, DegeneratePattern, classify_turn
 from hestia.orchestrator.types import TransitionCallback, Turn, TurnContext, TurnState
 from hestia.policy.engine import PolicyEngine, RetryAction
 from hestia.security import InjectionScanner
@@ -259,7 +259,9 @@ class TurnExecution:
 
         Returns ``True`` when a correction was injected and the caller should
         continue to the next iteration. Raises ``PolicyFailureError`` when a
-        degenerate pattern persists after the maximum number of corrections.
+        repeated-action loop persists after the maximum number of corrections.
+        For empty responses, the caller's normal retry/fail logic is allowed to
+        run after the correction budget is exhausted.
         """
         history = (
             ctx.running_history
@@ -275,6 +277,10 @@ class TurnExecution:
             await self._inject_correction(ctx, turn, correction)
             ctx.correction_count += 1
             return True
+        if correction.pattern == DegeneratePattern.EMPTY_RESPONSE:
+            # Empty responses are transient; let the policy engine decide whether
+            # to retry or fail rather than forcing an immediate hard failure.
+            return False
         raise PolicyFailureError(
             f"Degenerate pattern persisted after {ctx.correction_count} corrections: "
             f"{correction.pattern.value}. {correction.message}"

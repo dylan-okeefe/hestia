@@ -225,10 +225,14 @@ class ContextBuilder:
     def _assistant_messages_equal(
         cls, a: Message, b: Message
     ) -> bool:
-        """True when two assistant messages look identical for loop detection."""
+        """True when two assistant messages look identical for loop detection.
+
+        The action (tool calls) is what matters in a loop; the natural-language
+        commentary often drifts (e.g., empty, "Let me get to work", thinking
+        tags) while the model keeps emitting the same tool call. Collapsing on
+        identical tool calls stops those loops from poisoning the context window.
+        """
         if a.role != "assistant" or b.role != "assistant":
-            return False
-        if (a.content or "").strip() != (b.content or "").strip():
             return False
         return cls._normalise_tool_calls(a.tool_calls) == cls._normalise_tool_calls(
             b.tool_calls
@@ -278,15 +282,19 @@ class ContextBuilder:
                     j += 2
 
                 if repeat_count > 1:
+                    repeated_tools = ", ".join(
+                        sorted({name for name, _ in self._normalise_tool_calls(assistant_msg.tool_calls)})
+                    ) or "the same tool"
                     collapsed.append(assistant_msg)
                     collapsed.append(tool_msg)
                     collapsed.append(
                         Message(
                             role="user",
                             content=(
-                                f"[Note: {repeat_count - 1} identical "
-                                f"assistant/tool repetitions were removed from history. "
-                                f"Do not repeat the same action again.]"
+                                f"[SYSTEM NOTE: {repeat_count - 1} repeated calls to "
+                                f"{repeated_tools} were removed from history. "
+                                f"You already have the result. Do NOT call {repeated_tools} "
+                                f"again. Choose a different action or reply to the user.]"
                             ),
                             correction=True,
                         )

@@ -145,6 +145,11 @@ def _build_capabilities_prefix(cfg: HestiaConfig, registry: ToolRegistry) -> str
 
     tool_names = registry.list_names()
     lines.append(f"- Tools available ({len(tool_names)}): {', '.join(tool_names)}")
+    lines.append(
+        "- Tool discipline: only call list_tools once if you need it. "
+        "The full tool list is provided above and persists for the conversation. "
+        "Repeated identical tool calls will be treated as a loop and blocked."
+    )
 
     if cfg.storage.allowed_roots:
         lines.append(f"- Allowed file roots: {', '.join(cfg.storage.allowed_roots)}")

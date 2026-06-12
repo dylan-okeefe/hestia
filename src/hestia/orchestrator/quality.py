@@ -108,10 +108,13 @@ def classify_turn(
             message=f"That tool doesn't exist; valid tools are: {valid}",
         )
 
-    if _is_repeated_identical_call(assistant_message, history):
+    repeated_calls = _get_repeated_identical_calls(assistant_message, history)
+    if repeated_calls:
+        tool_names = [name for name, _ in repeated_calls]
+        message = _build_repeated_call_correction(tool_names)
         return Correction(
             pattern=DegeneratePattern.REPEATED_IDENTICAL_CALL,
-            message="You're looping; try a different approach.",
+            message=message,
         )
 
     patch_file = _patch_failed_file(history)
@@ -159,8 +162,17 @@ def _is_repeated_identical_call(
     assistant_message: Message, history: list[Message]
 ) -> bool:
     """True when the current tool calls exactly match the previous turn's."""
+    return bool(_get_repeated_identical_calls(assistant_message, history))
+
+
+def _get_repeated_identical_calls(
+    assistant_message: Message, history: list[Message]
+) -> list[_ToolCallKey]:
+    """Return the repeated tool calls when the current assistant message duplicates
+    the previous assistant message's tool calls, else an empty list.
+    """
     if not assistant_message.tool_calls:
-        return False
+        return []
 
     current_calls = _normalise_tool_calls(assistant_message.tool_calls)
 
@@ -172,12 +184,36 @@ def _is_repeated_identical_call(
             break
 
     if prev is None or not prev.tool_calls:
-        return False
+        return []
 
-    return current_calls == _normalise_tool_calls(prev.tool_calls)
+    prev_calls = _normalise_tool_calls(prev.tool_calls)
+    if current_calls == prev_calls:
+        return current_calls
+    return []
 
 
 _ToolCallKey = tuple[str, tuple[tuple[str, Any], ...]]
+
+
+def _build_repeated_call_correction(tool_names: list[str]) -> str:
+    """Return a forceful, specific correction for repeated identical tool calls."""
+    if len(tool_names) == 1:
+        name = tool_names[0]
+        if name == "list_tools":
+            return (
+                "STOP calling list_tools. You already received the complete tool list "
+                "in the previous result and in the system prompt. Do not list tools again. "
+                "Pick a specific tool from that list and call it, or reply directly to the user."
+            )
+        return (
+            f"STOP calling {name} repeatedly. You already called it with the same arguments; "
+            f"calling it again will return the same result. Use a different tool or answer the user."
+        )
+    names = ", ".join(tool_names)
+    return (
+        f"STOP repeating the same tool calls ({names}). You already executed them; "
+        f"calling them again will return the same result. Use different tools or answer the user."
+    )
 
 
 def _normalise_tool_calls(tool_calls: list[ToolCall]) -> list[_ToolCallKey]:

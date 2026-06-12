@@ -100,7 +100,27 @@ def test_repeated_identical_call_detected(session: Session) -> None:
     result = classify_turn(turn, current, [prev, current], ["read_file"])
     assert result is not None
     assert result.pattern == DegeneratePattern.REPEATED_IDENTICAL_CALL
-    assert "looping" in result.message.lower()
+    assert "repeatedly" in result.message.lower()
+
+
+def test_repeated_list_tools_call_correction_is_specific(session: Session) -> None:
+    """A repeated list_tools call gets a forceful, specific correction."""
+    turn = _make_turn(iterations=1)
+    prev = Message(
+        role="assistant",
+        content="",
+        tool_calls=[ToolCall(id="c1", name="list_tools", arguments={})],
+    )
+    current = Message(
+        role="assistant",
+        content="",
+        tool_calls=[ToolCall(id="c2", name="list_tools", arguments={})],
+    )
+    result = classify_turn(turn, current, [prev, current], ["list_tools"])
+    assert result is not None
+    assert result.pattern == DegeneratePattern.REPEATED_IDENTICAL_CALL
+    assert "list_tools" in result.message
+    assert "STOP calling list_tools" in result.message
 
 
 def test_repeated_call_with_different_args_not_detected(session: Session) -> None:
