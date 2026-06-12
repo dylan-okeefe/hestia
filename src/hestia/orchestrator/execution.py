@@ -322,7 +322,19 @@ class TurnExecution:
         """Dispatch tool calls, handle delegation, rebuild context, and advance the turn."""
         await transition(turn, TurnState.EXECUTING_TOOLS, "")
 
-        tool_names = [tc.name for tc in chat_response.tool_calls]
+        tool_names: list[str] = []
+        for tc in chat_response.tool_calls:
+            if tc.name == "describe_tool":
+                raw_names = tc.arguments.get("names") if tc.arguments else []
+                if isinstance(raw_names, str):
+                    tool_names.append(f"describe_tool:{raw_names}")
+                elif isinstance(raw_names, list):
+                    for n in raw_names:
+                        tool_names.append(f"describe_tool:{n}")
+                else:
+                    tool_names.append("describe_tool")
+            else:
+                tool_names.append(tc.name)
         ctx.tool_chain.extend(tool_names)
         logger.debug("Executing tools: %s", ", ".join(tool_names))
         await set_typing(True)
@@ -377,16 +389,23 @@ class TurnExecution:
         ctx.running_history.append(assistant_msg)
         ctx.running_history.extend(tool_results)
 
-        # If we had to hard-block repeated list_tools calls, temporarily remove
-        # list_tools from the model's available tools for the next iteration so
-        # it cannot loop again. The real first execution already gave it the
-        # tool list; removing the schema is the strongest signal for small models.
-        if ctx.tools and getattr(ctx, "_list_tools_blocked", False):
-            ctx.tools = [
-                schema for schema in ctx.tools
-                if schema.function.name != "list_tools"
-            ]
-            ctx._list_tools_blocked = False
+        # If we had to hard-block repeated list_tools or describe_tool calls,
+        # temporarily remove those schemas from the model's available tools for
+        # the next iteration so it cannot loop again. Removing the schema is the
+        # strongest signal for small models.
+        if ctx.tools:
+            blocked_names: set[str] = set()
+            if getattr(ctx, "_list_tools_blocked", False):
+                blocked_names.add("list_tools")
+                ctx._list_tools_blocked = False
+            if getattr(ctx, "_describe_tool_blocked", False):
+                blocked_names.add("describe_tool")
+                ctx._describe_tool_blocked = False
+            if blocked_names:
+                ctx.tools = [
+                    schema for schema in ctx.tools
+                    if schema.function.name not in blocked_names
+                ]
 
         self._builder.set_style_prefix(ctx.style_prefix)
         ctx.build_result = await self._builder.build(
@@ -604,10 +623,58 @@ class TurnExecution:
                     deduped.append(tc)
             tool_calls = deduped
 
-        # Persist the block signal on the context so _handle_tool_calls can drop
-        # the list_tools schema from the next prompt.
-        if ctx is not None and blocked_any_list_tools:
-            ctx._list_tools_blocked = True
+        # Circuit breaker: repeated describe_tool calls with the same name are a
+        # common degenerate pattern. After the 3rd unique describe_tool name, we
+        # keep executing it but mark that the describe_tool schema should be
+        # dropped from the next prompt so the model cannot binge on it.
+        prior_describe_tool_names: set[str] = set()
+        for name in prior_tool_chain:
+            if name.startswith("describe_tool:"):
+                prior_describe_tool_names.add(name.split(":", 1)[1])
+        describe_tool_block_results: dict[str, Message] = {}
+        blocked_describe_tool_binge = False
+        if any(tc.name == "describe_tool" for tc in original_tool_calls):
+            deduped: list[ToolCall] = []
+            for tc in original_tool_calls:
+                if tc.name == "describe_tool":
+                    raw_names = tc.arguments.get("names") if tc.arguments else []
+                    if isinstance(raw_names, str):
+                        names = {raw_names}
+                    elif isinstance(raw_names, list):
+                        names = set(raw_names)
+                    else:
+                        names = set()
+                    # Block if we've already described 3+ unique tools in this
+                    # session, or if this call repeats any name we've seen.
+                    already_seen = bool(names & prior_describe_tool_names)
+                    if len(prior_describe_tool_names) >= 3 or already_seen:
+                        blocked_describe_tool_binge = True
+                        describe_tool_block_results[tc.id] = Message(
+                            role="tool",
+                            content=(
+                                "🛑 STOP. You have already called describe_tool enough. "
+                                "The tool schemas are in the previous describe_tool results. "
+                                "describe_tool is now DISABLED for the rest of this "
+                                "conversation. Stop inspecting tools and call one, or "
+                                "reply directly to the user."
+                            ),
+                            tool_call_id=tc.id,
+                            created_at=utcnow(),
+                        )
+                    else:
+                        prior_describe_tool_names.update(names)
+                        deduped.append(tc)
+                else:
+                    deduped.append(tc)
+            tool_calls = deduped
+
+        # Persist the block signals on the context so _handle_tool_calls can drop
+        # the corresponding schemas from the next prompt.
+        if ctx is not None:
+            if blocked_any_list_tools:
+                ctx._list_tools_blocked = True
+            if blocked_describe_tool_binge:
+                ctx._describe_tool_blocked = True
 
         if len(tool_calls) > self._max_tool_calls_per_turn:
             logger.warning(
@@ -689,6 +756,9 @@ class TurnExecution:
         for tc in original_tool_calls:
             if tc.id in list_tools_block_results:
                 result_messages.append(list_tools_block_results[tc.id])
+                continue
+            if tc.id in describe_tool_block_results:
+                result_messages.append(describe_tool_block_results[tc.id])
                 continue
             if tc.id not in dispatched_ids:
                 # Tool was removed by the per-turn cap; its rejection message is

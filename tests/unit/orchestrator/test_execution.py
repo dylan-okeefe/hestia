@@ -321,6 +321,124 @@ async def test_first_list_tools_in_batch_is_allowed():
 
 
 @pytest.mark.asyncio
+async def test_describe_tool_binge_is_blocked_after_three_unique_tools():
+    """After describing 3 unique tools, further describe_tool calls are blocked."""
+    registry = MagicMock()
+    registry.describe.return_value = MagicMock(
+        requires_confirmation=False, ordering="concurrent"
+    )
+
+    policy = MagicMock()
+    policy.tool_result_max_chars.return_value = 8000
+
+    execution = TurnExecution(
+        tool_registry=registry,
+        inference_client=MagicMock(),
+        policy=policy,
+        context_builder=MagicMock(),
+        session_store=MagicMock(),
+    )
+
+    ctx = TurnContext(
+        turn=_make_turn(),
+        user_message=Message(role="user", content="hello"),
+        system_prompt="",
+        respond_callback=AsyncMock(),
+        session=_make_session(),
+        build_result=MagicMock(messages=[]),
+    )
+    # Prior turn already described read_file, list_dir, and grep.
+    ctx.tool_chain = [
+        "describe_tool:read_file",
+        "describe_tool:list_dir",
+        "describe_tool:grep",
+        "list_dir",
+        "search_memory",
+    ]
+
+    tool_calls = [
+        ToolCall(id="tc1", name="describe_tool", arguments={"names": ["browser_get"]}),
+        ToolCall(id="tc2", name="describe_tool", arguments={"names": "write_file"}),
+    ]
+
+    with patch.object(
+        execution, "_dispatch_tool_call", new_callable=AsyncMock
+    ) as mock_dispatch:
+        mock_dispatch.return_value = ToolCallResult(
+            status="ok",
+            content="schema",
+            artifact_handle=None,
+            truncated=False,
+        )
+
+        result_messages, _artifact_handles = await execution._execute_tool_calls(
+            _make_session(), tool_calls, ctx=ctx
+        )
+
+        # Both describe_tool calls are blocked; nothing is dispatched.
+        assert mock_dispatch.call_count == 0
+        assert len(result_messages) == 2
+        assert result_messages[0].tool_call_id == "tc1"
+        assert "describe_tool is now DISABLED" in result_messages[0].content
+        assert result_messages[1].tool_call_id == "tc2"
+        assert "describe_tool is now DISABLED" in result_messages[1].content
+        assert ctx._describe_tool_blocked is True
+
+
+@pytest.mark.asyncio
+async def test_describe_tool_repeated_name_is_blocked():
+    """A describe_tool call for an already-described tool is blocked."""
+    registry = MagicMock()
+    registry.describe.return_value = MagicMock(
+        requires_confirmation=False, ordering="concurrent"
+    )
+
+    policy = MagicMock()
+    policy.tool_result_max_chars.return_value = 8000
+
+    execution = TurnExecution(
+        tool_registry=registry,
+        inference_client=MagicMock(),
+        policy=policy,
+        context_builder=MagicMock(),
+        session_store=MagicMock(),
+    )
+
+    ctx = TurnContext(
+        turn=_make_turn(),
+        user_message=Message(role="user", content="hello"),
+        system_prompt="",
+        respond_callback=AsyncMock(),
+        session=_make_session(),
+        build_result=MagicMock(messages=[]),
+    )
+    ctx.tool_chain = ["describe_tool:read_file", "list_dir"]
+
+    tool_calls = [
+        ToolCall(id="tc1", name="describe_tool", arguments={"names": ["read_file"]}),
+    ]
+
+    with patch.object(
+        execution, "_dispatch_tool_call", new_callable=AsyncMock
+    ) as mock_dispatch:
+        mock_dispatch.return_value = ToolCallResult(
+            status="ok",
+            content="schema",
+            artifact_handle=None,
+            truncated=False,
+        )
+
+        result_messages, _artifact_handles = await execution._execute_tool_calls(
+            _make_session(), tool_calls, ctx=ctx
+        )
+
+        assert mock_dispatch.call_count == 0
+        assert len(result_messages) == 1
+        assert "describe_tool is now DISABLED" in result_messages[0].content
+        assert ctx._describe_tool_blocked is True
+
+
+@pytest.mark.asyncio
 async def test_tool_result_truncated_before_reprompting():
     """A 50 KB tool result is clipped before being added to result messages."""
     registry = MagicMock()
