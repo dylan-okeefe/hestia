@@ -31,6 +31,8 @@ class IdentityConfig(_ConfigFromEnv):
     )
     max_tokens: int = 300
     recompile_on_change: bool = True
+    capabilities_prefix_enabled: bool = False
+    """Inject a dynamic deployment/capabilities block after identity/memory prefixes."""
 
     def __post_init__(self) -> None:
         if self.max_tokens < 0:
@@ -77,6 +79,16 @@ class SlotConfig(_ConfigFromEnv):
     slot_dir: Path = field(default_factory=lambda: Path("slots"))
     """Directory for llama-server slot snapshots (must match --slot-save-path)."""
     pool_size: int = 4
+
+
+@dataclass
+class MemoryConfig(_ConfigFromEnv):
+    """Configuration for the long-term memory subsystem."""
+
+    _ENV_PREFIX = "MEMORY"
+
+    epoch_max_tokens: int = 500
+    """Maximum tokens for the compiled memory epoch injected into the system prompt."""
 
 
 @dataclass
@@ -499,6 +511,7 @@ class CoreConfig:
 
     inference: InferenceConfig = field(default_factory=InferenceConfig)
     slots: SlotConfig = field(default_factory=SlotConfig)
+    memory: MemoryConfig = field(default_factory=MemoryConfig)
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
     identity: IdentityConfig = field(default_factory=IdentityConfig)
@@ -567,6 +580,7 @@ class HestiaConfig(_ConfigFromEnv):
         # Deprecated flat fields (backward compat)
         inference: InferenceConfig | None = None,
         slots: SlotConfig | None = None,
+        memory: MemoryConfig | None = None,
         scheduler: SchedulerConfig | None = None,
         storage: StorageConfig | None = None,
         identity: IdentityConfig | None = None,
@@ -588,6 +602,7 @@ class HestiaConfig(_ConfigFromEnv):
             core = CoreConfig(
                 inference=inference or InferenceConfig(),
                 slots=slots or SlotConfig(),
+                memory=memory or MemoryConfig(),
                 scheduler=scheduler or SchedulerConfig(),
                 storage=storage or StorageConfig(),
                 identity=identity or IdentityConfig(),
@@ -641,6 +656,15 @@ class HestiaConfig(_ConfigFromEnv):
     @slots.setter
     def slots(self, value: SlotConfig) -> None:
         self.core.slots = value
+
+    @property
+    def memory(self) -> MemoryConfig:
+        """Deprecated: use core.memory instead."""
+        return self.core.memory
+
+    @memory.setter
+    def memory(self, value: MemoryConfig) -> None:
+        self.core.memory = value
 
     @property
     def scheduler(self) -> SchedulerConfig:

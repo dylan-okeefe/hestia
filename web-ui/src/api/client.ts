@@ -665,3 +665,38 @@ export async function fetchHandoffs(userId: string) {
   if (!res.ok) throw new Error('Failed to fetch handoffs');
   return res.json() as Promise<{ handoffs: Array<{ session_id: string; summary: string; created_at: string }> }>;
 }
+
+// Context Lab
+export interface PreviewLayer {
+  name: string;
+  tokens: number;
+  truncated: boolean;
+  text: string;
+}
+
+export interface PreviewPromptResult {
+  context_length: number;
+  budget: number;
+  empty_used: number;
+  history_used: number;
+  history_kept: number;
+  history_truncated: number;
+  layers: PreviewLayer[];
+  assembled_system: string;
+  assembled_tokens: number;
+}
+
+export async function previewPrompt(payload: {
+  identity_tokens?: number;
+  memory_tokens?: number;
+  context_length?: number;
+  history_turns?: number;
+}): Promise<PreviewPromptResult> {
+  const res = await apiFetch(`${API_BASE}/context-lab/preview`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error('Failed to preview prompt');
+  return res.json() as Promise<PreviewPromptResult>;
+}

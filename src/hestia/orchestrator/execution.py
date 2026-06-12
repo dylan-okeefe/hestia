@@ -258,7 +258,8 @@ class TurnExecution:
         """Classify the turn and, if degenerate, inject a tailored correction.
 
         Returns ``True`` when a correction was injected and the caller should
-        continue to the next iteration.
+        continue to the next iteration. Raises ``PolicyFailureError`` when a
+        degenerate pattern persists after the maximum number of corrections.
         """
         history = (
             ctx.running_history
@@ -268,11 +269,16 @@ class TurnExecution:
         correction = classify_turn(
             turn, assistant_msg, history, ctx.allowed_tools or []
         )
-        if correction is not None and ctx.correction_count < 3:
+        if correction is None:
+            return False
+        if ctx.correction_count < 3:
             await self._inject_correction(ctx, turn, correction)
             ctx.correction_count += 1
             return True
-        return False
+        raise PolicyFailureError(
+            f"Degenerate pattern persisted after {ctx.correction_count} corrections: "
+            f"{correction.pattern.value}. {correction.message}"
+        )
 
     async def _inject_correction(
         self,
@@ -285,6 +291,7 @@ class TurnExecution:
             role="user",
             content=correction.message,
             created_at=utcnow(),
+            correction=True,
         )
         await self._store.append_message(ctx.session.id, msg)
         ctx.running_history.append(msg)

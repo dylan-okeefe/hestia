@@ -256,7 +256,9 @@ def _is_read_only_streak(history: list[Message]) -> bool:
                         return True
                 else:
                     return False
-        elif msg.role == "user":
+        elif msg.role == "user" and not msg.correction:
+            # Real user messages reset the streak; injected corrections do not,
+            # otherwise a correction would hide a continuing read-only loop.
             return False
     return False
 

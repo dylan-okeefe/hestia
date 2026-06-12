@@ -34,6 +34,7 @@ from hestia.config import (
     IdentityConfig,
     InferenceConfig,
     MatrixConfig,
+    MemoryConfig,
     ReflectionConfig,
     SchedulerConfig,
     SecurityConfig,
@@ -87,9 +88,9 @@ _DB_PATH = _ROOT / "hestia.db"
 config = HestiaConfig(
     inference=InferenceConfig(
         base_url="http://127.0.0.1:8001",
-        model_name="Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+        model_name="Qwen3.6-35B-A3B-APEX-I-Quality.gguf",
         # Must match llama-server's per-slot context: --ctx-size / --parallel.
-        # With -c 131072 -np 2, each slot gets 131072 / 2 = 65536 tokens.
+        # With -c 262144 -np 4, each slot gets 262144 / 4 = 65536 tokens.
         # The policy engine uses this value for context-window budgeting.
         context_length=65536,
         default_reasoning_budget=2048,
@@ -112,7 +113,12 @@ config = HestiaConfig(
         artifacts_dir=_ROOT / "artifacts",
         allowed_roots=["/home/dylan/Documents/Job Search"],
     ),
-    identity=IdentityConfig(soul_path=DEFAULT_SOUL_MD_PATH),
+    identity=IdentityConfig(
+        soul_path=DEFAULT_SOUL_MD_PATH,
+        max_tokens=500,
+        capabilities_prefix_enabled=True,
+    ),
+    memory=MemoryConfig(epoch_max_tokens=2000),
     telegram=_telegram_from_env(),
     matrix=_matrix_from_secrets(),
     voice=VoiceConfig(

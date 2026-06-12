@@ -5,7 +5,7 @@ from datetime import datetime
 import pytest
 
 from hestia.context.builder import ContextBuilder
-from hestia.core.types import Message, Session, SessionState, SessionTemperature, ToolSchema
+from hestia.core.types import Message, Session, SessionState, SessionTemperature, ToolCall, ToolSchema
 from hestia.errors import ContextTooLargeError
 from hestia.policy.default import DefaultPolicyEngine
 
@@ -481,3 +481,99 @@ class TestHandoffMessages:
             for m in result.messages
         )
         assert result.kept_first_user
+
+
+
+class TestContextHygiene:
+    """Tests for loop collapse and auth-code filtering in ContextBuilder."""
+
+    def test_collapse_loops_repeated_assistant_tool_pairs(self, fake_client, policy):
+        """Repeated identical assistant/tool pairs are collapsed to one pair."""
+        builder = ContextBuilder(fake_client, policy, body_factor=1.0)
+
+        assistant_msg = Message(
+            role="assistant",
+            content="Let me get to work.",
+            tool_calls=[ToolCall(id="call_1", name="list_tools", arguments={})],
+        )
+        tool_msg = Message(role="tool", content="- list_tools: ...", tool_call_id="call_1")
+
+        history = [
+            Message(role="user", content="Do something"),
+            assistant_msg,
+            tool_msg,
+            Message(
+                role="assistant",
+                content="Let me get to work.",
+                tool_calls=[ToolCall(id="call_2", name="list_tools", arguments={})],
+            ),
+            Message(role="tool", content="- list_tools: ...", tool_call_id="call_2"),
+            Message(
+                role="assistant",
+                content="Let me get to work.",
+                tool_calls=[ToolCall(id="call_3", name="list_tools", arguments={})],
+            ),
+            Message(role="tool", content="- list_tools: ...", tool_call_id="call_3"),
+        ]
+
+        collapsed = builder._collapse_loops(history)
+
+        # Should keep first pair + user note, drop the next two identical pairs.
+        assert len(collapsed) == 4
+        assert collapsed[0] == history[0]
+        assert collapsed[1] == assistant_msg
+        assert collapsed[2] == tool_msg
+        assert collapsed[3].role == "user"
+        assert "repetitions were removed" in collapsed[3].content
+        assert collapsed[3].correction is True
+
+    def test_collapse_loops_does_not_collapse_different_pairs(self, fake_client, policy):
+        """Non-identical assistant/tool pairs are preserved."""
+        builder = ContextBuilder(fake_client, policy, body_factor=1.0)
+
+        history = [
+            Message(role="user", content="Do something"),
+            Message(
+                role="assistant",
+                content="First call",
+                tool_calls=[ToolCall(id="call_1", name="list_tools", arguments={})],
+            ),
+            Message(role="tool", content="tools list", tool_call_id="call_1"),
+            Message(
+                role="assistant",
+                content="Second call",
+                tool_calls=[ToolCall(id="call_2", name="read_file", arguments={"path": "a"})],
+            ),
+            Message(role="tool", content="file a contents", tool_call_id="call_2"),
+        ]
+
+        collapsed = builder._collapse_loops(history)
+        assert len(collapsed) == 5
+
+    def test_filter_auth_codes_drops_numeric_user_codes(self, fake_client, policy):
+        """User messages that are just short numeric codes are dropped."""
+        builder = ContextBuilder(fake_client, policy, body_factor=1.0)
+
+        history = [
+            Message(role="user", content="123456"),
+            Message(role="user", content="Here is the code 123456"),
+            Message(role="user", content="hello"),
+        ]
+
+        filtered = builder._filter_auth_codes(history)
+        assert len(filtered) == 2
+        assert filtered[0].content == "Here is the code 123456"
+        assert filtered[1].content == "hello"
+
+    def test_filter_auth_codes_drops_outgoing_code_messages(self, fake_client, policy):
+        """Outgoing assistant messages containing dashboard codes are dropped."""
+        builder = ContextBuilder(fake_client, policy, body_factor=1.0)
+
+        history = [
+            Message(role="assistant", content="Your Hestia dashboard code is: 654321"),
+            Message(role="assistant", content="Something else"),
+        ]
+
+        filtered = builder._filter_auth_codes(history)
+        assert len(filtered) == 1
+        assert filtered[0].content == "Something else"
