@@ -40,7 +40,12 @@ async def cmd_chat(app: AppContext, new_session: bool = False) -> None:
         click.echo(f"Recovered {recovered} stale turn(s) from previous crash.")
 
     if new_session:
-        session = await app.session_store.create_session("cli", "default")
+        # Archive any existing active CLI session so the unique
+        # (platform, platform_user) ACTIVE constraint is satisfied.
+        previous = await app.session_store.get_active_session("cli", "default")
+        session = await app.session_store.create_session(
+            "cli", "default", archive_previous=previous
+        )
         click.echo(f"New session: {session.id}")
     else:
         session = await app.session_store.get_or_create_session("cli", "default")
