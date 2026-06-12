@@ -93,3 +93,22 @@ class TestSessionStore:
 
         fetched = await store.get_session(session.id)
         assert fetched.state == SessionState.ARCHIVED
+
+    @pytest.mark.asyncio
+    async def test_get_active_session_returns_active_or_none(self, store):
+        session = await store.get_or_create_session("cli", "testuser")
+
+        active = await store.get_active_session("cli", "testuser")
+        assert active is not None
+        assert active.id == session.id
+
+        await store.archive_session(session.id)
+
+        active_after_archive = await store.get_active_session("cli", "testuser")
+        assert active_after_archive is None
+
+        # Other users are unaffected
+        other = await store.get_or_create_session("cli", "otheruser")
+        other_active = await store.get_active_session("cli", "otheruser")
+        assert other_active is not None
+        assert other_active.id == other.id

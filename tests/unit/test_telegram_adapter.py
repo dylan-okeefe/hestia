@@ -354,6 +354,108 @@ class TestTelegramAdapterAsync:
         mock_message.reply_text.assert_called_once_with("Not authorized.")
 
 
+class TestTelegramAdapterReset:
+    """Tests for the /reset command."""
+
+    @pytest.mark.asyncio
+    async def test_handle_reset_archives_active_session_and_clears_cache(
+        self,
+        telegram_config: TelegramConfig,
+    ) -> None:
+        """Verify /reset archives the active session and invokes the cache callback."""
+        telegram_config.allowed_users = ["12345"]
+        adapter = TelegramAdapter(telegram_config)
+
+        mock_session = MagicMock()
+        mock_session.id = "telegram_12345_test"
+        mock_session.platform_user = "12345"
+
+        mock_session_store = AsyncMock()
+        mock_session_store.get_active_session = AsyncMock(return_value=mock_session)
+        mock_session_store.archive_session = AsyncMock()
+        adapter._session_store = mock_session_store
+
+        cache_cleared = False
+
+        async def reset_callback(platform_user: str) -> None:
+            nonlocal cache_cleared
+            cache_cleared = True
+            assert platform_user == "12345"
+
+        adapter.register_reset_callback(reset_callback)
+
+        mock_update = MagicMock(spec=Update)
+        mock_user = MagicMock(spec=User)
+        mock_user.id = 12345
+        mock_user.username = "testuser"
+        mock_update.effective_user = mock_user
+
+        mock_message = MagicMock(spec=Message)
+        mock_message.reply_text = AsyncMock()
+        mock_update.effective_message = mock_message
+
+        await adapter._handle_reset(mock_update, None)
+
+        mock_session_store.get_active_session.assert_called_once_with("telegram", "12345")
+        mock_session_store.archive_session.assert_called_once_with("telegram_12345_test")
+        assert cache_cleared is True
+        mock_message.reply_text.assert_called_once()
+        assert "reset" in mock_message.reply_text.call_args[0][0].lower()
+
+    @pytest.mark.asyncio
+    async def test_handle_reset_no_active_session(
+        self,
+        telegram_config: TelegramConfig,
+    ) -> None:
+        """Verify /reset replies gracefully when there is no active session."""
+        telegram_config.allowed_users = ["12345"]
+        adapter = TelegramAdapter(telegram_config)
+
+        mock_session_store = AsyncMock()
+        mock_session_store.get_active_session = AsyncMock(return_value=None)
+        adapter._session_store = mock_session_store
+
+        mock_update = MagicMock(spec=Update)
+        mock_user = MagicMock(spec=User)
+        mock_user.id = 12345
+        mock_user.username = "testuser"
+        mock_update.effective_user = mock_user
+
+        mock_message = MagicMock(spec=Message)
+        mock_message.reply_text = AsyncMock()
+        mock_update.effective_message = mock_message
+
+        await adapter._handle_reset(mock_update, None)
+
+        mock_session_store.archive_session.assert_not_called()
+        mock_message.reply_text.assert_called_once()
+        assert "no active" in mock_message.reply_text.call_args[0][0].lower()
+
+    @pytest.mark.asyncio
+    async def test_handle_reset_rejects_unauthorized(
+        self,
+        adapter: TelegramAdapter,
+        telegram_config: TelegramConfig,
+    ) -> None:
+        """Verify /reset rejects unauthorized users."""
+        telegram_config.allowed_users = ["allowed_user"]
+        adapter = TelegramAdapter(telegram_config)
+
+        mock_update = MagicMock(spec=Update)
+        mock_user = MagicMock(spec=User)
+        mock_user.id = 12345
+        mock_user.username = "unauthorized_user"
+        mock_update.effective_user = mock_user
+
+        mock_message = MagicMock(spec=Message)
+        mock_message.reply_text = AsyncMock()
+        mock_update.effective_message = mock_message
+
+        await adapter._handle_reset(mock_update, None)
+
+        mock_message.reply_text.assert_called_once_with("Not authorized.")
+
+
 class TestTelegramAdapterStreaming:
     """Tests for TelegramAdapter progressive streaming delivery."""
 

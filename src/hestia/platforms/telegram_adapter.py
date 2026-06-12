@@ -10,6 +10,7 @@ import os
 import re
 import tempfile
 import time
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 from telegram import Chat, InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -109,11 +110,12 @@ class TelegramAdapter(Platform):
         # Background tasks that keep the typing indicator alive (refreshed every 4s).
         self._typing_tasks: dict[str, asyncio.Task[None]] = {}
 
-        # Voice deps are injected by run_platform when voice is enabled.
+        # Runtime deps are injected by run_platform after the orchestrator is built.
         self._orchestrator: Orchestrator | None = None
         self._session_store: SessionStore | None = None
         self._system_prompt: str = ""
         self._voice_config: VoiceConfig | None = None
+        self._reset_callback: Callable[[str], Awaitable[None]] | None = None
 
         # Validate allowed_users entries (hard-fail at startup)
         for entry in self._config.allowed_users:
@@ -148,6 +150,16 @@ class TelegramAdapter(Platform):
         self._system_prompt = system_prompt
         self._voice_config = voice_config
 
+    def register_reset_callback(
+        self, callback: Callable[[str], Awaitable[None]]
+    ) -> None:
+        """Register a callback invoked when /reset archives a session.
+
+        The callback receives the platform_user whose session was reset so the
+        runner can drop any in-memory session cache for that user.
+        """
+        self._reset_callback = callback
+
     async def start(self, on_message: IncomingMessageCallback) -> None:
         """Start polling for Telegram messages."""
         self._on_message = on_message
@@ -156,6 +168,7 @@ class TelegramAdapter(Platform):
 
         # Register handlers
         self._app.add_handler(CommandHandler("start", self._handle_start))
+        self._app.add_handler(CommandHandler("reset", self._handle_reset))
         self._app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message))
         if self._config.voice_messages:
             self._app.add_handler(MessageHandler(filters.VOICE, self._handle_voice_message))
@@ -395,6 +408,49 @@ class TelegramAdapter(Platform):
 
         await update.effective_message.reply_text(
             "Hestia is running. Send me a message to start a conversation."
+        )
+
+    async def _handle_reset(self, update: Update, context: Any) -> None:
+        """Handle /reset command: archive the active session and clear the cache."""
+        if update.effective_user is None or update.effective_message is None:
+            return
+
+        user_id = update.effective_user.id
+        username = update.effective_user.username or str(user_id)
+        chat = update.effective_chat
+        in_group = chat is not None and chat.type in (Chat.GROUP, Chat.SUPERGROUP)
+
+        if not self._is_allowed(user_id, username):
+            if in_group:
+                return
+            await update.effective_message.reply_text("Not authorized.")
+            return
+
+        if self._session_store is None:
+            await update.effective_message.reply_text(
+                "Reset is not available right now (session store not connected)."
+            )
+            return
+
+        platform_user = str(chat.id) if in_group else str(user_id)
+        session = await self._session_store.get_active_session("telegram", platform_user)
+
+        if session is None:
+            await update.effective_message.reply_text(
+                "No active conversation to reset. You're already starting fresh."
+            )
+            return
+
+        await self._session_store.archive_session(session.id)
+
+        if self._reset_callback is not None:
+            try:
+                await self._reset_callback(platform_user)
+            except Exception:
+                logger.exception("Reset callback failed for %s", platform_user)
+
+        await update.effective_message.reply_text(
+            "Conversation reset. Previous context was archived; your next message starts a fresh session."
         )
 
     async def _handle_message(self, update: Update, context: Any) -> None:

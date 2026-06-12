@@ -468,6 +468,30 @@ class SessionStore:
                 return self._row_to_session(row)
             return None
 
+    async def get_active_session(
+        self, platform: str, platform_user: str
+    ) -> Session | None:
+        """Get the active session for a platform user, if one exists."""
+        query = (
+            sa.select(sessions)
+            .where(
+                sa.and_(
+                    sessions.c.platform == platform,
+                    sessions.c.platform_user == platform_user,
+                    sessions.c.state == SessionState.ACTIVE.value,
+                )
+            )
+            .order_by(sessions.c.last_active_at.desc())
+            .limit(1)
+        )
+
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(query)
+            row = result.fetchone()
+            if row:
+                return self._row_to_session(row)
+            return None
+
     async def get_sessions_batch(self, session_ids: list[str]) -> list[Session]:
         """Get multiple sessions by ID in a single query."""
         if not session_ids:
