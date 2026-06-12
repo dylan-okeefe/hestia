@@ -176,6 +176,7 @@ class TurnExecution:
                     "🛑 You have been reasoning extensively but haven't emitted a tool call. "
                     "Please make a tool call now."
                 )
+                await transition(turn, TurnState.RETRYING, "")
                 turn.iterations += 1
                 continue
 
@@ -213,6 +214,7 @@ class TurnExecution:
                     if await self._classify_and_maybe_correct(
                         ctx, turn, assistant_msg, history_includes_current=False
                     ):
+                        await transition(turn, TurnState.RETRYING, "")
                         turn.iterations += 1
                         continue
                     decision = self._policy.retry_after_error(
@@ -231,6 +233,7 @@ class TurnExecution:
                 if await self._classify_and_maybe_correct(
                     ctx, turn, assistant_msg, history_includes_current=False
                 ):
+                    await transition(turn, TurnState.RETRYING, "")
                     turn.iterations += 1
                     continue
 
@@ -253,6 +256,7 @@ class TurnExecution:
                 if await self._classify_and_maybe_correct(
                     ctx, turn, assistant_msg, history_includes_current=False
                 ):
+                    await transition(turn, TurnState.RETRYING, "")
                     turn.iterations += 1
                     continue
                 decision = self._policy.retry_after_error(
