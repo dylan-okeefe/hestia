@@ -239,6 +239,29 @@ def test_read_only_streak_broken_by_write_tool(session: Session) -> None:
     assert result is None
 
 
+def test_meta_inspect_tools_do_not_count_toward_read_only_streak(session: Session) -> None:
+    """list_tools and describe_tool don't count toward read-only streaks."""
+    turn = _make_turn(iterations=5)
+    history: list[Message] = []
+    for i in range(5):
+        name = ["list_tools", "describe_tool", "read_file", "list_memories", "search_memory"][i]
+        assistant = Message(
+            role="assistant",
+            content="",
+            tool_calls=[ToolCall(id=f"call-{i}", name=name, arguments={})],
+        )
+        tool_result = Message(
+            role="tool",
+            content="ok",
+            tool_call_id=f"call-{i}",
+        )
+        history.extend([assistant, tool_result])
+
+    current = Message(role="assistant", content="done", tool_calls=None)
+    result = classify_turn(turn, current, history + [current], ["read_file", "list_memories", "search_memory"])
+    assert result is None
+
+
 def test_greeting_mid_task_detected(session: Session) -> None:
     """A greeting after iteration 2 triggers GREETING_MID_TASK."""
     turn = _make_turn(iterations=3)

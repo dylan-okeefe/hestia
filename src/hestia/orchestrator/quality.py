@@ -35,8 +35,6 @@ _READ_ONLY_TOOLS = {
     "list_dir",
     "browser_get",
     "browser_login",
-    "describe_tool",
-    "list_tools",
     "web_search",
     "http_get",
     "current_time",
@@ -44,6 +42,15 @@ _READ_ONLY_TOOLS = {
     "search_memory",
     "list_memories",
     "email_search_and_read",
+}
+
+# Meta-tools that inspect tools rather than mutate state. They are excluded
+# from read-only streak counting because small models sometimes call them
+# while ramping up, and penalizing them the same way as file reads causes
+# premature "write your answer" nudges before real work has begun.
+_META_INSPECT_TOOLS = {
+    "list_tools",
+    "describe_tool",
 }
 
 # Greeting patterns that indicate a context-loss restart.
@@ -286,6 +293,9 @@ def _is_read_only_streak(history: list[Message]) -> bool:
     for msg in reversed(history):
         if msg.role == "assistant" and msg.tool_calls:
             for tc in reversed(msg.tool_calls):
+                if tc.name in _META_INSPECT_TOOLS:
+                    # Tool-inspection calls don't count toward read-only streaks.
+                    continue
                 if tc.name in _READ_ONLY_TOOLS:
                     count += 1
                     if count >= _READ_ONLY_STREAK_THRESHOLD:
