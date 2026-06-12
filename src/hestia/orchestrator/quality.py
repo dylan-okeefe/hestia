@@ -82,7 +82,7 @@ _META_TOOLS = {"list_tools", "describe_tool", "call_tool"}
 _PATCH_FAILURE_THRESHOLD = 3
 
 # Number of consecutive read-only tools before we flag READ_ONLY_STREAK.
-_READ_ONLY_STREAK_THRESHOLD = 5
+_READ_ONLY_STREAK_THRESHOLD = 8
 
 
 def classify_turn(

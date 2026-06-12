@@ -191,10 +191,10 @@ def test_patch_failed_not_triggered_with_only_two_errors(session: Session) -> No
 
 
 def test_read_only_streak_detected(session: Session) -> None:
-    """Five consecutive read-only tools trigger READ_ONLY_STREAK."""
-    turn = _make_turn(iterations=5)
+    """Eight consecutive read-only tools trigger READ_ONLY_STREAK."""
+    turn = _make_turn(iterations=8)
     history: list[Message] = []
-    for i in range(5):
+    for i in range(8):
         assistant = Message(
             role="assistant",
             content="",
