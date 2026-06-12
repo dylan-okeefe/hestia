@@ -224,10 +224,24 @@ def _build_repeated_call_correction(tool_names: list[str]) -> str:
 
 
 def _normalise_tool_calls(tool_calls: list[ToolCall]) -> list[_ToolCallKey]:
-    """Return a stable, comparable representation of a list of tool calls."""
+    """Return a stable, comparable representation of a list of tool calls.
+
+    Argument values may be lists or dicts, so they are recursively frozen into
+    hashable tuples before sorting.
+    """
+
+    def _freeze(value: Any) -> Any:
+        if isinstance(value, dict):
+            return tuple(sorted((k, _freeze(v)) for k, v in value.items()))
+        if isinstance(value, list):
+            return tuple(_freeze(v) for v in value)
+        return value
+
     out: list[_ToolCallKey] = []
     for tc in tool_calls:
-        args = tuple(sorted((tc.arguments or {}).items()))
+        args = tuple(
+            sorted((k, _freeze(v)) for k, v in (tc.arguments or {}).items())
+        )
         out.append((tc.name, args))
     return out
 

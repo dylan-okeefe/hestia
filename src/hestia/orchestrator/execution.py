@@ -42,8 +42,20 @@ _ToolCallKey = tuple[str, tuple[tuple[str, Any], ...]]
 
 
 def _tool_call_key(tc: ToolCall) -> _ToolCallKey:
-    """Return a stable, comparable representation of a tool call."""
-    args = tuple(sorted((tc.arguments or {}).items()))
+    """Return a stable, comparable representation of a tool call.
+
+    Argument values may be lists or dicts (e.g. describe_tool(names=[...])),
+    so they are recursively frozen into hashable tuples before sorting.
+    """
+
+    def _freeze(value: Any) -> Any:
+        if isinstance(value, dict):
+            return tuple(sorted((k, _freeze(v)) for k, v in value.items()))
+        if isinstance(value, list):
+            return tuple(_freeze(v) for v in value)
+        return value
+
+    args = tuple(sorted((k, _freeze(v)) for k, v in (tc.arguments or {}).items()))
     return (tc.name, args)
 
 
