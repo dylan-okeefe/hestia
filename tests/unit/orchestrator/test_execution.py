@@ -8,6 +8,7 @@ import pytest
 from hestia.core.types import Message, Session, SessionState, SessionTemperature, ToolCall
 from hestia.errors import MaxIterationsError
 from hestia.orchestrator.execution import TurnExecution
+from hestia.orchestrator.quality import Correction, DegeneratePattern
 from hestia.orchestrator.types import Turn, TurnContext, TurnState
 from hestia.tools.metadata import ToolMetadata
 from hestia.tools.registry import ToolRegistry
@@ -735,6 +736,67 @@ async def test_repeated_identical_call_deduped_within_batch():
         assert result_messages[0].content == "contents"
         assert "DISABLED" in result_messages[1].content
         assert ctx._repeated_tools_blocked == {"read_file"}
+
+
+@pytest.mark.asyncio
+async def test_repeated_identical_call_correction_not_duplicated():
+    """A repeated-identical-call correction is injected once per tool."""
+    store = MagicMock()
+    store.append_message = AsyncMock()
+
+    builder = MagicMock()
+    builder.build = AsyncMock(return_value=MagicMock(messages=[]))
+
+    execution = TurnExecution(
+        tool_registry=MagicMock(),
+        inference_client=MagicMock(),
+        policy=MagicMock(),
+        context_builder=builder,
+        session_store=store,
+    )
+
+    ctx = TurnContext(
+        turn=_make_turn(),
+        user_message=Message(role="user", content="hello"),
+        system_prompt="",
+        respond_callback=AsyncMock(),
+        session=_make_session(),
+        build_result=MagicMock(messages=[]),
+    )
+
+    assistant_msg = Message(
+        role="assistant",
+        content=None,
+        tool_calls=[
+            ToolCall(id="tc1", name="read_file", arguments={"path": "/tmp/a.txt"})
+        ],
+    )
+
+    # First repeated-identical-call correction is injected.
+    with patch(
+        "hestia.orchestrator.execution.classify_turn",
+        return_value=Correction(
+            pattern=DegeneratePattern.REPEATED_IDENTICAL_CALL,
+            message="stop repeating",
+        ),
+    ):
+        assert await execution._classify_and_maybe_correct(
+            ctx, _make_turn(), assistant_msg
+        ) is True
+        assert ctx.correction_count == 1
+
+    # Second identical call does not get another correction.
+    with patch(
+        "hestia.orchestrator.execution.classify_turn",
+        return_value=Correction(
+            pattern=DegeneratePattern.REPEATED_IDENTICAL_CALL,
+            message="stop repeating",
+        ),
+    ):
+        assert await execution._classify_and_maybe_correct(
+            ctx, _make_turn(), assistant_msg
+        ) is False
+        assert ctx.correction_count == 1
 
 
 @pytest.mark.asyncio

@@ -298,6 +298,24 @@ class TurnExecution:
         )
         if correction is None:
             return False
+
+        # De-duplicate repeated-identical-call corrections for the same tool.
+        # The circuit breaker in _execute_tool_calls already blocks the call
+        # and drops the schema; re-injecting the same correction for every
+        # subsequent hallucinated call burns the correction budget and forces
+        # an avoidable failure. One nudge per tool per turn is enough.
+        if correction.pattern == DegeneratePattern.REPEATED_IDENTICAL_CALL:
+            corrected_tools: set[str] = getattr(
+                ctx, "_repeated_tools_corrected", set()
+            )
+            repeated_tools = set()
+            for tc in assistant_msg.tool_calls or []:
+                repeated_tools.add(tc.name)
+            if repeated_tools and repeated_tools <= corrected_tools:
+                return False
+            corrected_tools.update(repeated_tools)
+            ctx._repeated_tools_corrected = corrected_tools
+
         if ctx.correction_count < 3:
             await self._inject_correction(ctx, turn, correction)
             ctx.correction_count += 1
