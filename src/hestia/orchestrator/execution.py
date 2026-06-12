@@ -545,7 +545,15 @@ class TurnExecution:
         # common degenerate loop. After the first list_tools, feed the model a
         # synthetic result instead of re-executing it. Results are interleaved
         # in the original emission order so the model sees them in context.
-        seen_list_tools = ctx is not None and "list_tools" in ctx.tool_chain
+        # Note: ctx.tool_chain has already been extended with the current batch
+        # by _handle_tool_calls, so we look at the slice before this batch.
+        current_batch_size = len(original_tool_calls)
+        prior_tool_chain = (
+            ctx.tool_chain[:-current_batch_size]
+            if ctx is not None and current_batch_size > 0
+            else []
+        )
+        seen_list_tools = "list_tools" in prior_tool_chain
         list_tools_block_results: dict[str, Message] = {}
         if seen_list_tools or any(tc.name == "list_tools" for tc in original_tool_calls):
             deduped: list[ToolCall] = []

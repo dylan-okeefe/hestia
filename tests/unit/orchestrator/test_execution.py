@@ -218,7 +218,10 @@ async def test_repeated_list_tools_blocked_after_first_call():
         session=_make_session(),
         build_result=MagicMock(messages=[]),
     )
-    ctx.tool_chain = ["list_tools"]
+    # ctx.tool_chain has already been extended with the current batch by the
+    # caller (_handle_tool_calls). We include a prior list_tools entry so that
+    # the current batch's list_tools calls are treated as repeats.
+    ctx.tool_chain = ["list_tools", "read_file", "read_file", "read_file"]
 
     tool_calls = [
         ToolCall(id="tc1", name="list_tools", arguments={}),
@@ -252,6 +255,66 @@ async def test_repeated_list_tools_blocked_after_first_call():
         assert result_messages[1].content == "file contents"
         assert result_messages[2].tool_call_id == "tc3"
         assert "already called list_tools" in result_messages[2].content
+
+
+@pytest.mark.asyncio
+async def test_first_list_tools_in_batch_is_allowed():
+    """When no prior list_tools exists in the turn, the first one executes."""
+    registry = MagicMock()
+    registry.describe.return_value = MagicMock(
+        requires_confirmation=False, ordering="concurrent"
+    )
+
+    policy = MagicMock()
+    policy.tool_result_max_chars.return_value = 8000
+
+    execution = TurnExecution(
+        tool_registry=registry,
+        inference_client=MagicMock(),
+        policy=policy,
+        context_builder=MagicMock(),
+        session_store=MagicMock(),
+    )
+
+    ctx = TurnContext(
+        turn=_make_turn(),
+        user_message=Message(role="user", content="hello"),
+        system_prompt="",
+        respond_callback=AsyncMock(),
+        session=_make_session(),
+        build_result=MagicMock(messages=[]),
+    )
+    # Prior tools in the turn, but no list_tools yet.
+    ctx.tool_chain = ["read_file", "read_file"]
+
+    tool_calls = [
+        ToolCall(id="tc1", name="list_tools", arguments={}),
+        ToolCall(id="tc2", name="list_tools", arguments={}),
+    ]
+
+    with patch.object(
+        execution, "_dispatch_tool_call", new_callable=AsyncMock
+    ) as mock_dispatch:
+        mock_dispatch.return_value = ToolCallResult(
+            status="ok",
+            content="tool list",
+            artifact_handle=None,
+            truncated=False,
+        )
+
+        result_messages, _artifact_handles = await execution._execute_tool_calls(
+            _make_session(), tool_calls, ctx=ctx
+        )
+
+        # First list_tools executes; second is blocked.
+        assert mock_dispatch.call_count == 1
+        assert mock_dispatch.call_args[0][1].id == "tc1"
+
+        assert len(result_messages) == 2
+        assert result_messages[0].tool_call_id == "tc1"
+        assert result_messages[0].content == "tool list"
+        assert result_messages[1].tool_call_id == "tc2"
+        assert "already called list_tools" in result_messages[1].content
 
 
 @pytest.mark.asyncio
