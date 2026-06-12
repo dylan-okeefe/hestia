@@ -605,6 +605,139 @@ async def test_repeated_identical_call_allows_different_arguments():
 
 
 @pytest.mark.asyncio
+async def test_repeated_identical_call_blocked_across_non_consecutive_steps():
+    """A repeat of an earlier-turn tool call is blocked even if not consecutive."""
+    registry = MagicMock()
+    registry.describe.return_value = MagicMock(
+        requires_confirmation=False, ordering="concurrent"
+    )
+
+    policy = MagicMock()
+    policy.tool_result_max_chars.return_value = 8000
+
+    execution = TurnExecution(
+        tool_registry=registry,
+        inference_client=MagicMock(),
+        policy=policy,
+        context_builder=MagicMock(),
+        session_store=MagicMock(),
+    )
+
+    ctx = TurnContext(
+        turn=_make_turn(),
+        user_message=Message(role="user", content="hello"),
+        system_prompt="",
+        respond_callback=AsyncMock(),
+        session=_make_session(),
+        build_result=MagicMock(messages=[]),
+    )
+    ctx.running_history = [
+        Message(role="user", content="find jobs"),
+        Message(
+            role="assistant",
+            content=None,
+            tool_calls=[
+                ToolCall(
+                    id="prev1",
+                    name="search_memory",
+                    arguments={"query": "old query"},
+                )
+            ],
+        ),
+        Message(role="tool", content="no results", tool_call_id="prev1"),
+        # A different tool call in between does not reset the repeat guard.
+        Message(
+            role="assistant",
+            content=None,
+            tool_calls=[ToolCall(id="prev2", name="list_dir", arguments={"path": "/"})],
+        ),
+        Message(role="tool", content="files", tool_call_id="prev2"),
+    ]
+
+    tool_calls = [
+        ToolCall(
+            id="tc1",
+            name="search_memory",
+            arguments={"query": "old query"},
+        ),
+    ]
+
+    with patch.object(
+        execution, "_dispatch_tool_call", new_callable=AsyncMock
+    ) as mock_dispatch:
+        mock_dispatch.return_value = ToolCallResult(
+            status="ok",
+            content="results",
+            artifact_handle=None,
+            truncated=False,
+        )
+
+        result_messages, _artifact_handles = await execution._execute_tool_calls(
+            _make_session(), tool_calls, ctx=ctx
+        )
+
+        assert mock_dispatch.call_count == 0
+        assert len(result_messages) == 1
+        assert "DISABLED" in result_messages[0].content
+        assert ctx._repeated_tools_blocked == {"search_memory"}
+
+
+@pytest.mark.asyncio
+async def test_repeated_identical_call_deduped_within_batch():
+    """The same tool call twice in one batch is blocked the second time."""
+    registry = MagicMock()
+    registry.describe.return_value = MagicMock(
+        requires_confirmation=False, ordering="concurrent"
+    )
+
+    policy = MagicMock()
+    policy.tool_result_max_chars.return_value = 8000
+
+    execution = TurnExecution(
+        tool_registry=registry,
+        inference_client=MagicMock(),
+        policy=policy,
+        context_builder=MagicMock(),
+        session_store=MagicMock(),
+    )
+
+    ctx = TurnContext(
+        turn=_make_turn(),
+        user_message=Message(role="user", content="hello"),
+        system_prompt="",
+        respond_callback=AsyncMock(),
+        session=_make_session(),
+        build_result=MagicMock(messages=[]),
+    )
+
+    tool_calls = [
+        ToolCall(id="tc1", name="read_file", arguments={"path": "/tmp/a.txt"}),
+        ToolCall(id="tc2", name="read_file", arguments={"path": "/tmp/a.txt"}),
+    ]
+
+    with patch.object(
+        execution, "_dispatch_tool_call", new_callable=AsyncMock
+    ) as mock_dispatch:
+        mock_dispatch.return_value = ToolCallResult(
+            status="ok",
+            content="contents",
+            artifact_handle=None,
+            truncated=False,
+        )
+
+        result_messages, _artifact_handles = await execution._execute_tool_calls(
+            _make_session(), tool_calls, ctx=ctx
+        )
+
+        # First executes, second is blocked as a duplicate within the batch.
+        assert mock_dispatch.call_count == 1
+        assert len(result_messages) == 2
+        assert result_messages[0].content == "contents"
+        assert "DISABLED" in result_messages[1].content
+        assert ctx._repeated_tools_blocked == {"read_file"}
+
+
+@pytest.mark.asyncio
 async def test_tool_result_truncated_before_reprompting():
     """A 50 KB tool result is clipped before being added to result messages."""
     registry = MagicMock()

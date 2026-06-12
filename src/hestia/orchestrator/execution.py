@@ -707,39 +707,42 @@ class TurnExecution:
                     deduped.append(tc)
             tool_calls = deduped
 
-        # Circuit breaker: repeated identical calls in consecutive assistant
-        # messages. If the model emits the exact same tool call as the previous
-        # assistant message, block it and drop that schema from the next prompt.
-        # This prevents loops like search_memory(query=...) from burning tokens.
+        # Circuit breaker: repeated identical calls within the current turn.
+        # If the model emits the exact same tool call as any previous assistant
+        # message in this turn, block it and drop that schema from the next
+        # prompt. This prevents loops like search_memory(query=...) or
+        # read_file(path=...) from burning tokens. We also dedupe within the
+        # current batch so a model cannot emit the same call twice at once.
         repeated_block_results: dict[str, Message] = {}
         blocked_repeated_tools: set[str] = set()
         if ctx is not None:
             previous_keys: set[_ToolCallKey] = set()
-            for msg in reversed(ctx.running_history):
+            for msg in ctx.running_history:
                 if msg.role == "assistant" and msg.tool_calls:
-                    previous_keys = {_tool_call_key(tc) for tc in msg.tool_calls}
-                    break
+                    previous_keys.update({_tool_call_key(tc) for tc in msg.tool_calls})
 
-            if previous_keys:
-                deduped = []
-                for tc in tool_calls:
-                    if _tool_call_key(tc) in previous_keys:
-                        blocked_repeated_tools.add(tc.name)
-                        repeated_block_results[tc.id] = Message(
-                            role="tool",
-                            content=(
-                                f"🛑 STOP. You already called {tc.name} with these "
-                                "exact arguments in the previous step; repeating it "
-                                "will return the same result. This tool is now "
-                                "DISABLED for the rest of this conversation. Use a "
-                                "different tool or reply directly to the user."
-                            ),
-                            tool_call_id=tc.id,
-                            created_at=utcnow(),
-                        )
-                    else:
-                        deduped.append(tc)
-                tool_calls = deduped
+            deduped: list[ToolCall] = []
+            current_keys: set[_ToolCallKey] = set()
+            for tc in tool_calls:
+                key = _tool_call_key(tc)
+                if key in previous_keys or key in current_keys:
+                    blocked_repeated_tools.add(tc.name)
+                    repeated_block_results[tc.id] = Message(
+                        role="tool",
+                        content=(
+                            f"🛑 STOP. You already called {tc.name} with these "
+                            "exact arguments in this turn; repeating it will "
+                            "return the same result. This tool is now DISABLED "
+                            "for the rest of this conversation. Use a different "
+                            "tool or reply directly to the user."
+                        ),
+                        tool_call_id=tc.id,
+                        created_at=utcnow(),
+                    )
+                else:
+                    current_keys.add(key)
+                    deduped.append(tc)
+            tool_calls = deduped
 
         # Persist the block signals on the context so _handle_tool_calls can drop
         # the corresponding schemas from the next prompt.
