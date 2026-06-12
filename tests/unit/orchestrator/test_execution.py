@@ -191,6 +191,70 @@ async def test_per_turn_tool_call_cap_enforced():
 
 
 @pytest.mark.asyncio
+async def test_repeated_list_tools_blocked_after_first_call():
+    """After the first list_tools in a turn, subsequent list_tools calls are
+    replaced with a synthetic result instead of being re-executed."""
+    registry = MagicMock()
+    registry.describe.return_value = MagicMock(
+        requires_confirmation=False, ordering="concurrent"
+    )
+
+    policy = MagicMock()
+    policy.tool_result_max_chars.return_value = 8000
+
+    execution = TurnExecution(
+        tool_registry=registry,
+        inference_client=MagicMock(),
+        policy=policy,
+        context_builder=MagicMock(),
+        session_store=MagicMock(),
+    )
+
+    ctx = TurnContext(
+        turn=_make_turn(),
+        user_message=Message(role="user", content="hello"),
+        system_prompt="",
+        respond_callback=AsyncMock(),
+        session=_make_session(),
+        build_result=MagicMock(messages=[]),
+    )
+    ctx.tool_chain = ["list_tools"]
+
+    tool_calls = [
+        ToolCall(id="tc1", name="list_tools", arguments={}),
+        ToolCall(id="tc2", name="read_file", arguments={"path": "/tmp/a.txt"}),
+        ToolCall(id="tc3", name="list_tools", arguments={}),
+    ]
+
+    with patch.object(
+        execution, "_dispatch_tool_call", new_callable=AsyncMock
+    ) as mock_dispatch:
+        mock_dispatch.return_value = ToolCallResult(
+            status="ok",
+            content="file contents",
+            artifact_handle=None,
+            truncated=False,
+        )
+
+        result_messages, _artifact_handles = await execution._execute_tool_calls(
+            _make_session(), tool_calls, ctx=ctx
+        )
+
+        # Only read_file should have been dispatched; both list_tools calls are blocked.
+        assert mock_dispatch.call_count == 1
+        assert mock_dispatch.call_args[0][1].name == "read_file"
+
+        assert len(result_messages) == 3
+        assert result_messages[0].role == "tool"
+        assert result_messages[0].tool_call_id == "tc1"
+        assert "already called list_tools" in result_messages[0].content
+        assert result_messages[1].tool_call_id == "tc2"
+        assert result_messages[1].content == "file contents"
+        assert result_messages[2].tool_call_id == "tc3"
+        assert "already called list_tools" in result_messages[2].content
+
+
+@pytest.mark.asyncio
 async def test_tool_result_truncated_before_reprompting():
     """A 50 KB tool result is clipped before being added to result messages."""
     registry = MagicMock()

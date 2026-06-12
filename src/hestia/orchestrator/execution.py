@@ -539,6 +539,38 @@ class TurnExecution:
         """
         result_messages: list[Message] = []
         artifact_handles: list[str] = []
+        original_tool_calls = list(tool_calls)
+
+        # Circuit breaker: repeated list_tools calls within a single turn are a
+        # common degenerate loop. After the first list_tools, feed the model a
+        # synthetic result instead of re-executing it. Results are interleaved
+        # in the original emission order so the model sees them in context.
+        seen_list_tools = ctx is not None and "list_tools" in ctx.tool_chain
+        list_tools_block_results: dict[str, Message] = {}
+        if seen_list_tools or any(tc.name == "list_tools" for tc in original_tool_calls):
+            deduped: list[ToolCall] = []
+            for tc in original_tool_calls:
+                if tc.name == "list_tools":
+                    if seen_list_tools:
+                        list_tools_block_results[tc.id] = Message(
+                            role="tool",
+                            content=(
+                                "You already called list_tools this turn. The complete "
+                                "tool list is in the system prompt and in the previous "
+                                "list_tools result. Do not call list_tools again. "
+                                "Choose a specific tool and call it, or reply to the user."
+                            ),
+                            tool_call_id=tc.id,
+                            created_at=utcnow(),
+                        )
+                    else:
+                        # First list_tools in this batch: allow it, but mark seen
+                        # so any additional list_tools calls in the same batch are blocked.
+                        seen_list_tools = True
+                        deduped.append(tc)
+                else:
+                    deduped.append(tc)
+            tool_calls = deduped
 
         if len(tool_calls) > self._max_tool_calls_per_turn:
             logger.warning(
@@ -615,8 +647,22 @@ class TurnExecution:
             serial_results[idx] = result
 
         # Reassemble in original emission order for trace consistency
-        for i, tc in enumerate(tool_calls):
-            result = concurrent_results[i] if i in concurrent_results else serial_results[i]
+        dispatched_ids = {tc.id for tc in tool_calls}
+        dispatched_idx = 0
+        for tc in original_tool_calls:
+            if tc.id in list_tools_block_results:
+                result_messages.append(list_tools_block_results[tc.id])
+                continue
+            if tc.id not in dispatched_ids:
+                # Tool was removed by the per-turn cap; its rejection message is
+                # already in result_messages.
+                continue
+
+            result = (
+                concurrent_results[dispatched_idx]
+                if dispatched_idx in concurrent_results
+                else serial_results[dispatched_idx]
+            )
             result = self._scan_tool_result(result)
 
             # Circuit breaker: detect repeated empty-arg failures
@@ -662,6 +708,7 @@ class TurnExecution:
                 created_at=utcnow(),
             )
             result_messages.append(msg)
+            dispatched_idx += 1
 
         return result_messages, artifact_handles
 
