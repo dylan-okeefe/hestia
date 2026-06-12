@@ -376,6 +376,18 @@ class TurnExecution:
 
         ctx.running_history.append(assistant_msg)
         ctx.running_history.extend(tool_results)
+
+        # If we had to hard-block repeated list_tools calls, temporarily remove
+        # list_tools from the model's available tools for the next iteration so
+        # it cannot loop again. The real first execution already gave it the
+        # tool list; removing the schema is the strongest signal for small models.
+        if ctx.tools and getattr(ctx, "_list_tools_blocked", False):
+            ctx.tools = [
+                schema for schema in ctx.tools
+                if schema.function.name != "list_tools"
+            ]
+            ctx._list_tools_blocked = False
+
         self._builder.set_style_prefix(ctx.style_prefix)
         ctx.build_result = await self._builder.build(
             session=ctx.session,
@@ -541,10 +553,12 @@ class TurnExecution:
         artifact_handles: list[str] = []
         original_tool_calls = list(tool_calls)
 
-        # Circuit breaker: repeated list_tools calls within a single turn are a
-        # common degenerate loop. After the first list_tools, feed the model a
-        # synthetic result instead of re-executing it. Results are interleaved
-        # in the original emission order so the model sees them in context.
+        # Circuit breaker: repeated list_tools calls are a common degenerate loop.
+        # Once list_tools has been called in this turn (or in any prior turn of
+        # the same session), re-executing it wastes context and tokens. We keep
+        # one real execution so the model sees the tool list, but every repeat
+        # is replaced with a synthetic result that includes the complete list
+        # and a forceful instruction to stop.
         # Note: ctx.tool_chain has already been extended with the current batch
         # by _handle_tool_calls, so we look at the slice before this batch.
         current_batch_size = len(original_tool_calls)
@@ -553,32 +567,47 @@ class TurnExecution:
             if ctx is not None and current_batch_size > 0
             else []
         )
-        seen_list_tools = "list_tools" in prior_tool_chain
+        prior_list_tools_count = prior_tool_chain.count("list_tools")
+        seen_list_tools = prior_list_tools_count > 0
         list_tools_block_results: dict[str, Message] = {}
+        blocked_any_list_tools = False
         if seen_list_tools or any(tc.name == "list_tools" for tc in original_tool_calls):
             deduped: list[ToolCall] = []
             for tc in original_tool_calls:
                 if tc.name == "list_tools":
                     if seen_list_tools:
+                        # Any list_tools after the first one in the session is a
+                        # degenerate loop. Hard-block it and mark that we need to
+                        # drop the list_tools schema from the next prompt.
+                        blocked_any_list_tools = True
                         list_tools_block_results[tc.id] = Message(
                             role="tool",
                             content=(
-                                "You already called list_tools this turn. The complete "
-                                "tool list is in the system prompt and in the previous "
-                                "list_tools result. Do not call list_tools again. "
-                                "Choose a specific tool and call it, or reply to the user."
+                                "🛑 STOP. You have already called list_tools. "
+                                "The complete tool list is in the system prompt "
+                                "and in the previous list_tools result. "
+                                "list_tools is now DISABLED for the rest of this "
+                                "conversation. Do not call it again. Choose a "
+                                "specific tool from the list and call it, or reply "
+                                "directly to the user."
                             ),
                             tool_call_id=tc.id,
                             created_at=utcnow(),
                         )
                     else:
                         # First list_tools in this batch: allow it, but mark seen
-                        # so any additional list_tools calls in the same batch are blocked.
+                        # so any additional list_tools calls are blocked.
                         seen_list_tools = True
+                        prior_list_tools_count += 1
                         deduped.append(tc)
                 else:
                     deduped.append(tc)
             tool_calls = deduped
+
+        # Persist the block signal on the context so _handle_tool_calls can drop
+        # the list_tools schema from the next prompt.
+        if ctx is not None and blocked_any_list_tools:
+            ctx._list_tools_blocked = True
 
         if len(tool_calls) > self._max_tool_calls_per_turn:
             logger.warning(

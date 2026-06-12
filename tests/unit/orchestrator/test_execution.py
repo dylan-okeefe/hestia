@@ -250,11 +250,13 @@ async def test_repeated_list_tools_blocked_after_first_call():
         assert len(result_messages) == 3
         assert result_messages[0].role == "tool"
         assert result_messages[0].tool_call_id == "tc1"
-        assert "already called list_tools" in result_messages[0].content
+        assert "list_tools is now DISABLED" in result_messages[0].content
         assert result_messages[1].tool_call_id == "tc2"
         assert result_messages[1].content == "file contents"
         assert result_messages[2].tool_call_id == "tc3"
-        assert "already called list_tools" in result_messages[2].content
+        assert "list_tools is now DISABLED" in result_messages[2].content
+        # The context is flagged so the next prompt drops the list_tools schema.
+        assert ctx._list_tools_blocked is True
 
 
 @pytest.mark.asyncio
@@ -314,7 +316,8 @@ async def test_first_list_tools_in_batch_is_allowed():
         assert result_messages[0].tool_call_id == "tc1"
         assert result_messages[0].content == "tool list"
         assert result_messages[1].tool_call_id == "tc2"
-        assert "already called list_tools" in result_messages[1].content
+        assert "list_tools is now DISABLED" in result_messages[1].content
+        assert ctx._list_tools_blocked is True
 
 
 @pytest.mark.asyncio
