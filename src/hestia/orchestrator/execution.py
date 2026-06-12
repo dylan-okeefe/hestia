@@ -652,10 +652,23 @@ class TurnExecution:
         # common degenerate pattern. After the 3rd unique describe_tool name, we
         # keep executing it but mark that the describe_tool schema should be
         # dropped from the next prompt so the model cannot binge on it.
+        #
+        # Build the set of already-described names from previous assistant
+        # messages. We cannot slice ctx.tool_chain because describe_tool entries
+        # are expanded to one entry per name, so the batch size in tool_chain
+        # does not match len(original_tool_calls).
         prior_describe_tool_names: set[str] = set()
-        for name in prior_tool_chain:
-            if name.startswith("describe_tool:"):
-                prior_describe_tool_names.add(name.split(":", 1)[1])
+        if ctx is not None:
+            for msg in ctx.running_history:
+                if msg.role == "assistant" and msg.tool_calls:
+                    for prev_tc in msg.tool_calls:
+                        if prev_tc.name != "describe_tool":
+                            continue
+                        raw = prev_tc.arguments.get("names") if prev_tc.arguments else []
+                        if isinstance(raw, str):
+                            prior_describe_tool_names.add(raw)
+                        elif isinstance(raw, list):
+                            prior_describe_tool_names.update(raw)
         describe_tool_block_results: dict[str, Message] = {}
         blocked_describe_tool_binge = False
         if any(tc.name == "describe_tool" for tc in original_tool_calls):
@@ -670,7 +683,8 @@ class TurnExecution:
                     else:
                         names = set()
                     # Block if we've already described 3+ unique tools in this
-                    # session, or if this call repeats any name we've seen.
+                    # session, or if this call repeats any name we've seen
+                    # (including within the current batch).
                     already_seen = bool(names & prior_describe_tool_names)
                     if len(prior_describe_tool_names) >= 3 or already_seen:
                         blocked_describe_tool_binge = True

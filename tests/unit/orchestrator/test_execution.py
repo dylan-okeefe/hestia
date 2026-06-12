@@ -348,12 +348,19 @@ async def test_describe_tool_binge_is_blocked_after_three_unique_tools():
         build_result=MagicMock(messages=[]),
     )
     # Prior turn already described read_file, list_dir, and grep.
-    ctx.tool_chain = [
-        "describe_tool:read_file",
-        "describe_tool:list_dir",
-        "describe_tool:grep",
-        "list_dir",
-        "search_memory",
+    ctx.running_history = [
+        Message(
+            role="assistant",
+            content=None,
+            tool_calls=[
+                ToolCall(
+                    id="prev1",
+                    name="describe_tool",
+                    arguments={"names": ["read_file", "list_dir", "grep"]},
+                )
+            ],
+        ),
+        Message(role="tool", content="schemas", tool_call_id="prev1"),
     ]
 
     tool_calls = [
@@ -412,7 +419,20 @@ async def test_describe_tool_repeated_name_is_blocked():
         session=_make_session(),
         build_result=MagicMock(messages=[]),
     )
-    ctx.tool_chain = ["describe_tool:read_file", "list_dir"]
+    ctx.running_history = [
+        Message(
+            role="assistant",
+            content=None,
+            tool_calls=[
+                ToolCall(
+                    id="prev1",
+                    name="describe_tool",
+                    arguments={"names": ["read_file"]},
+                )
+            ],
+        ),
+        Message(role="tool", content="schema", tool_call_id="prev1"),
+    ]
 
     tool_calls = [
         ToolCall(id="tc1", name="describe_tool", arguments={"names": ["read_file"]}),
