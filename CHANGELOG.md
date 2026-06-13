@@ -5,6 +5,10 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+**Version note:** The installed package version is currently **0.12.2**
+(`pyproject.toml`). The next planned release is **0.13.0**; the 0.13.0 changes
+below are staged in this branch but not yet tagged as a package release.
+
 ## [0.13.0] — 2026-06-06
 
 ### Browser Sessions

@@ -68,24 +68,40 @@ as the inference backend.
 - **Path sandboxing** — `allowed_roots` restricts file tool access
 - **Webhook HMAC verification** — per-workflow secrets with replay-attack protection
 
-### Tools (20+ built-ins)
-`read_file`, `write_file`, `edit_file`, `append_to_file`, `list_dir`, `glob`, `grep`,
-`terminal`, `http_get`, `web_search`, `browser_get`, `browser_login`, `email_list`,
-`email_read`, `email_search`, `email_draft`, `email_send`, `email_move`, `email_flag`,
-`save_memory`, `search_memory`, `list_memories`, `delete_memory`, `delegate_task`,
-`current_time`, `read_artifact`, `scheduler_add`, `scheduler_list`, `scheduler_run`,
-`rollback`, `proposal_accept`, `proposal_reject`, `proposal_defer`, `style_reset`,
-`job_alert_save`, `job_alert_list`, `job_alert_delete`
+### Tools (35+ built-ins)
+
+Filesystem: `read_file`, `write_file`, `edit_file`, `append_to_file`, `list_dir`, `glob`, `grep`  
+Shell: `terminal`  
+Web: `http_get`, `web_search`, `search_web`, `browser_get`, `browser_login`  
+Email: `email_list`, `email_read`, `email_search`, `email_search_and_read`, `email_draft`, `email_send`, `email_move`, `email_flag`  
+Memory: `save_memory`, `search_memory`, `list_memories`, `delete_memory`  
+Scheduler: `create_scheduled_task`, `list_scheduled_tasks`, `disable_scheduled_task`, `enable_scheduled_task`, `delete_scheduled_task`  
+Proposals: `list_proposals`, `show_proposal`, `accept_proposal`, `reject_proposal`, `defer_proposal`  
+Style: `show_style_profile`, `reset_style_metric`, `reset_style_profile`  
+Workflow: `save_job_alert`, `list_pending_alerts`, `mark_alerts_sent`  
+System: `current_time`, `read_artifact`, `rollback_turn`, `delegate_task`
 
 ## Quick Start
 
 ```bash
-pip install hestia
-hestia --config config.py serve
+git clone <repo-url>
+cd hestia
+uv sync
+cp deploy/example_config.py config.py
+# Edit config.py: set inference.model_name, telegram.bot_token, etc.
+hestia init
+# Start the llama.cpp server (see deploy/hestia-llama.service or docs/guides/runtime-setup.md)
+hestia serve
 ```
 
-See [docs/guides/runtime-setup.md](docs/guides/runtime-setup.md) for detailed setup
-including llama.cpp configuration, systemd services, and platform secrets.
+`hestia serve` runs all configured platform adapters and the web dashboard. Use
+`hestia chat` for a local REPL. Note that `web.enabled` defaults to `False`; set it
+to `True` in `config.py` to enable the dashboard.
+
+Hestia bootstraps its database with `create_tables()` plus idempotent runtime
+migrations on every startup. The Alembic files under `migrations/` exist for
+reference and development convenience, but they are **not** the production
+upgrade path. Running `hestia init` is sufficient.
 
 ## Documentation
 

@@ -5,7 +5,115 @@ This guide covers upgrading between recent releases. Read each step before runni
 If you are on a version older than v0.2.2, upgrade to v0.2.2 first
 (see the v0.2.2 release notes), then follow the sections below in order.
 
-There is no automated migration tool yet (`hestia upgrade` is planned but not in v0.10.0).
+There is no automated migration tool yet; a future upgrade subcommand is planned
+but not implemented as of v0.10.0.
+
+> **Migration model:** Hestia bootstraps its database with `create_tables()` plus
+> idempotent runtime migrations on every startup. The Alembic files under
+> `migrations/` exist for reference and development convenience, but they are
+> **not** the production upgrade path. Running `hestia init` is sufficient.
+
+---
+
+## v0.12.2
+
+**Released:** 2026-05-27  
+**Full notes:** [`docs/releases/v0.12.2.md`](docs/releases/v0.12.2.md)
+
+If you are upgrading from v0.10.0 or earlier, follow the previous sections first,
+then continue here.
+
+### 1. Back up
+
+```bash
+cp -r ~/.hestia ~/.hestia-backup-$(date +%Y%m%d)
+```
+
+### 2. Pull and sync
+
+```bash
+git fetch --tags
+git checkout v0.12.2
+uv sync --all-extras
+```
+
+### 3. Database migrations
+
+Automatic. `hestia init` runs `create_tables()` and runtime migrations; no Alembic
+step is required.
+
+### 4. Config changes
+
+No required config changes for v0.12.2. New optional features:
+
+- Job-alert workflow reliability improvements are automatic.
+- `scripts/warmup_site_session.py` can pre-warm Cloudflare-protected sites.
+- `scripts/test_workflow_email.py` can test job email workflows against a specific
+  IMAP UID.
+
+### 5. Verify
+
+```bash
+hestia doctor
+hestia chat
+```
+
+### What changed (high level)
+
+v0.12.2 is a job workflow reliability patch. It fixes artifact passing, URL
+extraction, browser anti-detection, and Cloudflare session management for job
+alert processing.
+
+---
+
+## v0.12.2 → v0.13.0
+
+**Released:** 2026-06-06  
+**Full notes:** [`docs/releases/v0.13.0.md`](docs/releases/v0.13.0.md)
+
+### 1. Back up
+
+```bash
+cp -r ~/.hestia ~/.hestia-backup-$(date +%Y%m%d)
+```
+
+### 2. Pull and sync
+
+```bash
+git fetch --tags
+git checkout v0.13.0
+uv sync --all-extras
+```
+
+### 3. Database migrations
+
+Automatic. `hestia init` runs `create_tables()` and runtime migrations; no Alembic
+step is required.
+
+### 4. Config changes
+
+No required config changes for v0.13.0. New features are opt-in:
+
+- Browser sessions dashboard and CDP screencast streaming require `browser.enabled: true`
+  (or Playwright installed) and `web.enabled: true` for the dashboard.
+- Visual workflow editor improvements are available automatically when workflows
+  are enabled.
+- New built-in tools (`edit_file`, `glob`, `grep`, `rollback_turn`) are available
+  automatically when the tool registry is built.
+
+### 5. Verify
+
+```bash
+hestia doctor
+hestia chat
+```
+
+### What changed (high level)
+
+v0.13.0 ships persistent browser session management, CDP/headed browser streaming,
+playwright-stealth anti-detection, email-triggered workflows, and new built-in
+tools (`edit_file`, `glob`, `grep`, `rollback_turn`). The web dashboard adds dark
+mode, session titles, debug login, and a shared CSS system.
 
 ---
 
@@ -35,7 +143,7 @@ existing config; `uv sync` does not write config files.
 
 Default in v0.8.0 is `paranoid` — every external action requires confirmation.
 To match v0.2.2 (no trust gating), use `permissive`. To opt in to gradual
-trust, see `docs/guides/trust-config.md`.
+trust, see `docs/guides/security.md`.
 
 ```yaml
 trust:
@@ -74,7 +182,7 @@ style:
 ### `reflection:` (introduced L26)
 
 Background reflection loop; **off by default**. Enable only if you've
-read `docs/guides/reflection-setup.md`.
+read `docs/guides/reflection-tuning.md`.
 
 ```yaml
 reflection:
@@ -101,10 +209,8 @@ imported internal modules from `hestia.cli`, those imports may have moved.
 New commands in v0.8.0:
 
 - `hestia doctor` (L35c) — read-only health check. Run this in step 6 below.
-- `hestia skills *` (L33c) — only useful with `HESTIA_EXPERIMENTAL_SKILLS=1`.
 - `hestia reflection *` (L26) — only useful with `reflection.enabled: true`.
 - `hestia style *` (L27)
-- `hestia memory epochs *` (refined across the arc)
 
 ## 6. Verify
 
@@ -117,16 +223,14 @@ read the detail line and fix before proceeding. Common fixes:
 
 - "uv pip check" failures → `uv sync` again.
 - llama.cpp not reachable → start the llama.cpp server (see deploy/ in the repo).
-- Memory epoch unparseable → see `docs/guides/memory-epochs.md`.
 
 ## 7. First run after upgrade
 
 ```bash
-hestia memory epochs list
 hestia chat
 ```
 
-If memory loads and chat starts, you're upgraded.
+If chat starts, you're upgraded.
 
 ## What changed (high level)
 
