@@ -256,11 +256,35 @@ class TelegramAdapter(Platform):
             self._app = None
         logger.info("Telegram adapter stopped")
 
+    async def _send_chunk(
+        self, chat_id: int, text: str, *, parse_mode: str = "HTML"
+    ) -> Any:
+        """Send one chunk, falling back to plain text if HTML parse fails."""
+        assert self._app is not None
+        try:
+            return await self._app.bot.send_message(
+                chat_id=chat_id,
+                text=_md_to_tg_html(text),
+                parse_mode=parse_mode,
+            )
+        except TelegramError as e:
+            if "can't parse entities" in str(e).lower():
+                logger.warning(
+                    "HTML parse failed for chunk, retrying as plain text: %s", e
+                )
+                return await self._app.bot.send_message(
+                    chat_id=chat_id,
+                    text=text,
+                    parse_mode=None,
+                )
+            raise
+
     async def send_message(self, user: str, text: str) -> str:
         """Send a message to a Telegram chat. Returns message ID.
 
         Long messages are split into multiple Telegram messages; the first
-        message ID is returned.
+        message ID is returned. If a chunk fails HTML parsing it is retried as
+        plain text.
         """
         if self._app is None:
             raise RuntimeError("Telegram adapter not started")
@@ -269,11 +293,7 @@ class TelegramAdapter(Platform):
         chunks = _split_long_text(text)
         first_msg = None
         for chunk in chunks:
-            msg = await self._app.bot.send_message(
-                chat_id=chat_id,
-                text=_md_to_tg_html(chunk),
-                parse_mode="HTML",
-            )
+            msg = await self._send_chunk(chat_id, chunk)
             if first_msg is None:
                 first_msg = msg
         assert first_msg is not None
@@ -309,19 +329,29 @@ class TelegramAdapter(Platform):
         chat_id = int(user)
         chunks = _split_long_text(text)
         try:
-            await self._app.bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=int(msg_id),
-                text=_md_to_tg_html(chunks[0]),
-                parse_mode="HTML",
-            )
-            self._last_edit_times[msg_id] = time.monotonic()
-            for chunk in chunks[1:]:
-                await self._app.bot.send_message(
+            try:
+                await self._app.bot.edit_message_text(
                     chat_id=chat_id,
-                    text=_md_to_tg_html(chunk),
+                    message_id=int(msg_id),
+                    text=_md_to_tg_html(chunks[0]),
                     parse_mode="HTML",
                 )
+            except TelegramError as e:
+                if "can't parse entities" in str(e).lower():
+                    logger.warning(
+                        "HTML parse failed for edit, retrying as plain text: %s", e
+                    )
+                    await self._app.bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=int(msg_id),
+                        text=chunks[0],
+                        parse_mode=None,
+                    )
+                else:
+                    raise
+            self._last_edit_times[msg_id] = time.monotonic()
+            for chunk in chunks[1:]:
+                await self._send_chunk(chat_id, chunk)
         except TelegramError as e:
             # Telegram returns 400 if message content is unchanged
             if "message is not modified" in str(e).lower():

@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from telegram import Bot, Message, Update, User
+from telegram.error import TelegramError
 from telegram.ext import Application
 
 from hestia.config import TelegramConfig
@@ -84,6 +85,87 @@ class TestTelegramAdapterAsync:
             parse_mode="HTML",
         )
         assert result == "42"
+
+    @pytest.mark.asyncio
+    async def test_send_message_falls_back_to_plain_text_on_html_parse_error(
+        self,
+        adapter: TelegramAdapter,
+    ) -> None:
+        """If HTML parse fails, send_message retries the chunk as plain text."""
+        mock_app = MagicMock(spec=Application)
+        mock_bot = AsyncMock(spec=Bot)
+        mock_app.bot = mock_bot
+
+        mock_message = MagicMock(spec=Message)
+        mock_message.message_id = 42
+        mock_bot.send_message = AsyncMock(side_effect=[
+            TelegramError("Can't parse entities: unsupported start tag \"code\" at byte offset 10"),
+            mock_message,
+        ])
+
+        adapter._app = mock_app
+
+        result = await adapter.send_message("12345", "some text")
+
+        assert mock_bot.send_message.call_count == 2
+        second_call = mock_bot.send_message.call_args
+        assert second_call.kwargs["parse_mode"] is None
+        assert second_call.kwargs["text"] == "some text"
+        assert result == "42"
+
+    @pytest.mark.asyncio
+    async def test_send_long_fenced_code_block_splits_and_sends(
+        self,
+        adapter: TelegramAdapter,
+    ) -> None:
+        """A fenced code block longer than the chunk limit is split and sent."""
+        mock_app = MagicMock(spec=Application)
+        mock_bot = AsyncMock(spec=Bot)
+        mock_app.bot = mock_bot
+
+        mock_message = MagicMock(spec=Message)
+        mock_message.message_id = 1
+        mock_bot.send_message = AsyncMock(return_value=mock_message)
+
+        adapter._app = mock_app
+
+        # Build a fenced code block that exceeds the safe chunk length.
+        line = "x" * 100
+        block = "```\n" + "\n".join([line] * 50) + "\n```"
+        assert len(block) > 3800
+
+        result = await adapter.send_message("12345", block)
+
+        assert result == "1"
+        assert mock_bot.send_message.call_count > 1
+        # Every call should attempt HTML first; plain-text fallback is exercised
+        # only on parse errors.
+        for call in mock_bot.send_message.call_args_list:
+            assert call.kwargs.get("parse_mode") == "HTML"
+
+    @pytest.mark.asyncio
+    async def test_edit_message_falls_back_to_plain_text_on_html_parse_error(
+        self,
+        adapter: TelegramAdapter,
+    ) -> None:
+        """If HTML parse fails during edit, retry the edit as plain text."""
+        mock_app = MagicMock(spec=Application)
+        mock_bot = AsyncMock(spec=Bot)
+        mock_app.bot = mock_bot
+
+        mock_bot.edit_message_text = AsyncMock(side_effect=[
+            TelegramError("Can't parse entities: invalid entity at byte offset 5"),
+            None,
+        ])
+
+        adapter._app = mock_app
+
+        await adapter.edit_message("12345", "100", "some text")
+
+        assert mock_bot.edit_message_text.call_count == 2
+        second_call = mock_bot.edit_message_text.call_args
+        assert second_call.kwargs["parse_mode"] is None
+        assert second_call.kwargs["text"] == "some text"
 
     @pytest.mark.asyncio
     async def test_edit_message_rate_limited(
