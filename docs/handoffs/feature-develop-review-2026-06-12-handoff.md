@@ -52,11 +52,21 @@ uv run ruff check src/ tests/
 cd web-ui && npm run build && npm run test
 ```
 
-Known baseline:
-- `tests/unit/test_web_routes.py::TestDoctorRoute::test_doctor_check` is flaky in the full suite but passes in isolation.
-- `tests/unit/tools/test_browser_session_store.py::TestBrowserSessionStore::test_list_domains` is a stale test expecting old domain-normalization behavior.
-- `tests/unit/web/test_browser_stream.py::TestStartSession::test_start_session_launches_browser_and_returns_id` is a stale test expecting old launch args.
-- `mypy` has 26 pre-existing errors (down from 31); none are in code changed by this branch.
+Actual results on this branch:
+
+| Gate | Result |
+|------|--------|
+| `uv run pytest tests/unit/ tests/integration/ -q` | **1757 passed, 6 skipped, 3 failed** |
+| `uv run mypy src/hestia` | **26 errors** (pre-existing baseline) |
+| `uv run ruff check src/ tests/` | **56 errors** (pre-existing baseline; E501/E402 are clean) |
+| `cd web-ui && npm run build && npm run test` | **pass** (128/128 tests) |
+
+Known baseline failures (not introduced by this branch):
+- `tests/unit/test_web_routes.py::TestDoctorRoute::test_doctor_check` — flaky in the full suite; passes in isolation.
+- `tests/unit/tools/test_browser_session_store.py::TestBrowserSessionStore::test_list_domains` — stale test expecting old domain-normalization behavior.
+- `tests/unit/web/test_browser_stream.py::TestStartSession::test_start_session_launches_browser_and_returns_id` — stale test expecting old launch args.
+- `mypy` errors are in unchanged files (`orchestrator/execution.py`, `telegram_adapter.py` Chat\|None, `commands/preview_prompt.py`, `platforms/runners.py`).
+- `ruff` errors are the pre-existing baseline; the subset this branch touched is clean, and E501/E402 specifically are clean.
 
 ## Version chosen
 
