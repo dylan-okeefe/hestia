@@ -5,9 +5,11 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## [0.13.0] — 2026-06-13
+## [0.13.1] — 2026-06-13
 
 ### Release prep & front door
+- **Version note** — `0.13.0` was already tagged on an earlier `main` merge, so the
+  consolidated release is `0.13.1`.
 - **README Quick Start rewrite** — clone → `uv sync` → copy `deploy/example_config.py` →
   `hestia init` → start llama.cpp → `hestia serve`/`hestia chat`; no more fictional
   `pip install hestia`.
