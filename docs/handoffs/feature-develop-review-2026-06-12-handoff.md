@@ -1,8 +1,8 @@
 # Handoff — `feature/develop-review-2026-06-12`
 
 **Branch:** `feature/develop-review-2026-06-12`  
-**Target version:** `0.13.0`  
-**Status:** Ready for final merge/tag/push.
+**Released version:** `0.13.1`  
+**Status:** Merged to `develop`, tagged, and pushed.
 
 ## What is shipping in this release
 
@@ -29,7 +29,10 @@
 
 ### Tooling
 - **ruff line-length 120** — `pyproject.toml` updated; E402 fixed and worst E501 offenders wrapped.
-- Agent docs (`SKILL.md`, `references/*.md`, `.cursorrules`) updated to describe the real schema/bootstrap path and the 120-char gate.
+- Agent docs (`SKILL.md`, `references/*.md`, `.cursorrules`) updated to describe the real schema/bootstrap path and the 120-char gate, and to clarify that Kimi may merge/push `develop` and tag releases when Dylan authorizes it.
+
+### Packaging
+- **`playwright-stealth` declared** — added to `[project.optional-dependencies] browser` so a fresh `uv sync --extra browser` installs the runtime import used by `src/hestia/tools/browser/stealth.py`.
 
 ## What is explicitly deferred (HOLD specs)
 
@@ -70,30 +73,32 @@ Known baseline failures (not introduced by this branch):
 
 ## Version chosen
 
-`0.13.0` — the CHANGELOG already staged 0.13.0 with a 2026-06-06 date; this branch completes that release and updates the date to 2026-06-13. `pyproject.toml` was bumped from `0.12.2` to `0.13.0` to match.
+`0.13.1` — the `v0.13.0` tag already existed on an earlier `main` merge commit, so the consolidated release was tagged `v0.13.1`. `pyproject.toml` and `CHANGELOG.md` were bumped accordingly.
 
-## Merge / tag / push commands
+## Merge / tag / push status
+
+Done in `/home/dylan/Hestia`:
 
 ```bash
-# 1. Ensure you are on the feature branch and the tree is clean
-cd /home/dylan/Hestia-runtime
-git status
-
-# 2. Switch to develop and merge the feature branch
 git checkout develop
 git pull origin develop
-git merge --no-ff feature/develop-review-2026-06-12 -m "release: merge feature/develop-review-2026-06-12 for v0.13.0"
-
-# 3. Tag the release
-git tag -a v0.13.0 -m "Release v0.13.0"
-
-# 4. Push develop and the tag
+git merge --no-ff feature/develop-review-2026-06-12-release -m "release: merge feature/develop-review-2026-06-12 for v0.13.0"
+uv run pytest tests/unit/ tests/integration/ -q
+git tag -a v0.13.1 -m "Release v0.13.1"
 git push origin develop
-git push origin v0.13.0
-
-# 5. (Optional) delete the feature branch after merge
-git branch -d feature/develop-review-2026-06-12
-git push origin --delete feature/develop-review-2026-06-12
+git push origin v0.13.1
 ```
 
-After push, restart the runtime service so the new code is loaded.
+Merge was clean (`--no-ff`, no conflicts). Post-merge pytest showed the three known baseline failures only. `develop` and `v0.13.1` are pushed.
+
+## What you still need to do
+
+- Fast-forward `main` to `develop` and push `main` (Dylan only, via GitHub PR or direct push).
+- Restart the runtime service so the new code is loaded.
+- (Optional) delete the feature branches after merge:
+  ```bash
+  git branch -d feature/develop-review-2026-06-12
+  git branch -d feature/develop-review-2026-06-12-release
+  git push origin --delete feature/develop-review-2026-06-12
+  git push origin --delete feature/develop-review-2026-06-12-release
+  ```
