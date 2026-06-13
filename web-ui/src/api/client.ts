@@ -109,18 +109,6 @@ export async function debugLogin(userId: string): Promise<{ token: string; platf
   return res.json();
 }
 
-export async function fetchSessions(limit = 50) {
-  const res = await apiFetch(`${API_BASE}/sessions?limit=${limit}`);
-  if (!res.ok) throw new Error('Failed to fetch sessions');
-  return res.json();
-}
-
-export async function fetchTurns(sessionId: string) {
-  const res = await apiFetch(`${API_BASE}/sessions/${sessionId}/turns`);
-  if (!res.ok) throw new Error('Failed to fetch turns');
-  return res.json();
-}
-
 export async function fetchProposals(status = 'pending') {
   const qs = status ? `?status=${status}` : '';
   const res = await apiFetch(`${API_BASE}/proposals${qs}`);
@@ -508,12 +496,6 @@ export async function fetchRooms() {
   return res.json() as Promise<{ rooms: Array<{ id: string; platform: string; platform_room_id: string; display_name: string | null; created_at: string }> }>;
 }
 
-export async function fetchRoom(roomId: string) {
-  const res = await apiFetch(`${API_BASE}/rooms/${roomId}`);
-  if (!res.ok) throw new Error('Failed to fetch room');
-  return res.json();
-}
-
 // Memories
 export async function fetchMemories(limit = 20) {
   const res = await apiFetch(`${API_BASE}/memory?limit=${limit}`);
@@ -666,37 +648,4 @@ export async function fetchHandoffs(userId: string) {
   return res.json() as Promise<{ handoffs: Array<{ session_id: string; summary: string; created_at: string }> }>;
 }
 
-// Context Lab
-export interface PreviewLayer {
-  name: string;
-  tokens: number;
-  truncated: boolean;
-  text: string;
-}
 
-export interface PreviewPromptResult {
-  context_length: number;
-  budget: number;
-  empty_used: number;
-  history_used: number;
-  history_kept: number;
-  history_truncated: number;
-  layers: PreviewLayer[];
-  assembled_system: string;
-  assembled_tokens: number;
-}
-
-export async function previewPrompt(payload: {
-  identity_tokens?: number;
-  memory_tokens?: number;
-  context_length?: number;
-  history_turns?: number;
-}): Promise<PreviewPromptResult> {
-  const res = await apiFetch(`${API_BASE}/context-lab/preview`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error('Failed to preview prompt');
-  return res.json() as Promise<PreviewPromptResult>;
-}

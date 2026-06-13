@@ -5,6 +5,7 @@ import PageCard from '../components/layout/PageCard';
 import LoadingSkeleton from '../components/layout/LoadingSkeleton';
 import ErrorState from '../components/layout/ErrorState';
 import EmptyState from '../components/layout/EmptyState';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { TEXT } from '../lib/text';
 import './StyleProfile.css';
 
@@ -146,25 +147,16 @@ export default function StyleProfile() {
         </div>
       )}
 
-      {confirmReset && (
-        <div
-          className="modal-overlay"
-          onClick={() => setConfirmReset(false)}
-        >
-          <div className="modal modal--sm" onClick={(e) => e.stopPropagation()}>
-            <h3>{TEXT.styleProfile.resetConfirmTitle}</h3>
-            <p className="text-small text-secondary">
-              {TEXT.styleProfile.resetConfirmDescription(metrics.length, platformUser, platform)}
-            </p>
-            <div className="row-center gap-2 mt-4">
-              <button onClick={() => setConfirmReset(false)}>{TEXT.common.cancel}</button>
-              <button onClick={handleReset} className="text-danger border-danger">
-                {TEXT.styleProfile.resetConfirmButton}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        isOpen={confirmReset}
+        title={TEXT.styleProfile.resetConfirmTitle}
+        description={TEXT.styleProfile.resetConfirmDescription(metrics.length, platformUser, platform)}
+        confirmLabel={TEXT.styleProfile.resetConfirmButton}
+        cancelLabel={TEXT.common.cancel}
+        onConfirm={handleReset}
+        onCancel={() => setConfirmReset(false)}
+        variant="danger"
+      />
     </div>
   );
 }
