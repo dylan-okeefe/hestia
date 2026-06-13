@@ -12,9 +12,9 @@ from hestia.persistence.db import Database
 from hestia.persistence.sessions import SessionStore
 from hestia.tools.builtin.current_time import current_time
 from hestia.tools.builtin.terminal import make_terminal_tool
+from hestia.tools.registry import ToolRegistry
 
 terminal = make_terminal_tool()
-from hestia.tools.registry import ToolRegistry
 
 
 class FakeInferenceClient:
@@ -591,3 +591,49 @@ async def test_turn_fetches_message_history_at_most_once(
         f"Expected exactly one get_messages call per turn (M-2 invariant), "
         f"got {counting_store.get_messages_calls}"
     )
+
+
+@pytest.mark.asyncio
+async def test_process_turn_persists_reasoning_budget(
+    store,
+    fake_inference,
+    fake_policy,
+    context_builder,
+    tool_registry,
+    respond_callback,
+):
+    """After process_turn the turns.reasoning_budget column is persisted."""
+    from hestia.core.types import Session, SessionState, SessionTemperature
+
+    session = Session(
+        id="test_session_budget",
+        platform="test",
+        platform_user="user",
+        started_at=datetime.now(),
+        last_active_at=datetime.now(),
+        slot_id=None,
+        slot_saved_path=None,
+        state=SessionState.ACTIVE,
+        temperature=SessionTemperature.COLD,
+    )
+
+    orchestrator = Orchestrator(
+        inference=fake_inference,
+        session_store=store,
+        context_builder=context_builder,
+        tool_registry=tool_registry,
+        policy=fake_policy,
+        default_reasoning_budget=8192,
+    )
+
+    turn = await orchestrator.process_turn(
+        session=session,
+        user_message=Message(role="user", content="hello"),
+        respond_callback=respond_callback,
+    )
+
+    # The turn object may be updated each iteration by the policy, but the
+    # value persisted at turn start should match the configured default.
+    fetched = await store.get_turn(turn.id)
+    assert fetched is not None
+    assert fetched.reasoning_budget == 8192

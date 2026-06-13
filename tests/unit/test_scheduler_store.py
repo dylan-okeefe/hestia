@@ -211,6 +211,39 @@ class TestListDueTasks:
         assert len(due) == 3
 
 
+class TestSetNextRunAt:
+    """Tests for set_next_run_at method."""
+
+    @pytest.mark.asyncio
+    async def test_set_next_run_at_updates_only_next_run(
+        self, scheduler_store, test_session
+    ):
+        """set_next_run_at only changes next_run_at and leaves other fields intact."""
+        task = await scheduler_store.create_task(
+            session_id=test_session.id,
+            prompt="Task",
+            cron_expression="0 9 * * *",
+        )
+        original_created_at = task.created_at
+        original_last_run_at = task.last_run_at
+
+        future = datetime.now(UTC) + timedelta(days=1)
+        result = await scheduler_store.set_next_run_at(task.id, future)
+        assert result is True
+
+        updated = await scheduler_store.get_task(task.id)
+        assert updated.next_run_at == future
+        assert updated.last_run_at == original_last_run_at
+        assert updated.created_at == original_created_at
+        assert updated.enabled is True
+
+    @pytest.mark.asyncio
+    async def test_set_next_run_at_missing_task(self, scheduler_store):
+        """Returns False for a non-existent task."""
+        result = await scheduler_store.set_next_run_at("task_nonexistent", datetime.now(UTC))
+        assert result is False
+
+
 class TestUpdateAfterRun:
     """Tests for update_after_run method."""
 

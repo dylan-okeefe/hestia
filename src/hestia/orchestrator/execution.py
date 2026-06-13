@@ -74,6 +74,7 @@ class TurnExecution:
         injection_scanner: InjectionScanner | None = None,
         max_iterations: int = 10,
         max_tool_calls_per_turn: int = 10,
+        max_tokens: int = 1024,
         stream: bool = False,
         event_bus: "EventBus | None" = None,
     ) -> None:
@@ -86,6 +87,7 @@ class TurnExecution:
         self._injection_scanner = injection_scanner
         self._max_iterations = max_iterations
         self._max_tool_calls_per_turn = max_tool_calls_per_turn
+        self._max_tokens = max_tokens
         self._stream = stream
         self._event_bus = event_bus
 
@@ -128,6 +130,7 @@ class TurnExecution:
                         tools=ctx.tools,
                         slot_id=ctx.slot_id,
                         reasoning_budget=turn.reasoning_budget,
+                        max_tokens=self._max_tokens,
                     )
             except ThinkingBudgetExceededError:
                 await transition(turn, TurnState.RETRYING, "")
@@ -487,6 +490,7 @@ class TurnExecution:
             tools=ctx.tools,
             slot_id=ctx.slot_id,
             reasoning_budget=turn.reasoning_budget,
+            max_tokens=self._max_tokens,
         ):
             if delta.reasoning_content and not turn.thinking_aborted:
                 thinking_chars = sum(len(p) for p in reasoning_parts) + len(delta.reasoning_content)

@@ -1,7 +1,7 @@
 """Scheduler persistence layer for scheduled tasks."""
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import sqlalchemy as sa
@@ -12,6 +12,11 @@ from hestia.core.types import ScheduledTask
 from hestia.errors import PersistenceError
 from hestia.persistence.db import Database
 from hestia.persistence.schema import scheduled_tasks
+
+
+# Retry backoff for failed scheduled-task runs. Capped to avoid hammering.
+_MIN_RETRY_BACKOFF_SECONDS = 30
+_MAX_RETRY_BACKOFF_SECONDS = 300
 
 
 def _generate_task_id() -> str:
@@ -28,6 +33,14 @@ def _dt_gt_utc(left: datetime, right: datetime) -> bool:
         return dt.astimezone(UTC)
 
     return as_utc_aware(left) > as_utc_aware(right)
+
+
+def _retry_backoff_from_now(now: datetime) -> datetime:
+    """Return a future time for the next retry after a failed run.
+
+    Uses a short fixed backoff capped at _MAX_RETRY_BACKOFF_SECONDS.
+    """
+    return now + timedelta(seconds=min(_MIN_RETRY_BACKOFF_SECONDS, _MAX_RETRY_BACKOFF_SECONDS))
 
 
 def _calculate_next_run(
@@ -248,8 +261,8 @@ class SchedulerStore:
             # Calculate next run time if not provided
             if next_run_at is None:
                 if error is not None:
-                    # Failed run - keep enabled for retry
-                    next_run_at = task.next_run_at
+                    # Failed run - keep enabled for retry with a capped backoff
+                    next_run_at = _retry_backoff_from_now(now)
                 elif task.cron_expression is not None:
                     # Recurring task - calculate next occurrence
                     next_run_at = _calculate_next_run(task.cron_expression, None, now)
@@ -287,6 +300,24 @@ class SchedulerStore:
                 next_run_at=next_run_at,
                 last_error=error,
             )
+
+    async def set_next_run_at(self, task_id: str, next_run_at: datetime | None) -> bool:
+        """Update only the next_run_at field.
+
+        Used to mark a task as in-flight before the long-running work begins,
+        so a subsequent tick does not re-list the same task.
+
+        Returns True if the task was found, False otherwise.
+        """
+        update = (
+            sa.update(scheduled_tasks)
+            .where(scheduled_tasks.c.id == task_id)
+            .values(next_run_at=next_run_at)
+        )
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(update)
+            await conn.commit()
+            return result.rowcount > 0
 
     async def run_now(self, task_id: str) -> bool:
         """Mark a task to run on the next scheduler tick.

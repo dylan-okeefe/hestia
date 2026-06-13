@@ -306,3 +306,12 @@ job_alerts = sa.Table(
     sa.Index("idx_job_alerts_pending", "digest_sent", "created_at"),
     sa.Index("idx_job_alerts_created", "created_at"),
 )
+
+error_resolutions = sa.Table(
+    "error_resolutions",
+    metadata,
+    sa.Column("error_id", sa.String, primary_key=True),
+    sa.Column("status", sa.String, nullable=False),
+    sa.Column("resolved_at", sa.DateTime, nullable=False),
+    sa.Column("resolved_by", sa.String, nullable=True),
+)
