@@ -73,7 +73,7 @@ class SubagentResult:
 def make_delegate_task_tool(
     session_store: SessionStore,
     orchestrator_factory: Callable[[], Any],  # Factory to create orchestrator for subagent
-    default_timeout: float = 300.0,  # 5 minutes default
+    default_timeout: float = 600.0,  # 10 minutes default
 ) -> Callable[..., Coroutine[Any, Any, str]]:
     """Create a delegate_task tool bound to stores and orchestrator.
 
@@ -144,8 +144,15 @@ def make_delegate_task_tool(
             if context:
                 prompt_parts.append(f"\nContext: {context}")
             prompt_parts.append(
-                "\nWork on this task independently. When done, provide a concise summary "
-                "of what you accomplished and any key findings."
+                "\nWork on this task independently. "
+                "You may use browser_get, http_get, read_file, and other tools, but do not "
+                "spin in read loops. If you have tried a few sources and they are blocked, "
+                "returning 404/403, or giving you the same answer repeatedly, STOP and "
+                "summarize what you know rather than retrying. "
+                "Prefer writing structured findings to a file with write_file or append_to_file "
+                "so the parent can read the artifact. "
+                "When done, provide a concise summary of what you accomplished, what you "
+                "could not determine, and any key findings or artifact paths."
             )
             prompt = "\n".join(prompt_parts)
 
@@ -166,7 +173,14 @@ def make_delegate_task_tool(
                     session=subagent_session,
                     user_message=user_message,
                     respond_callback=_noop_respond,
-                    system_prompt="You are a focused subagent working on a specific task.",
+                    system_prompt=(
+                        "You are a focused subagent working on a single delegated task. "
+                        "Be efficient: gather only the information needed, avoid repeating "
+                        "the same read or search, and if the information is not available "
+                        "after a reasonable attempt, stop and summarize what you found. "
+                        "Always end by returning a concise, actionable summary to the parent. "
+                        "Do not ask follow-up questions unless the task explicitly requires it."
+                    ),
                 )
                 return cast("Turn", turn)
 

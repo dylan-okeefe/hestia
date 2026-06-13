@@ -50,6 +50,10 @@ def make_terminal_tool(blocked_patterns: list[str] | None = None) -> Any:
                     "type": "number",
                     "description": "Max seconds (default 30)",
                 },
+                "description": {
+                    "type": "string",
+                    "description": "Optional human-readable description of what the command does. Ignored.",
+                },
             },
             "required": ["command"],
         },
@@ -58,7 +62,7 @@ def make_terminal_tool(blocked_patterns: list[str] | None = None) -> Any:
         tags=["system"],
         capabilities=[SHELL_EXEC],
     )
-    async def terminal(command: str, timeout: float = 30.0) -> str:
+    async def terminal(command: str, timeout: float = 30.0, description: str = "") -> str:
         """Run a shell command and return the result."""
         for pat in patterns:
             if pat.search(command):
