@@ -43,7 +43,7 @@ What to change, where, and why. Include:
 
 - `pytest tests/unit/ tests/integration/ -q` green
 - `mypy src/hestia` reports 0 errors
-- `ruff check src/` remains at baseline or better
+- `ruff check src/` remains at baseline or better (project line-length is 120)
 - `.kimi-done` includes `LOOP=L<NN>`
 
 ## Handoff

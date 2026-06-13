@@ -181,8 +181,10 @@ Based on experience across 7 phases:
    actually read somewhere in cli.py
 3. **Import changes break downstream tests** — When __init__.py exports change,
    check all test files that import from that package
-4. **Alembic migrations lag behind schema.py** — Compare table count in migrations
-   vs tables defined in schema.py
+4. **Schema/bootstrap parity** — Hestia bootstraps via `create_tables()` from
+   `src/hestia/persistence/schema.py` plus additive runtime migrations in
+   `src/hestia/persistence/migrations/`. Verify the runtime path creates the
+   same tables/columns as schema.py; Alembic files are reference-only.
 5. **Store methods missing from CLI** — If a store gains a new method, check
    whether the CLI command that should call it actually does
 6. **In-memory state lost on restart** — Any dict cache needs a database fallback

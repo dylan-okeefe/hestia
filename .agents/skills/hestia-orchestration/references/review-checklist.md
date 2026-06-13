@@ -24,10 +24,13 @@ Check all test files that import from the modified package.
 
 ## 4. Migration/schema parity
 
+Hestia bootstraps via `create_tables()` from the declarative schema in `src/hestia/persistence/schema.py` and applies additive idempotent runtime migrations in `src/hestia/persistence/migrations/`.
+
 If `schema.py` changed:
-- Alembic migration exists under `migrations/versions/`
-- Migration creates/drops the same tables/columns as schema.py
-- `alembic upgrade head` + `alembic downgrade -1` works
+- The runtime bootstrap path creates/drops the same tables/columns as schema.py
+- A runtime migration in `src/hestia/persistence/migrations/` is idempotent and handles existing data safely
+- `create_tables()` on a fresh SQLite deploy succeeds
+- Alembic files under `migrations/versions/` may be updated for reference but are **not** the production path
 
 ## 5. Store-to-CLI wiring
 
