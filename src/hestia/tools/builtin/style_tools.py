@@ -62,7 +62,13 @@ def make_reset_style_metric_tool(
         parameters_schema={
             "type": "object",
             "properties": {
-                "metric": {"type": "string", "description": "Metric name to reset (e.g. 'formality', 'preferred_length')."},
+                "metric": {
+                    "type": "string",
+                    "description": (
+                        "Metric name to reset "
+                        "(e.g. 'formality', 'preferred_length')."
+                    ),
+                },
             },
             "required": ["metric"],
         },

@@ -212,8 +212,18 @@ async def test_search_memory(
     store, fake_policy, tool_registry, memory_store, respond_callback
 ):
     """search_memory returns relevant matches."""
-    await memory_store.save("Project Phoenix roadmap", tags=["e2e_hestia_l11", "project"], platform="test", platform_user="user")
-    await memory_store.save("Grocery list: eggs", tags=["e2e_hestia_l11", "personal"], platform="test", platform_user="user")
+    await memory_store.save(
+        "Project Phoenix roadmap",
+        tags=["e2e_hestia_l11", "project"],
+        platform="test",
+        platform_user="user",
+    )
+    await memory_store.save(
+        "Grocery list: eggs",
+        tags=["e2e_hestia_l11", "personal"],
+        platform="test",
+        platform_user="user",
+    )
 
     responses = [
         ChatResponse(

@@ -70,7 +70,13 @@ def make_save_memory_tool(
             "type": "object",
             "properties": {
                 "content": {"type": "string", "description": "The text content to remember."},
-                "tags": {"type": "string", "description": "Comma-separated tags for categorization (e.g. 'project, todo')."},
+                "tags": {
+                    "type": "string",
+                    "description": (
+                        "Comma-separated tags for categorization "
+                        "(e.g. 'project, todo')."
+                    ),
+                },
             },
             "required": ["content"],
         },

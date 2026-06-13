@@ -20,7 +20,13 @@ def make_append_to_file_tool(config: StorageConfig) -> Any:
         parameters_schema={
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Absolute or relative file path. Must be within allowed roots."},
+                "path": {
+                    "type": "string",
+                    "description": (
+                        "Absolute or relative file path. "
+                        "Must be within allowed roots."
+                    ),
+                },
                 "content": {"type": "string", "description": "Text content to append."},
             },
             "required": ["path", "content"],

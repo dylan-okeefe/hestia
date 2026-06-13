@@ -17,7 +17,12 @@ def cli_runner() -> CliRunner:
 class TestMissingSoulWarning:
     """Tests that CLI warns when SOUL.md or calibration is missing."""
 
-    def test_missing_soul_path_warns(self, cli_runner: CliRunner, tmp_path: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_missing_soul_path_warns(
+        self,
+        cli_runner: CliRunner,
+        tmp_path: str,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Running a command with a non-existent HESTIA_SOUL_PATH prints a warning."""
         monkeypatch.setenv("HESTIA_SOUL_PATH", "/nonexistent/SOUL.md")
 
@@ -35,7 +40,12 @@ class TestMissingSoulWarning:
         assert "/nonexistent/SOUL.md" in result.output
         assert "Warning" in result.output
 
-    def test_missing_calibration_warns(self, cli_runner: CliRunner, tmp_path: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_missing_calibration_warns(
+        self,
+        cli_runner: CliRunner,
+        tmp_path: str,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Running a command with a non-existent HESTIA_CALIBRATION_PATH prints a warning."""
         monkeypatch.setenv("HESTIA_CALIBRATION_PATH", "/nonexistent/calibration.json")
 

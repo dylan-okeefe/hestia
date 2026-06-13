@@ -38,7 +38,13 @@ class TestTelegramGroupChatRouting:
 
         received_args: tuple[str, str, str, str | None, str | None] | None = None
 
-        async def on_message(platform: str, user: str, text: str, sender: str | None, session_title: str | None = None) -> None:
+        async def on_message(
+            platform: str,
+            user: str,
+            text: str,
+            sender: str | None,
+            session_title: str | None = None,
+        ) -> None:
             nonlocal received_args
             received_args = (platform, user, text, sender, session_title)
 
@@ -82,7 +88,13 @@ class TestTelegramGroupChatRouting:
 
         received_args: tuple[str, str, str, str | None, str | None] | None = None
 
-        async def on_message(platform: str, user: str, text: str, sender: str | None, session_title: str | None = None) -> None:
+        async def on_message(
+            platform: str,
+            user: str,
+            text: str,
+            sender: str | None,
+            session_title: str | None = None,
+        ) -> None:
             nonlocal received_args
             received_args = (platform, user, text, sender, session_title)
 
@@ -124,7 +136,13 @@ class TestTelegramGroupChatRouting:
 
         callback_called = False
 
-        async def on_message(platform: str, user: str, text: str, sender: str | None, session_title: str | None = None) -> None:
+        async def on_message(
+            platform: str,
+            user: str,
+            text: str,
+            sender: str | None,
+            session_title: str | None = None,
+        ) -> None:
             nonlocal callback_called
             callback_called = True
 
