@@ -19,7 +19,7 @@ You are the **orchestrator**, not the primary builder. Your job is to run the lo
 
 You only implement directly when a fix is trivial (single-line, typo, import fix) and validating/fixing via subagent would take longer than just doing it.
 
-Dylan (the user) handles: final approval, `git push`, secrets, and release tags.
+Dylan handles: final approval, secrets, and merges/pushes to `main`. When Dylan explicitly authorizes it for a task, Kimi may merge feature branches into `develop`, push `develop`, and create and push release tags.
 
 ## Workflow modes
 
@@ -50,7 +50,7 @@ uv run mypy src/hestia
 uv run ruff check src/ tests/
 ```
 
-All three must pass before advancing. If ruff has pre-existing baseline issues, note the count and ensure no new issues were introduced.
+All three must pass before advancing. If ruff has pre-existing baseline issues, note the count and ensure no new issues were introduced. The project line-length is **120** (`tool.ruff.line-length` in `pyproject.toml`); do not reformat to 100.
 
 ## Self-review checklist
 
@@ -59,7 +59,7 @@ Before declaring a chunk done, verify:
 1. **§0 cleanup items are addressed** — If the spec has a `## Review carry-forward` section, every bullet must be checked off or fixed.
 2. **Config fields are wired** — Every new config field is read somewhere (CLI, adapter, or runner).
 3. **Import changes don't break downstream** — When `__init__.py` exports change, grep for test files that import from that package.
-4. **Migrations match schema** — If schema changed, Alembic migration exists and table count matches.
+4. **Migrations match schema** — Hestia bootstraps via `create_tables()` from the declarative schema in `src/hestia/persistence/schema.py` and applies additive idempotent runtime migrations in `src/hestia/persistence/migrations/`. If schema changed, ensure the runtime bootstrap path creates the new table/column and the runtime migration is idempotent; Alembic files exist for reference only and are not the production path.
 5. **Store methods reach the CLI** — If a store gains a new method, the CLI command that should call it actually does.
 6. **In-memory state has a DB fallback** — Any dict cache needs persistence on restart.
 7. **Tests cover the change** — New code has tests; existing tests still pass.
@@ -80,7 +80,7 @@ See `references/review-checklist.md` for the detailed version with examples.
 - Branch from `develop`: `git checkout -b feature/l<NN>-<slug>`
 - Conventional commits: `feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`
 - One commit per logical section
-- Do **not** merge to `develop` unless Dylan explicitly authorizes it
+- Merge to `develop`, push `develop`, and tag releases only when Dylan explicitly authorizes it for the current task. Never push to `main`, never force-push, never rewrite published history, and never delete a branch you did not create.
 - Push feature branch to origin when done: `git push -u origin feature/l<NN>-<slug>`
 
 ## Release discipline

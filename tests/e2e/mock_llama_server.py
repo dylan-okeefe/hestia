@@ -70,7 +70,10 @@ CANNED_RESPONSES: list[tuple[re.Pattern, dict[str, Any]]] = [
                                 "type": "function",
                                 "function": {
                                     "name": "save_memory",
-                                    "arguments": '{"content": "User\'s favorite color is blue", "tags": ["preferences"]}',
+                                    "arguments": (
+                                        '{"content": "User\'s favorite color is blue", '
+                                        '"tags": ["preferences"]}'
+                                    ),
                                 },
                             }
                         ],

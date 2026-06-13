@@ -438,6 +438,7 @@ class InferenceClient:
             "messages": [message_to_dict(m) for m in clean_messages],
             "max_tokens": max_tokens,
             "temperature": temperature,
+            "reasoning_budget": reasoning_budget,
         }
 
         if tools:
@@ -578,6 +579,7 @@ class InferenceClient:
             "stream": True,
             "max_tokens": max_tokens,
             "temperature": temperature,
+            "reasoning_budget": reasoning_budget,
         }
 
         if tools:

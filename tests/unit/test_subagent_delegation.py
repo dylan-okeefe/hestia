@@ -81,6 +81,21 @@ async def test_delegate_task_invokes_factory_orchestrator(store, tmp_path):
     assert archived is not None
     assert archived.state.value == "archived"
 
+    # Verify subagent prompt discourages read loops and asks for summary
+    call_kwargs = mock_orch.process_turn.await_args.kwargs
+    assert "do not spin in read loops" in call_kwargs["user_message"].content
+    assert "STOP and summarize" in call_kwargs["user_message"].content
+    assert "avoid repeating the same read or search" in call_kwargs["system_prompt"]
+
+
+def test_delegate_task_default_timeout_bumped():
+    """Default subagent timeout is 10 minutes."""
+    from unittest.mock import MagicMock
+
+    tool = make_delegate_task_tool(MagicMock(), MagicMock())
+    schema = tool.__hestia_tool__.parameters_schema
+    assert "600" in schema["properties"]["timeout_seconds"]["description"]
+
 
 @pytest.mark.asyncio
 async def test_delegate_task_surfaces_artifact_refs_from_turn(store, tmp_path):

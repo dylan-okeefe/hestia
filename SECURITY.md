@@ -1,8 +1,23 @@
-# Security model
+# Security
 
-Hestia is designed as a **single-operator**, **local-first** assistant. The
-threat model assumes the person who can edit the config file and run the
-process is fully trusted.
+## Supported versions
+
+| Version  | Supported          |
+|----------|--------------------|
+| 0.13.0   | :white_check_mark: |
+| 0.12.x   | :white_check_mark: |
+| < 0.12.0 | :x:                |
+
+## Reporting a vulnerability
+
+Please report security issues privately to the maintainers at
+[dylanokeefedev@gmail.com](mailto:dylanokeefedev@gmail.com). Include a clear
+description of the issue, steps to reproduce, affected versions, and any
+suggested fixes or mitigations.
+
+We aim to acknowledge reports within 72 hours and will release patches for
+supported versions as quickly as possible. Please do not disclose public
+vulnerabilities until a fix is available.
 
 ## Config files execute Python
 
@@ -10,7 +25,7 @@ process is fully trusted.
 top-level `config` object (see `src/hestia/config.py`). That means a config
 file can execute arbitrary code at import time. This is intentional for
 flexibility (shared presets, computed paths, etc.) and is **not** a bug to be
-“fixed” by sandboxing in-tree.
+"fixed" by sandboxing in-tree.
 
 **Operational guidance:** treat `hestia.toml` / `config.py` like shell startup
 files: only edit them from accounts you trust, keep them out of world-writable

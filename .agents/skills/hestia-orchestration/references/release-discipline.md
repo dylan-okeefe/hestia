@@ -9,8 +9,8 @@ The release-prep doc is the authoritative scope. A branch that is not listed by 
 ## During the post-release window
 
 - Feature branches are fine. Work may continue on them.
-- Merging those branches into `develop` is **forbidden** until the next release-prep doc exists and names them.
-- Loop completion means: feature branch pushed to origin, handoff written, `KIMI_CURRENT.md` advanced. It does **NOT** mean merged to `develop`.
+- Merging those branches into `develop` is **forbidden** until the next release-prep doc exists and names them, **unless Dylan explicitly authorizes the merge for the current task**.
+- Loop completion means: feature branch pushed to origin, handoff written, `KIMI_CURRENT.md` advanced. It does **NOT** mean merged to `develop` unless Dylan authorized the merge.
 
 ## Allowed exceptions
 
@@ -46,5 +46,5 @@ No release-prep doc needed for:
 4. Bump version in `pyproject.toml`
 5. Update `CHANGELOG.md`
 6. Place annotated tag: `git tag -a vX.Y.Z -m "..."`
-7. Fast-forward `main` to `develop`
-8. Dylan pushes: `git push origin develop main vX.Y.Z`
+7. Fast-forward `main` to `develop` (Dylan only)
+8. Push `develop` and the tag: `git push origin develop vX.Y.Z`. Pushing `main` is reserved for Dylan.

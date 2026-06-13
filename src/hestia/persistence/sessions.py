@@ -750,6 +750,7 @@ class SessionStore:
             started_at=turn.started_at,
             last_transition_at=turn.started_at,
             iteration=turn.iterations,
+            reasoning_budget=turn.reasoning_budget,
         )
 
         async with self._db.engine.connect() as conn:
@@ -838,6 +839,7 @@ class SessionStore:
                     tool_calls_made=0,  # Not stored separately
                     final_response=None,
                     error=row.error,
+                    reasoning_budget=row.reasoning_budget,
                     transitions=[],  # Loaded separately
                 )
             return None
@@ -869,6 +871,7 @@ class SessionStore:
                     tool_calls_made=0,
                     final_response=None,
                     error=row.error,
+                    reasoning_budget=row.reasoning_budget,
                     transitions=[],
                 )
                 for row in rows
@@ -897,6 +900,7 @@ class SessionStore:
                     tool_calls_made=0,
                     final_response=None,
                     error=row.error,
+                    reasoning_budget=row.reasoning_budget,
                     transitions=[],
                 )
                 for row in rows

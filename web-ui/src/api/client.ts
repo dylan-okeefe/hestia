@@ -109,18 +109,6 @@ export async function debugLogin(userId: string): Promise<{ token: string; platf
   return res.json();
 }
 
-export async function fetchSessions(limit = 50) {
-  const res = await apiFetch(`${API_BASE}/sessions?limit=${limit}`);
-  if (!res.ok) throw new Error('Failed to fetch sessions');
-  return res.json();
-}
-
-export async function fetchTurns(sessionId: string) {
-  const res = await apiFetch(`${API_BASE}/sessions/${sessionId}/turns`);
-  if (!res.ok) throw new Error('Failed to fetch turns');
-  return res.json();
-}
-
 export async function fetchProposals(status = 'pending') {
   const qs = status ? `?status=${status}` : '';
   const res = await apiFetch(`${API_BASE}/proposals${qs}`);
@@ -506,12 +494,6 @@ export async function fetchRooms() {
   const res = await apiFetch(`${API_BASE}/rooms`);
   if (!res.ok) throw new Error('Failed to fetch rooms');
   return res.json() as Promise<{ rooms: Array<{ id: string; platform: string; platform_room_id: string; display_name: string | null; created_at: string }> }>;
-}
-
-export async function fetchRoom(roomId: string) {
-  const res = await apiFetch(`${API_BASE}/rooms/${roomId}`);
-  if (!res.ok) throw new Error('Failed to fetch room');
-  return res.json();
 }
 
 // Memories

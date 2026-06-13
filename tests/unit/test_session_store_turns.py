@@ -47,6 +47,24 @@ class TestTurnPersistence:
         assert fetched.state == TurnState.RECEIVED
 
     @pytest.mark.asyncio
+    async def test_insert_turn_persists_reasoning_budget(self, store):
+        """reasoning_budget is persisted and read back."""
+        turn = Turn(
+            id="turn_123",
+            session_id="session_456",
+            state=TurnState.RECEIVED,
+            user_message=None,
+            started_at=datetime.now(),
+            reasoning_budget=4096,
+        )
+
+        await store.insert_turn(turn)
+
+        fetched = await store.get_turn("turn_123")
+        assert fetched is not None
+        assert fetched.reasoning_budget == 4096
+
+    @pytest.mark.asyncio
     async def test_update_turn(self, store):
         """Can update a turn's state."""
         turn = Turn(

@@ -407,10 +407,12 @@ class SecurityAuditor:
                 try:
                     vulnerabilities = json.loads(result.stdout)
                     for vuln in vulnerabilities:
+                        name = vuln.get("name", "unknown")
+                        vuln_id = vuln.get("vulnerability_id", "unknown")
                         report.add_finding(
                             "warning",
                             "dependencies",
-                            f"Vulnerability in {vuln.get('name', 'unknown')}: {vuln.get('vulnerability_id', 'unknown')}",
+                            f"Vulnerability in {name}: {vuln_id}",
                             vuln,
                         )
                         report.dependency_issues.append(

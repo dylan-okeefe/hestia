@@ -38,7 +38,14 @@ class TestSaveExecution:
             workflow_id="wf_1",
             status="ok",
             node_results=[
-                NodeResult(node_id="n1", status="ok", output="hello", elapsed_ms=100, prompt_tokens=10, completion_tokens=5)
+                NodeResult(
+                    node_id="n1",
+                    status="ok",
+                    output="hello",
+                    elapsed_ms=100,
+                    prompt_tokens=10,
+                    completion_tokens=5,
+                )
             ],
             total_elapsed_ms=200,
             total_prompt_tokens=10,

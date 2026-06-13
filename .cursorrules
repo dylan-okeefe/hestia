@@ -8,16 +8,18 @@ Ubuntu with llama.cpp + Qwen 3.5 9B. It is built by a three-tool workflow:
 1. **Claude (Cowork on Mac)** or **Cursor** — Reviews code, writes Kimi prompts,
    orchestrates the build (including **full Kimi queue runs**: see below)
 2. **Kimi** — Executes build phases on the Ubuntu machine in 1-2 hour cycles
-3. **Dylan** — GitHub merge/push when ready, and **final** pass over the repo after
-   a queued multi-loop run (Cursor handles per-loop review and the next prompt in between)
+3. **Dylan** — Final approval, secrets, and merges/pushes to `main`. When Dylan
+   explicitly authorizes it for a task, **Kimi** may merge feature branches into
+   `develop`, push `develop`, and create and push release tags.
 
 **Who runs Kimi and git between loops:** For queued work, **Cursor** runs
 `./scripts/kimi-run-current.sh`, watches completion (`.kimi-done`), reviews diffs,
 fixes trivial issues or tightens prompts, **merges feature branches to `develop`**,
 advances `KIMI_CURRENT.md` / carry-forward, and starts the next loop. **Dylan** does
 not need to operate Kimi or manage that git flow by hand unless they choose to;
-Dylan’s main jobs are direction, secrets on the machine, and **push / release**
-when Cursor says the queue (or a milestone) is green.
+Dylan’s main jobs are direction, secrets on the machine, and **final approval
+/ `main` merges**. Kimi handles `develop` merges, `develop` pushes, and release
+tags only when Dylan explicitly authorizes them for the current task.
 
 ## Before doing anything, read:
 
@@ -47,9 +49,9 @@ When Dylan wants a **queued multi-loop run** (`docs/development-process/kimi-pha
 2. Run `./scripts/kimi-run-current.sh` (from repo root). **Completion signal is only `.kimi-done`** — see subsection below. Do **not** wait for Dylan to say the loop finished; keep working until the file proves it.
 3. **Review:** `git diff`, `uv run pytest tests/unit/ tests/integration/ -q`, spot-check risky areas (config wiring, migrations, platform callbacks).
 4. **If red:** fix trivial issues yourself **or** tighten `KIMI_CURRENT` / add follow-up spec — re-run Kimi on the same loop until green or you document a blocker for Dylan.
-5. **If green:** merge feature branch to `develop` (fast-forward or merge commit per project habit), append **`docs/development-process/kimi-loop-log.md`** (full detail), reply in chat with a **short** bullet summary only.
+5. **If green:** merge feature branch to `develop` (fast-forward or merge commit per project habit) **when Dylan has authorized the merge for the current task**, append **`docs/development-process/kimi-loop-log.md`** (full detail), reply in chat with a **short** bullet summary only.
 6. **Advance:** Point `docs/development-process/prompts/KIMI_CURRENT.md` at the **next** `docs/development-process/loops/kimi-L*.md` row. **Before** the next Kimi launch, edit that next spec file’s **`## Review carry-forward`** with every issue from step 3 (including nits).
-7. **Start the next loop:** go to step 2. If there is no next row, tell Dylan the queue is complete and what to `git push` / sanity-check.
+7. **Start the next loop:** go to step 2. If there is no next row, tell Dylan the queue is complete and what to sanity-check. Only `git push` `develop` or release tags if Dylan explicitly authorized it for this queue run.
 
 **If your Cursor context runs out** mid-queue: stop after a clean **git** state (commit or stash), finish step 5–6 for the last completed loop, and tell Dylan to send **“Continue Kimi orchestration”**; resume from `docs/development-process/kimi-loop-log.md` + `docs/development-process/prompts/KIMI_CURRENT.md`.
 
@@ -71,9 +73,11 @@ During the "post-release, pre-next-release" window:
 
 - Feature branches are fine. Kimi may run loops on them.
 - Merging those branches into `develop` is **forbidden** until the next
-  release-prep doc exists and names them.
+  release-prep doc exists and names them, **unless Dylan explicitly authorizes
+  the merge for the current task**.
 - Loop completion means: feature branch pushed to `origin`, handoff written,
-  `KIMI_CURRENT.md` advanced. It does **NOT** mean merged to `develop`.
+  `KIMI_CURRENT.md` advanced. It does **NOT** mean merged to `develop` unless
+  Dylan authorized the merge.
 
 When a new release is being prepared, Cursor writes the release-prep doc
 first, gets Dylan's sign-off on scope, then merges the named feature branches
@@ -83,7 +87,8 @@ into `develop` as part of the release sequence.
 
 - Pre-tag hotfixes that are themselves part of the in-flight release
   (Cursor lands these on a `feature/hotfix-*` branch, merges to `develop`,
-  then re-tags — this is the *current* release sequence, not "post-release").
+  then re-tags when Dylan authorizes it — this is the *current* release
+  sequence, not "post-release").
 - Pure planning/spec docs under `docs/development-process/` — kimi-loop spec
   files, ADRs, KIMI_CURRENT/queue/log updates, release-prep docs themselves.
   These are release-meta, not feature work.
@@ -144,7 +149,7 @@ To avoid feature-branch sprawl, completed loops for an upcoming release are merg
 2. They merge into `release/vX.Y.Z` in dependency order.
 3. When the release is ready, the release-prep doc names the release branch.
 4. `release/vX.Y.Z` merges to `develop` as a single unit.
-5. Tag, main fast-forward, push.
+5. Tag and push `develop` + tag. Fast-forward and push `main` is reserved for Dylan.
 
 **Why:** This collapses N feature branches into one merge to `develop`, keeps the develop history clean, and gives a single integration point for final QA.
 
@@ -181,8 +186,10 @@ Based on experience across 7 phases:
    actually read somewhere in cli.py
 3. **Import changes break downstream tests** — When __init__.py exports change,
    check all test files that import from that package
-4. **Alembic migrations lag behind schema.py** — Compare table count in migrations
-   vs tables defined in schema.py
+4. **Schema/bootstrap parity** — Hestia bootstraps via `create_tables()` from
+   `src/hestia/persistence/schema.py` plus additive runtime migrations in
+   `src/hestia/persistence/migrations/`. Verify the runtime path creates the
+   same tables/columns as schema.py; Alembic files are reference-only.
 5. **Store methods missing from CLI** — If a store gains a new method, check
    whether the CLI command that should call it actually does
 6. **In-memory state lost on restart** — Any dict cache needs a database fallback

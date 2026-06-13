@@ -5,7 +5,49 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## [0.13.0] — 2026-06-06
+## [0.13.0] — 2026-06-13
+
+### Release prep & front door
+- **README Quick Start rewrite** — clone → `uv sync` → copy `deploy/example_config.py` →
+  `hestia init` → start llama.cpp → `hestia serve`/`hestia chat`; no more fictional
+  `pip install hestia`.
+- **Tool-name accuracy pass** — README tool list corrected to match registered tool names
+  (`rollback_turn`, `accept_proposal`, `create_scheduled_task`, `reset_style_profile`, etc.).
+- **UPGRADE.md current to 0.13.0** — removed fictional `hestia skills` / `hestia memory epochs`
+  commands; fixed dead guide links; added migration-model note.
+- **SECURITY.md disclosure process** — added supported-versions table, responsible disclosure
+  process, and contact email.
+- **CHANGELOG version coherence** — `pyproject.toml` and CHANGELOG both at 0.13.0.
+
+### Orchestrator & Inference
+- **`reasoning_budget` and `max_tokens` wiring** — both values are now sent in the
+  llama.cpp `/v1/chat/completions` request body; `turns.reasoning_budget` is persisted.
+- **Scheduler double-fire / retry-storm fix** — tasks are marked in-flight before dispatch
+  and get a capped backoff on failure instead of retrying every tick.
+
+### Platforms
+- **Telegram long-message splitting** — messages longer than Telegram's 4096-character cap
+  are split into multiple messages; HTML parse failures fall back to plain text per chunk,
+  protecting against unbalanced tags from Markdown-to-HTML conversion inside code fences.
+- **VoiceConfig schema fix** — added missing `stt_language`, `stt_beam_size`, and
+  `stt_vad_filter` fields referenced by the voice pipeline.
+
+### Web Dashboard
+- **ContextLab launch** — restored the prompt-context preview page and added a route + nav
+  entry so it is reachable at `/context-lab`.
+- **Reusable Modal / ConfirmDialog** — extracted shared modal components and replaced copied
+  inline modal markup in Scheduler, AdminUsers, ErrorDashboard, and StyleProfile.
+- **Dashboard label fix** — "Recent Sessions" stat now correctly labeled "Recent Executions".
+
+### Security & Admin
+- **WebSocket admin-check hardening** — `browser_stream_ws` now requires admin role for all
+  authenticated callers and rejects valid-OTP tokens with no user mapping.
+- **error_resolutions bootstrap** — the table is now created by the runtime bootstrap path
+  (not only Alembic), and `list_statuses` uses `bindparam(expanding=True)`.
+
+### Tooling
+- **ruff line-length 120** — `pyproject.toml` line-length raised from 100 to 120; E402 and
+  the worst E501 offenders fixed. The lint gate is clean for E501/E402.
 
 ### Browser Sessions
 - **Browser session dashboard** — list, manage, and authenticate persistent

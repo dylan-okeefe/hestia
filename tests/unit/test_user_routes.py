@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -132,9 +132,6 @@ def _user_session(auth_manager: AuthManager, user_id: str = "user-1") -> str:
         user_id=user_id,
     )
     return token
-
-
-from datetime import timedelta
 
 
 class TestUserRoutes:

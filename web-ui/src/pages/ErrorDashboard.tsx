@@ -10,6 +10,7 @@ import {
 } from '../api/client';
 import PageCard from '../components/layout/PageCard';
 import Button from '../components/Button';
+import Modal from '../components/Modal';
 import LoadingSkeleton from '../components/layout/LoadingSkeleton';
 import ErrorState from '../components/layout/ErrorState';
 import EmptyState from '../components/layout/EmptyState';
@@ -240,28 +241,24 @@ export default function ErrorDashboard() {
         </PageCard>
       )}
 
-      {debugModal && (
-        <div
-          className="modal-overlay"
-          onClick={() => setDebugModal(null)}
-        >
-          <div
-            className="modal modal--lg"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3>{TEXT.errorDashboard.debugModalTitle}</h3>
-            <textarea
-              readOnly
-              value={debugModal.prompt}
-              rows={12}
-              className="code-input"
-            />
-            <div className="row-between mt-4">
-              <button onClick={() => setDebugModal(null)}>{TEXT.common.close}</button>
-            </div>
+      <Modal
+        isOpen={!!debugModal}
+        onClose={() => setDebugModal(null)}
+        title={TEXT.errorDashboard.debugModalTitle}
+        size="lg"
+        footer={
+          <div className="row-between">
+            <button onClick={() => setDebugModal(null)}>{TEXT.common.close}</button>
           </div>
-        </div>
-      )}
+        }
+      >
+        <textarea
+          readOnly
+          value={debugModal?.prompt ?? ''}
+          rows={12}
+          className="code-input"
+        />
+      </Modal>
     </div>
   );
 }

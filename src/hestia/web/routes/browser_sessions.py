@@ -7,14 +7,14 @@ import json
 import logging
 from typing import Any
 
-logger = logging.getLogger(__name__)
-
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 from hestia.tools.browser.session_store import BrowserSessionStore, normalize_domain
 from hestia.web.context import WebContext, get_web_context
 from hestia.web.dependencies import require_admin
+
+logger = logging.getLogger(__name__)
 
 
 async def _run_headed_login(url: str) -> None:
@@ -221,19 +221,25 @@ async def browser_stream_ws(
                 code=1008, reason="Authentication required"
             )
             return
-        if web_session is not None:
-            user_id = web_session.user_id
-            if user_id is not None:
-                user = await ctx.user_store.get_user(user_id)
-                if user is None or user.role != "admin":
-                    await websocket.close(
-                        code=1008, reason="Admin access required"
-                    )
-                    return
+        user_id = web_session.user_id if web_session is not None else None
+        if user_id is None:
+            await websocket.close(
+                code=1008, reason="Admin access required"
+            )
+            return
+        user = await ctx.user_store.get_user(user_id)
+        if user is None or user.role != "admin":
+            await websocket.close(
+                code=1008, reason="Admin access required"
+            )
+            return
 
     manager = ctx.stream_manager
     if manager is None or manager.get_session_id() != session_id:
-        logger.warning("WS rejected: session %s not found (active=%s)", session_id, manager.get_session_id() if manager else None)
+        active_id = manager.get_session_id() if manager else None
+        logger.warning(
+            "WS rejected: session %s not found (active=%s)", session_id, active_id
+        )
         await websocket.close(code=4004, reason="Session not found")
         return
 

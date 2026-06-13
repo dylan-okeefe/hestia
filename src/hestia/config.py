@@ -448,6 +448,9 @@ class VoiceConfig(_ConfigFromEnv):
     stt_model: str = "faster-whisper/large-v3-turbo"
     stt_device: str = "cuda"
     stt_compute_type: str = "int8"
+    stt_language: str = "en"
+    stt_beam_size: int = 5
+    stt_vad_filter: bool = True
     tts_engine: str = "piper"
     tts_voice: str = "en_US-amy-medium"
     tts_speed: float = 1.0

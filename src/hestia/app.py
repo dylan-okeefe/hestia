@@ -388,6 +388,8 @@ class AppContext:
             confirm_callback=self.confirm_callback,
             max_iterations=self.config.max_iterations,
             max_tool_calls_per_turn=self.config.policy.max_tool_calls_per_turn,
+            max_tokens=self.config.inference.max_tokens,
+            default_reasoning_budget=self.config.inference.default_reasoning_budget,
             slot_manager=self.slot_manager,
             failure_store=self.failure_store,
             trace_store=self.trace_store,

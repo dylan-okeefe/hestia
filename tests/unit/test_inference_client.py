@@ -221,6 +221,66 @@ class TestChatStream:
         assert "tools" in call_kwargs["json"]
         assert call_kwargs["json"]["slot_id"] == 3
 
+    @pytest.mark.asyncio
+    async def test_reasoning_budget_and_max_tokens_included(
+        self, client: InferenceClient, mock_stream_response: Any
+    ) -> None:
+        """reasoning_budget and max_tokens are forwarded in the request body."""
+        mock_stream_response(client, ["data: [DONE]", ""])
+
+        messages = [Message(role="user", content="Hello")]
+        async for _delta in client.chat_stream(
+            messages, reasoning_budget=1234, max_tokens=567
+        ):
+            pass
+
+        call_kwargs = client._client.stream.call_args.kwargs  # type: ignore[attr-defined]
+        assert call_kwargs["json"]["reasoning_budget"] == 1234
+        assert call_kwargs["json"]["max_tokens"] == 567
+
+
+class TestChatRequestBody:
+    """Tests for chat() request body construction."""
+
+    @pytest.fixture
+    def client(self) -> InferenceClient:
+        return InferenceClient("http://localhost:8001", "my-model.gguf")
+
+    @pytest.fixture
+    def mock_chat_response(self) -> Any:
+        """Return a helper that patches client._request with a canned JSON response."""
+
+        def _apply(client: InferenceClient, data: dict[str, Any]) -> None:
+            mock_response = MagicMock()
+            mock_response.json.return_value = data
+            client._request = AsyncMock(return_value=mock_response)  # type: ignore[method-assign]
+
+        return _apply
+
+    @pytest.mark.asyncio
+    async def test_reasoning_budget_and_max_tokens_included(
+        self, client: InferenceClient, mock_chat_response: Any
+    ) -> None:
+        """reasoning_budget and max_tokens are forwarded in the request body."""
+        mock_chat_response(
+            client,
+            {
+                "choices": [
+                    {
+                        "message": {"content": "Hi"},
+                        "finish_reason": "stop",
+                    }
+                ]
+            },
+        )
+
+        messages = [Message(role="user", content="Hello")]
+        await client.chat(messages, reasoning_budget=1234, max_tokens=567)
+
+        call_kwargs = client._request.call_args.kwargs  # type: ignore[attr-defined]
+        assert call_kwargs["json_payload"]["reasoning_budget"] == 1234
+        assert call_kwargs["json_payload"]["max_tokens"] == 567
+
 
 class TestChatMalformedOutput:
     """Tests for chat() malformed-output defense (lines 420-497)."""

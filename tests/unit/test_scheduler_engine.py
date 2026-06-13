@@ -516,3 +516,58 @@ class TestTick:
 
         # Tasks should execute in order
         assert execution_order == ["Task 1", "Task 2"]
+
+    @pytest.mark.asyncio
+    async def test_tick_marks_in_flight_before_process_turn(
+        self, scheduler_store, session_store, test_session, response_log
+    ):
+        """Two concurrent _tick calls must not fire the same task twice."""
+        past = datetime.now(UTC) - timedelta(minutes=5)
+        await scheduler_store.create_task(
+            session_id=test_session.id,
+            prompt="Slow task",
+            fire_at=past,
+        )
+
+        class SlowOrchestrator(FakeOrchestrator):
+            async def process_turn(self, session, user_message, respond_callback, **kwargs):
+                await asyncio.sleep(0.2)
+                return await super().process_turn(
+                    session, user_message, respond_callback, **kwargs
+                )
+
+        orchestrator = SlowOrchestrator()
+        scheduler = await make_scheduler(scheduler_store, session_store, response_log, orchestrator)
+
+        now = datetime.now(UTC)
+        await asyncio.gather(scheduler._tick(now), scheduler._tick(now))
+
+        # The slow task should only have been dispatched once.
+        assert len(orchestrator.calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_tick_error_advances_next_run_to_future(
+        self, scheduler_store, session_store, test_session, response_log
+    ):
+        """A failing one-shot task must not leave next_run_at in the past."""
+        past = datetime.now(UTC) - timedelta(minutes=5)
+        task = await scheduler_store.create_task(
+            session_id=test_session.id,
+            prompt="Failing task",
+            fire_at=past,
+        )
+
+        failing_orchestrator = FakeOrchestrator(should_fail=True)
+        scheduler = await make_scheduler(
+            scheduler_store, session_store, response_log, failing_orchestrator
+        )
+
+        now = datetime.now(UTC)
+        await scheduler._tick(now)
+
+        updated = await scheduler_store.get_task(task.id)
+        assert updated.last_error == "Orchestrator failed"
+        assert updated.next_run_at is not None
+        assert updated.next_run_at > now
+        assert updated.next_run_at <= now + timedelta(minutes=5)
+        assert len(failing_orchestrator.calls) == 1

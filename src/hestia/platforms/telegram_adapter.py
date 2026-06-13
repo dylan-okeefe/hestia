@@ -36,6 +36,63 @@ if TYPE_CHECKING:
     from hestia.persistence.sessions import SessionStore
 
 
+# Telegram caps a single message at 4096 characters. We leave headroom for
+# the HTML tags added by _md_to_tg_html by splitting the raw Markdown text at
+# a conservative limit and sending/editing in chunks.
+_TELEGRAM_MAX_TEXT_LEN = 4096
+_SAFE_CHUNK_LEN = 3800
+
+
+def _split_long_text(text: str, max_len: int = _SAFE_CHUNK_LEN) -> list[str]:
+    """Split ``text`` into chunks that fit Telegram's message length limit.
+
+    Prefers splitting at paragraph boundaries, then lines, then sentences,
+    then words, falling back to a hard split at ``max_len``.
+    """
+    if len(text) <= max_len:
+        return [text]
+
+    chunks: list[str] = []
+    remaining = text
+
+    while len(remaining) > max_len:
+        chunk = remaining[:max_len]
+
+        # Prefer paragraph boundary
+        split_at = chunk.rfind("\n\n")
+        if split_at > max_len // 4:
+            split_at += 2
+        else:
+            # Then line boundary
+            split_at = chunk.rfind("\n")
+            if split_at > max_len // 4:
+                split_at += 1
+            else:
+                # Then sentence boundary
+                split_at = max(
+                    chunk.rfind(". "),
+                    chunk.rfind("! "),
+                    chunk.rfind("? "),
+                )
+                if split_at > max_len // 4:
+                    split_at += 2
+                else:
+                    # Then word boundary
+                    split_at = chunk.rfind(" ")
+                    if split_at > max_len // 4:
+                        split_at += 1
+                    else:
+                        split_at = max_len
+
+        chunks.append(remaining[:split_at].rstrip())
+        remaining = remaining[split_at:].lstrip()
+
+    if remaining:
+        chunks.append(remaining)
+
+    return chunks
+
+
 def _md_to_tg_html(text: str) -> str:
     """Convert basic Markdown to Telegram HTML parse_mode.
 
@@ -199,18 +256,48 @@ class TelegramAdapter(Platform):
             self._app = None
         logger.info("Telegram adapter stopped")
 
+    async def _send_chunk(
+        self, chat_id: int, text: str, *, parse_mode: str = "HTML"
+    ) -> Any:
+        """Send one chunk, falling back to plain text if HTML parse fails."""
+        assert self._app is not None
+        try:
+            return await self._app.bot.send_message(
+                chat_id=chat_id,
+                text=_md_to_tg_html(text),
+                parse_mode=parse_mode,
+            )
+        except TelegramError as e:
+            if "can't parse entities" in str(e).lower():
+                logger.warning(
+                    "HTML parse failed for chunk, retrying as plain text: %s", e
+                )
+                return await self._app.bot.send_message(
+                    chat_id=chat_id,
+                    text=text,
+                    parse_mode=None,
+                )
+            raise
+
     async def send_message(self, user: str, text: str) -> str:
-        """Send a message to a Telegram chat. Returns message ID."""
+        """Send a message to a Telegram chat. Returns message ID.
+
+        Long messages are split into multiple Telegram messages; the first
+        message ID is returned. If a chunk fails HTML parsing it is retried as
+        plain text.
+        """
         if self._app is None:
             raise RuntimeError("Telegram adapter not started")
 
         chat_id = int(user)
-        msg = await self._app.bot.send_message(
-            chat_id=chat_id,
-            text=_md_to_tg_html(text),
-            parse_mode="HTML",
-        )
-        return str(msg.message_id)
+        chunks = _split_long_text(text)
+        first_msg = None
+        for chunk in chunks:
+            msg = await self._send_chunk(chat_id, chunk)
+            if first_msg is None:
+                first_msg = msg
+        assert first_msg is not None
+        return str(first_msg.message_id)
 
     def _prune_last_edit_times(self) -> None:
         """Evict entries older than _last_edit_max_age to prevent unbounded growth."""
@@ -220,7 +307,12 @@ class TelegramAdapter(Platform):
             del self._last_edit_times[k]
 
     async def edit_message(self, user: str, msg_id: str, text: str) -> None:
-        """Edit a message in-place, rate-limited to avoid 429s."""
+        """Edit a message in-place, rate-limited to avoid 429s.
+
+        If the new text exceeds Telegram's message length limit, the first
+        chunk replaces the original message and any remaining chunks are sent
+        as new messages.
+        """
         if self._app is None:
             raise RuntimeError("Telegram adapter not started")
 
@@ -235,14 +327,31 @@ class TelegramAdapter(Platform):
             await asyncio.sleep(wait)
 
         chat_id = int(user)
+        chunks = _split_long_text(text)
         try:
-            await self._app.bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=int(msg_id),
-                text=_md_to_tg_html(text),
-                parse_mode="HTML",
-            )
+            try:
+                await self._app.bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=int(msg_id),
+                    text=_md_to_tg_html(chunks[0]),
+                    parse_mode="HTML",
+                )
+            except TelegramError as e:
+                if "can't parse entities" in str(e).lower():
+                    logger.warning(
+                        "HTML parse failed for edit, retrying as plain text: %s", e
+                    )
+                    await self._app.bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=int(msg_id),
+                        text=chunks[0],
+                        parse_mode=None,
+                    )
+                else:
+                    raise
             self._last_edit_times[msg_id] = time.monotonic()
+            for chunk in chunks[1:]:
+                await self._send_chunk(chat_id, chunk)
         except TelegramError as e:
             # Telegram returns 400 if message content is unchanged
             if "message is not modified" in str(e).lower():

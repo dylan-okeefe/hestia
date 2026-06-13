@@ -65,6 +65,13 @@ class TestTerminal:
         result = await terminal("sleep 10", timeout=0.2)
         assert "TIMEOUT after 0.2s" in result
 
+    @pytest.mark.asyncio
+    async def test_accepts_description_argument(self):
+        """Terminal accepts an optional description argument without failing."""
+        result = await terminal("echo hello", timeout=5.0, description="Say hello")
+        assert "exit_code: 0" in result
+        assert "hello" in result
+
 
 def _is_process_alive(pid: int) -> bool:
     """Check if a process is still alive."""

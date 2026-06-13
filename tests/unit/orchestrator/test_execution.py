@@ -5,7 +5,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from hestia.core.types import Message, Session, SessionState, SessionTemperature, ToolCall
+from hestia.core.types import (
+    Message,
+    Session,
+    SessionState,
+    SessionTemperature,
+    StreamDelta,
+    ToolCall,
+)
 from hestia.errors import MaxIterationsError
 from hestia.orchestrator.execution import TurnExecution
 from hestia.orchestrator.quality import Correction, DegeneratePattern
@@ -1038,3 +1045,120 @@ async def test_scan_tool_result_wiring():
         assert result_messages[0].content == "[SCANNED] wrapped content"
         scanner.scan.assert_called_once_with("suspicious content")
         scanner.wrap.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_max_tokens_default_passed_to_chat(make_chat_response):
+    """TurnExecution passes its default max_tokens to the inference client."""
+    store = MagicMock()
+    store.append_message = AsyncMock()
+
+    builder = MagicMock()
+    builder.build = AsyncMock(return_value=MagicMock(messages=[]))
+
+    inference_client = MagicMock()
+    inference_client.chat = AsyncMock(
+        return_value=make_chat_response(finish_reason="stop", content="ok")
+    )
+
+    execution = TurnExecution(
+        tool_registry=MagicMock(),
+        inference_client=inference_client,
+        policy=MagicMock(),
+        context_builder=builder,
+        session_store=store,
+    )
+
+    ctx = TurnContext(
+        turn=_make_turn(),
+        user_message=Message(role="user", content="hello"),
+        system_prompt="",
+        respond_callback=AsyncMock(),
+        session=_make_session(),
+        build_result=MagicMock(messages=[]),
+    )
+
+    await execution.run(ctx, AsyncMock(), AsyncMock())
+
+    call_kwargs = inference_client.chat.call_args.kwargs
+    assert call_kwargs["max_tokens"] == 1024
+
+
+@pytest.mark.asyncio
+async def test_max_tokens_override_passed_to_chat(make_chat_response):
+    """A custom max_tokens value is forwarded to the inference client."""
+    store = MagicMock()
+    store.append_message = AsyncMock()
+
+    builder = MagicMock()
+    builder.build = AsyncMock(return_value=MagicMock(messages=[]))
+
+    inference_client = MagicMock()
+    inference_client.chat = AsyncMock(
+        return_value=make_chat_response(finish_reason="stop", content="ok")
+    )
+
+    execution = TurnExecution(
+        tool_registry=MagicMock(),
+        inference_client=inference_client,
+        policy=MagicMock(),
+        context_builder=builder,
+        session_store=store,
+        max_tokens=4096,
+    )
+
+    ctx = TurnContext(
+        turn=_make_turn(),
+        user_message=Message(role="user", content="hello"),
+        system_prompt="",
+        respond_callback=AsyncMock(),
+        session=_make_session(),
+        build_result=MagicMock(messages=[]),
+    )
+
+    await execution.run(ctx, AsyncMock(), AsyncMock())
+
+    call_kwargs = inference_client.chat.call_args.kwargs
+    assert call_kwargs["max_tokens"] == 4096
+
+
+@pytest.mark.asyncio
+async def test_max_tokens_passed_to_chat_stream(make_chat_response):
+    """TurnExecution passes max_tokens to the streaming inference client."""
+    store = MagicMock()
+    store.append_message = AsyncMock()
+
+    builder = MagicMock()
+    builder.build = AsyncMock(return_value=MagicMock(messages=[]))
+
+    inference_client = MagicMock()
+
+    async def _mock_chat_stream(*args, **kwargs):
+        yield StreamDelta(content="ok", finish_reason="stop")
+
+    inference_client.chat_stream = MagicMock(wraps=_mock_chat_stream)
+
+    execution = TurnExecution(
+        tool_registry=MagicMock(),
+        inference_client=inference_client,
+        policy=MagicMock(),
+        context_builder=builder,
+        session_store=store,
+        stream=True,
+        max_tokens=2048,
+    )
+
+    ctx = TurnContext(
+        turn=_make_turn(),
+        user_message=Message(role="user", content="hello"),
+        system_prompt="",
+        respond_callback=AsyncMock(),
+        session=_make_session(),
+        build_result=MagicMock(messages=[]),
+        stream_callback=AsyncMock(),
+    )
+
+    await execution.run(ctx, AsyncMock(), AsyncMock())
+
+    call_kwargs = inference_client.chat_stream.call_args.kwargs
+    assert call_kwargs["max_tokens"] == 2048
