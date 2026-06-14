@@ -89,6 +89,52 @@ def _normalize_tool_arguments(arguments: Any) -> dict[str, Any]:
     return {}
 
 
+# Phrases that indicate a previous tool call failed for a transient reason and
+# should be allowed to retry with the same arguments.  This prevents the
+# repeated-identical-call circuit breaker from blocking legitimate retries of
+# network or browser calls that timed out or hit bot protection.
+_RETRYABLE_RESULT_MARKERS = (
+    "error",
+    "timeout",
+    "timed out",
+    "partial failure",
+    "blocked",
+    "bot protection",
+    "cloudflare",
+    "permission denied",
+    "access denied",
+    "no links found",
+    "can't find this page",
+    "page doesn't exist",
+    "isn't available",
+    "humans only",
+)
+
+
+def _is_retryable_tool_result(content: str) -> bool:
+    """True when a tool result looks like a transient failure worth retrying."""
+    lowered = (content or "").lower()
+    return any(marker in lowered for marker in _RETRYABLE_RESULT_MARKERS)
+
+
+def _previous_failed_tool_call_ids(
+    history: list[Message],
+) -> set[str]:
+    """Return tool_call_ids whose most recent result was a retryable failure."""
+    # Walk history to pair assistant tool_calls with their tool results.
+    # We only need the latest result for each id.
+    latest_result: dict[str, str] = {}
+    pending_ids: set[str] = set()
+    for msg in history:
+        if msg.role == "assistant" and msg.tool_calls:
+            pending_ids.update(tc.id for tc in msg.tool_calls)
+        elif msg.role == "tool" and msg.tool_call_id:
+            if msg.tool_call_id in pending_ids:
+                latest_result[msg.tool_call_id] = msg.content or ""
+                pending_ids.discard(msg.tool_call_id)
+    return {tid for tid, content in latest_result.items() if _is_retryable_tool_result(content)}
+
+
 class TurnExecution:
     """Runs the model inference loop and dispatches tool calls."""
 
@@ -827,19 +873,28 @@ class TurnExecution:
         # prompt. This prevents loops like search_memory(query=...) or
         # read_file(path=...) from burning tokens. We also dedupe within the
         # current batch so a model cannot emit the same call twice at once.
+        #
+        # Exception: if the previous identical call produced a retryable failure
+        # (timeout, bot block, 404, etc.), let the model try again.
         repeated_block_results: dict[str, Message] = {}
         blocked_repeated_tools: set[str] = set()
         if ctx is not None:
             previous_keys: set[_ToolCallKey] = set()
+            failed_call_ids = _previous_failed_tool_call_ids(ctx.running_history)
+            failed_keys: set[_ToolCallKey] = set()
             for msg in ctx.running_history:
                 if msg.role == "assistant" and msg.tool_calls:
-                    previous_keys.update({_tool_call_key(tc) for tc in msg.tool_calls})
+                    for tc in msg.tool_calls:
+                        key = _tool_call_key(tc)
+                        previous_keys.add(key)
+                        if tc.id in failed_call_ids:
+                            failed_keys.add(key)
 
             deduped: list[ToolCall] = []
             current_keys: set[_ToolCallKey] = set()
             for tc in tool_calls:
                 key = _tool_call_key(tc)
-                if key in previous_keys or key in current_keys:
+                if (key in previous_keys and key not in failed_keys) or key in current_keys:
                     blocked_repeated_tools.add(tc.name)
                     repeated_block_results[tc.id] = Message(
                         role="tool",

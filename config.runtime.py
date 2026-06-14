@@ -94,9 +94,9 @@ config = HestiaConfig(
         base_url="http://127.0.0.1:8001",
         model_name="Qwen3.6-35B-A3B-APEX-I-Quality.gguf",
         # Must match llama-server's per-slot context: --ctx-size / --parallel.
-        # With -c 262144 -np 4, each slot gets 262144 / 4 = 65536 tokens.
+        # With -c 393216 -np 3, each slot gets 393216 / 3 = 131072 tokens.
         # The policy engine uses this value for context-window budgeting.
-        context_length=65536,
+        context_length=131072,
         default_reasoning_budget=2048,
         max_tokens=4096,
         stream=True,
@@ -115,7 +115,10 @@ config = HestiaConfig(
     storage=StorageConfig(
         database_url=f"sqlite+aiosqlite:///{_DB_PATH}",
         artifacts_dir=_ROOT / "artifacts",
-        allowed_roots=["/home/dylan/Documents/Job Search"],
+        allowed_roots=[
+            "/home/dylan/Documents/Job Search",
+            str(_ROOT / "artifacts"),
+        ],
     ),
     identity=IdentityConfig(
         soul_path=DEFAULT_SOUL_MD_PATH,

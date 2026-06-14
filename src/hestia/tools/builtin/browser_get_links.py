@@ -54,7 +54,7 @@ def _load_session(store: BrowserSessionStore, domain: str) -> dict[str, Any] | N
         "Params: url (str), selector (str, optional) — CSS selector limiting "
         "which links to extract (e.g. 'a.job-card'). "
         "pattern (str, optional) — regex to filter link text. "
-        "wait_seconds (int, default 3), timeout_seconds (int, default 30)."
+        "wait_seconds (int, default 3), timeout_seconds (int, default 60)."
     ),
     parameters_schema={
         "type": "object",
@@ -82,7 +82,7 @@ async def browser_get_links(
     selector: str = "a",
     pattern: str = "",
     wait_seconds: int = 3,
-    timeout_seconds: int = 30,
+    timeout_seconds: int = 60,
 ) -> str:
     """Fetch a URL with Playwright and return a list of direct link URLs.
 

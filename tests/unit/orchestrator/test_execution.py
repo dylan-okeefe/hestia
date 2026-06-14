@@ -1257,6 +1257,146 @@ def test_normalize_tool_arguments_coerces_non_dict_values():
     assert _normalize_tool_arguments("not a dict") == {}
 
 
+def test_previous_failed_tool_call_ids_detects_retryable_results():
+    """Transient failures are flagged for retry; successful results are not."""
+    from hestia.orchestrator.execution import _previous_failed_tool_call_ids
+
+    history = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[ToolCall(id="tc1", name="browser_get", arguments={"url": "https://example.com"})],
+        ),
+        Message(role="tool", content="Error fetching https://example.com: Timeout", tool_call_id="tc1"),
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=[ToolCall(id="tc2", name="browser_get", arguments={"url": "https://ok.com"})],
+        ),
+        Message(role="tool", content="Page loaded successfully", tool_call_id="tc2"),
+    ]
+    assert _previous_failed_tool_call_ids(history) == {"tc1"}
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_calls_allows_retry_after_transient_failure():
+    """A tool call that previously failed with a timeout can be retried."""
+    registry = MagicMock()
+    registry.describe.return_value = MagicMock(
+        requires_confirmation=False, ordering="concurrent"
+    )
+
+    policy = MagicMock()
+    policy.tool_result_max_chars.return_value = 8000
+
+    execution = TurnExecution(
+        tool_registry=registry,
+        inference_client=MagicMock(),
+        policy=policy,
+        context_builder=MagicMock(),
+        session_store=MagicMock(),
+    )
+
+    first_tc = ToolCall(
+        id="tc1", name="browser_get", arguments={"url": "https://example.com"}
+    )
+    retry_tc = ToolCall(
+        id="tc2", name="browser_get", arguments={"url": "https://example.com"}
+    )
+
+    ctx = TurnContext(
+        turn=_make_turn(),
+        user_message=Message(role="user", content="hello"),
+        system_prompt="",
+        respond_callback=AsyncMock(),
+        session=_make_session(),
+        build_result=MagicMock(messages=[]),
+    )
+    ctx.running_history = [
+        Message(role="assistant", content="", tool_calls=[first_tc]),
+        Message(
+            role="tool",
+            content="Error fetching https://example.com: Timeout 30000ms exceeded.",
+            tool_call_id="tc1",
+        ),
+    ]
+
+    with patch.object(
+        execution, "_dispatch_tool_call", new_callable=AsyncMock
+    ) as mock_dispatch:
+        mock_dispatch.return_value = ToolCallResult(
+            status="ok",
+            content="ok",
+            artifact_handle=None,
+            truncated=False,
+        )
+
+        result_messages, _ = await execution._execute_tool_calls(
+            _make_session(), [retry_tc], ctx=ctx
+        )
+
+    # The retry should have been dispatched, not blocked.
+    assert mock_dispatch.call_count == 1
+    assert mock_dispatch.call_args.args[1].id == "tc2"
+    assert len(result_messages) == 1
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_calls_blocks_retry_after_success():
+    """A successful tool call with the same arguments is still blocked."""
+    registry = MagicMock()
+    registry.describe.return_value = MagicMock(
+        requires_confirmation=False, ordering="concurrent"
+    )
+
+    policy = MagicMock()
+    policy.tool_result_max_chars.return_value = 8000
+
+    execution = TurnExecution(
+        tool_registry=registry,
+        inference_client=MagicMock(),
+        policy=policy,
+        context_builder=MagicMock(),
+        session_store=MagicMock(),
+    )
+
+    first_tc = ToolCall(
+        id="tc1", name="browser_get", arguments={"url": "https://example.com"}
+    )
+    retry_tc = ToolCall(
+        id="tc2", name="browser_get", arguments={"url": "https://example.com"}
+    )
+
+    ctx = TurnContext(
+        turn=_make_turn(),
+        user_message=Message(role="user", content="hello"),
+        system_prompt="",
+        respond_callback=AsyncMock(),
+        session=_make_session(),
+        build_result=MagicMock(messages=[]),
+    )
+    ctx.running_history = [
+        Message(role="assistant", content="", tool_calls=[first_tc]),
+        Message(
+            role="tool",
+            content="Page content here",
+            tool_call_id="tc1",
+        ),
+    ]
+
+    with patch.object(
+        execution, "_dispatch_tool_call", new_callable=AsyncMock
+    ) as mock_dispatch:
+        result_messages, _ = await execution._execute_tool_calls(
+            _make_session(), [retry_tc], ctx=ctx
+        )
+
+    # Should be blocked; no dispatch.
+    assert mock_dispatch.call_count == 0
+    assert len(result_messages) == 1
+    assert "DISABLED" in result_messages[0].content
+
+
 @pytest.mark.asyncio
 async def test_execute_tool_calls_normalizes_non_dict_arguments():
     """_execute_tool_calls tolerates tool calls whose arguments are not dicts."""
