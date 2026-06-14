@@ -18,7 +18,10 @@ def make_write_file_tool(
 
     @tool(
         name="write_file",
-        public_description="Write content to a file. Params: path (str), content (str).",
+        public_description=(
+            "Write content to a file. Params: path (str), content (str). "
+            "For large files, write a short header first, then use append_to_file for the body."
+        ),
         parameters_schema={
             "type": "object",
             "properties": {

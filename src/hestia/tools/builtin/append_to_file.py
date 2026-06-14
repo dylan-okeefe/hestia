@@ -16,7 +16,11 @@ def make_append_to_file_tool(config: StorageConfig) -> Any:
 
     @tool(
         name="append_to_file",
-        public_description="Append content to an existing file. Params: path (str), content (str).",
+        public_description=(
+            "Append content to an existing file. Params: path (str), content (str). "
+            "Use this to add sections to a file created by write_file instead of putting "
+            "everything in one huge write_file call."
+        ),
         parameters_schema={
             "type": "object",
             "properties": {

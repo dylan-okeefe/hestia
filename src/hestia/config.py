@@ -574,9 +574,16 @@ class HestiaConfig(_ConfigFromEnv):
         "2. list_tools and describe_tool are tools themselves; call them directly, "
         "NOT inside call_tool.\n"
         "3. NEVER call call_tool with name=\"call_tool\" (no recursive wrapping).\n"
-        "4. If a tool is unavailable, blocked, or returns an error, STOP and tell the user "
+        "4. NEVER emit XML tags such as <tool_call>, <function=...>, or <parameter=...>. "
+        "Those are not valid tool calls here.\n"
+        "5. If a tool is unavailable, blocked, or returns an error, STOP and tell the user "
         "or choose a different action. Do not keep retrying the same call.\n"
-        "5. When the user asks a conversational question, reply directly without calling tools."
+        "6. When the user asks a conversational question, reply directly without calling tools.\n"
+        "7. For long files, create the file with write_file using a short header, then add "
+        "sections with append_to_file. Do not try to fit everything into one enormous JSON string.\n\n"
+        "EXAMPLE:\n"
+        "call_tool({\"name\": \"write_file\", \"arguments\": {\"path\": \"/home/dylan/Documents/notes.md\", \"content\": \"# Notes\\n\"}})\n"
+        "call_tool({\"name\": \"append_to_file\", \"arguments\": {\"path\": \"/home/dylan/Documents/notes.md\", \"content\": \"## Section 1\\n...\"}})"
     )
     max_iterations: int = 10
     verbose: bool = False

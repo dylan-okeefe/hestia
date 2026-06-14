@@ -38,8 +38,10 @@ ConfirmCallback = Callable[[str, dict[str, Any]], Awaitable[bool]]
 TypingCallback = Callable[[bool], Awaitable[None]]
 
 # Inter-chunk timeout: once the model has started emitting tokens, if no chunk
-# arrives for this long we assume the stream is dead and finish.
-_STREAM_INACTIVITY_TIMEOUT = 30.0
+# arrives for this long we assume the stream is dead and finish.  Tool-call
+# argument JSON can be large, so this needs to be generous enough for the
+# server to finish emitting a complete chunk.
+_STREAM_INACTIVITY_TIMEOUT = 60.0
 
 # First-chunk timeout: prompt processing for long contexts can take tens of
 # seconds without emitting any tokens.  We allow up to two minutes for the
