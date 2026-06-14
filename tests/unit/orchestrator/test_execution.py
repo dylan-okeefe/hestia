@@ -1209,6 +1209,45 @@ async def test_streaming_inactivity_timeout_returns_partial_content():
     assert stream_callback.await_count == 2
 
 
+@pytest.mark.asyncio
+async def test_streaming_first_chunk_timeout_returns_empty():
+    """If the stream never yields any chunk, the first-chunk timeout fires."""
+    execution = TurnExecution(
+        tool_registry=MagicMock(),
+        inference_client=MagicMock(),
+        policy=MagicMock(),
+        context_builder=MagicMock(),
+        session_store=MagicMock(),
+        stream=True,
+    )
+
+    async def _hung_stream(*args, **kwargs):
+        await asyncio.Event().wait()
+        yield StreamDelta(content="never")  # pragma: no cover
+
+    execution._inference.chat_stream = _hung_stream
+
+    stream_callback = AsyncMock()
+    ctx = TurnContext(
+        turn=_make_turn(),
+        user_message=Message(role="user", content="hello"),
+        system_prompt="",
+        respond_callback=AsyncMock(),
+        session=_make_session(),
+        build_result=MagicMock(messages=[]),
+        stream_callback=stream_callback,
+    )
+
+    with patch(
+        "hestia.orchestrator.execution._STREAM_FIRST_CHUNK_TIMEOUT", 0.05
+    ):
+        result = await execution._run_inference_streaming(ctx, ctx.turn)
+
+    assert result.content == ""
+    assert result.finish_reason == "stop"
+    stream_callback.assert_not_awaited()
+
+
 def test_normalize_tool_arguments_coerces_non_dict_values():
     """Non-dict tool-call arguments are coerced to an empty dict."""
     assert _normalize_tool_arguments({"x": 1}) == {"x": 1}

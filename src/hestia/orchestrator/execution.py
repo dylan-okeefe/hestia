@@ -37,11 +37,14 @@ logger = logging.getLogger(__name__)
 ConfirmCallback = Callable[[str, dict[str, Any]], Awaitable[bool]]
 TypingCallback = Callable[[bool], Awaitable[None]]
 
-# If no chunk arrives for this many seconds during streaming, treat the stream
-# as finished and return the content accumulated so far. This prevents a model
-# server that never sends [DONE] or never closes the HTTP connection from
-# hanging the turn indefinitely.
+# Inter-chunk timeout: once the model has started emitting tokens, if no chunk
+# arrives for this long we assume the stream is dead and finish.
 _STREAM_INACTIVITY_TIMEOUT = 30.0
+
+# First-chunk timeout: prompt processing for long contexts can take tens of
+# seconds without emitting any tokens.  We allow up to two minutes for the
+# first chunk before giving up, while keeping the inter-chunk timeout tight.
+_STREAM_FIRST_CHUNK_TIMEOUT = 120.0
 
 
 _ToolCallKey = tuple[str, tuple[tuple[str, Any], ...]]
@@ -528,24 +531,40 @@ class TurnExecution:
             max_tokens=self._max_tokens,
         )
 
+        any_chunk_received = False
         while True:
+            # Use a longer timeout for the very first chunk because the model
+            # server may still be processing a long prompt without emitting
+            # tokens.  After tokens start flowing, switch to the tight timeout.
+            timeout = (
+                _STREAM_INACTIVITY_TIMEOUT
+                if any_chunk_received
+                else _STREAM_FIRST_CHUNK_TIMEOUT
+            )
             try:
-                delta = await asyncio.wait_for(
-                    stream.__anext__(), timeout=_STREAM_INACTIVITY_TIMEOUT
-                )
+                delta = await asyncio.wait_for(stream.__anext__(), timeout=timeout)
             except StopAsyncIteration:
                 break
             except TimeoutError:
-                logger.warning(
-                    "Streaming inference inactive for %.1fs; finishing with %d content chars "
-                    "and %d tool-call buffers accumulated so far",
-                    _STREAM_INACTIVITY_TIMEOUT,
-                    sum(len(p) for p in content_parts),
-                    len(tool_call_buffers),
-                )
+                if any_chunk_received:
+                    logger.warning(
+                        "Streaming inference inactive for %.1fs; finishing with %d content "
+                        "chars and %d tool-call buffers accumulated so far",
+                        _STREAM_INACTIVITY_TIMEOUT,
+                        sum(len(p) for p in content_parts),
+                        len(tool_call_buffers),
+                    )
+                else:
+                    logger.warning(
+                        "Streaming inference produced no chunks within %.1fs "
+                        "(likely long prompt processing); finishing empty",
+                        _STREAM_FIRST_CHUNK_TIMEOUT,
+                    )
                 if finish_reason == "unknown":
                     finish_reason = "stop"
                 break
+
+            any_chunk_received = True
 
             if delta.reasoning_content and not turn.thinking_aborted:
                 thinking_chars = sum(len(p) for p in reasoning_parts) + len(delta.reasoning_content)
