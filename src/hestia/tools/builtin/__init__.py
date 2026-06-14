@@ -17,6 +17,7 @@ that is not importable at module load time.
 from hestia.runtime_context import current_session_id, current_trace_store
 from hestia.tools.builtin.append_to_file import make_append_to_file_tool
 from hestia.tools.builtin.browser_get import browser_get
+from hestia.tools.builtin.browser_get_links import browser_get_links
 from hestia.tools.builtin.browser_login import browser_login
 from hestia.tools.builtin.current_time import current_time
 from hestia.tools.builtin.delegate_task import SubagentResult, make_delegate_task_tool
@@ -78,6 +79,7 @@ from hestia.tools.capabilities import (
 
 __all__ = [
     "browser_get",
+    "browser_get_links",
     "browser_login",
     "current_session_id",
     "current_trace_store",

@@ -128,6 +128,16 @@ def _parse_adhoc_xml_tool_calls(text: str) -> list[ToolCall]:
                     name = inner_name
                     adhoc_args = inner_args
 
+        # Some models emit a direct tool call like <function=grep>
+        # <parameter=arguments>{"path": "...", "pattern": "..."}</parameter>.
+        # Unwrap the arguments dict so the parameters land at the top level.
+        elif (
+            "arguments" in adhoc_args
+            and len(adhoc_args) == 1
+            and isinstance(adhoc_args["arguments"], dict)
+        ):
+            adhoc_args = adhoc_args["arguments"]
+
         # Validate extracted args before creating ToolCall
         if name == "browser_get" and not _is_valid_url(adhoc_args.get("url", "")):
             continue

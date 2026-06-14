@@ -584,3 +584,40 @@ class TestChatMalformedOutput:
             "path": "/home/dylan/Documents/Job Search/new_job_listings.md",
             "content": "# Job Search Results",
         }
+
+    @pytest.mark.asyncio
+    async def test_xml_adhoc_unwraps_arguments_parameter_for_direct_call(
+        self, client: InferenceClient, mock_chat_response: Any
+    ) -> None:
+        """A direct tool call that wraps args in <parameter=arguments>{...}</parameter> works."""
+        mock_chat_response(
+            client,
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                "<tool_call>\n"
+                                "<function=grep>\n"
+                                "<parameter=arguments>\n"
+                                '{"path": "/home/dylan/docs", "pattern": "TODO"}\n'
+                                "</parameter>\n"
+                                "</function>\n"
+                                "</tool_call>"
+                            ),
+                            "tool_calls": [],
+                        },
+                        "finish_reason": "stop",
+                    }
+                ]
+            },
+        )
+
+        messages = [Message(role="user", content="Grep for TODO")]
+        response = await client.chat(messages)
+        assert len(response.tool_calls) == 1
+        assert response.tool_calls[0].name == "grep"
+        assert response.tool_calls[0].arguments == {
+            "path": "/home/dylan/docs",
+            "pattern": "TODO",
+        }
