@@ -1,0 +1,4 @@
+<tool_call>
+<function=write_file>
+<parameter=arguments>
+{"path": "/home/dylan/Documents/Job Search/job_listings_2026_06_14.md", "content": "# Job Search Results - June 14, 2026\n\n## TRACK 1: Software Engineering - AI/Developer Tools (Primary)\n\n### Remote Roles\n\n1. **Toast — Staff Software Engineer**\n   - Location: Remote (USA)\n   - Salary: $193K-309K Annually\n   - Level: Expert/Leader\n   - Posted: Reposted 15 Hours Ago\n   - Source: Built In Boston\n   - URL: https://www.builtinboston.com/jobs?q=software+engineer&sort=date\n\n2. **Toast — Senior Software Engineer**\n   - Location: In-Office (Boston, MA)\n   - Salary: $159K-254K Annually\n   - Level: Senior\n   - Posted:

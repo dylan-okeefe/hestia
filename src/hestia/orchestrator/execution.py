@@ -11,6 +11,7 @@ from hestia.core.clock import utcnow
 from hestia.core.inference import InferenceClient, _extract_tool_calls_from_text
 from hestia.core.json_repair import repair_json
 from hestia.core.types import ChatResponse, Message, Session, ToolCall
+from hestia.diagnostics import regression_collector
 from hestia.errors import (
     EmptyResponseError,
     MaxIterationsError,
@@ -377,6 +378,11 @@ class TurnExecution:
         )
         if correction is None:
             return False
+
+        regression_collector.maybe_collect_degenerate_turn(
+            correction.pattern.value,
+            history,
+        )
 
         # De-duplicate repeated-identical-call corrections for the same tool.
         # The circuit breaker in _execute_tool_calls already blocks the call
@@ -751,6 +757,11 @@ class TurnExecution:
         for tc in tool_calls:
             norm_args = _normalize_tool_arguments(tc.arguments)
             if norm_args is not tc.arguments:
+                regression_collector.maybe_collect_malformed_tool_call(
+                    tc.name,
+                    tc.arguments,
+                    source="_execute_tool_calls normalization",
+                )
                 tc = ToolCall(id=tc.id, name=tc.name, arguments=norm_args)
             normalized_tool_calls.append(tc)
         tool_calls = normalized_tool_calls
@@ -1021,6 +1032,17 @@ class TurnExecution:
                 else serial_results[dispatched_idx]
             )
             result = self._scan_tool_result(result)
+
+            # Capture transient failures as regression fixtures if enabled.
+            if (
+                isinstance(result.content, str)
+                and _is_retryable_tool_result(result.content)
+            ):
+                regression_collector.maybe_collect_tool_failure(
+                    tc.name,
+                    tc.arguments or {},
+                    result.content,
+                )
 
             # Circuit breaker: detect repeated empty-arg failures
             is_empty_args = tc.arguments is None or tc.arguments == {}

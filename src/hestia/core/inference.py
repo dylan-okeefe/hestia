@@ -1,5 +1,6 @@
 """Inference client for llama.cpp server."""
 
+import ast
 import asyncio
 import dataclasses
 import json
@@ -100,11 +101,17 @@ def _parse_adhoc_xml_tool_calls(text: str) -> list[ToolCall]:
             val = param_match.group(2).strip()
             # Strip a trailing </parameter> tag if the model included one.
             val = re.sub(r"</parameter>\s*$", "", val).strip()
-            # Try to coerce numbers/booleans, else keep as string
+            # Try to coerce numbers/booleans/dicts, else keep as string.
+            # Models often emit Python-like literals (e.g. escaping single quotes
+            # as \') that are not valid JSON; fall back to ast.literal_eval which
+            # safely handles a superset of JSON literal syntax.
             try:
-                val_parsed = json.loads(val)
+                val_parsed = json.loads(val.replace("\\'", "'"))
             except json.JSONDecodeError:
-                val_parsed = val
+                try:
+                    val_parsed = ast.literal_eval(val)
+                except (SyntaxError, ValueError):
+                    val_parsed = val
             adhoc_args[key] = val_parsed
 
         # --- NSC-ACE-SABER wrapper unwrap ---
