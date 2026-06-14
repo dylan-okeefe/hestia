@@ -1,5 +1,6 @@
 """Unit tests for TurnExecution direct tool dispatch (L161)."""
 
+import asyncio
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -14,7 +15,10 @@ from hestia.core.types import (
     ToolCall,
 )
 from hestia.errors import MaxIterationsError
-from hestia.orchestrator.execution import TurnExecution
+from hestia.orchestrator.execution import (
+    TurnExecution,
+    _normalize_tool_arguments,
+)
 from hestia.orchestrator.quality import Correction, DegeneratePattern
 from hestia.orchestrator.types import Turn, TurnContext, TurnState
 from hestia.tools.metadata import ToolMetadata
@@ -1162,3 +1166,98 @@ async def test_max_tokens_passed_to_chat_stream(make_chat_response):
 
     call_kwargs = inference_client.chat_stream.call_args.kwargs
     assert call_kwargs["max_tokens"] == 2048
+
+
+@pytest.mark.asyncio
+async def test_streaming_inactivity_timeout_returns_partial_content():
+    """If the stream stalls, _run_inference_streaming returns accumulated content."""
+    execution = TurnExecution(
+        tool_registry=MagicMock(),
+        inference_client=MagicMock(),
+        policy=MagicMock(),
+        context_builder=MagicMock(),
+        session_store=MagicMock(),
+        stream=True,
+    )
+
+    async def _stalled_stream(*args, **kwargs):
+        yield StreamDelta(content="partial ")
+        yield StreamDelta(content="content")
+        # Never yield another item; the wait_for should time out.
+        await asyncio.Event().wait()
+
+    execution._inference.chat_stream = _stalled_stream
+
+    stream_callback = AsyncMock()
+    ctx = TurnContext(
+        turn=_make_turn(),
+        user_message=Message(role="user", content="hello"),
+        system_prompt="",
+        respond_callback=AsyncMock(),
+        session=_make_session(),
+        build_result=MagicMock(messages=[]),
+        stream_callback=stream_callback,
+    )
+
+    with patch(
+        "hestia.orchestrator.execution._STREAM_INACTIVITY_TIMEOUT", 0.05
+    ):
+        result = await execution._run_inference_streaming(ctx, ctx.turn)
+
+    assert result.content == "partial content"
+    assert result.finish_reason == "stop"
+    assert stream_callback.await_count == 2
+
+
+def test_normalize_tool_arguments_coerces_non_dict_values():
+    """Non-dict tool-call arguments are coerced to an empty dict."""
+    assert _normalize_tool_arguments({"x": 1}) == {"x": 1}
+    assert _normalize_tool_arguments(None) == {}
+    assert _normalize_tool_arguments("") == {}
+    assert _normalize_tool_arguments(["a"]) == {}
+    assert _normalize_tool_arguments("not a dict") == {}
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_calls_normalizes_non_dict_arguments():
+    """_execute_tool_calls tolerates tool calls whose arguments are not dicts."""
+    registry = MagicMock()
+    registry.describe.return_value = MagicMock(
+        requires_confirmation=False, ordering="concurrent"
+    )
+
+    policy = MagicMock()
+    policy.tool_result_max_chars.return_value = 8000
+
+    execution = TurnExecution(
+        tool_registry=registry,
+        inference_client=MagicMock(),
+        policy=policy,
+        context_builder=MagicMock(),
+        session_store=MagicMock(),
+    )
+
+    tool_calls = [
+        ToolCall(id="tc1", name="write_file", arguments="not-a-dict"),
+        ToolCall(id="tc2", name="read_file", arguments=None),
+    ]
+
+    with patch.object(
+        execution, "_dispatch_tool_call", new_callable=AsyncMock
+    ) as mock_dispatch:
+        mock_dispatch.return_value = ToolCallResult(
+            status="ok",
+            content="ok",
+            artifact_handle=None,
+            truncated=False,
+        )
+
+        result_messages, _ = await execution._execute_tool_calls(
+            _make_session(), tool_calls
+        )
+
+    # Both calls should have been normalized to {} and dispatched.
+    assert mock_dispatch.call_count == 2
+    for call in mock_dispatch.call_args_list:
+        assert call.args[1].arguments == {}
+    assert len(result_messages) == 2

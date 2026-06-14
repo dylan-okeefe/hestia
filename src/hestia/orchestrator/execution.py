@@ -37,6 +37,12 @@ logger = logging.getLogger(__name__)
 ConfirmCallback = Callable[[str, dict[str, Any]], Awaitable[bool]]
 TypingCallback = Callable[[bool], Awaitable[None]]
 
+# If no chunk arrives for this many seconds during streaming, treat the stream
+# as finished and return the content accumulated so far. This prevents a model
+# server that never sends [DONE] or never closes the HTTP connection from
+# hanging the turn indefinitely.
+_STREAM_INACTIVITY_TIMEOUT = 30.0
+
 
 _ToolCallKey = tuple[str, tuple[tuple[str, Any], ...]]
 
@@ -57,6 +63,25 @@ def _tool_call_key(tc: ToolCall) -> _ToolCallKey:
 
     args = tuple(sorted((k, _freeze(v)) for k, v in (tc.arguments or {}).items()))
     return (tc.name, args)
+
+
+def _normalize_tool_arguments(arguments: Any) -> dict[str, Any]:
+    """Coerce tool-call arguments to a dict.
+
+    Small/reasoning models sometimes emit arguments as a string, list, or other
+    non-dict value (especially after JSON repair or when streaming deltas are
+    truncated).  Treating those as an empty dict lets the turn continue with a
+    useful error rather than raising an AttributeError downstream.
+    """
+    if isinstance(arguments, dict):
+        return arguments
+    if arguments is None or arguments == "":
+        return {}
+    logger.warning(
+        "Tool-call arguments are %s, not dict; coercing to {}",
+        type(arguments).__name__,
+    )
+    return {}
 
 
 class TurnExecution:
@@ -368,6 +393,16 @@ class TurnExecution:
         """Dispatch tool calls, handle delegation, rebuild context, and advance the turn."""
         await transition(turn, TurnState.EXECUTING_TOOLS, "")
 
+        # Defensive: malformed tool arguments crash attribute-based lookups below.
+        chat_response.tool_calls = [
+            ToolCall(
+                id=tc.id,
+                name=tc.name,
+                arguments=_normalize_tool_arguments(tc.arguments),
+            )
+            for tc in chat_response.tool_calls
+        ]
+
         tool_names: list[str] = []
         for tc in chat_response.tool_calls:
             if tc.name == "describe_tool":
@@ -485,13 +520,33 @@ class TurnExecution:
         assert ctx.build_result is not None
         assert ctx.stream_callback is not None
 
-        async for delta in self._inference.chat_stream(
+        stream = self._inference.chat_stream(
             messages=ctx.build_result.messages,
             tools=ctx.tools,
             slot_id=ctx.slot_id,
             reasoning_budget=turn.reasoning_budget,
             max_tokens=self._max_tokens,
-        ):
+        )
+
+        while True:
+            try:
+                delta = await asyncio.wait_for(
+                    stream.__anext__(), timeout=_STREAM_INACTIVITY_TIMEOUT
+                )
+            except StopAsyncIteration:
+                break
+            except TimeoutError:
+                logger.warning(
+                    "Streaming inference inactive for %.1fs; finishing with %d content chars "
+                    "and %d tool-call buffers accumulated so far",
+                    _STREAM_INACTIVITY_TIMEOUT,
+                    sum(len(p) for p in content_parts),
+                    len(tool_call_buffers),
+                )
+                if finish_reason == "unknown":
+                    finish_reason = "stop"
+                break
+
             if delta.reasoning_content and not turn.thinking_aborted:
                 thinking_chars = sum(len(p) for p in reasoning_parts) + len(delta.reasoning_content)
                 # Rough token estimate: 4 characters per token
@@ -621,6 +676,18 @@ class TurnExecution:
         """
         result_messages: list[Message] = []
         artifact_handles: list[str] = []
+
+        # Defensive: ensure every tool-call argument payload is a dict.  Non-dict
+        # arguments (strings, lists, None) come from malformed model output or
+        # legacy DB rows and would otherwise crash attribute-based lookups.
+        normalized_tool_calls: list[ToolCall] = []
+        for tc in tool_calls:
+            norm_args = _normalize_tool_arguments(tc.arguments)
+            if norm_args is not tc.arguments:
+                tc = ToolCall(id=tc.id, name=tc.name, arguments=norm_args)
+            normalized_tool_calls.append(tc)
+        tool_calls = normalized_tool_calls
+
         original_tool_calls = list(tool_calls)
 
         # Circuit breaker: repeated list_tools calls are a common degenerate loop.

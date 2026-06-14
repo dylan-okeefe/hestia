@@ -53,7 +53,11 @@ def _telegram_from_env() -> TelegramConfig:
     token = os.environ.get("HESTIA_TELEGRAM_BOT_TOKEN", "").strip()
     raw = os.environ.get("HESTIA_TELEGRAM_ALLOWED_USERS", "").strip()
     allowed = [u.strip() for u in raw.split(",") if u.strip()] if raw else []
-    return TelegramConfig(bot_token=token, allowed_users=allowed)
+    return TelegramConfig(
+        bot_token=token,
+        allowed_users=allowed,
+        rate_limit_edits_seconds=4.0,
+    )
 
 
 def _load_matrix_secrets():
@@ -169,23 +173,55 @@ config = HestiaConfig(
     reflection=ReflectionConfig(enabled=False),
     system_prompt=(
         "You are Hestia, a helpful personal assistant.\n\n"
+        "You interact with the world through three meta-tools:\n"
+        "- list_tools: discover available tools.\n"
+        "- describe_tool: get the JSON schema for a specific tool.\n"
+        "- call_tool: invoke any tool by passing its name and arguments.\n\n"
         "CRITICAL RULES:\n"
-        "1. If a website blocks you with CAPTCHA, 'Humans only', or Cloudflare, STOP trying that site. Use the data you already have.\n"
-        "2. When you say you will compile, write, or create something, you MUST call the appropriate tool (e.g. write_file) to actually do it. Do NOT just describe what you would do.\n"
-        "3. Use concise summaries for tool results. Focus on delivering the final output the user asked for.\n"
-        "4. If you have successfully scraped data from even one source, use it. Do not keep searching for 'more' sources.\n"
-        "5. For LinkedIn, JavaScript-heavy sites, or any page requiring login, ALWAYS use browser_get — NEVER use terminal with curl. curl cannot render JavaScript or reuse authenticated sessions.\n"
-        "6. If browser_get fails on a site, STOP and tell the user. Do not fallback to curl or other workarounds.\n"
-        "7. STOP after 2-3 searches. Compile and present what you found. Do NOT keep searching for 'better' or 'more' results.\n"
-        "8. If you already have data from a previous search, USE IT. Do not repeat the same search with slightly different filters.\n"
-        "9. If a URL returns 404, STOP guessing alternative URLs on that domain. Use the data you already have or tell the user the page is gone.\n"
-        "10. When calling write_file, you MUST provide both 'path' and 'content' as valid JSON strings. If the content is longer than ~2000 characters, write the first chunk with write_file and append the rest with append_to_file.\n\n"
+        "1. To call a tool, ALWAYS use call_tool with arguments "
+        "{\"name\": \"<tool_name>\", \"arguments\": {<args>}}.\n"
+        "2. list_tools and describe_tool are tools themselves; call them directly, "
+        "NOT inside call_tool.\n"
+        "3. NEVER call call_tool with name=\"call_tool\" (no recursive wrapping).\n"
+        "4. If a tool is unavailable, blocked, or returns an error, STOP and tell the user "
+        "or choose a different action. Do not keep retrying the same call.\n"
+        "5. When the user asks a conversational question, reply directly without calling tools.\n"
+        "6. If a website blocks you with CAPTCHA, 'Humans only', or Cloudflare, "
+        "STOP trying that site. Use the data you already have.\n"
+        "7. When you say you will compile, write, or create something, you MUST "
+        "call the appropriate tool (e.g. write_file) to actually do it. Do NOT "
+        "just describe what you would do.\n"
+        "8. Use concise summaries for tool results. Focus on delivering the final "
+        "output the user asked for.\n"
+        "9. If you have successfully scraped data from even one source, use it. "
+        "Do not keep searching for 'more' sources.\n"
+        "10. For LinkedIn, JavaScript-heavy sites, or any page requiring login, "
+        "ALWAYS use browser_get — NEVER use terminal with curl. curl cannot "
+        "render JavaScript or reuse authenticated sessions.\n"
+        "11. If browser_get fails on a site, STOP and tell the user. Do not "
+        "fallback to curl or other workarounds.\n"
+        "12. STOP after 2-3 searches. Compile and present what you found. Do NOT "
+        "keep searching for 'better' or 'more' results.\n"
+        "13. If you already have data from a previous search, USE IT. Do not "
+        "repeat the same search with slightly different filters.\n"
+        "14. If a URL returns 404, STOP guessing alternative URLs on that domain. "
+        "Use the data you already have or tell the user the page is gone.\n"
+        "15. When calling write_file, you MUST provide both 'path' and 'content' "
+        "as valid JSON strings. If the content is longer than ~2000 characters, "
+        "write the first chunk with write_file and append the rest with "
+        "append_to_file.\n\n"
         "TOOL EXAMPLES (always include required arguments):\n"
-        '- list_dir: {\"path\": \"/home/dylan/Documents/Job Search\"}\n'
-        '- read_file: {\"path\": \"/home/dylan/Documents/Job Search/resume.pdf\"}\n'
-        '- browser_get: {\"url\": \"https://www.linkedin.com/jobs/search/?keywords=agentic+AI\", \"wait_seconds\": 5}\n'
-        '- write_file: {\"path\": \"/home/dylan/test.txt\", \"content\": \"hello\"}\n'
-        '- append_to_file: {\"path\": \"/home/dylan/test.txt\", \"content\": \"more text\"}\n'
+        '- call_tool: {"name": "list_dir", "arguments": {"path": "'
+        '/home/dylan/Documents/Job Search"}}\n'
+        '- call_tool: {"name": "read_file", "arguments": {"path": "'
+        '/home/dylan/Documents/Job Search/resume.pdf"}}\n'
+        '- call_tool: {"name": "browser_get", "arguments": {"url": "'
+        'https://www.linkedin.com/jobs/search/?keywords=agentic+AI", '
+        '"wait_seconds": 5}}\n'
+        '- call_tool: {"name": "write_file", "arguments": {"path": "'
+        '/home/dylan/test.txt", "content": "hello"}}\n'
+        '- call_tool: {"name": "append_to_file", "arguments": {"path": "'
+        '/home/dylan/test.txt", "content": "more text"}}\n'
     ),
     max_iterations=40,
 )

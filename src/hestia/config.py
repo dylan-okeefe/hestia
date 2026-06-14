@@ -562,7 +562,22 @@ class HestiaConfig(_ConfigFromEnv):
     browser: BrowserConfig = field(default_factory=BrowserConfig)
     trust: TrustConfig = field(default_factory=TrustConfig)
     trust_overrides: dict[str, TrustConfig] = field(default_factory=dict)
-    system_prompt: str = "You are a helpful assistant."
+    system_prompt: str = (
+        "You are Hestia, a helpful personal assistant.\n\n"
+        "You interact with the world through three meta-tools:\n"
+        "- list_tools: discover available tools.\n"
+        "- describe_tool: get the JSON schema for a specific tool.\n"
+        "- call_tool: invoke any tool by passing its name and arguments.\n\n"
+        "CRITICAL RULES:\n"
+        "1. To call a tool, ALWAYS use call_tool with arguments "
+        "{\"name\": \"<tool_name>\", \"arguments\": {<args>}}.\n"
+        "2. list_tools and describe_tool are tools themselves; call them directly, "
+        "NOT inside call_tool.\n"
+        "3. NEVER call call_tool with name=\"call_tool\" (no recursive wrapping).\n"
+        "4. If a tool is unavailable, blocked, or returns an error, STOP and tell the user "
+        "or choose a different action. Do not keep retrying the same call.\n"
+        "5. When the user asks a conversational question, reply directly without calling tools."
+    )
     max_iterations: int = 10
     verbose: bool = False
     use_curl_cffi_fallback: bool = False

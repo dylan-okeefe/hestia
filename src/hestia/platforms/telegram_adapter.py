@@ -14,7 +14,7 @@ from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 from telegram import Chat, InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.error import TelegramError
+from telegram.error import RetryAfter, TelegramError
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
 from hestia.config import TelegramConfig
@@ -259,9 +259,24 @@ class TelegramAdapter(Platform):
     async def _send_chunk(
         self, chat_id: int, text: str, *, parse_mode: str = "HTML"
     ) -> Any:
-        """Send one chunk, falling back to plain text if HTML parse fails."""
+        """Send one chunk, falling back to plain text if HTML parse fails.
+
+        Sleeps and retries once on Telegram flood-control (RetryAfter).
+        """
         assert self._app is not None
         try:
+            return await self._app.bot.send_message(
+                chat_id=chat_id,
+                text=_md_to_tg_html(text),
+                parse_mode=parse_mode,
+            )
+        except RetryAfter as e:
+            logger.warning(
+                "Telegram flood control for chat %s; sleeping %ss then retrying",
+                chat_id,
+                e.retry_after,
+            )
+            await asyncio.sleep(e.retry_after)
             return await self._app.bot.send_message(
                 chat_id=chat_id,
                 text=_md_to_tg_html(text),
@@ -330,18 +345,17 @@ class TelegramAdapter(Platform):
         chunks = _split_long_text(text)
         try:
             try:
-                await self._app.bot.edit_message_text(
+                await self._edit_message_text(
                     chat_id=chat_id,
                     message_id=int(msg_id),
-                    text=_md_to_tg_html(chunks[0]),
-                    parse_mode="HTML",
+                    text=chunks[0],
                 )
             except TelegramError as e:
                 if "can't parse entities" in str(e).lower():
                     logger.warning(
                         "HTML parse failed for edit, retrying as plain text: %s", e
                     )
-                    await self._app.bot.edit_message_text(
+                    await self._edit_message_text(
                         chat_id=chat_id,
                         message_id=int(msg_id),
                         text=chunks[0],
@@ -358,6 +372,37 @@ class TelegramAdapter(Platform):
                 logger.debug("Message %s not modified, skipping edit", msg_id)
             else:
                 logger.warning("Failed to edit message %s: %s", msg_id, e)
+
+    async def _edit_message_text(
+        self,
+        *,
+        chat_id: int,
+        message_id: int,
+        text: str,
+        parse_mode: str | None = "HTML",
+    ) -> None:
+        """Edit a message, sleeping and retrying once on flood control."""
+        assert self._app is not None
+        try:
+            await self._app.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=_md_to_tg_html(text) if parse_mode == "HTML" else text,
+                parse_mode=parse_mode,
+            )
+        except RetryAfter as e:
+            logger.warning(
+                "Telegram flood control for message %s; sleeping %ss then retrying",
+                message_id,
+                e.retry_after,
+            )
+            await asyncio.sleep(e.retry_after)
+            await self._app.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=_md_to_tg_html(text) if parse_mode == "HTML" else text,
+                parse_mode=parse_mode,
+            )
 
     async def send_error(self, user: str, text: str) -> None:
         """Send an error message to a Telegram chat."""
@@ -409,7 +454,7 @@ class TelegramAdapter(Platform):
         Buffers the first chunk until at least 20 characters have been
         accumulated or 500 ms have elapsed, then sends a new message.
         Subsequent chunks trigger rate-limited in-place edits (max one
-        edit per 1.5 s per message).
+        edit per config.rate_limit_edits_seconds per message).
         """
         state: dict[str, Any] = {
             "accumulated": "",
@@ -418,6 +463,7 @@ class TelegramAdapter(Platform):
             "first_chunk_time": None,
         }
         self._stream_states[chat_id] = state
+        min_edit_interval = self._config.rate_limit_edits_seconds
 
         async def callback(chunk: str) -> None:
             state["accumulated"] += chunk
@@ -435,7 +481,7 @@ class TelegramAdapter(Platform):
                 return
 
             now = time.monotonic()
-            if now - state["last_edit"] >= 1.5:
+            if now - state["last_edit"] >= min_edit_interval:
                 await self.edit_message(chat_id, state["message_id"], state["accumulated"])
                 state["last_edit"] = now
 
