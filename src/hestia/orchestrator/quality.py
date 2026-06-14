@@ -19,6 +19,7 @@ class DegeneratePattern(Enum):
     PATCH_FAILED = "patch_failed"
     READ_ONLY_STREAK = "read_only_streak"
     GREETING_MID_TASK = "greeting_mid_task"
+    TRUNCATED_WRITE_FILE = "truncated_write_file"
 
 
 @dataclass
@@ -141,6 +142,18 @@ def classify_turn(
         return Correction(
             pattern=DegeneratePattern.GREETING_MID_TASK,
             message="You lost context; continue where you left off, don't restart.",
+        )
+
+    truncated_write = _is_truncated_write_file_xml(assistant_message)
+    if truncated_write:
+        return Correction(
+            pattern=DegeneratePattern.TRUNCATED_WRITE_FILE,
+            message=(
+                "Your write_file call was too large and got truncated before it could "
+                "be executed. Each write_file/append_to_file call MUST have content "
+                "shorter than 2000 characters. Write a short header with write_file, "
+                "then add sections with append_to_file. Do not put everything in one call."
+            ),
         )
 
     return None
@@ -299,6 +312,22 @@ def _extract_file_path(tool_call: ToolCall) -> str | None:
     """Extract the target file path from an edit_file or write_call argument dict."""
     args = tool_call.arguments or {}
     return args.get("path") or args.get("file_path") or args.get("filename")
+
+
+def _is_truncated_write_file_xml(assistant_message: Message) -> bool:
+    """True when the assistant emitted an unclosed XML write_file block with huge content.
+
+    The model sometimes ignores the 2000-character chunking rule and emits one
+    enormous <tool_call><function=write_file>... block that exceeds max_tokens,
+    so the closing tags are never generated and no tool call is executed.
+    """
+    content = assistant_message.content or ""
+    if "<tool_call>" not in content or "</tool_call>" in content:
+        return False
+    if "<function=write_file>" not in content and "<function=append_to_file>" not in content:
+        return False
+    # Be conservative: only flag when the content is clearly too long to be one call.
+    return len(content) > 1500
 
 
 def _is_read_only_streak(history: list[Message]) -> bool:

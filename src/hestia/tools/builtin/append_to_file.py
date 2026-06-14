@@ -31,7 +31,11 @@ def make_append_to_file_tool(config: StorageConfig) -> Any:
                         "Must be within allowed roots."
                     ),
                 },
-                "content": {"type": "string", "description": "Text content to append."},
+                "content": {
+                    "type": "string",
+                    "description": "Text content to append. MUST be 2000 characters or fewer. Append in sections if you have more.",
+                    "maxLength": 2000,
+                },
             },
             "required": ["path", "content"],
         },

@@ -29,7 +29,11 @@ def make_write_file_tool(
                     "type": "string",
                     "description": "Absolute or relative file path. Must be within allowed roots.",
                 },
-                "content": {"type": "string", "description": "Text content to write."},
+                "content": {
+                    "type": "string",
+                    "description": "Text content to write. MUST be 2000 characters or fewer. For longer documents, write a header and use append_to_file for the rest.",
+                    "maxLength": 2000,
+                },
             },
             "required": ["path", "content"],
         },
