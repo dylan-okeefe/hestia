@@ -791,7 +791,7 @@ class TurnExecution:
                                 "The complete tool list is in the system prompt "
                                 "and in the previous list_tools result. "
                                 "list_tools is now DISABLED for the rest of this "
-                                "conversation. Do not call it again. Choose a "
+                                "turn. Do not call it again. Choose a "
                                 "specific tool from the list and call it, or reply "
                                 "directly to the user."
                             ),
@@ -854,7 +854,7 @@ class TurnExecution:
                                 "🛑 STOP. You have already called describe_tool enough. "
                                 "The tool schemas are in the previous describe_tool results. "
                                 "describe_tool is now DISABLED for the rest of this "
-                                "conversation. Stop inspecting tools and call one, or "
+                                "turn. Stop inspecting tools and call one, or "
                                 "reply directly to the user."
                             ),
                             tool_call_id=tc.id,
@@ -902,7 +902,7 @@ class TurnExecution:
                             f"🛑 STOP. You already called {tc.name} with these "
                             "exact arguments in this turn; repeating it will "
                             "return the same result. This tool is now DISABLED "
-                            "for the rest of this conversation. Use a different "
+                            "for the rest of this turn. Use a different "
                             "tool or reply directly to the user."
                         ),
                         tool_call_id=tc.id,
