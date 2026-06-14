@@ -506,3 +506,81 @@ class TestChatMalformedOutput:
         assert len(response.tool_calls) == 1
         assert response.tool_calls[0].name == "reason_tool"
         assert response.tool_calls[0].arguments == {"b": 2}
+
+    @pytest.mark.asyncio
+    async def test_xml_adhoc_parameter_blocks_with_closing_tags(
+        self, client: InferenceClient, mock_chat_response: Any
+    ) -> None:
+        """Ad-hoc XML with <parameter=key>value</parameter> blocks parses cleanly."""
+        mock_chat_response(
+            client,
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                "<tool_call>\n"
+                                "<function=write_file>\n"
+                                "<parameter=path>\n"
+                                "/home/dylan/Documents/Job Search/new_job_listings.md\n"
+                                "</parameter>\n"
+                                "<parameter=content>\n"
+                                "# Job Search Results\n\n"
+                                "## Section 1\n"
+                                "</parameter>\n"
+                                "</function>\n"
+                                "</tool_call>"
+                            ),
+                            "tool_calls": [],
+                        },
+                        "finish_reason": "stop",
+                    }
+                ]
+            },
+        )
+
+        messages = [Message(role="user", content="Write file")]
+        response = await client.chat(messages)
+        assert len(response.tool_calls) == 1
+        assert response.tool_calls[0].name == "write_file"
+        assert response.tool_calls[0].arguments == {
+            "path": "/home/dylan/Documents/Job Search/new_job_listings.md",
+            "content": "# Job Search Results\n\n## Section 1",
+        }
+
+    @pytest.mark.asyncio
+    async def test_xml_adhoc_parameter_blocks_without_closing_tags(
+        self, client: InferenceClient, mock_chat_response: Any
+    ) -> None:
+        """Ad-hoc XML with open <parameter=key>value blocks still parses."""
+        mock_chat_response(
+            client,
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                "<tool_call>\n"
+                                "<function=write_file>\n"
+                                "<parameter=path>\n"
+                                "/home/dylan/Documents/Job Search/new_job_listings.md\n"
+                                "<parameter=content>\n"
+                                "# Job Search Results\n"
+                                "</tool_call>"
+                            ),
+                            "tool_calls": [],
+                        },
+                        "finish_reason": "stop",
+                    }
+                ]
+            },
+        )
+
+        messages = [Message(role="user", content="Write file")]
+        response = await client.chat(messages)
+        assert len(response.tool_calls) == 1
+        assert response.tool_calls[0].name == "write_file"
+        assert response.tool_calls[0].arguments == {
+            "path": "/home/dylan/Documents/Job Search/new_job_listings.md",
+            "content": "# Job Search Results",
+        }

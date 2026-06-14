@@ -88,14 +88,18 @@ def _parse_adhoc_xml_tool_calls(text: str) -> list[ToolCall]:
         name = fn_match.group(1).strip()
 
         adhoc_args: dict[str, Any] = {}
-        # Match <parameter=key> or <parameter key> followed by value on next line(s)
+        # Match <parameter=key>value</parameter> blocks. The value may span
+        # multiple lines. Some models close the tag on the next line; others
+        # leave it open until the next parameter or the end of the tool_call.
         for param_match in re.finditer(
-            r"<parameter[=:]\s*([^>\s]+)>\s*(.+?)(?=<parameter[=:]|</tool_call>|$)",
+            r"<parameter[=:]\s*([^>\s]+)>\s*(.+?)(?=<parameter[=:]|</parameter>|</tool_call>|$)",
             block,
             re.DOTALL,
         ):
             key = param_match.group(1).strip()
             val = param_match.group(2).strip()
+            # Strip a trailing </parameter> tag if the model included one.
+            val = re.sub(r"</parameter>\s*$", "", val).strip()
             # Try to coerce numbers/booleans, else keep as string
             try:
                 val_parsed = json.loads(val)
