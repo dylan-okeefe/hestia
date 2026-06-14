@@ -126,7 +126,7 @@ async def browser_get_links(
             await page.wait_for_timeout(wait_seconds * 1000)
 
             links = await page.evaluate(
-                """(selector, pattern) => {
+                """({selector, pattern}) => {
                     const re = pattern ? new RegExp(pattern, 'i') : null;
                     const seen = new Set();
                     const results = [];
@@ -141,8 +141,7 @@ async def browser_get_links(
                     });
                     return results;
                 }""",
-                selector,
-                pattern,
+                {"selector": selector, "pattern": pattern},
             )
 
             try:
