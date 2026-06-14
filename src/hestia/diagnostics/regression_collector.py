@@ -13,8 +13,22 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from hestia.diagnostics.scrub import scrub_text
+
 
 _ENV_VAR = "HESTIA_REGRESSION_FIXTURES_DIR"
+_AUTO_SCRUB_ENV_VAR = "HESTIA_REGRESSION_AUTO_SCRUB"
+
+
+def _scrub_payload(value: Any) -> Any:
+    """Recursively scrub strings inside a payload dict/list."""
+    if isinstance(value, str):
+        return scrub_text(value)
+    if isinstance(value, dict):
+        return {k: _scrub_payload(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_scrub_payload(v) for v in value]
+    return value
 
 
 def _safe_name(name: str) -> str:
@@ -39,6 +53,8 @@ def _write(category: str, name: str, payload: dict[str, Any]) -> Path | None:
         return None
     timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S-%f")
     filename = f"{_safe_name(name)}_{timestamp}.json"
+    if os.environ.get(_AUTO_SCRUB_ENV_VAR):
+        payload = _scrub_payload(payload)
     fixture = {
         "captured_at": datetime.now(UTC).isoformat(),
         "category": category,

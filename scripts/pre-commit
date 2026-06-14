@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Pre-commit hook for Hestia.
+# Install with: cp scripts/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+# Scrub regression fixtures before allowing a commit.
+.venv/bin/python scripts/scrub_regression_fixtures.py --check

@@ -35,6 +35,6 @@ def test_grep_direct_call_with_arguments_parameter():
     assert len(calls) == 1
     assert calls[0].name == "grep"
     args = calls[0].arguments
-    assert args["path"] == "/home/dylan/.hestia/artifacts/art_6c65504923"
+    assert args["path"] == "/home/<user>/.hestia/artifacts/art_6c65504923"
     assert "builtinboston" in args["pattern"]
     assert "jobs" in args["pattern"]
