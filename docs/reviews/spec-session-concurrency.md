@@ -4,6 +4,12 @@
 **Review source:** docs/reviews/develop-review-2026-06-12.md (Backend correctness / Security sections)  
 **Scope:** One coherent spec for all concurrency/session-lifecycle findings. Do NOT split into independent loops.
 
+## Changes since this spec was written
+
+- `tools/browser/fetch.py` now uses a warm `_BrowserPool` that reuses a single Playwright browser across calls and closes contexts per fetch. This does **not** change the concurrency model: the pool is process-scoped and still allows multiple sessions to fetch concurrently; per-session turn serialization remains the load-bearing invariant.
+- Tool results now carry `[CATEGORY: ...]` markers. The `correction` column work and message-sequence validator should treat marked tool results as first-class content and preserve them without re-interpreting the text.
+- The `error_resolutions` bootstrap gap noted in the parent review is still unaddressed; the messages-table migration for `correction=True` should use the same schema-ownership path as the store-split spec.
+
 ## Problem statement
 
 Three independent drivers can currently execute turns against the same session at the same time:

@@ -4,6 +4,12 @@
 **Review source:** docs/reviews/develop-review-2026-06-12.md (Architecture section)  
 **Scope:** One coherent spec for the store split. Do NOT refactor other persistence files in the same loop.
 
+## Changes since this spec was written
+
+- Tool results now carry `[CATEGORY: ...]` markers. `MessageDTO.content` must remain a plain string so markers survive persistence and reload without loss or reinterpretation.
+- `tools/browser/fetch.py` is now the single browser front door; any browser-session metadata persisted by the store split should be domain-scoped, not session-scoped, because the browser pool is process-wide.
+- The `error_resolutions` bootstrap gap is still outstanding; the store split should own the authoritative `create_tables()` path and ensure new tables (including any added by the concurrency spec's `correction` column) exist in both Alembic and runtime bootstrap.
+
 ## Problem statement
 
 `src/hestia/persistence/sessions.py` is 1044 lines with ~32 methods and is responsible for:
