@@ -20,7 +20,8 @@ def make_write_file_tool(
         name="write_file",
         public_description=(
             "Write content to a file. Params: path (str), content (str). "
-            "For large files, write a short header first, then use append_to_file for the body."
+            "If content is longer than 2000 characters, write a short header first "
+            "and append the rest with append_to_file."
         ),
         parameters_schema={
             "type": "object",

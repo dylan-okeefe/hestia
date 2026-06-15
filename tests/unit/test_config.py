@@ -42,7 +42,8 @@ class TestDefaultConfig:
         assert cfg.storage.artifacts_dir == Path("artifacts")
 
         # Top-level defaults
-        assert cfg.system_prompt == "You are a helpful assistant."
+        assert "Hestia" in cfg.system_prompt
+        assert "2000 characters" in cfg.system_prompt
         assert cfg.max_iterations == 10
         assert cfg.verbose is False
 
@@ -61,6 +62,13 @@ class TestDefaultConfig:
         # But different objects
         assert cfg1.inference is not cfg2.inference
         assert cfg1.slots is not cfg2.slots
+
+    def test_default_system_prompt_teaches_chunked_writes(self):
+        """The default system prompt instructs chunked file writes."""
+        cfg = HestiaConfig.default()
+        assert "If you need to write more than 2000 characters" in cfg.system_prompt
+        assert "write_file" in cfg.system_prompt
+        assert "append_to_file" in cfg.system_prompt
 
     def test_default_telegram_config(self):
         """Default Telegram config has sensible values."""

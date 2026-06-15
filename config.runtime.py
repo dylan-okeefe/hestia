@@ -208,10 +208,13 @@ config = HestiaConfig(
         "repeat the same search with slightly different filters.\n"
         "12. If a URL returns 404, STOP guessing alternative URLs on that domain. "
         "Use the data you already have or tell the user the page is gone.\n"
-        "13. FILE WRITING: Each write_file or append_to_file call MUST have "
-        "'content' shorter than 2000 characters. Create the file with a short header "
-        "using write_file, then add sections with append_to_file. Do NOT try to "
-        "fit an entire long document into one tool call.\n\n"
+        "13. FILE WRITING: If you need to write more than 2000 characters, create the file "
+        "with a short header using write_file, then add each remaining section with "
+        "append_to_file. Do NOT try to fit an entire long document into one tool call.\n\n"
+        "CHUNKED WRITE EXAMPLE:\n"
+        'call_tool({"name": "write_file", "arguments": {"path": "/home/<user>/Documents/Job Search/listings.md", "content": "# Job Listings\\n\\n"}})\n'
+        'call_tool({"name": "append_to_file", "arguments": {"path": "/home/<user>/Documents/Job Search/listings.md", "content": "## Listing 1\\n..."}})\n'
+        'call_tool({"name": "append_to_file", "arguments": {"path": "/home/<user>/Documents/Job Search/listings.md", "content": "## Listing 2\\n..."}})\n\n'
         "TOOL EXAMPLES (use the XML format from the tool instructions):\n"
         '- write_file: {"path": "/home/dylan/Documents/notes.md", "content": "# Notes\\n"}\n'
         '- append_to_file: {"path": "/home/dylan/Documents/notes.md", "content": "## Section 1\\n..."}\n'

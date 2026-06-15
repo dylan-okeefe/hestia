@@ -18,8 +18,8 @@ def make_append_to_file_tool(config: StorageConfig) -> Any:
         name="append_to_file",
         public_description=(
             "Append content to an existing file. Params: path (str), content (str). "
-            "Use this to add sections to a file created by write_file instead of putting "
-            "everything in one huge write_file call."
+            "If content is longer than 2000 characters, append it in sections using "
+            "multiple append_to_file calls after creating the file with write_file."
         ),
         parameters_schema={
             "type": "object",
