@@ -24,6 +24,7 @@ from hestia.policy.engine import PolicyEngine, RetryAction
 from hestia.security import InjectionScanner
 from hestia.tools.metadata import ToolMetadata
 from hestia.tools.registry import ToolNotFoundError, ToolRegistry
+from hestia.tools.result_classifier import ToolResultCategory, classify_tool_result
 from hestia.tools.types import ToolCallResult
 
 if TYPE_CHECKING:
@@ -71,6 +72,37 @@ def _tool_call_key(tc: ToolCall) -> _ToolCallKey:
     return (tc.name, args)
 
 
+def _extract_url_from_tool_call(tc: ToolCall) -> str | None:
+    """Return the URL argument of a tool call if present."""
+    if not tc.arguments:
+        return None
+    for key, value in tc.arguments.items():
+        if key.lower() == "url" and isinstance(value, str):
+            return value
+    return None
+
+
+def _format_retry_exhausted_message(
+    tool_name: str,
+    category: ToolResultCategory,
+    retry_count: int,
+    url: str | None,
+) -> str:
+    """Format the block message when retries are exhausted."""
+    if url:
+        target = url
+        disabled = "This URL is now DISABLED for the rest of this turn"
+    else:
+        target = "these arguments"
+        disabled = "This tool is now DISABLED for the rest of this turn"
+    category_phrase = category.name.lower().replace("_", " ")
+    return (
+        f"🛑 {tool_name} {category_phrase} {retry_count} time(s) for {target}. "
+        f"{disabled}. "
+        "Try http_get, web_search, or grep the cached artifact instead."
+    )
+
+
 def _normalize_tool_arguments(arguments: Any) -> dict[str, Any]:
     """Coerce tool-call arguments to a dict.
 
@@ -90,40 +122,18 @@ def _normalize_tool_arguments(arguments: Any) -> dict[str, Any]:
     return {}
 
 
-# Phrases that indicate a previous tool call failed for a transient reason and
-# should be allowed to retry with the same arguments.  This prevents the
-# repeated-identical-call circuit breaker from blocking legitimate retries of
-# network or browser calls that timed out or hit bot protection.
-_RETRYABLE_RESULT_MARKERS = (
-    "error",
-    "timeout",
-    "timed out",
-    "partial failure",
-    "blocked",
-    "bot protection",
-    "cloudflare",
-    "permission denied",
-    "access denied",
-    "no links found",
-    "can't find this page",
-    "page doesn't exist",
-    "isn't available",
-    "humans only",
-)
-
-
 def _is_retryable_tool_result(content: str) -> bool:
     """True when a tool result looks like a transient failure worth retrying."""
-    lowered = (content or "").lower()
-    return any(marker in lowered for marker in _RETRYABLE_RESULT_MARKERS)
+    return classify_tool_result(content) in (
+        ToolResultCategory.TIMEOUT,
+        ToolResultCategory.TRANSIENT_OTHER,
+    )
 
 
-def _previous_failed_tool_call_ids(
+def _latest_tool_result_categories(
     history: list[Message],
-) -> set[str]:
-    """Return tool_call_ids whose most recent result was a retryable failure."""
-    # Walk history to pair assistant tool_calls with their tool results.
-    # We only need the latest result for each id.
+) -> dict[str, ToolResultCategory]:
+    """Return the latest result category for each tool_call_id."""
     latest_result: dict[str, str] = {}
     pending_ids: set[str] = set()
     for msg in history:
@@ -133,7 +143,10 @@ def _previous_failed_tool_call_ids(
             if msg.tool_call_id in pending_ids:
                 latest_result[msg.tool_call_id] = msg.content or ""
                 pending_ids.discard(msg.tool_call_id)
-    return {tid for tid, content in latest_result.items() if _is_retryable_tool_result(content)}
+    return {
+        tid: classify_tool_result(content)
+        for tid, content in latest_result.items()
+    }
 
 
 class TurnExecution:
@@ -151,6 +164,7 @@ class TurnExecution:
         injection_scanner: InjectionScanner | None = None,
         max_iterations: int = 10,
         max_tool_calls_per_turn: int = 10,
+        max_retries_for_failed_tool_call: int = 2,
         max_tokens: int = 1024,
         stream: bool = False,
         event_bus: "EventBus | None" = None,
@@ -164,6 +178,7 @@ class TurnExecution:
         self._injection_scanner = injection_scanner
         self._max_iterations = max_iterations
         self._max_tool_calls_per_turn = max_tool_calls_per_turn
+        self._max_retries_for_failed_tool_call = max_retries_for_failed_tool_call
         self._max_tokens = max_tokens
         self._stream = stream
         self._event_bus = event_bus
@@ -885,27 +900,30 @@ class TurnExecution:
         # read_file(path=...) from burning tokens. We also dedupe within the
         # current batch so a model cannot emit the same call twice at once.
         #
-        # Exception: if the previous identical call produced a retryable failure
-        # (timeout, bot block, 404, etc.), let the model try again.
+        # Exception: if the previous identical call produced a transient failure
+        # (TIMEOUT or TRANSIENT_OTHER), allow a capped number of retries.
         repeated_block_results: dict[str, Message] = {}
         blocked_repeated_tools: set[str] = set()
         if ctx is not None:
             previous_keys: set[_ToolCallKey] = set()
-            failed_call_ids = _previous_failed_tool_call_ids(ctx.running_history)
-            failed_keys: set[_ToolCallKey] = set()
+            result_categories = _latest_tool_result_categories(ctx.running_history)
+            previous_key_categories: dict[_ToolCallKey, ToolResultCategory] = {}
             for msg in ctx.running_history:
                 if msg.role == "assistant" and msg.tool_calls:
                     for tc in msg.tool_calls:
                         key = _tool_call_key(tc)
                         previous_keys.add(key)
-                        if tc.id in failed_call_ids:
-                            failed_keys.add(key)
+                        category = result_categories.get(tc.id)
+                        if category is not None:
+                            previous_key_categories[key] = category
+
+            retry_counts = ctx._tool_call_retry_counts
 
             deduped: list[ToolCall] = []
             current_keys: set[_ToolCallKey] = set()
             for tc in tool_calls:
                 key = _tool_call_key(tc)
-                if (key in previous_keys and key not in failed_keys) or key in current_keys:
+                if key in current_keys:
                     blocked_repeated_tools.add(tc.name)
                     repeated_block_results[tc.id] = Message(
                         role="tool",
@@ -919,9 +937,52 @@ class TurnExecution:
                         tool_call_id=tc.id,
                         created_at=utcnow(),
                     )
-                else:
-                    current_keys.add(key)
-                    deduped.append(tc)
+                    continue
+
+                if key in previous_keys:
+                    category = previous_key_categories.get(
+                        key, ToolResultCategory.SUCCESS
+                    )
+                    if category in (
+                        ToolResultCategory.TIMEOUT,
+                        ToolResultCategory.TRANSIENT_OTHER,
+                    ):
+                        count = retry_counts.get(key, 0)
+                        if count >= self._max_retries_for_failed_tool_call:
+                            blocked_repeated_tools.add(tc.name)
+                            url = _extract_url_from_tool_call(tc)
+                            repeated_block_results[tc.id] = Message(
+                                role="tool",
+                                content=_format_retry_exhausted_message(
+                                    tc.name, category, count, url
+                                ),
+                                tool_call_id=tc.id,
+                                created_at=utcnow(),
+                            )
+                        else:
+                            retry_counts[key] = count + 1
+                            current_keys.add(key)
+                            deduped.append(tc)
+                    else:
+                        # SUCCESS, BLOCKED, NOT_FOUND, or missing category:
+                        # fail-fast / do not retry.
+                        blocked_repeated_tools.add(tc.name)
+                        repeated_block_results[tc.id] = Message(
+                            role="tool",
+                            content=(
+                                f"🛑 STOP. You already called {tc.name} with these "
+                                "exact arguments in this turn; repeating it will "
+                                "return the same result. This tool is now DISABLED "
+                                "for the rest of this turn. Use a different "
+                                "tool or reply directly to the user."
+                            ),
+                            tool_call_id=tc.id,
+                            created_at=utcnow(),
+                        )
+                    continue
+
+                current_keys.add(key)
+                deduped.append(tc)
             tool_calls = deduped
 
         # Persist the block signals on the context so _handle_tool_calls can drop

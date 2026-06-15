@@ -6,7 +6,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from hestia.core.types import Message
 
@@ -115,3 +115,7 @@ class TurnContext:
     empty_tool_failure_counts: dict[str, int] = field(default_factory=dict)
     # Quality monitor: how many corrections have been injected this turn
     correction_count: int = 0
+    # Circuit breaker: retry counters for failed identical tool calls
+    _tool_call_retry_counts: dict[Any, int] = field(default_factory=dict, repr=False)
+    # Circuit breaker: remaining wall-clock budget per URL for timeout retries
+    _url_time_budgets: dict[str, float] = field(default_factory=dict, repr=False)
