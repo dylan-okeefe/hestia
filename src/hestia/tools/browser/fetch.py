@@ -7,7 +7,7 @@ import logging
 import random
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from playwright.async_api import async_playwright
 
@@ -57,7 +57,9 @@ class BrowserFetchResult:
 
 def _get_min_delay_seconds() -> float:
     """Return the minimum delay between fetches for the same domain."""
-    return 3.0
+    from hestia.config import BrowserConfig
+
+    return BrowserConfig.from_env().min_fetch_delay_seconds
 
 
 async def _rate_limit_sleep(store: BrowserSessionStore, domain: str) -> None:
@@ -260,9 +262,9 @@ async def fetch_url(
 
             # Persist refreshed session state so subsequent calls stay authenticated.
             try:
-                refreshed_storage = await context.storage_state()
+                refreshed_storage = cast(dict[str, Any], await context.storage_state())
                 store.save_storage(domain, refreshed_storage)
-                refreshed_cookies = await context.cookies()
+                refreshed_cookies = cast(list[dict[str, Any]], await context.cookies())
                 store.save_cookies(domain, refreshed_cookies)
             except Exception as exc:
                 logger.warning("Failed to persist session for %s: %s", domain, exc)

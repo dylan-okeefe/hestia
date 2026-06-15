@@ -487,6 +487,7 @@ class BrowserConfig(_ConfigFromEnv):
     )
     headless: bool = True
     default_timeout_seconds: int = 30
+    min_fetch_delay_seconds: float = 3.0
 
 
 @dataclass

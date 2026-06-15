@@ -64,10 +64,14 @@ def mock_store() -> Any:
 @pytest.fixture(autouse=True)
 def no_delays() -> Any:
     """Disable rate-limit sleeps and jitter by default."""
-    with patch("hestia.tools.browser.fetch._get_min_delay_seconds", return_value=0.0):
-        with patch("hestia.tools.browser.fetch.asyncio.sleep", AsyncMock()):
-            with patch("hestia.tools.browser.fetch.random.uniform", return_value=0.0):
-                yield
+    mock_cfg = MagicMock()
+    mock_cfg.min_fetch_delay_seconds = 0.0
+    with (
+        patch("hestia.config.BrowserConfig.from_env", return_value=mock_cfg),
+        patch("hestia.tools.browser.fetch.asyncio.sleep", AsyncMock()),
+        patch("hestia.tools.browser.fetch.random.uniform", return_value=0.0),
+    ):
+        yield
 
 
 @pytest.mark.asyncio
@@ -158,13 +162,46 @@ async def test_rate_limiting_sleeps_between_calls(
     metadata.last_used = datetime.now(UTC) - timedelta(seconds=0.5)
     mock_store.load_metadata = MagicMock(return_value=metadata)
 
-    with patch("hestia.tools.browser.fetch._get_min_delay_seconds", return_value=2.0):
-        with patch("hestia.tools.browser.fetch.asyncio.sleep", AsyncMock()) as mock_sleep:
-            with patch("hestia.tools.browser.fetch.random.uniform", return_value=0.25):
-                await fetch_url("https://example.com/page", domain="example.com")
+    mock_cfg = MagicMock()
+    mock_cfg.min_fetch_delay_seconds = 2.0
+
+    with (
+        patch("hestia.config.BrowserConfig.from_env", return_value=mock_cfg),
+        patch("hestia.tools.browser.fetch.asyncio.sleep", AsyncMock()) as mock_sleep,
+        patch("hestia.tools.browser.fetch.random.uniform", return_value=0.25),
+    ):
+        await fetch_url("https://example.com/page", domain="example.com")
 
     mock_sleep.assert_awaited_once()
     # Sleep should be approximately 2.0 - 0.5 + 0.25 = 1.75
+    call_args = mock_sleep.call_args[0]
+    assert 1.7 <= call_args[0] <= 1.8
+
+
+@pytest.mark.asyncio
+async def test_rate_limiting_per_domain_does_not_affect_other_domains(
+    mock_playwright: Any, mock_store: Any
+) -> None:
+    """A recent fetch for one domain does not delay a fetch for another."""
+    from datetime import UTC, datetime, timedelta
+
+    metadata = MagicMock()
+    metadata.last_used = datetime.now(UTC) - timedelta(seconds=0.5)
+    mock_store.load_metadata = MagicMock(side_effect=[metadata, None])
+
+    mock_cfg = MagicMock()
+    mock_cfg.min_fetch_delay_seconds = 2.0
+
+    with (
+        patch("hestia.config.BrowserConfig.from_env", return_value=mock_cfg),
+        patch("hestia.tools.browser.fetch.asyncio.sleep", AsyncMock()) as mock_sleep,
+        patch("hestia.tools.browser.fetch.random.uniform", return_value=0.25),
+    ):
+        await fetch_url("https://example.com/page", domain="example.com")
+        await fetch_url("https://other.com/page", domain="other.com")
+
+    # Only the first call (example.com) should sleep.
+    assert mock_sleep.call_count == 1
     call_args = mock_sleep.call_args[0]
     assert 1.7 <= call_args[0] <= 1.8
 

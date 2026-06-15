@@ -27,6 +27,7 @@ from pathlib import Path
 
 from hestia.config import (
     DEFAULT_SOUL_MD_PATH,
+    BrowserConfig,
     CompressionConfig,
     EmailConfig,
     HandoffConfig,
@@ -90,6 +91,9 @@ _ROOT = Path(__file__).resolve().parent / "runtime-data"
 _DB_PATH = _ROOT / "hestia.db"
 
 config = HestiaConfig(
+    browser=BrowserConfig(
+        min_fetch_delay_seconds=3.0,
+    ),
     inference=InferenceConfig(
         base_url="http://127.0.0.1:8001",
         model_name="Qwen3.6-35B-A3B-APEX-I-Quality.gguf",
