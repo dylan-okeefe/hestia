@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
@@ -19,6 +21,7 @@ class DegeneratePattern(Enum):
     PATCH_FAILED = "patch_failed"
     READ_ONLY_STREAK = "read_only_streak"
     GREETING_MID_TASK = "greeting_mid_task"
+    TRUNCATED_WRITE_FILE = "truncated_write_file"
 
 
 @dataclass
@@ -35,8 +38,6 @@ _READ_ONLY_TOOLS = {
     "list_dir",
     "browser_get",
     "browser_login",
-    "describe_tool",
-    "list_tools",
     "web_search",
     "http_get",
     "current_time",
@@ -44,6 +45,15 @@ _READ_ONLY_TOOLS = {
     "search_memory",
     "list_memories",
     "email_search_and_read",
+}
+
+# Meta-tools that inspect tools rather than mutate state. They are excluded
+# from read-only streak counting because small models sometimes call them
+# while ramping up, and penalizing them the same way as file reads causes
+# premature "write your answer" nudges before real work has begun.
+_META_INSPECT_TOOLS = {
+    "list_tools",
+    "describe_tool",
 }
 
 # Greeting patterns that indicate a context-loss restart.
@@ -75,14 +85,17 @@ _META_TOOLS = {"list_tools", "describe_tool", "call_tool"}
 _PATCH_FAILURE_THRESHOLD = 3
 
 # Number of consecutive read-only tools before we flag READ_ONLY_STREAK.
-_READ_ONLY_STREAK_THRESHOLD = 5
+_READ_ONLY_STREAK_THRESHOLD = 8
 
 
-def classify_turn(
+async def classify_turn(
     turn: Turn,
     assistant_message: Message,
     history: list[Message],
     allowed_tools: list[str] | None,
+    *,
+    write_file_handler: Callable[..., Awaitable[str]] | None = None,
+    append_to_file_handler: Callable[..., Awaitable[str]] | None = None,
 ) -> Correction | None:
     """Inspect a single turn and return a tailored correction if it looks degenerate.
 
@@ -91,6 +104,8 @@ def classify_turn(
         assistant_message: The assistant message produced this iteration.
         history: Full conversation history *including* ``assistant_message``.
         allowed_tools: Tools permitted in this session context.
+        write_file_handler: Optional handler for recovering truncated write_file calls.
+        append_to_file_handler: Optional handler for recovering truncated append_to_file calls.
 
     Returns:
         A :class:`Correction` if a degenerate pattern was detected, else ``None``.
@@ -108,10 +123,13 @@ def classify_turn(
             message=f"That tool doesn't exist; valid tools are: {valid}",
         )
 
-    if _is_repeated_identical_call(assistant_message, history):
+    repeated_calls = _get_repeated_identical_calls(assistant_message, history)
+    if repeated_calls:
+        tool_names = [name for name, _ in repeated_calls]
+        message = _build_repeated_call_correction(tool_names)
         return Correction(
             pattern=DegeneratePattern.REPEATED_IDENTICAL_CALL,
-            message="You're looping; try a different approach.",
+            message=message,
         )
 
     patch_file = _patch_failed_file(history)
@@ -133,7 +151,138 @@ def classify_turn(
             message="You lost context; continue where you left off, don't restart.",
         )
 
+    truncated_write = _is_truncated_write_file_xml(assistant_message)
+    if truncated_write:
+        return await _handle_truncated_write_file(
+            assistant_message,
+            write_file_handler=write_file_handler,
+            append_to_file_handler=append_to_file_handler,
+        )
+
     return None
+
+
+async def _handle_truncated_write_file(
+    assistant_message: Message,
+    *,
+    write_file_handler: Callable[..., Awaitable[str]] | None,
+    append_to_file_handler: Callable[..., Awaitable[str]] | None,
+) -> Correction:
+    """Recover partial content from a truncated write/append call and build a correction."""
+    generic = (
+        "Your write_file call was too large and got truncated before it could "
+        "be executed. Each write_file/append_to_file call MUST have content "
+        "shorter than 2000 characters. Write a short header with write_file, "
+        "then add sections with append_to_file. Do not put everything in one call."
+    )
+
+    recovery = _recover_truncated_write_file(assistant_message.content or "")
+    if recovery is None:
+        return Correction(
+            pattern=DegeneratePattern.TRUNCATED_WRITE_FILE,
+            message=generic,
+        )
+
+    name, path, safe_content, last_complete_line = recovery
+    handler: Callable[..., Awaitable[str]] | None = None
+    if name == "write_file":
+        handler = write_file_handler
+    elif name == "append_to_file":
+        handler = append_to_file_handler
+
+    if handler is None:
+        return Correction(
+            pattern=DegeneratePattern.TRUNCATED_WRITE_FILE,
+            message=generic,
+        )
+
+    try:
+        result = await handler(path=path, content=safe_content)
+    except Exception:  # noqa: BLE001
+        result = None
+
+    if not result or not (result.startswith("Wrote") or result.startswith("Appended")):
+        return Correction(
+            pattern=DegeneratePattern.TRUNCATED_WRITE_FILE,
+            message=generic,
+        )
+
+    bytes_written = len(safe_content)
+    resume_hint = (
+        f" Resume from the line after `{last_complete_line}`."
+        if last_complete_line
+        else ""
+    )
+    if name == "append_to_file":
+        message = (
+            f"Your append_to_file call was truncated before completion. The first "
+            f"{bytes_written:,} characters have been appended to {path}. Continue by "
+            f"calling append_to_file with the rest of this section.{resume_hint} "
+            f"Do not try to rewrite the entire file in one call."
+        )
+    else:
+        message = (
+            f"Your write_file call was truncated before completion. The first "
+            f"{bytes_written:,} characters have been saved to {path}. Continue by "
+            f"calling append_to_file with the next section.{resume_hint} "
+            f"Do not try to rewrite the entire file in one call."
+        )
+
+    return Correction(
+        pattern=DegeneratePattern.TRUNCATED_WRITE_FILE,
+        message=message,
+    )
+
+
+def _recover_truncated_write_file(
+    content: str,
+) -> tuple[str, str, str, str] | None:
+    """Extract the tool name, path, and safe partial content from an unclosed XML block.
+
+    The captured string is truncated mid-JSON, so the final line is almost always
+    incomplete.  We drop that incomplete trailing fragment and return the last
+    complete line so the caller can tell the model exactly where to resume.
+    """
+    name_match = re.search(r"<function[=:]\s*([^>\s]+)\s*>", content)
+    if not name_match:
+        return None
+    name = name_match.group(1).strip()
+    if name not in ("write_file", "append_to_file"):
+        return None
+
+    path_match = re.search(r'"path"\s*:\s*"([^"]+)"', content)
+    if not path_match:
+        return None
+    path = path_match.group(1)
+
+    content_match = re.search(r'"content"\s*:\s*"(.*)', content, re.DOTALL)
+    if not content_match:
+        return None
+    partial_content = content_match.group(1)
+
+    safe_content, last_complete_line = _drop_incomplete_trailing_line(partial_content)
+    return name, path, safe_content, last_complete_line
+
+
+def _drop_incomplete_trailing_line(content: str) -> tuple[str, str]:
+    """Return content up to the last complete line and that line's text.
+
+    A "complete" line ends with ``\\n``.  If the content already ends with a
+    newline, the whole content is kept and the last line is reported.  If there
+    is no complete line, the content is emptied and the last-complete-line hint
+    is blank.
+    """
+    if content.endswith("\n"):
+        lines = content.splitlines()
+        last_complete_line = lines[-1] if lines else ""
+        return content, last_complete_line
+
+    *complete_lines, _incomplete = content.splitlines()
+    if not complete_lines:
+        return "", ""
+    safe_content = "\n".join(complete_lines) + "\n"
+    last_complete_line = complete_lines[-1]
+    return safe_content, last_complete_line
 
 
 def _is_empty_response(assistant_message: Message) -> bool:
@@ -159,8 +308,17 @@ def _is_repeated_identical_call(
     assistant_message: Message, history: list[Message]
 ) -> bool:
     """True when the current tool calls exactly match the previous turn's."""
+    return bool(_get_repeated_identical_calls(assistant_message, history))
+
+
+def _get_repeated_identical_calls(
+    assistant_message: Message, history: list[Message]
+) -> list[_ToolCallKey]:
+    """Return the repeated tool calls when the current assistant message duplicates
+    the previous assistant message's tool calls, else an empty list.
+    """
     if not assistant_message.tool_calls:
-        return False
+        return []
 
     current_calls = _normalise_tool_calls(assistant_message.tool_calls)
 
@@ -172,19 +330,57 @@ def _is_repeated_identical_call(
             break
 
     if prev is None or not prev.tool_calls:
-        return False
+        return []
 
-    return current_calls == _normalise_tool_calls(prev.tool_calls)
+    prev_calls = _normalise_tool_calls(prev.tool_calls)
+    if current_calls == prev_calls:
+        return current_calls
+    return []
 
 
 _ToolCallKey = tuple[str, tuple[tuple[str, Any], ...]]
 
 
+def _build_repeated_call_correction(tool_names: list[str]) -> str:
+    """Return a forceful, specific correction for repeated identical tool calls."""
+    if len(tool_names) == 1:
+        name = tool_names[0]
+        if name == "list_tools":
+            return (
+                "STOP calling list_tools. You already received the complete tool list "
+                "in the previous result and in the system prompt. Do not list tools again. "
+                "Pick a specific tool from that list and call it, or reply directly to the user."
+            )
+        return (
+            f"STOP calling {name} repeatedly. You already called it with the same arguments; "
+            f"calling it again will return the same result. Use a different tool or answer the user."
+        )
+    names = ", ".join(tool_names)
+    return (
+        f"STOP repeating the same tool calls ({names}). You already executed them; "
+        f"calling them again will return the same result. Use different tools or answer the user."
+    )
+
+
 def _normalise_tool_calls(tool_calls: list[ToolCall]) -> list[_ToolCallKey]:
-    """Return a stable, comparable representation of a list of tool calls."""
+    """Return a stable, comparable representation of a list of tool calls.
+
+    Argument values may be lists or dicts, so they are recursively frozen into
+    hashable tuples before sorting.
+    """
+
+    def _freeze(value: Any) -> Any:
+        if isinstance(value, dict):
+            return tuple(sorted((k, _freeze(v)) for k, v in value.items()))
+        if isinstance(value, list):
+            return tuple(_freeze(v) for v in value)
+        return value
+
     out: list[_ToolCallKey] = []
     for tc in tool_calls:
-        args = tuple(sorted((tc.arguments or {}).items()))
+        args = tuple(
+            sorted((k, _freeze(v)) for k, v in (tc.arguments or {}).items())
+        )
         out.append((tc.name, args))
     return out
 
@@ -244,19 +440,40 @@ def _extract_file_path(tool_call: ToolCall) -> str | None:
     return args.get("path") or args.get("file_path") or args.get("filename")
 
 
+def _is_truncated_write_file_xml(assistant_message: Message) -> bool:
+    """True when the assistant emitted an unclosed XML write_file block with huge content.
+
+    The model sometimes ignores the 2000-character chunking rule and emits one
+    enormous <tool_call><function=write_file>... block that exceeds max_tokens,
+    so the closing tags are never generated and no tool call is executed.
+    """
+    content = assistant_message.content or ""
+    if "<tool_call>" not in content or "</tool_call>" in content:
+        return False
+    if "<function=write_file>" not in content and "<function=append_to_file>" not in content:
+        return False
+    # Be conservative: only flag when the content is clearly too long to be one call.
+    return len(content) > 1500
+
+
 def _is_read_only_streak(history: list[Message]) -> bool:
     """True when the last N tool calls are all read-only."""
     count = 0
     for msg in reversed(history):
         if msg.role == "assistant" and msg.tool_calls:
             for tc in reversed(msg.tool_calls):
+                if tc.name in _META_INSPECT_TOOLS:
+                    # Tool-inspection calls don't count toward read-only streaks.
+                    continue
                 if tc.name in _READ_ONLY_TOOLS:
                     count += 1
                     if count >= _READ_ONLY_STREAK_THRESHOLD:
                         return True
                 else:
                     return False
-        elif msg.role == "user":
+        elif msg.role == "user" and not msg.correction:
+            # Real user messages reset the streak; injected corrections do not,
+            # otherwise a correction would hide a continuing read-only loop.
             return False
     return False
 

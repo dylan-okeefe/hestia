@@ -616,6 +616,62 @@ async def doctor(app: AppContext, plain: bool) -> None:
         sys.exit(exit_code)
 
 
+@cli.command(name="preview-prompt")
+@click.option(
+    "--identity-tokens",
+    type=int,
+    default=None,
+    help="Override identity max_tokens budget.",
+)
+@click.option(
+    "--memory-tokens",
+    type=int,
+    default=None,
+    help="Override memory epoch max_tokens budget.",
+)
+@click.option(
+    "--context-length",
+    type=int,
+    default=None,
+    help="Override per-slot context length for budget calculation.",
+)
+@click.option(
+    "--history-turns",
+    type=int,
+    default=10,
+    help="Number of sample user/assistant turns to simulate.",
+)
+@click.option(
+    "--show-full",
+    is_flag=True,
+    help="Print full text of each prefix layer instead of truncated preview.",
+)
+@click.pass_obj
+@async_command
+async def preview_prompt(
+    app: AppContext,
+    identity_tokens: int | None,
+    memory_tokens: int | None,
+    context_length: int | None,
+    history_turns: int,
+    show_full: bool,
+) -> None:
+    """Dry-run the system prompt assembly and show token budgets.
+
+    This lets you tune identity, memory epoch, and context length
+    interactively: you can see exactly what lands in the system prompt,
+    which layers are truncated, and how much budget remains for history.
+    """
+    await _commands.cmd_preview_prompt(
+        app,
+        identity_tokens=identity_tokens,
+        memory_tokens=memory_tokens,
+        context_length=context_length,
+        show_full=show_full,
+        history_turns=history_turns,
+    )
+
+
 @cli.command(name="history")
 @click.argument("session_id", required=False)
 @click.option("--limit", type=int, default=20, help="Number of sessions to list.")

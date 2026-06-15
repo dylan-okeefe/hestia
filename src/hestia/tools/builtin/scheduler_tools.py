@@ -47,14 +47,30 @@ def make_create_scheduled_task_tool(
 
     @tool(
         name="create_scheduled_task",
-        public_description="Create a recurring scheduled task. Params: prompt (str), cron_expression (str), description (str, default ''), notify (bool, default False).",
+        public_description=(
+            "Create a recurring scheduled task. "
+            "Params: prompt (str), cron_expression (str), "
+            "description (str, default ''), notify (bool, default False)."
+        ),
         parameters_schema={
             "type": "object",
             "properties": {
                 "prompt": {"type": "string", "description": "The instruction to execute on each run."},
-                "cron_expression": {"type": "string", "description": "Cron expression for schedule, e.g. '0 9 * * *' for daily at 9 AM."},
+                "cron_expression": {
+                    "type": "string",
+                    "description": (
+                        "Cron expression for schedule, "
+                        "e.g. '0 9 * * *' for daily at 9 AM."
+                    ),
+                },
                 "description": {"type": "string", "description": "Optional human-readable description."},
-                "notify": {"type": "boolean", "description": "If True, push output to the user on each run (default False)."},
+                "notify": {
+                    "type": "boolean",
+                    "description": (
+                        "If True, push output to the user on each run "
+                        "(default False)."
+                    ),
+                },
             },
             "required": ["prompt", "cron_expression"],
         },
@@ -122,7 +138,13 @@ def make_list_scheduled_tasks_tool(
         parameters_schema={
             "type": "object",
             "properties": {
-                "include_disabled": {"type": "boolean", "description": "If True, also show disabled tasks (default False)."},
+                "include_disabled": {
+                    "type": "boolean",
+                    "description": (
+                        "If True, also show disabled tasks "
+                        "(default False)."
+                    ),
+                },
             },
             "required": [],
         },

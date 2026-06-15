@@ -45,6 +45,7 @@ from hestia.style.scheduler import StyleScheduler
 from hestia.style.store import StyleProfileStore
 from hestia.tools.builtin import (
     browser_get,
+    browser_get_links,
     browser_login,
     current_time,
     make_accept_proposal_tool,
@@ -114,6 +115,51 @@ def _make_policy(cfg: HestiaConfig) -> DefaultPolicyEngine:
     )
 
 
+def _build_capabilities_prefix(cfg: HestiaConfig, registry: ToolRegistry) -> str:
+    """Build a concise runtime self-awareness block for the system prompt.
+
+    This is intentionally factual and terse: it tells the model exactly what
+    deployment, tools, and restrictions it is operating under so it does not
+    hallucinate integrations or claim unavailable capabilities.
+    """
+    from hestia.core.clock import utcnow
+
+    lines = ["Deployment context:"]
+    lines.append(f"- Model: {cfg.inference.model_name}")
+    lines.append(
+        f"- Context window: {cfg.inference.context_length} tokens per slot; "
+        f"{cfg.slots.pool_size} slots"
+    )
+    lines.append(f"- Inference endpoint: {cfg.inference.base_url}")
+
+    surfaces = ["CLI"]
+    if cfg.telegram.bot_token:
+        surfaces.append("Telegram")
+    if cfg.matrix.access_token:
+        surfaces.append("Matrix")
+    if cfg.web.enabled:
+        surfaces.append("Web dashboard")
+    lines.append(f"- Surfaces: {', '.join(surfaces)}")
+
+    trust_name = cfg.trust.preset or "custom"
+    lines.append(f"- Trust posture: {trust_name}")
+
+    tool_names = registry.list_names()
+    lines.append(f"- Tools available ({len(tool_names)}): {', '.join(tool_names)}")
+    lines.append(
+        "- Tool discipline: only call list_tools once if you need it. "
+        "The full tool list is provided above and persists for the conversation. "
+        "Repeated identical tool calls will be treated as a loop and blocked."
+    )
+
+    if cfg.storage.allowed_roots:
+        lines.append(f"- Allowed file roots: {', '.join(cfg.storage.allowed_roots)}")
+
+    lines.append(f"- Current time: {utcnow().isoformat()}")
+
+    return "\n".join(lines)
+
+
 class CliResponseHandler:
     """Handles responses from the orchestrator in CLI mode."""
 
@@ -167,7 +213,9 @@ class AppContext:
         self.error_resolution_store = ErrorResolutionStore(self.db)
         self.job_alert_store = JobAlertStore(self.db)
         self.trigger_registry: Any = None
-        self.epoch_compiler = MemoryEpochCompiler(self.memory_store, max_tokens=500)
+        self.epoch_compiler = MemoryEpochCompiler(
+            self.memory_store, max_tokens=self.config.memory.epoch_max_tokens
+        )
         self.tool_registry = ToolRegistry(self.artifact_store)
         self.checkpoint_manager = CheckpointManager()
 
@@ -209,6 +257,10 @@ class AppContext:
         cb = ContextBuilder.from_calibration_file(self.inference, self.policy, path)
         if self._compiled_identity:
             cb.set_identity_prefix(self._compiled_identity)
+        if self.config.identity.capabilities_prefix_enabled:
+            cb.set_capabilities_prefix(
+                _build_capabilities_prefix(self.config, self.tool_registry)
+            )
         if self.config.compression.enabled:
             cb.enable_compression(
                 InferenceHistoryCompressor(
@@ -337,6 +389,8 @@ class AppContext:
             confirm_callback=self.confirm_callback,
             max_iterations=self.config.max_iterations,
             max_tool_calls_per_turn=self.config.policy.max_tool_calls_per_turn,
+            max_tokens=self.config.inference.max_tokens,
+            default_reasoning_budget=self.config.inference.default_reasoning_budget,
             slot_manager=self.slot_manager,
             failure_store=self.failure_store,
             trace_store=self.trace_store,
@@ -438,6 +492,7 @@ class AppContext:
         if cfg.browser.enabled or _playwright_available():
             reg.register(browser_login)
             reg.register(browser_get)
+            reg.register(browser_get_links)
 
 
 # Backward-compatible aliases (deprecated, will be removed in a future release)

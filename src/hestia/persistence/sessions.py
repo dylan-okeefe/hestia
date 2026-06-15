@@ -468,6 +468,30 @@ class SessionStore:
                 return self._row_to_session(row)
             return None
 
+    async def get_active_session(
+        self, platform: str, platform_user: str
+    ) -> Session | None:
+        """Get the active session for a platform user, if one exists."""
+        query = (
+            sa.select(sessions)
+            .where(
+                sa.and_(
+                    sessions.c.platform == platform,
+                    sessions.c.platform_user == platform_user,
+                    sessions.c.state == SessionState.ACTIVE.value,
+                )
+            )
+            .order_by(sessions.c.last_active_at.desc())
+            .limit(1)
+        )
+
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(query)
+            row = result.fetchone()
+            if row:
+                return self._row_to_session(row)
+            return None
+
     async def get_sessions_batch(self, session_ids: list[str]) -> list[Session]:
         """Get multiple sessions by ID in a single query."""
         if not session_ids:
@@ -692,14 +716,24 @@ class SessionStore:
         if row.tool_calls:
             try:
                 data = json.loads(row.tool_calls)
-                tool_calls = [
-                    ToolCall(
-                        id=tc["id"],
-                        name=tc["name"],
-                        arguments=tc["arguments"],
+                normalized_tool_calls: list[ToolCall] = []
+                for tc in data:
+                    raw_args = tc.get("arguments")
+                    if isinstance(raw_args, dict):
+                        args: dict[str, Any] = raw_args
+                    else:
+                        # Defensive: legacy or corrupted rows may store a string,
+                        # list, or null here. Coerce to an empty dict so the rest
+                        # of the pipeline can safely call .get() on arguments.
+                        args = {}
+                    normalized_tool_calls.append(
+                        ToolCall(
+                            id=tc["id"],
+                            name=tc["name"],
+                            arguments=args,
+                        )
                     )
-                    for tc in data
-                ]
+                tool_calls = normalized_tool_calls
             except (json.JSONDecodeError, KeyError) as e:
                 raise PersistenceError(f"Failed to parse tool_calls JSON: {e}") from e
 
@@ -726,6 +760,7 @@ class SessionStore:
             started_at=turn.started_at,
             last_transition_at=turn.started_at,
             iteration=turn.iterations,
+            reasoning_budget=turn.reasoning_budget,
         )
 
         async with self._db.engine.connect() as conn:
@@ -814,6 +849,7 @@ class SessionStore:
                     tool_calls_made=0,  # Not stored separately
                     final_response=None,
                     error=row.error,
+                    reasoning_budget=row.reasoning_budget,
                     transitions=[],  # Loaded separately
                 )
             return None
@@ -845,6 +881,7 @@ class SessionStore:
                     tool_calls_made=0,
                     final_response=None,
                     error=row.error,
+                    reasoning_budget=row.reasoning_budget,
                     transitions=[],
                 )
                 for row in rows
@@ -873,6 +910,7 @@ class SessionStore:
                     tool_calls_made=0,
                     final_response=None,
                     error=row.error,
+                    reasoning_budget=row.reasoning_budget,
                     transitions=[],
                 )
                 for row in rows

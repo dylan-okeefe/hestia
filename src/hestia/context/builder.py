@@ -14,7 +14,7 @@ from hestia.context.compressor import HistoryCompressor
 from hestia.context.history_window_selector import HistoryWindowSelector
 from hestia.core.inference import InferenceClient
 from hestia.core.serialization import message_to_dict
-from hestia.core.types import Message, Session, ToolSchema
+from hestia.core.types import Message, Session, ToolCall, ToolSchema
 from hestia.errors import ContextTooLargeError
 from hestia.policy.engine import PolicyEngine
 
@@ -82,6 +82,7 @@ class ContextBuilder:
         identity_prefix: str | None = None,
         memory_epoch_prefix: str | None = None,
         style_prefix: str | None = None,
+        capabilities_prefix: str | None = None,
         compressor: HistoryCompressor | None = None,
         compress_on_overflow: bool = False,
     ):
@@ -95,6 +96,7 @@ class ContextBuilder:
             identity_prefix: Optional compiled identity view to prepend to system prompt
             memory_epoch_prefix: Optional compiled memory epoch to prepend to system prompt
             style_prefix: Optional style profile addendum to prepend to system prompt
+            capabilities_prefix: Optional runtime capabilities/setup block to prepend
             compressor: Optional history compressor for overflow recovery
             compress_on_overflow: Whether to compress dropped history
         """
@@ -105,6 +107,7 @@ class ContextBuilder:
         self._identity_prefix = identity_prefix
         self._memory_epoch_prefix = memory_epoch_prefix
         self._style_prefix = style_prefix
+        self._capabilities_prefix = capabilities_prefix
         self._compressor = compressor
         self._compress_on_overflow = compress_on_overflow
         self._tokenize_cache: OrderedDict[tuple[str, str], int] = OrderedDict()
@@ -135,6 +138,14 @@ class ContextBuilder:
             style_prefix: Style profile text, or None to clear
         """
         self._style_prefix = style_prefix
+
+    def set_capabilities_prefix(self, capabilities_prefix: str | None) -> None:
+        """Set the runtime capabilities/setup prefix to prepend to system prompts.
+
+        Args:
+            capabilities_prefix: Runtime capabilities text, or None to clear
+        """
+        self._capabilities_prefix = capabilities_prefix
 
     def enable_compression(self, compressor: HistoryCompressor) -> None:
         """Attach a history compressor and turn on overflow compression.
@@ -196,7 +207,127 @@ class ContextBuilder:
             _PrefixLayer("identity", self._identity_prefix),
             _PrefixLayer("memory_epoch", self._memory_epoch_prefix),
             _PrefixLayer("style", self._style_prefix),
+            _PrefixLayer("capabilities", self._capabilities_prefix),
         ]
+
+    @staticmethod
+    def _normalise_tool_calls(
+        tool_calls: list[ToolCall] | None,
+    ) -> list[tuple[str, tuple[tuple[str, Any], ...]]]:
+        """Return a stable, comparable representation of tool calls."""
+        out: list[tuple[str, tuple[tuple[str, Any], ...]]] = []
+        for tc in tool_calls or []:
+            args = tuple(sorted((tc.arguments or {}).items()))
+            out.append((tc.name, args))
+        return out
+
+    @classmethod
+    def _assistant_messages_equal(
+        cls, a: Message, b: Message
+    ) -> bool:
+        """True when two assistant messages look identical for loop detection.
+
+        The action (tool calls) is what matters in a loop; the natural-language
+        commentary often drifts (e.g., empty, "Let me get to work", thinking
+        tags) while the model keeps emitting the same tool call. Collapsing on
+        identical tool calls stops those loops from poisoning the context window.
+        """
+        if a.role != "assistant" or b.role != "assistant":
+            return False
+        return cls._normalise_tool_calls(a.tool_calls) == cls._normalise_tool_calls(
+            b.tool_calls
+        )
+
+    @classmethod
+    def _tool_results_equal(cls, a: Message, b: Message) -> bool:
+        """True when two tool result messages look identical for loop detection."""
+        if a.role != "tool" or b.role != "tool":
+            return False
+        # Tool results from the same tool with the same shape are considered equal.
+        # We ignore tool_call_id because it differs per call.
+        return (a.content or "").strip() == (b.content or "").strip()
+
+    def _collapse_loops(self, history: list[Message]) -> list[Message]:
+        """Collapse consecutive identical assistant/tool pairs.
+
+        Model loops often produce the same assistant utterance followed by the
+        same tool call repeatedly. Keeping one copy preserves the information
+        the model needs; dropping the rest saves budget and stops the loop from
+        poisoning the context window.
+        """
+        if len(history) < 4:
+            return history
+
+        collapsed: list[Message] = []
+        i = 0
+        while i < len(history):
+            # Look for a repeating (assistant, tool) pair.
+            if (
+                i + 1 < len(history)
+                and history[i].role == "assistant"
+                and history[i + 1].role == "tool"
+            ):
+                assistant_msg = history[i]
+                tool_msg = history[i + 1]
+                repeat_count = 1
+                j = i + 2
+                while (
+                    j + 1 < len(history)
+                    and history[j].role == "assistant"
+                    and history[j + 1].role == "tool"
+                    and self._assistant_messages_equal(history[j], assistant_msg)
+                    and self._tool_results_equal(history[j + 1], tool_msg)
+                ):
+                    repeat_count += 1
+                    j += 2
+
+                if repeat_count > 1:
+                    repeated_tools = ", ".join(
+                        sorted({name for name, _ in self._normalise_tool_calls(assistant_msg.tool_calls)})
+                    ) or "the same tool"
+                    collapsed.append(assistant_msg)
+                    collapsed.append(tool_msg)
+                    collapsed.append(
+                        Message(
+                            role="user",
+                            content=(
+                                f"[SYSTEM NOTE: {repeat_count - 1} repeated calls to "
+                                f"{repeated_tools} were removed from history. "
+                                f"You already have the result. Do NOT call {repeated_tools} "
+                                f"again. Choose a different action or reply to the user.]"
+                            ),
+                            correction=True,
+                        )
+                    )
+                    i = j
+                    continue
+
+            collapsed.append(history[i])
+            i += 1
+
+        return collapsed
+
+    @staticmethod
+    def _filter_auth_codes(history: list[Message]) -> list[Message]:
+        """Drop dashboard auth-code messages from conversation history.
+
+        These are transient one-time codes; keeping them in context is a
+        security/privacy risk and provides no value to the model.
+        """
+        filtered: list[Message] = []
+        for msg in history:
+            if msg.role == "user":
+                text = (msg.content or "").strip()
+                # Numeric codes sent back by the user.
+                if text.isdigit() and 4 <= len(text) <= 10:
+                    continue
+            elif msg.role == "assistant":
+                text = (msg.content or "").strip()
+                # Outgoing "Your Hestia dashboard code is: 123456" messages.
+                if text.lower().startswith("your hestia dashboard code is"):
+                    continue
+            filtered.append(msg)
+        return filtered
 
     async def _compute_join_overhead(
         self,
@@ -264,6 +395,10 @@ class ContextBuilder:
         ]
         handoff_ids = {id(msg) for msg in handoff_msgs}
         history = [msg for msg in history if id(msg) not in handoff_ids]
+
+        # Context hygiene: collapse model loops and drop transient auth codes.
+        history = self._collapse_loops(history)
+        history = self._filter_auth_codes(history)
 
         parts = [layer.value for layer in self._prefix_layers() if layer.value]
         parts.append(system_prompt)

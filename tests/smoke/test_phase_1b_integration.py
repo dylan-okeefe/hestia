@@ -15,12 +15,12 @@ from hestia.core.inference import InferenceClient
 from hestia.core.types import Message, Session, SessionState, SessionTemperature
 from hestia.policy.default import DefaultPolicyEngine
 from hestia.tools.builtin import current_time, make_terminal_tool
-
-terminal = make_terminal_tool()
 from hestia.config import StorageConfig
 from hestia.tools.builtin.read_artifact import make_read_artifact_tool
 from hestia.tools.builtin.read_file import make_read_file_tool
 from hestia.tools.registry import ToolRegistry
+
+terminal = make_terminal_tool()
 
 SYSTEM_PROMPT = """You are a helpful personal assistant. You have access to tools for:
 - current_time: Get the current time

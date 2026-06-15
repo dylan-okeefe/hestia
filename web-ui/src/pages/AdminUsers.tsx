@@ -14,6 +14,8 @@ import LoadingSkeleton from '../components/layout/LoadingSkeleton';
 import ErrorState from '../components/layout/ErrorState';
 import EmptyState from '../components/layout/EmptyState';
 import Button from '../components/Button';
+import Modal from '../components/Modal';
+import ConfirmDialog from '../components/ConfirmDialog';
 import RoleDropdown from '../components/forms/RoleDropdown';
 import TrustPresetDropdown from '../components/forms/TrustPresetDropdown';
 import PlatformDropdown from '../components/forms/PlatformDropdown';
@@ -124,7 +126,8 @@ export default function AdminUsers() {
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: string | null) => {
+    if (!id) return;
     try {
       await deleteMut.mutateAsync(id);
       addToast({ message: 'User deleted', type: 'success', duration: 3000 });
@@ -259,142 +262,119 @@ export default function AdminUsers() {
         </PageCard>
       )}
 
-      {modalOpen && (
-        <div
-          className="modal-overlay"
-          onClick={() => setModalOpen(false)}
-        >
-          <div
-            className="modal modal--md"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3>{editingUser ? TEXT.adminUsers.editTitle : TEXT.adminUsers.createTitle}</h3>
-            <div className="stack-md">
-              <label>
-                {TEXT.adminUsers.displayNameLabel}
-                <input
-                  value={form.display_name}
-                  onChange={(e) => setForm((f) => ({ ...f, display_name: e.target.value }))}
-                  placeholder={TEXT.adminUsers.displayNamePlaceholder}
-                  className="form-input mt-1"
-                />
-              </label>
-              <label>
-                {TEXT.adminUsers.roleLabel}
-                <div className="mt-1">
-                  <RoleDropdown value={form.role} onChange={(v) => setForm((f) => ({ ...f, role: v }))} />
-                </div>
-              </label>
-              <label>
-                {TEXT.adminUsers.trustPresetLabel}
-                <div className="mt-1">
-                  <TrustPresetDropdown value={form.trust_preset} onChange={(v) => setForm((f) => ({ ...f, trust_preset: v }))} />
-                </div>
-              </label>
-              <label>
-                {TEXT.adminUsers.notesLabel}
-                <textarea
-                  rows={3}
-                  value={form.notes}
-                  onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-                  placeholder={TEXT.adminUsers.notesPlaceholder}
-                  className="form-textarea mt-1"
-                />
-              </label>
-            </div>
-            <div className="row-between mt-4">
-              <Button variant="ghost" onClick={() => { setModalOpen(false); setConfirmRoleChange(false); }}>
-                {TEXT.common.cancel}
-              </Button>
-              <Button onClick={handleSave} disabled={!form.display_name.trim()}>
-                {editingUser ? TEXT.common.save : TEXT.common.create}
-              </Button>
-            </div>
+      <Modal
+        isOpen={modalOpen}
+        onClose={() => { setModalOpen(false); setConfirmRoleChange(false); }}
+        title={editingUser ? TEXT.adminUsers.editTitle : TEXT.adminUsers.createTitle}
+        size="md"
+        footer={
+          <div className="row-between">
+            <Button variant="ghost" onClick={() => { setModalOpen(false); setConfirmRoleChange(false); }}>
+              {TEXT.common.cancel}
+            </Button>
+            <Button onClick={handleSave} disabled={!form.display_name.trim()}>
+              {editingUser ? TEXT.common.save : TEXT.common.create}
+            </Button>
           </div>
+        }
+      >
+        <div className="stack-md">
+          <label>
+            {TEXT.adminUsers.displayNameLabel}
+            <input
+              value={form.display_name}
+              onChange={(e) => setForm((f) => ({ ...f, display_name: e.target.value }))}
+              placeholder={TEXT.adminUsers.displayNamePlaceholder}
+              className="form-input mt-1"
+            />
+          </label>
+          <label>
+            {TEXT.adminUsers.roleLabel}
+            <div className="mt-1">
+              <RoleDropdown value={form.role} onChange={(v) => setForm((f) => ({ ...f, role: v }))} />
+            </div>
+          </label>
+          <label>
+            {TEXT.adminUsers.trustPresetLabel}
+            <div className="mt-1">
+              <TrustPresetDropdown value={form.trust_preset} onChange={(v) => setForm((f) => ({ ...f, trust_preset: v }))} />
+            </div>
+          </label>
+          <label>
+            {TEXT.adminUsers.notesLabel}
+            <textarea
+              rows={3}
+              value={form.notes}
+              onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+              placeholder={TEXT.adminUsers.notesPlaceholder}
+              className="form-textarea mt-1"
+            />
+          </label>
         </div>
-      )}
+      </Modal>
 
-      {confirmRoleChange && (
-        <div
-          className="modal-overlay"
-          onClick={() => setConfirmRoleChange(false)}
-        >
-          <div className="modal modal--sm" onClick={(e) => e.stopPropagation()}>
-            <h3>Remove admin role?</h3>
-            <p className="text-small text-secondary">
-              You are about to remove your own administrator role. You will lose access to this page.
-            </p>
-            <div className="row-center gap-2 mt-4">
-              <button onClick={() => setConfirmRoleChange(false)}>{TEXT.common.cancel}</button>
-              <button onClick={handleSave} className="text-danger border-danger">
-                {TEXT.common.confirm}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        isOpen={confirmRoleChange}
+        title="Remove admin role?"
+        description="You are about to remove your own administrator role. You will lose access to this page."
+        confirmLabel={TEXT.common.confirm}
+        cancelLabel={TEXT.common.cancel}
+        onConfirm={handleSave}
+        onCancel={() => setConfirmRoleChange(false)}
+        variant="danger"
+        loading={updateMut.isPending}
+      />
 
-      {confirmDelete && (
-        <div
-          className="modal-overlay"
-          onClick={() => setConfirmDelete(null)}
-        >
-          <div className="modal modal--sm" onClick={(e) => e.stopPropagation()}>
-            <h3>{TEXT.adminUsers.deleteConfirmTitle}</h3>
-            <p className="text-small text-secondary">
-              {TEXT.adminUsers.deleteConfirmDescription}
-            </p>
-            <div className="row-center gap-2 mt-4">
-              <Button variant="ghost" onClick={() => setConfirmDelete(null)}>
-                {TEXT.common.cancel}
-              </Button>
-              <Button variant="danger" onClick={() => handleDelete(confirmDelete)}>
-                {TEXT.common.delete}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        isOpen={!!confirmDelete}
+        title={TEXT.adminUsers.deleteConfirmTitle}
+        description={TEXT.adminUsers.deleteConfirmDescription}
+        confirmLabel={TEXT.common.delete}
+        cancelLabel={TEXT.common.cancel}
+        onConfirm={() => handleDelete(confirmDelete)}
+        onCancel={() => setConfirmDelete(null)}
+        variant="danger"
+        loading={deleteMut.isPending}
+      />
 
-      {showAddIdentity && (
-        <div
-          className="modal-overlay"
-          onClick={() => setShowAddIdentity(null)}
-        >
-          <div className="modal modal--sm" onClick={(e) => e.stopPropagation()}>
-            <h3>{TEXT.adminUsers.addIdentityTitle}</h3>
-            <p className="text-small text-secondary">
-              {TEXT.adminUsers.addIdentityPrompt}
-            </p>
-            <div className="stack-md mt-2">
-              <label>
-                {TEXT.adminUsers.addIdentityPlatformLabel}
-                <div className="mt-1">
-                  <PlatformDropdown
-                    value={identityForm.platform}
-                    onChange={(v) => setIdentityForm((f) => ({ ...f, platform: v }))}
-                    includeEmpty
-                  />
-                </div>
-              </label>
-              <label>
-                {TEXT.adminUsers.addIdentityUserLabel}
-                <input
-                  value={identityForm.platform_user}
-                  onChange={(e) => setIdentityForm((f) => ({ ...f, platform_user: e.target.value }))}
-                  className="form-input mt-1"
-                />
-              </label>
-            </div>
-            <div className="row-between mt-4">
-              <button onClick={() => setShowAddIdentity(null)}>{TEXT.adminUsers.skip}</button>
-              <button onClick={handleAddIdentity} disabled={!identityForm.platform.trim() || !identityForm.platform_user.trim()}>
-                {TEXT.common.add}
-              </button>
-            </div>
+      <Modal
+        isOpen={!!showAddIdentity}
+        onClose={() => setShowAddIdentity(null)}
+        title={TEXT.adminUsers.addIdentityTitle}
+        size="sm"
+        footer={
+          <div className="row-between">
+            <button onClick={() => setShowAddIdentity(null)}>{TEXT.adminUsers.skip}</button>
+            <button onClick={handleAddIdentity} disabled={!identityForm.platform.trim() || !identityForm.platform_user.trim()}>
+              {TEXT.common.add}
+            </button>
           </div>
+        }
+      >
+        <p className="text-small text-secondary">
+          {TEXT.adminUsers.addIdentityPrompt}
+        </p>
+        <div className="stack-md mt-2">
+          <label>
+            {TEXT.adminUsers.addIdentityPlatformLabel}
+            <div className="mt-1">
+              <PlatformDropdown
+                value={identityForm.platform}
+                onChange={(v) => setIdentityForm((f) => ({ ...f, platform: v }))}
+                includeEmpty
+              />
+            </div>
+          </label>
+          <label>
+            {TEXT.adminUsers.addIdentityUserLabel}
+            <input
+              value={identityForm.platform_user}
+              onChange={(e) => setIdentityForm((f) => ({ ...f, platform_user: e.target.value }))}
+              className="form-input mt-1"
+            />
+          </label>
         </div>
-      )}
+      </Modal>
     </div>
   );
 }

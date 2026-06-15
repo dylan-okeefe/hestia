@@ -1,6 +1,7 @@
 """Unit tests for the quality monitor degenerate-pattern classifier."""
 
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 
@@ -39,25 +40,25 @@ def _make_turn(iterations: int = 0) -> Turn:
     )
 
 
-def test_empty_response_detected(session: Session) -> None:
+async def test_empty_response_detected(session: Session) -> None:
     """A message with no content and no tool calls is EMPTY_RESPONSE."""
     turn = _make_turn()
     msg = Message(role="assistant", content="", tool_calls=None)
-    result = classify_turn(turn, msg, [msg], ["list_tools"])
+    result = await classify_turn(turn, msg, [msg], ["list_tools"])
     assert result is not None
     assert result.pattern == DegeneratePattern.EMPTY_RESPONSE
     assert "Respond with text or a tool call." in result.message
 
 
-def test_empty_response_with_reasoning_not_detected(session: Session) -> None:
+async def test_empty_response_with_reasoning_not_detected(session: Session) -> None:
     """Reasoning-only content should not be flagged as empty."""
     turn = _make_turn()
     msg = Message(role="assistant", content="", tool_calls=None, reasoning_content="thinking...")
-    result = classify_turn(turn, msg, [msg], ["list_tools"])
+    result = await classify_turn(turn, msg, [msg], ["list_tools"])
     assert result is None
 
 
-def test_hallucinated_tool_detected(session: Session) -> None:
+async def test_hallucinated_tool_detected(session: Session) -> None:
     """A tool call not in the allowed list is HALLUCINATED_TOOL."""
     turn = _make_turn()
     msg = Message(
@@ -65,14 +66,14 @@ def test_hallucinated_tool_detected(session: Session) -> None:
         content="",
         tool_calls=[ToolCall(id="c1", name="fake_tool", arguments={})],
     )
-    result = classify_turn(turn, msg, [msg], ["list_tools", "write_file"])
+    result = await classify_turn(turn, msg, [msg], ["list_tools", "write_file"])
     assert result is not None
     assert result.pattern == DegeneratePattern.HALLUCINATED_TOOL
     assert "fake_tool" not in result.message  # message lists valid tools
     assert "list_tools" in result.message
 
 
-def test_meta_tools_not_hallucinated(session: Session) -> None:
+async def test_meta_tools_not_hallucinated(session: Session) -> None:
     """Meta-tools are always permitted and should not be flagged."""
     turn = _make_turn()
     msg = Message(
@@ -80,11 +81,11 @@ def test_meta_tools_not_hallucinated(session: Session) -> None:
         content="",
         tool_calls=[ToolCall(id="c1", name="list_tools", arguments={})],
     )
-    result = classify_turn(turn, msg, [msg], ["write_file"])
+    result = await classify_turn(turn, msg, [msg], ["write_file"])
     assert result is None
 
 
-def test_repeated_identical_call_detected(session: Session) -> None:
+async def test_repeated_identical_call_detected(session: Session) -> None:
     """Two consecutive assistant messages with identical tool calls trigger the pattern."""
     turn = _make_turn(iterations=1)
     prev = Message(
@@ -97,13 +98,33 @@ def test_repeated_identical_call_detected(session: Session) -> None:
         content="",
         tool_calls=[ToolCall(id="c2", name="read_file", arguments={"path": "/tmp/a.txt"})],
     )
-    result = classify_turn(turn, current, [prev, current], ["read_file"])
+    result = await classify_turn(turn, current, [prev, current], ["read_file"])
     assert result is not None
     assert result.pattern == DegeneratePattern.REPEATED_IDENTICAL_CALL
-    assert "looping" in result.message.lower()
+    assert "repeatedly" in result.message.lower()
 
 
-def test_repeated_call_with_different_args_not_detected(session: Session) -> None:
+async def test_repeated_list_tools_call_correction_is_specific(session: Session) -> None:
+    """A repeated list_tools call gets a forceful, specific correction."""
+    turn = _make_turn(iterations=1)
+    prev = Message(
+        role="assistant",
+        content="",
+        tool_calls=[ToolCall(id="c1", name="list_tools", arguments={})],
+    )
+    current = Message(
+        role="assistant",
+        content="",
+        tool_calls=[ToolCall(id="c2", name="list_tools", arguments={})],
+    )
+    result = await classify_turn(turn, current, [prev, current], ["list_tools"])
+    assert result is not None
+    assert result.pattern == DegeneratePattern.REPEATED_IDENTICAL_CALL
+    assert "list_tools" in result.message
+    assert "STOP calling list_tools" in result.message
+
+
+async def test_repeated_call_with_different_args_not_detected(session: Session) -> None:
     """Tool calls with different arguments are not a repeat."""
     turn = _make_turn(iterations=1)
     prev = Message(
@@ -116,11 +137,11 @@ def test_repeated_call_with_different_args_not_detected(session: Session) -> Non
         content="",
         tool_calls=[ToolCall(id="c2", name="read_file", arguments={"path": "/tmp/b.txt"})],
     )
-    result = classify_turn(turn, current, [prev, current], ["read_file"])
+    result = await classify_turn(turn, current, [prev, current], ["read_file"])
     assert result is None
 
 
-def test_patch_failed_detected(session: Session) -> None:
+async def test_patch_failed_detected(session: Session) -> None:
     """Three write_file errors on the same file trigger PATCH_FAILED."""
     turn = _make_turn(iterations=3)
     history: list[Message] = []
@@ -140,13 +161,13 @@ def test_patch_failed_detected(session: Session) -> None:
         history.extend([assistant, tool_result])
 
     current = Message(role="assistant", content="done", tool_calls=None)
-    result = classify_turn(turn, current, history + [current], ["write_file"])
+    result = await classify_turn(turn, current, history + [current], ["write_file"])
     assert result is not None
     assert result.pattern == DegeneratePattern.PATCH_FAILED
     assert "rewrite from scratch" in result.message
 
 
-def test_patch_failed_not_triggered_with_only_two_errors(session: Session) -> None:
+async def test_patch_failed_not_triggered_with_only_two_errors(session: Session) -> None:
     """Two errors on the same file are below the threshold."""
     turn = _make_turn(iterations=2)
     history: list[Message] = []
@@ -166,15 +187,15 @@ def test_patch_failed_not_triggered_with_only_two_errors(session: Session) -> No
         history.extend([assistant, tool_result])
 
     current = Message(role="assistant", content="done", tool_calls=None)
-    result = classify_turn(turn, current, history + [current], ["write_file"])
+    result = await classify_turn(turn, current, history + [current], ["write_file"])
     assert result is None
 
 
-def test_read_only_streak_detected(session: Session) -> None:
-    """Five consecutive read-only tools trigger READ_ONLY_STREAK."""
-    turn = _make_turn(iterations=5)
+async def test_read_only_streak_detected(session: Session) -> None:
+    """Eight consecutive read-only tools trigger READ_ONLY_STREAK."""
+    turn = _make_turn(iterations=8)
     history: list[Message] = []
-    for i in range(5):
+    for i in range(8):
         assistant = Message(
             role="assistant",
             content="",
@@ -190,13 +211,13 @@ def test_read_only_streak_detected(session: Session) -> None:
         history.extend([assistant, tool_result])
 
     current = Message(role="assistant", content="done", tool_calls=None)
-    result = classify_turn(turn, current, history + [current], ["read_file", "write_file"])
+    result = await classify_turn(turn, current, history + [current], ["read_file", "write_file"])
     assert result is not None
     assert result.pattern == DegeneratePattern.READ_ONLY_STREAK
     assert "write your answer" in result.message
 
 
-def test_read_only_streak_broken_by_write_tool(session: Session) -> None:
+async def test_read_only_streak_broken_by_write_tool(session: Session) -> None:
     """A write tool in the chain breaks the streak."""
     turn = _make_turn(iterations=3)
     history: list[Message] = []
@@ -215,33 +236,56 @@ def test_read_only_streak_broken_by_write_tool(session: Session) -> None:
         history.extend([assistant, tool_result])
 
     current = Message(role="assistant", content="done", tool_calls=None)
-    result = classify_turn(turn, current, history + [current], ["read_file", "write_file"])
+    result = await classify_turn(turn, current, history + [current], ["read_file", "write_file"])
     assert result is None
 
 
-def test_greeting_mid_task_detected(session: Session) -> None:
+async def test_meta_inspect_tools_do_not_count_toward_read_only_streak(session: Session) -> None:
+    """list_tools and describe_tool don't count toward read-only streaks."""
+    turn = _make_turn(iterations=5)
+    history: list[Message] = []
+    for i in range(5):
+        name = ["list_tools", "describe_tool", "read_file", "list_memories", "search_memory"][i]
+        assistant = Message(
+            role="assistant",
+            content="",
+            tool_calls=[ToolCall(id=f"call-{i}", name=name, arguments={})],
+        )
+        tool_result = Message(
+            role="tool",
+            content="ok",
+            tool_call_id=f"call-{i}",
+        )
+        history.extend([assistant, tool_result])
+
+    current = Message(role="assistant", content="done", tool_calls=None)
+    result = await classify_turn(turn, current, history + [current], ["read_file", "list_memories", "search_memory"])
+    assert result is None
+
+
+async def test_greeting_mid_task_detected(session: Session) -> None:
     """A greeting after iteration 2 triggers GREETING_MID_TASK."""
     turn = _make_turn(iterations=3)
     msg = Message(role="assistant", content="Hello! How can I help?")
-    result = classify_turn(turn, msg, [msg], ["list_tools"])
+    result = await classify_turn(turn, msg, [msg], ["list_tools"])
     assert result is not None
     assert result.pattern == DegeneratePattern.GREETING_MID_TASK
     assert "continue where you left off" in result.message
 
 
-def test_greeting_early_turn_not_detected(session: Session) -> None:
+async def test_greeting_early_turn_not_detected(session: Session) -> None:
     """Greetings in the first few iterations are not flagged."""
     turn = _make_turn(iterations=1)
     msg = Message(role="assistant", content="Hello! How can I help?")
-    result = classify_turn(turn, msg, [msg], ["list_tools"])
+    result = await classify_turn(turn, msg, [msg], ["list_tools"])
     assert result is None
 
 
-def test_no_degenerate_pattern(session: Session) -> None:
+async def test_no_degenerate_pattern(session: Session) -> None:
     """A normal response returns None."""
     turn = _make_turn(iterations=1)
     msg = Message(role="assistant", content="Here is the answer.")
-    result = classify_turn(turn, msg, [msg], ["list_tools"])
+    result = await classify_turn(turn, msg, [msg], ["list_tools"])
     assert result is None
 
 
@@ -418,3 +462,204 @@ async def test_correction_count_capped_at_three() -> None:
 
     # After the first 3 corrections, retry_after_error should be called for empty responses
     assert policy.retry_after_error.call_count > 0
+
+
+@pytest.mark.asyncio
+async def test_truncated_write_file_is_detected_and_recovered(session: Session) -> None:
+    """A truncated write_file XML is classified as TRUNCATED_WRITE_FILE and recovered."""
+    turn = _make_turn()
+    body = (
+        '<tool_call>\n<function=write_file>\n<parameter=arguments>\n'
+        '{"path": "/tmp/recovered.md", "content": "# Part 1\n'
+        + "a" * 1600
+    )
+    msg = Message(role="assistant", content=body)
+    calls: list[tuple[str, str]] = []
+
+    async def fake_write_file(path: str = "", content: str = "") -> str:
+        calls.append((path, content))
+        return f"Wrote {len(content)} bytes to {path}"
+
+    result = await classify_turn(
+        turn,
+        msg,
+        [msg],
+        ["write_file", "append_to_file"],
+        write_file_handler=fake_write_file,
+    )
+
+    assert result is not None
+    assert result.pattern == DegeneratePattern.TRUNCATED_WRITE_FILE
+    assert "/tmp/recovered.md" in result.message
+    assert "append_to_file" in result.message
+    assert len(calls) == 1
+    assert calls[0][0] == "/tmp/recovered.md"
+    assert "# Part 1" in calls[0][1]
+
+
+@pytest.mark.asyncio
+async def test_truncated_append_to_file_is_detected_and_recovered(session: Session) -> None:
+    """A truncated append_to_file XML reuses the recovery helper."""
+    turn = _make_turn()
+    body = (
+        '<tool_call>\n<function=append_to_file>\n<parameter=arguments>\n'
+        '{"path": "/tmp/recovered.md", "content": "## Section 2\n'
+        + "b" * 1600
+    )
+    msg = Message(role="assistant", content=body)
+    calls: list[tuple[str, str]] = []
+
+    async def fake_append_to_file(path: str = "", content: str = "") -> str:
+        calls.append((path, content))
+        return f"Appended {len(content)} bytes to {path}"
+
+    result = await classify_turn(
+        turn,
+        msg,
+        [msg],
+        ["write_file", "append_to_file"],
+        append_to_file_handler=fake_append_to_file,
+    )
+
+    assert result is not None
+    assert result.pattern == DegeneratePattern.TRUNCATED_WRITE_FILE
+    assert "/tmp/recovered.md" in result.message
+    assert "append_to_file" in result.message
+    assert len(calls) == 1
+    assert calls[0][0] == "/tmp/recovered.md"
+    assert "## Section 2" in calls[0][1]
+
+
+@pytest.mark.asyncio
+async def test_truncated_write_file_falls_back_when_write_fails(session: Session) -> None:
+    """If the recovered write fails, the correction falls back to the generic message."""
+    turn = _make_turn()
+    body = (
+        '<tool_call>\n<function=write_file>\n<parameter=arguments>\n'
+        '{"path": "/tmp/recovered.md", "content": "# Part 1\n'
+        + "a" * 1600
+    )
+    msg = Message(role="assistant", content=body)
+
+    async def failing_write_file(path: str = "", content: str = "") -> str:
+        return "Error: access denied"
+
+    result = await classify_turn(
+        turn,
+        msg,
+        [msg],
+        ["write_file", "append_to_file"],
+        write_file_handler=failing_write_file,
+    )
+
+    assert result is not None
+    assert result.pattern == DegeneratePattern.TRUNCATED_WRITE_FILE
+    assert "shorter than 2000 characters" in result.message
+
+
+@pytest.mark.asyncio
+async def test_truncated_write_file_recovery_resumes_at_line_boundary(session: Session) -> None:
+    """Recovery drops an incomplete trailing line so append can continue seamlessly."""
+    padding = "x" * 200
+    original_lines = [f"Line {i:03d}: {padding}" for i in range(1, 21)]
+    original_content = "\n".join(original_lines) + "\n"
+    # Truncate mid-way through "Line 015\n" so the trailing fragment is incomplete.
+    truncation_point = original_content.index("Line 015:") + len("Line 015: ") + len(padding) + 1
+    partial = original_content[:truncation_point - 3]
+
+    tmp_path = Path("/tmp/recovered-seam-test.md")
+    tmp_path.unlink(missing_ok=True)
+
+    body = (
+        '<tool_call>\n<function=write_file>\n<parameter=arguments>\n'
+        f'{{"path": "{tmp_path}", "content": "{partial}'
+    )
+    msg = Message(role="assistant", content=body)
+
+    async def fake_write_file(path: str = "", content: str = "") -> str:
+        Path(path).write_text(content, encoding="utf-8")
+        return f"Wrote {len(content)} bytes to {path}"
+
+    async def fake_append_to_file(path: str = "", content: str = "") -> str:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(content)
+        return f"Appended {len(content)} bytes to {path}"
+
+    result = await classify_turn(
+        _make_turn(),
+        msg,
+        [msg],
+        ["write_file", "append_to_file"],
+        write_file_handler=fake_write_file,
+        append_to_file_handler=fake_append_to_file,
+    )
+
+    assert result is not None
+    assert result.pattern == DegeneratePattern.TRUNCATED_WRITE_FILE
+
+    # The correction must name the exact last complete line so the model can resume.
+    assert "Line 014" in result.message
+    assert "append_to_file" in result.message
+
+    # Simulate the model obeying the correction: append the rest of the original
+    # content starting right after the last complete line.
+    written = tmp_path.read_text(encoding="utf-8")
+    remaining = original_content[len(written):]
+    await fake_append_to_file(path=str(tmp_path), content=remaining)
+
+    assert tmp_path.read_text(encoding="utf-8") == original_content
+
+
+@pytest.mark.asyncio
+async def test_truncated_write_file_recovery_is_byte_for_byte_with_real_file(
+    session: Session,
+) -> None:
+    """A mid-line truncation of a real source file recovers to the exact original."""
+    known_path = Path(__file__).parents[3] / "src" / "hestia" / "orchestrator" / "execution.py"
+    original_content = known_path.read_text(encoding="utf-8")
+    assert original_content.endswith("\n")
+
+    # Truncate mid-line after enough characters that the XML body exceeds the
+    # truncated-write detection threshold.
+    truncation_point = 2000
+    partial = original_content[:truncation_point]
+    if partial.endswith("\n"):
+        partial = partial[:-1]
+    assert "\n" in partial
+
+    tmp_path = Path("/tmp/recovered-byte-for-byte.py")
+    tmp_path.unlink(missing_ok=True)
+
+    body = (
+        '<tool_call>\n<function=write_file>\n<parameter=arguments>\n'
+        f'{{"path": "{tmp_path}", "content": "{partial}'
+    )
+    msg = Message(role="assistant", content=body)
+
+    async def fake_write_file(path: str = "", content: str = "") -> str:
+        Path(path).write_text(content, encoding="utf-8")
+        return f"Wrote {len(content)} bytes to {path}"
+
+    async def fake_append_to_file(path: str = "", content: str = "") -> str:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(content)
+        return f"Appended {len(content)} bytes to {path}"
+
+    result = await classify_turn(
+        _make_turn(),
+        msg,
+        [msg],
+        ["write_file", "append_to_file"],
+        write_file_handler=fake_write_file,
+        append_to_file_handler=fake_append_to_file,
+    )
+
+    assert result is not None
+    assert result.pattern == DegeneratePattern.TRUNCATED_WRITE_FILE
+
+    # Continue from where recovery left off.
+    written = tmp_path.read_text(encoding="utf-8")
+    remaining = original_content[len(written):]
+    await fake_append_to_file(path=str(tmp_path), content=remaining)
+
+    assert tmp_path.read_text(encoding="utf-8") == original_content

@@ -11,10 +11,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from telegram import Bot, Message, Update, User
+from telegram.error import TelegramError
 from telegram.ext import Application
 
 from hestia.config import TelegramConfig
-from hestia.platforms.telegram_adapter import TelegramAdapter
+from hestia.platforms.telegram_adapter import TelegramAdapter, _split_long_text
 
 
 @pytest.fixture
@@ -86,6 +87,87 @@ class TestTelegramAdapterAsync:
         assert result == "42"
 
     @pytest.mark.asyncio
+    async def test_send_message_falls_back_to_plain_text_on_html_parse_error(
+        self,
+        adapter: TelegramAdapter,
+    ) -> None:
+        """If HTML parse fails, send_message retries the chunk as plain text."""
+        mock_app = MagicMock(spec=Application)
+        mock_bot = AsyncMock(spec=Bot)
+        mock_app.bot = mock_bot
+
+        mock_message = MagicMock(spec=Message)
+        mock_message.message_id = 42
+        mock_bot.send_message = AsyncMock(side_effect=[
+            TelegramError("Can't parse entities: unsupported start tag \"code\" at byte offset 10"),
+            mock_message,
+        ])
+
+        adapter._app = mock_app
+
+        result = await adapter.send_message("12345", "some text")
+
+        assert mock_bot.send_message.call_count == 2
+        second_call = mock_bot.send_message.call_args
+        assert second_call.kwargs["parse_mode"] is None
+        assert second_call.kwargs["text"] == "some text"
+        assert result == "42"
+
+    @pytest.mark.asyncio
+    async def test_send_long_fenced_code_block_splits_and_sends(
+        self,
+        adapter: TelegramAdapter,
+    ) -> None:
+        """A fenced code block longer than the chunk limit is split and sent."""
+        mock_app = MagicMock(spec=Application)
+        mock_bot = AsyncMock(spec=Bot)
+        mock_app.bot = mock_bot
+
+        mock_message = MagicMock(spec=Message)
+        mock_message.message_id = 1
+        mock_bot.send_message = AsyncMock(return_value=mock_message)
+
+        adapter._app = mock_app
+
+        # Build a fenced code block that exceeds the safe chunk length.
+        line = "x" * 100
+        block = "```\n" + "\n".join([line] * 50) + "\n```"
+        assert len(block) > 3800
+
+        result = await adapter.send_message("12345", block)
+
+        assert result == "1"
+        assert mock_bot.send_message.call_count > 1
+        # Every call should attempt HTML first; plain-text fallback is exercised
+        # only on parse errors.
+        for call in mock_bot.send_message.call_args_list:
+            assert call.kwargs.get("parse_mode") == "HTML"
+
+    @pytest.mark.asyncio
+    async def test_edit_message_falls_back_to_plain_text_on_html_parse_error(
+        self,
+        adapter: TelegramAdapter,
+    ) -> None:
+        """If HTML parse fails during edit, retry the edit as plain text."""
+        mock_app = MagicMock(spec=Application)
+        mock_bot = AsyncMock(spec=Bot)
+        mock_app.bot = mock_bot
+
+        mock_bot.edit_message_text = AsyncMock(side_effect=[
+            TelegramError("Can't parse entities: invalid entity at byte offset 5"),
+            None,
+        ])
+
+        adapter._app = mock_app
+
+        await adapter.edit_message("12345", "100", "some text")
+
+        assert mock_bot.edit_message_text.call_count == 2
+        second_call = mock_bot.edit_message_text.call_args
+        assert second_call.kwargs["parse_mode"] is None
+        assert second_call.kwargs["text"] == "some text"
+
+    @pytest.mark.asyncio
     async def test_edit_message_rate_limited(
         self,
         adapter: TelegramAdapter,
@@ -137,7 +219,13 @@ class TestTelegramAdapterAsync:
         # Track if on_message callback is called
         callback_called = False
 
-        async def on_message(platform: str, user: str, text: str, sender: str | None, session_title: str | None = None) -> None:
+        async def on_message(
+            platform: str,
+            user: str,
+            text: str,
+            sender: str | None,
+            session_title: str | None = None,
+        ) -> None:
             nonlocal callback_called
             callback_called = True
 
@@ -161,7 +249,13 @@ class TestTelegramAdapterAsync:
 
         received_args: tuple[str, str, str, str | None, str | None] | None = None
 
-        async def on_message(platform: str, user: str, text: str, sender: str | None, session_title: str | None = None) -> None:
+        async def on_message(
+            platform: str,
+            user: str,
+            text: str,
+            sender: str | None,
+            session_title: str | None = None,
+        ) -> None:
             nonlocal received_args
             received_args = (platform, user, text, sender, session_title)
 
@@ -209,7 +303,13 @@ class TestTelegramAdapterAsync:
         ):
             callback_called = False
 
-            async def on_message(platform: str, user: str, text: str, sender: str | None, session_title: str | None = None) -> None:
+            async def on_message(
+            platform: str,
+            user: str,
+            text: str,
+            sender: str | None,
+            session_title: str | None = None,
+        ) -> None:
                 nonlocal callback_called
                 callback_called = True
 
@@ -354,6 +454,108 @@ class TestTelegramAdapterAsync:
         mock_message.reply_text.assert_called_once_with("Not authorized.")
 
 
+class TestTelegramAdapterReset:
+    """Tests for the /reset command."""
+
+    @pytest.mark.asyncio
+    async def test_handle_reset_archives_active_session_and_clears_cache(
+        self,
+        telegram_config: TelegramConfig,
+    ) -> None:
+        """Verify /reset archives the active session and invokes the cache callback."""
+        telegram_config.allowed_users = ["12345"]
+        adapter = TelegramAdapter(telegram_config)
+
+        mock_session = MagicMock()
+        mock_session.id = "telegram_12345_test"
+        mock_session.platform_user = "12345"
+
+        mock_session_store = AsyncMock()
+        mock_session_store.get_active_session = AsyncMock(return_value=mock_session)
+        mock_session_store.archive_session = AsyncMock()
+        adapter._session_store = mock_session_store
+
+        cache_cleared = False
+
+        async def reset_callback(platform_user: str) -> None:
+            nonlocal cache_cleared
+            cache_cleared = True
+            assert platform_user == "12345"
+
+        adapter.register_reset_callback(reset_callback)
+
+        mock_update = MagicMock(spec=Update)
+        mock_user = MagicMock(spec=User)
+        mock_user.id = 12345
+        mock_user.username = "testuser"
+        mock_update.effective_user = mock_user
+
+        mock_message = MagicMock(spec=Message)
+        mock_message.reply_text = AsyncMock()
+        mock_update.effective_message = mock_message
+
+        await adapter._handle_reset(mock_update, None)
+
+        mock_session_store.get_active_session.assert_called_once_with("telegram", "12345")
+        mock_session_store.archive_session.assert_called_once_with("telegram_12345_test")
+        assert cache_cleared is True
+        mock_message.reply_text.assert_called_once()
+        assert "reset" in mock_message.reply_text.call_args[0][0].lower()
+
+    @pytest.mark.asyncio
+    async def test_handle_reset_no_active_session(
+        self,
+        telegram_config: TelegramConfig,
+    ) -> None:
+        """Verify /reset replies gracefully when there is no active session."""
+        telegram_config.allowed_users = ["12345"]
+        adapter = TelegramAdapter(telegram_config)
+
+        mock_session_store = AsyncMock()
+        mock_session_store.get_active_session = AsyncMock(return_value=None)
+        adapter._session_store = mock_session_store
+
+        mock_update = MagicMock(spec=Update)
+        mock_user = MagicMock(spec=User)
+        mock_user.id = 12345
+        mock_user.username = "testuser"
+        mock_update.effective_user = mock_user
+
+        mock_message = MagicMock(spec=Message)
+        mock_message.reply_text = AsyncMock()
+        mock_update.effective_message = mock_message
+
+        await adapter._handle_reset(mock_update, None)
+
+        mock_session_store.archive_session.assert_not_called()
+        mock_message.reply_text.assert_called_once()
+        assert "no active" in mock_message.reply_text.call_args[0][0].lower()
+
+    @pytest.mark.asyncio
+    async def test_handle_reset_rejects_unauthorized(
+        self,
+        adapter: TelegramAdapter,
+        telegram_config: TelegramConfig,
+    ) -> None:
+        """Verify /reset rejects unauthorized users."""
+        telegram_config.allowed_users = ["allowed_user"]
+        adapter = TelegramAdapter(telegram_config)
+
+        mock_update = MagicMock(spec=Update)
+        mock_user = MagicMock(spec=User)
+        mock_user.id = 12345
+        mock_user.username = "unauthorized_user"
+        mock_update.effective_user = mock_user
+
+        mock_message = MagicMock(spec=Message)
+        mock_message.reply_text = AsyncMock()
+        mock_update.effective_message = mock_message
+
+        await adapter._handle_reset(mock_update, None)
+
+        mock_message.reply_text.assert_called_once_with("Not authorized.")
+
+
 class TestTelegramAdapterStreaming:
     """Tests for TelegramAdapter progressive streaming delivery."""
 
@@ -456,3 +658,73 @@ class TestTelegramAdapterStreaming:
             text="First message is long enough. Added text.",
             parse_mode="HTML",
         )
+
+
+class TestTelegramAdapterLongMessages:
+    """Tests for splitting messages that exceed Telegram's length limit."""
+
+    def test_split_long_text_short_text_unchanged(self) -> None:
+        """Text under the limit is not split."""
+        text = "Short message"
+        assert _split_long_text(text) == [text]
+
+    def test_split_long_text_prefers_paragraph_boundary(self) -> None:
+        """Splitting prefers paragraph boundaries."""
+        paragraph = "word " * 700  # ~3500 chars
+        text = paragraph + "\n\n" + paragraph
+        chunks = _split_long_text(text)
+        assert len(chunks) == 2
+        assert all(len(chunk) <= 3800 for chunk in chunks)
+
+    def test_split_long_text_falls_back_to_sentence(self) -> None:
+        """When no paragraph/line boundary exists, split at sentence end."""
+        text = "Hello world. " * 400  # ~5200 chars, no newlines
+        chunks = _split_long_text(text)
+        assert len(chunks) >= 2
+        assert all(len(chunk) <= 3800 for chunk in chunks)
+
+    def test_split_long_text_falls_back_to_word(self) -> None:
+        """When no sentence boundary exists, split at word boundary."""
+        text = "a " * 3000  # ~6000 chars
+        chunks = _split_long_text(text)
+        assert len(chunks) >= 2
+        assert all(len(chunk) <= 3800 for chunk in chunks)
+
+    @pytest.mark.asyncio
+    async def test_send_message_splits_long_text(
+        self,
+        adapter: TelegramAdapter,
+    ) -> None:
+        """Long messages are sent as multiple Telegram messages."""
+        mock_app = MagicMock(spec=Application)
+        mock_bot = AsyncMock(spec=Bot)
+        mock_messages = [
+            MagicMock(spec=Message, message_id=1),
+            MagicMock(spec=Message, message_id=2),
+        ]
+        mock_bot.send_message = AsyncMock(side_effect=mock_messages)
+        mock_app.bot = mock_bot
+        adapter._app = mock_app
+
+        long_text = "word " * 1000  # ~5000 chars
+        result = await adapter.send_message("12345", long_text)
+
+        assert mock_bot.send_message.call_count == 2
+        assert result == "1"
+
+    @pytest.mark.asyncio
+    async def test_edit_message_splits_long_text(
+        self,
+        adapter: TelegramAdapter,
+    ) -> None:
+        """Editing with long text replaces original and sends follow-ups."""
+        mock_app = MagicMock(spec=Application)
+        mock_bot = AsyncMock(spec=Bot)
+        mock_app.bot = mock_bot
+        adapter._app = mock_app
+
+        long_text = "word " * 1000  # ~5000 chars
+        await adapter.edit_message("12345", "100", long_text)
+
+        assert mock_bot.edit_message_text.call_count == 1
+        assert mock_bot.send_message.call_count == 1

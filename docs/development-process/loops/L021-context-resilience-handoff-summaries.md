@@ -456,7 +456,7 @@ SlotConfig(slot_dir=Path.home() / ".hermes" / "cache" / "slots", …)
 ```
 
 The llama-server on `127.0.0.1:8001` is actually
-`/home/dylan/.config/systemd/user/hermes-llama.service`, not
+`/home/<user>/.config/systemd/user/hermes-llama.service`, not
 `deploy/hestia-llama.service`. Hestia and Hermes therefore:
 
 - Share the same `llama-server` process (and its 3-slot pool → 16 K per slot).

@@ -349,7 +349,7 @@ export const TEXT = {
     activeWorkflowsLabel: 'Active Workflows',
     scheduledTasksLabel: 'Scheduled Tasks',
     pendingProposalsLabel: 'Pending Proposals',
-    recentSessionsLabel: 'Recent Sessions',
+    recentSessionsLabel: 'Recent Executions',
     systemHealthLabel: 'System Health',
     healthUnknown: 'Unknown',
     healthPassing: (rate: number) => `${rate}% passing`,
@@ -428,21 +428,4 @@ export const TEXT = {
   },
 } as const;
 
-export function t(path: string, ...args: unknown[]): string {
-  const keys = path.split('.');
-  let current: unknown = TEXT;
-  for (const key of keys) {
-    if (current && typeof current === 'object' && key in current) {
-      current = (current as Record<string, unknown>)[key];
-    } else {
-      return path;
-    }
-  }
-  if (typeof current === 'function') {
-    return (current as (...args: unknown[]) => string)(...args);
-  }
-  if (typeof current === 'string') {
-    return current;
-  }
-  return path;
-}
+

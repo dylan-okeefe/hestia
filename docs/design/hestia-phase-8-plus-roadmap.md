@@ -454,72 +454,13 @@ trace_id: str | None       # link to the trace record
 
 ## Phase 12: Manual skill definitions
 
-> **Goal:** Let users define reusable multi-step workflows. No automatic mining — that comes later. The model can suggest creating a skill, but the definition is human-authored.
-
-### 12.1 — Skill lifecycle
-
-Skills move through states: `draft` → `tested` → `trusted` → `deprecated` → `disabled`.
-
-```python
-class SkillState(str, Enum):
-    DRAFT = "draft"
-    TESTED = "tested"
-    TRUSTED = "trusted"
-    DEPRECATED = "deprecated"
-    DISABLED = "disabled"
-```
-
-### 12.2 — Skill definition format
-
-Skills are Python files in a `skills/` directory, using a `@skill` decorator:
-
-```python
-from hestia.skills import skill
-
-@skill(
-    name="daily_briefing",
-    description="Fetch weather, calendar, and news, then summarize.",
-    required_tools=["http_get", "search_memory"],
-    capabilities=["network_egress", "memory_read"],
-    state=SkillState.DRAFT,
-)
-async def daily_briefing(context: SkillContext) -> SkillResult:
-    weather = await context.call_tool("http_get", url="https://wttr.in/?format=3")
-    memories = await context.call_tool("search_memory", query="morning routine")
-    return SkillResult(
-        summary=f"Weather: {weather}\nRelevant memories: {memories}",
-        status="success",
-    )
-```
-
-### 12.3 — Skill index in prompt
-
-The model sees a compact index (not full skill bodies):
-
-```
-Available skills:
-- daily_briefing: Fetch weather, calendar, and news, then summarize. [trusted, network_egress+memory_read]
-- weekly_review: Summarize this week's activity from traces. [draft, memory_read]
-```
-
-A `run_skill` meta-tool lets the model invoke skills by name.
-
-### 12.4 — Skill persistence
-
-SQLite table `skills` with fields: id, name, description, file_path, state, capabilities (JSON), required_tools (JSON), created_at, last_run_at, run_count, failure_count.
-
-### 12.5 — CLI commands
-
-```
-hestia skill list                   # list skills with states
-hestia skill show NAME              # show skill details
-hestia skill promote NAME           # advance state (draft→tested→trusted)
-hestia skill demote NAME            # move back one state
-hestia skill disable NAME           # disable without removing
-hestia skill test NAME              # run skill in sandbox mode
-```
-
-**ADR:** ADR-0024 — Skills as user-defined Python functions. Automatic discovery deferred until trace store has enough data. Skills are procedural memory with explicit trust lifecycle.
+> **Status: Removed.** The skills framework was prototyped but withdrawn before production.
+> There is no `hestia.skills` package, `@skill` decorator, `run_skill` tool, or
+> `hestia skill *` CLI command in the current codebase. The original design is archived
+> in `docs/adr/ADR-024-skills-user-defined-python-functions.md` for historical reference.
+>
+> Reusable multi-step automation is now handled by the **Workflows** system
+> (`docs/guides/workflows.md`).
 
 ---
 

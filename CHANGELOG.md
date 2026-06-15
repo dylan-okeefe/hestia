@@ -5,7 +5,109 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## [0.13.0] — 2026-06-06
+## [0.14.0] — 2026-06-15
+
+### Browser Automation
+- **Shared authenticated fetch helper** — new `hestia.tools.browser.fetch.fetch_url` provides
+  a single Playwright-based path for `browser_get` and `browser_get_links`, with persistent
+  session reuse, per-domain rate limiting, and stealth context injection.
+- **Structured result categories** — fetches now return explicit `SUCCESS`, `BLOCKED`,
+  `NOT_FOUND`, `TIMEOUT`, or `TRANSIENT_OTHER` categories and embed `[CATEGORY: <name>]` in
+  failure text so downstream retry logic no longer re-guesses from human-readable strings.
+- **Honest page classification** — login/challenge detection is now driven by the final URL
+  and page title first. Body text triggers `BLOCKED` only when login phrases dominate the page
+  (≥3 occurrences or a very short page), so job listings that say “Log in to apply” are no
+  longer silently discarded.
+- **Browser session authentication spec** — documented the `browser_login` → `browser_get`
+  flow, session storage/cookie persistence, and health-check expectations.
+
+### File Writing & Recovery
+- **Truncated `write_file` recovery** — the quality monitor detects oversized unclosed XML
+  `write_file`/`append_to_file` blocks, drops the incomplete trailing line, writes the safe
+  prefix, and tells the model exactly where to resume.
+- **Chunked large-file protocol** — `write_file` enforces a 2000-character chunk limit;
+  large files are written with an initial `write_file` followed by `append_to_file` sections.
+- **Byte-for-byte seam test** — added a recovery test that truncates a real source file
+  mid-line and asserts the recovered + appended result is identical to the original.
+
+### Tooling Reliability
+- **Tool-result classifier** — introduced `ToolResultCategory` and `classify_tool_result` to
+  distinguish transient failures (retryable) from permanent blocks and 404s.
+- **Retry policy wiring** — identical failed tool calls are capped, blocked/404 URLs fail
+  fast, and timeouts escalate with per-attempt and total URL time budgets.
+- **XML tool-call repair** — handles `<parameter=arguments>` direct calls and unclosed tags
+  produced by small/reasoning models.
+
+### Hygiene & Diagnostics
+- **Regression fixture suite** — collects real model failures (XML tool-call malformations,
+  network failures) for regression testing.
+- **Fixture scrubber** — redacts emails, IPs, home paths, Telegram/Matrix tokens, session
+  cookies, and high-entropy values from regression fixtures before they are committed.
+- **Scrubber hardening** — added LinkedIn (`li_at`, `JSESSIONID`) and Indeed cookie redaction
+  plus a high-entropy catch-all for 32+ character token values.
+- **VRAM check honesty** — `scripts/verify_vram.py` documents that the baseline GPU-memory
+  reading is taken after llama.cpp pre-allocates the KV cache, so the check reflects the
+  worst-case footprint.
+- **Precautionary PII scrub audit** — replaced real emails and `/home/dylan/` paths in
+  documentation, examples, and test scripts with `example.com` and `/home/<user>/` placeholders.
+- **Secret-scanner hygiene** — replaced realistic-looking token literals in scrubber tests
+  with runtime-built placeholders after a GitGuardian bearer-token alert.
+
+### Loop Documentation
+- Renumbered `L189`/`L190` to `L218`/`L219` to free the 189–190 range, with updated specs,
+  handoffs, and loop-log entries.
+
+## [0.13.1] — 2026-06-13
+
+### Release prep & front door
+- **Version note** — `0.13.0` was already tagged on an earlier `main` merge, so the
+  consolidated release is `0.13.1`.
+- **README Quick Start rewrite** — clone → `uv sync` → copy `deploy/example_config.py` →
+  `hestia init` → start llama.cpp → `hestia serve`/`hestia chat`; no more fictional
+  `pip install hestia`.
+- **Tool-name accuracy pass** — README tool list corrected to match registered tool names
+  (`rollback_turn`, `accept_proposal`, `create_scheduled_task`, `reset_style_profile`, etc.).
+- **UPGRADE.md current to 0.13.0** — removed fictional `hestia skills` / `hestia memory epochs`
+  commands; fixed dead guide links; added migration-model note.
+- **SECURITY.md disclosure process** — added supported-versions table, responsible disclosure
+  process, and contact email.
+- **CHANGELOG version coherence** — `pyproject.toml` and CHANGELOG aligned at release time.
+
+### Orchestrator & Inference
+- **`reasoning_budget` and `max_tokens` wiring** — both values are now sent in the
+  llama.cpp `/v1/chat/completions` request body; `turns.reasoning_budget` is persisted.
+- **Scheduler double-fire / retry-storm fix** — tasks are marked in-flight before dispatch
+  and get a capped backoff on failure instead of retrying every tick.
+
+### Platforms
+- **Telegram long-message splitting** — messages longer than Telegram's 4096-character cap
+  are split into multiple messages; HTML parse failures fall back to plain text per chunk,
+  protecting against unbalanced tags from Markdown-to-HTML conversion inside code fences.
+- **VoiceConfig schema fix** — added missing `stt_language`, `stt_beam_size`, and
+  `stt_vad_filter` fields referenced by the voice pipeline.
+
+### Web Dashboard
+- **ContextLab launch** — restored the prompt-context preview page and added a route + nav
+  entry so it is reachable at `/context-lab`.
+- **Reusable Modal / ConfirmDialog** — extracted shared modal components and replaced copied
+  inline modal markup in Scheduler, AdminUsers, ErrorDashboard, and StyleProfile.
+- **Dashboard label fix** — "Recent Sessions" stat now correctly labeled "Recent Executions".
+
+### Security & Admin
+- **WebSocket admin-check hardening** — `browser_stream_ws` now requires admin role for all
+  authenticated callers and rejects valid-OTP tokens with no user mapping.
+- **error_resolutions bootstrap** — the table is now created by the runtime bootstrap path
+  (not only Alembic), and `list_statuses` uses `bindparam(expanding=True)`.
+
+### Tooling
+- **ruff line-length 120** — `pyproject.toml` line-length raised from 100 to 120; E402 and
+  the worst E501 offenders fixed. The lint gate is clean for E501/E402.
+
+### Packaging
+- **playwright-stealth declared** — added to `[project.optional-dependencies] browser` so
+  `uv sync --extra browser` installs the runtime import used by the stealth wrapper.
+
+## [0.13.0] — 2026-06-08
 
 ### Browser Sessions
 - **Browser session dashboard** — list, manage, and authenticate persistent

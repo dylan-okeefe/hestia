@@ -37,7 +37,15 @@ def mock_app() -> MagicMock:
     mock.config.trust = MagicMock(preset=None)
     mock.config.rate_limit = MagicMock()
     mock.config.features = MagicMock()
-    mock.config.features.web = MagicMock(enabled=True, host="127.0.0.1", port=8080, auth_enabled=False, session_lifetime_hours=72, code_expiry_seconds=300, code_length=6)
+    mock.config.features.web = MagicMock(
+        enabled=True,
+        host="127.0.0.1",
+        port=8080,
+        auth_enabled=False,
+        session_lifetime_hours=72,
+        code_expiry_seconds=300,
+        code_length=6,
+    )
     mock.config.features.rate_limit = MagicMock()
     mock.config.features.policy = MagicMock()
     mock.config.features.style = MagicMock()
@@ -1628,3 +1636,14 @@ class TestToolsRoutes:
         assert response.status_code == 200
         data = response.json()
         assert data["tools"] == []
+
+
+class TestWebConfigDefaults:
+    """Tests for web dashboard configuration defaults."""
+
+    def test_web_host_defaults_to_localhost(self) -> None:
+        """WebConfig.host defaults to loopback for safe out-of-box binding."""
+        from hestia.config import WebConfig
+
+        config = WebConfig()
+        assert config.host == "127.0.0.1"

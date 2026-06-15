@@ -31,7 +31,11 @@ async def test_shallow_investigation_returns_report(app: AppContext) -> None:
     )
     app.inference.chat = AsyncMock(
         return_value=ChatResponse(
-            content='{"findings": ["Django is batteries-included", "FastAPI is async-native"], "recommendations": ["Use FastAPI for microservices"], "sources": ["docs.djangoproject.com"]}',
+            content=(
+                '{"findings": ["Django is batteries-included", "FastAPI is async-native"], '
+                '"recommendations": ["Use FastAPI for microservices"], '
+                '"sources": ["docs.djangoproject.com"]}'
+            ),
             reasoning_content=None,
             tool_calls=[],
             finish_reason="stop",
@@ -72,7 +76,11 @@ async def test_deep_investigation_makes_multiple_calls(app: AppContext) -> None:
                 total_tokens=60,
             ),
             ChatResponse(
-                content='{"findings": ["Interpretability helps"], "recommendations": ["Fund mechanistic interpretability"], "sources": ["distill.pub"]}',
+                content=(
+                    '{"findings": ["Interpretability helps"], '
+                    '"recommendations": ["Fund mechanistic interpretability"], '
+                    '"sources": ["distill.pub"]}'
+                ),
                 reasoning_content=None,
                 tool_calls=[],
                 finish_reason="stop",
@@ -121,7 +129,11 @@ async def test_with_specified_tools_calls_those_tools(app: AppContext) -> None:
     )
     app.inference.chat = AsyncMock(
         return_value=ChatResponse(
-            content='{"findings": ["It is sunny today"], "recommendations": ["Wear sunglasses"], "sources": ["weather_lookup"]}',
+            content=(
+                '{"findings": ["It is sunny today"], '
+                '"recommendations": ["Wear sunglasses"], '
+                '"sources": ["weather_lookup"]}'
+            ),
             reasoning_content=None,
             tool_calls=[],
             finish_reason="stop",

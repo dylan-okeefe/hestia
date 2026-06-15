@@ -54,6 +54,18 @@ In the editor:
 - Use **Test Run** to execute the workflow manually.
 - Inspect execution history with per-node output drill-down.
 
+### Context Lab
+Dry-run the system-prompt assembly and tune context budgets. The Context Lab
+loads the current config, lets you adjust the identity and memory epoch budgets
+and the total context length, then shows:
+
+- A per-layer token breakdown (identity, memory epoch, history, assembled system prompt).
+- The number of history turns that fit within the budget.
+- An over-budget warning when the protected block exceeds the per-slot context.
+
+Use it to find the right balance between long identity/system prompts and the
+room left for conversation history. Reach it from the nav at **Context Lab**.
+
 ### Browser Sessions *(admin only)*
 Manage persistent browser sessions per-domain. Stream a headless or headed
 browser to authenticate with JavaScript-heavy sites, run health checks, and

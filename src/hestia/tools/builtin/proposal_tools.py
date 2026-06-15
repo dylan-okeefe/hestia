@@ -23,7 +23,13 @@ def make_list_proposals_tool(
         parameters_schema={
             "type": "object",
             "properties": {
-                "status": {"type": "string", "description": "Filter by status: pending, accepted, rejected, deferred, expired (default pending)."},
+                "status": {
+                    "type": "string",
+                    "description": (
+                        "Filter by status: pending, accepted, rejected, deferred, expired "
+                        "(default pending)."
+                    ),
+                },
             },
             "required": [],
         },

@@ -79,6 +79,7 @@ describe('Dashboard', () => {
     expect(screen.getByText(TEXT.dashboard.activeWorkflowsLabel)).toBeInTheDocument();
     expect(screen.getByText(TEXT.dashboard.scheduledTasksLabel)).toBeInTheDocument();
     expect(screen.getByText(TEXT.dashboard.pendingProposalsLabel)).toBeInTheDocument();
+    expect(screen.getAllByText(TEXT.dashboard.recentSessionsLabel).length).toBeGreaterThanOrEqual(1);
   });
 
   it('shows quick action buttons', async () => {

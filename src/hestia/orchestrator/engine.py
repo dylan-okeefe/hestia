@@ -69,6 +69,8 @@ class Orchestrator:
         confirm_callback: ConfirmCallback | None = None,
         max_iterations: int = 10,
         max_tool_calls_per_turn: int = 10,
+        max_tokens: int = 1024,
+        default_reasoning_budget: int = 2048,
         slot_manager: SlotManager | None = None,
         failure_store: "FailureStore | None" = None,
         trace_store: "TraceStore | None" = None,
@@ -93,6 +95,8 @@ class Orchestrator:
         self._confirm_callback = confirm_callback
         self._max_iterations = max_iterations
         self._max_tool_calls_per_turn = max_tool_calls_per_turn
+        self._max_tokens = max_tokens
+        self._default_reasoning_budget = default_reasoning_budget
         self._slot_manager = slot_manager
         self._failure_store = failure_store
         self._trace_store = trace_store
@@ -129,6 +133,7 @@ class Orchestrator:
             injection_scanner=injection_scanner,
             max_iterations=max_iterations,
             max_tool_calls_per_turn=max_tool_calls_per_turn,
+            max_tokens=max_tokens,
             stream=stream,
             event_bus=event_bus,
         )
@@ -302,6 +307,7 @@ class Orchestrator:
             tool_calls_made=0,
             final_response=None,
             error=None,
+            reasoning_budget=self._default_reasoning_budget,
             transitions=[],
         )
 

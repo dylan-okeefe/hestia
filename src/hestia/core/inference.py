@@ -1,5 +1,6 @@
 """Inference client for llama.cpp server."""
 
+import ast
 import asyncio
 import dataclasses
 import json
@@ -88,19 +89,29 @@ def _parse_adhoc_xml_tool_calls(text: str) -> list[ToolCall]:
         name = fn_match.group(1).strip()
 
         adhoc_args: dict[str, Any] = {}
-        # Match <parameter=key> or <parameter key> followed by value on next line(s)
+        # Match <parameter=key>value</parameter> blocks. The value may span
+        # multiple lines. Some models close the tag on the next line; others
+        # leave it open until the next parameter or the end of the tool_call.
         for param_match in re.finditer(
-            r"<parameter[=:]\s*([^>\s]+)>\s*(.+?)(?=<parameter[=:]|</tool_call>|$)",
+            r"<parameter[=:]\s*([^>\s]+)>\s*(.+?)(?=<parameter[=:]|</parameter>|</tool_call>|$)",
             block,
             re.DOTALL,
         ):
             key = param_match.group(1).strip()
             val = param_match.group(2).strip()
-            # Try to coerce numbers/booleans, else keep as string
+            # Strip a trailing </parameter> tag if the model included one.
+            val = re.sub(r"</parameter>\s*$", "", val).strip()
+            # Try to coerce numbers/booleans/dicts, else keep as string.
+            # Models often emit Python-like literals (e.g. escaping single quotes
+            # as \') that are not valid JSON; fall back to ast.literal_eval which
+            # safely handles a superset of JSON literal syntax.
             try:
-                val_parsed = json.loads(val)
+                val_parsed = json.loads(val.replace("\\'", "'"))
             except json.JSONDecodeError:
-                val_parsed = val
+                try:
+                    val_parsed = ast.literal_eval(val)
+                except (SyntaxError, ValueError):
+                    val_parsed = val
             adhoc_args[key] = val_parsed
 
         # --- NSC-ACE-SABER wrapper unwrap ---
@@ -123,6 +134,16 @@ def _parse_adhoc_xml_tool_calls(text: str) -> list[ToolCall]:
                 if isinstance(inner_name, str) and isinstance(inner_args, dict):
                     name = inner_name
                     adhoc_args = inner_args
+
+        # Some models emit a direct tool call like <function=grep>
+        # <parameter=arguments>{"path": "...", "pattern": "..."}</parameter>.
+        # Unwrap the arguments dict so the parameters land at the top level.
+        elif (
+            "arguments" in adhoc_args
+            and len(adhoc_args) == 1
+            and isinstance(adhoc_args["arguments"], dict)
+        ):
+            adhoc_args = adhoc_args["arguments"]
 
         # Validate extracted args before creating ToolCall
         if name == "browser_get" and not _is_valid_url(adhoc_args.get("url", "")):
@@ -438,6 +459,7 @@ class InferenceClient:
             "messages": [message_to_dict(m) for m in clean_messages],
             "max_tokens": max_tokens,
             "temperature": temperature,
+            "reasoning_budget": reasoning_budget,
         }
 
         if tools:
@@ -578,6 +600,7 @@ class InferenceClient:
             "stream": True,
             "max_tokens": max_tokens,
             "temperature": temperature,
+            "reasoning_budget": reasoning_budget,
         }
 
         if tools:

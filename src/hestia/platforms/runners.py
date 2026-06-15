@@ -117,14 +117,20 @@ async def run_platform(
     # Eagerly warm up context builder to avoid first-turn latency
     await app.context_builder.warm_up()
 
-    # Inject voice deps into Telegram adapter when voice messages are enabled
-    if isinstance(adapter, TelegramAdapter) and config.telegram.voice_messages:
+    # Inject runtime deps into Telegram adapter (session store, orchestrator,
+    # system prompt). Voice config is only required when voice messages are enabled.
+    if isinstance(adapter, TelegramAdapter):
         adapter.set_voice_deps(
             orchestrator=orchestrator,
             session_store=app.session_store,
             system_prompt=config.system_prompt,
-            voice_config=config.voice,
+            voice_config=config.voice if config.telegram.voice_messages else None,
         )
+
+        async def _clear_telegram_session_cache(platform_user: str) -> None:
+            user_sessions.pop(platform_user, None)
+
+        adapter.register_reset_callback(_clear_telegram_session_cache)
 
     # Recover stale turns from previous crash
     recovered = await orchestrator.recover_stale_turns()

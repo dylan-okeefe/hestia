@@ -6,6 +6,7 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
+from sqlalchemy import bindparam
 
 from hestia.core.clock import utcnow
 
@@ -65,10 +66,10 @@ class ErrorResolutionStore:
         sql = sa.text(
             "SELECT error_id, status FROM error_resolutions "
             "WHERE error_id IN :error_ids"
-        )
+        ).bindparams(bindparam("error_ids", expanding=True))
         async with self._db.engine.connect() as conn:
             result = await conn.execute(
-                sql, {"error_ids": tuple(error_ids)}
+                sql, {"error_ids": error_ids}
             )
             rows = result.fetchall()
             return {row[0]: row[1] for row in rows}

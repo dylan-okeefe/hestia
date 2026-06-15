@@ -23,7 +23,13 @@ def make_list_dir_tool(config: StorageConfig) -> Any:
         parameters_schema={
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Directory path to list. Defaults to the first allowed root if omitted."},
+                "path": {
+                    "type": "string",
+                    "description": (
+                        "Directory path to list. "
+                        "Defaults to the first allowed root if omitted."
+                    ),
+                },
                 "max_entries": {"type": "integer", "description": "Maximum entries to return (default 200)."},
             },
             "required": ["path"],

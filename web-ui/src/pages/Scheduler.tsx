@@ -12,6 +12,8 @@ import PageCard from '../components/layout/PageCard';
 import LoadingSkeleton from '../components/layout/LoadingSkeleton';
 import ErrorState from '../components/layout/ErrorState';
 import EmptyState from '../components/layout/EmptyState';
+import Modal from '../components/Modal';
+import ConfirmDialog from '../components/ConfirmDialog';
 import CronBuilder from '../components/workflow-editor/CronBuilder';
 import { formatDate, formatCron } from '../lib/format';
 import { TEXT } from '../lib/text';
@@ -105,7 +107,8 @@ export default function Scheduler() {
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: string | null) => {
+    if (!id) return;
     try {
       await deleteMut.mutateAsync(id);
       addToast({ message: 'Task deleted', type: 'success', duration: 3000 });
@@ -116,7 +119,8 @@ export default function Scheduler() {
     }
   };
 
-  const handleRun = async (id: string) => {
+  const handleRun = async (id: string | null) => {
+    if (!id) return;
     try {
       await runMut.mutateAsync(id);
       addToast({ message: 'Task triggered', type: 'success', duration: 3000 });
@@ -211,101 +215,82 @@ export default function Scheduler() {
         </PageCard>
       )}
 
-      {modalOpen && (
-        <div
-          className="modal-overlay"
-          onClick={() => setModalOpen(false)}
-        >
-          <div
-            className="modal modal--md"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2>{editingTask ? TEXT.scheduler.editTitle : TEXT.scheduler.createTitle}</h2>
-            <div className="stack-md">
-              <label>
-                {TEXT.scheduler.nameLabel}
-                <input
-                  value={form.description}
-                  onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                  placeholder={TEXT.scheduler.namePlaceholder}
-                  className="form-input mt-1"
-                />
-              </label>
-              <label>
-                {TEXT.scheduler.promptLabel}
-                <textarea
-                  rows={4}
-                  value={form.prompt}
-                  onChange={(e) => setForm((f) => ({ ...f, prompt: e.target.value }))}
-                  placeholder={TEXT.scheduler.promptPlaceholder}
-                  className="form-textarea mt-1"
-                />
-              </label>
-              <label>
-                {TEXT.scheduler.scheduleLabel}
-                <div className="mt-1">
-                  <CronBuilder
-                    value={form.cron_expression}
-                    onChange={(v) => setForm((f) => ({ ...f, cron_expression: v }))}
-                  />
-                </div>
-              </label>
-              <label className="row-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={form.enabled}
-                  onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))}
-                />
-                {TEXT.scheduler.enabledLabel}
-              </label>
-            </div>
-            <div className="row-between mt-4">
-              <button onClick={() => setModalOpen(false)}>{TEXT.common.cancel}</button>
-              <button onClick={handleSave} disabled={!form.prompt.trim()}>
-                {editingTask ? TEXT.common.save : TEXT.common.create}
-              </button>
-            </div>
+      <Modal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title={editingTask ? TEXT.scheduler.editTitle : TEXT.scheduler.createTitle}
+        size="md"
+        footer={
+          <div className="row-between">
+            <button onClick={() => setModalOpen(false)}>{TEXT.common.cancel}</button>
+            <button onClick={handleSave} disabled={!form.prompt.trim()}>
+              {editingTask ? TEXT.common.save : TEXT.common.create}
+            </button>
           </div>
+        }
+      >
+        <div className="stack-md">
+          <label>
+            {TEXT.scheduler.nameLabel}
+            <input
+              value={form.description}
+              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+              placeholder={TEXT.scheduler.namePlaceholder}
+              className="form-input mt-1"
+            />
+          </label>
+          <label>
+            {TEXT.scheduler.promptLabel}
+            <textarea
+              rows={4}
+              value={form.prompt}
+              onChange={(e) => setForm((f) => ({ ...f, prompt: e.target.value }))}
+              placeholder={TEXT.scheduler.promptPlaceholder}
+              className="form-textarea mt-1"
+            />
+          </label>
+          <label>
+            {TEXT.scheduler.scheduleLabel}
+            <div className="mt-1">
+              <CronBuilder
+                value={form.cron_expression}
+                onChange={(v) => setForm((f) => ({ ...f, cron_expression: v }))}
+              />
+            </div>
+          </label>
+          <label className="row-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={form.enabled}
+              onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))}
+            />
+            {TEXT.scheduler.enabledLabel}
+          </label>
         </div>
-      )}
+      </Modal>
 
-      {confirmDelete && (
-        <div
-          className="modal-overlay"
-          onClick={() => setConfirmDelete(null)}
-        >
-          <div className="modal modal--sm" onClick={(e) => e.stopPropagation()}>
-            <h3>{TEXT.scheduler.deleteConfirmTitle}</h3>
-            <p className="text-small text-secondary">
-              {TEXT.scheduler.deleteConfirmDescription}
-            </p>
-            <div className="row-center gap-2 mt-4">
-              <button onClick={() => setConfirmDelete(null)}>{TEXT.common.cancel}</button>
-              <button onClick={() => handleDelete(confirmDelete)} className="text-danger border-danger">
-                {TEXT.common.delete}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        isOpen={!!confirmDelete}
+        title={TEXT.scheduler.deleteConfirmTitle}
+        description={TEXT.scheduler.deleteConfirmDescription}
+        confirmLabel={TEXT.common.delete}
+        cancelLabel={TEXT.common.cancel}
+        onConfirm={() => handleDelete(confirmDelete)}
+        onCancel={() => setConfirmDelete(null)}
+        variant="danger"
+        loading={deleteMut.isPending}
+      />
 
-      {confirmRun && (
-        <div
-          className="modal-overlay"
-          onClick={() => setConfirmRun(null)}
-        >
-          <div className="modal modal--sm" onClick={(e) => e.stopPropagation()}>
-            <h3>{TEXT.scheduler.runNowConfirmTitle}</h3>
-            <p className="text-small text-secondary">
-              {TEXT.scheduler.runNowConfirmDescription}
-            </p>
-            <div className="row-center gap-2 mt-4">
-              <button onClick={() => setConfirmRun(null)}>{TEXT.common.cancel}</button>
-              <button onClick={() => handleRun(confirmRun)}>{TEXT.common.run}</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        isOpen={!!confirmRun}
+        title={TEXT.scheduler.runNowConfirmTitle}
+        description={TEXT.scheduler.runNowConfirmDescription}
+        confirmLabel={TEXT.scheduler.runNowConfirmRun}
+        cancelLabel={TEXT.common.cancel}
+        onConfirm={() => handleRun(confirmRun)}
+        onCancel={() => setConfirmRun(null)}
+        loading={runMut.isPending}
+      />
     </div>
   );
 }

@@ -86,9 +86,9 @@ async def cmd_telegram_migrate_rooms(app: AppContext) -> None:
 
 ```bash
 # Backend
-cd /home/dylan/Hestia && uv run pytest tests/unit/ tests/integration/ -q
-cd /home/dylan/Hestia && uv run mypy src/hestia
-cd /home/dylan/Hestia && uv run ruff check src/ tests/
+cd /home/<user>/Hestia && uv run pytest tests/unit/ tests/integration/ -q
+cd /home/<user>/Hestia && uv run mypy src/hestia
+cd /home/<user>/Hestia && uv run ruff check src/ tests/
 
 # Frontend
 cd web-ui && npm run build

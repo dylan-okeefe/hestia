@@ -35,6 +35,8 @@ class Message:
     reasoning_content: str | None = None
     created_at: datetime = field(default_factory=_utc_now)
     is_handoff: bool = False
+    correction: bool = False
+    """True when this user message was injected by the quality monitor as a correction."""
 
 
 class SessionState(Enum):

@@ -10,10 +10,11 @@ import os
 import re
 import tempfile
 import time
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 from telegram import Chat, InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.error import TelegramError
+from telegram.error import RetryAfter, TelegramError
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
 from hestia.config import TelegramConfig
@@ -33,6 +34,63 @@ if TYPE_CHECKING:
     from hestia.config import VoiceConfig
     from hestia.orchestrator.engine import Orchestrator
     from hestia.persistence.sessions import SessionStore
+
+
+# Telegram caps a single message at 4096 characters. We leave headroom for
+# the HTML tags added by _md_to_tg_html by splitting the raw Markdown text at
+# a conservative limit and sending/editing in chunks.
+_TELEGRAM_MAX_TEXT_LEN = 4096
+_SAFE_CHUNK_LEN = 3800
+
+
+def _split_long_text(text: str, max_len: int = _SAFE_CHUNK_LEN) -> list[str]:
+    """Split ``text`` into chunks that fit Telegram's message length limit.
+
+    Prefers splitting at paragraph boundaries, then lines, then sentences,
+    then words, falling back to a hard split at ``max_len``.
+    """
+    if len(text) <= max_len:
+        return [text]
+
+    chunks: list[str] = []
+    remaining = text
+
+    while len(remaining) > max_len:
+        chunk = remaining[:max_len]
+
+        # Prefer paragraph boundary
+        split_at = chunk.rfind("\n\n")
+        if split_at > max_len // 4:
+            split_at += 2
+        else:
+            # Then line boundary
+            split_at = chunk.rfind("\n")
+            if split_at > max_len // 4:
+                split_at += 1
+            else:
+                # Then sentence boundary
+                split_at = max(
+                    chunk.rfind(". "),
+                    chunk.rfind("! "),
+                    chunk.rfind("? "),
+                )
+                if split_at > max_len // 4:
+                    split_at += 2
+                else:
+                    # Then word boundary
+                    split_at = chunk.rfind(" ")
+                    if split_at > max_len // 4:
+                        split_at += 1
+                    else:
+                        split_at = max_len
+
+        chunks.append(remaining[:split_at].rstrip())
+        remaining = remaining[split_at:].lstrip()
+
+    if remaining:
+        chunks.append(remaining)
+
+    return chunks
 
 
 def _md_to_tg_html(text: str) -> str:
@@ -109,11 +167,12 @@ class TelegramAdapter(Platform):
         # Background tasks that keep the typing indicator alive (refreshed every 4s).
         self._typing_tasks: dict[str, asyncio.Task[None]] = {}
 
-        # Voice deps are injected by run_platform when voice is enabled.
+        # Runtime deps are injected by run_platform after the orchestrator is built.
         self._orchestrator: Orchestrator | None = None
         self._session_store: SessionStore | None = None
         self._system_prompt: str = ""
         self._voice_config: VoiceConfig | None = None
+        self._reset_callback: Callable[[str], Awaitable[None]] | None = None
 
         # Validate allowed_users entries (hard-fail at startup)
         for entry in self._config.allowed_users:
@@ -148,6 +207,16 @@ class TelegramAdapter(Platform):
         self._system_prompt = system_prompt
         self._voice_config = voice_config
 
+    def register_reset_callback(
+        self, callback: Callable[[str], Awaitable[None]]
+    ) -> None:
+        """Register a callback invoked when /reset archives a session.
+
+        The callback receives the platform_user whose session was reset so the
+        runner can drop any in-memory session cache for that user.
+        """
+        self._reset_callback = callback
+
     async def start(self, on_message: IncomingMessageCallback) -> None:
         """Start polling for Telegram messages."""
         self._on_message = on_message
@@ -156,6 +225,7 @@ class TelegramAdapter(Platform):
 
         # Register handlers
         self._app.add_handler(CommandHandler("start", self._handle_start))
+        self._app.add_handler(CommandHandler("reset", self._handle_reset))
         self._app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message))
         if self._config.voice_messages:
             self._app.add_handler(MessageHandler(filters.VOICE, self._handle_voice_message))
@@ -186,18 +256,63 @@ class TelegramAdapter(Platform):
             self._app = None
         logger.info("Telegram adapter stopped")
 
+    async def _send_chunk(
+        self, chat_id: int, text: str, *, parse_mode: str = "HTML"
+    ) -> Any:
+        """Send one chunk, falling back to plain text if HTML parse fails.
+
+        Sleeps and retries once on Telegram flood-control (RetryAfter).
+        """
+        assert self._app is not None
+        try:
+            return await self._app.bot.send_message(
+                chat_id=chat_id,
+                text=_md_to_tg_html(text),
+                parse_mode=parse_mode,
+            )
+        except RetryAfter as e:
+            logger.warning(
+                "Telegram flood control for chat %s; sleeping %ss then retrying",
+                chat_id,
+                e.retry_after,
+            )
+            await asyncio.sleep(e.retry_after)
+            return await self._app.bot.send_message(
+                chat_id=chat_id,
+                text=_md_to_tg_html(text),
+                parse_mode=parse_mode,
+            )
+        except TelegramError as e:
+            if "can't parse entities" in str(e).lower():
+                logger.warning(
+                    "HTML parse failed for chunk, retrying as plain text: %s", e
+                )
+                return await self._app.bot.send_message(
+                    chat_id=chat_id,
+                    text=text,
+                    parse_mode=None,
+                )
+            raise
+
     async def send_message(self, user: str, text: str) -> str:
-        """Send a message to a Telegram chat. Returns message ID."""
+        """Send a message to a Telegram chat. Returns message ID.
+
+        Long messages are split into multiple Telegram messages; the first
+        message ID is returned. If a chunk fails HTML parsing it is retried as
+        plain text.
+        """
         if self._app is None:
             raise RuntimeError("Telegram adapter not started")
 
         chat_id = int(user)
-        msg = await self._app.bot.send_message(
-            chat_id=chat_id,
-            text=_md_to_tg_html(text),
-            parse_mode="HTML",
-        )
-        return str(msg.message_id)
+        chunks = _split_long_text(text)
+        first_msg = None
+        for chunk in chunks:
+            msg = await self._send_chunk(chat_id, chunk)
+            if first_msg is None:
+                first_msg = msg
+        assert first_msg is not None
+        return str(first_msg.message_id)
 
     def _prune_last_edit_times(self) -> None:
         """Evict entries older than _last_edit_max_age to prevent unbounded growth."""
@@ -207,7 +322,12 @@ class TelegramAdapter(Platform):
             del self._last_edit_times[k]
 
     async def edit_message(self, user: str, msg_id: str, text: str) -> None:
-        """Edit a message in-place, rate-limited to avoid 429s."""
+        """Edit a message in-place, rate-limited to avoid 429s.
+
+        If the new text exceeds Telegram's message length limit, the first
+        chunk replaces the original message and any remaining chunks are sent
+        as new messages.
+        """
         if self._app is None:
             raise RuntimeError("Telegram adapter not started")
 
@@ -222,20 +342,67 @@ class TelegramAdapter(Platform):
             await asyncio.sleep(wait)
 
         chat_id = int(user)
+        chunks = _split_long_text(text)
         try:
-            await self._app.bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=int(msg_id),
-                text=_md_to_tg_html(text),
-                parse_mode="HTML",
-            )
+            try:
+                await self._edit_message_text(
+                    chat_id=chat_id,
+                    message_id=int(msg_id),
+                    text=chunks[0],
+                )
+            except TelegramError as e:
+                if "can't parse entities" in str(e).lower():
+                    logger.warning(
+                        "HTML parse failed for edit, retrying as plain text: %s", e
+                    )
+                    await self._edit_message_text(
+                        chat_id=chat_id,
+                        message_id=int(msg_id),
+                        text=chunks[0],
+                        parse_mode=None,
+                    )
+                else:
+                    raise
             self._last_edit_times[msg_id] = time.monotonic()
+            for chunk in chunks[1:]:
+                await self._send_chunk(chat_id, chunk)
         except TelegramError as e:
             # Telegram returns 400 if message content is unchanged
             if "message is not modified" in str(e).lower():
                 logger.debug("Message %s not modified, skipping edit", msg_id)
             else:
                 logger.warning("Failed to edit message %s: %s", msg_id, e)
+
+    async def _edit_message_text(
+        self,
+        *,
+        chat_id: int,
+        message_id: int,
+        text: str,
+        parse_mode: str | None = "HTML",
+    ) -> None:
+        """Edit a message, sleeping and retrying once on flood control."""
+        assert self._app is not None
+        try:
+            await self._app.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=_md_to_tg_html(text) if parse_mode == "HTML" else text,
+                parse_mode=parse_mode,
+            )
+        except RetryAfter as e:
+            logger.warning(
+                "Telegram flood control for message %s; sleeping %ss then retrying",
+                message_id,
+                e.retry_after,
+            )
+            await asyncio.sleep(e.retry_after)
+            await self._app.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=_md_to_tg_html(text) if parse_mode == "HTML" else text,
+                parse_mode=parse_mode,
+            )
 
     async def send_error(self, user: str, text: str) -> None:
         """Send an error message to a Telegram chat."""
@@ -287,7 +454,7 @@ class TelegramAdapter(Platform):
         Buffers the first chunk until at least 20 characters have been
         accumulated or 500 ms have elapsed, then sends a new message.
         Subsequent chunks trigger rate-limited in-place edits (max one
-        edit per 1.5 s per message).
+        edit per config.rate_limit_edits_seconds per message).
         """
         state: dict[str, Any] = {
             "accumulated": "",
@@ -296,6 +463,7 @@ class TelegramAdapter(Platform):
             "first_chunk_time": None,
         }
         self._stream_states[chat_id] = state
+        min_edit_interval = self._config.rate_limit_edits_seconds
 
         async def callback(chunk: str) -> None:
             state["accumulated"] += chunk
@@ -313,7 +481,7 @@ class TelegramAdapter(Platform):
                 return
 
             now = time.monotonic()
-            if now - state["last_edit"] >= 1.5:
+            if now - state["last_edit"] >= min_edit_interval:
                 await self.edit_message(chat_id, state["message_id"], state["accumulated"])
                 state["last_edit"] = now
 
@@ -395,6 +563,49 @@ class TelegramAdapter(Platform):
 
         await update.effective_message.reply_text(
             "Hestia is running. Send me a message to start a conversation."
+        )
+
+    async def _handle_reset(self, update: Update, context: Any) -> None:
+        """Handle /reset command: archive the active session and clear the cache."""
+        if update.effective_user is None or update.effective_message is None:
+            return
+
+        user_id = update.effective_user.id
+        username = update.effective_user.username or str(user_id)
+        chat = update.effective_chat
+        in_group = chat is not None and chat.type in (Chat.GROUP, Chat.SUPERGROUP)
+
+        if not self._is_allowed(user_id, username):
+            if in_group:
+                return
+            await update.effective_message.reply_text("Not authorized.")
+            return
+
+        if self._session_store is None:
+            await update.effective_message.reply_text(
+                "Reset is not available right now (session store not connected)."
+            )
+            return
+
+        platform_user = str(chat.id) if in_group else str(user_id)
+        session = await self._session_store.get_active_session("telegram", platform_user)
+
+        if session is None:
+            await update.effective_message.reply_text(
+                "No active conversation to reset. You're already starting fresh."
+            )
+            return
+
+        await self._session_store.archive_session(session.id)
+
+        if self._reset_callback is not None:
+            try:
+                await self._reset_callback(platform_user)
+            except Exception:
+                logger.exception("Reset callback failed for %s", platform_user)
+
+        await update.effective_message.reply_text(
+            "Conversation reset. Previous context was archived; your next message starts a fresh session."
         )
 
     async def _handle_message(self, update: Update, context: Any) -> None:

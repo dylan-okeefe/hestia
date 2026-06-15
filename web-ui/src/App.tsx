@@ -12,6 +12,7 @@ import Security from './pages/Security';
 import BrowserSessions from './pages/BrowserSessions';
 import BrowserStream from './pages/BrowserStream';
 import Config from './pages/Config';
+import ContextLab from './pages/ContextLab';
 import Workflows from './pages/Workflows';
 import WorkflowEditor from './pages/WorkflowEditor';
 import Profile from './pages/Profile';
@@ -62,6 +63,7 @@ function AppContent() {
             {navLink('Security & Health', '/security')}
             {navLink('Config', '/config')}
             {navLink('Workflows', '/workflows')}
+            {navLink('Context Lab', '/context-lab')}
             {navLink('Profile', '/profile')}
             {navLink('Knowledge', '/knowledge')}
             {navLink('Errors', '/errors')}
@@ -84,6 +86,7 @@ function AppContent() {
             <Route path="/config" element={<Config />} />
             <Route path="/workflows" element={<Workflows />} />
             <Route path="/workflows/:id" element={<WorkflowEditor />} />
+            <Route path="/context-lab" element={<ContextLab />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/knowledge" element={<Knowledge />} />
             <Route path="/sessions/:id" element={<SessionDetail />} />

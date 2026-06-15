@@ -6,14 +6,18 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from hestia.core.clock import utcnow
 from hestia.core.types import Message, ScheduledTask, SessionState
 from hestia.events.bus import EventBus
 from hestia.orchestrator import Orchestrator
-from hestia.persistence.scheduler import SchedulerStore, _calculate_next_run
+from hestia.persistence.scheduler import (
+    SchedulerStore,
+    _calculate_next_run,
+    _MIN_RETRY_BACKOFF_SECONDS,
+)
 from hestia.persistence.sessions import SessionStore
 from hestia.platforms.notifier import PlatformNotifier
 from hestia.runtime_context import scheduler_tick_active
@@ -47,6 +51,7 @@ class Scheduler:
         self._system_prompt = system_prompt or "You are a helpful assistant."
         self._notifier = notifier
         self._event_bus = event_bus
+        self._tick_lock = asyncio.Lock()
         self._stop_event = asyncio.Event()
         self._loop_task: asyncio.Task[Any] | None = None
 
@@ -85,10 +90,34 @@ class Scheduler:
         finally:
             logger.info("Scheduler loop exited")
 
+    def _backoff_next_run(self, now: datetime) -> datetime:
+        """Return a future time for the next retry after a failed run."""
+        return now + timedelta(seconds=_MIN_RETRY_BACKOFF_SECONDS)
+
+    def _in_flight_next_run(
+        self, task: ScheduledTask, now: datetime
+    ) -> datetime:
+        """Return the next_run_at value to write before dispatching a task.
+
+        For cron tasks this is the computed next occurrence; for one-shot tasks
+        it is a short backoff so failures do not retry every tick.
+        """
+        if task.cron_expression is not None:
+            next_run = _calculate_next_run(task.cron_expression, None, base_time=now)
+            return next_run if next_run is not None else self._backoff_next_run(now)
+        return self._backoff_next_run(now)
+
     async def _tick(self, now: datetime) -> None:
-        due = await self._scheduler_store.list_due_tasks(now)
-        for task in due:
-            await self._fire_task(task, now)
+        # Serialize ticks so a second rapid _tick cannot interleave between
+        # listing due tasks and marking them in-flight.
+        async with self._tick_lock:
+            due = await self._scheduler_store.list_due_tasks(now)
+            for task in due:
+                # Mark in-flight before the long-running process_turn so the next
+                # tick cannot re-list the same task while it is already dispatched.
+                in_flight_next_run = self._in_flight_next_run(task, now)
+                await self._scheduler_store.set_next_run_at(task.id, in_flight_next_run)
+                await self._fire_task(task, now)
 
     async def run_now(self, task_id: str) -> None:
         """Manually trigger a task immediately. Useful for testing and CLI."""
@@ -125,7 +154,7 @@ class Scheduler:
             error = f"Session {task.session_id} no longer exists"
             logger.warning(error)
             await self._scheduler_store.update_after_run(
-                task.id, error=error, now=now, next_run_at=None
+                task.id, error=error, now=now, next_run_at=self._backoff_next_run(now)
             )
             return
 
@@ -163,9 +192,13 @@ class Scheduler:
         finally:
             scheduler_tick_active.reset(tick_token)
 
-        # Compute next run: cron tasks advance, one-shot tasks don't
-        if task.cron_expression is not None:
-            next_run = _calculate_next_run(task.cron_expression, None, base_time=now)
+        # Compute next run: on error use a capped backoff, otherwise cron tasks
+        # advance and one-shot tasks are disabled.
+        if turn_error is not None:
+            next_run = self._backoff_next_run(now)
+        elif task.cron_expression is not None:
+            calculated = _calculate_next_run(task.cron_expression, None, base_time=now)
+            next_run = calculated if calculated is not None else self._backoff_next_run(now)
         else:
             next_run = None  # One-shot tasks don't repeat
         await self._scheduler_store.update_after_run(
