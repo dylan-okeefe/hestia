@@ -61,7 +61,8 @@ def _replace_cookies(text: str) -> str:
     text = re.sub(r"(?i)(Cookie:\s*).*", r"\1<redacted>", text)
     text = re.sub(r"(?i)(Set-Cookie:\s*).*", r"\1<redacted>", text)
     text = re.sub(
-        r"(?i)\b(sessionid|session|csrftoken|auth[_-]?token|access[_-]?token|refresh[_-]?token)\s*=\s*[^;\s]+",
+        r"(?i)\b(sessionid|session|jsessionid|csrftoken|li_at|indeed_[a-z0-9_]+|"
+        r"auth[_-]?token|access[_-]?token|refresh[_-]?token)\s*=\s*[^;\s]+",
         r"\1=<redacted>",
         text,
     )
@@ -73,6 +74,23 @@ def _replace_matrix_tokens(text: str) -> str:
     return re.sub(r"\bsyt_[A-Za-z0-9_\-]{20,}\b", "<matrix-token>", text)
 
 
+def _replace_high_entropy_tokens(text: str) -> str:
+    """Redact long, random-looking token values regardless of the key name."""
+
+    def _redact(m: re.Match[str]) -> str:
+        token = m.group(2)
+        # Avoid redacting long natural-language words (e.g. configuration keys).
+        if not (any(c.isdigit() for c in token) and any(c.isalpha() for c in token)):
+            return m.group(0)
+        return f"{m.group(1)}<redacted>"
+
+    return re.sub(
+        r"(\b[a-zA-Z0-9_\-]{2,}\s*[=:]\s*[\"']?)([A-Za-z0-9_+/=\-]{32,})",
+        _redact,
+        text,
+    )
+
+
 _SCRUBBERS: list[Callable[[str], str]] = [
     _replace_home_paths,
     _replace_windows_home_paths,
@@ -81,6 +99,7 @@ _SCRUBBERS: list[Callable[[str], str]] = [
     _replace_telegram_tokens,
     _replace_matrix_tokens,
     _replace_cookies,
+    _replace_high_entropy_tokens,
     _replace_api_keys,
 ]
 

@@ -52,7 +52,7 @@ def make_append_to_file_tool(config: StorageConfig) -> Any:
         if not path:
             return (
                 "Error: append_to_file requires a 'path' argument. "
-                'Example: {"path": "/home/dylan/Documents/file.md", "content": "more text"}'
+                'Example: {"path": "/home/<user>/Documents/file.md", "content": "more text"}'
             )
         if not content:
             return (

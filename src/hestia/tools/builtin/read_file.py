@@ -39,7 +39,7 @@ def make_read_file_tool(config: StorageConfig) -> Any:
         if not path:
             return (
                 "Error: read_file requires a 'path' argument. "
-                'Example: {"path": "/home/dylan/Documents/file.md"}'
+                'Example: {"path": "/home/<user>/Documents/file.md"}'
             )
         # Check path sandboxing
         if error := check_path_allowed(path, allowed_roots):

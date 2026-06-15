@@ -55,7 +55,7 @@ Fix:
 
 ## Quality Gates
 ```bash
-cd /home/dylan/Hestia/web-ui
+cd /home/<user>/Hestia/web-ui
 npm run test -- --run
 npm run lint
 ```

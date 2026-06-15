@@ -7,7 +7,7 @@
 *Reflects actual build through Phase 6 (311 tests, 20 ADRs, develop branch)*
 
 Target: RTX 3060 12 GB | Qwen 3.5 9B UD Q4_K_XL | llama.cpp
-Dylan O'Keefe | dylanokeefedev@gmail.com
+Dylan O'Keefe | user@example.com
 
 ---
 

@@ -1,4 +1,4 @@
-# L189: Chunked Large-File Writes
+# L218: Chunked Large-File Writes
 
 ## Goal
 Prevent unclosed `write_file` XML blocks (the truncated-write regression fixtures) by teaching the model the chunked-write protocol and recovering gracefully when a write is truncated.
@@ -74,7 +74,7 @@ Add a regression test in `tests/unit/core/test_regression_xml_tool_calls.py`:
 `feat: recover partial content from truncated write_file and continue with append_to_file`
 
 ## §3 Handoff
-Update this spec with review carry-forward and write `docs/handoffs/L189-chunked-large-file-writes-handoff.md`.
+Update this spec with review carry-forward and write `docs/handoffs/L218-chunked-large-file-writes-handoff.md`.
 
 ## Quality gates
 Run after each section:

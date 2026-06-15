@@ -194,5 +194,5 @@ The Hugging Face CLI tool is available as `hf` (not `huggingface-cli`):
 hf download <repo_id> <filename> --local-dir <path>
 
 # Example: download a GGUF quant
-hf download GestaltLabs/Qwen3.5-9B-NSC-ACE-SABER-GGUF Qwen3.5-9B-NSC-ACE-SABER.Q5_K_M.gguf --local-dir /home/dylan/models/qwen35-nsc-ace-saber
+hf download GestaltLabs/Qwen3.5-9B-NSC-ACE-SABER-GGUF Qwen3.5-9B-NSC-ACE-SABER.Q5_K_M.gguf --local-dir /home/<user>/models/qwen35-nsc-ace-saber
 ```

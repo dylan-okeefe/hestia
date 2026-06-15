@@ -1,6 +1,7 @@
 """Unit tests for the quality monitor degenerate-pattern classifier."""
 
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 
@@ -554,3 +555,56 @@ async def test_truncated_write_file_falls_back_when_write_fails(session: Session
     assert result is not None
     assert result.pattern == DegeneratePattern.TRUNCATED_WRITE_FILE
     assert "shorter than 2000 characters" in result.message
+
+
+@pytest.mark.asyncio
+async def test_truncated_write_file_recovery_resumes_at_line_boundary(session: Session) -> None:
+    """Recovery drops an incomplete trailing line so append can continue seamlessly."""
+    padding = "x" * 200
+    original_lines = [f"Line {i:03d}: {padding}" for i in range(1, 21)]
+    original_content = "\n".join(original_lines) + "\n"
+    # Truncate mid-way through "Line 015\n" so the trailing fragment is incomplete.
+    truncation_point = original_content.index("Line 015:") + len("Line 015: ") + len(padding) + 1
+    partial = original_content[:truncation_point - 3]
+
+    tmp_path = Path("/tmp/recovered-seam-test.md")
+    tmp_path.unlink(missing_ok=True)
+
+    body = (
+        '<tool_call>\n<function=write_file>\n<parameter=arguments>\n'
+        f'{{"path": "{tmp_path}", "content": "{partial}'
+    )
+    msg = Message(role="assistant", content=body)
+
+    async def fake_write_file(path: str = "", content: str = "") -> str:
+        Path(path).write_text(content, encoding="utf-8")
+        return f"Wrote {len(content)} bytes to {path}"
+
+    async def fake_append_to_file(path: str = "", content: str = "") -> str:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(content)
+        return f"Appended {len(content)} bytes to {path}"
+
+    result = await classify_turn(
+        _make_turn(),
+        msg,
+        [msg],
+        ["write_file", "append_to_file"],
+        write_file_handler=fake_write_file,
+        append_to_file_handler=fake_append_to_file,
+    )
+
+    assert result is not None
+    assert result.pattern == DegeneratePattern.TRUNCATED_WRITE_FILE
+
+    # The correction must name the exact last complete line so the model can resume.
+    assert "Line 014" in result.message
+    assert "append_to_file" in result.message
+
+    # Simulate the model obeying the correction: append the rest of the original
+    # content starting right after the last complete line.
+    written = tmp_path.read_text(encoding="utf-8")
+    remaining = original_content[len(written):]
+    await fake_append_to_file(path=str(tmp_path), content=remaining)
+
+    assert tmp_path.read_text(encoding="utf-8") == original_content

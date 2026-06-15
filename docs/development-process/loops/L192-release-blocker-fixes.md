@@ -108,11 +108,11 @@ const pos = start + `{{data.${value}}}`.length;
 ## Quality gates
 
 ```bash
-cd /home/dylan/Hestia && uv run pytest tests/unit/ tests/integration/ -q
-cd /home/dylan/Hestia && uv run mypy src/hestia
-cd /home/dylan/Hestia && uv run ruff check src/ tests/
-cd /home/dylan/Hestia/web-ui && npm run build
-cd /home/dylan/Hestia/web-ui && npx vitest run
+cd /home/<user>/Hestia && uv run pytest tests/unit/ tests/integration/ -q
+cd /home/<user>/Hestia && uv run mypy src/hestia
+cd /home/<user>/Hestia && uv run ruff check src/ tests/
+cd /home/<user>/Hestia/web-ui && npm run build
+cd /home/<user>/Hestia/web-ui && npx vitest run
 ```
 
 All five must pass.

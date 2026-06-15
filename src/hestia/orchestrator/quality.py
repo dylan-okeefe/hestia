@@ -183,7 +183,7 @@ async def _handle_truncated_write_file(
             message=generic,
         )
 
-    name, path, partial_content = recovery
+    name, path, safe_content, last_complete_line = recovery
     handler: Callable[..., Awaitable[str]] | None = None
     if name == "write_file":
         handler = write_file_handler
@@ -197,7 +197,7 @@ async def _handle_truncated_write_file(
         )
 
     try:
-        result = await handler(path=path, content=partial_content)
+        result = await handler(path=path, content=safe_content)
     except Exception:  # noqa: BLE001
         result = None
 
@@ -207,20 +207,25 @@ async def _handle_truncated_write_file(
             message=generic,
         )
 
-    bytes_written = len(partial_content)
+    bytes_written = len(safe_content)
+    resume_hint = (
+        f" Resume from the line after `{last_complete_line}`."
+        if last_complete_line
+        else ""
+    )
     if name == "append_to_file":
         message = (
             f"Your append_to_file call was truncated before completion. The first "
             f"{bytes_written:,} characters have been appended to {path}. Continue by "
-            f"calling append_to_file with the rest of this section. Do not try to "
-            f"rewrite the entire file in one call."
+            f"calling append_to_file with the rest of this section.{resume_hint} "
+            f"Do not try to rewrite the entire file in one call."
         )
     else:
         message = (
             f"Your write_file call was truncated before completion. The first "
             f"{bytes_written:,} characters have been saved to {path}. Continue by "
-            f"calling append_to_file with the next section. Do not try to "
-            f"rewrite the entire file in one call."
+            f"calling append_to_file with the next section.{resume_hint} "
+            f"Do not try to rewrite the entire file in one call."
         )
 
     return Correction(
@@ -231,12 +236,12 @@ async def _handle_truncated_write_file(
 
 def _recover_truncated_write_file(
     content: str,
-) -> tuple[str, str, str] | None:
-    """Extract the tool name, path, and partial content from an unclosed XML block.
+) -> tuple[str, str, str, str] | None:
+    """Extract the tool name, path, and safe partial content from an unclosed XML block.
 
-    The content capture is intentionally lenient: the JSON string is incomplete,
-    so we stop at the truncation point and treat whatever we captured as the
-    partial content.
+    The captured string is truncated mid-JSON, so the final line is almost always
+    incomplete.  We drop that incomplete trailing fragment and return the last
+    complete line so the caller can tell the model exactly where to resume.
     """
     name_match = re.search(r"<function[=:]\s*([^>\s]+)\s*>", content)
     if not name_match:
@@ -255,7 +260,29 @@ def _recover_truncated_write_file(
         return None
     partial_content = content_match.group(1)
 
-    return name, path, partial_content
+    safe_content, last_complete_line = _drop_incomplete_trailing_line(partial_content)
+    return name, path, safe_content, last_complete_line
+
+
+def _drop_incomplete_trailing_line(content: str) -> tuple[str, str]:
+    """Return content up to the last complete line and that line's text.
+
+    A "complete" line ends with ``\\n``.  If the content already ends with a
+    newline, the whole content is kept and the last line is reported.  If there
+    is no complete line, the content is emptied and the last-complete-line hint
+    is blank.
+    """
+    if content.endswith("\n"):
+        lines = content.splitlines()
+        last_complete_line = lines[-1] if lines else ""
+        return content, last_complete_line
+
+    *complete_lines, _incomplete = content.splitlines()
+    if not complete_lines:
+        return "", ""
+    safe_content = "\n".join(complete_lines) + "\n"
+    last_complete_line = complete_lines[-1]
+    return safe_content, last_complete_line
 
 
 def _is_empty_response(assistant_message: Message) -> bool:

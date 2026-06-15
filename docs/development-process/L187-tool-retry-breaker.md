@@ -19,7 +19,7 @@ During job-search runs, `browser_get_links` timed out on LinkedIn/Indeed and `ht
 ## Out of scope
 - Automatic transparent fallback execution (e.g. silently swapping `browser_get` for `http_get`). The model chooses the fallback after reading the correction.
 - Browser session reuse (L188).
-- Chunked file writes (L189).
+- Chunked file writes (L218).
 
 ## §1 Add tool-result classifier
 

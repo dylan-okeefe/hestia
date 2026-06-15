@@ -4,7 +4,7 @@ version = "0.13.0"
 description = "Local-first personal assistant framework for consumer GPU LLMs"
 readme = "README.md"
 authors = [
-    { name = "Dylan O'Keefe", email = "dylanokeefedev@gmail.com" }
+    { name = "Dylan O'Keefe", email = "user@example.com" }
 ]
 license = "Apache-2.0"
 requires-python = ">=3.11"

@@ -53,7 +53,7 @@ def make_write_file_tool(
         if not path:
             return (
                 "Error: write_file requires a 'path' argument. "
-                "Example: {\"path\": \"/home/dylan/Documents/file.md\", \"content\": \"# Hello\"}"
+                "Example: {\"path\": \"/home/<user>/Documents/file.md\", \"content\": \"# Hello\"}"
             )
         if not content:
             return (

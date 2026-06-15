@@ -6,6 +6,27 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-06-15 — L218–L219 Complete (Tool Reliability Follow-ups)
+
+**Outcome:** Hardened the truncated-write recovery seam, expanded the regression fixture scrubber to cover authenticated-session cookies and high-entropy tokens, made the VRAM check honest about llama.cpp's pre-allocated KV cache, and renumbered the two new loops to avoid collisions with already-merged L189/L189.
+
+### L218 — Chunked Large-File Writes
+**Branch:** `feature/develop-review-2026-06-12`
+- Taught the chunked-write protocol in system prompts and tool descriptions (header via `write_file`, sections via `append_to_file`, 2000-char limit).
+- Replaced the generic `TRUNCATED_WRITE_FILE` correction with a recovery flow that extracts partial `path`/`content`, writes it, and tells the model to continue with `append_to_file`.
+- Fixed the recovery seam: dropped the incomplete trailing line and reported the last complete line so the model resumes at the correct boundary.
+- Added byte-for-byte seam correctness test.
+
+**Quality gates:** 1762 pytest passed, 3 pre-existing failures, mypy/ruff clean on changed files.
+
+### L219 — Hygiene and VRAM Check Verification
+**Branch:** `feature/develop-review-2026-06-12`
+- Expanded `scrub.py` to redact `li_at`, `JSESSIONID`, `indeed_*`, and any 32+ char high-entropy token value.
+- Added `scripts/verify_vram.py`: reads live slot config and `nvidia-smi`, adds a 512 MiB generation buffer, and verifies ≥10% VRAM headroom.
+- Documented that the baseline measurement is after model load and therefore already includes llama.cpp's pre-allocated KV cache.
+
+**Quality gates:** 1762 pytest passed, 3 pre-existing failures, mypy/ruff clean on changed files.
+
 ## 2026-06-03 — L212–L215 Complete (Security & Robustness Arc)
 
 **Outcome:** Closed authorization gaps, fixed SlotManager eviction race, added webhook replay protection, cleaned up backend inconsistencies, and hardened web UI state management.

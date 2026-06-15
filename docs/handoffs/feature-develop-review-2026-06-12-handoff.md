@@ -76,7 +76,7 @@ Known baseline failures (not introduced by this branch):
 
 ```bash
 # 1. Ensure you are on the feature branch and the tree is clean
-cd /home/dylan/Hestia-runtime
+cd /home/<user>/Hestia-runtime
 git status
 
 # 2. Switch to develop and merge the feature branch

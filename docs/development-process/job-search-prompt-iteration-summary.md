@@ -77,7 +77,7 @@ Using `browser_get` with `wait_seconds=10`:
 
 ## 4. Manual Extraction Results
 
-**File:** `/home/dylan/Documents/Job Search/remote_software_development_jobs.md`
+**File:** `/home/<user>/Documents/Job Search/remote_software_development_jobs.md`
 
 15 verified jobs extracted:
 - **Built In Boston:** 13 jobs (Arcadia, Toast, mabl, Samsara, SoFi, Zeta Global, etc.)
@@ -130,8 +130,8 @@ ece0b71 feat(orchestrator): registry schema exposure, execution, assembly, engin
 ## 6. Infrastructure Changes
 
 ### 6.1 Service Rename: hermes-llama → hestia-llama
-- **Old:** `/home/dylan/.config/systemd/user/hermes-llama.service`
-- **New:** `/home/dylan/.config/systemd/user/hestia-llama.service`
+- **Old:** `/home/<user>/.config/systemd/user/hermes-llama.service`
+- **New:** `/home/<user>/.config/systemd/user/hestia-llama.service`
 - **Updated:** `deploy/hestia-serve.service` dependencies (`After=` / `Wants=`)
 - **Updated:** `deploy/README.md` references
 - **Status:** ✅ Active, enabled, llama-server running on :8001
@@ -198,11 +198,11 @@ Run a standalone Python script (not an agent) that scrapes the boards nightly an
 
 ## 9. Files of Record
 
-- `/home/dylan/Documents/Job Search/remote_software_development_jobs.md` — 15 verified jobs
-- `/home/dylan/Documents/Job Search/job-board-guide.md` — Scraping guide
-- `/home/dylan/Documents/Job Search/prompt-iteration-log.md` — Full iteration history
-- `/home/dylan/Documents/Job Search/model-evaluation-prompt-v{1-9}.md` — All prompt versions
-- `/home/dylan/Hestia/docs/development-process/job-search-prompt-iteration-summary.md` — This document
+- `/home/<user>/Documents/Job Search/remote_software_development_jobs.md` — 15 verified jobs
+- `/home/<user>/Documents/Job Search/job-board-guide.md` — Scraping guide
+- `/home/<user>/Documents/Job Search/prompt-iteration-log.md` — Full iteration history
+- `/home/<user>/Documents/Job Search/model-evaluation-prompt-v{1-9}.md` — All prompt versions
+- `/home/<user>/Hestia/docs/development-process/job-search-prompt-iteration-summary.md` — This document
 
 ---
 

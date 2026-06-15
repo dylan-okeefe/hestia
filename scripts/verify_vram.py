@@ -49,13 +49,17 @@ def main() -> int:
         print(f"ERROR: cannot reach llama-server at {LLAMA_SERVER}: {exc}")
         return 2
 
+    # llama.cpp pre-allocates the full KV cache to n_ctx_total = n_ctx * np at
+    # startup.  Therefore the GPU memory reported here (after the model has
+    # loaded and slots are idle) already includes the worst-case cache footprint
+    # for all three 131,072-token slots.  The projection below just adds a
+    # generation working-buffer allowance; it does not assume memory grows
+    # linearly as prompts are ingested.
     used_mb, total_mb, free_mb = _gpu_memory_mb()
     n_slots = len(slots)
     per_slot_ctx = slots[0]["n_ctx"] if slots else 0
     total_ctx = n_slots * per_slot_ctx
 
-    # KV cache is pre-allocated, so observed usage at any idle moment is already
-    # close to the maximum.  Add a small working-buffer allowance for generation.
     generation_allowance_mb = 512
     projected_max_mb = used_mb + generation_allowance_mb
     safe_limit_mb = int(total_mb * (1 - VRAM_HEADROOM_FRACTION))

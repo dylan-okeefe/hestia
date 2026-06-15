@@ -120,7 +120,7 @@ config = HestiaConfig(
         database_url=f"sqlite+aiosqlite:///{_DB_PATH}",
         artifacts_dir=_ROOT / "artifacts",
         allowed_roots=[
-            "/home/dylan/Documents/Job Search",
+            os.path.expanduser("~/Documents/Job Search"),
             str(_ROOT / "artifacts"),
         ],
     ),
@@ -165,12 +165,13 @@ config = HestiaConfig(
     # outbound network call to runtime-data/logs/egress.jsonl.
     security=SecurityConfig(),
     # Gmail via IMAP + SMTP app password from .env (EMAIL_APP_PASSWORD).
+    # Replace the placeholder username with the real Gmail address in local config.
     email=EmailConfig(
         imap_host="imap.gmail.com",
         imap_port=993,
         smtp_host="smtp.gmail.com",
         smtp_port=587,
-        username="agent.silas13@gmail.com",
+        username="agent@example.com",
         password_env="EMAIL_APP_PASSWORD",
         default_folder="INBOX",
     ),
@@ -216,8 +217,8 @@ config = HestiaConfig(
         'append_to_file({"path": "<listings.md>", "content": "## Listing 1\\n..."})\n'
         'append_to_file({"path": "<listings.md>", "content": "## Listing 2\\n..."})\n\n'
         "TOOL EXAMPLES (use the XML format from the tool instructions):\n"
-        '- write_file: {"path": "/home/dylan/Documents/notes.md", "content": "# Notes\\n"}\n'
-        '- append_to_file: {"path": "/home/dylan/Documents/notes.md", "content": "## Section 1\\n..."}\n'
+        '- write_file: {"path": "/home/<user>/Documents/notes.md", "content": "# Notes\\n"}\n'
+        '- append_to_file: {"path": "/home/<user>/Documents/notes.md", "content": "## Section 1\\n..."}\n'
         '- browser_get: {"url": "https://www.linkedin.com/jobs/search/?keywords=agentic+AI", "wait_seconds": 5}\n'
     ),
     max_iterations=40,

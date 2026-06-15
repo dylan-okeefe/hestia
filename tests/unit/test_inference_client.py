@@ -522,7 +522,7 @@ class TestChatMalformedOutput:
                                 "<tool_call>\n"
                                 "<function=write_file>\n"
                                 "<parameter=path>\n"
-                                "/home/dylan/Documents/Job Search/new_job_listings.md\n"
+                                "/home/<user>/Documents/Job Search/new_job_listings.md\n"
                                 "</parameter>\n"
                                 "<parameter=content>\n"
                                 "# Job Search Results\n\n"
@@ -544,7 +544,7 @@ class TestChatMalformedOutput:
         assert len(response.tool_calls) == 1
         assert response.tool_calls[0].name == "write_file"
         assert response.tool_calls[0].arguments == {
-            "path": "/home/dylan/Documents/Job Search/new_job_listings.md",
+            "path": "/home/<user>/Documents/Job Search/new_job_listings.md",
             "content": "# Job Search Results\n\n## Section 1",
         }
 
@@ -563,7 +563,7 @@ class TestChatMalformedOutput:
                                 "<tool_call>\n"
                                 "<function=write_file>\n"
                                 "<parameter=path>\n"
-                                "/home/dylan/Documents/Job Search/new_job_listings.md\n"
+                                "/home/<user>/Documents/Job Search/new_job_listings.md\n"
                                 "<parameter=content>\n"
                                 "# Job Search Results\n"
                                 "</tool_call>"
@@ -581,7 +581,7 @@ class TestChatMalformedOutput:
         assert len(response.tool_calls) == 1
         assert response.tool_calls[0].name == "write_file"
         assert response.tool_calls[0].arguments == {
-            "path": "/home/dylan/Documents/Job Search/new_job_listings.md",
+            "path": "/home/<user>/Documents/Job Search/new_job_listings.md",
             "content": "# Job Search Results",
         }
 
@@ -600,7 +600,7 @@ class TestChatMalformedOutput:
                                 "<tool_call>\n"
                                 "<function=grep>\n"
                                 "<parameter=arguments>\n"
-                                '{"path": "/home/dylan/docs", "pattern": "TODO"}\n'
+                                '{"path": "/home/<user>/docs", "pattern": "TODO"}\n'
                                 "</parameter>\n"
                                 "</function>\n"
                                 "</tool_call>"
@@ -618,6 +618,6 @@ class TestChatMalformedOutput:
         assert len(response.tool_calls) == 1
         assert response.tool_calls[0].name == "grep"
         assert response.tool_calls[0].arguments == {
-            "path": "/home/dylan/docs",
+            "path": "/home/<user>/docs",
             "pattern": "TODO",
         }
