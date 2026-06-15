@@ -50,6 +50,11 @@ def classify_tool_result(content: str, tool_name: str = "") -> ToolResultCategor
             "sign in",
             "unauthorized",
             "access denied",
+            "[blocked - login_required]",
+            "[challenge]",
+            "verify your identity",
+            "checkpoint",
+            "welcome back",
         )
     ):
         return ToolResultCategory.BLOCKED

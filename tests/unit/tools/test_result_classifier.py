@@ -57,6 +57,11 @@ def test_classify_not_found(content: str) -> None:
         "sign in to continue",
         "unauthorized access",
         "Access Denied",
+        "[BLOCKED - LOGIN_REQUIRED] re-authenticate",
+        "[CHALLENGE] verify your identity",
+        "verify your identity to continue",
+        "security checkpoint reached",
+        "welcome back, please sign in",
     ],
 )
 def test_classify_blocked(content: str) -> None:
