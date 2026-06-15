@@ -20,7 +20,7 @@
 - **VoiceConfig schema fix** — added `stt_language`, `stt_beam_size`, `stt_vad_filter`.
 
 ### Web UI
-- **ContextLab deferred** — the component exists in source but was not finalized or included in the release.
+- **ContextLab launched** — restored from git history, route + nav added at `/context-lab`.
 - **Reusable Modal/ConfirmDialog** extracted and adopted.
 - **Dashboard label fixed** — "Recent Sessions" → "Recent Executions".
 
