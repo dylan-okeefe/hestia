@@ -1,5 +1,6 @@
 """Classify tool-result content into high-level failure categories."""
 
+import re
 from enum import Enum, auto
 
 
@@ -21,6 +22,16 @@ def classify_tool_result(content: str, tool_name: str = "") -> ToolResultCategor
     when no failure marker is present.
     """
     lowered = (content or "").lower()
+
+    # If the tool explicitly embedded its category (e.g. browser_fetch), trust it
+    # instead of re-guessing from the human-readable text.
+    marker_match = re.search(r"\[category:\s*([a-z_]+)\]", lowered)
+    if marker_match:
+        name = marker_match.group(1).upper()
+        try:
+            return ToolResultCategory[name]
+        except KeyError:
+            pass
 
     if any(marker in lowered for marker in ("timeout", "timed out")):
         return ToolResultCategory.TIMEOUT

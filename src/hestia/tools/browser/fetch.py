@@ -43,6 +43,12 @@ _NOT_FOUND_PHRASES = (
 )
 
 
+#: Number of login-phrase occurrences in the body that indicate a login/challenge
+#: page rather than a content page that happens to mention logging in.
+_LOGIN_BODY_OCCURRENCE_THRESHOLD = 3
+
+
+
 @dataclass
 class BrowserFetchResult:
     """Result of an authenticated browser fetch."""
@@ -133,8 +139,18 @@ async def _extract_links(page: Any, selector: str, pattern: str) -> list[dict[st
     return result if isinstance(result, list) else []
 
 
+def _format_failure_message(category: ToolResultCategory, message: str) -> str:
+    """Prefix a failure message with its structured category for downstream consumers."""
+    return f"[CATEGORY: {category.name}] {message}"
+
+
 def _classify_page(url: str, title: str, text: str) -> tuple[bool, ToolResultCategory, str]:
     """Detect login/bot/not-found pages and return a failure description.
+
+    Decisions are driven primarily by the final URL, HTTP status (handled in
+    ``fetch_url``), and page title.  Body text is treated as a login/challenge
+    page only when it is dominated by login UI or corroborated by the URL or
+    title, so content like "Log in to apply" on a job listing is not discarded.
 
     Returns ``(is_blocked, category, message)``.
     """
@@ -142,37 +158,74 @@ def _classify_page(url: str, title: str, text: str) -> tuple[bool, ToolResultCat
     lower_title = title.lower()
     lower_text = text.lower()
 
+    # 1. Final URL points at a login/checkpoint gate.
     if any(path in lower_url for path in _LOGIN_PATHS):
         return (
             True,
             ToolResultCategory.BLOCKED,
-            f"[BLOCKED - LOGIN_REQUIRED] Fetched {url} redirected to login page "
-            f"({url}). Re-authenticate with browser_login.",
+            _format_failure_message(
+                ToolResultCategory.BLOCKED,
+                f"[BLOCKED - LOGIN_REQUIRED] Fetched {url} redirected to login or "
+                f"checkpoint page ({url}). Re-authenticate with browser_login.",
+            ),
         )
 
-    if any(phrase in lower_title for phrase in _LOGIN_PHRASES) or any(
-        phrase in lower_text for phrase in _LOGIN_PHRASES
-    ):
+    # 2. Page title clearly indicates a login/challenge page.
+    if any(phrase in lower_title for phrase in _LOGIN_PHRASES):
         return (
             True,
             ToolResultCategory.BLOCKED,
-            f"[BLOCKED - LOGIN_REQUIRED] Fetched {url} presented a login or "
-            f"challenge page ({url}). Re-authenticate with browser_login.",
+            _format_failure_message(
+                ToolResultCategory.BLOCKED,
+                f"[BLOCKED - LOGIN_REQUIRED] Fetched {url} presented a login or "
+                f"challenge page ({url}). Re-authenticate with browser_login.",
+            ),
         )
 
+    if not lower_text:
+        return False, ToolResultCategory.SUCCESS, ""
+
+    # 3. Bot protection is usually explicit in the body.
     if any(phrase in lower_text for phrase in _BOT_PHRASES):
         return (
             True,
             ToolResultCategory.BLOCKED,
-            f"[BLOCKED] Bot protection page for {url} ({url}). "
-            "The site is blocking automated access.",
+            _format_failure_message(
+                ToolResultCategory.BLOCKED,
+                f"[BLOCKED] Bot protection page for {url} ({url}). "
+                "The site is blocking automated access.",
+            ),
         )
 
-    if "404" in lower_text or any(phrase in lower_text for phrase in _NOT_FOUND_PHRASES[1:]):
+    # 4. Body text only counts as a login page when login phrases dominate.
+    #    A single mention in a long listing is not enough.
+    login_occurrences = sum(lower_text.count(phrase) for phrase in _LOGIN_PHRASES)
+    dominated_by_login_ui = (
+        login_occurrences >= _LOGIN_BODY_OCCURRENCE_THRESHOLD
+        or (len(text) < 200 and login_occurrences >= 1)
+    )
+    if dominated_by_login_ui:
+        return (
+            True,
+            ToolResultCategory.BLOCKED,
+            _format_failure_message(
+                ToolResultCategory.BLOCKED,
+                f"[BLOCKED - LOGIN_REQUIRED] Fetched {url} presented a login or "
+                f"challenge page ({url}). Re-authenticate with browser_login.",
+            ),
+        )
+
+    # 5. 404-like body text is only trusted when corroborated by URL or title.
+    url_not_found = "/404" in lower_url
+    title_not_found = any(phrase in lower_title for phrase in _NOT_FOUND_PHRASES)
+    if url_not_found or title_not_found:
         return (
             True,
             ToolResultCategory.NOT_FOUND,
-            f"[NOT FOUND] {url} returned 404 or page not found.",
+            _format_failure_message(
+                ToolResultCategory.NOT_FOUND,
+                f"[NOT FOUND] {url} returned 404 or page not found.",
+            ),
         )
 
     return False, ToolResultCategory.SUCCESS, ""
@@ -229,7 +282,10 @@ async def fetch_url(
                 return BrowserFetchResult(
                     ok=False,
                     category=ToolResultCategory.NOT_FOUND,
-                    text=f"[NOT FOUND] {url} returned 404.",
+                    text=_format_failure_message(
+                        ToolResultCategory.NOT_FOUND,
+                        f"[NOT FOUND] {url} returned 404.",
+                    ),
                     final_url=final_url,
                     title=title,
                 )
@@ -282,14 +338,23 @@ async def fetch_url(
 
         except Exception as exc:
             logger.warning("browser_fetch partial failure for %s: %s", url, exc)
-            error_text = f"Timeout fetching {url}: {exc}"
+            category = (
+                ToolResultCategory.TIMEOUT
+                if "timeout" in str(exc).lower()
+                else ToolResultCategory.TRANSIENT_OTHER
+            )
+            error_text = _format_failure_message(
+                category,
+                f"Timeout fetching {url}: {exc}",
+            )
             if "timeout" not in str(exc).lower():
-                error_text = f"Error fetching {url}: {exc}"
+                error_text = _format_failure_message(
+                    category,
+                    f"Error fetching {url}: {exc}",
+                )
             return BrowserFetchResult(
                 ok=False,
-                category=ToolResultCategory.TIMEOUT
-                if "timeout" in str(exc).lower()
-                else ToolResultCategory.TRANSIENT_OTHER,
+                category=category,
                 text=error_text,
                 final_url=page.url if page else "",
                 title="",

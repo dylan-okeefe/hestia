@@ -121,7 +121,47 @@ async def test_login_title_detection_returns_blocked_login(
 
     assert result.ok is False
     assert result.category == ToolResultCategory.BLOCKED
-    assert "[BLOCKED - LOGIN_REQUIRED]" in result.text
+    assert "[CATEGORY: BLOCKED]" in result.text
+    assert "login" in result.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_login_phrase_in_job_listing_body_returns_success(
+    mock_playwright: Any, mock_store: Any
+) -> None:
+    """A job listing that mentions 'Log in to apply' must not be discarded."""
+    job_listing = (
+        "Software Engineer\n"
+        "Location: Remote\n"
+        "Apply now. Log in to apply or create an account.\n"
+        + ("We are building the future of AI infrastructure.\n" * 30)
+    )
+    mock_playwright["page"].url = "https://example.com/jobs/123"
+    mock_playwright["page"].title = AsyncMock(return_value="Software Engineer - Example Jobs")
+    mock_playwright["page"].evaluate = AsyncMock(return_value=job_listing)
+
+    result = await fetch_url("https://example.com/jobs/123", domain="example.com")
+
+    assert result.ok is True
+    assert result.category == ToolResultCategory.SUCCESS
+    assert result.text == job_listing
+
+
+@pytest.mark.asyncio
+async def test_redirect_to_checkpoint_url_returns_blocked_login(
+    mock_playwright: Any, mock_store: Any
+) -> None:
+    """A final URL that points at a checkpoint/login gate is BLOCKED."""
+    mock_playwright["page"].url = "https://example.com/checkpoint?next=/jobs/123"
+    mock_playwright["page"].title = AsyncMock(return_value="Example")
+    mock_playwright["page"].evaluate = AsyncMock(return_value="Please verify you are human.")
+
+    result = await fetch_url("https://example.com/jobs/123", domain="example.com")
+
+    assert result.ok is False
+    assert result.category == ToolResultCategory.BLOCKED
+    assert "[CATEGORY: BLOCKED]" in result.text
+    assert "checkpoint" in result.text.lower()
 
 
 @pytest.mark.asyncio
@@ -136,7 +176,7 @@ async def test_bot_protection_text_returns_blocked_bot(
 
     assert result.ok is False
     assert result.category == ToolResultCategory.BLOCKED
-    assert "[BLOCKED]" in result.text
+    assert "[CATEGORY: BLOCKED]" in result.text
 
 
 @pytest.mark.asyncio
@@ -149,6 +189,7 @@ async def test_timeout_returns_timeout(
 
     assert result.ok is False
     assert result.category == ToolResultCategory.TIMEOUT
+    assert "[CATEGORY: TIMEOUT]" in result.text
     assert "timeout" in result.text.lower()
 
 

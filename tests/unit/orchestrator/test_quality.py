@@ -608,3 +608,58 @@ async def test_truncated_write_file_recovery_resumes_at_line_boundary(session: S
     await fake_append_to_file(path=str(tmp_path), content=remaining)
 
     assert tmp_path.read_text(encoding="utf-8") == original_content
+
+
+@pytest.mark.asyncio
+async def test_truncated_write_file_recovery_is_byte_for_byte_with_real_file(
+    session: Session,
+) -> None:
+    """A mid-line truncation of a real source file recovers to the exact original."""
+    known_path = Path(__file__).parents[3] / "src" / "hestia" / "orchestrator" / "execution.py"
+    original_content = known_path.read_text(encoding="utf-8")
+    assert original_content.endswith("\n")
+
+    # Truncate mid-line after enough characters that the XML body exceeds the
+    # truncated-write detection threshold.
+    truncation_point = 2000
+    partial = original_content[:truncation_point]
+    if partial.endswith("\n"):
+        partial = partial[:-1]
+    assert "\n" in partial
+
+    tmp_path = Path("/tmp/recovered-byte-for-byte.py")
+    tmp_path.unlink(missing_ok=True)
+
+    body = (
+        '<tool_call>\n<function=write_file>\n<parameter=arguments>\n'
+        f'{{"path": "{tmp_path}", "content": "{partial}'
+    )
+    msg = Message(role="assistant", content=body)
+
+    async def fake_write_file(path: str = "", content: str = "") -> str:
+        Path(path).write_text(content, encoding="utf-8")
+        return f"Wrote {len(content)} bytes to {path}"
+
+    async def fake_append_to_file(path: str = "", content: str = "") -> str:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(content)
+        return f"Appended {len(content)} bytes to {path}"
+
+    result = await classify_turn(
+        _make_turn(),
+        msg,
+        [msg],
+        ["write_file", "append_to_file"],
+        write_file_handler=fake_write_file,
+        append_to_file_handler=fake_append_to_file,
+    )
+
+    assert result is not None
+    assert result.pattern == DegeneratePattern.TRUNCATED_WRITE_FILE
+
+    # Continue from where recovery left off.
+    written = tmp_path.read_text(encoding="utf-8")
+    remaining = original_content[len(written):]
+    await fake_append_to_file(path=str(tmp_path), content=remaining)
+
+    assert tmp_path.read_text(encoding="utf-8") == original_content
