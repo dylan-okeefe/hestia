@@ -71,7 +71,7 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   commands; fixed dead guide links; added migration-model note.
 - **SECURITY.md disclosure process** — added supported-versions table, responsible disclosure
   process, and contact email.
-- **CHANGELOG version coherence** — `pyproject.toml` and CHANGELOG both at 0.13.0.
+- **CHANGELOG version coherence** — `pyproject.toml` and CHANGELOG aligned at release time.
 
 ### Orchestrator & Inference
 - **`reasoning_budget` and `max_tokens` wiring** — both values are now sent in the
@@ -102,6 +102,12 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Tooling
 - **ruff line-length 120** — `pyproject.toml` line-length raised from 100 to 120; E402 and
   the worst E501 offenders fixed. The lint gate is clean for E501/E402.
+
+### Packaging
+- **playwright-stealth declared** — added to `[project.optional-dependencies] browser` so
+  `uv sync --extra browser` installs the runtime import used by the stealth wrapper.
+
+## [0.13.0] — 2026-06-08
 
 ### Browser Sessions
 - **Browser session dashboard** — list, manage, and authenticate persistent
