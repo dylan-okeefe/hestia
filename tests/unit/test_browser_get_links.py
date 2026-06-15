@@ -1,76 +1,63 @@
 """Unit tests for browser_get_links tool."""
 
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from hestia.tools.browser.fetch import BrowserFetchResult, ToolResultCategory
 from hestia.tools.builtin.browser_get_links import browser_get_links
 
 
 @pytest.fixture
-def mock_playwright() -> Any:
-    """Patch playwright.async_api.async_playwright to yield a controllable context."""
-    mock_p = MagicMock()
-    mock_browser = MagicMock()
-    mock_context = MagicMock()
-    mock_page = MagicMock()
-
-    # Set up async context manager chain
-    mock_p.chromium.launch = AsyncMock(return_value=mock_browser)
-    mock_browser.new_context = AsyncMock(return_value=mock_context)
-    mock_context.new_page = AsyncMock(return_value=mock_page)
-    mock_page.goto = AsyncMock()
-    mock_page.wait_for_timeout = AsyncMock()
-    mock_page.evaluate = AsyncMock(return_value=[])
-    mock_context.storage_state = AsyncMock(return_value={})
-    mock_context.cookies = AsyncMock(return_value=[])
-    mock_context.close = AsyncMock()
-    mock_browser.close = AsyncMock()
-
-    # patch the async context manager returned by async_playwright()
-    async def _playwright_cm():
-        return mock_p
-
-    mock_p.__aenter__ = AsyncMock(return_value=mock_p)
-    mock_p.__aexit__ = AsyncMock(return_value=False)
-
-    with patch(
-        "playwright.async_api.async_playwright",
-        return_value=mock_p,
-    ):
-        yield {
-            "p": mock_p,
-            "browser": mock_browser,
-            "context": mock_context,
-            "page": mock_page,
-        }
+def mock_fetch_url() -> Any:
+    """Patch the shared fetch_url helper used by browser_get_links."""
+    with patch("hestia.tools.builtin.browser_get_links.fetch_url") as mock_fetch:
+        yield mock_fetch
 
 
 @pytest.mark.asyncio
-async def test_extracts_links(mock_playwright: Any) -> None:
-    mock_playwright["page"].evaluate.return_value = [
-        {"text": "Staff Software Engineer", "href": "https://builtinboston.com/job/123"},
-        {"text": "Senior Backend Engineer", "href": "https://builtinboston.com/job/456"},
-    ]
+async def test_extracts_links(mock_fetch_url: Any) -> None:
+    mock_fetch_url.return_value = BrowserFetchResult(
+        ok=True,
+        category=ToolResultCategory.SUCCESS,
+        text="",
+        links=[
+            {"text": "Staff Software Engineer", "href": "https://builtinboston.com/job/123"},
+            {"text": "Senior Backend Engineer", "href": "https://builtinboston.com/job/456"},
+        ],
+        final_url="https://builtinboston.com/jobs",
+        title="Jobs",
+    )
 
     result = await browser_get_links("https://builtinboston.com/jobs")
+
     assert "Staff Software Engineer" in result
     assert "https://builtinboston.com/job/123" in result
     assert "Senior Backend Engineer" in result
     assert "https://builtinboston.com/job/456" in result
 
-    mock_playwright["page"].goto.assert_awaited_once()
-    # Ensure evaluate was called with a single object argument.
-    call_args = mock_playwright["page"].evaluate.call_args
-    assert isinstance(call_args[0][1], dict)
-    assert call_args[0][1]["selector"] == "a"
-    assert call_args[0][1]["pattern"] == ""
+    mock_fetch_url.assert_awaited_once_with(
+        "https://builtinboston.com/jobs",
+        domain="builtinboston.com",
+        selector="a",
+        extract_links=True,
+        pattern="",
+        wait_seconds=3,
+        timeout_seconds=60,
+    )
 
 
 @pytest.mark.asyncio
-async def test_respects_selector_and_pattern(mock_playwright: Any) -> None:
-    mock_playwright["page"].evaluate.return_value = []
+async def test_respects_selector_and_pattern(mock_fetch_url: Any) -> None:
+    mock_fetch_url.return_value = BrowserFetchResult(
+        ok=True,
+        category=ToolResultCategory.SUCCESS,
+        text="",
+        links=[],
+        final_url="https://builtinboston.com/jobs",
+        title="Jobs",
+    )
 
     await browser_get_links(
         "https://builtinboston.com/jobs",
@@ -78,14 +65,41 @@ async def test_respects_selector_and_pattern(mock_playwright: Any) -> None:
         pattern="Engineer",
     )
 
-    call_args = mock_playwright["page"].evaluate.call_args
-    assert call_args[0][1]["selector"] == "a.job-card"
-    assert call_args[0][1]["pattern"] == "Engineer"
+    mock_fetch_url.assert_awaited_once_with(
+        "https://builtinboston.com/jobs",
+        domain="builtinboston.com",
+        selector="a.job-card",
+        extract_links=True,
+        pattern="Engineer",
+        wait_seconds=3,
+        timeout_seconds=60,
+    )
 
 
 @pytest.mark.asyncio
-async def test_no_links_message(mock_playwright: Any) -> None:
-    mock_playwright["page"].evaluate.return_value = []
+async def test_no_links_message(mock_fetch_url: Any) -> None:
+    mock_fetch_url.return_value = BrowserFetchResult(
+        ok=True,
+        category=ToolResultCategory.SUCCESS,
+        text="",
+        links=[],
+        final_url="https://example.com",
+        title="Example",
+    )
 
     result = await browser_get_links("https://example.com")
     assert "No links found" in result
+
+
+@pytest.mark.asyncio
+async def test_returns_failure_text_when_blocked(mock_fetch_url: Any) -> None:
+    mock_fetch_url.return_value = BrowserFetchResult(
+        ok=False,
+        category=ToolResultCategory.BLOCKED,
+        text="[BLOCKED - LOGIN_REQUIRED] re-authenticate",
+        final_url="https://example.com/login",
+        title="Sign in",
+    )
+
+    result = await browser_get_links("https://example.com")
+    assert "[BLOCKED - LOGIN_REQUIRED]" in result
