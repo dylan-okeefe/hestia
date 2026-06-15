@@ -50,6 +50,11 @@ _STREAM_INACTIVITY_TIMEOUT = 60.0
 # first chunk before giving up, while keeping the inter-chunk timeout tight.
 _STREAM_FIRST_CHUNK_TIMEOUT = 120.0
 
+# Timeout escalation schedule for repeated TIMEOUT retries (seconds).
+_TIMEOUT_ESCALATION_SCHEDULE = (15.0, 30.0, 60.0)
+_MAX_PER_ATTEMPT_TIMEOUT = 90.0
+_DEFAULT_URL_TIME_BUDGET = 120.0
+
 
 _ToolCallKey = tuple[str, tuple[tuple[str, Any], ...]]
 
@@ -87,6 +92,8 @@ def _format_retry_exhausted_message(
     category: ToolResultCategory,
     retry_count: int,
     url: str | None,
+    *,
+    budget_exhausted: bool = False,
 ) -> str:
     """Format the block message when retries are exhausted."""
     if url:
@@ -96,11 +103,47 @@ def _format_retry_exhausted_message(
         target = "these arguments"
         disabled = "This tool is now DISABLED for the rest of this turn"
     category_phrase = category.name.lower().replace("_", " ")
+    budget_note = " (total URL time budget exhausted)" if budget_exhausted else ""
     return (
         f"🛑 {tool_name} {category_phrase} {retry_count} time(s) for {target}. "
-        f"{disabled}. "
+        f"{disabled}{budget_note}. "
         "Try http_get, web_search, or grep the cached artifact instead."
     )
+
+
+def _escalated_timeout_seconds(tc: ToolCall, retry_count: int) -> float:
+    """Return the escalated timeout_seconds for a TIMEOUT retry."""
+    current = tc.arguments.get("timeout_seconds") if tc.arguments else None
+    base = float(current) if isinstance(current, (int, float)) else 0.0
+    schedule_value = _TIMEOUT_ESCALATION_SCHEDULE[
+        min(retry_count, len(_TIMEOUT_ESCALATION_SCHEDULE) - 1)
+    ]
+    return min(max(base, schedule_value), _MAX_PER_ATTEMPT_TIMEOUT)
+
+
+def _tool_call_with_timeout(tc: ToolCall, timeout: float) -> ToolCall:
+    """Return a copy of ``tc`` with ``timeout_seconds`` set to ``timeout``."""
+    new_arguments = dict(tc.arguments or {})
+    new_arguments["timeout_seconds"] = timeout
+    return ToolCall(id=tc.id, name=tc.name, arguments=new_arguments)
+
+
+def _consume_url_budget(
+    ctx: TurnContext,
+    url: str | None,
+    proposed_timeout: float,
+) -> bool:
+    """Return True when the URL has enough budget and reserve ``proposed_timeout``.
+
+    A ``None`` URL always succeeds (no budget tracking for non-URL calls).
+    """
+    if url is None:
+        return True
+    remaining = ctx._url_time_budgets.get(url, _DEFAULT_URL_TIME_BUDGET)
+    if proposed_timeout > remaining:
+        return False
+    ctx._url_time_budgets[url] = remaining - proposed_timeout
+    return True
 
 
 def _normalize_tool_arguments(arguments: Any) -> dict[str, Any]:
@@ -959,10 +1002,35 @@ class TurnExecution:
                                 tool_call_id=tc.id,
                                 created_at=utcnow(),
                             )
-                        else:
-                            retry_counts[key] = count + 1
-                            current_keys.add(key)
-                            deduped.append(tc)
+                            continue
+
+                        if category == ToolResultCategory.TIMEOUT:
+                            url = _extract_url_from_tool_call(tc)
+                            proposed_timeout = _escalated_timeout_seconds(
+                                tc, count
+                            )
+                            if not _consume_url_budget(
+                                ctx, url, proposed_timeout
+                            ):
+                                blocked_repeated_tools.add(tc.name)
+                                repeated_block_results[tc.id] = Message(
+                                    role="tool",
+                                    content=_format_retry_exhausted_message(
+                                        tc.name,
+                                        category,
+                                        count,
+                                        url,
+                                        budget_exhausted=True,
+                                    ),
+                                    tool_call_id=tc.id,
+                                    created_at=utcnow(),
+                                )
+                                continue
+                            tc = _tool_call_with_timeout(tc, proposed_timeout)
+
+                        retry_counts[key] = count + 1
+                        current_keys.add(key)
+                        deduped.append(tc)
                     else:
                         # SUCCESS, BLOCKED, NOT_FOUND, or missing category:
                         # fail-fast / do not retry.

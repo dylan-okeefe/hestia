@@ -1666,3 +1666,189 @@ def test_is_retryable_tool_result_uses_classifier() -> None:
     assert _is_retryable_tool_result("Blocked by Cloudflare") is False
     assert _is_retryable_tool_result("404 not found") is False
     assert _is_retryable_tool_result("Page loaded") is False
+
+
+@pytest.mark.asyncio
+async def test_timeout_retry_escalates_timeout_seconds():
+    """A TIMEOUT retry increases the tool's timeout_seconds argument."""
+    registry = MagicMock()
+    registry.describe.return_value = MagicMock(
+        requires_confirmation=False, ordering="concurrent"
+    )
+
+    policy = MagicMock()
+    policy.tool_result_max_chars.return_value = 8000
+
+    execution = TurnExecution(
+        tool_registry=registry,
+        inference_client=MagicMock(),
+        policy=policy,
+        context_builder=MagicMock(),
+        session_store=MagicMock(),
+    )
+
+    url = "https://example.com"
+    original_tc = ToolCall(
+        id="tc0", name="browser_get", arguments={"url": url, "timeout_seconds": 10}
+    )
+    retry_tc = ToolCall(
+        id="tc1", name="browser_get", arguments={"url": url, "timeout_seconds": 10}
+    )
+
+    ctx = TurnContext(
+        turn=_make_turn(),
+        user_message=Message(role="user", content="hello"),
+        system_prompt="",
+        respond_callback=AsyncMock(),
+        session=_make_session(),
+        build_result=MagicMock(messages=[]),
+    )
+    ctx.running_history = [
+        Message(role="assistant", content="", tool_calls=[original_tc]),
+        Message(
+            role="tool",
+            content="Error fetching https://example.com: Timeout 10000ms exceeded.",
+            tool_call_id="tc0",
+        ),
+    ]
+
+    with patch.object(
+        execution, "_dispatch_tool_call", new_callable=AsyncMock
+    ) as mock_dispatch:
+        mock_dispatch.return_value = ToolCallResult(
+            status="ok",
+            content="ok",
+            artifact_handle=None,
+            truncated=False,
+        )
+
+        await execution._execute_tool_calls(
+            _make_session(), [retry_tc], ctx=ctx
+        )
+
+    assert mock_dispatch.call_count == 1
+    dispatched = mock_dispatch.call_args.args[1]
+    assert dispatched.arguments["timeout_seconds"] == 15
+
+
+@pytest.mark.asyncio
+async def test_timeout_retry_per_attempt_timeout_capped():
+    """The escalated per-attempt timeout is capped at 90 seconds."""
+    registry = MagicMock()
+    registry.describe.return_value = MagicMock(
+        requires_confirmation=False, ordering="concurrent"
+    )
+
+    policy = MagicMock()
+    policy.tool_result_max_chars.return_value = 8000
+
+    execution = TurnExecution(
+        tool_registry=registry,
+        inference_client=MagicMock(),
+        policy=policy,
+        context_builder=MagicMock(),
+        session_store=MagicMock(),
+    )
+
+    url = "https://example.com"
+    original_tc = ToolCall(
+        id="tc0", name="browser_get", arguments={"url": url, "timeout_seconds": 100}
+    )
+    retry_tc = ToolCall(
+        id="tc1", name="browser_get", arguments={"url": url, "timeout_seconds": 100}
+    )
+
+    ctx = TurnContext(
+        turn=_make_turn(),
+        user_message=Message(role="user", content="hello"),
+        system_prompt="",
+        respond_callback=AsyncMock(),
+        session=_make_session(),
+        build_result=MagicMock(messages=[]),
+    )
+    ctx.running_history = [
+        Message(role="assistant", content="", tool_calls=[original_tc]),
+        Message(
+            role="tool",
+            content="Error fetching https://example.com: Timeout 100000ms exceeded.",
+            tool_call_id="tc0",
+        ),
+    ]
+
+    with patch.object(
+        execution, "_dispatch_tool_call", new_callable=AsyncMock
+    ) as mock_dispatch:
+        mock_dispatch.return_value = ToolCallResult(
+            status="ok",
+            content="ok",
+            artifact_handle=None,
+            truncated=False,
+        )
+
+        await execution._execute_tool_calls(
+            _make_session(), [retry_tc], ctx=ctx
+        )
+
+    assert mock_dispatch.call_count == 1
+    dispatched = mock_dispatch.call_args.args[1]
+    assert dispatched.arguments["timeout_seconds"] == 90
+
+
+@pytest.mark.asyncio
+async def test_timeout_retry_budget_blocks_before_exceeding():
+    """A retry whose escalation would exceed the URL budget is blocked."""
+    registry = MagicMock()
+    registry.describe.return_value = MagicMock(
+        requires_confirmation=False, ordering="concurrent"
+    )
+
+    policy = MagicMock()
+    policy.tool_result_max_chars.return_value = 8000
+
+    execution = TurnExecution(
+        tool_registry=registry,
+        inference_client=MagicMock(),
+        policy=policy,
+        context_builder=MagicMock(),
+        session_store=MagicMock(),
+    )
+
+    url = "https://example.com"
+    original_tc = ToolCall(
+        id="tc0", name="browser_get", arguments={"url": url}
+    )
+    retry_tc = ToolCall(
+        id="tc1", name="browser_get", arguments={"url": url}
+    )
+
+    ctx = TurnContext(
+        turn=_make_turn(),
+        user_message=Message(role="user", content="hello"),
+        system_prompt="",
+        respond_callback=AsyncMock(),
+        session=_make_session(),
+        build_result=MagicMock(messages=[]),
+    )
+    ctx.running_history = [
+        Message(role="assistant", content="", tool_calls=[original_tc]),
+        Message(
+            role="tool",
+            content="Error fetching https://example.com: Timeout 30000ms exceeded.",
+            tool_call_id="tc0",
+        ),
+    ]
+    # Budget is below the first escalation value of 15s.
+    ctx._url_time_budgets[url] = 10.0
+
+    with patch.object(
+        execution, "_dispatch_tool_call", new_callable=AsyncMock
+    ) as mock_dispatch:
+        result_messages, _ = await execution._execute_tool_calls(
+            _make_session(), [retry_tc], ctx=ctx
+        )
+
+    assert mock_dispatch.call_count == 0
+    assert len(result_messages) == 1
+    assert result_messages[0].tool_call_id == "tc1"
+    assert "DISABLED" in result_messages[0].content
+    assert "http_get" in result_messages[0].content
