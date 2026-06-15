@@ -37,6 +37,6 @@ The policy engine uses these labels to restrict access by context. For example, 
 ## Best practices
 
 - Keep descriptions concise. The model sees `public_description` in `list_tools`.
-- Use typed arguments. Hestia generates a JSON schema from the function signature.
+- Declare an explicit `parameters_schema`. The `@tool` decorator does not auto-generate a schema from the function signature.
 - Return strings. Complex results should be saved as artifacts and a handle returned.
 - Handle errors gracefully. Uncaught exceptions become tool-error messages in the conversation.

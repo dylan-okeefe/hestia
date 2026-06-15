@@ -2,7 +2,12 @@
 
 ## Status
 
-Accepted
+Superseded / Withdrawn
+
+> The skills framework described in this ADR was removed before it reached production.
+> There is no `hestia.skills` package, `@skill` decorator, `run_skill` tool, or
+> `hestia skill *` CLI command in the current codebase. This document is retained for
+> historical context only.
 
 ## Context
 

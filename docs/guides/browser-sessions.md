@@ -74,22 +74,19 @@ Sessions expire when cookies age out or Cloudflare rotates its challenge. If `br
 
 ## Authenticated login
 
-For sites that require an actual account (e.g. LinkedIn for messaging, Gmail for IMAP alternatives):
+For sites that require an actual account (e.g. LinkedIn for messaging, Gmail for IMAP alternatives),
+use the **Browser Sessions** page in the web dashboard and click **Headed Login**, or invoke the
+`browser_login` tool from a Hestia chat session / `call_tool`:
 
-```bash
-# Via the Hestia CLI
-hestia tool browser_login --url https://linkedin.com/login
+```json
+{"name": "browser_login", "arguments": {"url": "https://linkedin.com/login"}}
 ```
 
-This opens a **visible** browser window (requires a real display or `xvfb-run`). Log in manually, then close the browser. The session is saved automatically.
+`browser_login` opens a **visible** browser window on the server (requires a real display or `xvfb-run`).
+Log in manually, then close the browser. The session is saved automatically.
 
-With `xvfb-run` on a headless server:
-
-```bash
-cd ~/Hestia-runtime
-source .venv/bin/activate
-PYTHONPATH=src xvfb-run hestia tool browser_login --url https://linkedin.com/login
-```
+With `xvfb-run` on a headless server you can drive the same flow via the web dashboard's **Headed Login**
+button, or run a small wrapper script that imports and calls the tool from the active virtual environment.
 
 ---
 

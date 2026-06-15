@@ -87,8 +87,9 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   `stt_vad_filter` fields referenced by the voice pipeline.
 
 ### Web Dashboard
-- **ContextLab launch** — restored the prompt-context preview page and added a route + nav
-  entry so it is reachable at `/context-lab`.
+- **ContextLab deferred** — the prompt-context preview page exists in source but was not
+  finalized for this release; the dashboard route and nav entry may be removed or completed
+  in a future cycle.
 - **Reusable Modal / ConfirmDialog** — extracted shared modal components and replaced copied
   inline modal markup in Scheduler, AdminUsers, ErrorDashboard, and StyleProfile.
 - **Dashboard label fix** — "Recent Sessions" stat now correctly labeled "Recent Executions".

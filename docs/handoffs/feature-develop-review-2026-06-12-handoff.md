@@ -1,7 +1,7 @@
 # Handoff — `feature/develop-review-2026-06-12`
 
 **Branch:** `feature/develop-review-2026-06-12`  
-**Released version:** `0.13.1`  
+**Released version:** `0.14.0` (this work originally targeted `0.13.1`; it was rolled into the `0.14.0` release).  
 **Status:** Merged to `develop`, tagged, and pushed.
 
 ## What is shipping in this release
@@ -20,7 +20,7 @@
 - **VoiceConfig schema fix** — added `stt_language`, `stt_beam_size`, `stt_vad_filter`.
 
 ### Web UI
-- **ContextLab launched** — restored from git history, route + nav added at `/context-lab`.
+- **ContextLab deferred** — the component exists in source but was not finalized or included in the release.
 - **Reusable Modal/ConfirmDialog** extracted and adopted.
 - **Dashboard label fixed** — "Recent Sessions" → "Recent Executions".
 
@@ -73,7 +73,7 @@ Known baseline failures (not introduced by this branch):
 
 ## Version chosen
 
-`0.13.1` — the `v0.13.0` tag already existed on an earlier `main` merge commit, so the consolidated release was tagged `v0.13.1`. `pyproject.toml` and `CHANGELOG.md` were bumped accordingly.
+`0.14.0` — the `v0.13.0` tag already existed on an earlier `main` merge commit, so the consolidated release was tagged `v0.13.1` initially and then advanced to `0.14.0` after additional fixes landed. `pyproject.toml` and `CHANGELOG.md` were bumped accordingly.
 
 ## Merge / tag / push status
 
@@ -87,11 +87,11 @@ git status
 # 2. Switch to develop and merge the feature branch
 git checkout develop
 git pull origin develop
-git merge --no-ff feature/develop-review-2026-06-12-release -m "release: merge feature/develop-review-2026-06-12 for v0.13.0"
+git merge --no-ff feature/develop-review-2026-06-12-release -m "release: merge feature/develop-review-2026-06-12 for v0.14.0"
 uv run pytest tests/unit/ tests/integration/ -q
-git tag -a v0.13.1 -m "Release v0.13.1"
+git tag -a v0.14.0 -m "Release v0.14.0"
 git push origin develop
-git push origin v0.13.1
+git push origin v0.14.0
 ```
 
 Merge was clean (`--no-ff`, no conflicts). Post-merge pytest showed the three known baseline failures only. `develop` and `v0.13.1` are pushed.

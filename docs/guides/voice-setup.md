@@ -7,12 +7,10 @@ machine — no audio leaves the network.
 ## 1. Install the extra
 
 ```bash
-pip install hestia[voice]
-# or, if you use uv:
 uv sync --extra voice
 ```
 
-Core Hestia (`pip install hestia`) does **not** pull in voice dependencies.
+The base `uv sync` does **not** pull in voice dependencies.
 
 ## 2. Model auto-download
 

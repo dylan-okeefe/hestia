@@ -23,8 +23,9 @@ as the inference backend.
 - Configurable model, context length, and reasoning budget
 
 ### [Web Dashboard](docs/guides/web-dashboard.md) (React + FastAPI)
-- **14-page admin SPA** — Dashboard, Sessions, Proposals, Style Profile, Scheduler,
-  Security & Health, Config, Workflows, Profile, Knowledge, Error Log, Admin Users
+- **Multi-page admin SPA** — Dashboard, Sessions, Proposals, Style Profile, Scheduler,
+  Security & Health, Config, Workflows, Profile, Knowledge, Error Log, Admin Users,
+  Browser Sessions
 - **Authentication** — platform-based 2FA (code via Telegram/Matrix), token sessions,
   role-based access control (admin / user)
 - **Responsive design** — mobile sidebar, desktop persistent nav, dark mode
@@ -72,8 +73,8 @@ as the inference backend.
 
 Filesystem: `read_file`, `write_file`, `edit_file`, `append_to_file`, `list_dir`, `glob`, `grep`  
 Shell: `terminal`  
-Web: `http_get`, `web_search`, `search_web`, `browser_get`, `browser_login`  
-Email: `email_list`, `email_read`, `email_search`, `email_search_and_read`, `email_draft`, `email_send`, `email_move`, `email_flag`  
+Web: `http_get`, `web_search` *(Tavily config required)*, `browser_get`, `browser_get_links`, `browser_login`  
+Email: `email_list`, `email_read`, `email_search`, `email_search_and_read`, `email_draft`, `email_send`, `email_move`, `email_flag` *(IMAP/SMTP config required)*  
 Memory: `save_memory`, `search_memory`, `list_memories`, `delete_memory`  
 Scheduler: `create_scheduled_task`, `list_scheduled_tasks`, `disable_scheduled_task`, `enable_scheduled_task`, `delete_scheduled_task`  
 Proposals: `list_proposals`, `show_proposal`, `accept_proposal`, `reject_proposal`, `defer_proposal`  
@@ -87,8 +88,11 @@ System: `current_time`, `read_artifact`, `rollback_turn`, `delegate_task`
 git clone <repo-url>
 cd hestia
 uv sync
-cp deploy/example_config.py config.py
-# Edit config.py: set inference.model_name, telegram.bot_token, etc.
+# Choose an example config that matches the platforms you want:
+cp deploy/example_config.cli.py config.py      # local CLI only
+cp deploy/example_config.py config.py          # Telegram production
+cp deploy/example_config.matrix.py config.py   # Matrix
+# Edit config.py: set inference.model_name, allowed paths, platform tokens, etc.
 hestia init
 # Start the llama.cpp server (see deploy/hestia-llama.service or docs/guides/runtime-setup.md)
 hestia serve
@@ -121,9 +125,9 @@ src/hestia/
   core/               # Types, inference client, serialization
   context/            # ContextBuilder with prefix layers and tokenize cache
   orchestrator/       # Turn state machine, tool dispatch, streaming
-  inference/          # SlotManager for llama.cpp KV-cache lifecycle
   scheduler/          # Background cron task loop
-  tools/              # Tool registry + 20+ built-ins
+  tools/              # Tool registry + 35+ built-ins
+  tools/browser/      # Authenticated Playwright fetch helpers
   artifacts/          # Artifact storage
   persistence/        # Database layer (SQLite/PostgreSQL)
   platforms/          # Platform ABC + Telegram, Matrix, Email, CLI adapters
@@ -131,9 +135,13 @@ src/hestia/
   web/                # FastAPI routes, auth middleware, static assets
   voice/              # STT/TTS pipeline (faster-whisper + Piper)
   email/              # IMAP/SMTP adapter
+  events/             # Event bus and trigger registry
+  memory/             # Long-term memory store and epoch generation
   reflection/         # Background analysis and proposal generation
   style/              # Per-user interaction-style learning
   security/           # Injection scanner, egress audit
+  audit/              # Deterministic configuration and capability audits
+  workflows/          # Workflow engine and visual editor backend
 ```
 
 ## License

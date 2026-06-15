@@ -1,5 +1,7 @@
 # Triage Index — develop review 2026-06-12
 
+> **Snapshot notice:** This index was written on 2026-06-12. Loop 1 (docs trio + accuracy pass) and several other items have since been completed on `develop`; the remaining `HOLD-FOR-REVIEW` security/concurrency/architecture items still require supervised design work. This document is retained as historical context.
+
 This index maps every consolidated finding to a small, single-purpose loop.  It honors the review's intent: **one cycle on invariants and the front door, not more feature breadth.**  Findings that are facets of the same root problem are grouped into one coherent spec rather than fragmented.
 
 Two root problems recur across many findings:

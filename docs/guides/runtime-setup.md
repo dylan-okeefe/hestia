@@ -123,7 +123,7 @@ COLD (rebuild from messages), which is slower but correct.
 ### Context budget warnings
 
 If you see "This session has grown past my context budget", the protected block
-(system prompt + identity + memory epoch + skill index + new user message)
+(system prompt + identity + memory epoch + new user message)
 exceeds the per-slot budget. Options:
 
 1. Reduce `IdentityConfig.max_tokens`.

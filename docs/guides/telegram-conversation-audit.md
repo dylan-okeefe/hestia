@@ -88,7 +88,7 @@ LIMIT 30
 - `tool_call_count >= 8` → excessive tool use for one user message.
 - `delegated = 1 AND outcome = 'failed'` → subagent failed. Check if parent kept retrying.
 - `tools_called` contains repeated calls to the same tool → loop.
-- `tools_called` contains `http_get` with Google/Yelp URLs → bot ignoring `search_web`.
+- `tools_called` contains `http_get` with Google/Yelp URLs → bot ignoring `web_search` (Tavily).
 
 ### 4. Read actual messages from a problematic session
 
@@ -141,7 +141,7 @@ ORDER BY created_at
 **Red flags:**
 - `domain = 'www.google.com'` or `domain = 'www.yelp.com'` with `status = 200`
   and `size > 50000` → bot downloaded a JS-heavy page with `http_get` instead
-  of using `search_web` or Tavily.
+  of using `web_search` (Tavily) or `browser_get`.
 - `domain = 'api.tavily.com'` with `status != 200` → Tavily API error.
 
 ## What to evaluate
@@ -150,7 +150,7 @@ For each problematic session, answer these questions:
 
 ### A. Tool usage
 - Did the bot pick the right tool for the job?
-  - Web search queries should use `search_web` (DuckDuckGo) or Tavily, NOT `http_get` on Google/Yelp.
+  - Web search queries should use `web_search` (Tavily) or `browser_get`, NOT `http_get` on Google/Yelp.
   - File operations should use `read_file`/`write_file`, not `terminal` with `cat`.
   - Memory lookups should use `search_memory`, not raw `read_file` on the DB.
 - Did the bot enter a retry loop? (same tool called repeatedly with slightly different args)

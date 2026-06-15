@@ -83,4 +83,4 @@
 2. **Merge sequence:** L195 → L196 → L197 → L198 → L199 → L200 → L201 → L202 → L203 → L204 → L205
 3. **Update runtime** (`~/Hestia-runtime`) with merged develop
 4. **Restart services** and run smoke tests
-5. **Tag v0.13.0** when stable
+5. **Tag v0.14.0** when stable
