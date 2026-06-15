@@ -1,7 +1,7 @@
 """Unit tests for browser_get_links tool."""
 
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 
