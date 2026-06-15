@@ -84,6 +84,13 @@ uv run mypy src/hestia
 uv run ruff check src/ tests/
 ```
 
+## Review carry-forward
+- The recovery regex is intentionally lenient. When the model emits arguments out of order (e.g. `"content"` before `"path"`, as in `write_file_unclosed_huge.xml`) or omits the path entirely, recovery falls back to the generic correction. A more robust prefix JSON parser could improve recovery rates if this keeps happening.
+- Only `path` and `content` are recovered; other arguments are ignored.
+- The truncated-write classifier threshold (1500 chars) and the chunked-write limit (2000 chars) are intentionally separate; monitor real model output to tune them.
+- For a truncated `append_to_file`, the current recovery overwrites the file if a path is present. Revisit whether appending is safer when the file already exists.
+- Consider surfacing recovered partial files as artifacts or in the UI so users know a partial save occurred.
+
 ## Critical rules recap
 - Do not merge or push without Dylan's okay.
 - No trust/security policy changes.
