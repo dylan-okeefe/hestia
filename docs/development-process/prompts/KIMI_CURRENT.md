@@ -8,9 +8,23 @@
 
 ## Current task
 
-**Status:** ALL SPECCED LOOPS COMPLETE. L195–L205 done. L206 deferred.
+**Status:** Post-review spec update complete. Decisions in `docs/reviews/decisions-store-split.md` reviewed by Dylan and folded into the specs below.
 
-### Next: Dylan review + merge sequence
+### Queued loops (from develop-review-2026-06-12 Architecture / Security findings)
+
+| Loop | Branch | Status | Focus | Spec |
+|------|--------|--------|-------|------|
+| **L220** | `feature/l220-persistence-store-split` | **📋 Spec complete** | Split `sessions.py` into `SessionStore`/`MessageStore`/`TurnStore`, DTOs, mappers, `HandoffService`, deprecated facade | `docs/development-process/L220-persistence-store-split.md` |
+| **L221** | `feature/l221-session-concurrency` | **📋 Spec complete** | Per-session turn serialization, email adapter lock, slot erase on non-DONE, correction column | `docs/development-process/L221-session-concurrency.md` |
+| **L222** | `feature/l222-trust-capability-boundary` | **📋 Spec complete** | `CapabilityGate`, confirmation binding, webhook secret redaction, admin route hardening, browser SSRF | `docs/development-process/L222-trust-capability-boundary.md` |
+
+### Execution order
+
+1. **L220** first — it is a pure behavior-preserving refactor with no new columns.
+2. **L221** after L220 — the `correction` column migration belongs in the already-split `MessageStore`.
+3. **L222** can run independently, but sequencing it after L221 gives a stable base.
+
+### Next: implement L220
 
 ---
 
