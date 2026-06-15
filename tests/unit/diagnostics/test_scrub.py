@@ -3,8 +3,6 @@
 import tempfile
 from pathlib import Path
 
-import pytest
-
 from hestia.diagnostics.scrub import scrub_fixture_file, scrub_text
 
 
@@ -25,6 +23,30 @@ class TestScrubText:
         assert (
             scrub_text("bot token: 123456789:ABCDefghijklmnopqrstuvwxyz1234")
             == "bot token: <telegram-token>"
+        )
+
+    def test_replaces_matrix_tokens(self):
+        assert (
+            scrub_text("Authorization: Bearer syt_abc123def456ghi7890123")
+            == "Authorization: Bearer <matrix-token>"
+        )
+
+    def test_replaces_cookie_header(self):
+        assert (
+            scrub_text("Cookie: sessionid=secret123; csrftoken=abc")
+            == "Cookie: <redacted>"
+        )
+
+    def test_replaces_set_cookie_header(self):
+        assert (
+            scrub_text("Set-Cookie: session=supersecret; Path=/; HttpOnly")
+            == "Set-Cookie: <redacted>"
+        )
+
+    def test_replaces_inline_session_cookie_values(self):
+        assert (
+            scrub_text("sessionid=secret123; csrftoken=abc")
+            == "sessionid=<redacted>; csrftoken=<redacted>"
         )
 
     def test_leaves_artifact_handles_intact(self):

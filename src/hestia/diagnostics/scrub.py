@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
-
 
 # ---------------------------------------------------------------------------
 # Scrubbing rules
@@ -57,12 +56,31 @@ def _replace_api_keys(text: str) -> str:
     )
 
 
+def _replace_cookies(text: str) -> str:
+    """Redact Cookie / Set-Cookie headers and common session cookie values."""
+    text = re.sub(r"(?i)(Cookie:\s*).*", r"\1<redacted>", text)
+    text = re.sub(r"(?i)(Set-Cookie:\s*).*", r"\1<redacted>", text)
+    text = re.sub(
+        r"(?i)\b(sessionid|session|csrftoken|auth[_-]?token|access[_-]?token|refresh[_-]?token)\s*=\s*[^;\s]+",
+        r"\1=<redacted>",
+        text,
+    )
+    return text
+
+
+def _replace_matrix_tokens(text: str) -> str:
+    """Redact Matrix access tokens (syt_...)."""
+    return re.sub(r"\bsyt_[A-Za-z0-9_\-]{20,}\b", "<matrix-token>", text)
+
+
 _SCRUBBERS: list[Callable[[str], str]] = [
     _replace_home_paths,
     _replace_windows_home_paths,
     _replace_emails,
     _replace_ips,
     _replace_telegram_tokens,
+    _replace_matrix_tokens,
+    _replace_cookies,
     _replace_api_keys,
 ]
 
