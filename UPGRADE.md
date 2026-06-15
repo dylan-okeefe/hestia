@@ -15,6 +15,35 @@ but not implemented as of v0.10.0.
 
 ---
 
+## v0.14.0
+
+**Released:** 2026-06-15  
+**Full notes:** [`CHANGELOG.md`](CHANGELOG.md)
+
+If you are upgrading from v0.13.1 or earlier, follow the previous sections first,
+then continue here.
+
+### 1. Back up
+
+```bash
+cp -r ~/.hestia ~/.hestia-backup-$(date +%Y%m%d)
+```
+
+### 2. Pull and sync
+
+```bash
+git fetch --tags
+git checkout v0.14.0
+uv sync --all-extras
+```
+
+### 3. No manual migrations required
+
+v0.14.0 adds only runtime-hardening and tooling changes. Start `hestia` normally;
+`create_tables()` and idempotent runtime migrations will handle the database.
+
+---
+
 ## v0.12.2
 
 **Released:** 2026-05-27  

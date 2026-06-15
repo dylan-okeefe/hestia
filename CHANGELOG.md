@@ -5,6 +5,58 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-06-15
+
+### Browser Automation
+- **Shared authenticated fetch helper** — new `hestia.tools.browser.fetch.fetch_url` provides
+  a single Playwright-based path for `browser_get` and `browser_get_links`, with persistent
+  session reuse, per-domain rate limiting, and stealth context injection.
+- **Structured result categories** — fetches now return explicit `SUCCESS`, `BLOCKED`,
+  `NOT_FOUND`, `TIMEOUT`, or `TRANSIENT_OTHER` categories and embed `[CATEGORY: <name>]` in
+  failure text so downstream retry logic no longer re-guesses from human-readable strings.
+- **Honest page classification** — login/challenge detection is now driven by the final URL
+  and page title first. Body text triggers `BLOCKED` only when login phrases dominate the page
+  (≥3 occurrences or a very short page), so job listings that say “Log in to apply” are no
+  longer silently discarded.
+- **Browser session authentication spec** — documented the `browser_login` → `browser_get`
+  flow, session storage/cookie persistence, and health-check expectations.
+
+### File Writing & Recovery
+- **Truncated `write_file` recovery** — the quality monitor detects oversized unclosed XML
+  `write_file`/`append_to_file` blocks, drops the incomplete trailing line, writes the safe
+  prefix, and tells the model exactly where to resume.
+- **Chunked large-file protocol** — `write_file` enforces a 2000-character chunk limit;
+  large files are written with an initial `write_file` followed by `append_to_file` sections.
+- **Byte-for-byte seam test** — added a recovery test that truncates a real source file
+  mid-line and asserts the recovered + appended result is identical to the original.
+
+### Tooling Reliability
+- **Tool-result classifier** — introduced `ToolResultCategory` and `classify_tool_result` to
+  distinguish transient failures (retryable) from permanent blocks and 404s.
+- **Retry policy wiring** — identical failed tool calls are capped, blocked/404 URLs fail
+  fast, and timeouts escalate with per-attempt and total URL time budgets.
+- **XML tool-call repair** — handles `<parameter=arguments>` direct calls and unclosed tags
+  produced by small/reasoning models.
+
+### Hygiene & Diagnostics
+- **Regression fixture suite** — collects real model failures (XML tool-call malformations,
+  network failures) for regression testing.
+- **Fixture scrubber** — redacts emails, IPs, home paths, Telegram/Matrix tokens, session
+  cookies, and high-entropy values from regression fixtures before they are committed.
+- **Scrubber hardening** — added LinkedIn (`li_at`, `JSESSIONID`) and Indeed cookie redaction
+  plus a high-entropy catch-all for 32+ character token values.
+- **VRAM check honesty** — `scripts/verify_vram.py` documents that the baseline GPU-memory
+  reading is taken after llama.cpp pre-allocates the KV cache, so the check reflects the
+  worst-case footprint.
+- **Precautionary PII scrub audit** — replaced real emails and `/home/dylan/` paths in
+  documentation, examples, and test scripts with `example.com` and `/home/<user>/` placeholders.
+- **Secret-scanner hygiene** — replaced realistic-looking token literals in scrubber tests
+  with runtime-built placeholders after a GitGuardian bearer-token alert.
+
+### Loop Documentation
+- Renumbered `L189`/`L190` to `L218`/`L219` to free the 189–190 range, with updated specs,
+  handoffs, and loop-log entries.
+
 ## [0.13.1] — 2026-06-13
 
 ### Release prep & front door
