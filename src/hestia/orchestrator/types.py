@@ -119,3 +119,9 @@ class TurnContext:
     _tool_call_retry_counts: dict[Any, int] = field(default_factory=dict, repr=False)
     # Circuit breaker: remaining wall-clock budget per URL for timeout retries
     _url_time_budgets: dict[str, float] = field(default_factory=dict, repr=False)
+    # Circuit breaker: schemas dropped after repeated use
+    _list_tools_blocked: bool = field(default=False, repr=False)
+    _describe_tool_blocked: bool = field(default=False, repr=False)
+    _repeated_tools_blocked: set[str] = field(default_factory=set, repr=False)
+    # Quality: tools already corrected for repeated-identical-call this turn
+    _repeated_tools_corrected: set[str] = field(default_factory=set, repr=False)

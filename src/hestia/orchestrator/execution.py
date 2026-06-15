@@ -182,10 +182,13 @@ def _latest_tool_result_categories(
     for msg in history:
         if msg.role == "assistant" and msg.tool_calls:
             pending_ids.update(tc.id for tc in msg.tool_calls)
-        elif msg.role == "tool" and msg.tool_call_id:
-            if msg.tool_call_id in pending_ids:
-                latest_result[msg.tool_call_id] = msg.content or ""
-                pending_ids.discard(msg.tool_call_id)
+        elif (
+            msg.role == "tool"
+            and msg.tool_call_id
+            and msg.tool_call_id in pending_ids
+        ):
+            latest_result[msg.tool_call_id] = msg.content or ""
+            pending_ids.discard(msg.tool_call_id)
     return {
         tid: classify_tool_result(content)
         for tid, content in latest_result.items()
@@ -845,7 +848,7 @@ class TurnExecution:
         list_tools_block_results: dict[str, Message] = {}
         blocked_any_list_tools = False
         if seen_list_tools or any(tc.name == "list_tools" for tc in original_tool_calls):
-            deduped: list[ToolCall] = []
+            list_tools_deduped: list[ToolCall] = []
             for tc in original_tool_calls:
                 if tc.name == "list_tools":
                     if seen_list_tools:
@@ -872,10 +875,10 @@ class TurnExecution:
                         # so any additional list_tools calls are blocked.
                         seen_list_tools = True
                         prior_list_tools_count += 1
-                        deduped.append(tc)
+                        list_tools_deduped.append(tc)
                 else:
-                    deduped.append(tc)
-            tool_calls = deduped
+                    list_tools_deduped.append(tc)
+            tool_calls = list_tools_deduped
 
         # Circuit breaker: repeated describe_tool calls with the same name are a
         # common degenerate pattern. After the 3rd unique describe_tool name, we
@@ -901,7 +904,7 @@ class TurnExecution:
         describe_tool_block_results: dict[str, Message] = {}
         blocked_describe_tool_binge = False
         if any(tc.name == "describe_tool" for tc in original_tool_calls):
-            deduped: list[ToolCall] = []
+            describe_tool_deduped: list[ToolCall] = []
             for tc in original_tool_calls:
                 if tc.name == "describe_tool":
                     raw_names = tc.arguments.get("names") if tc.arguments else []
@@ -931,10 +934,10 @@ class TurnExecution:
                         )
                     else:
                         prior_describe_tool_names.update(names)
-                        deduped.append(tc)
+                        describe_tool_deduped.append(tc)
                 else:
-                    deduped.append(tc)
-            tool_calls = deduped
+                    describe_tool_deduped.append(tc)
+            tool_calls = describe_tool_deduped
 
         # Circuit breaker: repeated identical calls within the current turn.
         # If the model emits the exact same tool call as any previous assistant
@@ -1251,10 +1254,11 @@ class TurnExecution:
 
         messages: list[Message] = []
         for i, tc in enumerate(tool_calls):
-            if i == 0:
-                content = body
-            else:
-                content = f"(Same policy delegation as tool_call_id={tool_calls[0].id}.)\n{body}"
+            content = (
+                body
+                if i == 0
+                else f"(Same policy delegation as tool_call_id={tool_calls[0].id}.)\n{body}"
+            )
             messages.append(
                 Message(
                     role="tool",
