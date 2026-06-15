@@ -14,7 +14,6 @@ from hestia.core.types import Message
 from hestia.orchestrator.quality import DegeneratePattern, classify_turn
 from hestia.orchestrator.types import Turn
 
-
 FIXTURES = Path(__file__).parent.parent.parent / "fixtures" / "regression" / "xml_tool_calls"
 
 

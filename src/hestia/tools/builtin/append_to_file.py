@@ -33,7 +33,7 @@ def make_append_to_file_tool(config: StorageConfig) -> Any:
                 },
                 "content": {
                     "type": "string",
-                    "description": "Text content to append. MUST be 2000 characters or fewer. Append in sections if you have more.",
+                    "description": "Text content to append. MUST be 2000 characters or fewer. Append in sections.",
                     "maxLength": 2000,
                 },
             },

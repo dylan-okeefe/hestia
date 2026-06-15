@@ -32,7 +32,8 @@ def make_write_file_tool(
                 },
                 "content": {
                     "type": "string",
-                    "description": "Text content to write. MUST be 2000 characters or fewer. For longer documents, write a header and use append_to_file for the rest.",
+                    "description": "Text content to write. MUST be 2000 characters or fewer. "
+                    "For longer documents, write a header and use append_to_file.",
                     "maxLength": 2000,
                 },
             },
