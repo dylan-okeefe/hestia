@@ -1,0 +1,7 @@
+<tool_call>
+<function=grep>
+<parameter=arguments>
+{"path": "/home/<user>/.hestia/artifacts/art_6c65504923", "pattern": "https?://[^\"\'<>]+builtinboston\.com/jobs/[^\"\'<>]+"}
+</parameter>
+</function>
+</tool_call>

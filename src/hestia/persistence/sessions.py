@@ -716,14 +716,24 @@ class SessionStore:
         if row.tool_calls:
             try:
                 data = json.loads(row.tool_calls)
-                tool_calls = [
-                    ToolCall(
-                        id=tc["id"],
-                        name=tc["name"],
-                        arguments=tc["arguments"],
+                normalized_tool_calls: list[ToolCall] = []
+                for tc in data:
+                    raw_args = tc.get("arguments")
+                    if isinstance(raw_args, dict):
+                        args: dict[str, Any] = raw_args
+                    else:
+                        # Defensive: legacy or corrupted rows may store a string,
+                        # list, or null here. Coerce to an empty dict so the rest
+                        # of the pipeline can safely call .get() on arguments.
+                        args = {}
+                    normalized_tool_calls.append(
+                        ToolCall(
+                            id=tc["id"],
+                            name=tc["name"],
+                            arguments=args,
+                        )
                     )
-                    for tc in data
-                ]
+                tool_calls = normalized_tool_calls
             except (json.JSONDecodeError, KeyError) as e:
                 raise PersistenceError(f"Failed to parse tool_calls JSON: {e}") from e
 

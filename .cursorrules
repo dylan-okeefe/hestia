@@ -218,7 +218,7 @@ src/hestia/
 deployment / runtime directory. It is typically on a `runtime` branch (or
 `develop` when not running a feature experiment). Configuration secrets,
 SQLite database, slots, artifacts, and platform logs live there — **not** in
-`/home/dylan/Hestia`.
+`/home/<user>/Hestia`.
 
 ### Testing from the runtime directory
 

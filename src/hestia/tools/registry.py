@@ -217,7 +217,13 @@ class ToolRegistry:
                 name="call_tool",
                 description=(
                     "Invoke a tool by name with arguments. Use list_tools first to "
-                    "discover what exists, then describe_tool if you need exact parameter names."
+                    "discover what exists, then describe_tool if you need exact parameter names. "
+                    "Arguments must be a valid JSON object. "
+                    "Example: call_tool({\"name\": \"write_file\", "
+                    "\"arguments\": {\"path\": \"<path>\", \"content\": \"# Notes\\n\"}}). "
+                    "Each write_file or append_to_file call MUST have content shorter than 2000 characters. "
+                    "For large files, first create the file with a short header using write_file, "
+                    "then add sections with append_to_file."
                 ),
                 parameters={
                     "type": "object",
@@ -228,7 +234,7 @@ class ToolRegistry:
                         },
                         "arguments": {
                             "type": "object",
-                            "description": "Arguments for the tool",
+                            "description": "Arguments for the tool as a JSON object",
                         },
                     },
                     "required": ["name", "arguments"],

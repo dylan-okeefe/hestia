@@ -1,0 +1,10 @@
+{
+  "description": "browser_get_links timeout on LinkedIn job search",
+  "tool_name": "browser_get_links",
+  "arguments": {
+    "url": "https://www.linkedin.com/jobs/search/?keywords=software%20engineer&location=Boston%2C%20Massachusetts%2C%20United%20States&f_WT=2&sortBy=DD",
+    "wait_seconds": 5,
+    "timeout_seconds": 60
+  },
+  "result": "Error fetching https://www.linkedin.com/jobs/search/...: Page.goto: Timeout 30000ms exceeded."
+}

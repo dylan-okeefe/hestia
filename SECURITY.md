@@ -11,7 +11,7 @@
 ## Reporting a vulnerability
 
 Please report security issues privately to the maintainers at
-[dylanokeefedev@gmail.com](mailto:dylanokeefedev@gmail.com). Include a clear
+[security@example.com](mailto:security@example.com). Include a clear
 description of the issue, steps to reproduce, affected versions, and any
 suggested fixes or mitigations.
 

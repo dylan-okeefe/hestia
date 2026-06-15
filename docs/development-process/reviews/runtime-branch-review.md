@@ -175,7 +175,7 @@ After 3 consecutive calls to the same tool with empty/missing arguments that ret
 - **Model:** `Qwen3.5-9B-DeepSeek-V4-Flash-Q4_K_M.gguf` — the Q4 quantization of the model discussed in the prompt iteration summary
 - **Context:** 32768 tokens (comment says 16384 per slot but value is 32768 — mismatch worth verifying against actual llama-server config)
 - **Trust:** `developer` preset with wildcard auto-approve — no confirmation prompts for any tool
-- **Allowed roots:** `["/home/dylan/Documents/Job Search"]` — very narrow sandboxing, likely temporary for the job search task
+- **Allowed roots:** `["/home/<user>/Documents/Job Search"]` — very narrow sandboxing, likely temporary for the job search task
 - **Max iterations:** 40 — extremely high; most turns should complete in 3–5 iterations. This was likely raised to give the model more attempts at the job scraping task.
 - **System prompt:** 10 rules + tool examples, heavily tuned to combat specific model failure modes (CAPTCHA retry loops, curl fallback, infinite searching, empty JSON payloads)
 
@@ -189,7 +189,7 @@ After 3 consecutive calls to the same tool with empty/missing arguments that ret
 |------|-------|
 | `escape_room_planning.md` | Personal family information (children, ex-wife, travel plans) |
 | `hestia-serve.service` (root) | Duplicate of `deploy/hestia-serve.service` |
-| `config.runtime.py` | Contains email address (`agent.silas13@gmail.com`), hardcoded paths. Should be gitignored or use env vars exclusively |
+| `config.runtime.py` | Contains email address (`agent@example.com`), hardcoded paths. Should be gitignored or use env vars exclusively |
 
 `config.runtime.py` is borderline — it's useful as a reference config, but it contains operational details that tie it to a specific deployment. Consider a `config.runtime.example.py` pattern.
 

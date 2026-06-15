@@ -487,6 +487,7 @@ class BrowserConfig(_ConfigFromEnv):
     )
     headless: bool = True
     default_timeout_seconds: int = 30
+    min_fetch_delay_seconds: float = 3.0
 
 
 @dataclass
@@ -562,7 +563,20 @@ class HestiaConfig(_ConfigFromEnv):
     browser: BrowserConfig = field(default_factory=BrowserConfig)
     trust: TrustConfig = field(default_factory=TrustConfig)
     trust_overrides: dict[str, TrustConfig] = field(default_factory=dict)
-    system_prompt: str = "You are a helpful assistant."
+    system_prompt: str = (
+        "You are Hestia, a helpful personal assistant.\n\n"
+        "You have access to tools. Use the tool-calling format shown in the tool "
+        "instructions.\n\n"
+        "CRITICAL RULES:\n"
+        "1. Put all reasoning and planning inside any <think></think> blocks the tool "
+        "instructions provide.\n"
+        "2. If a tool is unavailable, blocked, or returns an error, STOP and tell the user "
+        "or choose a different action. Do not keep retrying the same call.\n"
+        "3. When the user asks a conversational question, reply directly without calling tools.\n"
+        "4. FILE WRITING: If you need to write more than 2000 characters, create the file "
+        "with a short header using write_file, then add each remaining section with "
+        "append_to_file. Do NOT try to fit an entire long document into one tool call."
+    )
     max_iterations: int = 10
     verbose: bool = False
     use_curl_cffi_fallback: bool = False
@@ -576,7 +590,20 @@ class HestiaConfig(_ConfigFromEnv):
         browser: BrowserConfig | None = None,
         trust: TrustConfig | None = None,
         trust_overrides: dict[str, TrustConfig] | None = None,
-        system_prompt: str = "You are a helpful assistant.",
+        system_prompt: str = (
+            "You are Hestia, a helpful personal assistant.\n\n"
+            "You have access to tools. Use the tool-calling format shown in the tool "
+            "instructions.\n\n"
+            "CRITICAL RULES:\n"
+            "1. Put all reasoning and planning inside any <think></think> blocks the tool "
+            "instructions provide.\n"
+            "2. If a tool is unavailable, blocked, or returns an error, STOP and tell the user "
+            "or choose a different action. Do not keep retrying the same call.\n"
+            "3. When the user asks a conversational question, reply directly without calling tools.\n"
+            "4. FILE WRITING: If you need to write more than 2000 characters, create the file "
+            "with a short header using write_file, then add each remaining section with "
+            "append_to_file. Do NOT try to fit an entire long document into one tool call."
+        ),
         max_iterations: int = 10,
         verbose: bool = False,
         use_curl_cffi_fallback: bool = False,

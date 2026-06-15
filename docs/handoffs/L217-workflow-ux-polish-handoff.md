@@ -53,9 +53,9 @@ Implemented all five sections of the L217 UX polish spec for the workflow builde
 ## Quality Gates
 
 ```bash
-cd /home/dylan/Hestia/web-ui
+cd /home/<user>/Hestia/web-ui
 npm run test -- --run     # 25 passed, 128 tests
-cd /home/dylan/Hestia
+cd /home/<user>/Hestia
 uv run pytest tests/unit/ tests/integration/ -q  # 1644 passed, 6 skipped
 ```
 

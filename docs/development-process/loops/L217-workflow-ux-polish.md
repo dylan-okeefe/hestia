@@ -51,14 +51,14 @@ range, by node name.
 
 ## Quality Gates
 ```bash
-cd /home/dylan/Hestia/web-ui
+cd /home/<user>/Hestia/web-ui
 npm run test -- --run
 npm run build
 ```
 
 Backend tests:
 ```bash
-cd /home/dylan/Hestia
+cd /home/<user>/Hestia
 uv run pytest tests/unit/ tests/integration/ -q
 ```
 

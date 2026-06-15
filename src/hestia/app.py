@@ -45,6 +45,7 @@ from hestia.style.scheduler import StyleScheduler
 from hestia.style.store import StyleProfileStore
 from hestia.tools.builtin import (
     browser_get,
+    browser_get_links,
     browser_login,
     current_time,
     make_accept_proposal_tool,
@@ -491,6 +492,7 @@ class AppContext:
         if cfg.browser.enabled or _playwright_available():
             reg.register(browser_login)
             reg.register(browser_get)
+            reg.register(browser_get_links)
 
 
 # Backward-compatible aliases (deprecated, will be removed in a future release)

@@ -2,7 +2,7 @@
 """Test the job email workflow against a specific email from the inbox.
 
 Usage:
-    cd /home/dylan/Hestia-runtime
+    cd /home/<user>/Hestia-runtime
     . .venv/bin/activate
     EMAIL_APP_PASSWORD=... PYTHONPATH=src python scripts/test_workflow_email.py [UID]
 
@@ -51,7 +51,7 @@ async def list_emails(adapter: EmailAdapter, count: int = 20):
 async def read_email(adapter: EmailAdapter, uid: str) -> dict:
     """Read a specific email by UID.
 
-    The inbox contains forwarded emails from dylanokeefedev@gmail.com.
+    The inbox contains forwarded emails from user@example.com.
     The original sender/subject are in the body as HESTIA-META headers.
     """
     result = await adapter.read_message(uid)

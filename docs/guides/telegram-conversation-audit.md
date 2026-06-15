@@ -202,7 +202,7 @@ For each problematic session, answer these questions:
 import aiosqlite
 import asyncio
 
-DB = "/home/dylan/Hestia-runtime/runtime-data/hestia.db"
+DB = "/home/<user>/Hestia-runtime/runtime-data/hestia.db"
 
 async def audit():
     async with aiosqlite.connect(DB) as db:

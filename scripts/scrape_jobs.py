@@ -245,7 +245,7 @@ async def main() -> None:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("/home/dylan/Documents/Job Search/remote_software_development_jobs.md"),
+        default=Path.home() / "Documents" / "Job Search" / "remote_software_development_jobs.md",
         help="Output Markdown file path",
     )
     args = parser.parse_args()

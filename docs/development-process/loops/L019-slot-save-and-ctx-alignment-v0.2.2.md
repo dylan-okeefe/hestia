@@ -45,7 +45,7 @@ Record the baseline ("478 passed, 6 skipped" expected — matches v0.2.1).
 
 ```json
 POST /slots/{id}?action=save
-{"filename": "/home/dylan/.../runtime-data/slots/telegram_xxx.bin"}
+{"filename": "/home/<user>/.../runtime-data/slots/telegram_xxx.bin"}
 ```
 
 llama.cpp rejects any `filename` containing a path separator (path-traversal guard) and returns:

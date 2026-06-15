@@ -44,7 +44,7 @@ The adapter needs to answer: *the email came from `alice@example.com` — who is
 email=EmailConfig(
     ...,
     address_map={
-        "dylanokeefedev@gmail.com": "email:dylan",
+        "user@example.com": "email:dylan",
         "<wife's email>": "email:wife",
     },
 )

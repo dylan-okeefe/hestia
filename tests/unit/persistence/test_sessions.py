@@ -3,7 +3,7 @@
 
 import pytest
 
-from hestia.core.types import Message, SessionState
+from hestia.core.types import Message, SessionState, ToolCall
 from hestia.persistence.db import Database
 from hestia.persistence.sessions import SessionStore
 
@@ -112,3 +112,31 @@ class TestSessionStore:
         other_active = await store.get_active_session("cli", "otheruser")
         assert other_active is not None
         assert other_active.id == other.id
+
+    @pytest.mark.asyncio
+    async def test_tool_call_arguments_non_dict_coerced_on_load(self, store):
+        """Legacy/corrupt tool_call arguments that are not dicts become {}."""
+        session = await store.get_or_create_session("cli", "testuser")
+        await store.append_message(
+            session.id,
+            Message(
+                role="assistant",
+                content="",
+                tool_calls=[
+                    ToolCall(id="tc1", name="test_tool", arguments="string-args"),
+                    ToolCall(id="tc2", name="test_tool", arguments=None),
+                    ToolCall(id="tc3", name="test_tool", arguments=["list-arg"]),
+                    ToolCall(id="tc4", name="test_tool", arguments={"ok": True}),
+                ],
+            ),
+        )
+
+        messages = await store.get_messages(session.id)
+        assert len(messages) == 1
+        loaded = messages[0].tool_calls
+        assert loaded is not None
+        assert len(loaded) == 4
+        assert loaded[0].arguments == {}
+        assert loaded[1].arguments == {}
+        assert loaded[2].arguments == {}
+        assert loaded[3].arguments == {"ok": True}

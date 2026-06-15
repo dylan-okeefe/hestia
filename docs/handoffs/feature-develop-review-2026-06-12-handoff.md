@@ -80,6 +80,11 @@ Known baseline failures (not introduced by this branch):
 Done in `/home/dylan/Hestia`:
 
 ```bash
+# 1. Ensure you are on the feature branch and the tree is clean
+cd /home/<user>/Hestia-runtime
+git status
+
+# 2. Switch to develop and merge the feature branch
 git checkout develop
 git pull origin develop
 git merge --no-ff feature/develop-review-2026-06-12-release -m "release: merge feature/develop-review-2026-06-12 for v0.13.0"

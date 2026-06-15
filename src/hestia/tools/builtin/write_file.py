@@ -18,7 +18,11 @@ def make_write_file_tool(
 
     @tool(
         name="write_file",
-        public_description="Write content to a file. Params: path (str), content (str).",
+        public_description=(
+            "Write content to a file. Params: path (str), content (str). "
+            "If content is longer than 2000 characters, write a short header first "
+            "and append the rest with append_to_file."
+        ),
         parameters_schema={
             "type": "object",
             "properties": {
@@ -26,7 +30,12 @@ def make_write_file_tool(
                     "type": "string",
                     "description": "Absolute or relative file path. Must be within allowed roots.",
                 },
-                "content": {"type": "string", "description": "Text content to write."},
+                "content": {
+                    "type": "string",
+                    "description": "Text content to write. MUST be 2000 characters or fewer. "
+                    "For longer documents, write a header and use append_to_file.",
+                    "maxLength": 2000,
+                },
             },
             "required": ["path", "content"],
         },
@@ -44,7 +53,7 @@ def make_write_file_tool(
         if not path:
             return (
                 "Error: write_file requires a 'path' argument. "
-                "Example: {\"path\": \"/home/dylan/Documents/file.md\", \"content\": \"# Hello\"}"
+                "Example: {\"path\": \"/home/<user>/Documents/file.md\", \"content\": \"# Hello\"}"
             )
         if not content:
             return (

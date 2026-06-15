@@ -11,6 +11,7 @@ from hestia.core.clock import utcnow
 from hestia.core.inference import InferenceClient, _extract_tool_calls_from_text
 from hestia.core.json_repair import repair_json
 from hestia.core.types import ChatResponse, Message, Session, ToolCall
+from hestia.diagnostics import regression_collector
 from hestia.errors import (
     EmptyResponseError,
     MaxIterationsError,
@@ -23,6 +24,7 @@ from hestia.policy.engine import PolicyEngine, RetryAction
 from hestia.security import InjectionScanner
 from hestia.tools.metadata import ToolMetadata
 from hestia.tools.registry import ToolNotFoundError, ToolRegistry
+from hestia.tools.result_classifier import ToolResultCategory, classify_tool_result
 from hestia.tools.types import ToolCallResult
 
 if TYPE_CHECKING:
@@ -36,6 +38,22 @@ logger = logging.getLogger(__name__)
 
 ConfirmCallback = Callable[[str, dict[str, Any]], Awaitable[bool]]
 TypingCallback = Callable[[bool], Awaitable[None]]
+
+# Inter-chunk timeout: once the model has started emitting tokens, if no chunk
+# arrives for this long we assume the stream is dead and finish.  Tool-call
+# argument JSON can be large, so this needs to be generous enough for the
+# server to finish emitting a complete chunk.
+_STREAM_INACTIVITY_TIMEOUT = 60.0
+
+# First-chunk timeout: prompt processing for long contexts can take tens of
+# seconds without emitting any tokens.  We allow up to two minutes for the
+# first chunk before giving up, while keeping the inter-chunk timeout tight.
+_STREAM_FIRST_CHUNK_TIMEOUT = 120.0
+
+# Timeout escalation schedule for repeated TIMEOUT retries (seconds).
+_TIMEOUT_ESCALATION_SCHEDULE = (15.0, 30.0, 60.0)
+_MAX_PER_ATTEMPT_TIMEOUT = 90.0
+_DEFAULT_URL_TIME_BUDGET = 120.0
 
 
 _ToolCallKey = tuple[str, tuple[tuple[str, Any], ...]]
@@ -59,6 +77,124 @@ def _tool_call_key(tc: ToolCall) -> _ToolCallKey:
     return (tc.name, args)
 
 
+def _extract_url_from_tool_call(tc: ToolCall) -> str | None:
+    """Return the URL argument of a tool call if present."""
+    if not tc.arguments:
+        return None
+    for key, value in tc.arguments.items():
+        if key.lower() == "url" and isinstance(value, str):
+            return value
+    return None
+
+
+def _format_retry_exhausted_message(
+    tool_name: str,
+    category: ToolResultCategory,
+    retry_count: int,
+    url: str | None,
+    *,
+    budget_exhausted: bool = False,
+) -> str:
+    """Format the block message when retries are exhausted."""
+    if url:
+        target = url
+        disabled = "This URL is now DISABLED for the rest of this turn"
+    else:
+        target = "these arguments"
+        disabled = "This tool is now DISABLED for the rest of this turn"
+    category_phrase = category.name.lower().replace("_", " ")
+    budget_note = " (total URL time budget exhausted)" if budget_exhausted else ""
+    return (
+        f"🛑 {tool_name} {category_phrase} {retry_count} time(s) for {target}. "
+        f"{disabled}{budget_note}. "
+        "Try http_get, web_search, or grep the cached artifact instead."
+    )
+
+
+def _escalated_timeout_seconds(tc: ToolCall, retry_count: int) -> float:
+    """Return the escalated timeout_seconds for a TIMEOUT retry."""
+    current = tc.arguments.get("timeout_seconds") if tc.arguments else None
+    base = float(current) if isinstance(current, (int, float)) else 0.0
+    schedule_value = _TIMEOUT_ESCALATION_SCHEDULE[
+        min(retry_count, len(_TIMEOUT_ESCALATION_SCHEDULE) - 1)
+    ]
+    return min(max(base, schedule_value), _MAX_PER_ATTEMPT_TIMEOUT)
+
+
+def _tool_call_with_timeout(tc: ToolCall, timeout: float) -> ToolCall:
+    """Return a copy of ``tc`` with ``timeout_seconds`` set to ``timeout``."""
+    new_arguments = dict(tc.arguments or {})
+    new_arguments["timeout_seconds"] = timeout
+    return ToolCall(id=tc.id, name=tc.name, arguments=new_arguments)
+
+
+def _consume_url_budget(
+    ctx: TurnContext,
+    url: str | None,
+    proposed_timeout: float,
+) -> bool:
+    """Return True when the URL has enough budget and reserve ``proposed_timeout``.
+
+    A ``None`` URL always succeeds (no budget tracking for non-URL calls).
+    """
+    if url is None:
+        return True
+    remaining = ctx._url_time_budgets.get(url, _DEFAULT_URL_TIME_BUDGET)
+    if proposed_timeout > remaining:
+        return False
+    ctx._url_time_budgets[url] = remaining - proposed_timeout
+    return True
+
+
+def _normalize_tool_arguments(arguments: Any) -> dict[str, Any]:
+    """Coerce tool-call arguments to a dict.
+
+    Small/reasoning models sometimes emit arguments as a string, list, or other
+    non-dict value (especially after JSON repair or when streaming deltas are
+    truncated).  Treating those as an empty dict lets the turn continue with a
+    useful error rather than raising an AttributeError downstream.
+    """
+    if isinstance(arguments, dict):
+        return arguments
+    if arguments is None or arguments == "":
+        return {}
+    logger.warning(
+        "Tool-call arguments are %s, not dict; coercing to {}",
+        type(arguments).__name__,
+    )
+    return {}
+
+
+def _is_retryable_tool_result(content: str) -> bool:
+    """True when a tool result looks like a transient failure worth retrying."""
+    return classify_tool_result(content) in (
+        ToolResultCategory.TIMEOUT,
+        ToolResultCategory.TRANSIENT_OTHER,
+    )
+
+
+def _latest_tool_result_categories(
+    history: list[Message],
+) -> dict[str, ToolResultCategory]:
+    """Return the latest result category for each tool_call_id."""
+    latest_result: dict[str, str] = {}
+    pending_ids: set[str] = set()
+    for msg in history:
+        if msg.role == "assistant" and msg.tool_calls:
+            pending_ids.update(tc.id for tc in msg.tool_calls)
+        elif (
+            msg.role == "tool"
+            and msg.tool_call_id
+            and msg.tool_call_id in pending_ids
+        ):
+            latest_result[msg.tool_call_id] = msg.content or ""
+            pending_ids.discard(msg.tool_call_id)
+    return {
+        tid: classify_tool_result(content)
+        for tid, content in latest_result.items()
+    }
+
+
 class TurnExecution:
     """Runs the model inference loop and dispatches tool calls."""
 
@@ -74,6 +210,7 @@ class TurnExecution:
         injection_scanner: InjectionScanner | None = None,
         max_iterations: int = 10,
         max_tool_calls_per_turn: int = 10,
+        max_retries_for_failed_tool_call: int = 2,
         max_tokens: int = 1024,
         stream: bool = False,
         event_bus: "EventBus | None" = None,
@@ -87,6 +224,7 @@ class TurnExecution:
         self._injection_scanner = injection_scanner
         self._max_iterations = max_iterations
         self._max_tool_calls_per_turn = max_tool_calls_per_turn
+        self._max_retries_for_failed_tool_call = max_retries_for_failed_tool_call
         self._max_tokens = max_tokens
         self._stream = stream
         self._event_bus = event_bus
@@ -296,11 +434,31 @@ class TurnExecution:
             if history_includes_current
             else list(ctx.running_history) + [assistant_msg]
         )
-        correction = classify_turn(
-            turn, assistant_msg, history, ctx.allowed_tools or []
+        write_file_handler: Any | None = None
+        append_to_file_handler: Any | None = None
+        try:
+            write_file_meta = self._tools.describe("write_file")
+            write_file_handler = write_file_meta.handler
+            append_to_file_meta = self._tools.describe("append_to_file")
+            append_to_file_handler = append_to_file_meta.handler
+        except Exception:  # noqa: BLE001
+            pass
+
+        correction = await classify_turn(
+            turn,
+            assistant_msg,
+            history,
+            ctx.allowed_tools or [],
+            write_file_handler=write_file_handler,
+            append_to_file_handler=append_to_file_handler,
         )
         if correction is None:
             return False
+
+        regression_collector.maybe_collect_degenerate_turn(
+            correction.pattern.value,
+            history,
+        )
 
         # De-duplicate repeated-identical-call corrections for the same tool.
         # The circuit breaker in _execute_tool_calls already blocks the call
@@ -367,6 +525,16 @@ class TurnExecution:
     ) -> TurnState:
         """Dispatch tool calls, handle delegation, rebuild context, and advance the turn."""
         await transition(turn, TurnState.EXECUTING_TOOLS, "")
+
+        # Defensive: malformed tool arguments crash attribute-based lookups below.
+        chat_response.tool_calls = [
+            ToolCall(
+                id=tc.id,
+                name=tc.name,
+                arguments=_normalize_tool_arguments(tc.arguments),
+            )
+            for tc in chat_response.tool_calls
+        ]
 
         tool_names: list[str] = []
         for tc in chat_response.tool_calls:
@@ -485,13 +653,49 @@ class TurnExecution:
         assert ctx.build_result is not None
         assert ctx.stream_callback is not None
 
-        async for delta in self._inference.chat_stream(
+        stream = self._inference.chat_stream(
             messages=ctx.build_result.messages,
             tools=ctx.tools,
             slot_id=ctx.slot_id,
             reasoning_budget=turn.reasoning_budget,
             max_tokens=self._max_tokens,
-        ):
+        )
+
+        any_chunk_received = False
+        while True:
+            # Use a longer timeout for the very first chunk because the model
+            # server may still be processing a long prompt without emitting
+            # tokens.  After tokens start flowing, switch to the tight timeout.
+            timeout = (
+                _STREAM_INACTIVITY_TIMEOUT
+                if any_chunk_received
+                else _STREAM_FIRST_CHUNK_TIMEOUT
+            )
+            try:
+                delta = await asyncio.wait_for(stream.__anext__(), timeout=timeout)
+            except StopAsyncIteration:
+                break
+            except TimeoutError:
+                if any_chunk_received:
+                    logger.warning(
+                        "Streaming inference inactive for %.1fs; finishing with %d content "
+                        "chars and %d tool-call buffers accumulated so far",
+                        _STREAM_INACTIVITY_TIMEOUT,
+                        sum(len(p) for p in content_parts),
+                        len(tool_call_buffers),
+                    )
+                else:
+                    logger.warning(
+                        "Streaming inference produced no chunks within %.1fs "
+                        "(likely long prompt processing); finishing empty",
+                        _STREAM_FIRST_CHUNK_TIMEOUT,
+                    )
+                if finish_reason == "unknown":
+                    finish_reason = "stop"
+                break
+
+            any_chunk_received = True
+
             if delta.reasoning_content and not turn.thinking_aborted:
                 thinking_chars = sum(len(p) for p in reasoning_parts) + len(delta.reasoning_content)
                 # Rough token estimate: 4 characters per token
@@ -621,6 +825,23 @@ class TurnExecution:
         """
         result_messages: list[Message] = []
         artifact_handles: list[str] = []
+
+        # Defensive: ensure every tool-call argument payload is a dict.  Non-dict
+        # arguments (strings, lists, None) come from malformed model output or
+        # legacy DB rows and would otherwise crash attribute-based lookups.
+        normalized_tool_calls: list[ToolCall] = []
+        for tc in tool_calls:
+            norm_args = _normalize_tool_arguments(tc.arguments)
+            if norm_args is not tc.arguments:
+                regression_collector.maybe_collect_malformed_tool_call(
+                    tc.name,
+                    tc.arguments,
+                    source="_execute_tool_calls normalization",
+                )
+                tc = ToolCall(id=tc.id, name=tc.name, arguments=norm_args)
+            normalized_tool_calls.append(tc)
+        tool_calls = normalized_tool_calls
+
         original_tool_calls = list(tool_calls)
 
         # Circuit breaker: repeated list_tools calls are a common degenerate loop.
@@ -642,7 +863,7 @@ class TurnExecution:
         list_tools_block_results: dict[str, Message] = {}
         blocked_any_list_tools = False
         if seen_list_tools or any(tc.name == "list_tools" for tc in original_tool_calls):
-            deduped: list[ToolCall] = []
+            list_tools_deduped: list[ToolCall] = []
             for tc in original_tool_calls:
                 if tc.name == "list_tools":
                     if seen_list_tools:
@@ -657,7 +878,7 @@ class TurnExecution:
                                 "The complete tool list is in the system prompt "
                                 "and in the previous list_tools result. "
                                 "list_tools is now DISABLED for the rest of this "
-                                "conversation. Do not call it again. Choose a "
+                                "turn. Do not call it again. Choose a "
                                 "specific tool from the list and call it, or reply "
                                 "directly to the user."
                             ),
@@ -669,10 +890,10 @@ class TurnExecution:
                         # so any additional list_tools calls are blocked.
                         seen_list_tools = True
                         prior_list_tools_count += 1
-                        deduped.append(tc)
+                        list_tools_deduped.append(tc)
                 else:
-                    deduped.append(tc)
-            tool_calls = deduped
+                    list_tools_deduped.append(tc)
+            tool_calls = list_tools_deduped
 
         # Circuit breaker: repeated describe_tool calls with the same name are a
         # common degenerate pattern. After the 3rd unique describe_tool name, we
@@ -698,7 +919,7 @@ class TurnExecution:
         describe_tool_block_results: dict[str, Message] = {}
         blocked_describe_tool_binge = False
         if any(tc.name == "describe_tool" for tc in original_tool_calls):
-            deduped: list[ToolCall] = []
+            describe_tool_deduped: list[ToolCall] = []
             for tc in original_tool_calls:
                 if tc.name == "describe_tool":
                     raw_names = tc.arguments.get("names") if tc.arguments else []
@@ -720,7 +941,7 @@ class TurnExecution:
                                 "🛑 STOP. You have already called describe_tool enough. "
                                 "The tool schemas are in the previous describe_tool results. "
                                 "describe_tool is now DISABLED for the rest of this "
-                                "conversation. Stop inspecting tools and call one, or "
+                                "turn. Stop inspecting tools and call one, or "
                                 "reply directly to the user."
                             ),
                             tool_call_id=tc.id,
@@ -728,10 +949,10 @@ class TurnExecution:
                         )
                     else:
                         prior_describe_tool_names.update(names)
-                        deduped.append(tc)
+                        describe_tool_deduped.append(tc)
                 else:
-                    deduped.append(tc)
-            tool_calls = deduped
+                    describe_tool_deduped.append(tc)
+            tool_calls = describe_tool_deduped
 
         # Circuit breaker: repeated identical calls within the current turn.
         # If the model emits the exact same tool call as any previous assistant
@@ -739,19 +960,31 @@ class TurnExecution:
         # prompt. This prevents loops like search_memory(query=...) or
         # read_file(path=...) from burning tokens. We also dedupe within the
         # current batch so a model cannot emit the same call twice at once.
+        #
+        # Exception: if the previous identical call produced a transient failure
+        # (TIMEOUT or TRANSIENT_OTHER), allow a capped number of retries.
         repeated_block_results: dict[str, Message] = {}
         blocked_repeated_tools: set[str] = set()
         if ctx is not None:
             previous_keys: set[_ToolCallKey] = set()
+            result_categories = _latest_tool_result_categories(ctx.running_history)
+            previous_key_categories: dict[_ToolCallKey, ToolResultCategory] = {}
             for msg in ctx.running_history:
                 if msg.role == "assistant" and msg.tool_calls:
-                    previous_keys.update({_tool_call_key(tc) for tc in msg.tool_calls})
+                    for tc in msg.tool_calls:
+                        key = _tool_call_key(tc)
+                        previous_keys.add(key)
+                        category = result_categories.get(tc.id)
+                        if category is not None:
+                            previous_key_categories[key] = category
+
+            retry_counts = ctx._tool_call_retry_counts
 
             deduped: list[ToolCall] = []
             current_keys: set[_ToolCallKey] = set()
             for tc in tool_calls:
                 key = _tool_call_key(tc)
-                if key in previous_keys or key in current_keys:
+                if key in current_keys:
                     blocked_repeated_tools.add(tc.name)
                     repeated_block_results[tc.id] = Message(
                         role="tool",
@@ -759,15 +992,83 @@ class TurnExecution:
                             f"🛑 STOP. You already called {tc.name} with these "
                             "exact arguments in this turn; repeating it will "
                             "return the same result. This tool is now DISABLED "
-                            "for the rest of this conversation. Use a different "
+                            "for the rest of this turn. Use a different "
                             "tool or reply directly to the user."
                         ),
                         tool_call_id=tc.id,
                         created_at=utcnow(),
                     )
-                else:
-                    current_keys.add(key)
-                    deduped.append(tc)
+                    continue
+
+                if key in previous_keys:
+                    category = previous_key_categories.get(
+                        key, ToolResultCategory.SUCCESS
+                    )
+                    if category in (
+                        ToolResultCategory.TIMEOUT,
+                        ToolResultCategory.TRANSIENT_OTHER,
+                    ):
+                        count = retry_counts.get(key, 0)
+                        if count >= self._max_retries_for_failed_tool_call:
+                            blocked_repeated_tools.add(tc.name)
+                            url = _extract_url_from_tool_call(tc)
+                            repeated_block_results[tc.id] = Message(
+                                role="tool",
+                                content=_format_retry_exhausted_message(
+                                    tc.name, category, count, url
+                                ),
+                                tool_call_id=tc.id,
+                                created_at=utcnow(),
+                            )
+                            continue
+
+                        if category == ToolResultCategory.TIMEOUT:
+                            url = _extract_url_from_tool_call(tc)
+                            proposed_timeout = _escalated_timeout_seconds(
+                                tc, count
+                            )
+                            if not _consume_url_budget(
+                                ctx, url, proposed_timeout
+                            ):
+                                blocked_repeated_tools.add(tc.name)
+                                repeated_block_results[tc.id] = Message(
+                                    role="tool",
+                                    content=_format_retry_exhausted_message(
+                                        tc.name,
+                                        category,
+                                        count,
+                                        url,
+                                        budget_exhausted=True,
+                                    ),
+                                    tool_call_id=tc.id,
+                                    created_at=utcnow(),
+                                )
+                                continue
+                            tc = _tool_call_with_timeout(tc, proposed_timeout)
+
+                        retry_counts[key] = count + 1
+                        current_keys.add(key)
+                        deduped.append(tc)
+                    else:
+                        # SUCCESS, BLOCKED, NOT_FOUND, or missing category:
+                        # fail-fast / do not retry.
+                        blocked_repeated_tools.add(tc.name)
+                        repeated_block_results[tc.id] = Message(
+                            role="tool",
+                            content=(
+                                f"🛑 STOP. You already called {tc.name} with these "
+                                "exact arguments in this turn; repeating it will "
+                                "return the same result. This tool is now DISABLED "
+                                "for the rest of this turn. Use a different "
+                                "tool or reply directly to the user."
+                            ),
+                            tool_call_id=tc.id,
+                            created_at=utcnow(),
+                        )
+                    continue
+
+                current_keys.add(key)
+                deduped.append(tc)
             tool_calls = deduped
 
         # Persist the block signals on the context so _handle_tool_calls can drop
@@ -879,6 +1180,17 @@ class TurnExecution:
             )
             result = self._scan_tool_result(result)
 
+            # Capture transient failures as regression fixtures if enabled.
+            if (
+                isinstance(result.content, str)
+                and _is_retryable_tool_result(result.content)
+            ):
+                regression_collector.maybe_collect_tool_failure(
+                    tc.name,
+                    tc.arguments or {},
+                    result.content,
+                )
+
             # Circuit breaker: detect repeated empty-arg failures
             is_empty_args = tc.arguments is None or tc.arguments == {}
             looks_like_missing_arg_error = (
@@ -957,10 +1269,11 @@ class TurnExecution:
 
         messages: list[Message] = []
         for i, tc in enumerate(tool_calls):
-            if i == 0:
-                content = body
-            else:
-                content = f"(Same policy delegation as tool_call_id={tool_calls[0].id}.)\n{body}"
+            content = (
+                body
+                if i == 0
+                else f"(Same policy delegation as tool_call_id={tool_calls[0].id}.)\n{body}"
+            )
             messages.append(
                 Message(
                     role="tool",

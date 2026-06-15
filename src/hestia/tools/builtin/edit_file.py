@@ -52,7 +52,7 @@ def make_edit_file_tool(config: StorageConfig) -> Any:
         if not path:
             return (
                 "Error: edit_file requires a 'path' argument. "
-                'Example: {"path": "/home/dylan/Documents/file.md", '
+                'Example: {"path": "/home/<user>/Documents/file.md", '
                 '"old_string": "hello", "new_string": "world"}'
             )
         if not old_string:

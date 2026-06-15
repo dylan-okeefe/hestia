@@ -4,10 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 SECURITY_PATH = Path("SECURITY.md")
-CONTACT_EMAIL = "dylanokeefedev@gmail.com"
+CONTACT_EMAIL = "security@example.com"
 
 
 def test_security_has_contact_email() -> None:

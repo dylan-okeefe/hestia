@@ -27,6 +27,7 @@ from pathlib import Path
 
 from hestia.config import (
     DEFAULT_SOUL_MD_PATH,
+    BrowserConfig,
     CompressionConfig,
     EmailConfig,
     HandoffConfig,
@@ -53,7 +54,11 @@ def _telegram_from_env() -> TelegramConfig:
     token = os.environ.get("HESTIA_TELEGRAM_BOT_TOKEN", "").strip()
     raw = os.environ.get("HESTIA_TELEGRAM_ALLOWED_USERS", "").strip()
     allowed = [u.strip() for u in raw.split(",") if u.strip()] if raw else []
-    return TelegramConfig(bot_token=token, allowed_users=allowed)
+    return TelegramConfig(
+        bot_token=token,
+        allowed_users=allowed,
+        rate_limit_edits_seconds=4.0,
+    )
 
 
 def _load_matrix_secrets():
@@ -86,13 +91,16 @@ _ROOT = Path(__file__).resolve().parent / "runtime-data"
 _DB_PATH = _ROOT / "hestia.db"
 
 config = HestiaConfig(
+    browser=BrowserConfig(
+        min_fetch_delay_seconds=3.0,
+    ),
     inference=InferenceConfig(
         base_url="http://127.0.0.1:8001",
         model_name="Qwen3.6-35B-A3B-APEX-I-Quality.gguf",
         # Must match llama-server's per-slot context: --ctx-size / --parallel.
-        # With -c 262144 -np 4, each slot gets 262144 / 4 = 65536 tokens.
+        # With -c 393216 -np 3, each slot gets 393216 / 3 = 131072 tokens.
         # The policy engine uses this value for context-window budgeting.
-        context_length=65536,
+        context_length=131072,
         default_reasoning_budget=2048,
         max_tokens=4096,
         stream=True,
@@ -111,7 +119,10 @@ config = HestiaConfig(
     storage=StorageConfig(
         database_url=f"sqlite+aiosqlite:///{_DB_PATH}",
         artifacts_dir=_ROOT / "artifacts",
-        allowed_roots=["/home/dylan/Documents/Job Search"],
+        allowed_roots=[
+            os.path.expanduser("~/Documents/Job Search"),
+            str(_ROOT / "artifacts"),
+        ],
     ),
     identity=IdentityConfig(
         soul_path=DEFAULT_SOUL_MD_PATH,
@@ -154,12 +165,13 @@ config = HestiaConfig(
     # outbound network call to runtime-data/logs/egress.jsonl.
     security=SecurityConfig(),
     # Gmail via IMAP + SMTP app password from .env (EMAIL_APP_PASSWORD).
+    # Replace the placeholder username with the real Gmail address in local config.
     email=EmailConfig(
         imap_host="imap.gmail.com",
         imap_port=993,
         smtp_host="smtp.gmail.com",
         smtp_port=587,
-        username="agent.silas13@gmail.com",
+        username="agent@example.com",
         password_env="EMAIL_APP_PASSWORD",
         default_folder="INBOX",
     ),
@@ -169,23 +181,45 @@ config = HestiaConfig(
     reflection=ReflectionConfig(enabled=False),
     system_prompt=(
         "You are Hestia, a helpful personal assistant.\n\n"
+        "You have access to tools. Use the tool-calling format shown in the tool "
+        "instructions (the <tool_call> XML format). Place the tool call immediately "
+        "after the closing </think> tag and before any conversational text.\n\n"
         "CRITICAL RULES:\n"
-        "1. If a website blocks you with CAPTCHA, 'Humans only', or Cloudflare, STOP trying that site. Use the data you already have.\n"
-        "2. When you say you will compile, write, or create something, you MUST call the appropriate tool (e.g. write_file) to actually do it. Do NOT just describe what you would do.\n"
-        "3. Use concise summaries for tool results. Focus on delivering the final output the user asked for.\n"
-        "4. If you have successfully scraped data from even one source, use it. Do not keep searching for 'more' sources.\n"
-        "5. For LinkedIn, JavaScript-heavy sites, or any page requiring login, ALWAYS use browser_get — NEVER use terminal with curl. curl cannot render JavaScript or reuse authenticated sessions.\n"
-        "6. If browser_get fails on a site, STOP and tell the user. Do not fallback to curl or other workarounds.\n"
-        "7. STOP after 2-3 searches. Compile and present what you found. Do NOT keep searching for 'better' or 'more' results.\n"
-        "8. If you already have data from a previous search, USE IT. Do not repeat the same search with slightly different filters.\n"
-        "9. If a URL returns 404, STOP guessing alternative URLs on that domain. Use the data you already have or tell the user the page is gone.\n"
-        "10. When calling write_file, you MUST provide both 'path' and 'content' as valid JSON strings. If the content is longer than ~2000 characters, write the first chunk with write_file and append the rest with append_to_file.\n\n"
-        "TOOL EXAMPLES (always include required arguments):\n"
-        '- list_dir: {\"path\": \"/home/dylan/Documents/Job Search\"}\n'
-        '- read_file: {\"path\": \"/home/dylan/Documents/Job Search/resume.pdf\"}\n'
-        '- browser_get: {\"url\": \"https://www.linkedin.com/jobs/search/?keywords=agentic+AI\", \"wait_seconds\": 5}\n'
-        '- write_file: {\"path\": \"/home/dylan/test.txt\", \"content\": \"hello\"}\n'
-        '- append_to_file: {\"path\": \"/home/dylan/test.txt\", \"content\": \"more text\"}\n'
+        "1. Put all reasoning and planning inside <think></think> blocks.\n"
+        "2. If a tool is unavailable, blocked, or returns an error, STOP and tell the user "
+        "or choose a different action. Do not keep retrying the same call.\n"
+        "3. When the user asks a conversational question, reply directly without calling tools.\n"
+        "4. If a website blocks you with CAPTCHA, 'Humans only', or Cloudflare, "
+        "STOP trying that site. Use the data you already have.\n"
+        "5. When you say you will compile, write, or create something, you MUST "
+        "call the appropriate tool (e.g. write_file) to actually do it. Do NOT "
+        "just describe what you would do.\n"
+        "6. Use concise summaries for tool results. Focus on delivering the final "
+        "output the user asked for.\n"
+        "7. If you have successfully scraped data from even one source, use it. "
+        "Do not keep searching for 'more' sources.\n"
+        "8. For LinkedIn, JavaScript-heavy sites, or any page requiring login, "
+        "ALWAYS use browser_get — NEVER use terminal with curl. curl cannot "
+        "render JavaScript or reuse authenticated sessions.\n"
+        "9. If browser_get fails on a site, STOP and tell the user. Do not "
+        "fallback to curl or other workarounds.\n"
+        "10. STOP after 2-3 searches. Compile and present what you found. Do NOT "
+        "keep searching for 'better' or 'more' results.\n"
+        "11. If you already have data from a previous search, USE IT. Do not "
+        "repeat the same search with slightly different filters.\n"
+        "12. If a URL returns 404, STOP guessing alternative URLs on that domain. "
+        "Use the data you already have or tell the user the page is gone.\n"
+        "13. FILE WRITING: If you need to write more than 2000 characters, create the file "
+        "with a short header using write_file, then add each remaining section with "
+        "append_to_file. Do NOT try to fit an entire long document into one tool call.\n\n"
+        "CHUNKED WRITE EXAMPLE (each call under 2000 chars):\n"
+        'write_file({"path": "<listings.md>", "content": "# Job Listings\\n\\n"})\n'
+        'append_to_file({"path": "<listings.md>", "content": "## Listing 1\\n..."})\n'
+        'append_to_file({"path": "<listings.md>", "content": "## Listing 2\\n..."})\n\n'
+        "TOOL EXAMPLES (use the XML format from the tool instructions):\n"
+        '- write_file: {"path": "/home/<user>/Documents/notes.md", "content": "# Notes\\n"}\n'
+        '- append_to_file: {"path": "/home/<user>/Documents/notes.md", "content": "## Section 1\\n..."}\n'
+        '- browser_get: {"url": "https://www.linkedin.com/jobs/search/?keywords=agentic+AI", "wait_seconds": 5}\n'
     ),
     max_iterations=40,
 )

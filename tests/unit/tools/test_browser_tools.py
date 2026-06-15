@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from hestia.tools.browser.fetch import BrowserFetchResult, ToolResultCategory
 from hestia.tools.builtin.browser_get import browser_get
 from hestia.tools.builtin.browser_login import browser_login
 
@@ -106,206 +107,84 @@ class TestBrowserLogin:
 class TestBrowserGet:
     """Tests for browser_get tool."""
 
+    @pytest.fixture
+    def mock_fetch_url(self):
+        """Patch the shared fetch_url helper used by browser_get."""
+        with patch("hestia.tools.builtin.browser_get.fetch_url") as mock_fetch:
+            yield mock_fetch
+
     @pytest.mark.asyncio
-    async def test_invalid_url_returns_error(self, mock_playwright):
+    async def test_invalid_url_returns_error(self, mock_fetch_url):
         """Invalid URL returns error message."""
-        mock_playwright.async_playwright = MagicMock()
         result = await browser_get("not-a-url")
         assert "Invalid URL" in result
+        mock_fetch_url.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_missing_scheme_returns_error(self, mock_playwright):
+    async def test_missing_scheme_returns_error(self, mock_fetch_url):
         """URL without scheme returns error message."""
-        mock_playwright.async_playwright = MagicMock()
         result = await browser_get("example.com/page")
         assert "Invalid URL" in result
+        mock_fetch_url.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_import_error_when_playwright_not_installed(self):
-        """ImportError returns installation instructions."""
-        import builtins
-
-        original_import = builtins.__import__
-
-        def _block_playwright(name: str, *args: object, **kwargs: object) -> object:
-            if name == "playwright.async_api":
-                raise ImportError("No module named 'playwright.async_api'")
-            return original_import(name, *args, **kwargs)
-
-        with patch.object(builtins, "__import__", _block_playwright):
-            result = await browser_get("https://example.com/page")
-        assert "Playwright is not installed" in result
-
-    @pytest.mark.asyncio
-    async def test_successful_fetch_with_session(self, mock_playwright, tmp_path):
-        """Successful fetch reuses stored session and saves refreshed cookies."""
-        mock_storage = {
-            "cookies": [{"name": "session", "value": "old"}],
-            "origins": [],
-        }
-        mock_text = "Page content here"
-        mock_cookies = [{"name": "session", "value": "refreshed"}]
-
-        mock_page = AsyncMock()
-        mock_page.goto = AsyncMock()
-        mock_page.wait_for_selector = AsyncMock()
-        mock_page.evaluate = AsyncMock(return_value=mock_text)
-
-        mock_context = AsyncMock()
-        mock_context.new_page = AsyncMock(return_value=mock_page)
-        mock_context.cookies = AsyncMock(return_value=mock_cookies)
-        mock_context.storage_state = AsyncMock(return_value=mock_storage)
-
-        mock_browser = AsyncMock()
-        mock_browser.new_context = AsyncMock(return_value=mock_context)
-
-        mock_playwright_instance = AsyncMock()
-        mock_playwright_instance.chromium = AsyncMock()
-        mock_playwright_instance.chromium.launch = AsyncMock(return_value=mock_browser)
-
-        mock_playwright.async_playwright = MagicMock(
-            return_value=MockAsyncContextManager(mock_playwright_instance)
+    async def test_delegates_to_fetch_url(self, mock_fetch_url):
+        """Successful fetch delegates to shared helper and returns text."""
+        mock_fetch_url.return_value = BrowserFetchResult(
+            ok=True,
+            category=ToolResultCategory.SUCCESS,
+            text="Page content here",
+            final_url="https://example.com/page",
+            title="Example",
         )
 
-        with patch(
-            "hestia.tools.builtin.browser_get.BrowserSessionStore"
-        ) as mock_store_cls:
-            mock_store = mock_store_cls.return_value
-            mock_store.load_storage = MagicMock(return_value=mock_storage)
-            mock_store.load_cookies = MagicMock(return_value=[])
-            result = await browser_get("https://example.com/page")
+        result = await browser_get("https://example.com/page")
 
-        assert result == mock_text
-        mock_browser.new_context.assert_called_once_with(
-            viewport={"width": 1920, "height": 1080},
-            user_agent=(
-                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
-            ),
-            locale="en-US",
-            timezone_id="America/New_York",
-            storage_state=mock_storage,
-        )
-        mock_store.save_storage.assert_called_once_with("example.com", mock_storage)
-        mock_store.save_cookies.assert_called_once_with("example.com", mock_cookies)
-
-    @pytest.mark.asyncio
-    async def test_fetch_without_stored_session(self, mock_playwright, tmp_path):
-        """Fetch works without stored session."""
-        mock_text = "Page content here"
-        mock_cookies = []
-
-        mock_page = AsyncMock()
-        mock_page.goto = AsyncMock()
-        mock_page.evaluate = AsyncMock(return_value=mock_text)
-
-        mock_context = AsyncMock()
-        mock_context.new_page = AsyncMock(return_value=mock_page)
-        mock_context.cookies = AsyncMock(return_value=mock_cookies)
-        mock_context.storage_state = AsyncMock(return_value={"cookies": [], "origins": []})
-
-        mock_browser = AsyncMock()
-        mock_browser.new_context = AsyncMock(return_value=mock_context)
-
-        mock_playwright_instance = AsyncMock()
-        mock_playwright_instance.chromium = AsyncMock()
-        mock_playwright_instance.chromium.launch = AsyncMock(return_value=mock_browser)
-
-        mock_playwright.async_playwright = MagicMock(
-            return_value=MockAsyncContextManager(mock_playwright_instance)
-        )
-
-        with patch(
-            "hestia.tools.builtin.browser_get.BrowserSessionStore"
-        ) as mock_store_cls:
-            mock_store = mock_store_cls.return_value
-            mock_store.load_storage = MagicMock(return_value=None)
-            mock_store.load_cookies = MagicMock(return_value=[])
-            result = await browser_get("https://example.com/page")
-
-        assert result == mock_text
-        mock_browser.new_context.assert_called_once_with(
-            viewport={"width": 1920, "height": 1080},
-            user_agent=(
-                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
-            ),
-            locale="en-US",
-            timezone_id="America/New_York",
+        assert result == "Page content here"
+        mock_fetch_url.assert_awaited_once_with(
+            "https://example.com/page",
+            domain="example.com",
+            wait_for_selector="",
+            wait_seconds=3,
+            timeout_seconds=30,
         )
 
     @pytest.mark.asyncio
-    async def test_fetch_with_wait_for_selector(self, mock_playwright, tmp_path):
-        """Fetch respects wait_for_selector parameter."""
-        mock_text = "Content after selector"
-        mock_cookies = []
-
-        mock_page = AsyncMock()
-        mock_page.goto = AsyncMock()
-        mock_page.wait_for_selector = AsyncMock()
-        mock_page.evaluate = AsyncMock(return_value=mock_text)
-
-        mock_context = AsyncMock()
-        mock_context.new_page = AsyncMock(return_value=mock_page)
-        mock_context.cookies = AsyncMock(return_value=mock_cookies)
-
-        mock_browser = AsyncMock()
-        mock_browser.new_context = AsyncMock(return_value=mock_context)
-
-        mock_playwright_instance = AsyncMock()
-        mock_playwright_instance.chromium = AsyncMock()
-        mock_playwright_instance.chromium.launch = AsyncMock(return_value=mock_browser)
-
-        mock_playwright.async_playwright = MagicMock(
-            return_value=MockAsyncContextManager(mock_playwright_instance)
+    async def test_passes_wait_for_selector(self, mock_fetch_url):
+        """Wait selector is forwarded to shared helper."""
+        mock_fetch_url.return_value = BrowserFetchResult(
+            ok=True,
+            category=ToolResultCategory.SUCCESS,
+            text="Content",
+            final_url="https://example.com/page",
+            title="Example",
         )
 
-        with patch(
-            "hestia.tools.builtin.browser_get.BrowserSessionStore"
-        ) as mock_store_cls:
-            mock_store = mock_store_cls.return_value
-            mock_store.load_storage = MagicMock(return_value=None)
-            result = await browser_get(
-                "https://example.com/page", wait_for_selector="#content"
-            )
+        await browser_get(
+            "https://example.com/page", wait_for_selector="#content", wait_seconds=5
+        )
 
-        assert result == mock_text
-        mock_page.wait_for_selector.assert_awaited_once_with(
-            "#content", timeout=30000
+        mock_fetch_url.assert_awaited_once_with(
+            "https://example.com/page",
+            domain="example.com",
+            wait_for_selector="#content",
+            wait_seconds=5,
+            timeout_seconds=30,
         )
 
     @pytest.mark.asyncio
-    async def test_fetch_error_handling(self, mock_playwright, tmp_path):
-        """Errors during fetch return error message."""
-        mock_page = AsyncMock()
-        mock_page.goto = AsyncMock(side_effect=Exception("Network error"))
-        mock_page.evaluate = AsyncMock(return_value="")
-
-        mock_context = AsyncMock()
-        mock_context.new_page = AsyncMock(return_value=mock_page)
-        mock_context.storage_state = AsyncMock(return_value={"cookies": [], "origins": []})
-
-        mock_browser = AsyncMock()
-        mock_browser.new_context = AsyncMock(return_value=mock_context)
-
-        mock_playwright_instance = AsyncMock()
-        mock_playwright_instance.chromium = AsyncMock()
-        mock_playwright_instance.chromium.launch = AsyncMock(return_value=mock_browser)
-
-        mock_playwright.async_playwright = MagicMock(
-            return_value=MockAsyncContextManager(mock_playwright_instance)
+    async def test_returns_failure_text(self, mock_fetch_url):
+        """Blocked result returns the helper's failure text."""
+        mock_fetch_url.return_value = BrowserFetchResult(
+            ok=False,
+            category=ToolResultCategory.BLOCKED,
+            text="[BLOCKED - LOGIN_REQUIRED] re-authenticate",
+            final_url="https://example.com/login",
+            title="Sign in",
         )
 
-        with patch(
-            "hestia.tools.builtin.browser_get.BrowserSessionStore"
-        ) as mock_store_cls:
-            mock_store = mock_store_cls.return_value
-            mock_store.load_storage = MagicMock(return_value=None)
-            mock_store.load_cookies = MagicMock(return_value=[])
-            result = await browser_get("https://example.com/page")
-
-        assert "Error fetching" in result
-        assert "Network error" in result
+        result = await browser_get("https://example.com/page")
+        assert "[BLOCKED - LOGIN_REQUIRED]" in result
 
 
 class TestBrowserSessionHealthCheck:
