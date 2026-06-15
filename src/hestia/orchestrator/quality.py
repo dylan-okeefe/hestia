@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
@@ -86,11 +88,14 @@ _PATCH_FAILURE_THRESHOLD = 3
 _READ_ONLY_STREAK_THRESHOLD = 8
 
 
-def classify_turn(
+async def classify_turn(
     turn: Turn,
     assistant_message: Message,
     history: list[Message],
     allowed_tools: list[str] | None,
+    *,
+    write_file_handler: Callable[..., Awaitable[str]] | None = None,
+    append_to_file_handler: Callable[..., Awaitable[str]] | None = None,
 ) -> Correction | None:
     """Inspect a single turn and return a tailored correction if it looks degenerate.
 
@@ -99,6 +104,8 @@ def classify_turn(
         assistant_message: The assistant message produced this iteration.
         history: Full conversation history *including* ``assistant_message``.
         allowed_tools: Tools permitted in this session context.
+        write_file_handler: Optional handler for recovering truncated write_file calls.
+        append_to_file_handler: Optional handler for recovering truncated append_to_file calls.
 
     Returns:
         A :class:`Correction` if a degenerate pattern was detected, else ``None``.
@@ -146,17 +153,109 @@ def classify_turn(
 
     truncated_write = _is_truncated_write_file_xml(assistant_message)
     if truncated_write:
-        return Correction(
-            pattern=DegeneratePattern.TRUNCATED_WRITE_FILE,
-            message=(
-                "Your write_file call was too large and got truncated before it could "
-                "be executed. Each write_file/append_to_file call MUST have content "
-                "shorter than 2000 characters. Write a short header with write_file, "
-                "then add sections with append_to_file. Do not put everything in one call."
-            ),
+        return await _handle_truncated_write_file(
+            assistant_message,
+            write_file_handler=write_file_handler,
+            append_to_file_handler=append_to_file_handler,
         )
 
     return None
+
+
+async def _handle_truncated_write_file(
+    assistant_message: Message,
+    *,
+    write_file_handler: Callable[..., Awaitable[str]] | None,
+    append_to_file_handler: Callable[..., Awaitable[str]] | None,
+) -> Correction:
+    """Recover partial content from a truncated write/append call and build a correction."""
+    generic = (
+        "Your write_file call was too large and got truncated before it could "
+        "be executed. Each write_file/append_to_file call MUST have content "
+        "shorter than 2000 characters. Write a short header with write_file, "
+        "then add sections with append_to_file. Do not put everything in one call."
+    )
+
+    recovery = _recover_truncated_write_file(assistant_message.content or "")
+    if recovery is None:
+        return Correction(
+            pattern=DegeneratePattern.TRUNCATED_WRITE_FILE,
+            message=generic,
+        )
+
+    name, path, partial_content = recovery
+    handler: Callable[..., Awaitable[str]] | None = None
+    if name == "write_file":
+        handler = write_file_handler
+    elif name == "append_to_file":
+        handler = append_to_file_handler
+
+    if handler is None:
+        return Correction(
+            pattern=DegeneratePattern.TRUNCATED_WRITE_FILE,
+            message=generic,
+        )
+
+    try:
+        result = await handler(path=path, content=partial_content)
+    except Exception:  # noqa: BLE001
+        result = None
+
+    if not result or not (result.startswith("Wrote") or result.startswith("Appended")):
+        return Correction(
+            pattern=DegeneratePattern.TRUNCATED_WRITE_FILE,
+            message=generic,
+        )
+
+    bytes_written = len(partial_content)
+    if name == "append_to_file":
+        message = (
+            f"Your append_to_file call was truncated before completion. The first "
+            f"{bytes_written:,} characters have been appended to {path}. Continue by "
+            f"calling append_to_file with the rest of this section. Do not try to "
+            f"rewrite the entire file in one call."
+        )
+    else:
+        message = (
+            f"Your write_file call was truncated before completion. The first "
+            f"{bytes_written:,} characters have been saved to {path}. Continue by "
+            f"calling append_to_file with the next section. Do not try to "
+            f"rewrite the entire file in one call."
+        )
+
+    return Correction(
+        pattern=DegeneratePattern.TRUNCATED_WRITE_FILE,
+        message=message,
+    )
+
+
+def _recover_truncated_write_file(
+    content: str,
+) -> tuple[str, str, str] | None:
+    """Extract the tool name, path, and partial content from an unclosed XML block.
+
+    The content capture is intentionally lenient: the JSON string is incomplete,
+    so we stop at the truncation point and treat whatever we captured as the
+    partial content.
+    """
+    name_match = re.search(r"<function[=:]\s*([^>\s]+)\s*>", content)
+    if not name_match:
+        return None
+    name = name_match.group(1).strip()
+    if name not in ("write_file", "append_to_file"):
+        return None
+
+    path_match = re.search(r'"path"\s*:\s*"([^"]+)"', content)
+    if not path_match:
+        return None
+    path = path_match.group(1)
+
+    content_match = re.search(r'"content"\s*:\s*"(.*)', content, re.DOTALL)
+    if not content_match:
+        return None
+    partial_content = content_match.group(1)
+
+    return name, path, partial_content
 
 
 def _is_empty_response(assistant_message: Message) -> bool:

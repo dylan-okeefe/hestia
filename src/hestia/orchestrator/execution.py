@@ -434,8 +434,23 @@ class TurnExecution:
             if history_includes_current
             else list(ctx.running_history) + [assistant_msg]
         )
-        correction = classify_turn(
-            turn, assistant_msg, history, ctx.allowed_tools or []
+        write_file_handler: Any | None = None
+        append_to_file_handler: Any | None = None
+        try:
+            write_file_meta = self._tools.describe("write_file")
+            write_file_handler = write_file_meta.handler
+            append_to_file_meta = self._tools.describe("append_to_file")
+            append_to_file_handler = append_to_file_meta.handler
+        except Exception:  # noqa: BLE001
+            pass
+
+        correction = await classify_turn(
+            turn,
+            assistant_msg,
+            history,
+            ctx.allowed_tools or [],
+            write_file_handler=write_file_handler,
+            append_to_file_handler=append_to_file_handler,
         )
         if correction is None:
             return False
