@@ -1268,7 +1268,11 @@ def test_latest_tool_result_categories_detects_retryable_results():
             content="",
             tool_calls=[ToolCall(id="tc1", name="browser_get", arguments={"url": "https://example.com"})],
         ),
-        Message(role="tool", content="Error fetching https://example.com: Timeout", tool_call_id="tc1"),
+        Message(
+            role="tool",
+            content="[CATEGORY: TIMEOUT] Error fetching https://example.com: Timeout",
+            tool_call_id="tc1",
+        ),
         Message(
             role="assistant",
             content="",
@@ -1320,7 +1324,7 @@ async def test_execute_tool_calls_allows_retry_after_transient_failure():
         Message(role="assistant", content="", tool_calls=[first_tc]),
         Message(
             role="tool",
-            content="Error fetching https://example.com: Timeout 30000ms exceeded.",
+            content="[CATEGORY: TIMEOUT] Error fetching https://example.com: Timeout 30000ms exceeded.",
             tool_call_id="tc1",
         ),
     ]
@@ -1483,7 +1487,7 @@ async def test_repeated_identical_call_retry_cap_and_fallback():
         Message(role="assistant", content="", tool_calls=[original_tc]),
         Message(
             role="tool",
-            content="Error fetching https://example.com: Timeout 30000ms exceeded.",
+            content="[CATEGORY: TIMEOUT] Error fetching https://example.com: Timeout 30000ms exceeded.",
             tool_call_id="tc0",
         ),
     ]
@@ -1493,7 +1497,7 @@ async def test_repeated_identical_call_retry_cap_and_fallback():
     ) as mock_dispatch:
         mock_dispatch.return_value = ToolCallResult(
             status="error",
-            content="Error fetching https://example.com: Timeout 30000ms exceeded.",
+            content="[CATEGORY: TIMEOUT] Error fetching https://example.com: Timeout 30000ms exceeded.",
             artifact_handle=None,
             truncated=False,
         )
@@ -1661,10 +1665,10 @@ def test_is_retryable_tool_result_uses_classifier() -> None:
     """Retryability is based on the classifier categories."""
     from hestia.orchestrator.execution import _is_retryable_tool_result
 
-    assert _is_retryable_tool_result("Timeout") is True
-    assert _is_retryable_tool_result("An error occurred") is True
-    assert _is_retryable_tool_result("Blocked by Cloudflare") is False
-    assert _is_retryable_tool_result("404 not found") is False
+    assert _is_retryable_tool_result("[CATEGORY: TIMEOUT] Timeout") is True
+    assert _is_retryable_tool_result("[CATEGORY: TRANSIENT_OTHER] An error occurred") is True
+    assert _is_retryable_tool_result("[CATEGORY: BLOCKED] Blocked by Cloudflare") is False
+    assert _is_retryable_tool_result("[CATEGORY: NOT_FOUND] 404 not found") is False
     assert _is_retryable_tool_result("Page loaded") is False
 
 
@@ -1707,7 +1711,7 @@ async def test_timeout_retry_escalates_timeout_seconds():
         Message(role="assistant", content="", tool_calls=[original_tc]),
         Message(
             role="tool",
-            content="Error fetching https://example.com: Timeout 10000ms exceeded.",
+            content="[CATEGORY: TIMEOUT] Error fetching https://example.com: Timeout 10000ms exceeded.",
             tool_call_id="tc0",
         ),
     ]
@@ -1770,7 +1774,7 @@ async def test_timeout_retry_per_attempt_timeout_capped():
         Message(role="assistant", content="", tool_calls=[original_tc]),
         Message(
             role="tool",
-            content="Error fetching https://example.com: Timeout 100000ms exceeded.",
+            content="[CATEGORY: TIMEOUT] Error fetching https://example.com: Timeout 100000ms exceeded.",
             tool_call_id="tc0",
         ),
     ]
@@ -1833,7 +1837,7 @@ async def test_timeout_retry_budget_blocks_before_exceeding():
         Message(role="assistant", content="", tool_calls=[original_tc]),
         Message(
             role="tool",
-            content="Error fetching https://example.com: Timeout 30000ms exceeded.",
+            content="[CATEGORY: TIMEOUT] Error fetching https://example.com: Timeout 30000ms exceeded.",
             tool_call_id="tc0",
         ),
     ]

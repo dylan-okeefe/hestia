@@ -52,28 +52,26 @@ def make_write_file_tool(
         """
         if not path:
             return (
+                "[CATEGORY: transient_other] "
                 "Error: write_file requires a 'path' argument. "
                 "Example: {\"path\": \"/home/<user>/Documents/file.md\", \"content\": \"# Hello\"}"
-            )
-        if not content:
-            return (
-                "Error: write_file requires a 'content' argument. "
-                "Provide the full text content you want to write."
             )
 
         # Check path sandboxing
         if error := check_path_allowed(path, allowed_roots):
-            return error
+            return f"[CATEGORY: transient_other] {error}"
 
         target = Path(path)
         if write_guard_enabled and await asyncio.to_thread(target.exists):
             return (
+                "[CATEGORY: transient_other] "
                 f"File {path} already exists. "
                 "Use edit_file(path=..., old_string=..., new_string=...) instead."
             )
 
         await asyncio.to_thread(target.parent.mkdir, parents=True, exist_ok=True)
         await asyncio.to_thread(target.write_text, content, encoding="utf-8")
-        return f"Wrote {len(content)} bytes to {path}"
+        bytes_written = len(content.encode("utf-8"))
+        return f"Wrote {bytes_written} bytes to {path}"
 
     return write_file

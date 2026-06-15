@@ -174,6 +174,29 @@ class TestWriteFile:
         assert "13 bytes" in result
 
     @pytest.mark.asyncio
+    async def test_write_file_allows_empty_content(self, tmp_path):
+        """Can write an empty file."""
+        write_file = make_write_file_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
+        target = tmp_path / "empty.txt"
+        result = await write_file(str(target), "")
+
+        assert target.exists()
+        assert target.read_text() == ""
+        assert "0 bytes" in result
+
+    @pytest.mark.asyncio
+    async def test_write_file_reports_utf8_bytes(self, tmp_path):
+        """Success message counts UTF-8 bytes, not Python characters."""
+        write_file = make_write_file_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
+        target = tmp_path / "unicode.txt"
+        content = "héllo"  # 6 UTF-8 bytes, 5 characters
+        result = await write_file(str(target), content)
+
+        assert target.read_text() == content
+        assert "6 bytes" in result
+        assert "5 bytes" not in result
+
+    @pytest.mark.asyncio
     async def test_write_file_creates_parent_dirs(self, tmp_path):
         """Creates parent directories if they don't exist."""
         write_file = make_write_file_tool(StorageConfig(allowed_roots=[str(tmp_path)]))

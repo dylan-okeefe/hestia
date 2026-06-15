@@ -1,5 +1,10 @@
 # L219 Handoff: Hygiene and VRAM Check Verification
 
+> **Loop-numbering note:** The git commits that landed this work are labeled
+> `L190` ("Hygiene and VRAM check verification"). It was later renumbered to `L219`
+> to avoid colliding with earlier `L189`/`L190` loops already recorded in the loop
+> log.
+
 ## Status
 Implemented on `feature/develop-review-2026-06-12`.
 

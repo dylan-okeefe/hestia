@@ -8,6 +8,7 @@ import pytest
 from hestia.tools.browser.fetch import (
     BrowserFetchResult,
     ToolResultCategory,
+    _BrowserPool,
     fetch_url,
 )
 
@@ -71,6 +72,13 @@ def no_delays() -> Any:
         patch("hestia.tools.browser.fetch.asyncio.sleep", AsyncMock()),
         patch("hestia.tools.browser.fetch.random.uniform", return_value=0.0),
     ):
+        yield
+
+
+@pytest.fixture(autouse=True)
+def isolated_browser_pool() -> Any:
+    """Give each test a fresh browser pool so per-test mocks are used."""
+    with patch("hestia.tools.browser.fetch._pool", _BrowserPool()):
         yield
 
 
