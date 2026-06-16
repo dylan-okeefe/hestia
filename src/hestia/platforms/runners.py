@@ -373,6 +373,7 @@ async def run_platform(
             tick_interval_seconds=config.scheduler.tick_interval_seconds,
             system_prompt=config.system_prompt,
             event_bus=app.event_bus,
+            blocked_actions_digest=app.blocked_actions_digest,
         )
         await scheduler.start()
 

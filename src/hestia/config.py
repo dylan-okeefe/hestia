@@ -508,6 +508,22 @@ class WebSearchConfig(_ConfigFromEnv):
     time_range: str | None = None  # Tavily: "day" | "week" | "month" | "year" | None
 
 
+@dataclass
+class NotificationsConfig(_ConfigFromEnv):
+    """Scheduled notification / digest configuration."""
+
+    _ENV_PREFIX = "NOTIFICATIONS"
+
+    blocked_digest_time: str = "09:00"
+    """Local time of day (HH:MM) at which to send the blocked-actions digest."""
+
+    blocked_digest_channel: str = ""
+    """Platform identifier for the operator's primary channel (e.g. 'telegram', 'matrix').
+
+    The actual recipient is the session bound to the digest scheduled task.
+    """
+
+
 # ---------------------------------------------------------------------------
 # Grouped config containers
 # ---------------------------------------------------------------------------
@@ -548,6 +564,7 @@ class FeatureConfig:
     policy: PolicyConfig = field(default_factory=PolicyConfig)
     rate_limit: RateLimitConfig = field(default_factory=RateLimitConfig)
     web: WebConfig = field(default_factory=WebConfig)
+    notifications: NotificationsConfig = field(default_factory=NotificationsConfig)
 
 
 # ---------------------------------------------------------------------------
@@ -631,6 +648,7 @@ class HestiaConfig(_ConfigFromEnv):
         policy: PolicyConfig | None = None,
         rate_limit: RateLimitConfig | None = None,
         web: WebConfig | None = None,
+        notifications: NotificationsConfig | None = None,
     ) -> None:
         if core is None:
             core = CoreConfig(
@@ -659,6 +677,7 @@ class HestiaConfig(_ConfigFromEnv):
                 policy=policy or PolicyConfig(),
                 rate_limit=rate_limit or RateLimitConfig(),
                 web=web or WebConfig(),
+                notifications=notifications or NotificationsConfig(),
             )
         self.core = core
         self.platforms = platforms
@@ -843,6 +862,15 @@ class HestiaConfig(_ConfigFromEnv):
     @web.setter
     def web(self, value: WebConfig) -> None:
         self.features.web = value
+
+    @property
+    def notifications(self) -> NotificationsConfig:
+        """Deprecated: use features.notifications instead."""
+        return self.features.notifications
+
+    @notifications.setter
+    def notifications(self, value: NotificationsConfig) -> None:
+        self.features.notifications = value
 
     @classmethod
     def from_file(cls, path: Path) -> HestiaConfig:

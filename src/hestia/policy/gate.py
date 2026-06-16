@@ -215,7 +215,7 @@ class CapabilityGate:
             return result
 
         if destructive and injection_flagged:
-            trusted = request.channel in _TRUSTED_CHANNELS or request.channel == Channel.SUBAGENT
+            trusted = request.channel in _TRUSTED_CHANNELS
             if trusted:
                 result = CapabilityResult(
                     allowed=True,

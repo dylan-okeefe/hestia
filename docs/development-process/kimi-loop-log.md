@@ -6,6 +6,31 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-06-17 — L222–L223 Complete (Trust Boundary & Blocked-Actions Digest)
+
+**Outcome:** Closed the L222 trust/capability boundary wiring, fixed a subagent injection-escalation bug, and implemented the L223 blocked-actions digest on top of the gate's audit store.
+
+### L222 — Trust/Capability Boundary (final wiring + security fix)
+**Branch:** `feature/l222-trust-capability-boundary`
+- Wired `CapabilityGate` into `TurnExecution` and the workflow executor; `TurnContext` carries `channel` and `request_token`.
+- Added `tests/unit/orchestrator/test_execution_gate.py` and `tests/unit/workflows/test_executor_trust.py`.
+- Fixed confirmation-callback signature drift across unit/integration/platform tests.
+- **Security correction:** removed `Channel.SUBAGENT` from the injection-escalation trusted branch so a destructive, injection-flagged subagent call is denied, while non-injection subagent calls still inherit operator trust.
+
+**Quality gates:** 1933 pytest passed (unit + integration), mypy 0 errors, ruff clean on touched files.
+
+### L223 — Blocked-Actions Digest
+**Branch:** `feature/l223-blocked-actions-digest`
+- Reused the L222 `capability_events` audit table and added `CapabilityEventStore.list_since()`.
+- Added `NotificationsConfig` with `blocked_digest_time`/`blocked_digest_channel`.
+- Added `task_type` to `scheduled_tasks` (schema + migration) and extended `Scheduler` to route `blocked_digest` tasks to the new `BlockedActionsDigest` service.
+- Implemented `BlockedActionsDigest` (query, format, send, cron helper, task upsert) in `src/hestia/blocked_actions/digest.py`.
+- Added on-demand `blocked_actions_summary` tool with a 24-hour default window.
+- Added tests under `tests/unit/blocked_actions/`, `tests/unit/scheduler/`, and `tests/unit/tools/`.
+- Deferred approval-queue / workflow suspend-and-resume to a stub in `docs/roadmap/future-systems-deferred-roadmap.md`.
+
+**Quality gates:** 1946 pytest passed (unit + integration), mypy 0 errors, ruff clean on touched files.
+
 ## 2026-06-16 — L220–L221 Complete (Persistence Store Split & Session Concurrency)
 
 **Outcome:** Split the monolithic `SessionStore` into message/turn/session stores, added a handoff service, then built per-session turn serialization, IMAP serialization, slot cleanup on failures, cache invalidation, and chat-template sequence validation.

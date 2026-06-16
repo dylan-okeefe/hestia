@@ -126,6 +126,23 @@ class CapabilityEventStore:
             rows = result.fetchall()
         return [self._row_to_event(row) for row in rows]
 
+    async def list_since(
+        self, since: datetime, *, limit: int = 1000
+    ) -> list[CapabilityEvent]:
+        """Return events created at or after *since*, ordered newest first."""
+        sql = sa.text(
+            "SELECT id, tool_name, arguments_json, channel, actor_platform, actor_platform_user, "
+            "source_workflow_id, source_trigger_id, decision, reason, injection_flagged, created_at "
+            "FROM capability_events WHERE created_at >= :since "
+            "ORDER BY created_at DESC LIMIT :limit"
+        )
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(
+                sql, {"since": since.isoformat(), "limit": limit}
+            )
+            rows = result.fetchall()
+        return [self._row_to_event(row) for row in rows]
+
     def _row_to_event(self, row: Any) -> CapabilityEvent:
         created_at = row.created_at
         if isinstance(created_at, str):

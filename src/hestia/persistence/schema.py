@@ -87,6 +87,7 @@ scheduled_tasks = sa.Table(
     metadata,
     sa.Column("id", sa.String, primary_key=True),
     sa.Column("session_id", sa.String, sa.ForeignKey("sessions.id"), nullable=False),
+    sa.Column("task_type", sa.String, nullable=False, default="chat"),
     sa.Column("prompt", sa.Text, nullable=False),
     sa.Column("description", sa.String, nullable=True),
     sa.Column("cron_expression", sa.String, nullable=True),

@@ -14,17 +14,19 @@
 
 | Loop | Branch | Status | Focus | Spec |
 |------|--------|--------|-------|------|
-| **L220** | `feature/l220-persistence-store-split` | **📋 Spec complete** | Split `sessions.py` into `SessionStore`/`MessageStore`/`TurnStore`, DTOs, mappers, `HandoffService`, deprecated facade | `docs/development-process/L220-persistence-store-split.md` |
-| **L221** | `feature/l221-session-concurrency` | **📋 Spec complete** | Per-session turn serialization, email adapter lock, slot erase on non-DONE, correction column | `docs/development-process/L221-session-concurrency.md` |
-| **L222** | `feature/l222-trust-capability-boundary` | **📋 Spec complete** | `CapabilityGate`, confirmation binding, webhook secret redaction, admin route hardening, browser SSRF | `docs/development-process/L222-trust-capability-boundary.md` |
+| **L220** | `feature/l220-persistence-store-split` | **✅ Complete** | Split `sessions.py` into `SessionStore`/`MessageStore`/`TurnStore`, DTOs, mappers, `HandoffService`, deprecated facade | `docs/development-process/L220-persistence-store-split.md` |
+| **L221** | `feature/l221-session-concurrency` | **✅ Complete** | Per-session turn serialization, email adapter lock, slot erase on non-DONE, correction column | `docs/development-process/L221-session-concurrency.md` |
+| **L222** | `feature/l222-trust-capability-boundary` | **✅ Complete** | `CapabilityGate`, confirmation binding, webhook secret redaction, admin route hardening, browser SSRF | `docs/development-process/L222-trust-capability-boundary.md` |
+| **L223** | `feature/l223-blocked-actions-digest` | **✅ Complete** | Blocked-actions digest (audit query, scheduled digest, on-demand tool) | `docs/development-process/L223-blocked-actions-digest.md` |
 
 ### Execution order
 
 1. **L220** first — it is a pure behavior-preserving refactor with no new columns.
 2. **L221** after L220 — the `correction` column migration belongs in the already-split `MessageStore`.
-3. **L222** can run independently, but sequencing it after L221 gives a stable base.
+3. **L222** after L221 — trust boundary needs the split store + correction base.
+4. **L223** after L222 — digest consumes the gate's `capability_events` audit entries.
 
-### Next: implement L220
+### Next: idle (awaiting Dylan's merge / next loop direction)
 
 ---
 

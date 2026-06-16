@@ -202,6 +202,33 @@ async def m006_workflow_allow_list(conn: AsyncConnection) -> None:
         )
 
 
+async def m007_scheduled_task_type(conn: AsyncConnection) -> None:
+    """Add task_type column to scheduled_tasks table."""
+    dialect = conn.dialect.name
+    if dialect == "sqlite":
+        result = await conn.execute(
+            sa.text(
+                "SELECT 1 FROM pragma_table_info('scheduled_tasks') WHERE name = 'task_type'"
+            )
+        )
+        has_column = result.scalar() is not None
+    else:
+        result = await conn.execute(
+            sa.text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = 'scheduled_tasks' AND column_name = 'task_type'"
+            )
+        )
+        has_column = result.scalar() is not None
+
+    if not has_column:
+        await conn.execute(
+            sa.text(
+                "ALTER TABLE scheduled_tasks ADD COLUMN task_type TEXT NOT NULL DEFAULT 'chat'"
+            )
+        )
+
+
 MIGRATIONS: list[Migration] = [
     m001_sessions_active_unique,
     m002_session_handoffs,
@@ -209,6 +236,7 @@ MIGRATIONS: list[Migration] = [
     m004_messages_correction,
     m005_capability_events,
     m006_workflow_allow_list,
+    m007_scheduled_task_type,
 ]
 
 

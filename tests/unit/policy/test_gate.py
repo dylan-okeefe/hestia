@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from typing import Any
 
 import pytest
@@ -18,7 +19,7 @@ from hestia.tools.registry import ToolRegistry
 
 
 @pytest.fixture
-async def db() -> Database:
+async def db() -> AsyncGenerator[Database, None]:
     database = Database("sqlite+aiosqlite:///:memory:")
     await database.connect()
     await database.create_tables()
@@ -254,3 +255,31 @@ class TestCapabilityGate:
         result = await gate.check(request)
         assert result.allowed is False
         assert result.reason == "blocked_by_killswitch"
+
+    async def test_subagent_injection_is_denied_non_injection_inherits_trust(
+        self, db: Database, registry: ToolRegistry
+    ) -> None:
+        cfg = HestiaConfig.default()
+        cfg.trust = TrustConfig.developer()
+        gate = make_gate(cfg, db, registry)
+        actor = await make_user(db, "Owner", "subagent", "agent-1", trust_preset="developer")
+
+        injection_request = CapabilityRequest(
+            actor=actor,
+            channel=Channel.SUBAGENT,
+            tool_name="terminal",
+            inputs={"command": "whoami"},
+        )
+        denied = await gate.check(injection_request, injection_flagged=True)
+        assert denied.allowed is False
+        assert denied.reason == "injection_flagged"
+
+        normal_request = CapabilityRequest(
+            actor=actor,
+            channel=Channel.SUBAGENT,
+            tool_name="terminal",
+            inputs={"command": "whoami"},
+        )
+        approved = await gate.check(normal_request)
+        assert approved.allowed is True
+        assert approved.auto_approved is True

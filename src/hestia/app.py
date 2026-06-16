@@ -13,6 +13,7 @@ from typing import Any
 import click
 
 from hestia.artifacts.store import ArtifactStore
+from hestia.blocked_actions.digest import BlockedActionsDigest
 from hestia.config import HestiaConfig
 from hestia.context.builder import ContextBuilder
 from hestia.context.compressor import InferenceHistoryCompressor
@@ -55,6 +56,7 @@ from hestia.tools.builtin import (
     current_time,
     make_accept_proposal_tool,
     make_append_to_file_tool,
+    make_blocked_actions_summary_tool,
     make_create_scheduled_task_tool,
     make_defer_proposal_tool,
     make_delegate_task_tool,
@@ -225,6 +227,10 @@ class AppContext:
         self.error_resolution_store = ErrorResolutionStore(self.db)
         self.job_alert_store = JobAlertStore(self.db)
         self.capability_event_store = CapabilityEventStore(self.db)
+        self.blocked_actions_digest = BlockedActionsDigest(
+            self.capability_event_store,
+            self.session_store,
+        )
         self.trigger_registry: Any = None
         self.epoch_compiler = MemoryEpochCompiler(
             self.memory_store, max_tokens=self.config.memory.epoch_max_tokens
@@ -455,6 +461,7 @@ class AppContext:
         reg.register(make_glob_tool(cfg.storage))
         reg.register(make_grep_tool(cfg.storage))
         reg.register(make_rollback_turn_tool(self.checkpoint_manager))
+        reg.register(make_blocked_actions_summary_tool(self.blocked_actions_digest))
         reg.register(make_search_memory_tool(self.memory_store))
         reg.register(make_save_memory_tool(self.memory_store))
         reg.register(make_list_memories_tool(self.memory_store))
