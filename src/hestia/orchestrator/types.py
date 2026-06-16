@@ -8,7 +8,9 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
+from hestia.core.clock import utcnow
 from hestia.core.types import Message
+from hestia.policy.channel import Channel
 
 if TYPE_CHECKING:
     from hestia.context.builder import BuildResult
@@ -59,9 +61,13 @@ class Turn:
     thinking_aborted: bool = False  # mid-stream thinking budget was exceeded once
     transitions: list[TurnTransition] = field(default_factory=list)
     # Artifact handles produced by tool calls during this turn. Populated by
-    # the orchestrator engine; consumed by the delegate_task tool so a
-    # subagent can surface the artifacts it produced back to its caller.
+    # the orchestrator engine; consumed by the delegate_task tool so a subagent
+    # can surface the artifacts it produced back to its caller.
     artifact_handles: list[str] = field(default_factory=list)
+    # Persistence fields carried on the domain object.
+    status_msg_id: str | None = None
+    slot_id: int | None = None
+    last_transition_at: datetime = field(default_factory=utcnow)
 
 
 # Callback types
@@ -86,6 +92,7 @@ class TurnContext:
     session: Session
     platform: Platform | None = None
     platform_user: str | None = None
+    channel: Channel | None = None
 
     # Set by _prepare_turn_context
     build_result: BuildResult | None = None
@@ -97,6 +104,9 @@ class TurnContext:
 
     # Per-turn delivery hint (set by platform adapter)
     voice_reply: bool = False
+
+    # Set by CapabilityGate when a tool requires confirmation.
+    request_token: str | None = None
 
     # Resolved user from identity store (set by platform runner)
     resolved_user: User | None = None
@@ -125,3 +135,5 @@ class TurnContext:
     _repeated_tools_blocked: set[str] = field(default_factory=set, repr=False)
     # Quality: tools already corrected for repeated-identical-call this turn
     _repeated_tools_corrected: set[str] = field(default_factory=set, repr=False)
+    # Circuit breaker: consecutive empty tool-call batches (finish_reason="tool_calls" with no calls)
+    _degenerate_tool_call_retries: int = field(default=0, repr=False)

@@ -106,7 +106,10 @@ class TestStartSession:
         assert manager.is_active()
         assert manager.get_session_id() == session_id
 
-        mock_playwright.chromium.launch.assert_called_once_with(headless=True)
+        mock_playwright.chromium.launch.assert_called_once()
+        launch_call = mock_playwright.chromium.launch.call_args
+        assert launch_call.kwargs.get("headless") is True
+        assert isinstance(launch_call.kwargs.get("args"), list)
         mock_browser.new_context.assert_awaited_once()
         mock_context.new_page.assert_awaited_once()
         mock_page.goto.assert_called_once_with(

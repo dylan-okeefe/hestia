@@ -12,6 +12,7 @@ from typing import Any, cast
 
 from playwright.async_api import async_playwright
 
+from hestia.security.ssrf import SSRFBlockedError, assert_url_safe
 from hestia.tools.browser.session_store import BrowserSessionStore
 from hestia.tools.browser.stealth import (
     STEALTH_LAUNCH_ARGS,
@@ -318,6 +319,19 @@ async def fetch_url(
     """
     store = BrowserSessionStore()
     await _rate_limit_sleep(store, domain)
+
+    try:
+        await assert_url_safe(url)
+    except SSRFBlockedError as exc:
+        return BrowserFetchResult(
+            ok=False,
+            category=ToolResultCategory.BLOCKED,
+            text=_format_failure_message(
+                ToolResultCategory.BLOCKED, f"SSRF blocked: {exc}"
+            ),
+            final_url="",
+            title="",
+        )
 
     storage_state = _load_session(store, domain)
 

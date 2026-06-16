@@ -49,6 +49,7 @@ messages = sa.Table(
     sa.Column("tool_call_id", sa.String, nullable=True),
     sa.Column("reasoning_content", sa.Text, nullable=True),  # stored but stripped on send
     sa.Column("is_handoff", sa.Boolean, nullable=False, default=False),
+    sa.Column("correction", sa.Boolean, nullable=False, default=False),
     sa.Column("created_at", sa.DateTime, nullable=False),
     sa.PrimaryKeyConstraint("session_id", "idx"),
 )
@@ -86,6 +87,7 @@ scheduled_tasks = sa.Table(
     metadata,
     sa.Column("id", sa.String, primary_key=True),
     sa.Column("session_id", sa.String, sa.ForeignKey("sessions.id"), nullable=False),
+    sa.Column("task_type", sa.String, nullable=False, default="chat"),
     sa.Column("prompt", sa.Text, nullable=False),
     sa.Column("description", sa.String, nullable=True),
     sa.Column("cron_expression", sa.String, nullable=True),
@@ -187,6 +189,7 @@ workflows = sa.Table(
     sa.Column("trigger_config", sa.Text, nullable=False, default="{}"),
     sa.Column("owner_id", sa.String, nullable=False, default=""),
     sa.Column("trust_level", sa.String, nullable=False, default="paranoid"),
+    sa.Column("allow_listed_tools", sa.Text, nullable=False, default="[]"),
     sa.Column("created_at", sa.DateTime, nullable=False),
     sa.Column("updated_at", sa.DateTime, nullable=False),
     sa.Index("idx_workflows_created", "created_at"),
@@ -314,4 +317,28 @@ error_resolutions = sa.Table(
     sa.Column("status", sa.String, nullable=False),
     sa.Column("resolved_at", sa.DateTime, nullable=False),
     sa.Column("resolved_by", sa.String, nullable=True),
+)
+
+capability_events = sa.Table(
+    "capability_events",
+    metadata,
+    sa.Column("id", sa.String, primary_key=True),
+    sa.Column("tool_name", sa.String, nullable=False),
+    sa.Column("arguments_json", sa.Text, nullable=False),
+    sa.Column("channel", sa.String, nullable=False),
+    sa.Column("actor_platform", sa.String, nullable=False),
+    sa.Column("actor_platform_user", sa.String, nullable=False),
+    sa.Column("source_workflow_id", sa.String, nullable=True),
+    sa.Column("source_trigger_id", sa.String, nullable=True),
+    sa.Column("decision", sa.String, nullable=False),
+    sa.Column("reason", sa.String, nullable=False),
+    sa.Column("injection_flagged", sa.Boolean, nullable=False, default=False),
+    sa.Column("created_at", sa.DateTime, nullable=False),
+    sa.Index("idx_capability_events_created", "created_at"),
+    sa.Index(
+        "idx_capability_events_actor",
+        "actor_platform",
+        "actor_platform_user",
+        "created_at",
+    ),
 )

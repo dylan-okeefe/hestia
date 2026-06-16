@@ -50,13 +50,14 @@ class TestBrowserSessionStore:
         assert store.load_storage("unknown.com") is None
 
     def test_list_domains(self, store):
-        """list_domains returns saved domain names."""
+        """list_domains returns normalized, deduplicated domains with session data."""
         store.save_cookies("example.com", [])
         store.save_cookies("sub.example.com", [])
         store.save_storage("another.org", {})
 
         domains = store.list_domains()
-        assert sorted(domains) == ["another.org", "example.com", "sub.example.com"]
+        # sub.example.com normalizes to the eTLD+1 example.com
+        assert sorted(domains) == ["another.org", "example.com"]
 
     def test_list_domains_empty(self, store):
         """list_domains returns empty list when nothing saved."""

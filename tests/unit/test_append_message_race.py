@@ -25,10 +25,16 @@ import sqlalchemy as sa
 from hestia.core.clock import utcnow
 from hestia.core.types import Message, SessionState, SessionTemperature
 from hestia.core.types import Session as HestiaSession
+from hestia.orchestrator.mappers import (
+    message_domain_to_dto,
+    turn_transition_domain_to_dto,
+)
 from hestia.orchestrator.types import TurnState, TurnTransition
 from hestia.persistence.db import Database
+from hestia.persistence.message_store import MessageStore
 from hestia.persistence.schema import messages, sessions, turn_transitions, turns
-from hestia.persistence.sessions import SessionStore
+from hestia.persistence.session_store import SessionStore
+from hestia.persistence.turn_store import TurnStore
 
 
 @pytest.fixture
@@ -39,6 +45,16 @@ async def store(tmp_path):
     await db.create_tables()
     yield SessionStore(db)
     await db.close()
+
+
+@pytest.fixture
+async def message_store(store):
+    return MessageStore(store._db)
+
+
+@pytest.fixture
+async def turn_store(store):
+    return TurnStore(store._db)
 
 
 async def _seed_session(store: SessionStore, session_id: str) -> None:
@@ -85,14 +101,18 @@ async def _seed_turn(store: SessionStore, turn_id: str, session_id: str) -> None
 
 
 @pytest.mark.asyncio
-async def test_append_message_concurrent_20_no_collision(store: SessionStore) -> None:
+async def test_append_message_concurrent_20_no_collision(
+    store: SessionStore, message_store: MessageStore
+) -> None:
     """20 concurrent append_message calls on the same session yield 20 distinct idx."""
     session_id = f"s_{uuid.uuid4().hex[:8]}"
     await _seed_session(store, session_id)
 
     async def _append(i: int) -> None:
         msg = Message(role="user", content=f"msg-{i}", created_at=utcnow())
-        await store.append_message(session_id, msg)
+        await message_store.append_message(
+            session_id, message_domain_to_dto(msg, session_id, idx=0)
+        )
 
     await asyncio.gather(*(_append(i) for i in range(20)))
 
@@ -107,7 +127,9 @@ async def test_append_message_concurrent_20_no_collision(store: SessionStore) ->
 
 
 @pytest.mark.asyncio
-async def test_append_transition_concurrent_20_no_collision(store: SessionStore) -> None:
+async def test_append_transition_concurrent_20_no_collision(
+    store: SessionStore, turn_store: TurnStore
+) -> None:
     """20 concurrent append_transition calls on the same turn yield 20 distinct idx."""
     session_id = f"s_{uuid.uuid4().hex[:8]}"
     turn_id = f"t_{uuid.uuid4().hex[:8]}"
@@ -121,7 +143,9 @@ async def test_append_transition_concurrent_20_no_collision(store: SessionStore)
             at=utcnow(),
             note=f"transition-{i}",
         )
-        await store.append_transition(turn_id, transition)
+        await turn_store.append_transition(
+            turn_transition_domain_to_dto(turn_id, transition)
+        )
 
     await asyncio.gather(*(_append(i) for i in range(20)))
 

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
-from typing import Any
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING, Any
 
 from nio import (
     AsyncClient,
@@ -23,6 +25,9 @@ from hestia.platforms.allowlist import (
 )
 from hestia.platforms.base import IncomingMessageCallback, Platform
 from hestia.platforms.confirmation import ConfirmationStore, render_args_for_human_review
+
+if TYPE_CHECKING:
+    from hestia.persistence.session_store import SessionStore
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +59,9 @@ class MatrixAdapter(Platform):
         self._confirmation_timeout_seconds = 60.0
         # Maps original confirmation event_id -> request_id so we can correlate replies
         self._pending_confirmations: dict[str, str] = {}
+        # Runtime deps are injected by run_platform after the orchestrator is built.
+        self._session_store: SessionStore | None = None
+        self._reset_callback: Callable[[str], Awaitable[None]] | None = None
 
         # Validate allowed_rooms entries (warn, don't hard-fail, for backward compat)
         for entry in self._config.allowed_rooms:
@@ -70,6 +78,20 @@ class MatrixAdapter(Platform):
     @property
     def name(self) -> str:
         return "matrix"
+
+    def set_session_store(self, session_store: SessionStore) -> None:
+        """Inject session store for /reset command handling."""
+        self._session_store = session_store
+
+    def register_reset_callback(
+        self, callback: Callable[[str], Awaitable[None]]
+    ) -> None:
+        """Register a callback invoked when /reset archives a session.
+
+        The callback receives the platform_user whose session was reset so the
+        runner can drop any in-memory session cache for that room.
+        """
+        self._reset_callback = callback
 
     async def start(self, on_message: IncomingMessageCallback) -> None:
         """Start Matrix sync loop."""
@@ -99,10 +121,8 @@ class MatrixAdapter(Platform):
 
         if self._sync_task is not None:
             self._sync_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._sync_task
-            except asyncio.CancelledError:
-                pass
             self._sync_task = None
 
         if self._client is not None:
@@ -199,7 +219,12 @@ class MatrixAdapter(Platform):
             logger.debug("Failed to redact message %s: %s", msg_id, e)
 
     async def request_confirmation(
-        self, user: str, tool_name: str, arguments: dict[str, Any]
+        self,
+        user: str,
+        tool_name: str,
+        arguments: dict[str, Any],
+        requester_platform_user: str | None = None,
+        request_token: str | None = None,
     ) -> bool:
         """Post a confirmation prompt and wait for a 'yes'/'no' reply.
 
@@ -220,6 +245,8 @@ class MatrixAdapter(Platform):
             tool_name=tool_name,
             arguments=arguments,
             timeout_seconds=self._confirmation_timeout_seconds,
+            requester_platform_user=requester_platform_user,
+            request_token=request_token,
         )
         self._pending_confirmations[event_id] = req.id
 
@@ -287,15 +314,23 @@ class MatrixAdapter(Platform):
         if not body or not body.strip():
             return  # Ignore empty/whitespace messages
 
+        stripped_body = body.strip()
+
+        # Handle /reset command before routing to the orchestrator
+        if stripped_body.lower().startswith("/reset"):
+            await self._handle_reset(room, event)
+            return
+
         # Check if this is a reply to a pending confirmation (internal adapter concern)
         in_reply_to = self._extract_in_reply_to(event)
         if in_reply_to and in_reply_to in self._pending_confirmations:
             request_id = self._pending_confirmations[in_reply_to]
-            reply_text = body.strip().lower()
+            reply_text = stripped_body.lower()
+            approver = event.sender
             if reply_text in ("yes", "y"):
-                self._confirmation_store.resolve(request_id, True)
+                self._confirmation_store.resolve(request_id, True, approver)
             elif reply_text in ("no", "n"):
-                self._confirmation_store.resolve(request_id, False)
+                self._confirmation_store.resolve(request_id, False, approver)
             # Don't route confirmation replies to the orchestrator
             return
 
@@ -304,7 +339,7 @@ class MatrixAdapter(Platform):
 
         pending_request_id = DEFAULT_RESPONSE_STORE.find_pending("matrix", room.room_id)
         if pending_request_id is not None:
-            resolved = DEFAULT_RESPONSE_STORE.resolve(pending_request_id, body.strip())
+            resolved = DEFAULT_RESPONSE_STORE.resolve(pending_request_id, stripped_body)
             if resolved:
                 # Don't route workflow replies to the orchestrator
                 return
@@ -324,13 +359,43 @@ class MatrixAdapter(Platform):
 
         # Call the orchestrator callback
         # platform_user is the room ID (one room = one session)
-        # Matrix: sender_platform_user is not resolved individually for rooms
+        # sender_platform_user is the individual Matrix user id that sent the event
         await self._on_message(
             self.name,
             room.room_id,
-            body.strip(),
+            stripped_body,
+            event.sender,
             None,
-            None,
+        )
+
+    async def _handle_reset(self, room: MatrixRoom, event: RoomMessageText) -> None:
+        """Handle /reset command: archive the active session and clear the cache."""
+        platform_user = room.room_id
+
+        if self._session_store is None:
+            logger.warning("Reset requested in %s but session store not injected", platform_user)
+            await self.send_message(platform_user, "Reset is not available right now.")
+            return
+
+        session = await self._session_store.get_active_session("matrix", platform_user)
+        if session is None:
+            await self.send_message(
+                platform_user,
+                "No active conversation to reset. You're already starting fresh.",
+            )
+            return
+
+        await self._session_store.archive_session(session.id)
+
+        if self._reset_callback is not None:
+            try:
+                await self._reset_callback(platform_user)
+            except Exception:
+                logger.exception("Reset callback failed for %s", platform_user)
+
+        await self.send_message(
+            platform_user,
+            "Conversation reset. Previous context was archived; your next message starts a fresh session.",
         )
 
     @staticmethod

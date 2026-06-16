@@ -11,16 +11,10 @@ from typing import TYPE_CHECKING, Any
 
 from hestia.app import AppContext
 from hestia.core.types import ChatResponse, Message
-from hestia.tools.capabilities import (
-    EMAIL_SEND,
-    MEMORY_READ,
-    MEMORY_WRITE,
-    NETWORK_EGRESS,
-    SELF_MANAGEMENT,
-    SHELL_EXEC,
-    WRITE_LOCAL,
-)
-from hestia.workflows.models import ExecutionResult, NodeResult, WorkflowEdge, WorkflowNode
+from hestia.policy.channel import Channel
+from hestia.policy.gate import CapabilityRequest
+from hestia.policy.identity import Identity
+from hestia.workflows.models import ExecutionResult, NodeResult, Workflow, WorkflowEdge, WorkflowNode
 from hestia.workflows.store import WorkflowStore
 
 if TYPE_CHECKING:
@@ -87,36 +81,6 @@ def _extract_best_job_url(body: str) -> str | None:
         return None
     candidates.sort(key=lambda x: x[0], reverse=True)
     return candidates[0][1]
-
-
-_TRUST_CAPS: dict[str, set[str]] = {
-    "paranoid": set(),
-    "household": {MEMORY_READ, MEMORY_WRITE, WRITE_LOCAL},
-    "developer": {
-        MEMORY_READ,
-        MEMORY_WRITE,
-        WRITE_LOCAL,
-        SHELL_EXEC,
-        NETWORK_EGRESS,
-        EMAIL_SEND,
-        SELF_MANAGEMENT,
-    },
-}
-
-
-def _blocked_capabilities(trust_level: str) -> set[str]:
-    """Return the set of capabilities blocked for a given trust level."""
-    allowed = _TRUST_CAPS.get(trust_level, set())
-    all_caps = {
-        MEMORY_READ,
-        MEMORY_WRITE,
-        WRITE_LOCAL,
-        SHELL_EXEC,
-        NETWORK_EGRESS,
-        EMAIL_SEND,
-        SELF_MANAGEMENT,
-    }
-    return all_caps - allowed
 
 
 def _topological_sort(
@@ -333,37 +297,12 @@ class WorkflowExecutor:
                 )
             return result
 
-        blocked = _blocked_capabilities(workflow.trust_level)
         active_edges: set[str] = set()
 
         for node in order:
             incoming = [e for e in version.edges if e.target_node_id == node.id]
             if incoming and not any(e.id in active_edges for e in incoming):
                 continue
-
-            node_caps = set(node.capabilities)
-            denied = node_caps & blocked
-            if denied:
-                nr = NodeResult(
-                    node_id=node.id,
-                    status="failed",
-                    error=(
-                        f"Trust level '{workflow.trust_level}' denies "
-                        f"capabilities: {', '.join(sorted(denied))}"
-                    ),
-                )
-                node_results.append(nr)
-                result = ExecutionResult(
-                    workflow_id=workflow_id,
-                    status="failed",
-                    node_results=node_results,
-                    outputs=outputs,
-                )
-                if self._execution_store is not None:
-                    await self._execution_store.save_execution(
-                        result, workflow_id, version.version, trigger_payload
-                    )
-                return result
 
             inputs = _resolve_inputs(node, version.edges, outputs)
 
@@ -377,7 +316,7 @@ class WorkflowExecutor:
 
             node_start = time.perf_counter()
             try:
-                node_output = await self._run_node(node, inputs)
+                node_output = await self._run_node(node, inputs, workflow)
             except Exception as exc:
                 logger.exception("Node %s failed in workflow %s", node.id, workflow_id)
                 elapsed_ms = int((time.perf_counter() - node_start) * 1000)
@@ -418,15 +357,8 @@ class WorkflowExecutor:
             single_edge = len(outgoing_edges) == 1
             for edge in outgoing_edges:
                 if node.type == "condition":
-                    if node_output.value and (
-                        (single_edge and edge.source_handle is None)
-                        or edge.source_handle == "true"
-):
-                        active_edges.add(edge.id)
-                    elif not node_output.value and (
-                        (single_edge and edge.source_handle is None)
-                        or edge.source_handle == "false"
-                    ):
+                    expected = "true" if node_output.value else "false"
+                    if (single_edge and edge.source_handle is None) or edge.source_handle == expected:
                         active_edges.add(edge.id)
                 elif node.type == "llm_decision":
                     if (single_edge and edge.source_handle is None) or edge.source_handle == str(node_output.value):
@@ -460,12 +392,15 @@ class WorkflowExecutor:
             )
         return result
 
-    async def _run_node(self, node: WorkflowNode, inputs: dict[str, Any]) -> _NodeOutput:
+    async def _run_node(
+        self, node: WorkflowNode, inputs: dict[str, Any], workflow: Workflow
+    ) -> _NodeOutput:
         """Execute a single node by delegating to the app context.
 
         Args:
             node: The workflow node to execute.
             inputs: Resolved inputs for this node.
+            workflow: The workflow this node belongs to.
 
         Returns:
             A ``_NodeOutput`` wrapping the node's output and any token usage.
@@ -546,6 +481,27 @@ class WorkflowExecutor:
             )
 
         # Treat node type as a tool name by default
+        if self._app.capability_gate is not None:
+            actor = Identity(
+                platform="workflow",
+                platform_user=workflow.owner_id or workflow.id,
+            )
+            request = CapabilityRequest(
+                actor=actor,
+                channel=Channel.WORKFLOW,
+                tool_name=node.type,
+                inputs=inputs,
+                session_id=None,
+            )
+            gate_result = await self._app.capability_gate.check(
+                request, allow_list=workflow.allow_listed_tools
+            )
+            if not gate_result.allowed:
+                raise ValueError(
+                    f"[CATEGORY: BLOCKED] Capability gate denied '{node.type}' "
+                    f"in workflow {workflow.id}: {gate_result.reason}"
+                )
+
         result = await self._app.tool_registry.call(node.type, inputs)
         value = result.content
         if result.artifact_handle:

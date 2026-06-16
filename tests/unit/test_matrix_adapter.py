@@ -209,7 +209,9 @@ class TestMatrixAdapter:
 
         await adapter._handle_room_message(mock_room, mock_event)
 
-        callback.assert_called_once_with("matrix", "!room:matrix.org", "Hello bot", None, None)
+        callback.assert_called_once_with(
+            "matrix", "!room:matrix.org", "Hello bot", "@user:matrix.org", None
+        )
 
     @pytest.mark.asyncio
     async def test_handle_room_message_strips_whitespace(self):
@@ -233,7 +235,9 @@ class TestMatrixAdapter:
 
         await adapter._handle_room_message(mock_room, mock_event)
 
-        callback.assert_called_once_with("matrix", "!room:matrix.org", "Hello with whitespace", None, None)
+        callback.assert_called_once_with(
+            "matrix", "!room:matrix.org", "Hello with whitespace", "@user:matrix.org", None
+        )
 
     @pytest.mark.asyncio
     async def test_handle_room_message_ignores_empty_messages(self):

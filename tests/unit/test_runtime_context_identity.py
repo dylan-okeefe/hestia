@@ -18,6 +18,8 @@ def mock_deps():
     tool_registry = MagicMock()
     policy = MagicMock()
     failure_store = MagicMock()
+    message_store = MagicMock()
+    turn_store = MagicMock()
 
     context_builder.build = AsyncMock(return_value=[{"role": "system", "content": "sys"}])
     inference.chat = AsyncMock(
@@ -32,11 +34,12 @@ def mock_deps():
         )
     )
 
-    session_store.insert_turn = AsyncMock()
-    session_store.update_turn = AsyncMock()
-    session_store.append_transition = AsyncMock()
-    session_store.append_message = AsyncMock()
-    session_store.get_messages = AsyncMock(return_value=[])
+    message_store.get_messages = AsyncMock(return_value=[])
+    message_store.append_message = AsyncMock()
+    turn_store.insert_turn = AsyncMock()
+    turn_store.update_turn = AsyncMock()
+    turn_store.append_transition = AsyncMock()
+    failure_store.record = AsyncMock()
 
     policy.filter_tools = MagicMock(return_value=[])
     policy.turn_token_budget = MagicMock(return_value=8000)
@@ -45,6 +48,8 @@ def mock_deps():
     return {
         "inference": inference,
         "session_store": session_store,
+        "message_store": message_store,
+        "turn_store": turn_store,
         "context_builder": context_builder,
         "tool_registry": tool_registry,
         "policy": policy,
@@ -88,6 +93,8 @@ async def test_context_vars_set_during_success(mock_deps):
     orchestrator = Orchestrator(
         inference=mock_deps["inference"],
         session_store=mock_deps["session_store"],
+        message_store=mock_deps["message_store"],
+        turn_store=mock_deps["turn_store"],
         context_builder=mock_deps["context_builder"],
         tool_registry=mock_deps["tool_registry"],
         policy=mock_deps["policy"],
@@ -129,6 +136,8 @@ async def test_context_vars_reset_on_failure(mock_deps):
     orchestrator = Orchestrator(
         inference=mock_deps["inference"],
         session_store=mock_deps["session_store"],
+        message_store=mock_deps["message_store"],
+        turn_store=mock_deps["turn_store"],
         context_builder=mock_deps["context_builder"],
         tool_registry=mock_deps["tool_registry"],
         policy=mock_deps["policy"],
@@ -179,6 +188,8 @@ async def test_context_vars_set_from_session_not_kwargs(mock_deps):
     orchestrator = Orchestrator(
         inference=mock_deps["inference"],
         session_store=mock_deps["session_store"],
+        message_store=mock_deps["message_store"],
+        turn_store=mock_deps["turn_store"],
         context_builder=mock_deps["context_builder"],
         tool_registry=mock_deps["tool_registry"],
         policy=mock_deps["policy"],

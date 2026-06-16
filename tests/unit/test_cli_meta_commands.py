@@ -117,8 +117,12 @@ async def test_meta_command_session_with_slot_and_budget(store, sample_session, 
 async def test_meta_command_history_empty(store, sample_session):
     """/history on empty session should print '(empty)'."""
     from hestia.app import _handle_meta_command
+    from hestia.persistence.message_store import MessageStore
 
-    should_exit, new_session = await _handle_meta_command("/history", sample_session, store)
+    message_store = MessageStore(store._db)
+    should_exit, new_session = await _handle_meta_command(
+        "/history", sample_session, store, message_store
+    )
 
     assert should_exit is False
 
@@ -188,7 +192,7 @@ async def test_meta_command_tokens_no_trace_store(store, sample_session, capsys)
     app = MagicMock()
     app.trace_store = None
 
-    should_exit, _ = await _handle_meta_command("/tokens", sample_session, store, app)
+    should_exit, _ = await _handle_meta_command("/tokens", sample_session, store, app=app)
 
     assert should_exit is False
     captured = capsys.readouterr()
@@ -204,7 +208,7 @@ async def test_meta_command_tokens_empty(store, sample_session, capsys):
     app.trace_store = MagicMock()
     app.trace_store.list_recent = AsyncMock(return_value=[])
 
-    should_exit, _ = await _handle_meta_command("/tokens", sample_session, store, app)
+    should_exit, _ = await _handle_meta_command("/tokens", sample_session, store, app=app)
 
     assert should_exit is False
     captured = capsys.readouterr()
@@ -238,7 +242,7 @@ async def test_meta_command_tokens_with_usage(store, sample_session, capsys):
     app.trace_store = MagicMock()
     app.trace_store.list_recent = AsyncMock(return_value=[trace])
 
-    should_exit, _ = await _handle_meta_command("/tokens", sample_session, store, app)
+    should_exit, _ = await _handle_meta_command("/tokens", sample_session, store, app=app)
 
     assert should_exit is False
     captured = capsys.readouterr()
@@ -272,7 +276,7 @@ async def test_meta_command_tokens_with_reasoning(store, sample_session, capsys)
     app.trace_store = MagicMock()
     app.trace_store.list_recent = AsyncMock(return_value=[trace])
 
-    should_exit, _ = await _handle_meta_command("/tokens", sample_session, store, app)
+    should_exit, _ = await _handle_meta_command("/tokens", sample_session, store, app=app)
 
     assert should_exit is False
     captured = capsys.readouterr()

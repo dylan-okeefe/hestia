@@ -54,6 +54,7 @@ class EmailAdapter:
             imaplib.IMAP4_SSL | None
         ] = contextvars.ContextVar("_imap_session_var", default=None)
         self._smtp: smtplib.SMTP | None = None
+        self._lock = asyncio.Lock()
 
     def close(self) -> None:
         """Close any held SMTP connection."""
@@ -297,7 +298,7 @@ class EmailAdapter:
         ``message_id`` is the IMAP UID (numeric string).
         """
 
-        async with self.imap_session(folder=folder) as conn:
+        async with self._lock, self.imap_session(folder=folder) as conn:
             def _run() -> list[dict[str, Any]]:
                 if unread_only:
                     ok, data = conn.uid("SEARCH", "UNSEEN")
@@ -376,7 +377,7 @@ class EmailAdapter:
         Returns dict with keys: headers, body, attachments.
         """
 
-        async with self.imap_session(folder=self.config.default_folder) as conn:
+        async with self._lock, self.imap_session(folder=self.config.default_folder) as conn:
             def _run() -> dict[str, Any]:
                 msg = self._fetch_full(conn, message_id, self.config.default_folder)
                 body, attachments = self._extract_body(msg)
@@ -401,7 +402,7 @@ class EmailAdapter:
         Returns list of IMAP UIDs.
         """
 
-        async with self.imap_session(folder=folder) as conn:
+        async with self._lock, self.imap_session(folder=folder) as conn:
             def _run() -> list[str]:
                 criteria = self._parse_search_query(query)
                 ok, data = conn.uid("SEARCH", None, criteria)  # type: ignore[arg-type]
@@ -470,7 +471,7 @@ class EmailAdapter:
         """
 
         drafts = self.config.drafts_folder
-        async with self.imap_session(folder=drafts) as conn:
+        async with self._lock, self.imap_session(folder=drafts) as conn:
             def _run() -> str:
                 msg = EmailMessage()
                 msg["Subject"] = subject
@@ -524,7 +525,7 @@ class EmailAdapter:
 
         drafts = self.config.drafts_folder
         sent = self.config.sent_folder
-        async with self.imap_session(folder=drafts) as imap:
+        async with self._lock, self.imap_session(folder=drafts) as imap:
             def _run() -> str:
                 # 1. Fetch draft
                 msg = self._fetch_full(imap, draft_id, drafts)
@@ -547,7 +548,7 @@ class EmailAdapter:
     async def move_message(self, message_id: str, folder: str) -> str:
         """Move a message to another folder."""
 
-        async with self.imap_session(folder=self.config.default_folder) as conn:
+        async with self._lock, self.imap_session(folder=self.config.default_folder) as conn:
             def _run() -> str:
                 conn.uid("COPY", message_id, folder)
                 conn.uid("STORE", message_id, "+FLAGS", r"(\Deleted)")
@@ -565,7 +566,7 @@ class EmailAdapter:
         ``starred`` → ``\\Flagged``.
         """
 
-        async with self.imap_session(folder=self.config.default_folder) as conn:
+        async with self._lock, self.imap_session(folder=self.config.default_folder) as conn:
             def _run() -> str:
                 flag_upper = flag.upper()
                 if flag_upper in ("READ", "SEEN"):

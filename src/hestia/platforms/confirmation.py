@@ -30,6 +30,8 @@ class ConfirmationRequest:
     prompt: str
     created_at: datetime
     expires_at: datetime
+    requester_platform_user: str | None = None
+    request_token: str | None = None
     future: asyncio.Future[bool] | None = None
 
 
@@ -51,6 +53,8 @@ class ConfirmationStore:
         tool_name: str,
         arguments: dict[str, Any],
         timeout_seconds: float = 60.0,
+        requester_platform_user: str | None = None,
+        request_token: str | None = None,
     ) -> ConfirmationRequest:
         """Create a new pending confirmation request.
 
@@ -58,6 +62,10 @@ class ConfirmationStore:
             tool_name: Name of the tool awaiting approval.
             arguments: Arguments the tool intends to run with.
             timeout_seconds: How long the request remains valid.
+            requester_platform_user: Platform identity of the user who requested
+                the tool execution. Used to bind approval to the requester.
+            request_token: Optional stable token from the capability gate for
+                audit correlation.
 
         Returns:
             The created ``ConfirmationRequest`` (await ``request.future``).
@@ -70,6 +78,8 @@ class ConfirmationStore:
             prompt=render_args_for_human_review(tool_name, arguments),
             created_at=now,
             expires_at=now + timedelta(seconds=timeout_seconds),
+            requester_platform_user=requester_platform_user,
+            request_token=request_token,
             future=asyncio.get_running_loop().create_future(),
         )
         self._pending[req.id] = req
@@ -80,17 +90,42 @@ class ConfirmationStore:
         self._gc()
         return self._pending.get(request_id)
 
-    def resolve(self, request_id: str, approved: bool) -> bool:
+    def resolve(
+        self,
+        request_id: str,
+        approved: bool,
+        approver_platform_user: str | None = None,
+    ) -> bool:
         """Resolve a pending request.
+
+        Args:
+            request_id: The confirmation request ID.
+            approved: Whether the request is approved.
+            approver_platform_user: Platform identity of the user approving the
+                request. When a requester is recorded and the approver does not
+                match, the request is denied.
 
         Returns:
             ``True`` if the request existed and was resolved, ``False`` otherwise.
         """
         req = self._pending.pop(request_id, None)
-        if req is not None and req.future is not None and not req.future.done():
-            req.future.set_result(approved)
+        if req is None or req.future is None or req.future.done():
+            return False
+        if (
+            req.requester_platform_user is not None
+            and approver_platform_user is not None
+            and approver_platform_user != req.requester_platform_user
+        ):
+            logger.warning(
+                "Confirmation request %s denied: approver %s does not match requester %s",
+                request_id,
+                approver_platform_user,
+                req.requester_platform_user,
+            )
+            req.future.set_result(False)
             return True
-        return False
+        req.future.set_result(approved)
+        return True
 
     def cancel(self, request_id: str) -> bool:
         """Cancel a pending request (treats as denied).

@@ -7,7 +7,7 @@ from typing import Any
 
 from hestia.core.types import Session
 from hestia.persistence.scheduler import SchedulerStore
-from hestia.persistence.sessions import SessionStore
+from hestia.persistence.session_store import SessionStore
 from hestia.runtime_context import current_platform, current_platform_user
 from hestia.tools.capabilities import ORCHESTRATION
 from hestia.tools.metadata import tool

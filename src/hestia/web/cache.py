@@ -29,3 +29,6 @@ class InMemoryCache:
 
     def set(self, key: str, data: Any) -> None:
         self._store[key] = CachedItem(data=data, cached_at=datetime.now(UTC))
+
+    def clear(self) -> None:
+        self._store.clear()

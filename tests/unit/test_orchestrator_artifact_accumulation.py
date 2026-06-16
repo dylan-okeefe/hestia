@@ -67,15 +67,20 @@ async def test_artifact_handle_accumulated_in_trace():
         )
     )
 
-    mock_session_store.insert_turn = AsyncMock()
-    mock_session_store.update_turn = AsyncMock()
-    mock_session_store.append_transition = AsyncMock()
-    mock_session_store.append_message = AsyncMock()
-    mock_session_store.get_messages = AsyncMock(return_value=[])
+    mock_message_store = MagicMock()
+    mock_message_store.get_messages = AsyncMock(return_value=[])
+    mock_message_store.append_message = AsyncMock()
+    mock_turn_store = MagicMock()
+    mock_turn_store.insert_turn = AsyncMock()
+    mock_turn_store.update_turn = AsyncMock()
+    mock_turn_store.append_transition = AsyncMock()
+    mock_trace_store.record = AsyncMock()
 
     orchestrator = Orchestrator(
         inference=mock_inference,
         session_store=mock_session_store,
+        message_store=mock_message_store,
+        turn_store=mock_turn_store,
         context_builder=mock_context_builder,
         tool_registry=mock_tool_registry,
         policy=mock_policy,

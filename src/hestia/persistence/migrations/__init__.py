@@ -127,10 +127,116 @@ async def m003_users_and_rooms(conn: AsyncConnection) -> None:
     ))
 
 
+async def m004_messages_correction(conn: AsyncConnection) -> None:
+    """Add correction flag to messages table.
+
+    Idempotent: checks whether the column already exists before adding it.
+    SQLite does not support ``ALTER TABLE IF NOT EXISTS ADD COLUMN``,
+    so we inspect the table info first.
+    """
+    dialect = conn.dialect.name
+    if dialect == "sqlite":
+        result = await conn.execute(
+            sa.text("SELECT 1 FROM pragma_table_info('messages') WHERE name = 'correction'")
+        )
+        has_column = result.scalar() is not None
+    else:
+        result = await conn.execute(
+            sa.text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = 'messages' AND column_name = 'correction'"
+            )
+        )
+        has_column = result.scalar() is not None
+
+    if not has_column:
+        await conn.execute(
+            sa.text("ALTER TABLE messages ADD COLUMN correction INTEGER NOT NULL DEFAULT 0")
+        )
+
+
+async def m005_capability_events(conn: AsyncConnection) -> None:
+    """Add capability_events audit table for the trust/capability gate."""
+    await conn.execute(
+        sa.text(
+            "CREATE TABLE IF NOT EXISTS capability_events ("
+            "id TEXT PRIMARY KEY,"
+            "tool_name TEXT NOT NULL,"
+            "arguments_json TEXT NOT NULL,"
+            "channel TEXT NOT NULL,"
+            "actor_platform TEXT NOT NULL,"
+            "actor_platform_user TEXT NOT NULL,"
+            "source_workflow_id TEXT,"
+            "source_trigger_id TEXT,"
+            "decision TEXT NOT NULL,"
+            "reason TEXT NOT NULL,"
+            "injection_flagged INTEGER NOT NULL DEFAULT 0,"
+            "created_at DATETIME NOT NULL"
+            ")"
+        )
+    )
+    await conn.execute(
+        sa.text(
+            "CREATE INDEX IF NOT EXISTS idx_capability_events_created "
+            "ON capability_events (created_at)"
+        )
+    )
+    await conn.execute(
+        sa.text(
+            "CREATE INDEX IF NOT EXISTS idx_capability_events_actor "
+            "ON capability_events (actor_platform, actor_platform_user, created_at)"
+        )
+    )
+
+
+async def m006_workflow_allow_list(conn: AsyncConnection) -> None:
+    """Add allow_listed_tools column to workflows table."""
+    result = await conn.execute(
+        sa.text("SELECT name FROM pragma_table_info('workflows') WHERE name = 'allow_listed_tools'")
+    )
+    if result.fetchone() is None:
+        await conn.execute(
+            sa.text(
+                "ALTER TABLE workflows ADD COLUMN allow_listed_tools TEXT NOT NULL DEFAULT '[]'"
+            )
+        )
+
+
+async def m007_scheduled_task_type(conn: AsyncConnection) -> None:
+    """Add task_type column to scheduled_tasks table."""
+    dialect = conn.dialect.name
+    if dialect == "sqlite":
+        result = await conn.execute(
+            sa.text(
+                "SELECT 1 FROM pragma_table_info('scheduled_tasks') WHERE name = 'task_type'"
+            )
+        )
+        has_column = result.scalar() is not None
+    else:
+        result = await conn.execute(
+            sa.text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = 'scheduled_tasks' AND column_name = 'task_type'"
+            )
+        )
+        has_column = result.scalar() is not None
+
+    if not has_column:
+        await conn.execute(
+            sa.text(
+                "ALTER TABLE scheduled_tasks ADD COLUMN task_type TEXT NOT NULL DEFAULT 'chat'"
+            )
+        )
+
+
 MIGRATIONS: list[Migration] = [
     m001_sessions_active_unique,
     m002_session_handoffs,
     m003_users_and_rooms,
+    m004_messages_correction,
+    m005_capability_events,
+    m006_workflow_allow_list,
+    m007_scheduled_task_type,
 ]
 
 

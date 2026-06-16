@@ -58,7 +58,7 @@ async def cmd_history_show(
         click.echo(click.style(f"Session not found: {session_id}", fg="red"), err=True)
         return
 
-    messages = await app.session_store.get_messages(session_id)
+    messages = await app.message_store.get_messages(session_id)
 
     if output_json:
         data = {

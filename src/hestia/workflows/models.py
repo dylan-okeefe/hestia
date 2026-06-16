@@ -54,6 +54,7 @@ class Workflow:
     trigger_config: dict[str, Any] = field(default_factory=dict)
     owner_id: str = ""
     trust_level: str = "paranoid"
+    allow_listed_tools: set[str] = field(default_factory=set)
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

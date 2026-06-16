@@ -38,7 +38,8 @@ async def list_sessions(
         limit=limit, platform=platform, platform_user=platform_user
     )
     session_ids = [s.id for s in sessions]
-    turn_counts = await ctx.session_store.count_turns_for_sessions(session_ids)
+    assert ctx.turn_store is not None
+    turn_counts = await ctx.turn_store.count_turns_for_sessions(session_ids)
     result = []
     for s in sessions:
         message_count = turn_counts.get(s.id, 0)
@@ -69,15 +70,16 @@ async def get_turns(
         raise HTTPException(status_code=404, detail="Session not found")
     await RequireOwner(session.platform_user)(request, ctx)
 
-    turns = await ctx.session_store.list_turns_for_session(session_id)
+    assert ctx.turn_store is not None
+    turns = await ctx.turn_store.list_turns_for_session(session_id)
     return {
         "turns": [
             {
                 "id": t.id,
                 "session_id": t.session_id,
-                "state": t.state.value if t.state else None,
+                "state": t.state,
                 "started_at": t.started_at.isoformat() if t.started_at else None,
-                "iterations": t.iterations,
+                "iterations": t.iteration,
                 "error": t.error,
             }
             for t in turns
@@ -97,8 +99,10 @@ async def get_session_messages(
         raise HTTPException(status_code=404, detail="Session not found")
     await RequireOwner(session.platform_user)(request, ctx)
 
-    turns = await ctx.session_store.list_turns_for_session(session_id)
-    messages = await ctx.session_store.get_messages(session_id)
+    assert ctx.turn_store is not None
+    assert ctx.message_store is not None
+    turns = await ctx.turn_store.list_turns_for_session(session_id)
+    messages = await ctx.message_store.get_messages(session_id)
     return {
         "session": {
             "id": session.id,
@@ -110,9 +114,9 @@ async def get_session_messages(
         "turns": [
             {
                 "id": t.id,
-                "state": t.state.value if t.state else None,
+                "state": t.state,
                 "started_at": t.started_at.isoformat() if t.started_at else None,
-                "iterations": t.iterations,
+                "iterations": t.iteration,
                 "error": t.error,
             }
             for t in turns

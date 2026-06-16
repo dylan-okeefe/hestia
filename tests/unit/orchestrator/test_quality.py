@@ -351,15 +351,16 @@ async def test_execution_loop_quality_monitor_injection() -> None:
     builder = MagicMock()
     builder.build = AsyncMock(return_value=MagicMock(messages=[]))
 
-    store = MagicMock()
-    store.append_message = AsyncMock()
+    message_store = MagicMock()
+    message_store.append_message = AsyncMock()
 
     execution = TurnExecution(
         tool_registry=MagicMock(),
         inference_client=inference_client,
         policy=policy,
         context_builder=builder,
-        session_store=store,
+        session_store=MagicMock(),
+        message_store=message_store,
     )
 
     transition = AsyncMock()
@@ -373,10 +374,10 @@ async def test_execution_loop_quality_monitor_injection() -> None:
     # 3. Second call returns text
     assert inference_client.chat.call_count == 2
 
-    # Correction should have been appended to store
-    assert store.append_message.call_count >= 2
+    # Correction should have been appended to the message store
+    assert message_store.append_message.call_count >= 2
     # The last call should be the correction message
-    correction_msg = store.append_message.call_args_list[-2][0][1]
+    correction_msg = message_store.append_message.call_args_list[-2][0][1]
     assert correction_msg.role == "user"
     assert "Respond with text or a tool call." in correction_msg.content
 
@@ -438,15 +439,16 @@ async def test_correction_count_capped_at_three() -> None:
     builder = MagicMock()
     builder.build = AsyncMock(return_value=MagicMock(messages=[]))
 
-    store = MagicMock()
-    store.append_message = AsyncMock()
+    message_store = MagicMock()
+    message_store.append_message = AsyncMock()
 
     execution = TurnExecution(
         tool_registry=MagicMock(),
         inference_client=inference_client,
         policy=policy,
         context_builder=builder,
-        session_store=store,
+        session_store=MagicMock(),
+        message_store=message_store,
     )
 
     transition = AsyncMock()

@@ -38,6 +38,7 @@ These are user-visible or operator-visible gaps called out in repo docs but not 
 | A6 | **Example configs & recipes** | Weather monitor, RSS digest, HA bridge (from revised design Phase 6). | Docs + small scripts | Stable Telegram/Matrix + scheduler |
 | A7 | **Read-only web dashboard (optional)** | ADR-007 defers full web UI; a **read-only** status view is still allowed as a future addition. | Phase 8+ | Separate process, no chat surface |
 | A8 | **Vector / semantic memory (plugin)** | ADR-006 locks FTS for v1; semantic search remains an extension. | Plugin phase | `sqlite-vec` or external index, ADR |
+| A9 | **Approval queue / workflow suspend-and-resume** | Design doc TBD (see chat: injection-stays-denied, workflows-first, re-validate-on-resume, TTL). | Post-0.14 | CapabilityGate audit + workflow executor |
 
 ---
 

@@ -74,6 +74,9 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
             set_web_context(
                 WebContext(
                     session_store=app.session_store,
+                    message_store=app.message_store,
+                    turn_store=app.turn_store,
+                    handoff_service=app.handoff_service,
                     proposal_store=app.proposal_store,
                     style_store=app.style_store,
                     scheduler_store=app.scheduler_store,

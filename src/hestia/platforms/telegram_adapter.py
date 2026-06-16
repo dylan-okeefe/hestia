@@ -11,6 +11,7 @@ import re
 import tempfile
 import time
 from collections.abc import Awaitable, Callable
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from telegram import Chat, InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -33,7 +34,8 @@ from hestia.voice.pipeline import get_voice_pipeline
 if TYPE_CHECKING:
     from hestia.config import VoiceConfig
     from hestia.orchestrator.engine import Orchestrator
-    from hestia.persistence.sessions import SessionStore
+    from hestia.orchestrator.handoff_service import HandoffService
+    from hestia.persistence.session_store import SessionStore
 
 
 # Telegram caps a single message at 4096 characters. We leave headroom for
@@ -170,6 +172,7 @@ class TelegramAdapter(Platform):
         # Runtime deps are injected by run_platform after the orchestrator is built.
         self._orchestrator: Orchestrator | None = None
         self._session_store: SessionStore | None = None
+        self._handoff_service: HandoffService | None = None
         self._system_prompt: str = ""
         self._voice_config: VoiceConfig | None = None
         self._reset_callback: Callable[[str], Awaitable[None]] | None = None
@@ -195,15 +198,17 @@ class TelegramAdapter(Platform):
         self,
         orchestrator: Orchestrator,
         session_store: SessionStore,
+        handoff_service: HandoffService,
         system_prompt: str,
-        voice_config: VoiceConfig,
+        voice_config: VoiceConfig | None,
     ) -> None:
-        """Inject orchestrator and session store for voice message handling.
+        """Inject orchestrator, session store, and handoff service.
 
         Called by run_platform after the orchestrator is built.
         """
         self._orchestrator = orchestrator
         self._session_store = session_store
+        self._handoff_service = handoff_service
         self._system_prompt = system_prompt
         self._voice_config = voice_config
 
@@ -276,7 +281,12 @@ class TelegramAdapter(Platform):
                 chat_id,
                 e.retry_after,
             )
-            await asyncio.sleep(e.retry_after)
+            retry_after = (
+                e.retry_after.total_seconds()
+                if isinstance(e.retry_after, timedelta)
+                else e.retry_after
+            )
+            await asyncio.sleep(retry_after)
             return await self._app.bot.send_message(
                 chat_id=chat_id,
                 text=_md_to_tg_html(text),
@@ -396,7 +406,12 @@ class TelegramAdapter(Platform):
                 message_id,
                 e.retry_after,
             )
-            await asyncio.sleep(e.retry_after)
+            retry_after = (
+                e.retry_after.total_seconds()
+                if isinstance(e.retry_after, timedelta)
+                else e.retry_after
+            )
+            await asyncio.sleep(retry_after)
             await self._app.bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=message_id,
@@ -488,7 +503,12 @@ class TelegramAdapter(Platform):
         return callback
 
     async def request_confirmation(
-        self, user: str, tool_name: str, arguments: dict[str, Any]
+        self,
+        user: str,
+        tool_name: str,
+        arguments: dict[str, Any],
+        requester_platform_user: str | None = None,
+        request_token: str | None = None,
     ) -> bool:
         """Send an inline-keyboard confirmation prompt and wait for operator response.
 
@@ -509,6 +529,8 @@ class TelegramAdapter(Platform):
             tool_name=tool_name,
             arguments=arguments,
             timeout_seconds=self._confirmation_timeout_seconds,
+            requester_platform_user=requester_platform_user,
+            request_token=request_token,
         )
 
         keyboard = [
@@ -581,13 +603,17 @@ class TelegramAdapter(Platform):
             await update.effective_message.reply_text("Not authorized.")
             return
 
-        if self._session_store is None:
+        if self._session_store is None or self._handoff_service is None:
             await update.effective_message.reply_text(
                 "Reset is not available right now (session store not connected)."
             )
             return
 
-        platform_user = str(chat.id) if in_group else str(user_id)
+        if in_group:
+            assert chat is not None
+            platform_user = str(chat.id)
+        else:
+            platform_user = str(user_id)
         session = await self._session_store.get_active_session("telegram", platform_user)
 
         if session is None:
@@ -596,7 +622,7 @@ class TelegramAdapter(Platform):
             )
             return
 
-        await self._session_store.archive_session(session.id)
+        await self._handoff_service.generate_handoff_summary(session.id)
 
         if self._reset_callback is not None:
             try:
@@ -632,9 +658,11 @@ class TelegramAdapter(Platform):
             assert chat is not None
             platform_user = str(chat.id)
             sender_platform_user = str(user_id)
+            session_title = chat.title
         else:
             platform_user = str(user_id)
             sender_platform_user = None
+            session_title = None
 
         # Check for pending workflow interactive responses
         from hestia.workflows.response_store import DEFAULT_RESPONSE_STORE
@@ -650,7 +678,6 @@ class TelegramAdapter(Platform):
                 # Don't route workflow replies to the orchestrator
                 return
 
-        session_title = chat.title if in_group else None
         if self._on_message is not None:
             await self._on_message(
                 self.name,
@@ -683,7 +710,12 @@ class TelegramAdapter(Platform):
             await message.reply_text("Not authorized.")
             return
 
-        if self._session_store is None or self._orchestrator is None or self._voice_config is None:
+        if (
+            self._session_store is None
+            or self._handoff_service is None
+            or self._orchestrator is None
+            or self._voice_config is None
+        ):
             logger.warning("Voice deps not injected; cannot process voice message")
             await message.reply_text("Voice processing is not configured.")
             return
@@ -740,11 +772,12 @@ class TelegramAdapter(Platform):
                 assert chat is not None
                 platform_user = str(chat.id)
                 _sender_platform_user = str(user_id)
+                session_title = chat.title
             else:
                 platform_user = str(user_id)
                 _sender_platform_user = None
-            session_title = chat.title if in_group else None
-            session = await self._session_store.get_or_create_session_with_handoff(
+                session_title = None
+            session = await self._handoff_service.get_or_create_session_with_handoff(
                 "telegram", platform_user, title=session_title
             )
             user_message = HestiaMessage(role="user", content=transcript)
@@ -851,7 +884,11 @@ class TelegramAdapter(Platform):
         _prefix, request_id, answer = parts
         approved = answer == "yes"
 
-        resolved = self._confirmation_store.resolve(request_id, approved)
+        approver = None
+        if update.callback_query.from_user is not None:
+            approver = str(update.callback_query.from_user.id)
+
+        resolved = self._confirmation_store.resolve(request_id, approved, approver)
 
         if resolved:
             await update.callback_query.answer(
