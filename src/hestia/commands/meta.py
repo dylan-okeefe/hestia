@@ -56,6 +56,7 @@ async def _handle_meta_command(
         return False, session
 
     if cmd == "/history":
+        assert message_store is not None
         messages = await message_store.get_messages(session.id)
         if not messages:
             click.echo("(empty)")

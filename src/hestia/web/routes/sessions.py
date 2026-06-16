@@ -38,6 +38,7 @@ async def list_sessions(
         limit=limit, platform=platform, platform_user=platform_user
     )
     session_ids = [s.id for s in sessions]
+    assert ctx.turn_store is not None
     turn_counts = await ctx.turn_store.count_turns_for_sessions(session_ids)
     result = []
     for s in sessions:
@@ -69,6 +70,7 @@ async def get_turns(
         raise HTTPException(status_code=404, detail="Session not found")
     await RequireOwner(session.platform_user)(request, ctx)
 
+    assert ctx.turn_store is not None
     turns = await ctx.turn_store.list_turns_for_session(session_id)
     return {
         "turns": [
@@ -97,6 +99,8 @@ async def get_session_messages(
         raise HTTPException(status_code=404, detail="Session not found")
     await RequireOwner(session.platform_user)(request, ctx)
 
+    assert ctx.turn_store is not None
+    assert ctx.message_store is not None
     turns = await ctx.turn_store.list_turns_for_session(session_id)
     messages = await ctx.message_store.get_messages(session_id)
     return {

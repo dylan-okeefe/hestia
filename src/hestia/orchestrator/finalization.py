@@ -109,6 +109,11 @@ class TurnFinalization:
                 await self._slot_manager.save(session)
             except (OSError, PersistenceError, InferenceServerError) as e:
                 logger.warning("Failed to save slot for session %s: %s", session.id, e)
+        elif session.slot_id is not None and self._slot_manager is not None:
+            try:
+                await self._slot_manager.erase(session)
+            except (OSError, PersistenceError, InferenceServerError) as e:
+                logger.warning("Failed to erase slot for session %s: %s", session.id, e)
 
         turn_end_time = utcnow()
         total_duration_ms = int((turn_end_time - turn_start_time).total_seconds() * 1000)
@@ -124,10 +129,9 @@ class TurnFinalization:
                 # user_input_summary may contain PII (user messages are intentionally
                 # stored in the trace store for debugging and session analysis).
                 raw_summary = ctx.user_message.content or ""
-                if len(raw_summary) > 200:
-                    user_input_summary = raw_summary[:200] + "..."
-                else:
-                    user_input_summary = raw_summary
+                user_input_summary = (
+                    raw_summary[:200] + "..." if len(raw_summary) > 200 else raw_summary
+                )
 
                 outcome = "success" if turn.state == TurnState.DONE else "failed"
                 if turn.state not in (TurnState.DONE, TurnState.FAILED):

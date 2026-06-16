@@ -2,6 +2,7 @@
 
 import json
 import shutil
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -168,28 +169,28 @@ class BrowserSessionStore:
         self.save_metadata(domain, metadata)
         return metadata
 
-    def save_cookies(self, domain: str, cookies: list[dict[str, Any]]) -> None:
+    def save_cookies(self, domain: str, cookies: Sequence[Mapping[str, Any]]) -> None:
         path = self._session_dir(domain) / "cookies.json"
         path.write_text(json.dumps(cookies, indent=2))
         self.update_metadata(
             domain, last_saved=datetime.now(UTC), cookie_count=len(cookies)
         )
 
-    def load_cookies(self, domain: str) -> list[dict[str, Any]]:
+    def load_cookies(self, domain: str) -> list[Mapping[str, Any]]:
         # Try exact domain first, then www variant for backward compatibility.
         path = self._session_dir(domain, create=False) / "cookies.json"
         if path.exists():
-            return cast(list[dict[str, Any]], json.loads(path.read_text()))
+            return cast(list[Mapping[str, Any]], json.loads(path.read_text()))
 
         existing_dir = self._find_existing_dir(domain)
         if existing_dir is not None:
             alt_path = existing_dir / "cookies.json"
             if alt_path.exists():
-                return cast(list[dict[str, Any]], json.loads(alt_path.read_text()))
+                return cast(list[Mapping[str, Any]], json.loads(alt_path.read_text()))
 
         return []
 
-    def save_storage(self, domain: str, storage_state: dict[str, Any]) -> None:
+    def save_storage(self, domain: str, storage_state: Mapping[str, Any]) -> None:
         path = self._session_dir(domain) / "storage_state.json"
         path.write_text(json.dumps(storage_state, indent=2))
         cookie_count = len(storage_state.get("cookies", []))

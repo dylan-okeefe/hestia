@@ -190,6 +190,35 @@ class SlotManager:
         # just a checkpoint. slot_saved_path is updated so eviction knows where to find it.
         await self._store.update_saved_path(session.id, saved_path.name)
 
+    async def erase(self, session: Session) -> None:
+        """Erase the session's live slot without saving KV cache to disk.
+
+        Use this when a turn terminates in a non-DONE state and we want to
+        discard the in-memory slot state rather than checkpoint a potentially
+        corrupted turn.
+        """
+        if session.slot_id is None:
+            logger.warning("erase() called on session %s with no slot_id", session.id)
+            return
+
+        async with self._lock:
+            self._assignments.pop(session.slot_id, None)
+            try:
+                await self._inference.slot_erase(session.slot_id)
+            except (OSError, InferenceServerError, httpx.HTTPError) as exc:
+                logger.warning(
+                    "slot_erase failed for session %s slot %d: %s",
+                    session.id,
+                    session.slot_id,
+                    exc,
+                )
+
+        await self._store.release_slot(
+            session.id,
+            demote_to=SessionTemperature.COLD,
+            saved_path=None,
+        )
+
     async def evict_by_id(self, session_id: str) -> None:
         """Forcibly evict a specific session from its slot. Saves state to disk first."""
         async with self._lock:

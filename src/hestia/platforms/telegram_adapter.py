@@ -11,6 +11,7 @@ import re
 import tempfile
 import time
 from collections.abc import Awaitable, Callable
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from telegram import Chat, InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -199,7 +200,7 @@ class TelegramAdapter(Platform):
         session_store: SessionStore,
         handoff_service: HandoffService,
         system_prompt: str,
-        voice_config: VoiceConfig,
+        voice_config: VoiceConfig | None,
     ) -> None:
         """Inject orchestrator, session store, and handoff service.
 
@@ -280,7 +281,12 @@ class TelegramAdapter(Platform):
                 chat_id,
                 e.retry_after,
             )
-            await asyncio.sleep(e.retry_after)
+            retry_after = (
+                e.retry_after.total_seconds()
+                if isinstance(e.retry_after, timedelta)
+                else e.retry_after
+            )
+            await asyncio.sleep(retry_after)
             return await self._app.bot.send_message(
                 chat_id=chat_id,
                 text=_md_to_tg_html(text),
@@ -400,7 +406,12 @@ class TelegramAdapter(Platform):
                 message_id,
                 e.retry_after,
             )
-            await asyncio.sleep(e.retry_after)
+            retry_after = (
+                e.retry_after.total_seconds()
+                if isinstance(e.retry_after, timedelta)
+                else e.retry_after
+            )
+            await asyncio.sleep(retry_after)
             await self._app.bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=message_id,
@@ -591,7 +602,11 @@ class TelegramAdapter(Platform):
             )
             return
 
-        platform_user = str(chat.id) if in_group else str(user_id)
+        if in_group:
+            assert chat is not None
+            platform_user = str(chat.id)
+        else:
+            platform_user = str(user_id)
         session = await self._session_store.get_active_session("telegram", platform_user)
 
         if session is None:
@@ -636,9 +651,11 @@ class TelegramAdapter(Platform):
             assert chat is not None
             platform_user = str(chat.id)
             sender_platform_user = str(user_id)
+            session_title = chat.title
         else:
             platform_user = str(user_id)
             sender_platform_user = None
+            session_title = None
 
         # Check for pending workflow interactive responses
         from hestia.workflows.response_store import DEFAULT_RESPONSE_STORE
@@ -654,7 +671,6 @@ class TelegramAdapter(Platform):
                 # Don't route workflow replies to the orchestrator
                 return
 
-        session_title = chat.title if in_group else None
         if self._on_message is not None:
             await self._on_message(
                 self.name,
@@ -749,10 +765,11 @@ class TelegramAdapter(Platform):
                 assert chat is not None
                 platform_user = str(chat.id)
                 _sender_platform_user = str(user_id)
+                session_title = chat.title
             else:
                 platform_user = str(user_id)
                 _sender_platform_user = None
-            session_title = chat.title if in_group else None
+                session_title = None
             session = await self._handoff_service.get_or_create_session_with_handoff(
                 "telegram", platform_user, title=session_title
             )

@@ -12,7 +12,7 @@ from typing import Any
 import click
 
 from hestia.config import HestiaConfig
-from hestia.core.types import Message, ScheduledTask, Session
+from hestia.core.types import Message, ScheduledTask, Session, SessionState
 from hestia.orchestrator.engine import ConfirmCallback
 from hestia.orchestrator.finalization import sanitize_user_error
 from hestia.persistence.scheduler import SchedulerStore
@@ -91,6 +91,164 @@ def make_matrix_scheduler_callback(
     return callback
 
 
+class PlatformRunner:
+    """Per-platform message loop and in-memory session cache.
+
+    ``PlatformRunner`` owns the ``user_sessions`` cache and exposes a single
+    helper, ``invalidate_session_cache``, so platform adapters can drop a cached
+    entry when a session is reset or archived.
+    """
+
+    def __init__(
+        self,
+        app: Any,
+        config: HestiaConfig,
+        adapter: Platform,
+        orchestrator: Any,
+        platform_name: str,
+        user_label: str = "user",
+        user_context_var: ContextVar[str] | None = None,
+    ) -> None:
+        self.app = app
+        self.config = config
+        self.adapter = adapter
+        self.orchestrator = orchestrator
+        self.platform_name = platform_name
+        self.user_label = user_label
+        self.user_context_var = user_context_var
+        # Session cache: platform_user -> Session
+        self.user_sessions: dict[str, Session] = {}
+
+    def invalidate_session_cache(self, platform_user: str) -> None:
+        """Drop the cached session for ``platform_user``.
+
+        Called by platform adapters when a session is reset or archived.
+        """
+        self.user_sessions.pop(platform_user, None)
+
+    async def on_message(
+        self,
+        platform_name_arg: str,
+        platform_user: str,
+        text: str,
+        sender_platform_user: str | None = None,
+        session_title: str | None = None,
+    ) -> None:
+        """Handle incoming platform message."""
+        token = (
+            self.user_context_var.set(platform_user)
+            if self.user_context_var is not None
+            else None
+        )
+        try:
+            if platform_user not in self.user_sessions:
+                session = await self.app.handoff_service.get_or_create_session_with_handoff(
+                    self.platform_name, platform_user, title=session_title
+                )
+                self.user_sessions[platform_user] = session
+            else:
+                session = self.user_sessions[platform_user]
+                # Re-fetch the session to detect external archival (e.g., /reset
+                # from another adapter, admin action, scheduler cleanup).
+                fresh_session = await self.app.session_store.get_session(session.id)
+                if fresh_session is None or fresh_session.state == SessionState.ARCHIVED:
+                    self.invalidate_session_cache(platform_user)
+                    session = await self.app.handoff_service.get_or_create_session_with_handoff(
+                        self.platform_name, platform_user, title=session_title
+                    )
+                    self.user_sessions[platform_user] = session
+                elif session_title is not None:
+                    await self.app.session_store.update_session_title(
+                        session.id, session_title
+                    )
+
+            user_message = Message(role="user", content=text)
+
+            # Resolve user from identity
+            resolved_user = None
+            if sender_platform_user is not None:
+                # Group chat: resolve individual sender
+                resolved_user = await self.app.user_store.get_user_by_identity(
+                    self.platform_name, sender_platform_user
+                )
+            else:
+                # Private chat: resolve platform_user directly
+                resolved_user = await self.app.user_store.get_user_by_identity(
+                    self.platform_name, platform_user
+                )
+
+            # Auto-register room and membership for group chats
+            if sender_platform_user is not None and resolved_user is not None:
+                room = await self.app.user_store.get_room_by_platform(
+                    self.platform_name, platform_user
+                )
+                if room is None:
+                    room = await self.app.user_store.create_room(
+                        self.platform_name, platform_user
+                    )
+                # Add member if not already present
+                members = await self.app.user_store.get_room_members(room.id)
+                member_ids = {m.id for m in members}
+                if resolved_user.id not in member_ids:
+                    await self.app.user_store.add_room_member(room.id, resolved_user.id)
+
+            stream_callback = None
+            if getattr(self.config.inference, "stream", False) and hasattr(
+                self.adapter, "_make_stream_callback"
+            ):
+                stream_callback = self.adapter._make_stream_callback(platform_user)
+
+            async def respond(response_text: str) -> None:
+                if stream_callback is not None:
+                    state = getattr(self.adapter, "_stream_states", {}).get(
+                        platform_user, {}
+                    )
+                    msg_id = state.get("message_id")
+                    if msg_id is not None:
+                        await self.adapter.edit_message(platform_user, msg_id, response_text)
+                        return
+                await self.adapter.send_message(platform_user, response_text)
+
+            await self.orchestrator.process_turn(
+                session=session,
+                user_message=user_message,
+                respond_callback=respond,
+                system_prompt=self.config.system_prompt,
+                platform=self.adapter,
+                platform_user=platform_user,
+                stream_callback=stream_callback,
+                resolved_user=resolved_user,
+            )
+
+            # Check for command prefix (e.g., "/workflow ")
+            if text.startswith("/"):
+                parts = text[1:].split(None, 1)
+                command = parts[0] if parts else ""
+                args = parts[1] if len(parts) > 1 else ""
+                if self.app.event_bus is not None:
+                    await self.app.event_bus.publish("chat_command", {
+                        "command": command,
+                        "args": args,
+                        "platform": self.platform_name,
+                        "platform_user": platform_user,
+                        "text": text,
+                    })
+
+            # Always publish message_matched for pattern matching
+            if self.app.event_bus is not None:
+                await self.app.event_bus.publish("message_matched", {
+                    "text": text,
+                    "platform": self.platform_name,
+                    "platform_user": platform_user,
+                })
+        except Exception as e:  # noqa: BLE001 — outermost boundary — intentionally broad
+            logger.exception("Turn failed for %s %s", self.user_label, platform_user)
+            await self.adapter.send_error(platform_user, sanitize_user_error(e))
+        finally:
+            if token is not None:
+                self.user_context_var.reset(token)  # type: ignore[union-attr]
+
+
 async def run_platform(
     app: Any,
     config: HestiaConfig,
@@ -117,8 +275,21 @@ async def run_platform(
     # Eagerly warm up context builder to avoid first-turn latency
     await app.context_builder.warm_up()
 
+    runner = PlatformRunner(
+        app,
+        config,
+        adapter,
+        orchestrator,
+        platform_name,
+        user_label=user_label,
+        user_context_var=user_context_var,
+    )
+
     # Inject runtime deps into Telegram adapter (session store, orchestrator,
     # system prompt). Voice config is only required when voice messages are enabled.
+    async def _reset_callback(platform_user: str) -> None:
+        runner.invalidate_session_cache(platform_user)
+
     if isinstance(adapter, TelegramAdapter):
         adapter.set_voice_deps(
             orchestrator=orchestrator,
@@ -127,123 +298,17 @@ async def run_platform(
             system_prompt=config.system_prompt,
             voice_config=config.voice if config.telegram.voice_messages else None,
         )
-
-        async def _clear_telegram_session_cache(platform_user: str) -> None:
-            user_sessions.pop(platform_user, None)
-
-        adapter.register_reset_callback(_clear_telegram_session_cache)
+        adapter.register_reset_callback(_reset_callback)
+    elif isinstance(adapter, MatrixAdapter):
+        adapter.set_session_store(app.session_store)
+        adapter.register_reset_callback(_reset_callback)
 
     # Recover stale turns from previous crash
     recovered = await orchestrator.recover_stale_turns()
     if recovered:
         click.echo(f"Recovered {recovered} stale turn(s) from previous crash.")
 
-    # Session cache: platform_user -> Session
-    user_sessions: dict[str, Session] = {}
-
-    async def on_message(
-        platform_name_arg: str,
-        platform_user: str,
-        text: str,
-        sender_platform_user: str | None = None,
-        session_title: str | None = None,
-    ) -> None:
-        """Handle incoming platform message."""
-        token = user_context_var.set(platform_user) if user_context_var is not None else None
-        try:
-            if platform_user not in user_sessions:
-                session = await app.handoff_service.get_or_create_session_with_handoff(
-                    platform_name, platform_user, title=session_title
-                )
-                user_sessions[platform_user] = session
-            else:
-                session = user_sessions[platform_user]
-                if session_title is not None:
-                    await app.session_store.update_session_title(session.id, session_title)
-
-            user_message = Message(role="user", content=text)
-
-            # Resolve user from identity
-            resolved_user = None
-            if sender_platform_user is not None:
-                # Group chat: resolve individual sender
-                resolved_user = await app.user_store.get_user_by_identity(
-                    platform_name, sender_platform_user
-                )
-            else:
-                # Private chat: resolve platform_user directly
-                resolved_user = await app.user_store.get_user_by_identity(
-                    platform_name, platform_user
-                )
-
-            # Auto-register room and membership for group chats
-            if sender_platform_user is not None and resolved_user is not None:
-                room = await app.user_store.get_room_by_platform(platform_name, platform_user)
-                if room is None:
-                    room = await app.user_store.create_room(platform_name, platform_user)
-                # Add member if not already present
-                members = await app.user_store.get_room_members(room.id)
-                member_ids = {m.id for m in members}
-                if resolved_user.id not in member_ids:
-                    await app.user_store.add_room_member(room.id, resolved_user.id)
-
-            stream_callback = None
-            if getattr(config.inference, "stream", False) and hasattr(
-                adapter, "_make_stream_callback"
-            ):
-                stream_callback = adapter._make_stream_callback(platform_user)
-
-            async def respond(response_text: str) -> None:
-                if stream_callback is not None:
-                    state = getattr(adapter, "_stream_states", {}).get(
-                        platform_user, {}
-                    )
-                    msg_id = state.get("message_id")
-                    if msg_id is not None:
-                        await adapter.edit_message(platform_user, msg_id, response_text)
-                        return
-                await adapter.send_message(platform_user, response_text)
-
-            await orchestrator.process_turn(
-                session=session,
-                user_message=user_message,
-                respond_callback=respond,
-                system_prompt=config.system_prompt,
-                platform=adapter,
-                platform_user=platform_user,
-                stream_callback=stream_callback,
-                resolved_user=resolved_user,
-            )
-
-            # Check for command prefix (e.g., "/workflow ")
-            if text.startswith("/"):
-                parts = text[1:].split(None, 1)
-                command = parts[0] if parts else ""
-                args = parts[1] if len(parts) > 1 else ""
-                if app.event_bus is not None:
-                    await app.event_bus.publish("chat_command", {
-                        "command": command,
-                        "args": args,
-                        "platform": platform_name,
-                        "platform_user": platform_user,
-                        "text": text,
-                    })
-
-            # Always publish message_matched for pattern matching
-            if app.event_bus is not None:
-                await app.event_bus.publish("message_matched", {
-                    "text": text,
-                    "platform": platform_name,
-                    "platform_user": platform_user,
-                })
-        except Exception as e:  # noqa: BLE001 — outermost boundary — intentionally broad
-            logger.exception("Turn failed for %s %s", user_label, platform_user)
-            await adapter.send_error(platform_user, sanitize_user_error(e))
-        finally:
-            if token is not None:
-                user_context_var.reset(token)  # type: ignore[union-attr]
-
-    await adapter.start(on_message)
+    await adapter.start(runner.on_message)
     click.echo(f"{platform_name.capitalize()} bot started. Press Ctrl-C to stop.")
 
     # Also start the scheduler if a response callback was provided

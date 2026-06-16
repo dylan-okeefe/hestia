@@ -6,6 +6,33 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-06-16 — L220–L221 Complete (Persistence Store Split & Session Concurrency)
+
+**Outcome:** Split the monolithic `SessionStore` into message/turn/session stores, added a handoff service, then built per-session turn serialization, IMAP serialization, slot cleanup on failures, cache invalidation, and chat-template sequence validation.
+
+### L220 — Persistence Store Split
+**Branch:** `feature/l220-persistence-store-split`
+- Introduced `MessageDTO`, `TurnDTO`, `TurnTransitionDTO` and mappers in `src/hestia/orchestrator/mappers.py`.
+- Implemented `MessageStore`, `TurnStore`, and a trimmed `SessionStore`.
+- Added `HandoffService` to archive sessions and persist handoff summaries as messages.
+- Converted `src/hestia/persistence/sessions.py` to a deprecation re-export facade.
+- Wired split stores through `Orchestrator`, `TurnExecution`, `TurnAssembly`, `TurnFinalization`, web context, and platform runners.
+- Fixed a `TurnAssembly` bug where raw `MessageDTO`s were passed to `ContextBuilder.build` instead of mapped domain messages.
+
+**Quality gates:** 1773 pytest passed, mypy clean, ruff improved.
+
+### L221 — Per-session Concurrency Model
+**Branch:** `feature/l221-session-concurrency`
+- Added `SessionLockManager` and held a per-session lock across `process_turn`.
+- Serialized IMAP operations in the email adapter.
+- Erased live slots on non-DONE turn finalization.
+- Invalidated the platform runner `user_sessions` cache on reset/archive and added Matrix `/reset` parity.
+- Handled degenerate `finish_reason=tool_calls` with zero valid tool calls.
+- Persisted the `correction` flag on messages and excluded corrections from read-only streak detection.
+- Added a chat-template sequence validator in `ContextBuilder.build`.
+
+**Quality gates:** 1889 pytest passed (unit + integration), mypy 0 errors, ruff 68 errors (down from 79 baseline, all pre-existing).
+
 ## 2026-06-15 — L218–L219 Complete (Tool Reliability Follow-ups)
 
 **Outcome:** Hardened the truncated-write recovery seam, expanded the regression fixture scrubber to cover authenticated-session cookies and high-entropy tokens, made the VRAM check honest about llama.cpp's pre-allocated KV cache, and renumbered the two new loops to avoid collisions with already-merged L189/L189.

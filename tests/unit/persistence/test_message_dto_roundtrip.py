@@ -44,6 +44,7 @@ async def test_message_dto_roundtrip(message_store, session_store):
         tool_call_id="call_1",
         reasoning_content="<thinking>Now</thinking>",
         is_handoff=False,
+        correction=True,
     )
 
     dto = message_domain_to_dto(original, session.id, idx=0)
@@ -58,6 +59,7 @@ async def test_message_dto_roundtrip(message_store, session_store):
     assert restored.tool_call_id == original.tool_call_id
     assert restored.reasoning_content == original.reasoning_content
     assert restored.is_handoff == original.is_handoff
+    assert restored.correction == original.correction
     assert restored.tool_calls is not None
     assert len(restored.tool_calls) == 1
     assert restored.tool_calls[0].id == original.tool_calls[0].id

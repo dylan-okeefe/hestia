@@ -7,7 +7,7 @@ mapped to/from these DTOs at the orchestrator boundary.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 
 
@@ -15,8 +15,7 @@ from datetime import datetime
 class MessageDTO:
     """Database-facing representation of a chat message.
 
-    Mirrors the ``messages`` table columns exactly (no ``correction`` column
-    yet; that is added by the concurrency loop).
+    Mirrors the ``messages`` table columns exactly.
     """
 
     session_id: str
@@ -28,6 +27,7 @@ class MessageDTO:
     tool_call_id: str | None = None
     reasoning_content: str | None = None
     is_handoff: bool = False
+    correction: bool = False
 
 
 @dataclass

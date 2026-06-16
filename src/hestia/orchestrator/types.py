@@ -130,3 +130,5 @@ class TurnContext:
     _repeated_tools_blocked: set[str] = field(default_factory=set, repr=False)
     # Quality: tools already corrected for repeated-identical-call this turn
     _repeated_tools_corrected: set[str] = field(default_factory=set, repr=False)
+    # Circuit breaker: consecutive empty tool-call batches (finish_reason="tool_calls" with no calls)
+    _degenerate_tool_call_retries: int = field(default=0, repr=False)

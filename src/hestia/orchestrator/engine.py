@@ -21,8 +21,8 @@ from hestia.orchestrator.execution import ConfirmCallback as ConfirmCallback
 from hestia.orchestrator.execution import TurnExecution
 from hestia.orchestrator.finalization import TurnFinalization
 from hestia.orchestrator.handoff_service import HandoffService
+from hestia.orchestrator.lock import SessionLockManager
 from hestia.orchestrator.mappers import (
-    message_domain_to_dto,
     turn_domain_to_dto,
     turn_transition_domain_to_dto,
 )
@@ -94,6 +94,7 @@ class Orchestrator:
         checkpoint_manager: CheckpointManager | None = None,
         checkpoint_scope: list[str] | None = None,
         auto_rollback_on_failure: bool = False,
+        lock_manager: SessionLockManager | None = None,
     ):
         """Initialize the orchestrator."""
         self._inference = inference
@@ -127,6 +128,7 @@ class Orchestrator:
         self._checkpoint_manager = checkpoint_manager
         self._checkpoint_scope = checkpoint_scope
         self._auto_rollback_on_failure = auto_rollback_on_failure
+        self._lock_manager = lock_manager or SessionLockManager()
 
         self._assembly = TurnAssembly(
             context_builder=context_builder,
@@ -216,91 +218,95 @@ class Orchestrator:
                 "Rate limit exceeded. Please wait a moment before sending another message."
             )
             raise PlatformError("Rate limit exceeded for session")  # noqa: TRY003
-        session_token = current_session_id.set(session.id)
-        platform_token = current_platform.set(session.platform)
-        platform_user_token = current_platform_user.set(session.platform_user)
-        trace_token: Any = None
-        if self._trace_store is not None:
-            trace_token = current_trace_store.set(self._trace_store)
-        turn_token = current_turn_id.set("")
 
-        try:
-            turn = self._create_turn(session.id, user_message)
-            await self._persist_turn(turn)
-            current_turn_id.set(turn.id)
-
-            if self._checkpoint_manager is not None:
-                scope = self._checkpoint_scope or [str(Path.cwd())]
-                self._checkpoint_manager.create(turn.id, scope)
-
-            await self._set_typing(platform, platform_user, True)
-
-            turn_start_time = utcnow()
-            trace_record_id: str | None = None
-
-            ctx = TurnContext(
-                turn=turn,
-                user_message=user_message,
-                system_prompt=system_prompt,
-                respond_callback=respond_callback,
-                platform=platform,
-                platform_user=platform_user,
-                session=session,
-                voice_reply=voice_reply,
-                stream_callback=stream_callback,
-                resolved_user=resolved_user,
-            )
+        lock = await self._lock_manager.acquire(session.id)
+        async with lock:
+            session_token = current_session_id.set(session.id)
+            platform_token = current_platform.set(session.platform)
+            platform_user_token = current_platform_user.set(session.platform_user)
+            trace_token: Any = None
+            if self._trace_store is not None:
+                trace_token = current_trace_store.set(self._trace_store)
+            turn_token = current_turn_id.set("")
 
             try:
-                await self._assembly.prepare(session, ctx, self._safe_transition)
-                await self._execution.run(
-                    ctx, self._safe_transition,
-                    lambda typing: self._set_typing(ctx.platform, ctx.platform_user, typing),
+                turn = self._create_turn(session.id, user_message)
+                await self._persist_turn(turn)
+                current_turn_id.set(turn.id)
+
+                if self._checkpoint_manager is not None:
+                    scope = self._checkpoint_scope or [str(Path.cwd())]
+                    self._checkpoint_manager.create(turn.id, scope)
+
+                await self._set_typing(platform, platform_user, True)
+
+                turn_start_time = utcnow()
+                trace_record_id: str | None = None
+
+                ctx = TurnContext(
+                    turn=turn,
+                    user_message=user_message,
+                    system_prompt=system_prompt,
+                    respond_callback=respond_callback,
+                    platform=platform,
+                    platform_user=platform_user,
+                    session=session,
+                    voice_reply=voice_reply,
+                    stream_callback=stream_callback,
+                    resolved_user=resolved_user,
                 )
 
-            except ContextTooLargeError as exc:
-                await self._set_typing(platform, platform_user, False)
-                trace_record_id = await self._finalization.handle_context_too_large(
-                    ctx, exc, trace_record_id, self._safe_transition
-                )
-
-            except IllegalTransitionError as exc:
-                await self._set_typing(platform, platform_user, False)
-                logger.error("Illegal transition: %s", exc)
-                if turn.state not in (TurnState.DONE, TurnState.FAILED):
-                    turn.state = TurnState.FAILED
-                    turn.error = str(exc)
-                    if self._turn_store is not None:
-                        await self._turn_store.update_turn(turn_domain_to_dto(turn))
                 try:
-                    await ctx.respond_callback(
-                        "An internal error occurred and the turn could not complete. "
-                        "Please try again."
-                    )
-                except Exception as notify_err:  # noqa: BLE001
-                    logger.warning(
-                        "Failed to send illegal transition notification: %s",
-                        notify_err,
+                    await self._assembly.prepare(session, ctx, self._safe_transition)
+                    await self._execution.run(
+                        ctx, self._safe_transition,
+                        lambda typing: self._set_typing(ctx.platform, ctx.platform_user, typing),
                     )
 
-            except Exception as e:  # noqa: BLE001 — turn boundary safety net
-                await self._set_typing(platform, platform_user, False)
-                trace_record_id = await self._finalization.handle_unexpected_error(
-                    ctx, e, trace_record_id, self._safe_transition
-                )
+                except ContextTooLargeError as exc:
+                    await self._set_typing(platform, platform_user, False)
+                    trace_record_id = await self._finalization.handle_context_too_large(
+                        ctx, exc, trace_record_id, self._safe_transition
+                    )
+
+                except IllegalTransitionError as exc:
+                    await self._set_typing(platform, platform_user, False)
+                    logger.error("Illegal transition: %s", exc)
+                    if turn.state not in (TurnState.DONE, TurnState.FAILED):
+                        turn.state = TurnState.FAILED
+                        turn.error = str(exc)
+                        if self._turn_store is not None:
+                            await self._turn_store.update_turn(turn_domain_to_dto(turn))
+                    try:
+                        await ctx.respond_callback(
+                            "An internal error occurred and the turn could not complete. "
+                            "Please try again."
+                        )
+                    except Exception as notify_err:  # noqa: BLE001
+                        logger.warning(
+                            "Failed to send illegal transition notification: %s",
+                            notify_err,
+                        )
+
+                except Exception as e:  # noqa: BLE001 — turn boundary safety net
+                    await self._set_typing(platform, platform_user, False)
+                    trace_record_id = await self._finalization.handle_unexpected_error(
+                        ctx, e, trace_record_id, self._safe_transition
+                    )
+
+                finally:
+                    await self._finalization.finalize_turn(ctx, turn_start_time, trace_record_id)
 
             finally:
-                await self._finalization.finalize_turn(ctx, turn_start_time, trace_record_id)
+                current_session_id.reset(session_token)
+                current_platform.reset(platform_token)
+                current_platform_user.reset(platform_user_token)
+                if trace_token is not None:
+                    current_trace_store.reset(trace_token)
+                current_turn_id.reset(turn_token)
 
-            return turn
-
-        finally:
-            current_session_id.reset(session_token)
-            current_platform.reset(platform_token)
-            current_platform_user.reset(platform_user_token)
-            if trace_token is not None:
-                current_trace_store.reset(trace_token)
-            current_turn_id.reset(turn_token)
+        self._lock_manager.release_unused(session.id)
+        return turn
 
     def _create_turn(self, session_id: str, user_message: Message) -> Turn:
         return Turn(

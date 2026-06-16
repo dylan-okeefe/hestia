@@ -250,6 +250,7 @@ async def get_user_handoffs(
         (i.platform, i.platform_user) for i in identities
     ]
 
+    assert ctx.handoff_service is not None
     handoffs = await ctx.handoff_service.list_handoffs_for_identities(
         identity_tuples, limit=3
     )

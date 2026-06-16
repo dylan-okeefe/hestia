@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Sequence
+from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy import select
@@ -54,6 +54,7 @@ class MessageStore:
                         tool_call_id=msg.tool_call_id,
                         reasoning_content=msg.reasoning_content,
                         is_handoff=msg.is_handoff,
+                        correction=msg.correction,
                         created_at=msg.created_at,
                     )
                     await conn.execute(insert)
@@ -149,4 +150,5 @@ class MessageStore:
             tool_call_id=row.tool_call_id,
             reasoning_content=row.reasoning_content,
             is_handoff=bool(row.is_handoff),
+            correction=bool(row.correction),
         )

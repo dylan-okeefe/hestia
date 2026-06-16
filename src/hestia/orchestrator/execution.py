@@ -59,6 +59,11 @@ _TIMEOUT_ESCALATION_SCHEDULE = (15.0, 30.0, 60.0)
 _MAX_PER_ATTEMPT_TIMEOUT = 90.0
 _DEFAULT_URL_TIME_BUDGET = 120.0
 
+# Maximum consecutive degenerate tool-call turns before failing the turn.
+# A degenerate turn is when the model returns finish_reason="tool_calls"
+# but the structured tool-call batch is empty (e.g. all calls failed JSON validation).
+_MAX_DEGENERATE_TOOL_CALL_RETRIES = 3
+
 
 _ToolCallKey = tuple[str, tuple[tuple[str, Any], ...]]
 
@@ -312,6 +317,31 @@ class TurnExecution:
                 reasoning_content=chat_response.reasoning_content,
                 created_at=utcnow(),
             )
+
+            # Guardrail: degenerate tool-call turn. The model emitted
+            # finish_reason="tool_calls" but every structured call failed JSON
+            # validation, leaving an empty batch. Do not persist a useless
+            # assistant message; retry a bounded number of times instead.
+            if (
+                chat_response.finish_reason == "tool_calls"
+                and not chat_response.tool_calls
+            ):
+                ctx._degenerate_tool_call_retries += 1
+                if ctx._degenerate_tool_call_retries > _MAX_DEGENERATE_TOOL_CALL_RETRIES:
+                    raise PolicyFailureError(
+                        f"Model returned finish_reason='tool_calls' with no valid tool calls "
+                        f"{ctx._degenerate_tool_call_retries} times; giving up."
+                    )
+                logger.warning(
+                    "Degenerate tool-call turn (finish_reason='tool_calls' with no calls); "
+                    "retry %d/%d",
+                    ctx._degenerate_tool_call_retries,
+                    _MAX_DEGENERATE_TOOL_CALL_RETRIES,
+                )
+                await transition(turn, TurnState.RETRYING, "")
+                turn.iterations += 1
+                continue
+
             await self._message_store.append_message(
                 session.id, message_domain_to_dto(assistant_msg, session.id, idx=0)
             )

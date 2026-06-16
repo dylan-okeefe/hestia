@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Literal, cast
+from typing import Literal, cast
 
 from hestia.core.types import Message, ToolCall
 from hestia.orchestrator.types import Turn, TurnState, TurnTransition
@@ -30,6 +30,7 @@ def message_domain_to_dto(msg: Message, session_id: str, idx: int) -> MessageDTO
         tool_call_id=msg.tool_call_id,
         reasoning_content=msg.reasoning_content,
         is_handoff=msg.is_handoff,
+        correction=msg.correction,
     )
 
 
@@ -42,11 +43,7 @@ def message_dto_to_domain(dto: MessageDTO) -> Message:
             normalized: list[ToolCall] = []
             for tc in data:
                 raw_args = tc.get("arguments")
-                if isinstance(raw_args, dict):
-                    args = raw_args
-                else:
-                    # Legacy/corrupt arguments that are not dicts become {}.
-                    args = {}
+                args = raw_args if isinstance(raw_args, dict) else {}
                 normalized.append(
                     ToolCall(
                         id=tc["id"],
@@ -64,6 +61,7 @@ def message_dto_to_domain(dto: MessageDTO) -> Message:
         tool_call_id=dto.tool_call_id,
         reasoning_content=dto.reasoning_content,
         is_handoff=dto.is_handoff,
+        correction=dto.correction,
     )
 
 
