@@ -503,7 +503,12 @@ class TelegramAdapter(Platform):
         return callback
 
     async def request_confirmation(
-        self, user: str, tool_name: str, arguments: dict[str, Any]
+        self,
+        user: str,
+        tool_name: str,
+        arguments: dict[str, Any],
+        requester_platform_user: str | None = None,
+        request_token: str | None = None,
     ) -> bool:
         """Send an inline-keyboard confirmation prompt and wait for operator response.
 
@@ -524,6 +529,8 @@ class TelegramAdapter(Platform):
             tool_name=tool_name,
             arguments=arguments,
             timeout_seconds=self._confirmation_timeout_seconds,
+            requester_platform_user=requester_platform_user,
+            request_token=request_token,
         )
 
         keyboard = [
@@ -877,7 +884,11 @@ class TelegramAdapter(Platform):
         _prefix, request_id, answer = parts
         approved = answer == "yes"
 
-        resolved = self._confirmation_store.resolve(request_id, approved)
+        approver = None
+        if update.callback_query.from_user is not None:
+            approver = str(update.callback_query.from_user.id)
+
+        resolved = self._confirmation_store.resolve(request_id, approved, approver)
 
         if resolved:
             await update.callback_query.answer(

@@ -329,8 +329,9 @@ class TestGroupChatResolution:
                 platform_name="fake",
             )
 
-        call_kwargs = orchestrator.process_turn.call_args.kwargs
-        assert call_kwargs["resolved_user"] is None
+        # Unknown senders in group/room contexts are rejected before a turn is
+        # created, so process_turn is never called and no room is auto-registered.
+        assert orchestrator.process_turn.call_args is None
 
         room = await store.get_room_by_platform("fake", "room_3")
         assert room is None

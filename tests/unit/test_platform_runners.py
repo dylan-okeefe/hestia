@@ -142,7 +142,9 @@ class TestConfirmCallbacks:
             result = await callback("terminal", {"command": "ls"})
             assert result is True
             adapter.request_confirmation.assert_awaited_once_with(
-                "@alice", "terminal", {"command": "ls"}
+                "@alice", "terminal", {"command": "ls"},
+                requester_platform_user="@alice",
+                request_token=None,
             )
         finally:
             var.reset(token)
@@ -168,7 +170,9 @@ class TestConfirmCallbacks:
             result = await callback("terminal", {"command": "ls"})
             assert result is True
             adapter.request_confirmation.assert_awaited_once_with(
-                "!room:example.com", "terminal", {"command": "ls"}
+                "!room:example.com", "terminal", {"command": "ls"},
+                requester_platform_user="!room:example.com",
+                request_token=None,
             )
         finally:
             var.reset(token)

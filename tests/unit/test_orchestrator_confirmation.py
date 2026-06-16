@@ -286,4 +286,4 @@ async def test_uses_callback_when_present():
 
     assert turn.state == TurnState.DONE
     # The callback should have been consulted when auto_approve is False
-    confirm_callback.assert_awaited_once_with("terminal", {"command": "echo hi"})
+    confirm_callback.assert_awaited_once_with("terminal", {"command": "echo hi"}, None)

@@ -17,6 +17,7 @@ from hestia.commands.meta import _handle_meta_command
 from hestia.core.types import Message
 from hestia.errors import HestiaError
 from hestia.persistence.memory_epochs import _compile_and_set_memory_epoch
+from hestia.policy.channel import Channel
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +78,7 @@ async def cmd_chat(app: AppContext, new_session: bool = False) -> None:
                 session=session,
                 user_message=user_message,
                 respond_callback=response_handler,
+                channel=Channel.CLI,
             )
             if app.verbose:
                 trace = await app.trace_store.get_by_turn(turn.id)

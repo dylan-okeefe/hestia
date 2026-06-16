@@ -124,7 +124,7 @@ async def _make_orchestrator(session_store, message_store, approve: bool):
 
     policy = FakePolicy()
 
-    async def confirm_callback(tool_name: str, arguments: dict) -> bool:
+    async def confirm_callback(tool_name: str, arguments: dict, request_token: str | None = None) -> bool:
         return await adapter.request_confirmation(
             "!room:matrix.org", tool_name, arguments
         )

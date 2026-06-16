@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 
 from fastapi import WebSocket
 
+from hestia.security.ssrf import SSRFBlockedError, assert_url_safe
 from hestia.tools.browser.session_store import BrowserSessionStore, normalize_domain
 from hestia.tools.browser.stealth import (
     STEALTH_LAUNCH_ARGS,
@@ -76,6 +77,11 @@ class SessionStreamManager:
             domain = normalize_domain(parsed.hostname or "")
             if not domain:
                 raise ValueError(f"Invalid URL: {url}")
+
+            try:
+                await assert_url_safe(url)
+            except SSRFBlockedError as exc:
+                raise SSRFBlockedError(f"SSRF blocked: {exc}") from exc
 
             session_id = str(uuid.uuid4())
             playwright = None

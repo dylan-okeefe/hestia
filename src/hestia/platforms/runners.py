@@ -15,6 +15,7 @@ from hestia.config import HestiaConfig
 from hestia.core.types import Message, ScheduledTask, Session, SessionState
 from hestia.orchestrator.engine import ConfirmCallback
 from hestia.orchestrator.finalization import sanitize_user_error
+from hestia.policy.channel import Channel
 from hestia.persistence.scheduler import SchedulerStore
 from hestia.persistence.session_store import SessionStore
 from hestia.platforms.base import Platform
@@ -24,13 +25,20 @@ from hestia.scheduler import Scheduler
 
 logger = logging.getLogger(__name__)
 
+# Platform identity of the user whose action triggered the current turn. Used
+# to bind interactive confirmations to the requester (especially important in
+# group/room chats where the destination is a chat/room id, not the sender).
+current_requester: ContextVar[str | None] = ContextVar("current_requester", default=None)
+
 
 def make_telegram_confirm_callback(
     adapter: TelegramAdapter, current_user_var: ContextVar[str]
 ) -> ConfirmCallback:
     """Create a confirmation callback wired to Telegram inline keyboard."""
 
-    async def callback(tool_name: str, arguments: dict[str, object]) -> bool:
+    async def callback(
+        tool_name: str, arguments: dict[str, object], request_token: str | None = None
+    ) -> bool:
         platform_user = current_user_var.get()
         if not platform_user:
             logger.warning(
@@ -38,7 +46,14 @@ def make_telegram_confirm_callback(
                 tool_name,
             )
             return False
-        return await adapter.request_confirmation(platform_user, tool_name, arguments)
+        requester = current_requester.get() or platform_user
+        return await adapter.request_confirmation(
+            platform_user,
+            tool_name,
+            arguments,
+            requester_platform_user=requester,
+            request_token=request_token,
+        )
 
     return callback
 
@@ -48,7 +63,9 @@ def make_matrix_confirm_callback(
 ) -> ConfirmCallback:
     """Create a confirmation callback wired to Matrix reply pattern."""
 
-    async def callback(tool_name: str, arguments: dict[str, object]) -> bool:
+    async def callback(
+        tool_name: str, arguments: dict[str, object], request_token: str | None = None
+    ) -> bool:
         room_id = current_room_var.get()
         if not room_id:
             logger.warning(
@@ -56,7 +73,14 @@ def make_matrix_confirm_callback(
                 tool_name,
             )
             return False
-        return await adapter.request_confirmation(room_id, tool_name, arguments)
+        requester = current_requester.get() or room_id
+        return await adapter.request_confirmation(
+            room_id,
+            tool_name,
+            arguments,
+            requester_platform_user=requester,
+            request_token=request_token,
+        )
 
     return callback
 
@@ -141,12 +165,39 @@ class PlatformRunner:
         session_title: str | None = None,
     ) -> None:
         """Handle incoming platform message."""
-        token = (
-            self.user_context_var.set(platform_user)
-            if self.user_context_var is not None
-            else None
-        )
+        token = None
+        requester_token = None
+        if self.user_context_var is not None:
+            token = self.user_context_var.set(platform_user)
+            requester_token = current_requester.set(
+                sender_platform_user or platform_user
+            )
         try:
+            # Resolve the trust actor before creating a session so unknown
+            # senders in group/room contexts are rejected before any session
+            # or side-effect is created.
+            resolved_user = None
+            if sender_platform_user is not None:
+                # Group chat: resolve individual sender
+                resolved_user = await self.app.user_store.get_user_by_identity(
+                    self.platform_name, sender_platform_user
+                )
+            else:
+                # Private chat: resolve platform_user directly
+                resolved_user = await self.app.user_store.get_user_by_identity(
+                    self.platform_name, platform_user
+                )
+
+            # In group/room contexts the actor must be a known identity.
+            if sender_platform_user is not None and resolved_user is None:
+                logger.warning(
+                    "Rejecting message from unknown sender %s in %s %s",
+                    sender_platform_user,
+                    self.platform_name,
+                    platform_user,
+                )
+                return
+
             if platform_user not in self.user_sessions:
                 session = await self.app.handoff_service.get_or_create_session_with_handoff(
                     self.platform_name, platform_user, title=session_title
@@ -169,19 +220,6 @@ class PlatformRunner:
                     )
 
             user_message = Message(role="user", content=text)
-
-            # Resolve user from identity
-            resolved_user = None
-            if sender_platform_user is not None:
-                # Group chat: resolve individual sender
-                resolved_user = await self.app.user_store.get_user_by_identity(
-                    self.platform_name, sender_platform_user
-                )
-            else:
-                # Private chat: resolve platform_user directly
-                resolved_user = await self.app.user_store.get_user_by_identity(
-                    self.platform_name, platform_user
-                )
 
             # Auto-register room and membership for group chats
             if sender_platform_user is not None and resolved_user is not None:
@@ -215,6 +253,9 @@ class PlatformRunner:
                         return
                 await self.adapter.send_message(platform_user, response_text)
 
+            channel = (
+                Channel.TELEGRAM if self.platform_name == "telegram" else Channel.MATRIX
+            )
             await self.orchestrator.process_turn(
                 session=session,
                 user_message=user_message,
@@ -224,6 +265,7 @@ class PlatformRunner:
                 platform_user=platform_user,
                 stream_callback=stream_callback,
                 resolved_user=resolved_user,
+                channel=channel,
             )
 
             # Check for command prefix (e.g., "/workflow ")
@@ -253,6 +295,8 @@ class PlatformRunner:
         finally:
             if token is not None:
                 self.user_context_var.reset(token)  # type: ignore[union-attr]
+            if requester_token is not None:
+                current_requester.reset(requester_token)
 
 
 async def run_platform(

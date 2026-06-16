@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 from hestia.core.clock import utcnow
 from hestia.core.types import Message
+from hestia.policy.channel import Channel
 
 if TYPE_CHECKING:
     from hestia.context.builder import BuildResult
@@ -91,6 +92,7 @@ class TurnContext:
     session: Session
     platform: Platform | None = None
     platform_user: str | None = None
+    channel: Channel | None = None
 
     # Set by _prepare_turn_context
     build_result: BuildResult | None = None
@@ -102,6 +104,9 @@ class TurnContext:
 
     # Per-turn delivery hint (set by platform adapter)
     voice_reply: bool = False
+
+    # Set by CapabilityGate when a tool requires confirmation.
+    request_token: str | None = None
 
     # Resolved user from identity store (set by platform runner)
     resolved_user: User | None = None

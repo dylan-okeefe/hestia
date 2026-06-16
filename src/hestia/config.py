@@ -211,6 +211,10 @@ class TrustConfig(_ConfigFromEnv):
     # the tool's built-in defaults.
     blocked_shell_patterns: list[str] = field(default_factory=list)
 
+    # Global emergency killswitch: tool names in this set are denied by the
+    # capability gate regardless of channel, preset, or trust overrides.
+    blocked_tools: set[str] = field(default_factory=set)
+
     # When True, write_file refuses to overwrite existing files and
     # suggests using edit_file instead.
     write_guard_enabled: bool = True

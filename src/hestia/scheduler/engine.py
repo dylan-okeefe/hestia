@@ -13,6 +13,7 @@ from hestia.core.clock import utcnow
 from hestia.core.types import Message, ScheduledTask, SessionState
 from hestia.events.bus import EventBus
 from hestia.orchestrator import Orchestrator
+from hestia.policy.channel import Channel
 from hestia.persistence.scheduler import (
     _MIN_RETRY_BACKOFF_SECONDS,
     SchedulerStore,
@@ -193,6 +194,7 @@ class Scheduler:
                 user_message=user_message,
                 respond_callback=deliver,
                 system_prompt=self._system_prompt,
+                channel=Channel.SCHEDULER,
             )
             turn_error = turn.error
         except Exception as e:  # noqa: BLE001

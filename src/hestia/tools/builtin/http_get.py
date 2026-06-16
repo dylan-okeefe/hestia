@@ -11,6 +11,13 @@ from urllib.parse import urlparse
 import httpx
 
 from hestia.runtime_context import current_session_id, current_trace_store
+from hestia.security.ssrf import (
+    SSRFBlockedError,
+    assert_url_safe,
+)
+from hestia.security.ssrf import (
+    _assert_ip_allowed as _ssrf_assert_ip_allowed,
+)
 from hestia.tools.capabilities import NETWORK_EGRESS
 from hestia.tools.metadata import tool
 
@@ -67,21 +74,14 @@ def _assert_ip_allowed(hostname: str) -> None:
     except socket.gaierror as exc:
         raise httpx.ConnectError(f"Cannot resolve hostname: {hostname}") from exc
 
-    for _family, _, _, _, sockaddr in addr_info:
+    for _family, _type, _proto, _canonical, sockaddr in addr_info:
         ip = ipaddress.ip_address(sockaddr[0])
-        # Normalize IPv4-mapped IPv6 addresses to their IPv4 form
-        if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
-            ip = ip.ipv4_mapped
-        # Broader guard: reject any non-global address
-        if not ip.is_global:
+        try:
+            _ssrf_assert_ip_allowed(ip)
+        except SSRFBlockedError as exc:
             raise httpx.ConnectError(
-                f"SSRF blocked: {hostname} resolves to {ip} (non-global)"
-            )
-        for blocked in _BLOCKED_RANGES:
-            if ip in blocked:
-                raise httpx.ConnectError(
-                    f"SSRF blocked: {hostname} resolves to {ip} (in {blocked})"
-                )
+                f"SSRF blocked: {hostname} resolves to {ip} ({exc})"
+            ) from exc
 
 
 def _is_url_safe(url: str) -> str | None:
@@ -165,22 +165,15 @@ async def _fetch_with_curl_cffi(
                     raise RuntimeError(
                         f"Redirect response {response.status_code} without Location header"
                     )
-                # Resolve relative redirects
+                # Resolve relative redirects and validate the target with the
+                # shared SSRF helper.
                 from urllib.parse import urljoin
 
                 current_url = urljoin(current_url, location)
-                if error := _is_url_safe(current_url):
-                    raise RuntimeError(f"SSRF blocked redirect: {error}")
-                parsed_redirect = urlparse(current_url)
-                if parsed_redirect.hostname:
-                    try:
-                        await asyncio.to_thread(
-                            _assert_ip_allowed, parsed_redirect.hostname
-                        )
-                    except httpx.ConnectError as exc:
-                        raise RuntimeError(
-                            f"SSRF blocked redirect: {exc}"
-                        ) from exc
+                try:
+                    await assert_url_safe(current_url)
+                except SSRFBlockedError as exc:
+                    raise RuntimeError(f"SSRF blocked redirect: {exc}") from exc
                 redirects += 1
                 continue
 
@@ -195,8 +188,10 @@ async def _http_get_impl(
 ) -> str:
     """Fetch a URL and return its text content."""
     # SSRF pre-flight check (user-friendly errors)
-    if error := _is_url_safe(url):
-        return error
+    try:
+        await assert_url_safe(url)
+    except SSRFBlockedError as exc:
+        return str(exc)
 
     response = await _fetch_with_httpx(url, timeout_seconds)
     if egress_audit_enabled:

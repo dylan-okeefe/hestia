@@ -155,11 +155,60 @@ async def m004_messages_correction(conn: AsyncConnection) -> None:
         )
 
 
+async def m005_capability_events(conn: AsyncConnection) -> None:
+    """Add capability_events audit table for the trust/capability gate."""
+    await conn.execute(
+        sa.text(
+            "CREATE TABLE IF NOT EXISTS capability_events ("
+            "id TEXT PRIMARY KEY,"
+            "tool_name TEXT NOT NULL,"
+            "arguments_json TEXT NOT NULL,"
+            "channel TEXT NOT NULL,"
+            "actor_platform TEXT NOT NULL,"
+            "actor_platform_user TEXT NOT NULL,"
+            "source_workflow_id TEXT,"
+            "source_trigger_id TEXT,"
+            "decision TEXT NOT NULL,"
+            "reason TEXT NOT NULL,"
+            "injection_flagged INTEGER NOT NULL DEFAULT 0,"
+            "created_at DATETIME NOT NULL"
+            ")"
+        )
+    )
+    await conn.execute(
+        sa.text(
+            "CREATE INDEX IF NOT EXISTS idx_capability_events_created "
+            "ON capability_events (created_at)"
+        )
+    )
+    await conn.execute(
+        sa.text(
+            "CREATE INDEX IF NOT EXISTS idx_capability_events_actor "
+            "ON capability_events (actor_platform, actor_platform_user, created_at)"
+        )
+    )
+
+
+async def m006_workflow_allow_list(conn: AsyncConnection) -> None:
+    """Add allow_listed_tools column to workflows table."""
+    result = await conn.execute(
+        sa.text("SELECT name FROM pragma_table_info('workflows') WHERE name = 'allow_listed_tools'")
+    )
+    if result.fetchone() is None:
+        await conn.execute(
+            sa.text(
+                "ALTER TABLE workflows ADD COLUMN allow_listed_tools TEXT NOT NULL DEFAULT '[]'"
+            )
+        )
+
+
 MIGRATIONS: list[Migration] = [
     m001_sessions_active_unique,
     m002_session_handoffs,
     m003_users_and_rooms,
     m004_messages_correction,
+    m005_capability_events,
+    m006_workflow_allow_list,
 ]
 
 

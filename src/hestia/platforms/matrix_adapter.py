@@ -219,7 +219,12 @@ class MatrixAdapter(Platform):
             logger.debug("Failed to redact message %s: %s", msg_id, e)
 
     async def request_confirmation(
-        self, user: str, tool_name: str, arguments: dict[str, Any]
+        self,
+        user: str,
+        tool_name: str,
+        arguments: dict[str, Any],
+        requester_platform_user: str | None = None,
+        request_token: str | None = None,
     ) -> bool:
         """Post a confirmation prompt and wait for a 'yes'/'no' reply.
 
@@ -240,6 +245,8 @@ class MatrixAdapter(Platform):
             tool_name=tool_name,
             arguments=arguments,
             timeout_seconds=self._confirmation_timeout_seconds,
+            requester_platform_user=requester_platform_user,
+            request_token=request_token,
         )
         self._pending_confirmations[event_id] = req.id
 
@@ -319,10 +326,11 @@ class MatrixAdapter(Platform):
         if in_reply_to and in_reply_to in self._pending_confirmations:
             request_id = self._pending_confirmations[in_reply_to]
             reply_text = stripped_body.lower()
+            approver = event.sender
             if reply_text in ("yes", "y"):
-                self._confirmation_store.resolve(request_id, True)
+                self._confirmation_store.resolve(request_id, True, approver)
             elif reply_text in ("no", "n"):
-                self._confirmation_store.resolve(request_id, False)
+                self._confirmation_store.resolve(request_id, False, approver)
             # Don't route confirmation replies to the orchestrator
             return
 
@@ -351,12 +359,12 @@ class MatrixAdapter(Platform):
 
         # Call the orchestrator callback
         # platform_user is the room ID (one room = one session)
-        # Matrix: sender_platform_user is not resolved individually for rooms
+        # sender_platform_user is the individual Matrix user id that sent the event
         await self._on_message(
             self.name,
             room.room_id,
             stripped_body,
-            None,
+            event.sender,
             None,
         )
 

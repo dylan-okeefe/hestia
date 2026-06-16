@@ -28,6 +28,7 @@ from hestia.memory.handoff import SessionHandoffSummarizer
 from hestia.orchestrator import Orchestrator
 from hestia.orchestrator.engine import ConfirmCallback
 from hestia.orchestrator.handoff_service import HandoffService
+from hestia.persistence.capability_events import CapabilityEventStore
 from hestia.persistence.db import Database
 from hestia.persistence.error_resolution_store import ErrorResolutionStore
 from hestia.persistence.failure_store import FailureStore
@@ -39,6 +40,7 @@ from hestia.persistence.trace_store import TraceStore
 from hestia.persistence.turn_store import TurnStore
 from hestia.persistence.users import UserStore
 from hestia.policy.default import DefaultPolicyEngine
+from hestia.policy.gate import CapabilityGate
 from hestia.reflection.runner import ReflectionRunner
 from hestia.reflection.scheduler import ReflectionScheduler
 from hestia.reflection.store import ProposalStore
@@ -178,7 +180,9 @@ class CliResponseHandler:
 class CliConfirmHandler:
     """Handles tool confirmation in CLI mode."""
 
-    async def __call__(self, tool_name: str, arguments: dict[str, Any]) -> bool:
+    async def __call__(
+        self, tool_name: str, arguments: dict[str, Any], request_token: str | None = None
+    ) -> bool:
         """Prompt user for confirmation."""
         click.echo(f"\nTool call requested: {tool_name}")
         click.echo(f"Arguments: {arguments}")
@@ -220,12 +224,19 @@ class AppContext:
         self.execution_store = ExecutionStore(self.db)
         self.error_resolution_store = ErrorResolutionStore(self.db)
         self.job_alert_store = JobAlertStore(self.db)
+        self.capability_event_store = CapabilityEventStore(self.db)
         self.trigger_registry: Any = None
         self.epoch_compiler = MemoryEpochCompiler(
             self.memory_store, max_tokens=self.config.memory.epoch_max_tokens
         )
         self.tool_registry = ToolRegistry(self.artifact_store)
         self.checkpoint_manager = CheckpointManager()
+        self.capability_gate = CapabilityGate(
+            config=config,
+            user_store=self.user_store,
+            registry=self.tool_registry,
+            event_store=self.capability_event_store,
+        )
 
         # Eager feature subsystems (lightweight; always available for status queries)
         self.proposal_store = ProposalStore(self.db)
@@ -404,6 +415,7 @@ class AppContext:
             tool_registry=self.tool_registry,
             policy=self.policy,
             confirm_callback=self.confirm_callback,
+            capability_gate=self.capability_gate,
             max_iterations=self.config.max_iterations,
             max_tool_calls_per_turn=self.config.policy.max_tool_calls_per_turn,
             max_tokens=self.config.inference.max_tokens,

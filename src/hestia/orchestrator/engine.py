@@ -40,6 +40,7 @@ from hestia.persistence.session_store import SessionStore
 from hestia.persistence.turn_store import TurnStore
 from hestia.persistence.users import User
 from hestia.platforms.base import Platform
+from hestia.policy.channel import Channel
 from hestia.policy.engine import PolicyEngine
 from hestia.reflection.store import ProposalStore
 from hestia.runtime_context import (
@@ -58,6 +59,7 @@ if TYPE_CHECKING:
     from hestia.events.bus import EventBus
     from hestia.persistence.failure_store import FailureStore
     from hestia.persistence.trace_store import TraceStore
+    from hestia.policy.gate import CapabilityGate
     from hestia.style.store import StyleProfileStore
 
 logger = logging.getLogger(__name__)
@@ -77,6 +79,7 @@ class Orchestrator:
         turn_store: TurnStore | None = None,
         handoff_service: HandoffService | None = None,
         confirm_callback: ConfirmCallback | None = None,
+        capability_gate: "CapabilityGate | None" = None,
         max_iterations: int = 10,
         max_tool_calls_per_turn: int = 10,
         max_tokens: int = 1024,
@@ -111,6 +114,7 @@ class Orchestrator:
         self._tools = tool_registry
         self._policy = policy
         self._confirm_callback = confirm_callback
+        self._capability_gate = capability_gate
         self._max_iterations = max_iterations
         self._max_tool_calls_per_turn = max_tool_calls_per_turn
         self._max_tokens = max_tokens
@@ -150,6 +154,7 @@ class Orchestrator:
             session_store=session_store,
             message_store=message_store,
             confirm_callback=confirm_callback,
+            capability_gate=capability_gate,
             injection_scanner=injection_scanner,
             max_iterations=max_iterations,
             max_tool_calls_per_turn=max_tool_calls_per_turn,
@@ -211,6 +216,7 @@ class Orchestrator:
         voice_reply: bool = False,
         stream_callback: StreamCallback | None = None,
         resolved_user: User | None = None,
+        channel: Channel | None = None,
     ) -> Turn:
         """Process a single user turn through the state machine."""
         if self._rate_limiter is not None and not self._rate_limiter.allow(session.id):
@@ -259,6 +265,7 @@ class Orchestrator:
                     voice_reply=voice_reply,
                     stream_callback=stream_callback,
                     resolved_user=resolved_user,
+                    channel=channel,
                 )
 
                 try:
