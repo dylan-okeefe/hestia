@@ -81,7 +81,9 @@ async def test_concurrent_acquire_no_stall_on_slow_erase(mock_inference, mock_st
     session_a = _session("session-a", slot_id=0, slot_saved_path="x.bin")
     session_b = _session("session-b", slot_id=1, slot_saved_path="x.bin")
 
-    mock_store.get_sessions_batch = AsyncMock(return_value=[session_a, session_b])
+    mock_store.get_sessions_batch = AsyncMock(
+        return_value={session_a.id: session_a, session_b.id: session_b}
+    )
     mock_store.get_session = AsyncMock(side_effect=lambda sid: session_a if sid == "session-a" else session_b)
 
     # Start an acquire that will need to evict

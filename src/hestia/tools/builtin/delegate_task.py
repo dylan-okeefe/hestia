@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from hestia.core.clock import utcnow
 from hestia.core.types import Message
-from hestia.persistence.sessions import SessionStore
+from hestia.persistence.session_store import SessionStore
 
 if TYPE_CHECKING:
     from hestia.orchestrator.types import Turn

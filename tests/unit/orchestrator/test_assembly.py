@@ -68,15 +68,16 @@ async def test_prepare_builds_context_and_acquires_slot():
 
     policy = DefaultPolicyEngine(ctx_window=4096)
 
-    mock_store = MagicMock()
-    mock_store.get_messages = AsyncMock(return_value=[])
-    mock_store.append_message = AsyncMock()
+    mock_message_store = MagicMock()
+    mock_message_store.get_messages = AsyncMock(return_value=[])
+    mock_message_store.append_message = AsyncMock()
 
     assembly = TurnAssembly(
         context_builder=mock_builder,
         tool_registry=mock_tools,
         policy=policy,
-        session_store=mock_store,
+        session_store=MagicMock(),
+        message_store=mock_message_store,
     )
 
     session = _make_session()

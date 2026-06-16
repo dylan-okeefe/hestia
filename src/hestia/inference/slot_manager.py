@@ -13,7 +13,7 @@ import httpx
 from hestia.core.inference import InferenceClient
 from hestia.core.types import Session, SessionTemperature
 from hestia.errors import InferenceServerError, PersistenceError
-from hestia.persistence.sessions import SessionStore
+from hestia.persistence.session_store import SessionStore
 
 logger = logging.getLogger(__name__)
 
@@ -271,10 +271,10 @@ class SlotManager:
         if not candidates:
             return None
         # Load all candidates in a single query instead of N serial round-trips.
-        session_list = await self._store.get_sessions_batch(candidates)
-        if not session_list:
+        session_map = await self._store.get_sessions_batch(candidates)
+        if not session_map:
             return None
-        session_list.sort(key=lambda s: s.last_active_at)
+        session_list = sorted(session_map.values(), key=lambda s: s.last_active_at)
         return session_list[0].id
 
     def _slot_path_for(self, session_id: str) -> Path:

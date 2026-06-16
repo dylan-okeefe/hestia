@@ -98,7 +98,8 @@ class TestGroupChatResolution:
             state=MagicMock(),
             temperature=MagicMock(),
         )
-        app.session_store.get_or_create_session_with_handoff = AsyncMock(
+        app.handoff_service = MagicMock()
+        app.handoff_service.get_or_create_session_with_handoff = AsyncMock(
             return_value=_session
         )
 
@@ -392,15 +393,16 @@ class TestSystemPromptInjection:
         policy = MagicMock()
         policy.filter_tools = MagicMock(return_value=[])
 
-        session_store = MagicMock()
-        session_store.get_messages = AsyncMock(return_value=[])
-        session_store.append_message = AsyncMock()
+        message_store = MagicMock()
+        message_store.get_messages = AsyncMock(return_value=[])
+        message_store.append_message = AsyncMock()
 
         assembly = TurnAssembly(
             context_builder=builder,
             tool_registry=tools,
             policy=policy,
-            session_store=session_store,
+            session_store=MagicMock(),
+            message_store=message_store,
             proposal_store=None,
             style_store=None,
             style_config=None,

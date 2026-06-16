@@ -16,7 +16,7 @@ from hestia.core.types import Message, ScheduledTask, Session
 from hestia.orchestrator.engine import ConfirmCallback
 from hestia.orchestrator.finalization import sanitize_user_error
 from hestia.persistence.scheduler import SchedulerStore
-from hestia.persistence.sessions import SessionStore
+from hestia.persistence.session_store import SessionStore
 from hestia.platforms.base import Platform
 from hestia.platforms.matrix_adapter import MatrixAdapter
 from hestia.platforms.telegram_adapter import TelegramAdapter
@@ -123,6 +123,7 @@ async def run_platform(
         adapter.set_voice_deps(
             orchestrator=orchestrator,
             session_store=app.session_store,
+            handoff_service=app.handoff_service,
             system_prompt=config.system_prompt,
             voice_config=config.voice if config.telegram.voice_messages else None,
         )
@@ -151,7 +152,7 @@ async def run_platform(
         token = user_context_var.set(platform_user) if user_context_var is not None else None
         try:
             if platform_user not in user_sessions:
-                session = await app.session_store.get_or_create_session_with_handoff(
+                session = await app.handoff_service.get_or_create_session_with_handoff(
                     platform_name, platform_user, title=session_title
                 )
                 user_sessions[platform_user] = session

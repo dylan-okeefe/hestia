@@ -27,13 +27,16 @@ from hestia.memory import MemoryEpochCompiler, MemoryStore
 from hestia.memory.handoff import SessionHandoffSummarizer
 from hestia.orchestrator import Orchestrator
 from hestia.orchestrator.engine import ConfirmCallback
+from hestia.orchestrator.handoff_service import HandoffService
 from hestia.persistence.db import Database
 from hestia.persistence.error_resolution_store import ErrorResolutionStore
 from hestia.persistence.failure_store import FailureStore
 from hestia.persistence.job_alert_store import JobAlertStore
+from hestia.persistence.message_store import MessageStore
 from hestia.persistence.scheduler import SchedulerStore
-from hestia.persistence.sessions import SessionStore
+from hestia.persistence.session_store import SessionStore
 from hestia.persistence.trace_store import TraceStore
+from hestia.persistence.turn_store import TurnStore
 from hestia.persistence.users import UserStore
 from hestia.policy.default import DefaultPolicyEngine
 from hestia.reflection.runner import ReflectionRunner
@@ -202,6 +205,11 @@ class AppContext:
         self.artifact_store = ArtifactStore(config.storage.artifacts_dir)
         self.event_bus = EventBus()
         self.session_store = SessionStore(self.db, event_bus=self.event_bus)
+        self.message_store = MessageStore(self.db)
+        self.turn_store = TurnStore(self.db)
+        self.handoff_service = HandoffService(
+            self.session_store, self.message_store, summarizer=None
+        )
         self.user_store = UserStore(self.db)
         self.policy = _make_policy(config)
         self.memory_store = MemoryStore(self.db)
@@ -380,9 +388,18 @@ class AppContext:
 
         checkpoint_scope = self.config.storage.checkpoint_scope or None
 
+        handoff_service = HandoffService(
+            self.session_store,
+            self.message_store,
+            summarizer=self.handoff_summarizer,
+        )
+
         return Orchestrator(
             inference=self.inference,
             session_store=self.session_store,
+            message_store=self.message_store,
+            turn_store=self.turn_store,
+            handoff_service=handoff_service,
             context_builder=self.context_builder,
             tool_registry=self.tool_registry,
             policy=self.policy,
@@ -394,7 +411,6 @@ class AppContext:
             slot_manager=self.slot_manager,
             failure_store=self.failure_store,
             trace_store=self.trace_store,
-            handoff_summarizer=self.handoff_summarizer,
             injection_scanner=self.make_injection_scanner(),
             proposal_store=self.proposal_store,
             style_store=self.style_store,

@@ -88,6 +88,9 @@ async def cmd_schedule_add(
         )
         click.echo(f"Created task: {task.id}")
         click.echo(f"  Session: {task.session_id}")
+        if platform is not None and platform_user is not None:
+            click.echo(f"  Platform: {platform}")
+            click.echo(f"  Platform user: {platform_user}")
         if task.cron_expression:
             click.echo(f"  Schedule: cron '{task.cron_expression}'")
         elif task.fire_at:

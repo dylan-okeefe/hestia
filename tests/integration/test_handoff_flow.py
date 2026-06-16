@@ -8,7 +8,10 @@ from hestia.core.types import ChatResponse, Message, Session, SessionState, Sess
 from hestia.memory.handoff import SessionHandoffSummarizer
 from hestia.memory.store import MemoryStore
 from hestia.orchestrator.engine import Orchestrator
+from hestia.orchestrator.handoff_service import HandoffService
+from hestia.orchestrator.mappers import message_domain_to_dto
 from hestia.persistence.db import Database
+from hestia.persistence.message_store import MessageStore
 from hestia.persistence.sessions import SessionStore
 
 
@@ -95,8 +98,13 @@ async def memory_store(db):
     yield store
 
 
+@pytest.fixture
+async def message_store(db):
+    return MessageStore(db)
+
+
 @pytest.mark.asyncio
-async def test_full_handoff_cycle(session_store, memory_store):
+async def test_full_handoff_cycle(session_store, message_store, memory_store):
     """Full cycle: start session, record turns, close, assert handoff memory."""
     from pathlib import Path
 
@@ -115,6 +123,9 @@ async def test_full_handoff_cycle(session_store, memory_store):
         memory_store=memory_store,
         min_messages=4,
     )
+    handoff_service = HandoffService(
+        session_store, message_store, summarizer=summarizer
+    )
 
     orchestrator = Orchestrator(
         inference=inference,
@@ -122,7 +133,7 @@ async def test_full_handoff_cycle(session_store, memory_store):
         context_builder=builder,
         tool_registry=registry,
         policy=policy,
-        handoff_summarizer=summarizer,
+        handoff_service=handoff_service,
     )
 
     test_session = Session(
@@ -142,11 +153,15 @@ async def test_full_handoff_cycle(session_store, memory_store):
 
     # Record enough turns to meet min_messages
     for i in range(4):
-        await session_store.append_message(
-            created.id, Message(role="user", content=f"Message {i}")
+        await message_store.append_message(
+            created.id,
+            message_domain_to_dto(Message(role="user", content=f"Message {i}"), created.id, idx=0),
         )
-        await session_store.append_message(
-            created.id, Message(role="assistant", content=f"Reply {i}")
+        await message_store.append_message(
+            created.id,
+            message_domain_to_dto(
+                Message(role="assistant", content=f"Reply {i}"), created.id, idx=0
+            ),
         )
 
     # Close the session

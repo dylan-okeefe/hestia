@@ -49,7 +49,7 @@ async def list_errors(
         ctx.execution_store.list_failed(limit=50),
         ctx.workflow_store.list_workflows(),
         ctx.scheduler_store.list_tasks_with_errors(limit=50),
-        ctx.session_store.list_turns_with_errors(limit=50),
+        ctx.turn_store.list_turns_with_errors(limit=50),
     )
 
     workflow_names = {w.id: w.name for w in workflows}
@@ -214,11 +214,14 @@ async def debug_error(
         else:
             prompt_parts.append("Task record not found.")
     elif source_type == "session_turn":
-        messages = await ctx.session_store.get_turn_messages(source_id)
-        if messages:
-            prompt_parts.append(f"Session: {messages['session_id']}")
-            prompt_parts.append(f"State: {messages['state']}")
-            prompt_parts.append(f"Error: {messages['error']}")
+        turn = await ctx.turn_store.get_turn(source_id)
+        if turn is not None:
+            session = await ctx.session_store.get_session(turn.session_id)
+            prompt_parts.append(f"Session: {turn.session_id}")
+            prompt_parts.append(f"State: {turn.state}")
+            prompt_parts.append(f"Error: {turn.error}")
+            if session is not None:
+                prompt_parts.append(f"Platform user: {session.platform_user}")
         else:
             prompt_parts.append("Turn record not found.")
     else:

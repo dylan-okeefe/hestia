@@ -18,6 +18,7 @@ from hestia.errors import (
     PolicyFailureError,
     ThinkingBudgetExceededError,
 )
+from hestia.orchestrator.mappers import message_domain_to_dto
 from hestia.orchestrator.quality import Correction, DegeneratePattern, classify_turn
 from hestia.orchestrator.types import TransitionCallback, Turn, TurnContext, TurnState
 from hestia.policy.engine import PolicyEngine, RetryAction
@@ -30,9 +31,12 @@ from hestia.tools.types import ToolCallResult
 if TYPE_CHECKING:
     from hestia.events.bus import EventBus
 
+from hestia.persistence.message_store import MessageStore
+
 if TYPE_CHECKING:
     from hestia.context.builder import ContextBuilder
-    from hestia.persistence.sessions import SessionStore
+    from hestia.persistence.message_store import MessageStore
+    from hestia.persistence.session_store import SessionStore
 
 logger = logging.getLogger(__name__)
 
@@ -206,6 +210,7 @@ class TurnExecution:
         policy: PolicyEngine,
         context_builder: "ContextBuilder",
         session_store: "SessionStore",
+        message_store: "MessageStore | None" = None,
         confirm_callback: ConfirmCallback | None = None,
         injection_scanner: InjectionScanner | None = None,
         max_iterations: int = 10,
@@ -220,6 +225,7 @@ class TurnExecution:
         self._policy = policy
         self._builder = context_builder
         self._store = session_store
+        self._message_store = message_store or MessageStore(session_store._db)
         self._confirm_callback = confirm_callback
         self._injection_scanner = injection_scanner
         self._max_iterations = max_iterations
@@ -281,7 +287,9 @@ class TurnExecution:
                     ),
                     created_at=utcnow(),
                 )
-                await self._store.append_message(session.id, nudge)
+                await self._message_store.append_message(
+                    session.id, message_domain_to_dto(nudge, session.id, idx=0)
+                )
                 ctx.running_history.append(nudge)
                 self._builder.set_style_prefix(ctx.style_prefix)
                 ctx.build_result = await self._builder.build(
@@ -304,7 +312,9 @@ class TurnExecution:
                 reasoning_content=chat_response.reasoning_content,
                 created_at=utcnow(),
             )
-            await self._store.append_message(session.id, assistant_msg)
+            await self._message_store.append_message(
+                session.id, message_domain_to_dto(assistant_msg, session.id, idx=0)
+            )
 
             # Guardrail: model is reasoning extensively but not acting
             if (
@@ -503,7 +513,9 @@ class TurnExecution:
             created_at=utcnow(),
             correction=True,
         )
-        await self._store.append_message(ctx.session.id, msg)
+        await self._message_store.append_message(
+            ctx.session.id, message_domain_to_dto(msg, ctx.session.id, idx=0)
+        )
         ctx.running_history.append(msg)
         self._builder.set_style_prefix(ctx.style_prefix)
         ctx.build_result = await self._builder.build(
@@ -596,7 +608,9 @@ class TurnExecution:
             ctx.artifact_handles.extend(handles)
 
         for result_msg in tool_results:
-            await self._store.append_message(ctx.session.id, result_msg)
+            await self._message_store.append_message(
+                ctx.session.id, message_domain_to_dto(result_msg, ctx.session.id, idx=0)
+            )
 
         await transition(turn, TurnState.BUILDING_CONTEXT, "")
 

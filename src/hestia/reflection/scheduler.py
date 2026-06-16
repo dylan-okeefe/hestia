@@ -14,7 +14,7 @@ from hestia.persistence.schema import sessions
 
 if TYPE_CHECKING:
     from hestia.config import ReflectionConfig
-    from hestia.persistence.sessions import SessionStore
+    from hestia.persistence.session_store import SessionStore
     from hestia.reflection.runner import ReflectionRunner
 
 logger = logging.getLogger(__name__)

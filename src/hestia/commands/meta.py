@@ -7,7 +7,8 @@ from typing import TYPE_CHECKING
 import click
 
 from hestia.core.types import Session
-from hestia.persistence.sessions import SessionStore
+from hestia.persistence.message_store import MessageStore
+from hestia.persistence.session_store import SessionStore
 
 if TYPE_CHECKING:
     from hestia.app import AppContext
@@ -18,6 +19,7 @@ async def _handle_meta_command(
     cmd: str,
     session: Session,
     session_store: SessionStore,
+    message_store: MessageStore | None = None,
     app: AppContext | None = None,
 ) -> tuple[bool, Session]:
     """Handle a /meta command. Returns (should_exit, possibly_new_session)."""
@@ -54,7 +56,7 @@ async def _handle_meta_command(
         return False, session
 
     if cmd == "/history":
-        messages = await session_store.get_messages(session.id)
+        messages = await message_store.get_messages(session.id)
         if not messages:
             click.echo("(empty)")
         else:

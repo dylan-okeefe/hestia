@@ -66,7 +66,7 @@ async def cmd_chat(app: AppContext, new_session: bool = False) -> None:
                 break
             if user_input.startswith("/"):
                 should_exit, session = await _handle_meta_command(
-                    user_input, session, app.session_store, app
+                    user_input, session, app.session_store, app.message_store, app
                 )
                 if should_exit:
                     break

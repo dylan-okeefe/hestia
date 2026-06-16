@@ -18,7 +18,7 @@ from hestia.persistence.scheduler import (
     _calculate_next_run,
     _MIN_RETRY_BACKOFF_SECONDS,
 )
-from hestia.persistence.sessions import SessionStore
+from hestia.persistence.session_store import SessionStore
 from hestia.platforms.notifier import PlatformNotifier
 from hestia.runtime_context import scheduler_tick_active
 

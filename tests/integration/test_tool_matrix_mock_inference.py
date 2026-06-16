@@ -42,7 +42,7 @@ def _make_session(session_id: str = "test_session") -> Session:
 
 @pytest.mark.asyncio
 async def test_meta_list_tools(
-    store, fake_policy, context_builder, tool_registry, respond_callback
+    store, message_store, fake_policy, context_builder, tool_registry, respond_callback
 ):
     """list_tools meta-tool returns the registered tool list."""
     responses = [
@@ -81,7 +81,7 @@ async def test_meta_list_tools(
         respond_callback=respond_callback,
     )
     assert turn.state == TurnState.DONE
-    messages = await store.get_messages(session.id)
+    messages = await message_store.get_messages(session.id)
     tool_msgs = [m for m in messages if m.role == "tool"]
     assert len(tool_msgs) == 1
     assert "current_time" in tool_msgs[0].content
@@ -89,7 +89,7 @@ async def test_meta_list_tools(
 
 @pytest.mark.asyncio
 async def test_meta_call_tool_current_time(
-    store, fake_policy, context_builder, tool_registry, respond_callback
+    store, message_store, fake_policy, context_builder, tool_registry, respond_callback
 ):
     """call_tool meta-tool can invoke current_time."""
     responses = [
@@ -134,14 +134,14 @@ async def test_meta_call_tool_current_time(
         respond_callback=respond_callback,
     )
     assert turn.state == TurnState.DONE
-    messages = await store.get_messages(session.id)
+    messages = await message_store.get_messages(session.id)
     tool_msgs = [m for m in messages if m.role == "tool"]
     assert any("UTC" in (m.content or "") for m in tool_msgs)
 
 
 @pytest.mark.asyncio
 async def test_read_file_and_list_dir(
-    store, fake_policy, tool_registry, file_sandbox, respond_callback, responses
+    store, message_store, fake_policy, tool_registry, file_sandbox, respond_callback, responses
 ):
     """read_file and list_dir via call_tool."""
     sandbox = Path(file_sandbox)
@@ -210,7 +210,7 @@ async def test_read_file_and_list_dir(
         respond_callback=respond_callback,
     )
     assert turn.state == TurnState.DONE
-    messages = await store.get_messages(session.id)
+    messages = await message_store.get_messages(session.id)
     tool_msgs = [m.content for m in messages if m.role == "tool"]
     assert any("Hello, world!" in m for m in tool_msgs)
     assert any("hello.txt" in m for m in tool_msgs)
@@ -218,7 +218,7 @@ async def test_read_file_and_list_dir(
 
 @pytest.mark.asyncio
 async def test_denied_write_file_without_confirm_callback(
-    store, fake_policy, context_builder, tool_registry, file_sandbox, respond_callback
+    store, message_store, fake_policy, context_builder, tool_registry, file_sandbox, respond_callback
 ):
     """write_file is denied when confirm_callback is None."""
     responses = [
@@ -267,14 +267,14 @@ async def test_denied_write_file_without_confirm_callback(
         respond_callback=respond_callback,
     )
     assert turn.state == TurnState.DONE
-    messages = await store.get_messages(session.id)
+    messages = await message_store.get_messages(session.id)
     tool_msgs = [m.content for m in messages if m.role == "tool"]
     assert any("no confirm_callback is configured" in m for m in tool_msgs)
 
 
 @pytest.mark.asyncio
 async def test_denied_terminal_without_confirm_callback(
-    store, fake_policy, context_builder, tool_registry, respond_callback
+    store, message_store, fake_policy, context_builder, tool_registry, respond_callback
 ):
     """terminal is denied when confirm_callback is None."""
     responses = [
@@ -323,14 +323,14 @@ async def test_denied_terminal_without_confirm_callback(
         respond_callback=respond_callback,
     )
     assert turn.state == TurnState.DONE
-    messages = await store.get_messages(session.id)
+    messages = await message_store.get_messages(session.id)
     tool_msgs = [m.content for m in messages if m.role == "tool"]
     assert any("no confirm_callback is configured" in m for m in tool_msgs)
 
 
 @pytest.mark.asyncio
 async def test_http_get_public_url(
-    store, fake_policy, context_builder, tool_registry, respond_callback
+    store, message_store, fake_policy, context_builder, tool_registry, respond_callback
 ):
     """http_get fetches a public URL via call_tool (httpx patched for speed)."""
     mock_response = AsyncMock()
@@ -388,7 +388,7 @@ async def test_http_get_public_url(
             respond_callback=respond_callback,
         )
     assert turn.state == TurnState.DONE
-    messages = await store.get_messages(session.id)
+    messages = await message_store.get_messages(session.id)
     tool_msgs = [m.content for m in messages if m.role == "tool"]
     assert any("Public page content" in m for m in tool_msgs)
 
@@ -396,6 +396,7 @@ async def test_http_get_public_url(
 @pytest.mark.asyncio
 async def test_artifact_overflow_and_read_artifact(
     store,
+    message_store,
     fake_policy,
     context_builder,
     tool_registry,
@@ -478,7 +479,7 @@ async def test_artifact_overflow_and_read_artifact(
         )
 
     assert turn.state == TurnState.DONE
-    messages = await store.get_messages(session.id)
+    messages = await message_store.get_messages(session.id)
     tool_msgs = [m.content for m in messages if m.role == "tool"]
 
     # First tool result should mention the artifact
@@ -489,7 +490,7 @@ async def test_artifact_overflow_and_read_artifact(
 
 @pytest.mark.asyncio
 async def test_delegate_task_minimal(
-    store, fake_policy, context_builder, artifact_store, file_sandbox, respond_callback
+    store, message_store, fake_policy, context_builder, artifact_store, file_sandbox, respond_callback
 ):
     """delegate_task spawns a subagent and returns a summary."""
     from hestia.tools.builtin import current_time
@@ -583,7 +584,7 @@ async def test_delegate_task_minimal(
         respond_callback=respond_callback,
     )
     assert turn.state == TurnState.DONE
-    messages = await store.get_messages(session.id)
+    messages = await message_store.get_messages(session.id)
     tool_msgs = [m.content for m in messages if m.role == "tool"]
     assert any("Subagent result: complete" in m for m in tool_msgs)
     assert any("Subagent completed the task" in m for m in tool_msgs)

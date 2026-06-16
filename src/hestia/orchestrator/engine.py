@@ -16,11 +16,16 @@ from hestia.errors import (
     PlatformError,
 )
 from hestia.inference.slot_manager import SlotManager
-from hestia.memory.handoff import SessionHandoffSummarizer
 from hestia.orchestrator.assembly import TurnAssembly
 from hestia.orchestrator.execution import ConfirmCallback as ConfirmCallback
 from hestia.orchestrator.execution import TurnExecution
 from hestia.orchestrator.finalization import TurnFinalization
+from hestia.orchestrator.handoff_service import HandoffService
+from hestia.orchestrator.mappers import (
+    message_domain_to_dto,
+    turn_domain_to_dto,
+    turn_transition_domain_to_dto,
+)
 from hestia.orchestrator.transitions import assert_transition
 from hestia.orchestrator.types import (
     ResponseCallback,
@@ -30,7 +35,9 @@ from hestia.orchestrator.types import (
     TurnState,
     TurnTransition,
 )
-from hestia.persistence.sessions import SessionStore
+from hestia.persistence.message_store import MessageStore
+from hestia.persistence.session_store import SessionStore
+from hestia.persistence.turn_store import TurnStore
 from hestia.persistence.users import User
 from hestia.platforms.base import Platform
 from hestia.policy.engine import PolicyEngine
@@ -66,6 +73,9 @@ class Orchestrator:
         context_builder: ContextBuilder,
         tool_registry: ToolRegistry,
         policy: PolicyEngine,
+        message_store: MessageStore | None = None,
+        turn_store: TurnStore | None = None,
+        handoff_service: HandoffService | None = None,
         confirm_callback: ConfirmCallback | None = None,
         max_iterations: int = 10,
         max_tool_calls_per_turn: int = 10,
@@ -74,7 +84,6 @@ class Orchestrator:
         slot_manager: SlotManager | None = None,
         failure_store: "FailureStore | None" = None,
         trace_store: "TraceStore | None" = None,
-        handoff_summarizer: SessionHandoffSummarizer | None = None,
         injection_scanner: InjectionScanner | None = None,
         proposal_store: ProposalStore | None = None,
         style_store: "StyleProfileStore | None" = None,
@@ -89,6 +98,14 @@ class Orchestrator:
         """Initialize the orchestrator."""
         self._inference = inference
         self._store = session_store
+        self._message_store = message_store or MessageStore(session_store._db)
+        self._turn_store = turn_store or TurnStore(session_store._db)
+        self._handoff_service = handoff_service or HandoffService(
+            session_store, self._message_store, summarizer=None
+        )
+        message_store = self._message_store
+        turn_store = self._turn_store
+        handoff_service = self._handoff_service
         self._builder = context_builder
         self._tools = tool_registry
         self._policy = policy
@@ -100,7 +117,6 @@ class Orchestrator:
         self._slot_manager = slot_manager
         self._failure_store = failure_store
         self._trace_store = trace_store
-        self._handoff_summarizer = handoff_summarizer
         self._injection_scanner = injection_scanner
         self._proposal_store = proposal_store
         self._style_store = style_store
@@ -117,6 +133,7 @@ class Orchestrator:
             tool_registry=tool_registry,
             policy=policy,
             session_store=session_store,
+            message_store=message_store,
             proposal_store=proposal_store,
             style_store=style_store,
             style_config=style_config,
@@ -129,6 +146,7 @@ class Orchestrator:
             policy=policy,
             context_builder=context_builder,
             session_store=session_store,
+            message_store=message_store,
             confirm_callback=confirm_callback,
             injection_scanner=injection_scanner,
             max_iterations=max_iterations,
@@ -142,45 +160,34 @@ class Orchestrator:
             slot_manager=slot_manager,
             failure_store=failure_store,
             trace_store=trace_store,
-            handoff_summarizer=handoff_summarizer,
+            handoff_service=handoff_service,
             policy=policy,
             session_store=session_store,
+            turn_store=turn_store,
             checkpoint_manager=checkpoint_manager,
             auto_rollback_on_failure=auto_rollback_on_failure,
         )
 
     async def recover_stale_turns(self) -> int:
         """Mark any turns in non-terminal states as FAILED."""
-        stale = await self._store.list_stale_turns()
+        stale = await self._turn_store.list_stale_turns()
         count = 0
-        for turn in stale:
-            if turn.state not in (TurnState.DONE, TurnState.FAILED):
-                await self._store.fail_turn(
-                    turn.id, error="Recovered after crash: turn was in non-terminal state"
+        for dto in stale:
+            if dto.state not in (TurnState.DONE.value, TurnState.FAILED.value):
+                await self._turn_store.fail_turn(
+                    dto.id, error="Recovered after crash: turn was in non-terminal state"
                 )
                 count += 1
         return count
 
     async def close_session(self, session_id: str) -> None:
-        """Close a session, optionally generating a handoff summary."""
+        """Close a session and generate a handoff summary."""
         session = await self._store.get_session(session_id)
         if session is None:
             logger.warning("close_session called for unknown session %s", session_id)
             return
 
-        summary: str | None = None
-        if self._handoff_summarizer is not None:
-            try:
-                history = await self._store.get_messages(session_id)
-                result = await self._handoff_summarizer.summarize_and_store(
-                    session, history
-                )
-                if result is not None:
-                    summary = result.summary
-            except Exception:  # noqa: BLE001
-                logger.warning("Handoff summarizer failed for %s", session_id, exc_info=True)
-
-        await self._store.archive_session(session_id, summary=summary)
+        await self._handoff_service.generate_handoff_summary(session_id)
 
     async def _set_typing(
         self, platform: Platform | None, platform_user: str | None, typing: bool
@@ -263,8 +270,8 @@ class Orchestrator:
                 if turn.state not in (TurnState.DONE, TurnState.FAILED):
                     turn.state = TurnState.FAILED
                     turn.error = str(exc)
-                    if self._store is not None:
-                        await self._store.update_turn(turn)
+                    if self._turn_store is not None:
+                        await self._turn_store.update_turn(turn_domain_to_dto(turn))
                 try:
                     await ctx.respond_callback(
                         "An internal error occurred and the turn could not complete. "
@@ -312,7 +319,7 @@ class Orchestrator:
         )
 
     async def _persist_turn(self, turn: Turn) -> None:
-        await self._store.insert_turn(turn)
+        await self._turn_store.insert_turn(turn_domain_to_dto(turn))
 
     async def _transition(self, turn: Turn, to_state: TurnState, note: str = "") -> None:
         assert_transition(turn.state, to_state)
@@ -324,8 +331,11 @@ class Orchestrator:
         )
         turn.transitions.append(transition)
         turn.state = to_state
-        await self._store.append_transition(turn.id, transition)
-        await self._store.update_turn(turn)
+        turn.last_transition_at = transition.at
+        await self._turn_store.append_transition(
+            turn_transition_domain_to_dto(turn.id, transition)
+        )
+        await self._turn_store.update_turn(turn_domain_to_dto(turn))
 
     async def _safe_transition(self, turn: Turn, to_state: TurnState, note: str = "") -> None:
         try:

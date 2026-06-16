@@ -138,7 +138,8 @@ class TestSessionsAuth:
                 )
             ]
         )
-        ctx.session_store.count_turns_for_sessions = AsyncMock(return_value={})
+        ctx.turn_store = AsyncMock()
+        ctx.turn_store.count_turns_for_sessions = AsyncMock(return_value={})
 
         response = auth_client.get(
             "/api/sessions",

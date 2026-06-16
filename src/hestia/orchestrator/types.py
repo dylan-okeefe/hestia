@@ -8,6 +8,7 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
+from hestia.core.clock import utcnow
 from hestia.core.types import Message
 
 if TYPE_CHECKING:
@@ -59,9 +60,13 @@ class Turn:
     thinking_aborted: bool = False  # mid-stream thinking budget was exceeded once
     transitions: list[TurnTransition] = field(default_factory=list)
     # Artifact handles produced by tool calls during this turn. Populated by
-    # the orchestrator engine; consumed by the delegate_task tool so a
-    # subagent can surface the artifacts it produced back to its caller.
+    # the orchestrator engine; consumed by the delegate_task tool so a subagent
+    # can surface the artifacts it produced back to its caller.
     artifact_handles: list[str] = field(default_factory=list)
+    # Persistence fields carried on the domain object.
+    status_msg_id: str | None = None
+    slot_id: int | None = None
+    last_transition_at: datetime = field(default_factory=utcnow)
 
 
 # Callback types

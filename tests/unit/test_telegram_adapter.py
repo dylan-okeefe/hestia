@@ -472,8 +472,10 @@ class TestTelegramAdapterReset:
 
         mock_session_store = AsyncMock()
         mock_session_store.get_active_session = AsyncMock(return_value=mock_session)
-        mock_session_store.archive_session = AsyncMock()
         adapter._session_store = mock_session_store
+
+        mock_handoff_service = AsyncMock()
+        adapter._handoff_service = mock_handoff_service
 
         cache_cleared = False
 
@@ -497,7 +499,9 @@ class TestTelegramAdapterReset:
         await adapter._handle_reset(mock_update, None)
 
         mock_session_store.get_active_session.assert_called_once_with("telegram", "12345")
-        mock_session_store.archive_session.assert_called_once_with("telegram_12345_test")
+        mock_handoff_service.generate_handoff_summary.assert_awaited_once_with(
+            "telegram_12345_test"
+        )
         assert cache_cleared is True
         mock_message.reply_text.assert_called_once()
         assert "reset" in mock_message.reply_text.call_args[0][0].lower()
@@ -515,6 +519,9 @@ class TestTelegramAdapterReset:
         mock_session_store.get_active_session = AsyncMock(return_value=None)
         adapter._session_store = mock_session_store
 
+        mock_handoff_service = AsyncMock()
+        adapter._handoff_service = mock_handoff_service
+
         mock_update = MagicMock(spec=Update)
         mock_user = MagicMock(spec=User)
         mock_user.id = 12345
@@ -527,7 +534,7 @@ class TestTelegramAdapterReset:
 
         await adapter._handle_reset(mock_update, None)
 
-        mock_session_store.archive_session.assert_not_called()
+        mock_handoff_service.generate_handoff_summary.assert_not_called()
         mock_message.reply_text.assert_called_once()
         assert "no active" in mock_message.reply_text.call_args[0][0].lower()
 
