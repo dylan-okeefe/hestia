@@ -120,11 +120,17 @@ class PlatformRunner:
         self.user_sessions: dict[str, Session] = {}
 
     def invalidate_session_cache(self, platform_user: str) -> None:
-        """Drop the cached session for ``platform_user``.
+        """Drop the cached session for ``platform_user`` and prune its lock.
 
         Called by platform adapters when a session is reset or archived.
+        Also releases the per-session lock so ``SessionLockManager._locks``
+        does not grow unbounded.
         """
-        self.user_sessions.pop(platform_user, None)
+        session = self.user_sessions.pop(platform_user, None)
+        if session is not None:
+            lock_manager = getattr(self.orchestrator, "_lock_manager", None)
+            if lock_manager is not None:
+                lock_manager.release_unused(session.id)
 
     async def on_message(
         self,

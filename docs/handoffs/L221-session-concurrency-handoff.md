@@ -61,6 +61,44 @@ uv run ruff check src/ tests/
 # 68 errors (down from 79 baseline; all remaining are pre-existing)
 ```
 
+## Spec/decision item accounting
+
+| Item | Status |
+|------|--------|
+| §1 `SessionLockManager` + Orchestrator serialization | done |
+| §2 Email adapter IMAP lock | done |
+| §3 Slot erase on non-DONE finalization | done |
+| §4 In-memory session cache invalidation + Matrix `/reset` parity | done |
+| §5 Degenerate tool-call turn handling | done |
+| §6 `correction` column persistence | done |
+| §7 Message sequence validator | done |
+| Decision #1 — non-reentrant lock + explicit re-entrancy guard | done |
+| Decision #2 — scheduler try-acquire-and-skip | done |
+| Decision #3 — lock pruning on archive/reset | done (wired into `PlatformRunner.invalidate_session_cache`) |
+| Decision #4 — sequence-validator repair strategy | done |
+| Decision #5 — IMAP lock scope + slot-erase cost accepted | done |
+
+## Post-review fixes (added after initial handoff)
+
+1. **Scheduler non-blocking lock check** — `Scheduler._tick` now probes `lock_manager.is_locked(session_id)` and skips a task when its session lock is held, leaving `next_run_at` untouched for retry on the next tick. It never awaits the session lock from inside the tick loop.
+2. **Re-entrancy guard** — `Orchestrator.process_turn` raises `RuntimeError` if `current_session_id.get() == session.id` before acquiring the lock, preventing accidental self-deadlock.
+3. **`append_message` last_active_at** — restored to `utcnow()` (write time) instead of `msg.created_at`, matching pre-L220 behavior.
+4. **`SessionLockManager` pruning** — `PlatformRunner.invalidate_session_cache` now also calls `release_unused(session.id)` so `_locks` does not grow unbounded.
+5. **Process gap closure** — Added "difficult work cannot be silently skipped" policy to `.agents/skills/hestia-orchestration/SKILL.md` and `AGENTS.md`, plus a self-review checklist item and handoff per-item accounting requirement.
+
+## Acceptance (after fixes)
+
+```bash
+uv run pytest tests/unit/ tests/integration/ -q
+# 1895 passed, 6 skipped
+
+uv run mypy src/hestia
+# Success: no issues found in 198 source files
+
+uv run ruff check src/ tests/
+# 67 errors (all pre-existing)
+```
+
 ## Known issues / notes
 
 - `tests/smoke/` includes an environment-dependent test (`test_proto_orchestrator_uses_terminal_tool`) that requires a live inference server at `localhost:8001`; it was not part of the acceptance gate.

@@ -30,8 +30,9 @@
 - Handled degenerate `finish_reason=tool_calls` with zero valid tool calls.
 - Persisted the `correction` flag on messages and excluded corrections from read-only streak detection.
 - Added a chat-template sequence validator in `ContextBuilder.build`.
+- **Post-review fixes:** scheduler now skips (not blocks) when the target session lock is held; `process_turn` has an explicit re-entrancy guard; `append_message` restored `last_active_at=utcnow()`; lock pruning wired into cache invalidation; added "no silently skipped work" policy to skill and `AGENTS.md`.
 
-**Quality gates:** 1889 pytest passed (unit + integration), mypy 0 errors, ruff 68 errors (down from 79 baseline, all pre-existing).
+**Quality gates:** 1895 pytest passed (unit + integration), mypy 0 errors, ruff 67 errors (all pre-existing).
 
 ## 2026-06-15 — L218–L219 Complete (Tool Reliability Follow-ups)
 

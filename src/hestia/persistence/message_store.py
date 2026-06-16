@@ -8,6 +8,7 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy import select
 
+from hestia.core.clock import utcnow
 from hestia.errors import PersistenceError
 from hestia.persistence.db import Database
 from hestia.persistence.dto import MessageDTO
@@ -62,7 +63,7 @@ class MessageStore:
                     await conn.execute(
                         sessions.update()
                         .where(sessions.c.id == session_id)
-                        .values(last_active_at=msg.created_at)
+                        .values(last_active_at=utcnow())
                     )
 
                     await conn.commit()

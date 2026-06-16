@@ -50,6 +50,31 @@ async def test_append_message_bumps_last_active_at(message_store, session_store)
 
 
 @pytest.mark.asyncio
+async def test_append_message_uses_write_time_not_message_time(
+    message_store, session_store
+):
+    """last_active_at must reflect the append write time, not msg.created_at."""
+    from datetime import timedelta
+
+    session = await session_store.create_session("test", "user1")
+    before = (await session_store.get_session(session.id)).last_active_at
+    past = (utcnow() - timedelta(seconds=5)).replace(tzinfo=None)
+
+    await message_store.append_message(
+        session.id,
+        message_domain_to_dto(
+            Message(role="user", content="delayed", created_at=past),
+            session.id,
+            idx=0,
+        ),
+    )
+
+    updated = await session_store.get_session(session.id)
+    assert updated.last_active_at > before
+    assert updated.last_active_at > past
+
+
+@pytest.mark.asyncio
 async def test_get_messages_ordered_by_idx(message_store, session_store):
     """Messages are returned in insertion order."""
     session = await session_store.create_session("test", "user2")

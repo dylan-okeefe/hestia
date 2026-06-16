@@ -158,3 +158,59 @@ async def test_lock_manager_release_unused() -> None:
         pass
     manager.release_unused("sess-prune")
     assert "sess-prune" not in manager._locks
+
+
+@pytest.mark.asyncio
+async def test_reentrant_process_turn_raises() -> None:
+    """Calling process_turn re-entrantly on the same session raises instead of deadlocking."""
+    orchestrator = _make_orchestrator()
+    session = _make_session("sess-reentrant")
+    user_msg = Message(role="user", content="hi")
+
+    async def reentrant_run(ctx, transition, set_typing):
+        # Simulate a callback that tries to start another turn on the same session.
+        with pytest.raises(RuntimeError, match="Re-entrant process_turn"):
+            await orchestrator.process_turn(
+                session=session,
+                user_message=user_msg,
+                respond_callback=AsyncMock(),
+            )
+        ctx.turn.state = TurnState.DONE
+        return "done"
+
+    with patch.object(orchestrator._execution, "run", side_effect=reentrant_run):
+        turn = await orchestrator.process_turn(
+            session=session,
+            user_message=user_msg,
+            respond_callback=AsyncMock(),
+        )
+
+    assert turn.state == TurnState.DONE
+
+
+@pytest.mark.asyncio
+async def test_subagent_turn_on_different_session_does_not_raise() -> None:
+    """A nested turn on a different session is allowed (subagents use distinct sessions)."""
+    orchestrator = _make_orchestrator()
+    session_a = _make_session("sess-a")
+    session_b = _make_session("sess-b")
+    user_msg = Message(role="user", content="hi")
+
+    async def nested_run(ctx, transition, set_typing):
+        # A subagent turn on a different session should succeed.
+        await orchestrator.process_turn(
+            session=session_b,
+            user_message=user_msg,
+            respond_callback=AsyncMock(),
+        )
+        ctx.turn.state = TurnState.DONE
+        return "done"
+
+    with patch.object(orchestrator._execution, "run", side_effect=nested_run):
+        turn_a = await orchestrator.process_turn(
+            session=session_a,
+            user_message=user_msg,
+            respond_callback=AsyncMock(),
+        )
+
+    assert turn_a.state == TurnState.DONE

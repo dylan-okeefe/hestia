@@ -219,6 +219,11 @@ class Orchestrator:
             )
             raise PlatformError("Rate limit exceeded for session")  # noqa: TRY003
 
+        if current_session_id.get() == session.id:
+            raise RuntimeError(
+                f"Re-entrant process_turn detected for session {session.id}"
+            )
+
         lock = await self._lock_manager.acquire(session.id)
         async with lock:
             session_token = current_session_id.set(session.id)

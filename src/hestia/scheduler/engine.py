@@ -14,9 +14,9 @@ from hestia.core.types import Message, ScheduledTask, SessionState
 from hestia.events.bus import EventBus
 from hestia.orchestrator import Orchestrator
 from hestia.persistence.scheduler import (
+    _MIN_RETRY_BACKOFF_SECONDS,
     SchedulerStore,
     _calculate_next_run,
-    _MIN_RETRY_BACKOFF_SECONDS,
 )
 from hestia.persistence.session_store import SessionStore
 from hestia.platforms.notifier import PlatformNotifier
@@ -113,6 +113,18 @@ class Scheduler:
         async with self._tick_lock:
             due = await self._scheduler_store.list_due_tasks(now)
             for task in due:
+                # If the target session is already inside process_turn, skip this
+                # tick and leave next_run_at untouched so the next tick retries.
+                # Never await the session lock from inside the tick loop.
+                lock_manager = getattr(self._orchestrator, "_lock_manager", None)
+                if lock_manager is not None and lock_manager.is_locked(task.session_id):
+                    logger.info(
+                        "Scheduler skipping task %s: session %s lock is held",
+                        task.id,
+                        task.session_id,
+                    )
+                    continue
+
                 # Mark in-flight before the long-running process_turn so the next
                 # tick cannot re-list the same task while it is already dispatched.
                 in_flight_next_run = self._in_flight_next_run(task, now)

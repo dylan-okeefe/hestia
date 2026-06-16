@@ -27,6 +27,16 @@ class SessionLockManager:
                 self._locks[session_id] = lock
         return lock
 
+    def is_locked(self, session_id: str) -> bool:
+        """Return True if a lock exists for *session_id* and is currently held.
+
+        This is a non-blocking, synchronous probe intended for callers
+        that must avoid awaiting a contended lock (e.g. the scheduler
+        tick loop).
+        """
+        lock = self._locks.get(session_id)
+        return lock.locked() if lock is not None else False
+
     def release_unused(self, session_id: str) -> None:
         """Prune the lock for *session_id* if it exists and is not held.
 
