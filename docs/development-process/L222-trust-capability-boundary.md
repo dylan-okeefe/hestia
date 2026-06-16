@@ -1,6 +1,6 @@
 # L222 — Unified trust/capability boundary
 
-**Status:** Spec only. Feature branch work; do not merge to develop until release-prep merge sequence.  
+**Status:** Spec ready. Decisions resolved in `docs/reviews/decisions-trust-capability-boundary.md` (the "Decisions needed" section below is now answered there; note additions #3 generalized injection escalation and #8 audit emit). Feature branch work; can run independently of L220/L221; do not merge to develop until release-prep merge sequence.  
 **Branch:** `feature/l222-trust-capability-boundary` (from `develop`; can be independent of L220/L221)  
 **Spec source:** `docs/reviews/spec-trust-capability-boundary.md`  
 
@@ -11,6 +11,14 @@ Create a single `CapabilityGate` that every tool-execution path must pass, enfor
 ## Review carry-forward
 
 - *(none — this is a new spec-driven arc)*
+
+## Decisions needed before implementation
+
+1. **Workflow confirmation delivery (blocking decision).** A webhook- or scheduler-triggered workflow has no human in a chat to approve a confirmation, yet §2 makes destructive workflow nodes "require confirmation" and §4 binds confirmation to a requester. Decide what a destructive tool does on an unattended channel: (a) hard-deny, with explicit per-workflow allow-listing as the only escape hatch; (b) require pre-authorization configured on the trigger; (c) deliver an out-of-band approval to the owner and block/timeout. Recommend (a): do not attempt to deliver interactive confirmations to an unattended trigger; deny by default and allow-list per workflow. This must be settled before any of §2 is coded.
+2. **The channel-by-capability trust matrix.** §1 step 5 ("untrusted channels require confirmation for destructive capabilities") must be made explicit, not inferred. Enumerate which channels are trusted (CLI/Telegram/Matrix operator) vs untrusted (email/webhook/workflow/scheduler), where SUBAGENT sits (acts for a trusted operator but unattended), and which capabilities count as destructive (terminal, write_local, email_send, browser_login, delegate_task). Recommend: write it as an explicit table in the decision doc; this is the core security logic.
+3. **`trust_overrides` migration.** Existing overrides are keyed `platform:platform_user`, and group sessions were historically keyed by room/chat id. §3 changes the trust actor to the sender, so room-keyed overrides may stop matching. Decide the key precedence and how existing overrides are interpreted; do not silently change which overrides apply.
+4. **Admin route treatment, per route (§6).** For each of doctor/audit/config/tools/egress/traces/memory, decide `require_admin` (global data) vs scope-by-identity (caller data). traces/egress/memory are arguably caller-scoped, so locking them admin-only could hide a user's own data while leaving them global leaks it. Recommend a per-route line: config/tools/doctor/audit to admin; traces/egress/memory to caller-scoped with admin-sees-all.
+5. **Confirmation delegation (§4).** Decide whether an admin may approve another user's pending tool, or only the original requester.
 
 ## Scope
 
@@ -52,10 +60,12 @@ class CapabilityResult:
 **Decision order inside `CapabilityGate.check`:**
 1. Global deny-list / emergency killswitch.
 2. Identity resolution via `UserStore`.
-3. Effective trust from `trust_overrides` → `User.trust_preset` → `HestiaConfig.trust.preset` → `auto_approve_tools`.
+3. Effective trust from `trust_overrides[sender]` → `User.trust_preset` → `HestiaConfig.trust.preset` → `auto_approve_tools` (decision #5).
 4. Tool capability label from `tools/capabilities.py`.
-5. Channel factor (untrusted channels require confirmation for destructive capabilities even under developer preset).
-6. Confirmation binding with stable `request_token`.
+5. Channel factor (decision #4): unattended channels (email/webhook/workflow/scheduler) gate the destructive subset regardless of preset; trusted channels (CLI/Telegram/Matrix) auto-approve under the developer preset.
+6. Injection escalation (decision #3): if any message in the current context carries the injection annotation and the tool is in the destructive subset, escalate. Require confirmation on attended channels; deny on unattended channels.
+7. Confirmation binding with stable `request_token`, bound to the original requester (decision #7).
+8. Emit a structured audit entry on every deny or escalation (decision #8); this feeds the L223 blocked-actions digest.
 
 **Tests:**
 - `tests/unit/policy/test_gate.py`:

@@ -1,6 +1,6 @@
 # L221 — Per-session concurrency model
 
-**Status:** Spec only. Feature branch work; do not merge to develop until release-prep merge sequence.  
+**Status:** Spec ready. Decisions resolved in `docs/reviews/decisions-session-concurrency.md` (the "Decisions needed" section below is now answered there). Feature branch work; implement after L220; do not merge to develop until release-prep merge sequence.  
 **Branch:** `feature/l221-session-concurrency` (from `develop` after L220 merges)  
 **Spec source:** `docs/reviews/spec-session-concurrency.md`  
 **Depends on:** L220 (`persistence/sessions.py` store split), `error_resolutions` schema bootstrap fix
@@ -12,6 +12,14 @@ Serialize per-session turn execution, protect the shared IMAP connection, erase 
 ## Review carry-forward
 
 - *(none — this is a new spec-driven arc)*
+
+## Decisions needed before implementation
+
+1. **Lock re-entrancy invariant.** `asyncio.Lock` is non-reentrant and is held across all of `process_turn`. Subagents currently get a distinct session (`delegate_task` calls `create_session`), so they do not re-enter, but this is load-bearing and implicit. Decide: enforce it as an explicit invariant (assert a subagent's `session_id` differs from any held lock, and confirm no other path calls `process_turn` re-entrantly on the same session), or make the lock re-entrant. Recommend: keep non-reentrant and add a guard, since the design already separates subagent sessions.
+2. **Scheduler behavior when the target session lock is held (currently unaddressed).** `_tick` awaits `_fire_task` then `process_turn` sequentially, so a scheduled task whose session is mid-turn will block the whole scheduler loop until the lock frees. Decide: try-acquire and skip-with-reschedule, queue, or block. Recommend: try-acquire; if the session is busy, leave `next_run_at` and move on, so one busy session cannot stall the scheduler.
+3. **`SessionLockManager` pruning.** `_locks` grows per `session_id` indefinitely. Decide when `release_unused` runs (on archive/reset, a TTL sweep, or accept the leak). Recommend: prune on archive/reset, wired into the §4 cache-invalidation path.
+4. **Sequence-validator repair strategy (§7).** "Drop invalid messages" silently changes what the model sees. Decide: drop the provably-invalid orphan/duplicate only, with loud logging; or pass-through-and-log in production with drop behind a flag. Recommend: drop only provably-invalid messages, log loudly, and add a test asserting a dropped message is logged.
+5. **Confirm the minor calls:** the adapter-wide IMAP lock serializes the entire email channel, and slot-erase runs on every non-DONE turn. Confirm both are acceptable.
 
 ## Scope
 
