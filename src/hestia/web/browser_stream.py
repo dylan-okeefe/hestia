@@ -194,6 +194,34 @@ class SessionStreamManager:
             except Exception:
                 logger.exception("Auto-stop failed for session %s", session_id)
 
+    async def _health_from_page(self, page: Any) -> str:
+        """Infer session health from the live stream page.
+
+        A login/auth URL or title means the session is expired; anything else
+        is treated as healthy because the stream itself is a real browser.
+        """
+        try:
+            url = getattr(page, "url", "")
+            if not isinstance(url, str):
+                return "stale"
+            url_lower = url.lower()
+            if any(path in url_lower for path in ("/login", "/signin", "/auth")):
+                return "expired"
+
+            title_coro = page.title()
+            if asyncio.iscoroutine(title_coro):
+                title = await title_coro
+                if isinstance(title, str) and any(
+                    phrase in title.lower()
+                    for phrase in ("sign in", "log in", "login")
+                ):
+                    return "expired"
+
+            return "healthy"
+        except Exception:
+            logger.exception("Failed to read stream page state")
+            return "stale"
+
     async def stop(self, session_id: str) -> dict[str, Any]:
         """Stop screencast, save cookies/storage, close browser. Returns save summary."""
         async with self._lock:
@@ -213,6 +241,14 @@ class SessionStreamManager:
             except Exception:
                 logger.exception("Failed to stop screencast")
 
+            # Infer health from the live page before we tear the browser down.
+            # A real browser stream is much more reliable than a headless health
+            # check for sites that block headless browsers.
+            health_status = await self._health_from_page(session.page)
+            health_check_url = getattr(session.page, "url", session.url)
+            if not isinstance(health_check_url, str):
+                health_check_url = session.url
+
             cookies: list[dict[str, Any]] = []
             storage_state: dict[str, Any] | None = None
             try:
@@ -226,16 +262,11 @@ class SessionStreamManager:
             if cookies:
                 self._store.save_cookies(session.domain, cookies)
 
-            # Mark the session as "stale" rather than running a headless health
-            # check immediately. Sites like LinkedIn often block headless browsers
-            # even when the saved cookies are valid, which would falsely mark a
-            # freshly authenticated session as expired. The user can run a manual
-            # health check from the UI when convenient.
             self._store.update_metadata(
                 session.domain,
                 last_saved=datetime.now(UTC),
-                health_status="stale",
-                health_check_url=session.url,
+                health_status=health_status,
+                health_check_url=health_check_url,
             )
 
             await self._cleanup(

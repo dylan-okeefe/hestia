@@ -171,6 +171,26 @@ class TestStopSession:
         with pytest.raises(ValueError, match="Session not found or ID mismatch"):
             await manager.stop("nonexistent-id")
 
+    @pytest.mark.asyncio
+    async def test_stop_marks_healthy_when_page_is_feed(
+        self, manager: SessionStreamManager, mock_store: BrowserSessionStore
+    ) -> None:
+        mock_cm, *_ = _make_mock_playwright()
+        _inject_playwright_module(mock_cm)
+
+        session_id = await manager.start("https://linkedin.com/feed")
+        # Make the mock page look like an authenticated feed.
+        mock_page = manager._session.page
+        mock_page.url = "https://www.linkedin.com/feed/"
+        mock_page.title = AsyncMock(return_value="LinkedIn")
+
+        await manager.stop(session_id)
+
+        metadata = mock_store.load_metadata("linkedin.com")
+        assert metadata is not None
+        assert metadata.health_status == "healthy"
+        assert metadata.health_check_url == "https://www.linkedin.com/feed/"
+
 
 class TestForwardInput:
     @pytest.mark.asyncio
