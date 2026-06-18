@@ -45,6 +45,13 @@ references the old one rather than editing history.
 | [ADR-037](adr/ADR-037-openui-deferred-for-l169-frontend.md) | OpenUI deferred for L169 frontend pages | Accepted |
 | [ADR-038](adr/ADR-038-user-registry-schema.md) | User registry uses four-table schema with separate rooms | Accepted |
 | [ADR-039](adr/ADR-039-group-chat-sender-resolution.md) | Group chats resolve individual sender separately from room | Accepted |
+| [ADR-040](adr/ADR-040-persistence-split-into-focused-stores-with-dto-boundary.md) | Persistence split into focused stores with a DTO boundary | Accepted |
+| [ADR-041](adr/ADR-041-per-session-turn-serialization.md) | Per-session turn serialization and slot/sequence safety | Accepted |
+| [ADR-042](adr/ADR-042-unified-capability-gate.md) | Unified CapabilityGate is the single trust/capability boundary | Accepted |
+| [ADR-043](adr/ADR-043-injection-flagged-escalation-through-the-gate.md) | Injection-flagged content escalates destructive tools via the gate | Accepted |
+| [ADR-044](adr/ADR-044-blocked-actions-audit-and-digest.md) | Blocked-actions audit events and scheduled digest | Accepted |
+| [ADR-045](adr/ADR-045-authenticated-browser-fetch-ssrf-and-result-categories.md) | Authenticated browser fetch, SSRF guard, and structured result categories | Accepted |
+| [ADR-046](adr/ADR-046-chunked-large-file-writes-with-truncation-recovery.md) | Chunked large-file writes with truncated-write recovery | Accepted |
 
 ---
 
