@@ -596,8 +596,12 @@ export async function deleteBrowserSession(domain: string): Promise<void> {
   if (!res.ok) throw new Error('Failed to delete session');
 }
 
-export async function checkBrowserSession(domain: string): Promise<{ domain: string; status: string }> {
-  const res = await apiFetch(`${API_BASE}/browser-sessions/${encodeURIComponent(domain)}/check`, {
+export async function checkBrowserSession(
+  domain: string,
+  force = false,
+): Promise<{ domain: string; status: string }> {
+  const params = force ? '?force=true' : '';
+  const res = await apiFetch(`${API_BASE}/browser-sessions/${encodeURIComponent(domain)}/check${params}`, {
     method: 'POST',
   });
   if (res.status === 429) throw new Error('Rate limited — try again later');

@@ -149,7 +149,6 @@ export default function BrowserStream() {
   };
 
   const handleDone = async () => {
-    const domain = session?.domain;
     stoppingRef.current = true;
     try {
       await stopMut.mutateAsync(undefined as unknown as string);
@@ -159,7 +158,7 @@ export default function BrowserStream() {
     } finally {
       closeWs();
       clearTimer();
-      navigate('/browser-sessions', { state: domain ? { checkedDomain: domain } : undefined });
+      navigate('/browser-sessions');
     }
   };
 

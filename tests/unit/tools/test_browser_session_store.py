@@ -1,10 +1,24 @@
 """Unit tests for BrowserSessionStore."""
 
 from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from hestia.tools.browser.session_store import BrowserSessionStore, SessionMetadata
+
+
+class _AsyncCtx:
+    """Tiny async context manager helper for mocking playwright."""
+
+    def __init__(self, enter_value):
+        self._enter_value = enter_value
+
+    async def __aenter__(self):
+        return self._enter_value
+
+    async def __aexit__(self, *exc):
+        return False
 
 
 class TestBrowserSessionStore:
@@ -166,3 +180,62 @@ class TestBrowserSessionStore:
         assert metadata is not None
         assert metadata.cookie_count == 3
         assert metadata.last_saved is not None
+
+    @pytest.mark.asyncio
+    async def test_check_health_rate_limit_throttles_repeated_calls(self, store):
+        """check_health refuses automatic re-checks within the one-hour window."""
+        now = datetime.now(UTC)
+        store.save_metadata(
+            "example.com",
+            SessionMetadata(
+                domain="example.com",
+                last_health_check=now,
+                health_status="expired",
+                health_check_url="https://example.com/",
+            ),
+        )
+
+        inner = MagicMock()
+        inner.chromium.launch = AsyncMock(side_effect=RuntimeError("should not launch"))
+        mock_playwright = MagicMock(return_value=_AsyncCtx(inner))
+
+        with (
+            patch("playwright.async_api.async_playwright", mock_playwright),
+            pytest.raises(ValueError, match="rate-limited"),
+        ):
+            await store.check_health("example.com")
+
+    @pytest.mark.asyncio
+    async def test_check_health_force_bypasses_rate_limit(self, store):
+        """force=True bypasses the automatic once-per-hour throttle."""
+        now = datetime.now(UTC)
+        store.save_cookies("example.com", [{"name": "session", "value": "x"}])
+        store.save_metadata(
+            "example.com",
+            SessionMetadata(
+                domain="example.com",
+                last_health_check=now,
+                health_status="expired",
+                health_check_url="https://example.com/",
+            ),
+        )
+
+        mock_page = AsyncMock()
+        mock_page.url = "https://example.com/dashboard"
+        mock_page.title = AsyncMock(return_value="Dashboard")
+        mock_context = AsyncMock()
+        mock_context.cookies = AsyncMock(return_value=[])
+        mock_context.storage_state = AsyncMock(return_value={"cookies": [], "origins": []})
+        mock_context.new_page = AsyncMock(return_value=mock_page)
+        mock_context.close = AsyncMock()
+        mock_browser = AsyncMock()
+        mock_browser.new_context = AsyncMock(return_value=mock_context)
+        mock_browser.close = AsyncMock()
+        inner = MagicMock()
+        inner.chromium.launch = AsyncMock(return_value=mock_browser)
+        mock_playwright = MagicMock(return_value=_AsyncCtx(inner))
+
+        with patch("playwright.async_api.async_playwright", mock_playwright):
+            status = await store.check_health("example.com", force=True)
+
+        assert status == "healthy"

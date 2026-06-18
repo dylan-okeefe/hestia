@@ -273,14 +273,16 @@ class BrowserSessionStore:
     def clear(self, domain: str) -> None:
         shutil.rmtree(self._session_dir(domain), ignore_errors=True)
 
-    async def check_health(self, domain: str, timeout_seconds: int = 30) -> str:
+    async def check_health(
+        self, domain: str, *, timeout_seconds: int = 30, force: bool = False
+    ) -> str:
         """Run a health check on the stored session for a domain.
 
         Launches a headless browser with the stored session, navigates to the
         health_check_url (default https://domain/), and checks whether the
         session is still authenticated.
 
-        Rate-limited to once per hour per domain.
+        Rate-limited to once per hour per domain unless *force* is True.
 
         Returns "healthy" or "expired".
         """
@@ -293,8 +295,9 @@ class BrowserSessionStore:
         if metadata is None:
             metadata = SessionMetadata(domain=domain)
 
-        # Rate limiting: enforce minimum 1 hour between checks
-        if metadata.last_health_check is not None:
+        # Rate limiting: enforce minimum 1 hour between automatic checks.
+        # Force-checks bypass the throttle.
+        if not force and metadata.last_health_check is not None:
             elapsed = datetime.now(UTC) - metadata.last_health_check
             if elapsed.total_seconds() < 3600:
                 raise ValueError(
