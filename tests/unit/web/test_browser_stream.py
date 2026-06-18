@@ -359,6 +359,7 @@ class TestWebSocketEndpoint:
 
         mock_app = MagicMock()
         mock_app.config = MagicMock()
+        mock_app.config.features.web.auth_enabled = False
 
         ctx = WebContext(
             session_store=AsyncMock(),
@@ -460,6 +461,43 @@ class TestWebSocketEndpoint:
             )
 
         mock_page.mouse.click.assert_called_once_with(50, 50)
+
+    @pytest.mark.asyncio
+    async def test_patch_requires_headed_persists_preference(
+        self, client: TestClient
+    ) -> None:
+        res = client.patch(
+            "/api/browser-sessions/example.com/requires-headed",
+            json={"requires_headed": True},
+            headers={"Authorization": "Bearer valid_token"},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["requires_headed"] is True
+
+    @pytest.mark.asyncio
+    async def test_restart_headed_relaunches_visible_browser(
+        self, client: TestClient, manager: SessionStreamManager
+    ) -> None:
+        mock_cm, mock_playwright, mock_browser, mock_context, mock_page, mock_cdp = (
+            _make_mock_playwright()
+        )
+        _inject_playwright_module(mock_cm)
+        session_id = await manager.start("https://example.com/login")
+
+        res = client.post(
+            "/api/browser-sessions/restart-headed",
+            headers={"Authorization": "Bearer valid_token"},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["session_id"] == session_id
+
+        assert manager.is_active()
+        launch_calls = mock_playwright.chromium.launch.call_args_list
+        assert len(launch_calls) == 2
+        assert launch_calls[0].kwargs.get("headless") is True
+        assert launch_calls[1].kwargs.get("headless") is False
 
 
 class TestAutoTimeout:

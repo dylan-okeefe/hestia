@@ -42,6 +42,7 @@ class BrowserSessionOut(BaseModel):
     last_health_check: str | None
     health_status: str
     health_check_url: str
+    requires_headed: bool
 
 
 def _session_to_out(
@@ -63,6 +64,7 @@ def _session_to_out(
         else None,
         health_status=metadata.health_status if metadata else "unknown",
         health_check_url=metadata.health_check_url if metadata else "",
+        requires_headed=metadata.requires_headed if metadata else False,
     )
 
 
@@ -125,6 +127,31 @@ async def check_browser_session(
     return {"domain": domain, "status": status}
 
 
+class RequiresHeadedRequest(BaseModel):
+    """Request body to toggle the headed requirement for a domain."""
+
+    requires_headed: bool
+
+
+@router.patch("/browser-sessions/{domain}/requires-headed")
+async def set_requires_headed(
+    request: Request,
+    domain: str,
+    body: RequiresHeadedRequest,
+    ctx: WebContext = _CTX_DEP,
+) -> BrowserSessionOut:
+    """Persist whether this domain needs a headed (visible) browser."""
+    await require_admin(request, ctx)
+    store = ctx.browser_session_store
+    if store is None:
+        raise HTTPException(
+            status_code=503, detail="Browser session store not available"
+        )
+    domain = normalize_domain(domain)
+    store.update_metadata(domain, requires_headed=body.requires_headed)
+    return _session_to_out(store, domain)
+
+
 class StartBrowserSessionRequest(BaseModel):
     """Request body to start a browser streaming session."""
 
@@ -181,6 +208,37 @@ async def stop_browser_session(
         raise HTTPException(status_code=404, detail="No active session")
     summary = await manager.stop(session_id)
     return summary
+
+
+@router.post("/browser-sessions/restart-headed")
+async def restart_headed_browser_session(
+    request: Request,
+    ctx: WebContext = _CTX_DEP,
+) -> dict[str, Any]:
+    """Restart the active stream in headed (visible) mode.
+
+    Preserves the WebSocket session ID so connected clients keep receiving
+    frames after the browser relaunches.
+    """
+    await require_admin(request, ctx)
+    manager = ctx.stream_manager
+    if manager is None:
+        raise HTTPException(
+            status_code=503, detail="Stream manager not available"
+        )
+    if not manager.is_active():
+        raise HTTPException(status_code=404, detail="No active session")
+
+    session_id = manager.get_session_id()
+    if session_id is None:
+        raise HTTPException(status_code=404, detail="No active session")
+    await manager.restart_headed(session_id)
+    domain = manager._session.domain if manager._session else ""
+    return {
+        "session_id": session_id,
+        "domain": domain,
+        "ws_url": f"/api/browser-session/stream/{session_id}",
+    }
 
 
 @router.post("/browser-sessions/headed-login")

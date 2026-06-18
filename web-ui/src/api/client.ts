@@ -580,6 +580,7 @@ export interface BrowserSession {
   last_health_check: string | null;
   health_status: string;
   health_check_url: string;
+  requires_headed: boolean;
 }
 
 export async function fetchBrowserSessions(): Promise<BrowserSession[]> {
@@ -609,6 +610,19 @@ export async function checkBrowserSession(
   return res.json();
 }
 
+export async function setBrowserSessionRequiresHeaded(
+  domain: string,
+  requires_headed: boolean,
+): Promise<BrowserSession> {
+  const res = await apiFetch(`${API_BASE}/browser-sessions/${encodeURIComponent(domain)}/requires-headed`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requires_headed }),
+  });
+  if (!res.ok) throw new Error('Failed to update headed preference');
+  return res.json();
+}
+
 export interface StreamSession {
   session_id: string;
   domain: string;
@@ -632,6 +646,12 @@ export async function startBrowserStream(payload: { url: string; headed?: boolea
 export async function stopBrowserStream(): Promise<{ domain: string; cookie_count: number; saved: boolean }> {
   const res = await apiFetch(`${API_BASE}/browser-sessions/stop`, { method: 'POST' });
   if (!res.ok) throw new Error('Failed to stop browser stream');
+  return res.json();
+}
+
+export async function restartHeadedBrowserStream(): Promise<StreamSession> {
+  const res = await apiFetch(`${API_BASE}/browser-sessions/restart-headed`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to restart stream in headed mode');
   return res.json();
 }
 
