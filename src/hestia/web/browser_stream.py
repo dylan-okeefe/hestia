@@ -284,6 +284,86 @@ class SessionStreamManager:
                 "saved": True,
             }
 
+    async def restart_headed(self, session_id: str) -> None:
+        """Restart the active stream in a visible (headed) browser.
+
+        Keeps the same session ID and WebSocket clients. The current page
+        URL and storage state are preserved so the user can continue where
+        they left off.
+        """
+        async with self._lock:
+            if self._session is None or self._session.session_id != session_id:
+                raise ValueError("Session not found or ID mismatch")
+
+            session = self._session
+
+            try:
+                await session.cdp_session.send("Page.stopScreencast")
+            except Exception:
+                logger.exception("Failed to stop screencast before restart")
+
+            current_url = ""
+            storage_state: dict[str, Any] | None = None
+            try:
+                current_url = getattr(session.page, "url", session.url) or session.url
+                if not isinstance(current_url, str):
+                    current_url = session.url
+                storage_state = await session.context.storage_state()
+            except Exception:
+                logger.exception("Failed to capture state for headed restart")
+
+            try:
+                await session.context.close()
+                await session.browser.close()
+            except Exception:
+                logger.exception("Failed to close headless browser")
+
+            try:
+                browser = await session.playwright.chromium.launch(
+                    headless=False,
+                    args=STEALTH_LAUNCH_ARGS,
+                )
+                context = await browser.new_context(
+                    **stealth_context_kwargs(storage_state)
+                )
+                page = await context.new_page()
+                await apply_stealth_async(page)
+                await page.goto(
+                    current_url or session.url,
+                    wait_until="domcontentloaded",
+                )
+
+                cdp_session = await page.context.new_cdp_session(page)
+                await cdp_session.send(
+                    "Page.startScreencast",
+                    {
+                        "format": "jpeg",
+                        "quality": 80,
+                        "maxWidth": 1920,
+                        "maxHeight": 1080,
+                        "everyNthFrame": 1,
+                    },
+                )
+
+                def _on_frame(params: dict[str, Any]) -> None:
+                    asyncio.create_task(self._handle_frame(session, params))
+
+                cdp_session.on("Page.screencastFrame", _on_frame)
+
+                session.browser = browser
+                session.context = context
+                session.page = page
+                session.cdp_session = cdp_session
+
+                if self._timeout_task is not None:
+                    self._timeout_task.cancel()
+                self._timeout_task = asyncio.create_task(
+                    self._auto_stop(session_id)
+                )
+            except Exception:
+                logger.exception("Failed to restart stream in headed mode")
+                raise
+
     async def _cleanup(
         self, playwright: Any, browser: Any, context: Any, page: Any
     ) -> None:

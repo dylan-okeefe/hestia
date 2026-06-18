@@ -60,6 +60,7 @@ class SessionMetadata:
     health_status: str = "unknown"  # "healthy", "stale", "expired", "unknown"
     health_check_url: str = ""
     cookie_count: int = 0
+    requires_headed: bool = False
 
 
 class BrowserSessionStore:
@@ -154,6 +155,7 @@ class BrowserSessionStore:
                 health_status=data.get("health_status", "unknown"),
                 health_check_url=data.get("health_check_url", ""),
                 cookie_count=data.get("cookie_count", 0),
+                requires_headed=bool(data.get("requires_headed", False)),
             )
         except (json.JSONDecodeError, KeyError, TypeError):
             return None
@@ -268,6 +270,8 @@ class BrowserSessionStore:
                         existing.health_check_url = metadata.health_check_url
                     if metadata.cookie_count > existing.cookie_count:
                         existing.cookie_count = metadata.cookie_count
+                    if metadata.requires_headed:
+                        existing.requires_headed = True
         return list(by_domain.values())
 
     def clear(self, domain: str) -> None:

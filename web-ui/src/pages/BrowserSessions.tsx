@@ -5,6 +5,7 @@ import {
   fetchBrowserSessions,
   deleteBrowserSession,
   checkBrowserSession,
+  setBrowserSessionRequiresHeaded,
   type BrowserSession,
 } from '../api/client';
 import PageCard from '../components/layout/PageCard';
@@ -55,6 +56,10 @@ export default function BrowserSessions() {
     ({ domain, force }: { domain: string; force: boolean }) => checkBrowserSession(domain, force)
   );
   const deleteMut = useApiMutation(deleteBrowserSession);
+  const requiresHeadedMut = useApiMutation(
+    ({ domain, requires_headed }: { domain: string; requires_headed: boolean }) =>
+      setBrowserSessionRequiresHeaded(domain, requires_headed)
+  );
 
   const handleCheck = async (domain: string) => {
     try {
@@ -81,7 +86,23 @@ export default function BrowserSessions() {
 
   const handleReauth = (session: BrowserSession) => {
     const targetUrl = session.health_check_url || `https://${session.domain}/`;
-    navigate(`/browser-sessions/stream?domain=${encodeURIComponent(session.domain)}&url=${encodeURIComponent(targetUrl)}`);
+    const params = new URLSearchParams({
+      domain: session.domain,
+      url: targetUrl,
+    });
+    if (session.requires_headed) {
+      params.set('headed', 'true');
+    }
+    navigate(`/browser-sessions/stream?${params.toString()}`);
+  };
+
+  const handleRequiresHeadedChange = async (session: BrowserSession, checked: boolean) => {
+    try {
+      await requiresHeadedMut.mutateAsync({ domain: session.domain, requires_headed: checked });
+      refetch();
+    } catch (err: any) {
+      addToast({ message: err.message || 'Failed to update headed preference', type: 'error', duration: 5000 });
+    }
   };
 
   return (
@@ -122,6 +143,7 @@ export default function BrowserSessions() {
                 <th>Last Saved</th>
                 <th>Last Used</th>
                 <th>Last Checked</th>
+                <th>Headed</th>
                 <th className="text-right">Actions</th>
               </tr>
             </thead>
@@ -146,6 +168,15 @@ export default function BrowserSessions() {
                   </td>
                   <td data-label="Last Checked">
                     {s.last_health_check ? formatRelativeDate(s.last_health_check) : 'Never'}
+                  </td>
+                  <td data-label="Headed">
+                    <input
+                      type="checkbox"
+                      checked={s.requires_headed}
+                      onChange={(e) => handleRequiresHeadedChange(s, e.target.checked)}
+                      disabled={requiresHeadedMut.isPending}
+                      title="Always use a headed (visible) browser for this site"
+                    />
                   </td>
                   <td data-label="Actions" className="text-right">
                     <div className="browser-sessions-actions">
