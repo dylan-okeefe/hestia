@@ -32,6 +32,7 @@ _TIMEOUT_SECONDS = 600  # 10 minutes
 class _StreamSession:
     session_id: str
     domain: str
+    url: str
     page: Any  # Playwright Page
     browser: Any  # Playwright Browser
     playwright: Any  # Playwright instance
@@ -126,6 +127,7 @@ class SessionStreamManager:
                 session = _StreamSession(
                     session_id=session_id,
                     domain=domain,
+                    url=url,
                     page=page,
                     browser=browser,
                     playwright=playwright,
@@ -224,15 +226,17 @@ class SessionStreamManager:
             if cookies:
                 self._store.save_cookies(session.domain, cookies)
 
-            self._store.update_metadata(session.domain, last_saved=datetime.now(UTC))
-
-            # Re-validate the freshly saved session so the UI reflects the new
-            # auth state immediately instead of showing the previous stale/expired
-            # status and hitting the automatic health-check rate limit.
-            try:
-                await self._store.check_health(session.domain, force=True)
-            except Exception:
-                logger.exception("Post-stream health check failed for %s", session.domain)
+            # Mark the session as "stale" rather than running a headless health
+            # check immediately. Sites like LinkedIn often block headless browsers
+            # even when the saved cookies are valid, which would falsely mark a
+            # freshly authenticated session as expired. The user can run a manual
+            # health check from the UI when convenient.
+            self._store.update_metadata(
+                session.domain,
+                last_saved=datetime.now(UTC),
+                health_status="stale",
+                health_check_url=session.url,
+            )
 
             await self._cleanup(
                 session.playwright,

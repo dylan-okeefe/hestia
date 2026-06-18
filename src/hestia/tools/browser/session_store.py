@@ -353,7 +353,9 @@ class BrowserSessionStore:
                     pass
 
             except Exception:
-                status = "expired"
+                # Navigation or browser errors do not prove the session is
+                # expired; the site may block headless access or be unreachable.
+                status = "unknown"
             finally:
                 await context.close()
                 await browser.close()
