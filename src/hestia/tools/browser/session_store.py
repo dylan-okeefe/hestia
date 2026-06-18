@@ -312,55 +312,59 @@ class BrowserSessionStore:
             if cookies:
                 storage_state = {"cookies": cookies, "origins": []}
 
-        status = "unknown"
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(
-                headless=True,
-                args=STEALTH_LAUNCH_ARGS,
-            )
-            context = await browser.new_context(
-                **stealth_context_kwargs(storage_state)
-            )
-            page = await context.new_page()
-            await apply_stealth_async(page)
-            try:
-                await page.goto(
-                    health_check_url,
-                    timeout=timeout_seconds * 1000,
-                    wait_until="networkidle",
+        status = metadata.health_status or "unknown"
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(
+                    headless=True,
+                    args=STEALTH_LAUNCH_ARGS,
                 )
-                url = page.url
-                title = await page.title()
-
-                # Detect login redirects
-                login_in_path = any(
-                    path in url.lower()
-                    for path in ("/login", "/signin", "/auth")
+                context = await browser.new_context(
+                    **stealth_context_kwargs(storage_state)
                 )
-                login_in_title = any(
-                    phrase in title.lower()
-                    for phrase in ("sign in", "log in", "login")
-                )
-                status = "expired" if login_in_path or login_in_title else "healthy"
-
-                # Save refreshed cookies/storage_state
+                page = await context.new_page()
+                await apply_stealth_async(page)
                 try:
-                    refreshed_storage = await context.storage_state()
-                    self.save_storage(domain, refreshed_storage)
-                    refreshed_cookies = await context.cookies()
-                    self.save_cookies(domain, refreshed_cookies)
-                except Exception:
-                    pass
+                    await page.goto(
+                        health_check_url,
+                        timeout=timeout_seconds * 1000,
+                        wait_until="networkidle",
+                    )
+                    url = page.url
+                    title = await page.title()
 
-            except Exception:
-                # Navigation or browser errors do not prove the session is
-                # expired; the site may block headless access or be unreachable.
-                status = "unknown"
-            finally:
-                await context.close()
-                await browser.close()
+                    # Detect login redirects
+                    login_in_path = any(
+                        path in url.lower()
+                        for path in ("/login", "/signin", "/auth")
+                    )
+                    login_in_title = any(
+                        phrase in title.lower()
+                        for phrase in ("sign in", "log in", "login")
+                    )
+                    status = "expired" if login_in_path or login_in_title else "healthy"
+
+                    # Save refreshed cookies/storage_state
+                    try:
+                        refreshed_storage = await context.storage_state()
+                        self.save_storage(domain, refreshed_storage)
+                        refreshed_cookies = await context.cookies()
+                        self.save_cookies(domain, refreshed_cookies)
+                    except Exception:
+                        pass
+                finally:
+                    await context.close()
+                    await browser.close()
+        except Exception:
+            # Launch/navigation/browser errors do not prove the session is
+            # expired; the site may block headless access or be unreachable.
+            # Preserve the previous status so a flaky check doesn't wipe a
+            # known-good (or freshly saved) session down to "unknown".
+            pass
 
         metadata.last_health_check = datetime.now(UTC)
-        metadata.health_status = status
+        # Only overwrite a known status when we actually got a fresh result.
+        if status != metadata.health_status or status in ("healthy", "expired"):
+            metadata.health_status = status
         self.save_metadata(domain, metadata)
         return status

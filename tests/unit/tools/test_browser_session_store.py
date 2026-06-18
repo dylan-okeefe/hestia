@@ -239,3 +239,30 @@ class TestBrowserSessionStore:
             status = await store.check_health("example.com", force=True)
 
         assert status == "healthy"
+
+    @pytest.mark.asyncio
+    async def test_check_health_preserves_status_on_exception(self, store):
+        """A failed health check does not overwrite a known status with unknown."""
+        now = datetime.now(UTC)
+        store.save_cookies("example.com", [{"name": "session", "value": "x"}])
+        store.save_metadata(
+            "example.com",
+            SessionMetadata(
+                domain="example.com",
+                last_health_check=now,
+                health_status="stale",
+                health_check_url="https://example.com/",
+            ),
+        )
+
+        inner = MagicMock()
+        inner.chromium.launch = AsyncMock(side_effect=RuntimeError("browser crashed"))
+        mock_playwright = MagicMock(return_value=_AsyncCtx(inner))
+
+        with patch("playwright.async_api.async_playwright", mock_playwright):
+            status = await store.check_health("example.com", force=True)
+
+        assert status == "stale"
+        loaded = store.load_metadata("example.com")
+        assert loaded is not None
+        assert loaded.health_status == "stale"
