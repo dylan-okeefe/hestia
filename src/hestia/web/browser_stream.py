@@ -226,6 +226,14 @@ class SessionStreamManager:
 
             self._store.update_metadata(session.domain, last_saved=datetime.now(UTC))
 
+            # Re-validate the freshly saved session so the UI reflects the new
+            # auth state immediately instead of showing the previous stale/expired
+            # status and hitting the automatic health-check rate limit.
+            try:
+                await self._store.check_health(session.domain, force=True)
+            except Exception:
+                logger.exception("Post-stream health check failed for %s", session.domain)
+
             await self._cleanup(
                 session.playwright,
                 session.browser,

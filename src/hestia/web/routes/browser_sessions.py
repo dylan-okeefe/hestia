@@ -102,9 +102,15 @@ async def delete_browser_session(
 
 @router.post("/browser-sessions/{domain}/check")
 async def check_browser_session(
-    request: Request, domain: str, ctx: WebContext = _CTX_DEP
+    request: Request,
+    domain: str,
+    force: bool = False,
+    ctx: WebContext = _CTX_DEP,
 ) -> dict[str, str]:
-    """Run a health check on the browser session for the given domain."""
+    """Run a health check on the browser session for the given domain.
+
+    Set ``force=true`` to bypass the automatic once-per-hour rate limit.
+    """
     await require_admin(request, ctx)
     store = ctx.browser_session_store
     if store is None:
@@ -113,7 +119,7 @@ async def check_browser_session(
         )
     domain = normalize_domain(domain)
     try:
-        status = await store.check_health(domain)
+        status = await store.check_health(domain, force=force)
     except ValueError as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc
     return {"domain": domain, "status": status}
@@ -207,11 +213,9 @@ async def browser_stream_ws(
     """WebSocket endpoint for bidirectional browser stream."""
     # Auth check before accept
     auth_header = websocket.headers.get("Authorization", "")
-    token: str | None = None
-    if auth_header.startswith("Bearer "):
-        token = auth_header[7:]
-    else:
-        token = websocket.query_params.get("token")
+    token: str | None = (
+        auth_header[7:] if auth_header.startswith("Bearer ") else websocket.query_params.get("token")
+    )
 
     ctx = get_web_context()
     if ctx.auth_manager is not None:
