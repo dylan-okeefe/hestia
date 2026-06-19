@@ -27,7 +27,7 @@ class HandoffResult:
     """Result of generating a handoff summary."""
 
     summary: str
-    memory_id: str
+    memory_id: str | None
     token_cost: int
 
 
@@ -92,8 +92,13 @@ class SessionHandoffSummarizer:
             tags=["handoff", session.platform],
             session_id=session.id,
         )
+        if memory is None:
+            logger.warning(
+                "Handoff summary for session %s was rejected by the memory sanitizer",
+                session.id,
+            )
         return HandoffResult(
             summary=summary,
-            memory_id=memory.id,
+            memory_id=memory.id if memory else None,
             token_cost=(response.prompt_tokens or 0) + (response.completion_tokens or 0),
         )
