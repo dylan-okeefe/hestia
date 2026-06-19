@@ -105,9 +105,14 @@ def make_save_memory_tool(
         platform = current_platform.get()
         platform_user = current_platform_user.get()
         mem = await memory_store.save(
-            content=content, tags=tag_list, session_id=session_id,
-            platform=platform, platform_user=platform_user,
+            content=content,
+            tags=tag_list,
+            session_id=session_id,
+            platform=platform,
+            platform_user=platform_user,
         )
+        if mem is None:
+            return "Memory rejected: content did not pass the write-time sanitizer."
         preview = content[:80] + ("..." if len(content) > 80 else "")
         return f"Saved memory {mem.id}: {preview}"
 

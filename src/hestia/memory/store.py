@@ -13,6 +13,7 @@ from sqlalchemy.exc import DatabaseError, OperationalError
 
 from hestia.core.clock import utcnow
 from hestia.errors import PersistenceError
+from hestia.memory.sanitizer import MemorySanitizer
 from hestia.persistence.db import Database
 
 logger = logging.getLogger(__name__)
@@ -72,6 +73,7 @@ class MemoryStore:
         self._db = db
         self._fts5_available = True
         self._fts5_probed = False
+        self._sanitizer = MemorySanitizer()
 
     async def _probe_fts5(self, conn: Any) -> None:
         """Detect FTS5 support once per instance."""
@@ -239,7 +241,8 @@ class MemoryStore:
         session_id: str | None = None,
         platform: str | None = None,
         platform_user: str | None = None,
-    ) -> Memory:
+        strict: bool = False,
+    ) -> Memory | None:
         """Save a memory entry.
 
         Args:
@@ -248,10 +251,26 @@ class MemoryStore:
             session_id: Optional session ID that created this memory
             platform: Optional platform identifier; falls back to runtime ContextVar
             platform_user: Optional user identifier; falls back to runtime ContextVar
+            strict: If True, raise PersistenceError when content is rejected.
 
         Returns:
-            The created Memory
+            The created Memory, or None when the content is rejected by the sanitizer.
         """
+        result = self._sanitizer.sanitize(content)
+        if result.rejected:
+            logger.warning(
+                "Memory content rejected by sanitizer: %s",
+                result.reason,
+            )
+            if strict:
+                raise PersistenceError(
+                    f"Memory content rejected by sanitizer: {result.reason}"
+                )
+            return None
+
+        # Use the cleaned content from the sanitizer (e.g., stripped whitespace).
+        clean_content = result.content or content
+
         platform, platform_user = self._resolve_scope(platform, platform_user)
         if platform is None or platform_user is None:
             logger.warning(
@@ -276,7 +295,7 @@ class MemoryStore:
                 insert,
                 {
                     "id": memory_id,
-                    "content": content,
+                    "content": clean_content,
                     "tags": tag_str,
                     "session_id": session_id,
                     "created_at": now.isoformat(),
@@ -288,7 +307,7 @@ class MemoryStore:
 
         return Memory(
             id=memory_id,
-            content=content,
+            content=clean_content,
             tags=tags if tags else [],
             session_id=session_id,
             created_at=now,

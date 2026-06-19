@@ -80,9 +80,9 @@ class TestMemoryUserScope:
     @pytest.mark.asyncio
     async def test_count_scoped_to_user(self, memory_store):
         """Count only counts memories for the scoped user."""
-        await memory_store.save(content="Alice 1", platform="cli", platform_user="alice")
-        await memory_store.save(content="Alice 2", platform="cli", platform_user="alice")
-        await memory_store.save(content="Bob 1", platform="cli", platform_user="bob")
+        await memory_store.save(content="Alice first note", platform="cli", platform_user="alice")
+        await memory_store.save(content="Alice second note", platform="cli", platform_user="alice")
+        await memory_store.save(content="Bob first note", platform="cli", platform_user="bob")
 
         assert await memory_store.count(platform="cli", platform_user="alice") == 2
         assert await memory_store.count(platform="cli", platform_user="bob") == 1
