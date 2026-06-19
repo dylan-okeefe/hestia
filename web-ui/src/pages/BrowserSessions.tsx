@@ -139,31 +139,47 @@ export default function BrowserSessions() {
         </button>
       </div>
 
-      {!isLoadingActive && activeStream && (
-        <div className="browser-sessions-active-banner">
-          <div className="browser-sessions-active-banner__content">
-            <span className="browser-sessions-active-banner__dot" />
-            <span>
-              Active stream on <strong>{activeStream.domain}</strong>
-            </span>
-          </div>
-          <div className="browser-sessions-active-banner__actions">
-            <button
-              onClick={() => navigate(`/browser-sessions/stream?domain=${encodeURIComponent(activeStream.domain)}`)}
-              className="button--secondary"
-            >
-              View Stream
-            </button>
-            <button
-              onClick={handleStopStream}
-              disabled={stopStreamMut.isPending}
-              className="button--danger"
-            >
-              End Session
-            </button>
-          </div>
+      <div className="browser-sessions-active-banner">
+        <div className="browser-sessions-active-banner__content">
+          {isLoadingActive ? (
+            <span className="browser-sessions-active-banner__inactive">Checking active stream…</span>
+          ) : activeStream ? (
+            <>
+              <span className="browser-sessions-active-banner__dot" />
+              <span>
+                Active stream on <strong>{activeStream.domain}</strong>
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="browser-sessions-active-banner__dot browser-sessions-active-banner__dot--inactive" />
+              <span className="browser-sessions-active-banner__inactive">No active browser stream</span>
+            </>
+          )}
         </div>
-      )}
+        <div className="browser-sessions-active-banner__actions">
+          {!isLoadingActive && activeStream ? (
+            <>
+              <button
+                onClick={() => navigate(`/browser-sessions/stream?domain=${encodeURIComponent(activeStream.domain)}`)}
+              >
+                View Stream
+              </button>
+              <button
+                onClick={handleStopStream}
+                disabled={stopStreamMut.isPending}
+                className="text-danger border-danger"
+              >
+                {stopStreamMut.isPending ? 'Ending…' : 'End Session'}
+              </button>
+            </>
+          ) : !isLoadingActive ? (
+            <button onClick={() => navigate('/browser-sessions/stream')}>
+              + New Session
+            </button>
+          ) : null}
+        </div>
+      </div>
 
       {isLoading && (
         <PageCard>

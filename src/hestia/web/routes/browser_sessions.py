@@ -196,10 +196,11 @@ async def start_browser_session(
         )
 
     session_id = await manager.start(body.url, headed=body.headed)
-    domain = manager._session.domain if manager._session else ""
+    session = manager.get_active_session()
     return {
         "session_id": session_id,
-        "domain": domain,
+        "domain": session.get("domain", "") if session else "",
+        "url": session.get("url", body.url) if session else body.url,
         "ws_url": f"/api/browser-session/stream/{session_id}",
     }
 
@@ -249,10 +250,11 @@ async def restart_headed_browser_session(
     if session_id is None:
         raise HTTPException(status_code=404, detail="No active session")
     await manager.restart_headed(session_id)
-    domain = manager._session.domain if manager._session else ""
+    session = manager.get_active_session()
     return {
         "session_id": session_id,
-        "domain": domain,
+        "domain": session.get("domain", "") if session else "",
+        "url": session.get("url", "") if session else "",
         "ws_url": f"/api/browser-session/stream/{session_id}",
     }
 

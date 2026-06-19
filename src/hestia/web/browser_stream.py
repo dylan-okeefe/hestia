@@ -426,6 +426,15 @@ class SessionStreamManager:
                 delta_y = event.get("deltaY", 0)
                 await session.page.mouse.move(x, y)
                 await session.page.mouse.wheel(delta_x, delta_y)
+            elif event_type == "navigate":
+                target_url = event.get("url", "").strip()
+                if target_url:
+                    if not target_url.startswith(("http://", "https://")):
+                        target_url = f"https://{target_url}"
+                    await assert_url_safe(target_url)
+                    await session.page.goto(target_url, wait_until="domcontentloaded")
+                    session.url = target_url
+                    session.domain = normalize_domain(urlparse(target_url).hostname or "")
         except Exception:
             logger.exception("Failed to forward input event")
 
