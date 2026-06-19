@@ -257,6 +257,7 @@ class SessionStreamManager:
                 last_saved=datetime.now(UTC),
                 health_status=health_status,
                 health_check_url=health_check_url,
+                requires_headed=False,
             )
 
             await self._cleanup(
