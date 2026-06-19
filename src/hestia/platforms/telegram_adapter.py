@@ -33,6 +33,7 @@ from hestia.voice.pipeline import get_voice_pipeline
 
 if TYPE_CHECKING:
     from hestia.config import VoiceConfig
+    from hestia.orchestrator.compaction import SessionCompactor
     from hestia.orchestrator.engine import Orchestrator
     from hestia.orchestrator.handoff_service import HandoffService
     from hestia.persistence.session_store import SessionStore
@@ -176,6 +177,7 @@ class TelegramAdapter(Platform):
         self._system_prompt: str = ""
         self._voice_config: VoiceConfig | None = None
         self._reset_callback: Callable[[str], Awaitable[None]] | None = None
+        self._compactor: SessionCompactor | None = None
 
         # Validate allowed_users entries (hard-fail at startup)
         for entry in self._config.allowed_users:
@@ -222,6 +224,10 @@ class TelegramAdapter(Platform):
         """
         self._reset_callback = callback
 
+    def set_compactor(self, compactor: SessionCompactor) -> None:
+        """Inject the session compactor for /compact handling."""
+        self._compactor = compactor
+
     async def start(self, on_message: IncomingMessageCallback) -> None:
         """Start polling for Telegram messages."""
         self._on_message = on_message
@@ -231,6 +237,7 @@ class TelegramAdapter(Platform):
         # Register handlers
         self._app.add_handler(CommandHandler("start", self._handle_start))
         self._app.add_handler(CommandHandler("reset", self._handle_reset))
+        self._app.add_handler(CommandHandler("compact", self._handle_compact))
         self._app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message))
         if self._config.voice_messages:
             self._app.add_handler(MessageHandler(filters.VOICE, self._handle_voice_message))
@@ -633,6 +640,52 @@ class TelegramAdapter(Platform):
         await update.effective_message.reply_text(
             "Conversation reset. Previous context was archived; your next message starts a fresh session."
         )
+
+    async def _handle_compact(self, update: Update, context: Any) -> None:
+        """Handle /compact command: summarize, archive, and shrink history in place."""
+        if update.effective_user is None or update.effective_message is None:
+            return
+
+        user_id = update.effective_user.id
+        username = update.effective_user.username or str(user_id)
+        chat = update.effective_chat
+        in_group = chat is not None and chat.type in (Chat.GROUP, Chat.SUPERGROUP)
+
+        if not self._is_allowed(user_id, username):
+            if in_group:
+                return
+            await update.effective_message.reply_text("Not authorized.")
+            return
+
+        if self._session_store is None or self._compactor is None:
+            await update.effective_message.reply_text(
+                "Compact is not available right now."
+            )
+            return
+
+        if in_group:
+            assert chat is not None
+            platform_user = str(chat.id)
+        else:
+            platform_user = str(user_id)
+
+        session = await self._session_store.get_active_session("telegram", platform_user)
+        if session is None:
+            await update.effective_message.reply_text(
+                "No active conversation to compact."
+            )
+            return
+
+        instruction = " ".join(context.args) if context and context.args else None
+
+        status_msg = await update.effective_message.reply_text("Compacting session...")
+        outcome = await self._compactor.compact(session.id, instruction=instruction)
+        try:
+            await self.edit_message(
+                platform_user, str(status_msg.message_id), outcome.message
+            )
+        except TelegramError:
+            await update.effective_message.reply_text(outcome.message)
 
     async def _handle_message(self, update: Update, context: Any) -> None:
         """Handle incoming text messages."""
