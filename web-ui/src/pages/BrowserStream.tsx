@@ -6,10 +6,14 @@ import { useToast } from '../hooks/useToast';
 import PageCard from '../components/layout/PageCard';
 import './BrowserStream.css';
 
-const CANVAS_WIDTH = 960;
-const CANVAS_HEIGHT = 540;
+const DEFAULT_WIDTH = 960;
+const DEFAULT_HEIGHT = 540;
 const SERVER_WIDTH = 1920;
 const SERVER_HEIGHT = 1080;
+const MIN_WIDTH = 320;
+const MIN_HEIGHT = 180;
+const MAX_WIDTH = 1920;
+const MAX_HEIGHT = 1080;
 const SESSION_TIMEOUT_MS = 10 * 60 * 1000;
 
 function formatMs(mmss: number): string {
@@ -41,6 +45,8 @@ export default function BrowserStream() {
   const [timedOut, setTimedOut] = useState(false);
   const [mobileText, setMobileText] = useState('');
   const [inputMode, setInputMode] = useState<'text' | 'password'>('text');
+  const [currentUrl, setCurrentUrl] = useState('');
+  const [canvasSize, setCanvasSize] = useState({ width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT });
 
   const startMut = useApiMutation(startBrowserStream);
   const stopMut = useApiMutation(stopBrowserStream);
@@ -120,7 +126,7 @@ export default function BrowserStream() {
           if (canvas) {
             const ctx = canvas.getContext('2d');
             if (ctx) {
-              ctx.drawImage(img, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+              ctx.drawImage(img, 0, 0, canvasSize.width, canvasSize.height);
             }
           }
           URL.revokeObjectURL(blobUrl);
@@ -140,6 +146,7 @@ export default function BrowserStream() {
     try {
       const data = await startMut.mutateAsync({ url: url.trim(), headed });
       setSession(data);
+      setCurrentUrl(data.url || url.trim());
       setConnected(false);
       setTimedOut(false);
       startTimer();
@@ -250,10 +257,10 @@ export default function BrowserStream() {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
-    const scaleX = SERVER_WIDTH / CANVAS_WIDTH;
-    const scaleY = SERVER_HEIGHT / CANVAS_HEIGHT;
-    const x = Math.round(((clientX - rect.left) / rect.width) * CANVAS_WIDTH * scaleX);
-    const y = Math.round(((clientY - rect.top) / rect.height) * CANVAS_HEIGHT * scaleY);
+    const scaleX = SERVER_WIDTH / canvasSize.width;
+    const scaleY = SERVER_HEIGHT / canvasSize.height;
+    const x = Math.round(((clientX - rect.left) / rect.width) * canvasSize.width * scaleX);
+    const y = Math.round(((clientY - rect.top) / rect.height) * canvasSize.height * scaleY);
     return { x, y };
   };
 
@@ -289,6 +296,23 @@ export default function BrowserStream() {
       sendWsMessage({ type: 'type', text: mobileText });
       setMobileText('');
     }
+  };
+
+  const handleNavigate = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (currentUrl.trim()) {
+      sendWsMessage({ type: 'navigate', url: currentUrl.trim() });
+    }
+  };
+
+  const handleWidthChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const width = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, parseInt(e.target.value, 10) || DEFAULT_WIDTH));
+    setCanvasSize((prev) => ({ ...prev, width }));
+  };
+
+  const handleHeightChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const height = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, parseInt(e.target.value, 10) || DEFAULT_HEIGHT));
+    setCanvasSize((prev) => ({ ...prev, height }));
   };
 
   if (!session) {
@@ -340,10 +364,48 @@ export default function BrowserStream() {
         </span>
       </div>
 
+      <form onSubmit={handleNavigate} className="browser-stream-url-bar">
+        <label className="form-label" htmlFor="stream-current-url">URL</label>
+        <input
+          id="stream-current-url"
+          type="url"
+          value={currentUrl}
+          onChange={(e) => setCurrentUrl(e.target.value)}
+          placeholder="https://example.com/login"
+          className="form-input"
+        />
+        <button type="submit" disabled={!currentUrl.trim()}>
+          Go
+        </button>
+      </form>
+
+      <div className="browser-stream-size-bar">
+        <label className="form-label" htmlFor="stream-width">Width</label>
+        <input
+          id="stream-width"
+          type="number"
+          min={MIN_WIDTH}
+          max={MAX_WIDTH}
+          value={canvasSize.width}
+          onChange={handleWidthChange}
+          className="form-input form-input--number"
+        />
+        <label className="form-label" htmlFor="stream-height">Height</label>
+        <input
+          id="stream-height"
+          type="number"
+          min={MIN_HEIGHT}
+          max={MAX_HEIGHT}
+          value={canvasSize.height}
+          onChange={handleHeightChange}
+          className="form-input form-input--number"
+        />
+      </div>
+
       <canvas
         ref={canvasRef}
-        width={CANVAS_WIDTH}
-        height={CANVAS_HEIGHT}
+        width={canvasSize.width}
+        height={canvasSize.height}
         className="browser-stream-canvas"
         tabIndex={0}
         onMouseDown={handleMouseDown}

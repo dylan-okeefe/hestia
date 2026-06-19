@@ -194,6 +194,40 @@ class TestStopSession:
 
 class TestForwardInput:
     @pytest.mark.asyncio
+    async def test_forward_input_navigates_to_url(
+        self, manager: SessionStreamManager
+    ) -> None:
+        mock_cm, *_rest = _make_mock_playwright()
+        mock_page = _rest[3]
+        _inject_playwright_module(mock_cm)
+        session_id = await manager.start("https://example.com/login")
+
+        await manager.forward_input(
+            session_id, {"type": "navigate", "url": "https://example.com/otp-link"}
+        )
+
+        mock_page.goto.assert_called_with(
+            "https://example.com/otp-link", wait_until="domcontentloaded"
+        )
+
+    @pytest.mark.asyncio
+    async def test_forward_input_navigate_adds_https_scheme(
+        self, manager: SessionStreamManager
+    ) -> None:
+        mock_cm, *_rest = _make_mock_playwright()
+        mock_page = _rest[3]
+        _inject_playwright_module(mock_cm)
+        session_id = await manager.start("https://example.com/login")
+
+        await manager.forward_input(
+            session_id, {"type": "navigate", "url": "example.com/otp-link"}
+        )
+
+        mock_page.goto.assert_called_with(
+            "https://example.com/otp-link", wait_until="domcontentloaded"
+        )
+
+    @pytest.mark.asyncio
     async def test_forward_input_dispatches_click(
         self, manager: SessionStreamManager
     ) -> None:
@@ -578,6 +612,7 @@ class TestGetActiveSession:
         assert data["active"] is not None
         assert data["active"]["session_id"] == session_id
         assert data["active"]["domain"] == "example.com"
+        assert data["active"]["url"] == "https://example.com/login"
 
     @pytest.mark.asyncio
     async def test_api_active_endpoint_returns_null_when_inactive(

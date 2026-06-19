@@ -626,6 +626,7 @@ export async function setBrowserSessionRequiresHeaded(
 export interface StreamSession {
   session_id: string;
   domain: string;
+  url: string;
   ws_url: string;
 }
 

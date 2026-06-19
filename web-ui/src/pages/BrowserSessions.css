@@ -79,6 +79,15 @@
   animation: pulse-dot 1.5s ease-in-out infinite;
 }
 
+.browser-sessions-active-banner__dot--inactive {
+  background: var(--color-text-muted);
+  animation: none;
+}
+
+.browser-sessions-active-banner__inactive {
+  color: var(--color-text-muted);
+}
+
 @keyframes pulse-dot {
   0%, 100% {
     opacity: 1;
