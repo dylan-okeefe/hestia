@@ -333,6 +333,29 @@ async def test_compact_instruction_passed_to_summarizer(
 
 
 @pytest.mark.asyncio
+async def test_compact_summarizer_messages_end_with_user(
+    session_store, message_store, compactor, fake_inference
+):
+    """The summarizer prompt must end with a user message so the model API accepts it."""
+    session = await session_store.get_or_create_session("cli", "testuser")
+    for i in range(4):
+        await message_store.append_message(
+            session.id,
+            message_domain_to_dto(
+                Message(role="user" if i % 2 == 0 else "assistant", content=f"msg{i}"),
+                session.id,
+                idx=i,
+            ),
+        )
+
+    await compactor.compact(session.id)
+
+    messages = fake_inference.calls[0]
+    assert messages[-1].role == "user"
+    assert "Summarize the task state as JSON" in messages[-1].content
+
+
+@pytest.mark.asyncio
 async def test_compact_too_short(session_store, message_store, compactor):
     """Compaction refuses when there are too few messages."""
     session = await session_store.get_or_create_session("cli", "testuser")

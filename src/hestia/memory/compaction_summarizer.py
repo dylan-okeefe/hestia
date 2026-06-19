@@ -92,6 +92,7 @@ class SessionCompactionSummarizer:
         request_msgs: list[Message] = [
             Message(role="system", content=prompt),
             *(m for m in history if m.role in ("user", "assistant") and m.content),
+            Message(role="user", content="Summarize the task state as JSON."),
         ]
 
         try:
