@@ -25,10 +25,13 @@ from hestia.events.bus import EventBus
 from hestia.identity import IdentityCompiler
 from hestia.inference import SlotManager
 from hestia.memory import MemoryEpochCompiler, MemoryStore
+from hestia.memory.compaction_summarizer import SessionCompactionSummarizer
 from hestia.memory.handoff import SessionHandoffSummarizer
 from hestia.orchestrator import Orchestrator
+from hestia.orchestrator.compaction import SessionCompactor
 from hestia.orchestrator.engine import ConfirmCallback
 from hestia.orchestrator.handoff_service import HandoffService
+from hestia.orchestrator.lock import SessionLockManager
 from hestia.persistence.capability_events import CapabilityEventStore
 from hestia.persistence.db import Database
 from hestia.persistence.error_resolution_store import ErrorResolutionStore
@@ -210,6 +213,7 @@ class AppContext:
         self.db = Database(config.storage.database_url)
         self.artifact_store = ArtifactStore(config.storage.artifacts_dir)
         self.event_bus = EventBus()
+        self.lock_manager = SessionLockManager()
         self.session_store = SessionStore(self.db, event_bus=self.event_bus)
         self.message_store = MessageStore(self.db)
         self.turn_store = TurnStore(self.db)
@@ -315,6 +319,28 @@ class AppContext:
                 min_messages=self.config.handoff.min_messages,
             )
         return None
+
+    @functools.cached_property
+    def compaction_summarizer(self) -> SessionCompactionSummarizer:
+        """Lazy compaction summarizer for the /compact meta-command."""
+        return SessionCompactionSummarizer(
+            inference=self.inference,
+            memory_store=self.memory_store,
+            max_chars=self.config.compaction.summary_max_chars,
+            min_messages=self.config.compaction.min_messages,
+        )
+
+    @functools.cached_property
+    def compactor(self) -> SessionCompactor:
+        """Lazy session compactor for the /compact meta-command."""
+        return SessionCompactor(
+            session_store=self.session_store,
+            message_store=self.message_store,
+            slot_manager=self.slot_manager,
+            summarizer=self.compaction_summarizer,
+            lock_manager=self.lock_manager,
+            config=self.config.compaction,
+        )
 
     # --- Lazy feature subsystems ---
 
@@ -427,6 +453,7 @@ class AppContext:
             max_tokens=self.config.inference.max_tokens,
             default_reasoning_budget=self.config.inference.default_reasoning_budget,
             slot_manager=self.slot_manager,
+            lock_manager=self.lock_manager,
             failure_store=self.failure_store,
             trace_store=self.trace_store,
             injection_scanner=self.make_injection_scanner(),
