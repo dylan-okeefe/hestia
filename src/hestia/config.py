@@ -318,6 +318,35 @@ class CompressionConfig(_ConfigFromEnv):
 
 
 @dataclass
+class CompactionConfig(_ConfigFromEnv):
+    """Manual in-session compaction via the /compact meta-command."""
+
+    _ENV_PREFIX = "COMPACTION"
+
+    enabled: bool = True
+    """Enable the /compact meta-command."""
+
+    verbatim_turns: int = 5
+    """Number of recent user/assistant turns to keep verbatim after compaction."""
+
+    summary_max_chars: int = 1500
+    """Maximum length of the synthetic compaction summary message."""
+
+    min_messages: int = 4
+    """Minimum number of messages required before compaction will run."""
+
+    def __post_init__(self) -> None:
+        if self.verbatim_turns < 0:
+            raise ValueError(
+                f"CompactionConfig.verbatim_turns must be non-negative, got {self.verbatim_turns}"
+            )
+        if self.summary_max_chars < 100:
+            raise ValueError(
+                f"CompactionConfig.summary_max_chars must be at least 100, got {self.summary_max_chars}"
+            )
+
+
+@dataclass
 class EmailConfig(_ConfigFromEnv):
     """Configuration for email integration (IMAP read + SMTP draft/send)."""
 
@@ -558,6 +587,7 @@ class FeatureConfig:
     web_search: WebSearchConfig = field(default_factory=WebSearchConfig)
     handoff: HandoffConfig = field(default_factory=HandoffConfig)
     compression: CompressionConfig = field(default_factory=CompressionConfig)
+    compaction: CompactionConfig = field(default_factory=CompactionConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
     reflection: ReflectionConfig = field(default_factory=ReflectionConfig)
     style: StyleConfig = field(default_factory=StyleConfig)
@@ -642,6 +672,7 @@ class HestiaConfig(_ConfigFromEnv):
         web_search: WebSearchConfig | None = None,
         handoff: HandoffConfig | None = None,
         compression: CompressionConfig | None = None,
+        compaction: CompactionConfig | None = None,
         security: SecurityConfig | None = None,
         reflection: ReflectionConfig | None = None,
         style: StyleConfig | None = None,
@@ -671,6 +702,7 @@ class HestiaConfig(_ConfigFromEnv):
                 web_search=web_search or WebSearchConfig(),
                 handoff=handoff or HandoffConfig(),
                 compression=compression or CompressionConfig(),
+                compaction=compaction or CompactionConfig(),
                 security=security or SecurityConfig(),
                 reflection=reflection or ReflectionConfig(),
                 style=style or StyleConfig(),
@@ -808,6 +840,15 @@ class HestiaConfig(_ConfigFromEnv):
     @compression.setter
     def compression(self, value: CompressionConfig) -> None:
         self.features.compression = value
+
+    @property
+    def compaction(self) -> CompactionConfig:
+        """Deprecated: use features.compaction instead."""
+        return self.features.compaction
+
+    @compaction.setter
+    def compaction(self, value: CompactionConfig) -> None:
+        self.features.compaction = value
 
     @property
     def security(self) -> SecurityConfig:
