@@ -6,6 +6,21 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-06-19 — L225 Complete (Memory-write sanitizer)
+
+**Outcome:** Added a write-time sanitizer at the shared memory-store boundary that rejects junk (tool-call XML, unclosed tags, raw turn dumps, trivial content) before it is stored. Clean prose facts and structured key-value summaries are preserved. All memory writers (`memory_write` tool, reflection loop, future `/compact` flush) now benefit.
+
+**Branch:** `feature/l225-memory-write-sanitizer`
+- Added `MemorySanitizer`/`SanitizerResult` in `src/hestia/memory/sanitizer.py`.
+- Wired sanitizer into `MemoryStore.save()`; returns `Memory | None`, logs and drops rejected writes by default, `strict=True` raises.
+- Updated `save_memory` tool and CLI `memory add` to handle rejected results gracefully.
+- Updated `SessionHandoffSummarizer` to tolerate a rejected handoff memory.
+- Added unit tests for every sanitizer rule and integration tests for the write boundary, tool path, and compaction-style summaries.
+
+**Quality gates:** 88 memory-related tests passed; mypy/ruff clean on changed files. Full suite: 1873 passed, 6 skipped, 3 pre-existing browser/web unrelated failures.
+
+**Next:** Orchestrator should validate and advance `KIMI_CURRENT.md` to L224.
+
 ## 2026-06-15 — L218–L219 Complete (Tool Reliability Follow-ups)
 
 **Outcome:** Hardened the truncated-write recovery seam, expanded the regression fixture scrubber to cover authenticated-session cookies and high-entropy tokens, made the VRAM check honest about llama.cpp's pre-allocated KV cache, and renumbered the two new loops to avoid collisions with already-merged L189/L189.
