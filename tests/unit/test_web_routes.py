@@ -20,6 +20,14 @@ def _clear_web_context() -> None:
     ctx_mod._ctx = None
 
 
+@pytest.fixture(autouse=True)
+def _clear_doctor_cache() -> None:
+    """Clear the doctor endpoint cache before each test."""
+    from hestia.web.routes import doctor as doctor_mod
+
+    doctor_mod._doctor_cache.clear()
+
+
 @pytest.fixture
 def mock_app() -> MagicMock:
     """Provide a mocked AppContext."""
@@ -65,6 +73,9 @@ def client(mock_app: MagicMock) -> TestClient:
     """Create a TestClient with all stores mocked."""
     ctx = WebContext(
         session_store=AsyncMock(),
+        message_store=AsyncMock(),
+        turn_store=AsyncMock(),
+        handoff_service=AsyncMock(),
         proposal_store=AsyncMock(),
         style_store=AsyncMock(),
         scheduler_store=AsyncMock(),
@@ -105,7 +116,7 @@ class TestSessionsRoutes:
                 )
             ]
         )
-        ctx.session_store.count_turns_for_sessions = AsyncMock(return_value={"s1": 0})
+        ctx.turn_store.count_turns_for_sessions = AsyncMock(return_value={"s1": 0})
 
         response = client.get("/api/sessions?limit=10")
         assert response.status_code == 200
@@ -122,14 +133,14 @@ class TestSessionsRoutes:
 
         ctx = ctx_mod._ctx
         assert ctx is not None
-        ctx.session_store.list_turns_for_session = AsyncMock(
+        ctx.turn_store.list_turns_for_session = AsyncMock(
             return_value=[
                 MagicMock(
                     id="t1",
                     session_id="s1",
-                    state=MagicMock(value="done"),
+                    state="done",
                     started_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
-                    iterations=1,
+                    iteration=1,
                     error=None,
                 )
             ]
@@ -140,7 +151,7 @@ class TestSessionsRoutes:
         data = response.json()
         assert len(data["turns"]) == 1
         assert data["turns"][0]["id"] == "t1"
-        ctx.session_store.list_turns_for_session.assert_awaited_once_with("s1")
+        ctx.turn_store.list_turns_for_session.assert_awaited_once_with("s1")
 
     def test_list_sessions_with_platform_filter(
         self, client: TestClient, mock_app: MagicMock
@@ -151,7 +162,7 @@ class TestSessionsRoutes:
         ctx = ctx_mod._ctx
         assert ctx is not None
         ctx.session_store.list_sessions = AsyncMock(return_value=[])
-        ctx.session_store.count_turns_for_sessions = AsyncMock(return_value={})
+        ctx.turn_store.count_turns_for_sessions = AsyncMock(return_value={})
 
         response = client.get(
             "/api/sessions?platform=cli&platform_user=u1&limit=5"
@@ -182,7 +193,7 @@ class TestSessionsRoutes:
                 )
             ]
         )
-        ctx.session_store.count_turns_for_sessions = AsyncMock(return_value={"s1": 3})
+        ctx.turn_store.count_turns_for_sessions = AsyncMock(return_value={"s1": 3})
 
         response = client.get("/api/sessions?limit=10")
         assert response.status_code == 200
@@ -205,24 +216,36 @@ class TestSessionsRoutes:
                 started_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
             )
         )
-        ctx.session_store.list_turns_for_session = AsyncMock(
+        ctx.turn_store.list_turns_for_session = AsyncMock(
             return_value=[
                 MagicMock(
                     id="t1",
                     session_id="s1",
-                    state=MagicMock(value="done"),
+                    state="done",
                     started_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
-                    iterations=1,
+                    iteration=1,
                     error=None,
                 )
             ]
         )
-        from hestia.core.types import Message
+        from hestia.persistence.dto import MessageDTO
 
-        ctx.session_store.get_messages = AsyncMock(
+        ctx.message_store.get_messages = AsyncMock(
             return_value=[
-                Message(role="user", content="hello"),
-                Message(role="assistant", content="hi there"),
+                MessageDTO(
+                    session_id="s1",
+                    idx=0,
+                    role="user",
+                    content="hello",
+                    created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+                ),
+                MessageDTO(
+                    session_id="s1",
+                    idx=1,
+                    role="assistant",
+                    content="hi there",
+                    created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+                ),
             ]
         )
 
@@ -237,8 +260,8 @@ class TestSessionsRoutes:
         assert data["messages"][0]["role"] == "user"
         assert data["messages"][0]["content"] == "hello"
         ctx.session_store.get_session.assert_awaited_once_with("s1")
-        ctx.session_store.list_turns_for_session.assert_awaited_once_with("s1")
-        ctx.session_store.get_messages.assert_awaited_once_with("s1")
+        ctx.turn_store.list_turns_for_session.assert_awaited_once_with("s1")
+        ctx.message_store.get_messages.assert_awaited_once_with("s1")
 
     def test_get_session_messages_not_found(
         self, client: TestClient, mock_app: MagicMock
@@ -264,6 +287,9 @@ class TestErrorsRoutes:
         with patch("hestia.web.routes.errors.require_admin", new=async_mock):
             ctx = WebContext(
                 session_store=AsyncMock(),
+                message_store=AsyncMock(),
+                turn_store=AsyncMock(),
+                handoff_service=AsyncMock(),
                 proposal_store=AsyncMock(),
                 style_store=AsyncMock(),
                 scheduler_store=AsyncMock(),
@@ -283,27 +309,30 @@ class TestErrorsRoutes:
             app = create_web_app()
             yield TestClient(app)
 
-    def test_debug_error_uses_get_turn_messages(
+    def test_debug_error_uses_turn_store(
         self, errors_client: TestClient, mock_app: MagicMock
     ) -> None:
-        """POST /api/errors/{id}/debug uses SessionStore.get_turn_messages."""
+        """POST /api/errors/{id}/debug reads the turn from TurnStore."""
         from hestia.web import context as ctx_mod
 
         ctx = ctx_mod._ctx
         assert ctx is not None
-        ctx.session_store.get_turn_messages = AsyncMock(
-            return_value={
-                "session_id": "s1",
-                "state": "failed",
-                "error": "Something broke",
-            }
+        ctx.turn_store.get_turn = AsyncMock(
+            return_value=MagicMock(
+                session_id="s1",
+                state="failed",
+                error="Something broke",
+            )
+        )
+        ctx.session_store.get_session = AsyncMock(
+            return_value=MagicMock(platform_user="u1")
         )
 
         response = errors_client.post("/api/errors/session_turn:t1/debug")
         assert response.status_code == 200
         data = response.json()
         assert "Something broke" in data["prompt"]
-        ctx.session_store.get_turn_messages.assert_awaited_once_with("t1")
+        ctx.turn_store.get_turn.assert_awaited_once_with("t1")
 
     def test_debug_error_turn_not_found(
         self, errors_client: TestClient, mock_app: MagicMock
@@ -313,7 +342,7 @@ class TestErrorsRoutes:
 
         ctx = ctx_mod._ctx
         assert ctx is not None
-        ctx.session_store.get_turn_messages = AsyncMock(return_value=None)
+        ctx.turn_store.get_turn = AsyncMock(return_value=None)
 
         response = errors_client.post("/api/errors/session_turn:t1/debug")
         assert response.status_code == 200

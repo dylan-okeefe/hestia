@@ -23,8 +23,6 @@ from hestia.core.types import (
     ToolCall,
 )
 from hestia.orchestrator import Orchestrator, TurnState
-from hestia.persistence.db import Database
-from hestia.persistence.sessions import SessionStore
 from hestia.platforms.matrix_adapter import MatrixAdapter
 from hestia.tools.registry import ToolRegistry
 
@@ -96,12 +94,9 @@ class FakeInferenceClient:
         pass
 
 
-async def _make_orchestrator(approve: bool):
+async def _make_orchestrator(session_store, message_store, approve: bool):
     """Build an orchestrator with a MatrixAdapter confirm callback."""
-    db = Database("sqlite+aiosqlite:///:memory:")
-    await db.connect()
-    await db.create_tables()
-    store = SessionStore(db)
+    store = session_store
 
     registry = ToolRegistry("/tmp/artifacts")
     import os
@@ -129,7 +124,7 @@ async def _make_orchestrator(approve: bool):
 
     policy = FakePolicy()
 
-    async def confirm_callback(tool_name: str, arguments: dict) -> bool:
+    async def confirm_callback(tool_name: str, arguments: dict, request_token: str | None = None) -> bool:
         return await adapter.request_confirmation(
             "!room:matrix.org", tool_name, arguments
         )
@@ -174,13 +169,15 @@ async def _make_orchestrator(approve: bool):
         policy=policy,
         confirm_callback=confirm_callback,
     )
-    return orchestrator, adapter, store, db
+    return orchestrator, adapter, store, message_store
 
 
 @pytest.mark.asyncio
-async def test_matrix_confirmation_approves_tool():
+async def test_matrix_confirmation_approves_tool(store, message_store):
     """End-to-end: model calls write_file, Matrix reply 'yes' approves it."""
-    orchestrator, adapter, store, db = await _make_orchestrator(approve=True)
+    orchestrator, adapter, session_store, message_store = await _make_orchestrator(
+        store, message_store, approve=True
+    )
 
     session = _make_session("test_matrix_confirm_yes")
     responses_list: list[str] = []
@@ -214,16 +211,17 @@ async def test_matrix_confirmation_approves_tool():
 
     turn = await asyncio.wait_for(turn_task, timeout=5)
     assert turn.state == TurnState.DONE
-    messages = await store.get_messages(session.id)
+    messages = await message_store.get_messages(session.id)
     tool_msgs = [m.content for m in messages if m.role == "tool"]
     assert any("Wrote" in (m or "") for m in tool_msgs)
-    await db.close()
 
 
 @pytest.mark.asyncio
-async def test_matrix_confirmation_denies_tool():
+async def test_matrix_confirmation_denies_tool(store, message_store):
     """End-to-end: model calls write_file, Matrix reply 'no' denies it."""
-    orchestrator, adapter, store, db = await _make_orchestrator(approve=False)
+    orchestrator, adapter, session_store, message_store = await _make_orchestrator(
+        store, message_store, approve=False
+    )
 
     session = _make_session("test_matrix_confirm_no")
     responses_list: list[str] = []
@@ -257,7 +255,6 @@ async def test_matrix_confirmation_denies_tool():
 
     turn = await asyncio.wait_for(turn_task, timeout=5)
     assert turn.state == TurnState.DONE
-    messages = await store.get_messages(session.id)
+    messages = await message_store.get_messages(session.id)
     tool_msgs = [m.content for m in messages if m.role == "tool"]
     assert any("cancelled by user" in (m or "").lower() for m in tool_msgs)
-    await db.close()

@@ -61,7 +61,7 @@ async def test_confirmed_returns_none():
         session=MagicMock(),
     )
     assert result is None
-    confirm_callback.assert_awaited_once_with("risky_tool", {"command": "rm -rf /"})
+    confirm_callback.assert_awaited_once_with("risky_tool", {"command": "rm -rf /"}, None)
 
 
 @pytest.mark.asyncio

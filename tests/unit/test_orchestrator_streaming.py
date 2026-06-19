@@ -40,7 +40,9 @@ async def test_streaming_path_content_chunks():
 
     mock_inference.chat_stream = MagicMock(return_value=_stream())
     mock_policy.reasoning_budget.return_value = 2048
-    mock_session_store.append_message = AsyncMock()
+    mock_message_store = MagicMock()
+    mock_message_store.append_message = AsyncMock()
+    mock_message_store.get_messages = AsyncMock(return_value=[])
 
     execution = TurnExecution(
         tool_registry=mock_tool_registry,
@@ -48,6 +50,7 @@ async def test_streaming_path_content_chunks():
         policy=mock_policy,
         context_builder=mock_context_builder,
         session_store=mock_session_store,
+        message_store=mock_message_store,
         stream=True,
     )
 
@@ -119,15 +122,19 @@ async def test_non_streaming_path_unchanged():
     mock_tool_registry.meta_tool_schemas.return_value = []
     mock_tool_registry.list_names.return_value = []
 
-    mock_session_store.insert_turn = AsyncMock()
-    mock_session_store.update_turn = AsyncMock()
-    mock_session_store.append_transition = AsyncMock()
-    mock_session_store.append_message = AsyncMock()
-    mock_session_store.get_messages = AsyncMock(return_value=[])
+    mock_message_store = MagicMock()
+    mock_message_store.get_messages = AsyncMock(return_value=[])
+    mock_message_store.append_message = AsyncMock()
+    mock_turn_store = MagicMock()
+    mock_turn_store.insert_turn = AsyncMock()
+    mock_turn_store.update_turn = AsyncMock()
+    mock_turn_store.append_transition = AsyncMock()
 
     orchestrator = Orchestrator(
         inference=mock_inference,
         session_store=mock_session_store,
+        message_store=mock_message_store,
+        turn_store=mock_turn_store,
         context_builder=mock_context_builder,
         tool_registry=mock_tool_registry,
         policy=mock_policy,
@@ -208,7 +215,9 @@ async def test_streaming_tool_call_accumulation():
         )
     )
 
-    mock_session_store.append_message = AsyncMock()
+    mock_message_store = MagicMock()
+    mock_message_store.append_message = AsyncMock()
+    mock_message_store.get_messages = AsyncMock(return_value=[])
     mock_context_builder.build = AsyncMock(return_value=MagicMock(messages=[]))
 
     execution = TurnExecution(
@@ -217,6 +226,7 @@ async def test_streaming_tool_call_accumulation():
         policy=mock_policy,
         context_builder=mock_context_builder,
         session_store=mock_session_store,
+        message_store=mock_message_store,
         stream=True,
     )
 
@@ -286,7 +296,9 @@ async def test_streaming_thinking_budget_abort_retries():
     mock_inference.chat_stream = MagicMock(
         side_effect=[_stream_excessive_thinking(), _stream_retry()]
     )
-    mock_session_store.append_message = AsyncMock()
+    mock_message_store = MagicMock()
+    mock_message_store.append_message = AsyncMock()
+    mock_message_store.get_messages = AsyncMock(return_value=[])
     mock_context_builder.build = AsyncMock(return_value=MagicMock(messages=[]))
 
     execution = TurnExecution(
@@ -295,6 +307,7 @@ async def test_streaming_thinking_budget_abort_retries():
         policy=mock_policy,
         context_builder=mock_context_builder,
         session_store=mock_session_store,
+        message_store=mock_message_store,
         stream=True,
     )
 
@@ -336,9 +349,9 @@ async def test_streaming_thinking_budget_abort_retries():
     # Verify transition to RETRYING happened
     transition.assert_any_call(turn, TurnState.RETRYING, "")
 
-    # Verify nudge was appended to session store and running history
-    assert len(mock_session_store.append_message.await_args_list) >= 1
-    nudge_call = mock_session_store.append_message.await_args_list[0]
+    # Verify nudge was appended to message store and running history
+    assert len(mock_message_store.append_message.await_args_list) >= 1
+    nudge_call = mock_message_store.append_message.await_args_list[0]
     nudge_msg = nudge_call.args[1]
     assert nudge_msg.role == "system"
     assert "Stop deliberating" in nudge_msg.content
@@ -366,7 +379,9 @@ async def test_streaming_thinking_within_budget_completes():
         yield StreamDelta(content="", finish_reason="stop")
 
     mock_inference.chat_stream = MagicMock(return_value=_stream())
-    mock_session_store.append_message = AsyncMock()
+    mock_message_store = MagicMock()
+    mock_message_store.append_message = AsyncMock()
+    mock_message_store.get_messages = AsyncMock(return_value=[])
 
     execution = TurnExecution(
         tool_registry=mock_tool_registry,
@@ -374,6 +389,7 @@ async def test_streaming_thinking_within_budget_completes():
         policy=mock_policy,
         context_builder=mock_context_builder,
         session_store=mock_session_store,
+        message_store=mock_message_store,
         stream=True,
     )
 
@@ -431,7 +447,9 @@ async def test_streaming_thinking_abort_limit_enforced():
         yield StreamDelta(content="", finish_reason="stop")
 
     mock_inference.chat_stream = MagicMock(return_value=_stream())
-    mock_session_store.append_message = AsyncMock()
+    mock_message_store = MagicMock()
+    mock_message_store.append_message = AsyncMock()
+    mock_message_store.get_messages = AsyncMock(return_value=[])
 
     execution = TurnExecution(
         tool_registry=mock_tool_registry,
@@ -439,6 +457,7 @@ async def test_streaming_thinking_abort_limit_enforced():
         policy=mock_policy,
         context_builder=mock_context_builder,
         session_store=mock_session_store,
+        message_store=mock_message_store,
         stream=True,
     )
 

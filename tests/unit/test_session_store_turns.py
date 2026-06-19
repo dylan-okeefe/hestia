@@ -1,33 +1,56 @@
-"""Unit tests for Turn persistence in SessionStore."""
+"""Unit tests for Turn persistence."""
 
 from datetime import datetime
 
 import pytest
 
-from hestia.core.types import Message, SessionState
+from hestia.core.types import SessionState
+from hestia.orchestrator.handoff_service import HandoffService
+from hestia.orchestrator.mappers import turn_domain_to_dto
+from hestia.core.types import Message
 from hestia.orchestrator.types import Turn, TurnState, TurnTransition
 from hestia.persistence.db import Database
-from hestia.persistence.sessions import SessionStore
+from hestia.persistence.message_store import MessageStore
+from hestia.persistence.session_store import SessionStore
+from hestia.persistence.turn_store import TurnStore
 
 
 @pytest.fixture
-async def store(tmp_path):
-    """Create a SessionStore with temp database."""
+async def db(tmp_path):
+    """Create a connected temp database."""
     db_url = f"sqlite+aiosqlite:///{tmp_path}/test.db"
     db = Database(db_url)
     await db.connect()
     await db.create_tables()
-
-    store = SessionStore(db)
-    yield store
+    yield db
     await db.close()
+
+
+@pytest.fixture
+async def session_store(db):
+    return SessionStore(db)
+
+
+@pytest.fixture
+async def message_store(db):
+    return MessageStore(db)
+
+
+@pytest.fixture
+async def turn_store(db):
+    return TurnStore(db)
+
+
+@pytest.fixture
+async def handoff_service(session_store, message_store):
+    return HandoffService(session_store, message_store)
 
 
 class TestTurnPersistence:
     """Tests for Turn CRUD operations."""
 
     @pytest.mark.asyncio
-    async def test_insert_turn(self, store):
+    async def test_insert_turn(self, turn_store):
         """Can insert a turn and read it back."""
         turn = Turn(
             id="turn_123",
@@ -37,17 +60,17 @@ class TestTurnPersistence:
             started_at=datetime.now(),
         )
 
-        await store.insert_turn(turn)
+        await turn_store.insert_turn(turn_domain_to_dto(turn))
 
         # Read it back
-        fetched = await store.get_turn("turn_123")
+        fetched = await turn_store.get_turn("turn_123")
         assert fetched is not None
         assert fetched.id == "turn_123"
         assert fetched.session_id == "session_456"
-        assert fetched.state == TurnState.RECEIVED
+        assert fetched.state == TurnState.RECEIVED.value
 
     @pytest.mark.asyncio
-    async def test_insert_turn_persists_reasoning_budget(self, store):
+    async def test_insert_turn_persists_reasoning_budget(self, turn_store):
         """reasoning_budget is persisted and read back."""
         turn = Turn(
             id="turn_123",
@@ -58,14 +81,14 @@ class TestTurnPersistence:
             reasoning_budget=4096,
         )
 
-        await store.insert_turn(turn)
+        await turn_store.insert_turn(turn_domain_to_dto(turn))
 
-        fetched = await store.get_turn("turn_123")
+        fetched = await turn_store.get_turn("turn_123")
         assert fetched is not None
         assert fetched.reasoning_budget == 4096
 
     @pytest.mark.asyncio
-    async def test_update_turn(self, store):
+    async def test_update_turn(self, turn_store):
         """Can update a turn's state."""
         turn = Turn(
             id="turn_123",
@@ -74,21 +97,21 @@ class TestTurnPersistence:
             user_message=None,
             started_at=datetime.now(),
         )
-        await store.insert_turn(turn)
+        await turn_store.insert_turn(turn_domain_to_dto(turn))
 
         # Update the turn
         turn.state = TurnState.DONE
         turn.iterations = 3
         turn.error = None
-        await store.update_turn(turn)
+        await turn_store.update_turn(turn_domain_to_dto(turn))
 
         # Read it back
-        fetched = await store.get_turn("turn_123")
-        assert fetched.state == TurnState.DONE
-        assert fetched.iterations == 3
+        fetched = await turn_store.get_turn("turn_123")
+        assert fetched.state == TurnState.DONE.value
+        assert fetched.iteration == 3
 
     @pytest.mark.asyncio
-    async def test_append_transition(self, store):
+    async def test_append_transition(self, turn_store):
         """Can append transitions to a turn."""
         turn = Turn(
             id="turn_123",
@@ -97,7 +120,7 @@ class TestTurnPersistence:
             user_message=None,
             started_at=datetime.now(),
         )
-        await store.insert_turn(turn)
+        await turn_store.insert_turn(turn_domain_to_dto(turn))
 
         transition = TurnTransition(
             from_state=TurnState.RECEIVED,
@@ -105,22 +128,26 @@ class TestTurnPersistence:
             at=datetime.now(),
             note="Starting build",
         )
-        await store.append_transition("turn_123", transition)
+        from hestia.orchestrator.mappers import turn_transition_domain_to_dto
+
+        await turn_store.append_transition(
+            turn_transition_domain_to_dto("turn_123", transition)
+        )
 
         # Transitions are stored in DB but not auto-loaded by get_turn
         # Just verify no error was raised
 
     @pytest.mark.asyncio
-    async def test_get_nonexistent_turn(self, store):
+    async def test_get_nonexistent_turn(self, turn_store):
         """Getting a nonexistent turn returns None."""
-        fetched = await store.get_turn("nonexistent")
+        fetched = await turn_store.get_turn("nonexistent")
         assert fetched is None
 
     @pytest.mark.asyncio
-    async def test_list_turns_for_session(self, store):
+    async def test_list_turns_for_session(self, turn_store, session_store):
         """Can list turns for a session."""
         # Create session first
-        session = await store.get_or_create_session("test", "user1")
+        session = await session_store.get_or_create_session("test", "user1")
 
         # Insert some turns
         for i in range(3):
@@ -131,16 +158,16 @@ class TestTurnPersistence:
                 user_message=None,
                 started_at=datetime.now(),
             )
-            await store.insert_turn(turn)
+            await turn_store.insert_turn(turn_domain_to_dto(turn))
 
         # List turns
-        turns = await store.list_turns_for_session(session.id)
+        turns = await turn_store.list_turns_for_session(session.id)
         assert len(turns) == 3
 
     @pytest.mark.asyncio
-    async def test_list_turns_respects_limit(self, store):
+    async def test_list_turns_respects_limit(self, turn_store, session_store):
         """list_turns_for_session respects the limit parameter."""
-        session = await store.get_or_create_session("test", "user2")
+        session = await session_store.get_or_create_session("test", "user2")
 
         # Insert 5 turns
         for i in range(5):
@@ -151,17 +178,17 @@ class TestTurnPersistence:
                 user_message=None,
                 started_at=datetime.now(),
             )
-            await store.insert_turn(turn)
+            await turn_store.insert_turn(turn_domain_to_dto(turn))
 
         # List with limit
-        turns = await store.list_turns_for_session(session.id, limit=2)
+        turns = await turn_store.list_turns_for_session(session.id, limit=2)
         assert len(turns) == 2
 
     @pytest.mark.asyncio
-    async def test_list_turns_filters_by_session(self, store):
+    async def test_list_turns_filters_by_session(self, turn_store, session_store):
         """list_turns_for_session only returns turns for the specified session."""
-        session1 = await store.get_or_create_session("test", "user3")
-        session2 = await store.get_or_create_session("test", "user4")
+        session1 = await session_store.get_or_create_session("test", "user3")
+        session2 = await session_store.get_or_create_session("test", "user4")
 
         # Insert turns for different sessions
         turn1 = Turn(
@@ -178,66 +205,66 @@ class TestTurnPersistence:
             user_message=None,
             started_at=datetime.now(),
         )
-        await store.insert_turn(turn1)
-        await store.insert_turn(turn2)
+        await turn_store.insert_turn(turn_domain_to_dto(turn1))
+        await turn_store.insert_turn(turn_domain_to_dto(turn2))
 
         # List for session1 only
-        turns = await store.list_turns_for_session(session1.id)
+        turns = await turn_store.list_turns_for_session(session1.id)
         assert len(turns) == 1
         assert turns[0].id == "turn_a"
 
     @pytest.mark.asyncio
-    async def test_count_turns_for_sessions(self, store):
+    async def test_count_turns_for_sessions(self, turn_store, session_store):
         """count_turns_for_sessions returns correct counts for multiple sessions."""
-        session1 = await store.get_or_create_session("test", "user5")
-        session2 = await store.get_or_create_session("test", "user6")
+        session1 = await session_store.get_or_create_session("test", "user5")
+        session2 = await session_store.get_or_create_session("test", "user6")
 
         for i in range(3):
-            await store.insert_turn(
-                Turn(
-                    id=f"t1_{i}",
-                    session_id=session1.id,
-                    state=TurnState.DONE,
-                    user_message=None,
-                    started_at=datetime.now(),
+            await turn_store.insert_turn(
+                turn_domain_to_dto(
+                    Turn(
+                        id=f"t1_{i}",
+                        session_id=session1.id,
+                        state=TurnState.DONE,
+                        user_message=None,
+                        started_at=datetime.now(),
+                    )
                 )
             )
         for i in range(5):
-            await store.insert_turn(
-                Turn(
-                    id=f"t2_{i}",
-                    session_id=session2.id,
-                    state=TurnState.DONE,
-                    user_message=None,
-                    started_at=datetime.now(),
+            await turn_store.insert_turn(
+                turn_domain_to_dto(
+                    Turn(
+                        id=f"t2_{i}",
+                        session_id=session2.id,
+                        state=TurnState.DONE,
+                        user_message=None,
+                        started_at=datetime.now(),
+                    )
                 )
             )
 
-        counts = await store.count_turns_for_sessions([session1.id, session2.id])
+        counts = await turn_store.count_turns_for_sessions([session1.id, session2.id])
         assert counts[session1.id] == 3
         assert counts[session2.id] == 5
 
     @pytest.mark.asyncio
-    async def test_count_turns_for_sessions_empty(self, store):
-        assert await store.count_turns_for_sessions([]) == {}
+    async def test_count_turns_for_sessions_empty(self, turn_store):
+        assert await turn_store.count_turns_for_sessions([]) == {}
 
 
 class TestCreateSession:
     """Tests for create_session method."""
 
     @pytest.mark.asyncio
-    async def test_create_session_with_archive_creates_new(self, store):
+    async def test_create_session_with_archive_creates_new(self, session_store):
         """create_session(archive_previous=...) supersedes the old session."""
-        session1 = await store.get_or_create_session("cli", "testuser")
+        session1 = await session_store.get_or_create_session("cli", "testuser")
         original_id = session1.id
 
-        # Call create_session with archive_previous to atomically supersede.
-        # This is the only safe usage when an ACTIVE session exists for the
-        # user — leaving archive_previous=None would create a duplicate ACTIVE
-        # row, which the partial unique index ux_sessions_active_user (added
-        # in v0.8.0 to fix the get_or_create TOCTOU race) now correctly
-        # forbids.
-        session2 = await store.create_session("cli", "testuser", archive_previous=session1)
+        session2 = await session_store.create_session(
+            "cli", "testuser", archive_previous=session1
+        )
 
         assert session2.id != original_id
         assert session2.platform == "cli"
@@ -245,19 +272,19 @@ class TestCreateSession:
         assert session2.state == SessionState.ACTIVE
 
         # Old session row is preserved but ARCHIVED; new session is ACTIVE.
-        fetched1 = await store.get_session(session1.id)
-        fetched2 = await store.get_session(session2.id)
+        fetched1 = await session_store.get_session(session1.id)
+        fetched2 = await session_store.get_session(session2.id)
         assert fetched1 is not None
         assert fetched2 is not None
         assert fetched1.state == SessionState.ARCHIVED
         assert fetched2.state == SessionState.ACTIVE
 
     @pytest.mark.asyncio
-    async def test_create_session_same_user_new_identity(self, store):
+    async def test_create_session_same_user_new_identity(self, session_store):
         """create_session preserves user identity while creating fresh session."""
-        session1 = await store.get_or_create_session("matrix", "@user:matrix.org")
+        session1 = await session_store.get_or_create_session("matrix", "@user:matrix.org")
 
-        session2 = await store.create_session(
+        session2 = await session_store.create_session(
             "matrix", "@user:matrix.org", archive_previous=session1
         )
 
@@ -266,53 +293,48 @@ class TestCreateSession:
         assert session1.platform == session2.platform
 
     @pytest.mark.asyncio
-    async def test_create_session_without_archive_violates_unique_index(self, store):
-        """create_session(archive_previous=None) for an existing ACTIVE user fails.
-
-        Documents the post-hotfix contract: callers that want a fresh session
-        for a user with an existing ACTIVE row MUST pass ``archive_previous``
-        so the supersession happens in a single transaction. The partial
-        unique index ``ux_sessions_active_user`` rejects the second INSERT
-        otherwise.
-        """
+    async def test_create_session_without_archive_violates_unique_index(self, session_store):
+        """create_session(archive_previous=None) for an existing ACTIVE user fails."""
         from sqlalchemy.exc import IntegrityError
 
-        await store.get_or_create_session("cli", "duplicate-user")
+        await session_store.get_or_create_session("cli", "duplicate-user")
 
         with pytest.raises(IntegrityError):
-            await store.create_session("cli", "duplicate-user")
+            await session_store.create_session("cli", "duplicate-user")
 
     @pytest.mark.asyncio
-    async def test_create_session_archives_previous(self, store):
+    async def test_create_session_archives_previous(self, session_store):
         """create_session with archive_previous marks old session ARCHIVED."""
         # Create initial session
-        session1 = await store.get_or_create_session("cli", "testuser")
+        session1 = await session_store.get_or_create_session("cli", "testuser")
         assert session1.state == SessionState.ACTIVE
 
         # Create new session with archive_previous
-        session2 = await store.create_session("cli", "testuser", archive_previous=session1)
+        session2 = await session_store.create_session(
+            "cli", "testuser", archive_previous=session1
+        )
 
         # New session is ACTIVE
         assert session2.state == SessionState.ACTIVE
         assert session2.id != session1.id
 
         # Old session is now ARCHIVED
-        fetched1 = await store.get_session(session1.id)
+        fetched1 = await session_store.get_session(session1.id)
         assert fetched1.state == SessionState.ARCHIVED
 
     @pytest.mark.asyncio
-    async def test_get_or_create_skips_archived(self, store):
+    async def test_get_or_create_skips_archived(self, session_store):
         """get_or_create_session creates new session if existing is ARCHIVED."""
         # Create and then archive a session
-        session1 = await store.get_or_create_session("cli", "testuser")
-        await store.archive_session(session1.id)
+        session1 = await session_store.get_or_create_session("cli", "testuser")
+        await session_store.archive_session(session1.id)
 
         # Verify it's archived
-        fetched = await store.get_session(session1.id)
+        fetched = await session_store.get_session(session1.id)
         assert fetched.state == SessionState.ARCHIVED
 
         # get_or_create_session should create a new one, not return archived
-        session2 = await store.get_or_create_session("cli", "testuser")
+        session2 = await session_store.get_or_create_session("cli", "testuser")
         assert session2.id != session1.id
         assert session2.state == SessionState.ACTIVE
 
@@ -321,104 +343,117 @@ class TestArchiveSession:
     """Tests for archive_session method."""
 
     @pytest.mark.asyncio
-    async def test_archive_session_marks_archived(self, store):
+    async def test_archive_session_marks_archived(self, session_store):
         """archive_session transitions session to ARCHIVED state."""
-        session = await store.get_or_create_session("cli", "testuser")
+        session = await session_store.get_or_create_session("cli", "testuser")
         assert session.state == SessionState.ACTIVE
 
-        await store.archive_session(session.id)
+        await session_store.archive_session(session.id)
 
-        fetched = await store.get_session(session.id)
+        fetched = await session_store.get_session(session.id)
         assert fetched.state == SessionState.ARCHIVED
 
 
 class TestSessionHandoff:
-    """Tests for session handoff persistence and retrieval."""
+    """Tests for session handoff via HandoffService."""
 
     @pytest.mark.asyncio
-    async def test_archive_session_creates_handoff(self, store):
-        """archive_session generates a handoff record."""
-        session = await store.get_or_create_session("cli", "testuser")
-        await store.append_message(session.id, Message(role="user", content="Hello"))
-        await store.append_message(session.id, Message(role="assistant", content="Hi"))
+    async def test_generate_handoff_creates_handoff_message(
+        self, session_store, message_store, handoff_service
+    ):
+        """generate_handoff_summary archives the session and writes a handoff message."""
+        from hestia.core.types import Message
 
-        await store.archive_session(session.id, summary="Test summary")
-
-        handoff = await store.get_latest_handoff("cli", "testuser")
-        assert handoff is not None
-        assert handoff.previous_session_id == session.id
-        assert handoff.summary == "Test summary"
-        assert handoff.platform == "cli"
-        assert handoff.platform_user == "testuser"
-        assert len(handoff.key_messages) == 2
-
-    @pytest.mark.asyncio
-    async def test_archive_session_captures_last_eight_messages(self, store):
-        """archive_session only captures the last 8 user/assistant messages."""
-        session = await store.get_or_create_session("cli", "testuser")
-        for i in range(10):
-            await store.append_message(
-                session.id, Message(role="user", content=f"Message {i}")
-            )
-            await store.append_message(
-                session.id, Message(role="assistant", content=f"Reply {i}")
-            )
-
-        await store.archive_session(session.id)
-
-        handoff = await store.get_latest_handoff("cli", "testuser")
-        assert len(handoff.key_messages) == 8
-        assert handoff.key_messages[0]["content"] == "Message 6"
-        assert handoff.key_messages[-1]["content"] == "Reply 9"
-
-    @pytest.mark.asyncio
-    async def test_archive_session_extracts_artifact_handles(self, store):
-        """archive_session scans message content for artifact handles."""
-        session = await store.get_or_create_session("cli", "testuser")
-        await store.append_message(
+        session = await session_store.get_or_create_session("cli", "testuser")
+        await message_store.append_message(
             session.id,
-            Message(
-                role="assistant",
-                content="Result stored as artifact art_a1b2c3d4e5",
-            ),
+            Message(role="user", content="Hello"),
+        )
+        await message_store.append_message(
+            session.id,
+            Message(role="assistant", content="Hi"),
         )
 
-        await store.archive_session(session.id)
+        await handoff_service.generate_handoff_summary(session.id, summary="Test summary")
 
-        handoff = await store.get_latest_handoff("cli", "testuser")
-        assert "art_a1b2c3d4e5" in handoff.artifacts
+        fetched = await session_store.get_session(session.id)
+        assert fetched.state == SessionState.ARCHIVED
 
-    @pytest.mark.asyncio
-    async def test_get_latest_handoff_returns_none_when_empty(self, store):
-        """get_latest_handoff returns None if no handoffs exist."""
-        handoff = await store.get_latest_handoff("cli", "unknown")
-        assert handoff is None
-
-    @pytest.mark.asyncio
-    async def test_get_latest_handoff_most_recent(self, store):
-        """get_latest_handoff returns the most recent handoff."""
-        session1 = await store.get_or_create_session("cli", "testuser")
-        await store.archive_session(session1.id, summary="First")
-
-        session2 = await store.get_or_create_session("cli", "testuser")
-        await store.archive_session(session2.id, summary="Second")
-
-        handoff = await store.get_latest_handoff("cli", "testuser")
-        assert handoff is not None
-        assert handoff.summary == "Second"
-        assert handoff.previous_session_id == session2.id
+        handoffs = await handoff_service.get_recent_handoffs("cli", "testuser")
+        assert len(handoffs) == 1
+        assert "Test summary" in handoffs[0]["summary"]
+        assert session.id in handoffs[0]["session_id"]
 
     @pytest.mark.asyncio
-    async def test_get_or_create_session_with_handoff_injects_message(self, store):
-        """get_or_create_session_with_handoff prepends a synthetic system message."""
+    async def test_generate_handoff_captures_last_eight_messages(
+        self, session_store, message_store, handoff_service
+    ):
+        """Handoff message contains the last 8 user/assistant messages."""
+        from hestia.core.types import Message
+
+        session = await session_store.get_or_create_session("cli", "testuser")
+        for i in range(10):
+            await message_store.append_message(
+                session.id,
+                Message(role="user", content=f"Message {i}"),
+            )
+            await message_store.append_message(
+                session.id,
+                Message(role="assistant", content=f"Reply {i}"),
+            )
+
+        await handoff_service.generate_handoff_summary(session.id)
+
+        handoffs = await handoff_service.get_recent_handoffs("cli", "testuser")
+        assert len(handoffs) == 1
+        summary = handoffs[0]["summary"]
+        assert "Message 6" in summary
+        assert "Reply 9" in summary
+
+    @pytest.mark.asyncio
+    async def test_get_recent_handoffs_returns_none_when_empty(self, handoff_service):
+        """get_recent_handoffs returns empty list if no handoffs exist."""
+        handoffs = await handoff_service.get_recent_handoffs("cli", "unknown")
+        assert handoffs == []
+
+    @pytest.mark.asyncio
+    async def test_get_recent_handoffs_most_recent(
+        self, session_store, message_store, handoff_service
+    ):
+        """get_recent_handoffs returns the most recent handoff."""
+        session1 = await session_store.get_or_create_session("cli", "testuser")
+        await handoff_service.generate_handoff_summary(session1.id, summary="First")
+
+        session2 = await session_store.get_or_create_session("cli", "testuser")
+        await handoff_service.generate_handoff_summary(session2.id, summary="Second")
+
+        handoffs = await handoff_service.get_recent_handoffs("cli", "testuser")
+        assert len(handoffs) == 1
+        assert "Second" in handoffs[0]["summary"]
+        assert session2.id in handoffs[0]["session_id"]
+
+    @pytest.mark.asyncio
+    async def test_get_or_create_session_with_handoff_injects_message(
+        self, session_store, message_store, handoff_service
+    ):
+        """get_or_create_session_with_handoff prepends a synthetic handoff message."""
+        from hestia.core.types import Message
+
         # Archive a session with a handoff
-        old_session = await store.get_or_create_session("cli", "testuser")
-        await store.append_message(old_session.id, Message(role="user", content="Hello"))
-        await store.archive_session(old_session.id, summary="Prior context")
+        old_session = await session_store.get_or_create_session("cli", "testuser")
+        await message_store.append_message(
+            old_session.id,
+            Message(role="user", content="Hello"),
+        )
+        await handoff_service.generate_handoff_summary(
+            old_session.id, summary="Prior context"
+        )
 
         # Create a new session via the handoff-aware path
-        new_session = await store.get_or_create_session_with_handoff("cli", "testuser")
-        messages = await store.get_messages(new_session.id)
+        new_session = await handoff_service.get_or_create_session_with_handoff(
+            "cli", "testuser"
+        )
+        messages = await message_store.get_messages(new_session.id)
 
         assert len(messages) == 1
         assert messages[0].role == "user"
@@ -428,90 +463,128 @@ class TestSessionHandoff:
         assert "Hello" in messages[0].content
 
     @pytest.mark.asyncio
-    async def test_get_or_create_session_with_handoff_skips_existing(self, store):
+    async def test_get_or_create_session_with_handoff_skips_existing(
+        self, session_store, message_store, handoff_service
+    ):
         """get_or_create_session_with_handoff does not inject if session already has messages."""
+        from hestia.core.types import Message
+
         # Create and archive an old session with a handoff
-        old = await store.get_or_create_session("cli", "testuser")
-        await store.append_message(old.id, Message(role="user", content="Old msg"))
-        await store.archive_session(old.id, summary="Old")
+        old = await session_store.get_or_create_session("cli", "testuser")
+        await message_store.append_message(
+            old.id,
+            Message(role="user", content="Old msg"),
+        )
+        await handoff_service.generate_handoff_summary(old.id, summary="Old")
 
         # Create a new session and add a message to it
-        new_session = await store.get_or_create_session("cli", "testuser")
-        await store.append_message(new_session.id, Message(role="user", content="First"))
+        new_session = await session_store.get_or_create_session("cli", "testuser")
+        await message_store.append_message(
+            new_session.id,
+            Message(role="user", content="First"),
+        )
 
         # Calling get_or_create_session_with_handoff again should return the same
         # active session (it already has messages), so no handoff injection.
-        result = await store.get_or_create_session_with_handoff("cli", "testuser")
-        messages = await store.get_messages(result.id)
+        result = await handoff_service.get_or_create_session_with_handoff(
+            "cli", "testuser"
+        )
+        messages = await message_store.get_messages(result.id)
         assert len(messages) == 1
         assert messages[0].content == "First"
 
     @pytest.mark.asyncio
-    async def test_list_handoffs_for_identities(self, store):
+    async def test_list_handoffs_for_identities(
+        self, session_store, message_store, handoff_service
+    ):
         """list_handoffs_for_identities returns handoffs for multiple identities."""
-        # Create sessions and archive them for two different identities
-        session1 = await store.get_or_create_session("cli", "user1")
-        await store.append_message(session1.id, Message(role="user", content="Hello"))
-        await store.archive_session(session1.id, summary="First handoff")
+        from hestia.core.types import Message
 
-        session2 = await store.get_or_create_session("matrix", "@user:matrix.org")
-        await store.append_message(session2.id, Message(role="user", content="Hi"))
-        await store.archive_session(session2.id, summary="Second handoff")
+        session1 = await session_store.get_or_create_session("cli", "user1")
+        await message_store.append_message(
+            session1.id,
+            Message(role="user", content="Hello"),
+        )
+        await handoff_service.generate_handoff_summary(session1.id, summary="First handoff")
+
+        session2 = await session_store.get_or_create_session("matrix", "@user:matrix.org")
+        await message_store.append_message(
+            session2.id,
+            Message(role="user", content="Hi"),
+        )
+        await handoff_service.generate_handoff_summary(session2.id, summary="Second handoff")
 
         # Query for both identities
-        handoffs = await store.list_handoffs_for_identities(
+        handoffs = await handoff_service.list_handoffs_for_identities(
             [("cli", "user1"), ("matrix", "@user:matrix.org")], limit=3
         )
         assert len(handoffs) == 2
-        summaries = {h["summary"] for h in handoffs}
-        assert "First handoff" in summaries
-        assert "Second handoff" in summaries
+        summaries = [h["summary"] for h in handoffs]
+        assert any("First handoff" in s for s in summaries)
+        assert any("Second handoff" in s for s in summaries)
         # Should be ordered by created_at desc (most recent first)
-        assert handoffs[0]["summary"] == "Second handoff"
+        assert "Second handoff" in handoffs[0]["summary"]
 
     @pytest.mark.asyncio
-    async def test_list_handoffs_for_identities_empty(self, store):
+    async def test_list_handoffs_for_identities_empty(self, handoff_service):
         """list_handoffs_for_identities returns empty list for unknown identities."""
-        handoffs = await store.list_handoffs_for_identities(
+        handoffs = await handoff_service.list_handoffs_for_identities(
             [("cli", "unknown")], limit=3
         )
         assert handoffs == []
 
     @pytest.mark.asyncio
-    async def test_list_handoffs_for_identities_no_identities(self, store):
+    async def test_list_handoffs_for_identities_no_identities(self, handoff_service):
         """list_handoffs_for_identities returns empty list when given no identities."""
-        handoffs = await store.list_handoffs_for_identities([], limit=3)
+        handoffs = await handoff_service.list_handoffs_for_identities([], limit=3)
         assert handoffs == []
 
     @pytest.mark.asyncio
-    async def test_list_handoffs_for_identities_respects_limit(self, store):
+    async def test_list_handoffs_for_identities_respects_limit(
+        self, session_store, message_store, handoff_service
+    ):
         """list_handoffs_for_identities respects the limit parameter."""
         for i in range(5):
-            session = await store.get_or_create_session("cli", "user1")
-            await store.append_message(session.id, Message(role="user", content=f"Msg {i}"))
-            await store.archive_session(session.id, summary=f"Handoff {i}")
+            session = await session_store.get_or_create_session("cli", "user1")
+            await message_store.append_message(
+                session.id,
+                Message(role="user", content=f"Msg {i}"),
+            )
+            await handoff_service.generate_handoff_summary(
+                session.id, summary=f"Handoff {i}"
+            )
 
-        handoffs = await store.list_handoffs_for_identities(
+        handoffs = await handoff_service.list_handoffs_for_identities(
             [("cli", "user1")], limit=2
         )
         assert len(handoffs) == 2
 
     @pytest.mark.asyncio
-    async def test_create_session_with_archive_generates_handoff(self, store):
-        """create_session with archive_previous now calls archive_session and generates handoff."""
-        session1 = await store.get_or_create_session("cli", "testuser")
-        await store.append_message(session1.id, Message(role="user", content="Hi"))
+    async def test_create_session_with_archive_generates_handoff(
+        self, session_store, message_store, handoff_service
+    ):
+        """create_session with archive_previous archives and callers may generate handoff."""
+        from hestia.core.types import Message
 
-        session2 = await store.create_session("cli", "testuser", archive_previous=session1)
+        session1 = await session_store.get_or_create_session("cli", "testuser")
+        await message_store.append_message(
+            session1.id,
+            Message(role="user", content="Hi"),
+        )
+
+        session2 = await session_store.create_session(
+            "cli", "testuser", archive_previous=session1
+        )
 
         # Old session archived
-        fetched1 = await store.get_session(session1.id)
+        fetched1 = await session_store.get_session(session1.id)
         assert fetched1.state == SessionState.ARCHIVED
 
-        # Handoff generated
-        handoff = await store.get_latest_handoff("cli", "testuser")
-        assert handoff is not None
-        assert handoff.previous_session_id == session1.id
+        # Generate handoff explicitly
+        await handoff_service.generate_handoff_summary(session1.id)
+        handoffs = await handoff_service.get_recent_handoffs("cli", "testuser")
+        assert len(handoffs) == 1
+        assert session1.id in handoffs[0]["session_id"]
 
         # New session active
         assert session2.state == SessionState.ACTIVE

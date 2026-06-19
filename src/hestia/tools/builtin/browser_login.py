@@ -2,7 +2,9 @@
 
 import asyncio
 import logging
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
+from typing import Any
 from urllib.parse import urlparse
 
 from hestia.tools.browser.session_store import BrowserSessionStore, normalize_domain
@@ -86,9 +88,9 @@ async def browser_login(url: str) -> str:
 
             if elapsed - last_snapshot >= _SNAPSHOT_INTERVAL_SECONDS:
                 try:
-                    storage = await context.storage_state()
+                    storage: Mapping[str, Any] = await context.storage_state()
                     store.save_storage(domain, storage)
-                    cookies = await context.cookies()
+                    cookies: Sequence[Mapping[str, Any]] = await context.cookies()
                     store.save_cookies(domain, cookies)
                     last_snapshot = elapsed
                 except Exception as exc:

@@ -4,7 +4,9 @@ import pytest
 
 from hestia.core.inference import InferenceClient
 from hestia.core.types import Message
+from hestia.orchestrator.mappers import message_domain_to_dto, message_dto_to_domain
 from hestia.persistence.db import Database
+from hestia.persistence.message_store import MessageStore
 from hestia.persistence.sessions import SessionStore
 
 
@@ -90,20 +92,23 @@ async def test_session_store_roundtrip(tmp_path):
 
     try:
         store = SessionStore(db)
+        message_store = MessageStore(db)
         session = await store.get_or_create_session("telegram", "user123")
         assert session.id
         assert session.platform == "telegram"
 
-        await store.append_message(
+        await message_store.append_message(
             session.id,
-            Message(role="user", content="Hello"),
+            message_domain_to_dto(Message(role="user", content="Hello"), session.id, idx=0),
         )
-        await store.append_message(
+        await message_store.append_message(
             session.id,
-            Message(role="assistant", content="Hi there"),
+            message_domain_to_dto(
+                Message(role="assistant", content="Hi there"), session.id, idx=0
+            ),
         )
 
-        messages = await store.get_messages(session.id)
+        messages = await message_store.get_messages(session.id)
         assert len(messages) == 2
         assert messages[0].content == "Hello"
         assert messages[1].content == "Hi there"
@@ -122,14 +127,20 @@ async def test_end_to_end_smoke(tmp_path):
 
     try:
         store = SessionStore(db)
+        message_store = MessageStore(db)
         session = await store.get_or_create_session("cli", "smoke-test")
         user_msg = Message(
             role="user",
             content="What is 2+2? Answer with just the number.",
         )
-        await store.append_message(session.id, user_msg)
+        await message_store.append_message(
+            session.id, message_domain_to_dto(user_msg, session.id, idx=0)
+        )
 
-        history = await store.get_messages(session.id)
+        history = [
+            message_dto_to_domain(dto)
+            for dto in await message_store.get_messages(session.id)
+        ]
         response = await client.chat(
             messages=history,
             max_tokens=2500,  # > 2048 reasoning budget
@@ -143,9 +154,11 @@ async def test_end_to_end_smoke(tmp_path):
             content=response.content,
             reasoning_content=response.reasoning_content,
         )
-        await store.append_message(session.id, assistant_msg)
+        await message_store.append_message(
+            session.id, message_domain_to_dto(assistant_msg, session.id, idx=0)
+        )
 
-        final_history = await store.get_messages(session.id)
+        final_history = await message_store.get_messages(session.id)
         assert len(final_history) == 2
     finally:
         await db.close()

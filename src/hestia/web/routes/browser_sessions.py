@@ -42,6 +42,7 @@ class BrowserSessionOut(BaseModel):
     last_health_check: str | None
     health_status: str
     health_check_url: str
+    requires_headed: bool
 
 
 def _session_to_out(
@@ -63,6 +64,7 @@ def _session_to_out(
         else None,
         health_status=metadata.health_status if metadata else "unknown",
         health_check_url=metadata.health_check_url if metadata else "",
+        requires_headed=metadata.requires_headed if metadata else False,
     )
 
 
@@ -102,9 +104,15 @@ async def delete_browser_session(
 
 @router.post("/browser-sessions/{domain}/check")
 async def check_browser_session(
-    request: Request, domain: str, ctx: WebContext = _CTX_DEP
+    request: Request,
+    domain: str,
+    force: bool = False,
+    ctx: WebContext = _CTX_DEP,
 ) -> dict[str, str]:
-    """Run a health check on the browser session for the given domain."""
+    """Run a health check on the browser session for the given domain.
+
+    Set ``force=true`` to bypass the automatic once-per-hour rate limit.
+    """
     await require_admin(request, ctx)
     store = ctx.browser_session_store
     if store is None:
@@ -113,10 +121,35 @@ async def check_browser_session(
         )
     domain = normalize_domain(domain)
     try:
-        status = await store.check_health(domain)
+        status = await store.check_health(domain, force=force)
     except ValueError as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc
     return {"domain": domain, "status": status}
+
+
+class RequiresHeadedRequest(BaseModel):
+    """Request body to toggle the headed requirement for a domain."""
+
+    requires_headed: bool
+
+
+@router.patch("/browser-sessions/{domain}/requires-headed")
+async def set_requires_headed(
+    request: Request,
+    domain: str,
+    body: RequiresHeadedRequest,
+    ctx: WebContext = _CTX_DEP,
+) -> BrowserSessionOut:
+    """Persist whether this domain needs a headed (visible) browser."""
+    await require_admin(request, ctx)
+    store = ctx.browser_session_store
+    if store is None:
+        raise HTTPException(
+            status_code=503, detail="Browser session store not available"
+        )
+    domain = normalize_domain(domain)
+    store.update_metadata(domain, requires_headed=body.requires_headed)
+    return _session_to_out(store, domain)
 
 
 class StartBrowserSessionRequest(BaseModel):
@@ -177,6 +210,37 @@ async def stop_browser_session(
     return summary
 
 
+@router.post("/browser-sessions/restart-headed")
+async def restart_headed_browser_session(
+    request: Request,
+    ctx: WebContext = _CTX_DEP,
+) -> dict[str, Any]:
+    """Restart the active stream in headed (visible) mode.
+
+    Preserves the WebSocket session ID so connected clients keep receiving
+    frames after the browser relaunches.
+    """
+    await require_admin(request, ctx)
+    manager = ctx.stream_manager
+    if manager is None:
+        raise HTTPException(
+            status_code=503, detail="Stream manager not available"
+        )
+    if not manager.is_active():
+        raise HTTPException(status_code=404, detail="No active session")
+
+    session_id = manager.get_session_id()
+    if session_id is None:
+        raise HTTPException(status_code=404, detail="No active session")
+    await manager.restart_headed(session_id)
+    domain = manager._session.domain if manager._session else ""
+    return {
+        "session_id": session_id,
+        "domain": domain,
+        "ws_url": f"/api/browser-session/stream/{session_id}",
+    }
+
+
 @router.post("/browser-sessions/headed-login")
 async def headed_browser_login(
     request: Request,
@@ -207,11 +271,9 @@ async def browser_stream_ws(
     """WebSocket endpoint for bidirectional browser stream."""
     # Auth check before accept
     auth_header = websocket.headers.get("Authorization", "")
-    token: str | None = None
-    if auth_header.startswith("Bearer "):
-        token = auth_header[7:]
-    else:
-        token = websocket.query_params.get("token")
+    token: str | None = (
+        auth_header[7:] if auth_header.startswith("Bearer ") else websocket.query_params.get("token")
+    )
 
     ctx = get_web_context()
     if ctx.auth_manager is not None:

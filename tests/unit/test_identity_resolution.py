@@ -98,7 +98,8 @@ class TestGroupChatResolution:
             state=MagicMock(),
             temperature=MagicMock(),
         )
-        app.session_store.get_or_create_session_with_handoff = AsyncMock(
+        app.handoff_service = MagicMock()
+        app.handoff_service.get_or_create_session_with_handoff = AsyncMock(
             return_value=_session
         )
 
@@ -328,8 +329,9 @@ class TestGroupChatResolution:
                 platform_name="fake",
             )
 
-        call_kwargs = orchestrator.process_turn.call_args.kwargs
-        assert call_kwargs["resolved_user"] is None
+        # Unknown senders in group/room contexts are rejected before a turn is
+        # created, so process_turn is never called and no room is auto-registered.
+        assert orchestrator.process_turn.call_args is None
 
         room = await store.get_room_by_platform("fake", "room_3")
         assert room is None
@@ -392,15 +394,16 @@ class TestSystemPromptInjection:
         policy = MagicMock()
         policy.filter_tools = MagicMock(return_value=[])
 
-        session_store = MagicMock()
-        session_store.get_messages = AsyncMock(return_value=[])
-        session_store.append_message = AsyncMock()
+        message_store = MagicMock()
+        message_store.get_messages = AsyncMock(return_value=[])
+        message_store.append_message = AsyncMock()
 
         assembly = TurnAssembly(
             context_builder=builder,
             tool_registry=tools,
             policy=policy,
-            session_store=session_store,
+            session_store=MagicMock(),
+            message_store=message_store,
             proposal_store=None,
             style_store=None,
             style_config=None,

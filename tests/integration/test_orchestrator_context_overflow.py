@@ -11,6 +11,9 @@ from hestia.memory.store import MemoryStore
 from hestia.orchestrator.engine import Orchestrator
 from hestia.persistence.db import Database
 from hestia.persistence.failure_store import FailureStore
+from hestia.orchestrator.handoff_service import HandoffService
+from hestia.orchestrator.mappers import message_domain_to_dto
+from hestia.persistence.message_store import MessageStore
 from hestia.persistence.sessions import SessionStore
 from hestia.tools.registry import ToolRegistry
 
@@ -105,8 +108,15 @@ async def memory_store(db):
     yield store
 
 
+@pytest.fixture
+async def message_store(db):
+    return MessageStore(db)
+
+
 @pytest.mark.asyncio
-async def test_overflow_records_failure_and_warns(session_store, failure_store, memory_store):
+async def test_overflow_records_failure_and_warns(
+    session_store, message_store, failure_store, memory_store
+):
     """End-to-end: force context overflow, assert failure record and handoff summary."""
     from pathlib import Path
 
@@ -121,6 +131,9 @@ async def test_overflow_records_failure_and_warns(session_store, failure_store, 
         memory_store=memory_store,
         min_messages=2,
     )
+    handoff_service = HandoffService(
+        session_store, message_store, summarizer=summarizer
+    )
 
     orchestrator = Orchestrator(
         inference=inference,
@@ -129,16 +142,24 @@ async def test_overflow_records_failure_and_warns(session_store, failure_store, 
         tool_registry=registry,
         policy=policy,
         failure_store=failure_store,
-        handoff_summarizer=summarizer,
+        handoff_service=handoff_service,
     )
 
     session = await session_store.create_session("test", "user1")
 
     # Add enough messages to meet min_messages for handoff
-    await session_store.append_message(session.id, Message(role="user", content="Hello"))
-    await session_store.append_message(session.id, Message(role="assistant", content="Hi"))
-    await session_store.append_message(session.id, Message(role="user", content="Question"))
-    await session_store.append_message(session.id, Message(role="assistant", content="Answer"))
+    await message_store.append_message(
+        session.id, message_domain_to_dto(Message(role="user", content="Hello"), session.id, idx=0)
+    )
+    await message_store.append_message(
+        session.id, message_domain_to_dto(Message(role="assistant", content="Hi"), session.id, idx=0)
+    )
+    await message_store.append_message(
+        session.id, message_domain_to_dto(Message(role="user", content="Question"), session.id, idx=0)
+    )
+    await message_store.append_message(
+        session.id, message_domain_to_dto(Message(role="assistant", content="Answer"), session.id, idx=0)
+    )
 
     responses = []
 

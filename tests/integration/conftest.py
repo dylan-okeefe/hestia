@@ -9,7 +9,9 @@ from hestia.config import StorageConfig
 from hestia.context.builder import ContextBuilder
 from hestia.memory.store import MemoryStore
 from hestia.persistence.db import Database
-from hestia.persistence.sessions import SessionStore
+from hestia.persistence.message_store import MessageStore
+from hestia.persistence.session_store import SessionStore
+from hestia.persistence.turn_store import TurnStore
 from hestia.tools.registry import ToolRegistry
 
 
@@ -24,6 +26,18 @@ async def store(tmp_path):
     s = SessionStore(db)
     yield s
     await db.close()
+
+
+@pytest.fixture
+async def message_store(store):
+    """Create a MessageStore bound to the same database."""
+    return MessageStore(store._db)
+
+
+@pytest.fixture
+async def turn_store(store):
+    """Create a TurnStore bound to the same database."""
+    return TurnStore(store._db)
 
 
 @pytest.fixture

@@ -13,6 +13,7 @@ from typing import Any
 import click
 
 from hestia.artifacts.store import ArtifactStore
+from hestia.blocked_actions.digest import BlockedActionsDigest
 from hestia.config import HestiaConfig
 from hestia.context.builder import ContextBuilder
 from hestia.context.compressor import InferenceHistoryCompressor
@@ -27,15 +28,20 @@ from hestia.memory import MemoryEpochCompiler, MemoryStore
 from hestia.memory.handoff import SessionHandoffSummarizer
 from hestia.orchestrator import Orchestrator
 from hestia.orchestrator.engine import ConfirmCallback
+from hestia.orchestrator.handoff_service import HandoffService
+from hestia.persistence.capability_events import CapabilityEventStore
 from hestia.persistence.db import Database
 from hestia.persistence.error_resolution_store import ErrorResolutionStore
 from hestia.persistence.failure_store import FailureStore
 from hestia.persistence.job_alert_store import JobAlertStore
+from hestia.persistence.message_store import MessageStore
 from hestia.persistence.scheduler import SchedulerStore
-from hestia.persistence.sessions import SessionStore
+from hestia.persistence.session_store import SessionStore
 from hestia.persistence.trace_store import TraceStore
+from hestia.persistence.turn_store import TurnStore
 from hestia.persistence.users import UserStore
 from hestia.policy.default import DefaultPolicyEngine
+from hestia.policy.gate import CapabilityGate
 from hestia.reflection.runner import ReflectionRunner
 from hestia.reflection.scheduler import ReflectionScheduler
 from hestia.reflection.store import ProposalStore
@@ -50,6 +56,7 @@ from hestia.tools.builtin import (
     current_time,
     make_accept_proposal_tool,
     make_append_to_file_tool,
+    make_blocked_actions_summary_tool,
     make_create_scheduled_task_tool,
     make_defer_proposal_tool,
     make_delegate_task_tool,
@@ -175,7 +182,9 @@ class CliResponseHandler:
 class CliConfirmHandler:
     """Handles tool confirmation in CLI mode."""
 
-    async def __call__(self, tool_name: str, arguments: dict[str, Any]) -> bool:
+    async def __call__(
+        self, tool_name: str, arguments: dict[str, Any], request_token: str | None = None
+    ) -> bool:
         """Prompt user for confirmation."""
         click.echo(f"\nTool call requested: {tool_name}")
         click.echo(f"Arguments: {arguments}")
@@ -202,6 +211,11 @@ class AppContext:
         self.artifact_store = ArtifactStore(config.storage.artifacts_dir)
         self.event_bus = EventBus()
         self.session_store = SessionStore(self.db, event_bus=self.event_bus)
+        self.message_store = MessageStore(self.db)
+        self.turn_store = TurnStore(self.db)
+        self.handoff_service = HandoffService(
+            self.session_store, self.message_store, summarizer=None
+        )
         self.user_store = UserStore(self.db)
         self.policy = _make_policy(config)
         self.memory_store = MemoryStore(self.db)
@@ -212,12 +226,23 @@ class AppContext:
         self.execution_store = ExecutionStore(self.db)
         self.error_resolution_store = ErrorResolutionStore(self.db)
         self.job_alert_store = JobAlertStore(self.db)
+        self.capability_event_store = CapabilityEventStore(self.db)
+        self.blocked_actions_digest = BlockedActionsDigest(
+            self.capability_event_store,
+            self.session_store,
+        )
         self.trigger_registry: Any = None
         self.epoch_compiler = MemoryEpochCompiler(
             self.memory_store, max_tokens=self.config.memory.epoch_max_tokens
         )
         self.tool_registry = ToolRegistry(self.artifact_store)
         self.checkpoint_manager = CheckpointManager()
+        self.capability_gate = CapabilityGate(
+            config=config,
+            user_store=self.user_store,
+            registry=self.tool_registry,
+            event_store=self.capability_event_store,
+        )
 
         # Eager feature subsystems (lightweight; always available for status queries)
         self.proposal_store = ProposalStore(self.db)
@@ -380,13 +405,23 @@ class AppContext:
 
         checkpoint_scope = self.config.storage.checkpoint_scope or None
 
+        handoff_service = HandoffService(
+            self.session_store,
+            self.message_store,
+            summarizer=self.handoff_summarizer,
+        )
+
         return Orchestrator(
             inference=self.inference,
             session_store=self.session_store,
+            message_store=self.message_store,
+            turn_store=self.turn_store,
+            handoff_service=handoff_service,
             context_builder=self.context_builder,
             tool_registry=self.tool_registry,
             policy=self.policy,
             confirm_callback=self.confirm_callback,
+            capability_gate=self.capability_gate,
             max_iterations=self.config.max_iterations,
             max_tool_calls_per_turn=self.config.policy.max_tool_calls_per_turn,
             max_tokens=self.config.inference.max_tokens,
@@ -394,7 +429,6 @@ class AppContext:
             slot_manager=self.slot_manager,
             failure_store=self.failure_store,
             trace_store=self.trace_store,
-            handoff_summarizer=self.handoff_summarizer,
             injection_scanner=self.make_injection_scanner(),
             proposal_store=self.proposal_store,
             style_store=self.style_store,
@@ -427,6 +461,7 @@ class AppContext:
         reg.register(make_glob_tool(cfg.storage))
         reg.register(make_grep_tool(cfg.storage))
         reg.register(make_rollback_turn_tool(self.checkpoint_manager))
+        reg.register(make_blocked_actions_summary_tool(self.blocked_actions_digest))
         reg.register(make_search_memory_tool(self.memory_store))
         reg.register(make_save_memory_tool(self.memory_store))
         reg.register(make_list_memories_tool(self.memory_store))

@@ -300,13 +300,14 @@ class TestReadArtifact:
 
     @pytest.mark.asyncio
     async def test_reads_existing_artifact(self, tmp_path):
-        """Reads content of existing artifact."""
+        """Reads content of existing artifact with chunk metadata."""
         store = ArtifactStore(root=tmp_path)
         handle = store.store(b"artifact content", source_tool="test")
 
         read_tool = make_read_artifact_tool(store)
         result = await read_tool(handle)
-        assert result == "artifact content"
+        assert "bytes 0-16 of 16" in result
+        assert "artifact content" in result
 
     @pytest.mark.asyncio
     async def test_missing_artifact(self, tmp_path):

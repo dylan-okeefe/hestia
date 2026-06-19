@@ -223,7 +223,9 @@ class ToolRegistry:
                     "\"arguments\": {\"path\": \"<path>\", \"content\": \"# Notes\\n\"}}). "
                     "Each write_file or append_to_file call MUST have content shorter than 2000 characters. "
                     "For large files, first create the file with a short header using write_file, "
-                    "then add sections with append_to_file."
+                    "then add sections with append_to_file. "
+                    "When a tool result says it is stored as an artifact, use read_artifact "
+                    "with start_at/length to fetch the remaining content in chunks."
                 ),
                 parameters={
                     "type": "object",

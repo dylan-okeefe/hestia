@@ -100,6 +100,7 @@ class ScheduledTask:
     next_run_at: datetime | None
     last_error: str | None
     notify: bool = False
+    task_type: str = "chat"
 
     def __post_init__(self) -> None:
         if bool(self.cron_expression) and bool(self.fire_at):

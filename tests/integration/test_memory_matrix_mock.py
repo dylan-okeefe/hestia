@@ -37,7 +37,7 @@ def _make_session(session_id: str = "test_session") -> Session:
 
 
 @pytest.mark.asyncio
-async def test_save_memory(store, fake_policy, tool_registry, respond_callback):
+async def test_save_memory(store, message_store, fake_policy, tool_registry, respond_callback):
     """save_memory via call_tool stores a note."""
     responses = [
         ChatResponse(
@@ -87,14 +87,14 @@ async def test_save_memory(store, fake_policy, tool_registry, respond_callback):
         respond_callback=respond_callback,
     )
     assert turn.state == TurnState.DONE
-    messages = await store.get_messages(session.id)
+    messages = await message_store.get_messages(session.id)
     tool_msgs = [m.content for m in messages if m.role == "tool"]
     assert any("Saved memory mem_" in m for m in tool_msgs)
 
 
 @pytest.mark.asyncio
 async def test_list_memories_all(
-    store, fake_policy, tool_registry, memory_store, respond_callback
+    store, message_store, fake_policy, tool_registry, memory_store, respond_callback
 ):
     """list_memories returns all memories."""
     await memory_store.save("Alpha note", tags=["e2e_hestia_l11", "test"], platform="test", platform_user="user")
@@ -142,7 +142,7 @@ async def test_list_memories_all(
         respond_callback=respond_callback,
     )
     assert turn.state == TurnState.DONE
-    messages = await store.get_messages(session.id)
+    messages = await message_store.get_messages(session.id)
     tool_msgs = [m.content for m in messages if m.role == "tool"]
     assert any("Alpha note" in m for m in tool_msgs)
     assert any("Beta note" in m for m in tool_msgs)
@@ -150,7 +150,7 @@ async def test_list_memories_all(
 
 @pytest.mark.asyncio
 async def test_list_memories_by_tag(
-    store, fake_policy, tool_registry, memory_store, respond_callback
+    store, message_store, fake_policy, tool_registry, memory_store, respond_callback
 ):
     """list_memories filtered by tag returns matching subset."""
     await memory_store.save("Tagged item", tags=["e2e_hestia_l11"], platform="test", platform_user="user")
@@ -201,7 +201,7 @@ async def test_list_memories_by_tag(
         respond_callback=respond_callback,
     )
     assert turn.state == TurnState.DONE
-    messages = await store.get_messages(session.id)
+    messages = await message_store.get_messages(session.id)
     tool_msgs = [m.content for m in messages if m.role == "tool"]
     assert any("Tagged item" in m for m in tool_msgs)
     assert not any("Untagged item" in m for m in tool_msgs)
@@ -209,7 +209,7 @@ async def test_list_memories_by_tag(
 
 @pytest.mark.asyncio
 async def test_search_memory(
-    store, fake_policy, tool_registry, memory_store, respond_callback
+    store, message_store, fake_policy, tool_registry, memory_store, respond_callback
 ):
     """search_memory returns relevant matches."""
     await memory_store.save(
@@ -270,7 +270,7 @@ async def test_search_memory(
         respond_callback=respond_callback,
     )
     assert turn.state == TurnState.DONE
-    messages = await store.get_messages(session.id)
+    messages = await message_store.get_messages(session.id)
     tool_msgs = [m.content for m in messages if m.role == "tool"]
     assert any("Phoenix" in m for m in tool_msgs)
     assert not any("eggs" in m for m in tool_msgs)
@@ -278,7 +278,7 @@ async def test_search_memory(
 
 @pytest.mark.asyncio
 async def test_search_memory_no_results(
-    store, fake_policy, tool_registry, memory_store, respond_callback
+    store, message_store, fake_policy, tool_registry, memory_store, respond_callback
 ):
     """search_memory returns no-results message when query misses."""
     responses = [
@@ -326,6 +326,6 @@ async def test_search_memory_no_results(
         respond_callback=respond_callback,
     )
     assert turn.state == TurnState.DONE
-    messages = await store.get_messages(session.id)
+    messages = await message_store.get_messages(session.id)
     tool_msgs = [m.content for m in messages if m.role == "tool"]
     assert any("No memories found" in m for m in tool_msgs)

@@ -94,6 +94,7 @@ class WorkflowStore:
             "trigger_config": json.dumps(workflow.trigger_config),
             "owner_id": workflow.owner_id,
             "trust_level": workflow.trust_level,
+            "allow_listed_tools": json.dumps(sorted(workflow.allow_listed_tools)),
             "created_at": workflow.created_at,
             "updated_at": workflow.updated_at,
         }
@@ -109,6 +110,7 @@ class WorkflowStore:
                 "trigger_config",
                 "owner_id",
                 "trust_level",
+                "allow_listed_tools",
                 "updated_at",
             ],
         )
@@ -339,6 +341,13 @@ class WorkflowStore:
                 trigger_config = json.loads(row.trigger_config)
             except json.JSONDecodeError:
                 trigger_config = {}
+        allow_listed_tools: set[str] = set()
+        raw_allow = getattr(row, "allow_listed_tools", None)
+        if raw_allow:
+            try:
+                allow_listed_tools = set(json.loads(raw_allow))
+            except json.JSONDecodeError:
+                allow_listed_tools = set()
         return Workflow(
             id=row.id,
             name=row.name,
@@ -347,6 +356,7 @@ class WorkflowStore:
             trigger_config=trigger_config,
             owner_id=getattr(row, "owner_id", "") or "",
             trust_level=getattr(row, "trust_level", "paranoid") or "paranoid",
+            allow_listed_tools=allow_listed_tools,
             created_at=row.created_at,
             updated_at=row.updated_at,
         )

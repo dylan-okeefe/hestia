@@ -80,6 +80,10 @@ def _make_app() -> MagicMock:
     app.session_store.get_or_create_session_with_handoff = AsyncMock(
         return_value=_session
     )
+    app.handoff_service = MagicMock()
+    app.handoff_service.get_or_create_session_with_handoff = AsyncMock(
+        return_value=_session
+    )
     app.user_store = MagicMock()
     app.user_store.get_user_by_identity = AsyncMock(return_value=None)
     app.user_store.get_room_by_platform = AsyncMock(return_value=None)
@@ -138,7 +142,9 @@ class TestConfirmCallbacks:
             result = await callback("terminal", {"command": "ls"})
             assert result is True
             adapter.request_confirmation.assert_awaited_once_with(
-                "@alice", "terminal", {"command": "ls"}
+                "@alice", "terminal", {"command": "ls"},
+                requester_platform_user="@alice",
+                request_token=None,
             )
         finally:
             var.reset(token)
@@ -164,7 +170,9 @@ class TestConfirmCallbacks:
             result = await callback("terminal", {"command": "ls"})
             assert result is True
             adapter.request_confirmation.assert_awaited_once_with(
-                "!room:example.com", "terminal", {"command": "ls"}
+                "!room:example.com", "terminal", {"command": "ls"},
+                requester_platform_user="!room:example.com",
+                request_token=None,
             )
         finally:
             var.reset(token)

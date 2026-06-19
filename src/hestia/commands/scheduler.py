@@ -88,6 +88,9 @@ async def cmd_schedule_add(
         )
         click.echo(f"Created task: {task.id}")
         click.echo(f"  Session: {task.session_id}")
+        if platform is not None and platform_user is not None:
+            click.echo(f"  Platform: {platform}")
+            click.echo(f"  Platform user: {platform_user}")
         if task.cron_expression:
             click.echo(f"  Schedule: cron '{task.cron_expression}'")
         elif task.fire_at:
@@ -194,6 +197,7 @@ async def cmd_schedule_run(app: AppContext, task_id: str) -> None:
         response_callback=response_callback,
         system_prompt=app.config.system_prompt,
         notifier=notifier,
+        blocked_actions_digest=app.blocked_actions_digest,
     )
     try:
         await scheduler.run_now(task_id)
@@ -250,6 +254,7 @@ def cmd_schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None
             tick_interval_seconds=tick,
             system_prompt=app.config.system_prompt,
             notifier=notifier,
+            blocked_actions_digest=app.blocked_actions_digest,
         )
         await scheduler.start()
         click.echo(f"Scheduler daemon started (tick={tick}s). Press Ctrl-C to stop.")

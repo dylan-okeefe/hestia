@@ -5,10 +5,12 @@ from datetime import datetime, timedelta
 import pytest
 
 from hestia.core.types import Message
+from hestia.orchestrator.mappers import turn_domain_to_dto
 from hestia.orchestrator.types import Turn, TurnState
 from hestia.persistence.db import Database
 from hestia.persistence.scheduler import SchedulerStore
 from hestia.persistence.sessions import SessionStore
+from hestia.persistence.turn_store import TurnStore
 
 
 class TestSessionStoreQueries:
@@ -24,6 +26,11 @@ class TestSessionStoreQueries:
         await db.create_tables()
         yield store
         await db.close()
+
+    @pytest.fixture
+    async def turn_store(self, session_store):
+        """Create a TurnStore bound to the same database."""
+        return TurnStore(session_store._db)
 
     @pytest.mark.asyncio
     async def test_count_sessions_by_state_empty(self, session_store):
@@ -47,14 +54,16 @@ class TestSessionStoreQueries:
         assert counts["archived"] == 1
 
     @pytest.mark.asyncio
-    async def test_turn_stats_since_empty(self, session_store):
+    async def test_turn_stats_since_empty(self, turn_store):
         """No turns returns empty dict."""
         since = datetime.now() - timedelta(hours=24)
-        stats = await session_store.turn_stats_since(since)
+        stats = await turn_store.turn_stats_since(since)
         assert stats == {}
 
     @pytest.mark.asyncio
-    async def test_turn_stats_since_filters_by_time(self, session_store):
+    async def test_turn_stats_since_filters_by_time(
+        self, session_store, turn_store
+    ):
         """Only counts turns since the given time."""
         session = await session_store.create_session("cli", "user1")
 
@@ -68,16 +77,16 @@ class TestSessionStoreQueries:
             iterations=0,
             tool_calls_made=0,
         )
-        await session_store.insert_turn(turn)
+        await turn_store.insert_turn(turn_domain_to_dto(turn))
 
         # Query for last hour - should find it
         since = datetime.now() - timedelta(hours=1)
-        stats = await session_store.turn_stats_since(since)
+        stats = await turn_store.turn_stats_since(since)
         assert stats.get("done") == 1
 
         # Query for future - should not find it
         since = datetime.now() + timedelta(hours=1)
-        stats = await session_store.turn_stats_since(since)
+        stats = await turn_store.turn_stats_since(since)
         assert stats == {}
 
 

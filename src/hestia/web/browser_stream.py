@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 
 from fastapi import WebSocket
 
+from hestia.security.ssrf import SSRFBlockedError, assert_url_safe
 from hestia.tools.browser.session_store import BrowserSessionStore, normalize_domain
 from hestia.tools.browser.stealth import (
     STEALTH_LAUNCH_ARGS,
@@ -31,6 +32,7 @@ _TIMEOUT_SECONDS = 600  # 10 minutes
 class _StreamSession:
     session_id: str
     domain: str
+    url: str
     page: Any  # Playwright Page
     browser: Any  # Playwright Browser
     playwright: Any  # Playwright instance
@@ -77,6 +79,11 @@ class SessionStreamManager:
             if not domain:
                 raise ValueError(f"Invalid URL: {url}")
 
+            try:
+                await assert_url_safe(url)
+            except SSRFBlockedError as exc:
+                raise SSRFBlockedError(f"SSRF blocked: {exc}") from exc
+
             session_id = str(uuid.uuid4())
             playwright = None
             browser = None
@@ -120,6 +127,7 @@ class SessionStreamManager:
                 session = _StreamSession(
                     session_id=session_id,
                     domain=domain,
+                    url=url,
                     page=page,
                     browser=browser,
                     playwright=playwright,
@@ -186,6 +194,34 @@ class SessionStreamManager:
             except Exception:
                 logger.exception("Auto-stop failed for session %s", session_id)
 
+    async def _health_from_page(self, page: Any) -> str:
+        """Infer session health from the live stream page.
+
+        A login/auth URL or title means the session is expired; anything else
+        is treated as healthy because the stream itself is a real browser.
+        """
+        try:
+            url = getattr(page, "url", "")
+            if not isinstance(url, str):
+                return "stale"
+            url_lower = url.lower()
+            if any(path in url_lower for path in ("/login", "/signin", "/auth")):
+                return "expired"
+
+            title_coro = page.title()
+            if asyncio.iscoroutine(title_coro):
+                title = await title_coro
+                if isinstance(title, str) and any(
+                    phrase in title.lower()
+                    for phrase in ("sign in", "log in", "login")
+                ):
+                    return "expired"
+
+            return "healthy"
+        except Exception:
+            logger.exception("Failed to read stream page state")
+            return "stale"
+
     async def stop(self, session_id: str) -> dict[str, Any]:
         """Stop screencast, save cookies/storage, close browser. Returns save summary."""
         async with self._lock:
@@ -205,6 +241,14 @@ class SessionStreamManager:
             except Exception:
                 logger.exception("Failed to stop screencast")
 
+            # Infer health from the live page before we tear the browser down.
+            # A real browser stream is much more reliable than a headless health
+            # check for sites that block headless browsers.
+            health_status = await self._health_from_page(session.page)
+            health_check_url = getattr(session.page, "url", session.url)
+            if not isinstance(health_check_url, str):
+                health_check_url = session.url
+
             cookies: list[dict[str, Any]] = []
             storage_state: dict[str, Any] | None = None
             try:
@@ -218,7 +262,12 @@ class SessionStreamManager:
             if cookies:
                 self._store.save_cookies(session.domain, cookies)
 
-            self._store.update_metadata(session.domain, last_saved=datetime.now(UTC))
+            self._store.update_metadata(
+                session.domain,
+                last_saved=datetime.now(UTC),
+                health_status=health_status,
+                health_check_url=health_check_url,
+            )
 
             await self._cleanup(
                 session.playwright,
@@ -234,6 +283,86 @@ class SessionStreamManager:
                 "cookie_count": len(cookies),
                 "saved": True,
             }
+
+    async def restart_headed(self, session_id: str) -> None:
+        """Restart the active stream in a visible (headed) browser.
+
+        Keeps the same session ID and WebSocket clients. The current page
+        URL and storage state are preserved so the user can continue where
+        they left off.
+        """
+        async with self._lock:
+            if self._session is None or self._session.session_id != session_id:
+                raise ValueError("Session not found or ID mismatch")
+
+            session = self._session
+
+            try:
+                await session.cdp_session.send("Page.stopScreencast")
+            except Exception:
+                logger.exception("Failed to stop screencast before restart")
+
+            current_url = ""
+            storage_state: dict[str, Any] | None = None
+            try:
+                current_url = getattr(session.page, "url", session.url) or session.url
+                if not isinstance(current_url, str):
+                    current_url = session.url
+                storage_state = await session.context.storage_state()
+            except Exception:
+                logger.exception("Failed to capture state for headed restart")
+
+            try:
+                await session.context.close()
+                await session.browser.close()
+            except Exception:
+                logger.exception("Failed to close headless browser")
+
+            try:
+                browser = await session.playwright.chromium.launch(
+                    headless=False,
+                    args=STEALTH_LAUNCH_ARGS,
+                )
+                context = await browser.new_context(
+                    **stealth_context_kwargs(storage_state)
+                )
+                page = await context.new_page()
+                await apply_stealth_async(page)
+                await page.goto(
+                    current_url or session.url,
+                    wait_until="domcontentloaded",
+                )
+
+                cdp_session = await page.context.new_cdp_session(page)
+                await cdp_session.send(
+                    "Page.startScreencast",
+                    {
+                        "format": "jpeg",
+                        "quality": 80,
+                        "maxWidth": 1920,
+                        "maxHeight": 1080,
+                        "everyNthFrame": 1,
+                    },
+                )
+
+                def _on_frame(params: dict[str, Any]) -> None:
+                    asyncio.create_task(self._handle_frame(session, params))
+
+                cdp_session.on("Page.screencastFrame", _on_frame)
+
+                session.browser = browser
+                session.context = context
+                session.page = page
+                session.cdp_session = cdp_session
+
+                if self._timeout_task is not None:
+                    self._timeout_task.cancel()
+                self._timeout_task = asyncio.create_task(
+                    self._auto_stop(session_id)
+                )
+            except Exception:
+                logger.exception("Failed to restart stream in headed mode")
+                raise
 
     async def _cleanup(
         self, playwright: Any, browser: Any, context: Any, page: Any

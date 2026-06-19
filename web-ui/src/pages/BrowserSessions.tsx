@@ -1,12 +1,11 @@
-import { useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useApiQuery, useApiMutation } from '../hooks/useApi';
 import { useToast } from '../hooks/useToast';
 import {
   fetchBrowserSessions,
   deleteBrowserSession,
   checkBrowserSession,
-  headedLoginBrowserSession,
+  setBrowserSessionRequiresHeaded,
   type BrowserSession,
 } from '../api/client';
 import PageCard from '../components/layout/PageCard';
@@ -44,7 +43,6 @@ function statusLabel(status: string): string {
 
 export default function BrowserSessions() {
   const navigate = useNavigate();
-  const location = useLocation();
   const { addToast } = useToast();
   const {
     data: sessions,
@@ -54,22 +52,18 @@ export default function BrowserSessions() {
     refetch,
   } = useApiQuery<BrowserSession[]>('browser-sessions', fetchBrowserSessions);
 
-  useEffect(() => {
-    const state = location.state as { checkedDomain?: string } | null;
-    const domain = state?.checkedDomain;
-    if (domain) {
-      handleCheck(domain);
-      navigate(location.pathname, { replace: true, state: {} });
-    }
-  }, [location.state]);
-
-  const checkMut = useApiMutation(checkBrowserSession);
+  const checkMut = useApiMutation(
+    ({ domain, force }: { domain: string; force: boolean }) => checkBrowserSession(domain, force)
+  );
   const deleteMut = useApiMutation(deleteBrowserSession);
-  const headedLoginMut = useApiMutation(headedLoginBrowserSession);
+  const requiresHeadedMut = useApiMutation(
+    ({ domain, requires_headed }: { domain: string; requires_headed: boolean }) =>
+      setBrowserSessionRequiresHeaded(domain, requires_headed)
+  );
 
   const handleCheck = async (domain: string) => {
     try {
-      await checkMut.mutateAsync(domain);
+      await checkMut.mutateAsync({ domain, force: true });
       addToast({ message: `Health check passed for ${domain}`, type: 'success', duration: 3000 });
       refetch();
     } catch (err: any) {
@@ -92,21 +86,22 @@ export default function BrowserSessions() {
 
   const handleReauth = (session: BrowserSession) => {
     const targetUrl = session.health_check_url || `https://${session.domain}/`;
-    navigate(`/browser-sessions/stream?domain=${encodeURIComponent(session.domain)}&url=${encodeURIComponent(targetUrl)}`);
+    const params = new URLSearchParams({
+      domain: session.domain,
+      url: targetUrl,
+    });
+    if (session.requires_headed) {
+      params.set('headed', 'true');
+    }
+    navigate(`/browser-sessions/stream?${params.toString()}`);
   };
 
-  const handleHeadedReauth = (session: BrowserSession) => {
-    const targetUrl = session.health_check_url || `https://${session.domain}/`;
-    navigate(`/browser-sessions/stream?domain=${encodeURIComponent(session.domain)}&url=${encodeURIComponent(targetUrl)}&headed=true`);
-  };
-
-  const handleHeadedLogin = async (session: BrowserSession) => {
-    const targetUrl = session.health_check_url || `https://${session.domain}/`;
+  const handleRequiresHeadedChange = async (session: BrowserSession, checked: boolean) => {
     try {
-      const result = await headedLoginMut.mutateAsync(targetUrl);
-      addToast({ message: result.message, type: 'success', duration: 5000 });
+      await requiresHeadedMut.mutateAsync({ domain: session.domain, requires_headed: checked });
+      refetch();
     } catch (err: any) {
-      addToast({ message: err.message || 'Failed to launch headed browser', type: 'error', duration: 5000 });
+      addToast({ message: err.message || 'Failed to update headed preference', type: 'error', duration: 5000 });
     }
   };
 
@@ -148,6 +143,7 @@ export default function BrowserSessions() {
                 <th>Last Saved</th>
                 <th>Last Used</th>
                 <th>Last Checked</th>
+                <th>Headed</th>
                 <th className="text-right">Actions</th>
               </tr>
             </thead>
@@ -173,26 +169,25 @@ export default function BrowserSessions() {
                   <td data-label="Last Checked">
                     {s.last_health_check ? formatRelativeDate(s.last_health_check) : 'Never'}
                   </td>
+                  <td data-label="Headed">
+                    <input
+                      type="checkbox"
+                      checked={s.requires_headed}
+                      onChange={(e) => handleRequiresHeadedChange(s, e.target.checked)}
+                      disabled={requiresHeadedMut.isPending}
+                      title="Always use a headed (visible) browser for this site"
+                    />
+                  </td>
                   <td data-label="Actions" className="text-right">
                     <div className="browser-sessions-actions">
                       <button onClick={() => handleCheck(s.domain)} disabled={checkMut.isPending}>
                         Check Now
                       </button>
-                      <button onClick={() => handleReauth(s)}>
-                        Authenticate
-                      </button>
                       <button
-                        onClick={() => handleHeadedReauth(s)}
-                        title="Stream a real browser window for sites that block headless browsers"
+                        onClick={() => handleReauth(s)}
+                        title="Open a browser stream for this site; toggle headed mode on the next screen"
                       >
-                        Headed Stream
-                      </button>
-                      <button
-                        onClick={() => handleHeadedLogin(s)}
-                        disabled={headedLoginMut.isPending}
-                        title="Opens a real browser window on the server"
-                      >
-                        {headedLoginMut.isPending ? 'Launching…' : 'Headed Login'}
+                        Stream
                       </button>
                       <button
                         onClick={() => handleDelete(s.domain)}

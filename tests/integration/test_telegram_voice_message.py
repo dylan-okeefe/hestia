@@ -98,14 +98,16 @@ async def test_voice_message_full_pipeline(
     mock_update = _make_mock_update()
     mock_orchestrator = AsyncMock()
     mock_session_store = AsyncMock()
+    mock_handoff_service = AsyncMock()
     mock_session = MagicMock()
-    mock_session_store.get_or_create_session_with_handoff = AsyncMock(
+    mock_handoff_service.get_or_create_session_with_handoff = AsyncMock(
         return_value=mock_session
     )
 
     adapter.set_voice_deps(
         orchestrator=mock_orchestrator,
         session_store=mock_session_store,
+        handoff_service=mock_handoff_service,
         system_prompt="You are helpful.",
         voice_config=voice_config,
     )
@@ -140,7 +142,7 @@ async def test_voice_message_full_pipeline(
         await adapter._handle_voice_message(mock_update, None)
 
         # Assert session was retrieved
-        mock_session_store.get_or_create_session_with_handoff.assert_called_once_with(
+        mock_handoff_service.get_or_create_session_with_handoff.assert_called_once_with(
             "telegram", "12345", title=None
         )
 
@@ -177,14 +179,16 @@ async def test_voice_message_truncation_when_over_1mb(
     mock_update = _make_mock_update()
     mock_orchestrator = AsyncMock()
     mock_session_store = AsyncMock()
+    mock_handoff_service = AsyncMock()
     mock_session = MagicMock()
-    mock_session_store.get_or_create_session_with_handoff = AsyncMock(
+    mock_handoff_service.get_or_create_session_with_handoff = AsyncMock(
         return_value=mock_session
     )
 
     adapter.set_voice_deps(
         orchestrator=mock_orchestrator,
         session_store=mock_session_store,
+        handoff_service=mock_handoff_service,
         system_prompt="You are helpful.",
         voice_config=voice_config,
     )
@@ -272,6 +276,7 @@ async def test_voice_message_stt_failure(
     adapter.set_voice_deps(
         orchestrator=mock_orchestrator,
         session_store=mock_session_store,
+        handoff_service=AsyncMock(),
         system_prompt="You are helpful.",
         voice_config=voice_config,
     )

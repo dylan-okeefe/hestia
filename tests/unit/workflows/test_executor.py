@@ -12,6 +12,7 @@ from hestia.app import AppContext
 from hestia.config import HestiaConfig
 from hestia.core.types import ChatResponse, Message
 from hestia.persistence.db import Database
+from hestia.policy.gate import CapabilityResult
 from hestia.tools.capabilities import SHELL_EXEC, WRITE_LOCAL
 from hestia.tools.registry import ToolRegistry
 from hestia.tools.types import ToolCallResult
@@ -210,6 +211,7 @@ class TestTrustEnforcement:
         self,
         workflow_store: WorkflowStore,
         executor: WorkflowExecutor,
+        app: AppContext,
     ) -> None:
         """Paranoid trust level blocks shell_exec capability."""
         wf = Workflow(id="wf_1", name="Unsafe", trust_level="paranoid")
@@ -230,11 +232,23 @@ class TestTrustEnforcement:
         )
         await workflow_store.save_version(version)
 
+        # Simulate the capability gate denying the destructive tool on the
+        # unattended WORKFLOW channel.
+        app.capability_gate.check = AsyncMock(  # type: ignore[method-assign]
+            return_value=CapabilityResult(
+                allowed=False,
+                auto_approved=False,
+                requires_confirmation=False,
+                reason="not_allow_listed",
+            )
+        )
+
         result = await executor.execute("wf_1", {})
 
         assert result.status == "failed"
         assert result.node_results[0].node_id == "n1"
-        assert "denies capabilities" in result.node_results[0].error
+        assert "[CATEGORY: BLOCKED]" in result.node_results[0].error
+        assert "Capability gate denied" in result.node_results[0].error
 
     @pytest.mark.asyncio
     async def test_household_allows_write_local(

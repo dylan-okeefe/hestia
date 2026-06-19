@@ -14,7 +14,7 @@ from hestia.persistence.schema import sessions
 
 if TYPE_CHECKING:
     from hestia.config import StyleConfig
-    from hestia.persistence.sessions import SessionStore
+    from hestia.persistence.session_store import SessionStore
     from hestia.style.builder import StyleProfileBuilder
 logger = logging.getLogger(__name__)
 class StyleScheduler:

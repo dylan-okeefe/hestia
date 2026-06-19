@@ -19,6 +19,13 @@ You are the **orchestrator**, not the primary builder. Your job is to run the lo
 
 You only implement directly when a fix is trivial (single-line, typo, import fix) and validating/fixing via subagent would take longer than just doing it.
 
+## Mandatory policy: difficult work cannot be skipped
+
+Anything explicitly called for in the planning document, spec, decision record, or loop scope is **mandatory**. If a piece is too large or daunting to finish in the current loop, the only acceptable response is to break it into one or more **additional named loops** and flag it in the handoff and `KIMI_CURRENT.md` (or the active tracking file if `KIMI_CURRENT.md` does not exist). Quietly omitting specified work, or implementing only the easy parts, is a **loop failure** even if tests pass.
+
+### Handoff accounting
+Every handoff must include an explicit per-item accounting: each spec/decision item is mapped to either **done** or **deferred to loop LXXX**. A specified item that is neither implemented nor explicitly deferred is a blocker — do not declare the loop complete.
+
 Dylan handles: final approval, secrets, and merges/pushes to `main`. When Dylan explicitly authorizes it for a task, Kimi may merge feature branches into `develop`, push `develop`, and create and push release tags.
 
 ## Workflow modes
@@ -56,17 +63,18 @@ All three must pass before advancing. If ruff has pre-existing baseline issues, 
 
 Before declaring a chunk done, verify:
 
-1. **§0 cleanup items are addressed** — If the spec has a `## Review carry-forward` section, every bullet must be checked off or fixed.
-2. **Config fields are wired** — Every new config field is read somewhere (CLI, adapter, or runner).
-3. **Import changes don't break downstream** — When `__init__.py` exports change, grep for test files that import from that package.
-4. **Migrations match schema** — Hestia bootstraps via `create_tables()` from the declarative schema in `src/hestia/persistence/schema.py` and applies additive idempotent runtime migrations in `src/hestia/persistence/migrations/`. If schema changed, ensure the runtime bootstrap path creates the new table/column and the runtime migration is idempotent; Alembic files exist for reference only and are not the production path.
-5. **Store methods reach the CLI** — If a store gains a new method, the CLI command that should call it actually does.
-6. **In-memory state has a DB fallback** — Any dict cache needs persistence on restart.
-7. **Tests cover the change** — New code has tests; existing tests still pass.
-8. **Type safety** — `mypy` reports 0 errors in changed files.
-9. **No sync I/O in async paths** — Wrap sync calls with `asyncio.to_thread` or use async-native APIs.
-10. **No bare excepts** — Narrow exception clauses; log unexpected ones.
-11. **No leaked API keys or secrets** — Scan for hardcoded tokens, passwords, or API keys in changed files and logs. Run:
+1. **No specified work is silently dropped** — Before declaring a loop done, compare the diff against the spec/decision/loop docs item by item. Every item is either implemented or explicitly carried into a named follow-up loop. A specified item that is neither is a blocker, not a completed loop.
+2. **§0 cleanup items are addressed** — If the spec has a `## Review carry-forward` section, every bullet must be checked off or fixed.
+3. **Config fields are wired** — Every new config field is read somewhere (CLI, adapter, or runner).
+4. **Import changes don't break downstream** — When `__init__.py` exports change, grep for test files that import from that package.
+5. **Migrations match schema** — Hestia bootstraps via `create_tables()` from the declarative schema in `src/hestia/persistence/schema.py` and applies additive idempotent runtime migrations in `src/hestia/persistence/migrations/`. If schema changed, ensure the runtime bootstrap path creates the new table/column and the runtime migration is idempotent; Alembic files exist for reference only and are not the production path.
+6. **Store methods reach the CLI** — If a store gains a new method, the CLI command that should call it actually does.
+7. **In-memory state has a DB fallback** — Any dict cache needs persistence on restart.
+8. **Tests cover the change** — New code has tests; existing tests still pass.
+9. **Type safety** — `mypy` reports 0 errors in changed files.
+10. **No sync I/O in async paths** — Wrap sync calls with `asyncio.to_thread` or use async-native APIs.
+11. **No bare excepts** — Narrow exception clauses; log unexpected ones.
+12. **No leaked API keys or secrets** — Scan for hardcoded tokens, passwords, or API keys in changed files and logs. Run:
     ```bash
     git diff --cached -p | grep -iE "(api[_-]?key|token|secret|password|bearer)\s*[:=]\s*[\"'][a-zA-Z0-9_-]{20,}"
     git diff --cached --name-only | xargs grep -iE "[0-9]+:[A-Za-z0-9_-]{35}" 2>/dev/null

@@ -176,7 +176,7 @@ async def cmd_status(app: AppContext) -> None:
     # 3. Turns in last 24h
     click.echo("\nTurns (last 24h):")
     since = utcnow() - timedelta(hours=24)
-    turn_stats = await app.session_store.turn_stats_since(since)
+    turn_stats = await app.turn_store.turn_stats_since(since)
     if turn_stats:
         for state, count in sorted(turn_stats.items()):
             click.echo(f"  {state}: {count}")

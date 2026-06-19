@@ -5,7 +5,9 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from hestia.core.clock import utcnow
+from hestia.orchestrator.mappers import message_domain_to_dto, message_dto_to_domain
 from hestia.orchestrator.types import TransitionCallback, TurnContext, TurnState
+from hestia.persistence.message_store import MessageStore
 from hestia.style.context import format_style_prefix_from_data
 
 if TYPE_CHECKING:
@@ -13,7 +15,8 @@ if TYPE_CHECKING:
     from hestia.context.builder import ContextBuilder
     from hestia.core.types import Session
     from hestia.inference.slot_manager import SlotManager
-    from hestia.persistence.sessions import SessionStore
+    from hestia.persistence.message_store import MessageStore
+    from hestia.persistence.session_store import SessionStore
     from hestia.policy.engine import PolicyEngine
     from hestia.reflection.store import ProposalStore
     from hestia.style.store import StyleProfileStore
@@ -32,6 +35,7 @@ class TurnAssembly:
         tool_registry: "ToolRegistry",
         policy: "PolicyEngine",
         session_store: "SessionStore",
+        message_store: "MessageStore | None" = None,
         proposal_store: "ProposalStore | None" = None,
         style_store: "StyleProfileStore | None" = None,
         style_config: "StyleConfig | None" = None,
@@ -41,6 +45,7 @@ class TurnAssembly:
         self._tools = tool_registry
         self._policy = policy
         self._store = session_store
+        self._message_store = message_store or MessageStore(session_store._db)
         self._proposal_store = proposal_store
         self._style_store = style_store
         self._style_config = style_config
@@ -58,9 +63,13 @@ class TurnAssembly:
         ctx.allowed_tools = self._policy.filter_tools(
             session, all_tool_names, self._tools
         )
-        history = await self._store.get_messages(session.id)
-        await self._store.append_message(session.id, ctx.user_message)
-        ctx.running_history = history + [ctx.user_message]
+        history = await self._message_store.get_messages(session.id)
+        history_domain = [message_dto_to_domain(dto) for dto in history]
+        await self._message_store.append_message(
+            session.id,
+            message_domain_to_dto(ctx.user_message, session.id, idx=0),
+        )
+        ctx.running_history = history_domain + [ctx.user_message]
 
         effective_system_prompt = ctx.system_prompt
         if self._proposal_store is not None and not history:
@@ -113,7 +122,7 @@ class TurnAssembly:
         self._builder.set_style_prefix(style_prefix)
         ctx.build_result = await self._builder.build(
             session=session,
-            history=history,
+            history=history_domain,
             system_prompt=effective_system_prompt,
             tools=ctx.tools,
             new_user_message=ctx.user_message,

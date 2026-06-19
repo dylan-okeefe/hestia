@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { startBrowserStream, stopBrowserStream, getAuthToken } from '../api/client';
+import { startBrowserStream, stopBrowserStream, restartHeadedBrowserStream, getAuthToken } from '../api/client';
 import { useApiMutation } from '../hooks/useApi';
 import { useToast } from '../hooks/useToast';
 import PageCard from '../components/layout/PageCard';
@@ -44,6 +44,7 @@ export default function BrowserStream() {
 
   const startMut = useApiMutation(startBrowserStream);
   const stopMut = useApiMutation(stopBrowserStream);
+  const restartHeadedMut = useApiMutation(restartHeadedBrowserStream);
 
   const startTimeRef = useRef<number | null>(null);
   const autoStartedRef = useRef(false);
@@ -149,7 +150,6 @@ export default function BrowserStream() {
   };
 
   const handleDone = async () => {
-    const domain = session?.domain;
     stoppingRef.current = true;
     try {
       await stopMut.mutateAsync(undefined as unknown as string);
@@ -159,7 +159,7 @@ export default function BrowserStream() {
     } finally {
       closeWs();
       clearTimer();
-      navigate('/browser-sessions', { state: domain ? { checkedDomain: domain } : undefined });
+      navigate('/browser-sessions');
     }
   };
 
@@ -173,6 +173,16 @@ export default function BrowserStream() {
       closeWs();
       clearTimer();
       navigate('/browser-sessions');
+    }
+  };
+
+  const handleRestartHeaded = async () => {
+    try {
+      await restartHeadedMut.mutateAsync(undefined as unknown as string);
+      setHeaded(true);
+      addToast({ message: 'Switched to headed browser', type: 'success', duration: 3000 });
+    } catch (err: any) {
+      addToast({ message: err.message || 'Failed to switch to headed browser', type: 'error', duration: 5000 });
     }
   };
 
@@ -360,6 +370,15 @@ export default function BrowserStream() {
       </form>
 
       <div className="browser-stream-controls">
+        {!headed && (
+          <button
+            onClick={handleRestartHeaded}
+            disabled={restartHeadedMut.isPending || stopMut.isPending}
+            title="Relaunch this stream as a visible browser window"
+          >
+            {restartHeadedMut.isPending ? 'Switching…' : 'Use Headed'}
+          </button>
+        )}
         <button onClick={handleDone} disabled={stopMut.isPending}>
           {stopMut.isPending ? 'Stopping…' : 'Done'}
         </button>
