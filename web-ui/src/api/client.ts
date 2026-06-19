@@ -629,6 +629,13 @@ export interface StreamSession {
   ws_url: string;
 }
 
+export async function fetchActiveBrowserStream(): Promise<StreamSession | null> {
+  const res = await apiFetch(`${API_BASE}/browser-sessions/active`);
+  if (!res.ok) throw new Error('Failed to fetch active browser stream');
+  const data = await res.json();
+  return data.active ?? null;
+}
+
 export async function startBrowserStream(payload: { url: string; headed?: boolean }): Promise<StreamSession> {
   const res = await apiFetch(`${API_BASE}/browser-sessions/start`, {
     method: 'POST',

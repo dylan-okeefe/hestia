@@ -3,10 +3,13 @@ import { useApiQuery, useApiMutation } from '../hooks/useApi';
 import { useToast } from '../hooks/useToast';
 import {
   fetchBrowserSessions,
+  fetchActiveBrowserStream,
   deleteBrowserSession,
   checkBrowserSession,
   setBrowserSessionRequiresHeaded,
+  stopBrowserStream,
   type BrowserSession,
+  type StreamSession,
 } from '../api/client';
 import PageCard from '../components/layout/PageCard';
 import LoadingSkeleton from '../components/layout/LoadingSkeleton';
@@ -51,11 +54,19 @@ export default function BrowserSessions() {
     error,
     refetch,
   } = useApiQuery<BrowserSession[]>('browser-sessions', fetchBrowserSessions);
+  const {
+    data: activeStream,
+    isLoading: isLoadingActive,
+    refetch: refetchActive,
+  } = useApiQuery<StreamSession | null>('browser-sessions-active', fetchActiveBrowserStream, {
+    refetchInterval: 5000,
+  });
 
   const checkMut = useApiMutation(
     ({ domain, force }: { domain: string; force: boolean }) => checkBrowserSession(domain, force)
   );
   const deleteMut = useApiMutation(deleteBrowserSession);
+  const stopStreamMut = useApiMutation(stopBrowserStream);
   const requiresHeadedMut = useApiMutation(
     ({ domain, requires_headed }: { domain: string; requires_headed: boolean }) =>
       setBrowserSessionRequiresHeaded(domain, requires_headed)
@@ -81,6 +92,20 @@ export default function BrowserSessions() {
       refetch();
     } catch (err: any) {
       addToast({ message: err.message || 'Delete failed', type: 'error', duration: 5000 });
+    }
+  };
+
+  const handleStopStream = async () => {
+    if (!window.confirm('End the active browser stream?')) {
+      return;
+    }
+    try {
+      await stopStreamMut.mutateAsync();
+      addToast({ message: 'Stream ended', type: 'success', duration: 3000 });
+      refetchActive();
+      refetch();
+    } catch (err: any) {
+      addToast({ message: err.message || 'Failed to end stream', type: 'error', duration: 5000 });
     }
   };
 
@@ -113,6 +138,32 @@ export default function BrowserSessions() {
           + New Session
         </button>
       </div>
+
+      {!isLoadingActive && activeStream && (
+        <div className="browser-sessions-active-banner">
+          <div className="browser-sessions-active-banner__content">
+            <span className="browser-sessions-active-banner__dot" />
+            <span>
+              Active stream on <strong>{activeStream.domain}</strong>
+            </span>
+          </div>
+          <div className="browser-sessions-active-banner__actions">
+            <button
+              onClick={() => navigate(`/browser-sessions/stream?domain=${encodeURIComponent(activeStream.domain)}`)}
+              className="button--secondary"
+            >
+              View Stream
+            </button>
+            <button
+              onClick={handleStopStream}
+              disabled={stopStreamMut.isPending}
+              className="button--danger"
+            >
+              End Session
+            </button>
+          </div>
+        </div>
+      )}
 
       {isLoading && (
         <PageCard>

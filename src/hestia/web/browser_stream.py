@@ -59,6 +59,17 @@ class SessionStreamManager:
         """Return the active session ID, or None."""
         return self._session.session_id if self._session is not None else None
 
+    def get_active_session(self) -> dict[str, Any] | None:
+        """Return metadata for the active session, or None."""
+        if self._session is None:
+            return None
+        return {
+            "session_id": self._session.session_id,
+            "domain": self._session.domain,
+            "url": self._session.url,
+            "started_at": self._session.started_at.isoformat(),
+        }
+
     async def start(self, url: str, headed: bool = False) -> str:
         """Launch browser, navigate to URL, start screencast. Returns session_id.
 

@@ -159,6 +159,22 @@ class StartBrowserSessionRequest(BaseModel):
     headed: bool = False
 
 
+@router.get("/browser-sessions/active")
+async def get_active_browser_session(
+    request: Request,
+    ctx: WebContext = _CTX_DEP,
+) -> dict[str, Any]:
+    """Return the active browser streaming session, or None."""
+    await require_admin(request, ctx)
+    manager = ctx.stream_manager
+    if manager is None:
+        raise HTTPException(
+            status_code=503, detail="Stream manager not available"
+        )
+    active = manager.get_active_session()
+    return {"active": active}
+
+
 @router.post("/browser-sessions/start")
 async def start_browser_session(
     request: Request,
