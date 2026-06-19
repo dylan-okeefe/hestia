@@ -229,6 +229,24 @@ session_handoffs = sa.Table(
     sa.Index("idx_handoffs_platform_user", "platform", "platform_user", "created_at"),
 )
 
+compaction_archive = sa.Table(
+    "compaction_archive",
+    metadata,
+    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+    sa.Column("session_id", sa.String, sa.ForeignKey("sessions.id"), nullable=False),
+    sa.Column("original_idx", sa.Integer, nullable=False),
+    sa.Column("role", sa.String, nullable=False),
+    sa.Column("content", sa.Text, nullable=False),
+    sa.Column("tool_calls", sa.Text, nullable=True),  # JSON
+    sa.Column("tool_call_id", sa.String, nullable=True),
+    sa.Column("reasoning_content", sa.Text, nullable=True),
+    sa.Column("is_handoff", sa.Boolean, nullable=False, default=False),
+    sa.Column("correction", sa.Boolean, nullable=False, default=False),
+    sa.Column("created_at", sa.DateTime, nullable=False),
+    sa.Column("compacted_at", sa.DateTime, nullable=False),
+    sa.Index("idx_compaction_archive_session", "session_id", "original_idx"),
+)
+
 workflow_executions = sa.Table(
     "workflow_executions",
     metadata,

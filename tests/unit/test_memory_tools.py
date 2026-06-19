@@ -187,3 +187,19 @@ class TestSearchMemoryTool:
         memories = await store.list_memories()
         assert len(memories) == 1
         assert memories[0].session_id is None
+
+    @pytest.mark.asyncio
+    async def test_save_memory_rejects_junk_content(self, tools):
+        """save_memory returns a graceful rejection message for junk content."""
+        store, _, save_tool, _ = tools
+        result = await save_tool("<tool_call>search_memory</tool_call>")
+        assert "rejected" in result.lower()
+        assert await store.count() == 0
+
+    @pytest.mark.asyncio
+    async def test_save_memory_accepts_clean_fact(self, tools):
+        """save_memory stores clean prose facts normally."""
+        store, _, save_tool, _ = tools
+        result = await save_tool("The user prefers remote roles.", tags="preference")
+        assert "Saved memory" in result
+        assert await store.count() == 1

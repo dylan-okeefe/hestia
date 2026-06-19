@@ -15,12 +15,12 @@ from hestia.config import HestiaConfig
 from hestia.core.types import Message, ScheduledTask, Session, SessionState
 from hestia.orchestrator.engine import ConfirmCallback
 from hestia.orchestrator.finalization import sanitize_user_error
-from hestia.policy.channel import Channel
 from hestia.persistence.scheduler import SchedulerStore
 from hestia.persistence.session_store import SessionStore
 from hestia.platforms.base import Platform
 from hestia.platforms.matrix_adapter import MatrixAdapter
 from hestia.platforms.telegram_adapter import TelegramAdapter
+from hestia.policy.channel import Channel
 from hestia.scheduler import Scheduler
 
 logger = logging.getLogger(__name__)
@@ -349,9 +349,11 @@ async def run_platform(
             voice_config=config.voice if config.telegram.voice_messages else None,
         )
         adapter.register_reset_callback(_reset_callback)
+        adapter.set_compactor(app.compactor)
     elif isinstance(adapter, MatrixAdapter):
         adapter.set_session_store(app.session_store)
         adapter.register_reset_callback(_reset_callback)
+        adapter.set_compactor(app.compactor)
 
     # Recover stale turns from previous crash
     recovered = await orchestrator.recover_stale_turns()

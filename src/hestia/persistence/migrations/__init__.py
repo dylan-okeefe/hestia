@@ -229,6 +229,38 @@ async def m007_scheduled_task_type(conn: AsyncConnection) -> None:
         )
 
 
+async def m008_compaction_archive(conn: AsyncConnection) -> None:
+    """Add compaction_archive table for recoverable /compact history.
+
+    Archives every message replaced by a compaction so the original history
+    remains recoverable. Indexed by session for efficient retrieval.
+    """
+    await conn.execute(
+        sa.text(
+            "CREATE TABLE IF NOT EXISTS compaction_archive ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            "session_id TEXT NOT NULL,"
+            "original_idx INTEGER NOT NULL,"
+            "role TEXT NOT NULL,"
+            "content TEXT NOT NULL,"
+            "tool_calls TEXT,"
+            "tool_call_id TEXT,"
+            "reasoning_content TEXT,"
+            "is_handoff INTEGER NOT NULL DEFAULT 0,"
+            "correction INTEGER NOT NULL DEFAULT 0,"
+            "created_at DATETIME NOT NULL,"
+            "compacted_at DATETIME NOT NULL"
+            ")"
+        )
+    )
+    await conn.execute(
+        sa.text(
+            "CREATE INDEX IF NOT EXISTS idx_compaction_archive_session "
+            "ON compaction_archive (session_id, original_idx)"
+        )
+    )
+
+
 MIGRATIONS: list[Migration] = [
     m001_sessions_active_unique,
     m002_session_handoffs,
@@ -237,6 +269,7 @@ MIGRATIONS: list[Migration] = [
     m005_capability_events,
     m006_workflow_allow_list,
     m007_scheduled_task_type,
+    m008_compaction_archive,
 ]
 
 

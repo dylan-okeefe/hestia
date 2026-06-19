@@ -27,6 +27,7 @@ from hestia.platforms.base import IncomingMessageCallback, Platform
 from hestia.platforms.confirmation import ConfirmationStore, render_args_for_human_review
 
 if TYPE_CHECKING:
+    from hestia.orchestrator.compaction import SessionCompactor
     from hestia.persistence.session_store import SessionStore
 
 logger = logging.getLogger(__name__)
@@ -62,6 +63,7 @@ class MatrixAdapter(Platform):
         # Runtime deps are injected by run_platform after the orchestrator is built.
         self._session_store: SessionStore | None = None
         self._reset_callback: Callable[[str], Awaitable[None]] | None = None
+        self._compactor: SessionCompactor | None = None
 
         # Validate allowed_rooms entries (warn, don't hard-fail, for backward compat)
         for entry in self._config.allowed_rooms:
@@ -82,6 +84,10 @@ class MatrixAdapter(Platform):
     def set_session_store(self, session_store: SessionStore) -> None:
         """Inject session store for /reset command handling."""
         self._session_store = session_store
+
+    def set_compactor(self, compactor: SessionCompactor) -> None:
+        """Inject the session compactor for /compact handling."""
+        self._compactor = compactor
 
     def register_reset_callback(
         self, callback: Callable[[str], Awaitable[None]]
@@ -316,9 +322,13 @@ class MatrixAdapter(Platform):
 
         stripped_body = body.strip()
 
-        # Handle /reset command before routing to the orchestrator
-        if stripped_body.lower().startswith("/reset"):
+        # Handle /reset and /compact commands before routing to the orchestrator
+        lower_body = stripped_body.lower()
+        if lower_body.startswith("/reset"):
             await self._handle_reset(room, event)
+            return
+        if lower_body.startswith("/compact"):
+            await self._handle_compact(room, event)
             return
 
         # Check if this is a reply to a pending confirmation (internal adapter concern)
@@ -397,6 +407,32 @@ class MatrixAdapter(Platform):
             platform_user,
             "Conversation reset. Previous context was archived; your next message starts a fresh session.",
         )
+
+    async def _handle_compact(self, room: MatrixRoom, event: RoomMessageText) -> None:
+        """Handle /compact command: summarize, archive, and shrink history in place."""
+        platform_user = room.room_id
+
+        if self._session_store is None or self._compactor is None:
+            logger.warning("Compact requested in %s but deps not injected", platform_user)
+            await self.send_message(platform_user, "Compact is not available right now.")
+            return
+
+        session = await self._session_store.get_active_session("matrix", platform_user)
+        if session is None:
+            await self.send_message(
+                platform_user,
+                "No active conversation to compact.",
+            )
+            return
+
+        body = event.body.strip()
+        instruction = None
+        if " " in body:
+            _, instruction = body.split(None, 1)
+
+        await self.send_message(platform_user, "Compacting session...")
+        outcome = await self._compactor.compact(session.id, instruction=instruction)
+        await self.send_message(platform_user, outcome.message)
 
     @staticmethod
     def _extract_in_reply_to(event: RoomMessageText) -> str | None:

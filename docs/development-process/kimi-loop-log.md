@@ -6,6 +6,41 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-06-19 — L224 Complete (Manual `/compact` command)
+
+**Outcome:** Implemented a user-invoked `/compact` meta-command that compacts the current session in place, without ending it. It produces a task-aware summary, archives the original messages, keeps the last K turns verbatim, erases the KV slot, and flushes structured task-state fields to memory through the L225 sanitizer.
+
+**Branch:** `feature/l224-manual-compact-command`
+- Added `CompactionConfig` in `src/hestia/config.py` (`enabled`, `verbatim_turns`, `summary_max_chars`, `min_messages`).
+- Added `compaction_archive` table in `src/hestia/persistence/schema.py` plus additive runtime migration `m008_compaction_archive`.
+- Added `MessageStore.archive_and_replace_messages()` for atomic archive-delete-replace.
+- Added `SessionCompactionSummarizer` in `src/hestia/memory/compaction_summarizer.py` for structured JSON task-state summaries and narrow memory flush with exact-match dedup.
+- Added `SessionCompactor` in `src/hestia/orchestrator/compaction.py` to orchestrate lock acquisition, summarization, archive/replace, slot erase, and memory flush.
+- Wired shared `SessionLockManager` and the compactor into `AppContext`; injected compactor into Telegram/Matrix adapters.
+- Added `/compact` and `/compact <instruction>` handling on CLI (`commands/meta.py`), Telegram (`telegram_adapter.py`), and Matrix (`matrix_adapter.py`).
+- Added unit tests in `tests/unit/orchestrator/test_compaction.py` and integration tests in `tests/integration/test_compaction_command.py`.
+
+**Quality gates:** Targeted tests 11 passed; unit suite 1915 passed; integration suite 88 passed, 6 skipped; `mypy src/hestia` clean; ruff no new issues introduced by L224 files.
+
+**Note:** The combined `pytest tests/unit/ tests/integration/` run exceeded the 300-second shell tool limit in this environment, but the same tests pass when run separately.
+
+**Next:** Dylan review; merge to `develop` when approved; update `~/Hestia-runtime`.
+
+## 2026-06-19 — L225 Complete (Memory-write sanitizer)
+
+**Outcome:** Added a write-time sanitizer at the shared memory-store boundary that rejects junk (tool-call XML, unclosed tags, raw turn dumps, trivial content) before it is stored. Clean prose facts and structured key-value summaries are preserved. All memory writers (`memory_write` tool, reflection loop, future `/compact` flush) now benefit.
+
+**Branch:** `feature/l225-memory-write-sanitizer`
+- Added `MemorySanitizer`/`SanitizerResult` in `src/hestia/memory/sanitizer.py`.
+- Wired sanitizer into `MemoryStore.save()`; returns `Memory | None`, logs and drops rejected writes by default, `strict=True` raises.
+- Updated `save_memory` tool and CLI `memory add` to handle rejected results gracefully.
+- Updated `SessionHandoffSummarizer` to tolerate a rejected handoff memory.
+- Added unit tests for every sanitizer rule and integration tests for the write boundary, tool path, and compaction-style summaries.
+
+**Quality gates:** 88 memory-related tests passed; mypy/ruff clean on changed files. Full suite: 1873 passed, 6 skipped, 3 pre-existing browser/web unrelated failures.
+
+**Next:** Orchestrator should validate and advance `KIMI_CURRENT.md` to L224.
+
 ## 2026-06-17 — L222–L223 Complete (Trust Boundary & Blocked-Actions Digest)
 
 **Outcome:** Closed the L222 trust/capability boundary wiring, fixed a subagent injection-escalation bug, and implemented the L223 blocked-actions digest on top of the gate's audit store.
