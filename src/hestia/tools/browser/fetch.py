@@ -13,7 +13,7 @@ from typing import Any, cast
 from playwright.async_api import async_playwright
 
 from hestia.security.ssrf import SSRFBlockedError, assert_url_safe
-from hestia.tools.browser.session_store import BrowserSessionStore
+from hestia.tools.browser.session_store import BrowserSessionStore, SessionMetadata
 from hestia.tools.browser.stealth import (
     STEALTH_LAUNCH_ARGS,
     apply_stealth_async,
@@ -70,9 +70,8 @@ def _get_min_delay_seconds() -> float:
     return BrowserConfig.from_env().min_fetch_delay_seconds
 
 
-async def _rate_limit_sleep(store: BrowserSessionStore, domain: str) -> None:
+async def _rate_limit_sleep(metadata: SessionMetadata | None) -> None:
     """Sleep if the last fetch for *domain* was too recent."""
-    metadata = store.load_metadata(domain)
     if metadata is None or metadata.last_used is None:
         return
 
@@ -82,7 +81,7 @@ async def _rate_limit_sleep(store: BrowserSessionStore, domain: str) -> None:
     if sleep_seconds > 0:
         logger.debug(
             "Rate-limiting fetch for %s (elapsed %.2fs, min_delay %.2fs, sleep %.2fs)",
-            domain,
+            metadata.domain if metadata.domain else "unknown",
             elapsed,
             min_delay,
             sleep_seconds,
@@ -318,7 +317,8 @@ async def fetch_url(
     for login/challenge/bot/not-found/timeout outcomes.
     """
     store = BrowserSessionStore()
-    await _rate_limit_sleep(store, domain)
+    metadata = store.load_metadata(domain)
+    await _rate_limit_sleep(metadata)
 
     try:
         await assert_url_safe(url)
@@ -328,6 +328,19 @@ async def fetch_url(
             category=ToolResultCategory.BLOCKED,
             text=_format_failure_message(
                 ToolResultCategory.BLOCKED, f"SSRF blocked: {exc}"
+            ),
+            final_url="",
+            title="",
+        )
+
+    if metadata is not None and metadata.requires_headed:
+        return BrowserFetchResult(
+            ok=False,
+            category=ToolResultCategory.BLOCKED,
+            text=_format_failure_message(
+                ToolResultCategory.BLOCKED,
+                f"[BLOCKED - HEADED_LOGIN_REQUIRED] {domain} is flagged as requiring a "
+                f"headed browser. Log in via the Browser Stream UI for {domain}, then retry.",
             ),
             final_url="",
             title="",
@@ -346,7 +359,7 @@ async def fetch_url(
         response = await page.goto(
             url,
             timeout=timeout_seconds * 1000,
-            wait_until="networkidle",
+            wait_until="domcontentloaded",
         )
 
         if wait_for_selector:
