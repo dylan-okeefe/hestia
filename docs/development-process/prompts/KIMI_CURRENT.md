@@ -7,7 +7,7 @@
 
 ## Current task
 
-**Status:** Planning complete; ready to implement.
+**Status:** L225 merged into `docs/compact-command`; implementing L224 now.
 **ADR:** `docs/adr/ADR-047-manual-in-session-compaction.md`
 **Decisions:** `docs/reviews/decisions-compact-command.md`
 **High-level spec:** `docs/reviews/spec-compact-command.md`
@@ -16,13 +16,13 @@
 
 | Loop | Branch | Status | Focus | Spec |
 |------|--------|--------|-------|------|
-| **L225** | `feature/l225-memory-write-sanitizer` | **📋 Spec complete** | Add write-time sanitizer at the shared memory-store boundary; rejects tool-call XML, unclosed tags, raw turn dumps, and trivial content. | `docs/development-process/L225-memory-write-sanitizer.md` |
-| **L224** | `feature/l224-manual-compact-command` | **📋 Spec complete** | User-invoked `/compact` meta-command; task-aware summarization, persist+archive, slot erase, narrow memory flush via L225 sanitizer. | `docs/development-process/L224-manual-compact-command.md` |
+| **L225** | `feature/l225-memory-write-sanitizer` | **✅ Merged** | Add write-time sanitizer at the shared memory-store boundary; rejects tool-call XML, unclosed tags, raw turn dumps, and trivial content. | `docs/development-process/L225-memory-write-sanitizer.md` |
+| **L224** | `feature/l224-manual-compact-command` | **🚧 In progress** | User-invoked `/compact` meta-command; task-aware summarization, persist+archive, slot erase, narrow memory flush via L225 sanitizer. | `docs/development-process/L224-manual-compact-command.md` |
 
 ### Execution order
 
-1. **L225 first** — it is shared infrastructure with no dependencies and protects the memory flush in L224.
-2. **L224 after L225** — `/compact` depends on the sanitized memory write boundary for its narrow task-state flush.
+1. **L225** ✅ — shared infrastructure; protects all memory writes.
+2. **L224** 🚧 — `/compact` depends on the sanitized memory write boundary for its narrow task-state flush.
 
 ### Deferred
 
