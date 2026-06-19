@@ -454,5 +454,11 @@ class SessionStreamManager:
                     disconnected.add(ws)
             if disconnected:
                 session.ws_clients -= disconnected
-        except Exception:
-            logger.exception("Failed to broadcast input mode")
+        except Exception as exc:
+            # Ignore transient errors during navigation; the next frame/interaction
+            # will re-broadcast once the execution context is stable.
+            msg = str(exc)
+            if "Execution context was destroyed" in msg or "Frame was detached" in msg:
+                logger.debug("Skipping input-mode broadcast during navigation: %s", msg)
+            else:
+                logger.exception("Failed to broadcast input mode")

@@ -13,6 +13,9 @@
 
 .browser-stream-canvas {
   display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
   border: var(--border-thin);
   border-radius: var(--radius-md);
   cursor: crosshair;
@@ -65,7 +68,6 @@
 
 .browser-stream-mobile-input {
   margin-top: var(--space-4);
-  max-width: 960px;
 }
 
 .browser-stream-url-bar,
@@ -75,7 +77,6 @@
   align-items: center;
   gap: var(--space-2);
   margin-bottom: var(--space-3);
-  max-width: 960px;
 }
 
 .browser-stream-url-bar .form-input,
