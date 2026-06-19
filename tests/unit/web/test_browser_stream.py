@@ -211,6 +211,22 @@ class TestStopSession:
         assert metadata.health_status == "healthy"
         assert metadata.health_check_url == "https://builtin.com/jobs"
 
+    @pytest.mark.asyncio
+    async def test_stop_clears_requires_headed(
+        self, manager: SessionStreamManager, mock_store: BrowserSessionStore
+    ) -> None:
+        mock_cm, *_ = _make_mock_playwright()
+        _inject_playwright_module(mock_cm)
+
+        mock_store.update_metadata("linkedin.com", requires_headed=True)
+        session_id = await manager.start("https://linkedin.com/feed")
+
+        await manager.stop(session_id)
+
+        metadata = mock_store.load_metadata("linkedin.com")
+        assert metadata is not None
+        assert metadata.requires_headed is False
+
 
 class TestForwardInput:
     @pytest.mark.asyncio
