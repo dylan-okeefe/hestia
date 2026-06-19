@@ -53,8 +53,6 @@ export default function BrowserStream() {
   const restartHeadedMut = useApiMutation(restartHeadedBrowserStream);
 
   const startTimeRef = useRef<number | null>(null);
-  const autoStartedRef = useRef(false);
-  const shouldAutoStartRef = useRef(!!searchParams.get('url'));
   const stoppingRef = useRef(false);
   const sessionRef = useRef(session);
   sessionRef.current = session;
@@ -205,27 +203,8 @@ export default function BrowserStream() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    autoStartedRef.current = false;
-  }, []);
-
-  useEffect(() => {
-    const onPageShow = (e: PageTransitionEvent) => {
-      if (e.persisted) {
-        autoStartedRef.current = false;
-      }
-    };
-    window.addEventListener('pageshow', onPageShow);
-    return () => window.removeEventListener('pageshow', onPageShow);
-  }, []);
-
-  useEffect(() => {
-    if (!session && url.trim() && !autoStartedRef.current && !startMut.isPending && shouldAutoStartRef.current) {
-      autoStartedRef.current = true;
-      shouldAutoStartRef.current = false;
-      handleStart();
-    }
-  }, [session, url, startMut.isPending]);
+  // Auto-start is intentionally disabled: landing here from a saved session
+  // pre-fills the URL, but the user must confirm by clicking Start Session.
 
   useEffect(() => {
     if (timedOut) {
