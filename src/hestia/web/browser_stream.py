@@ -205,34 +205,6 @@ class SessionStreamManager:
             except Exception:
                 logger.exception("Auto-stop failed for session %s", session_id)
 
-    async def _health_from_page(self, page: Any) -> str:
-        """Infer session health from the live stream page.
-
-        A login/auth URL or title means the session is expired; anything else
-        is treated as healthy because the stream itself is a real browser.
-        """
-        try:
-            url = getattr(page, "url", "")
-            if not isinstance(url, str):
-                return "stale"
-            url_lower = url.lower()
-            if any(path in url_lower for path in ("/login", "/signin", "/auth")):
-                return "expired"
-
-            title_coro = page.title()
-            if asyncio.iscoroutine(title_coro):
-                title = await title_coro
-                if isinstance(title, str) and any(
-                    phrase in title.lower()
-                    for phrase in ("sign in", "log in", "login")
-                ):
-                    return "expired"
-
-            return "healthy"
-        except Exception:
-            logger.exception("Failed to read stream page state")
-            return "stale"
-
     async def stop(self, session_id: str) -> dict[str, Any]:
         """Stop screencast, save cookies/storage, close browser. Returns save summary."""
         async with self._lock:
@@ -252,13 +224,20 @@ class SessionStreamManager:
             except Exception:
                 logger.exception("Failed to stop screencast")
 
-            # Infer health from the live page before we tear the browser down.
-            # A real browser stream is much more reliable than a headless health
-            # check for sites that block headless browsers.
-            health_status = await self._health_from_page(session.page)
-            health_check_url = getattr(session.page, "url", session.url)
-            if not isinstance(health_check_url, str):
-                health_check_url = session.url
+            # When saving from a live stream, the user explicitly chose to save,
+            # so treat the session as healthy. Do not use the current page URL as
+            # the health-check URL: the user may be on an OAuth redirect page
+            # (e.g. accounts.google.com) that is unrelated to the target domain.
+            # Fall back to the session's original URL or the domain root.
+            current_url = getattr(session.page, "url", "")
+            if not isinstance(current_url, str):
+                current_url = ""
+            current_domain = normalize_domain(urlparse(current_url).hostname or "")
+            if current_domain and current_domain == session.domain:
+                health_check_url = current_url
+            else:
+                health_check_url = session.url or f"https://{session.domain}/"
+            health_status = "healthy"
 
             cookies: list[dict[str, Any]] = []
             storage_state: dict[str, Any] | None = None

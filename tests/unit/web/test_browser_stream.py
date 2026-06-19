@@ -191,6 +191,26 @@ class TestStopSession:
         assert metadata.health_status == "healthy"
         assert metadata.health_check_url == "https://www.linkedin.com/feed/"
 
+    @pytest.mark.asyncio
+    async def test_stop_falls_back_to_session_url_on_oauth_redirect(
+        self, manager: SessionStreamManager, mock_store: BrowserSessionStore
+    ) -> None:
+        mock_cm, *_ = _make_mock_playwright()
+        _inject_playwright_module(mock_cm)
+
+        session_id = await manager.start("https://builtin.com/jobs")
+        # User is on an OAuth redirect page when they stop the stream.
+        mock_page = manager._session.page
+        mock_page.url = "https://accounts.google.com/signin/identifier"
+        mock_page.title = AsyncMock(return_value="Sign in - Google Accounts")
+
+        await manager.stop(session_id)
+
+        metadata = mock_store.load_metadata("builtin.com")
+        assert metadata is not None
+        assert metadata.health_status == "healthy"
+        assert metadata.health_check_url == "https://builtin.com/jobs"
+
 
 class TestForwardInput:
     @pytest.mark.asyncio
