@@ -8,7 +8,15 @@ export interface UseApiQueryResult<T> {
   refetch: () => Promise<T>;
 }
 
-export function useApiQuery<T>(key: string, fetcher: () => Promise<T>): UseApiQueryResult<T> {
+export interface UseApiQueryOptions {
+  refetchInterval?: number;
+}
+
+export function useApiQuery<T>(
+  key: string,
+  fetcher: () => Promise<T>,
+  options: UseApiQueryOptions = {},
+): UseApiQueryResult<T> {
   const [data, setData] = useState<T | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(true);
   const [isError, setIsError] = useState(false);
@@ -55,6 +63,16 @@ export function useApiQuery<T>(key: string, fetcher: () => Promise<T>): UseApiQu
     execute();
   }, [execute]);
 
+  useEffect(() => {
+    if (!options.refetchInterval) {
+      return;
+    }
+    const id = setInterval(() => {
+      execute();
+    }, options.refetchInterval);
+    return () => clearInterval(id);
+  }, [execute, options.refetchInterval]);
+
   const refetch = useCallback(() => {
     return execute();
   }, [execute]);
@@ -68,19 +86,31 @@ export interface UseApiMutationResult<TInput, TOutput> {
   error: Error | null;
 }
 
+export interface UseApiMutationResultNoArgs<TOutput> {
+  mutateAsync: () => Promise<TOutput>;
+  isPending: boolean;
+  error: Error | null;
+}
+
+export function useApiMutation<TOutput>(
+  mutator: () => Promise<TOutput>
+): UseApiMutationResultNoArgs<TOutput>;
 export function useApiMutation<TInput, TOutput>(
   mutator: (input: TInput) => Promise<TOutput>
-): UseApiMutationResult<TInput, TOutput> {
+): UseApiMutationResult<TInput, TOutput>;
+export function useApiMutation<TInput, TOutput>(
+  mutator: (input?: TInput) => Promise<TOutput>
+): UseApiMutationResult<TInput, TOutput> | UseApiMutationResultNoArgs<TOutput> {
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const mutatorRef = useRef(mutator);
   mutatorRef.current = mutator;
 
-  const mutateAsync = useCallback(async (input: TInput): Promise<TOutput> => {
+  const mutateAsync = useCallback(async (input?: TInput): Promise<TOutput> => {
     setIsPending(true);
     setError(null);
     try {
-      const result = await mutatorRef.current(input);
+      const result = await mutatorRef.current(input as TInput);
       return result;
     } catch (err: any) {
       const e = err instanceof Error ? err : new Error(String(err));
@@ -92,5 +122,5 @@ export function useApiMutation<TInput, TOutput>(
     }
   }, []);
 
-  return { mutateAsync, isPending, error };
+  return { mutateAsync, isPending, error } as UseApiMutationResult<TInput, TOutput>;
 }

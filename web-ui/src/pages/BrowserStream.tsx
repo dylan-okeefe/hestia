@@ -152,7 +152,7 @@ export default function BrowserStream() {
   const handleDone = async () => {
     stoppingRef.current = true;
     try {
-      await stopMut.mutateAsync(undefined as unknown as string);
+      await stopMut.mutateAsync();
       addToast({ message: 'Session saved', type: 'success', duration: 3000 });
     } catch (err: any) {
       addToast({ message: err.message || 'Failed to stop session', type: 'error', duration: 5000 });
@@ -166,7 +166,7 @@ export default function BrowserStream() {
   const handleCancel = async () => {
     stoppingRef.current = true;
     try {
-      await stopMut.mutateAsync(undefined as unknown as string);
+      await stopMut.mutateAsync();
     } catch {
       // ignore
     } finally {
@@ -178,7 +178,7 @@ export default function BrowserStream() {
 
   const handleRestartHeaded = async () => {
     try {
-      await restartHeadedMut.mutateAsync(undefined as unknown as string);
+      await restartHeadedMut.mutateAsync();
       setHeaded(true);
       addToast({ message: 'Switched to headed browser', type: 'success', duration: 3000 });
     } catch (err: any) {

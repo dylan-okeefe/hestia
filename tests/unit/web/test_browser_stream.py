@@ -343,6 +343,44 @@ class TestFrameDelivery:
         assert mock_ws not in manager._session.ws_clients
 
 
+@pytest.fixture
+def api_client(manager: SessionStreamManager) -> TestClient:
+    auth_manager = MagicMock()
+    web_session = MagicMock()
+    web_session.user_id = "admin-user-id"
+    auth_manager.validate_token = MagicMock(return_value=("valid", web_session))
+
+    mock_user = MagicMock()
+    mock_user.role = "admin"
+
+    user_store = AsyncMock()
+    user_store.get_user = AsyncMock(return_value=mock_user)
+
+    mock_app = MagicMock()
+    mock_app.config = MagicMock()
+    mock_app.config.features.web.auth_enabled = False
+
+    ctx = WebContext(
+        session_store=AsyncMock(),
+        proposal_store=AsyncMock(),
+        style_store=AsyncMock(),
+        scheduler_store=AsyncMock(),
+        trace_store=AsyncMock(),
+        failure_store=AsyncMock(),
+        workflow_store=AsyncMock(),
+        execution_store=AsyncMock(),
+        error_resolution_store=AsyncMock(),
+        app=mock_app,
+        auth_manager=auth_manager,
+        user_store=user_store,
+        browser_session_store=manager._store,
+        stream_manager=manager,
+    )
+    set_web_context(ctx)
+    app = create_web_app()
+    return TestClient(app)
+
+
 class TestWebSocketEndpoint:
     @pytest.fixture
     def client(self, manager: SessionStreamManager) -> TestClient:
@@ -498,6 +536,60 @@ class TestWebSocketEndpoint:
         assert len(launch_calls) == 2
         assert launch_calls[0].kwargs.get("headless") is True
         assert launch_calls[1].kwargs.get("headless") is False
+
+
+class TestGetActiveSession:
+    @pytest.mark.asyncio
+    async def test_get_active_session_returns_metadata(
+        self, manager: SessionStreamManager
+    ) -> None:
+        mock_cm, *_ = _make_mock_playwright()
+        _inject_playwright_module(mock_cm)
+
+        session_id = await manager.start("https://example.com/login")
+        active = manager.get_active_session()
+
+        assert active is not None
+        assert active["session_id"] == session_id
+        assert active["domain"] == "example.com"
+        assert active["url"] == "https://example.com/login"
+        assert "started_at" in active
+
+    @pytest.mark.asyncio
+    async def test_get_active_session_returns_none_when_inactive(
+        self, manager: SessionStreamManager
+    ) -> None:
+        assert manager.get_active_session() is None
+
+    @pytest.mark.asyncio
+    async def test_api_active_endpoint_returns_session(
+        self, api_client: TestClient, manager: SessionStreamManager
+    ) -> None:
+        mock_cm, *_ = _make_mock_playwright()
+        _inject_playwright_module(mock_cm)
+        session_id = await manager.start("https://example.com/login")
+
+        res = api_client.get(
+            "/api/browser-sessions/active",
+            headers={"Authorization": "Bearer valid_token"},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["active"] is not None
+        assert data["active"]["session_id"] == session_id
+        assert data["active"]["domain"] == "example.com"
+
+    @pytest.mark.asyncio
+    async def test_api_active_endpoint_returns_null_when_inactive(
+        self, api_client: TestClient
+    ) -> None:
+        res = api_client.get(
+            "/api/browser-sessions/active",
+            headers={"Authorization": "Bearer valid_token"},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["active"] is None
 
 
 class TestAutoTimeout:
