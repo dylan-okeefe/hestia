@@ -7,7 +7,7 @@
 
 ## Current task
 
-**Status:** Idle — L224 implementation complete and ready for Dylan review.
+**Status:** Idle — L225 and L224 both merged into `docs/compact-command`; ready for Dylan review/merge to `develop`.
 **ADR:** `docs/adr/ADR-047-manual-in-session-compaction.md`
 **Decisions:** `docs/reviews/decisions-compact-command.md`
 **High-level spec:** `docs/development-process/L224-manual-compact-command.md`
@@ -17,7 +17,7 @@
 | Loop | Branch | Status | Focus | Spec |
 |------|--------|--------|-------|------|
 | **L225** | `feature/l225-memory-write-sanitizer` | **✅ Merged** | Add write-time sanitizer at the shared memory-store boundary; rejects tool-call XML, unclosed tags, raw turn dumps, and trivial content. | `docs/development-process/L225-memory-write-sanitizer.md` |
-| **L224** | `feature/l224-manual-compact-command` | **✅ Complete (unmerged)** | User-invoked `/compact` meta-command; task-aware summarization, persist+archive, slot erase, narrow memory flush via L225 sanitizer. | `docs/development-process/L224-manual-compact-command.md` |
+| **L224** | `feature/l224-manual-compact-command` | **✅ Merged** | User-invoked `/compact` meta-command; task-aware summarization, persist+archive, slot erase, narrow memory flush via L225 sanitizer. | `docs/development-process/L224-manual-compact-command.md` |
 
 ### Execution order
 
