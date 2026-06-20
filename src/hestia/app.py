@@ -214,12 +214,8 @@ class AppContext:
         self.artifact_store = ArtifactStore(config.storage.artifacts_dir)
         self.event_bus = EventBus()
         self.lock_manager = SessionLockManager()
-        self.session_store = SessionStore(self.db, event_bus=self.event_bus)
         self.message_store = MessageStore(self.db)
         self.turn_store = TurnStore(self.db)
-        self.handoff_service = HandoffService(
-            self.session_store, self.message_store, summarizer=None
-        )
         self.user_store = UserStore(self.db)
         self.policy = _make_policy(config)
         self.memory_store = MemoryStore(self.db)
@@ -231,6 +227,16 @@ class AppContext:
         self.error_resolution_store = ErrorResolutionStore(self.db)
         self.job_alert_store = JobAlertStore(self.db)
         self.capability_event_store = CapabilityEventStore(self.db)
+        self.session_store = SessionStore(
+            self.db,
+            event_bus=self.event_bus,
+            message_store=self.message_store,
+            memory_store=self.memory_store,
+            inference_factory=lambda: self.inference,
+        )
+        self.handoff_service = HandoffService(
+            self.session_store, self.message_store, summarizer=None
+        )
         self.blocked_actions_digest = BlockedActionsDigest(
             self.capability_event_store,
             self.session_store,

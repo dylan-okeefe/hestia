@@ -4,16 +4,23 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
 from sqlalchemy import select
 
 from hestia.core.clock import utcnow
-from hestia.core.types import Session, SessionState, SessionTemperature
+from hestia.core.types import Message, Session, SessionState, SessionTemperature
 from hestia.errors import PersistenceError
+from hestia.memory.session_summarizer import SessionSummarizer
 from hestia.persistence.db import Database
+from hestia.persistence.message_store import MessageStore
 from hestia.persistence.schema import sessions
+
+if TYPE_CHECKING:  # pragma: no cover
+    from hestia.core.inference import InferenceClient
+    from hestia.memory.store import MemoryStore
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +39,33 @@ class SessionStore:
         self,
         db: Database,
         event_bus: Any | None = None,
+        message_store: MessageStore | None = None,
+        memory_store: MemoryStore | None = None,
+        session_summarizer: SessionSummarizer | None = None,
+        inference_factory: Callable[[], InferenceClient] | None = None,
     ) -> None:
         self._db = db
         self._event_bus = event_bus
+        self._message_store = message_store
+        self._memory_store = memory_store
+        self._session_summarizer = session_summarizer
+        self._inference_factory = inference_factory
+        self._summarizer_created = False
+
+    def _summarizer(self) -> SessionSummarizer | None:
+        """Return the configured summarizer, creating it lazily if needed."""
+        if self._session_summarizer is not None:
+            return self._session_summarizer
+        if self._summarizer_created or self._inference_factory is None:
+            return None
+        self._summarizer_created = True
+        try:
+            inference = self._inference_factory()
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to create inference client for session summarizer")
+            return None
+        self._session_summarizer = SessionSummarizer(inference=inference)
+        return self._session_summarizer
 
     def _emit_session_started(self, session: Session) -> None:
         if self._event_bus is not None:
@@ -209,11 +240,79 @@ class SessionStore:
         async with self._db.engine.connect() as conn:
             await conn.execute(update)
             await conn.commit()
+        await self._auto_save_session_memory(session_id)
 
     async def end_session(self, session_id: str, reason: str) -> None:
         """Archive a session (reason is logged but not persisted here)."""
         logger.debug("Ending session %s: %s", session_id, reason)
         await self.archive_session(session_id)
+
+    async def _auto_save_session_memory(self, session_id: str) -> None:
+        """Generate a summary and persist it to long-term memory.
+
+        This is a best-effort operation: failures are logged and swallowed so
+        that session archival never blocks on the memory subsystem.
+        """
+        if (
+            self._message_store is None
+            or self._memory_store is None
+        ):
+            return
+
+        summarizer = self._summarizer()
+        if summarizer is None:
+            return
+
+        try:
+            session = await self.get_session(session_id)
+            if session is None:
+                return
+
+            dtos = await self._message_store.get_messages(session_id)
+            messages = [
+                Message(
+                    role=dto.role,  # type: ignore[arg-type]
+                    content=dto.content or "",
+                    created_at=dto.created_at,
+                )
+                for dto in dtos
+            ]
+            summary = await summarizer.summarize(messages)
+            if not summary:
+                return
+
+            topic_tag = self._infer_topic_tag(messages)
+            user_contents = [
+                m.content for m in messages if m.role == "user" and m.content
+            ]
+            bullets = "\n".join(f"- {text}" for text in user_contents[:10])
+            content = f"{summary}\n\nKey user messages:\n{bullets}"
+
+            await self._memory_store.save(
+                content=content,
+                tags=["session-summary", session.platform, topic_tag],
+                session_id=session_id,
+                platform=session.platform,
+                platform_user=session.platform_user,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "Failed to auto-save session memory for session %s", session_id
+            )
+
+    @staticmethod
+    def _infer_topic_tag(messages: list[Message]) -> str:
+        """Infer a topic tag from user message content."""
+        text = " ".join(
+            (m.content or "").lower() for m in messages if m.role == "user"
+        )
+        if any(word in text for word in ("job", "resume", "hiring", "role")):
+            return "job-search"
+        if "weather" in text:
+            return "weather"
+        if any(word in text for word in ("memory", "remember")):
+            return "memory-config"
+        return "general"
 
     async def assign_slot(
         self,
