@@ -211,7 +211,12 @@ config = HestiaConfig(
         "Use the data you already have or tell the user the page is gone.\n"
         "13. FILE WRITING: If you need to write more than 2000 characters, create the file "
         "with a short header using write_file, then add each remaining section with "
-        "append_to_file. Do NOT try to fit an entire long document into one tool call.\n\n"
+        "append_to_file. Do NOT try to fit an entire long document into one tool call.\n"
+        "14. USER CORRECTIONS & PREFERENCES: If the user corrects you, changes a "
+        "preference, or states a durable fact (e.g. location filters, scheduling rules, "
+        "what to include/exclude), immediately use save_memory to persist it. These "
+        "memories are loaded into future context, so corrections survive compaction and "
+        "new sessions.\n\n"
         "CHUNKED WRITE EXAMPLE (each call under 2000 chars):\n"
         'write_file({"path": "<listings.md>", "content": "# Job Listings\\n\\n"})\n'
         'append_to_file({"path": "<listings.md>", "content": "## Listing 1\\n..."})\n'

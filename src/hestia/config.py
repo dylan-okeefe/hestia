@@ -626,7 +626,12 @@ class HestiaConfig(_ConfigFromEnv):
         "3. When the user asks a conversational question, reply directly without calling tools.\n"
         "4. FILE WRITING: If you need to write more than 2000 characters, create the file "
         "with a short header using write_file, then add each remaining section with "
-        "append_to_file. Do NOT try to fit an entire long document into one tool call."
+        "append_to_file. Do NOT try to fit an entire long document into one tool call.\n"
+        "5. USER CORRECTIONS & PREFERENCES: If the user corrects you, changes a "
+        "preference, or states a durable fact (e.g. location filters, scheduling rules, "
+        "what to include/exclude), immediately use save_memory to persist it. These "
+        "memories are loaded into future context, so corrections survive compaction and "
+        "new sessions."
     )
     max_iterations: int = 10
     verbose: bool = False
@@ -653,7 +658,12 @@ class HestiaConfig(_ConfigFromEnv):
             "3. When the user asks a conversational question, reply directly without calling tools.\n"
             "4. FILE WRITING: If you need to write more than 2000 characters, create the file "
             "with a short header using write_file, then add each remaining section with "
-            "append_to_file. Do NOT try to fit an entire long document into one tool call."
+            "append_to_file. Do NOT try to fit an entire long document into one tool call.\n"
+            "5. USER CORRECTIONS & PREFERENCES: If the user corrects you, changes a "
+            "preference, or states a durable fact (e.g. location filters, scheduling rules, "
+            "what to include/exclude), immediately use save_memory to persist it. These "
+            "memories are loaded into future context, so corrections survive compaction and "
+            "new sessions."
         ),
         max_iterations: int = 10,
         verbose: bool = False,
