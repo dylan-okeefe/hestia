@@ -30,6 +30,14 @@ With the agent now saving facts proactively during the session (the prompt rule)
 - Dedup the archive-save against existing memories for the session/user so it does not duplicate what was already saved proactively.
 - Treat it as a light backstop for what the proactive path missed, not a second full pass.
 
+## Accountability
+
+| # | Required change | Status | Notes |
+|---|-----------------|--------|-------|
+| 1 | Resolve handoff / auto-save responsibility split | Done | `SessionStore` owns archive-time summarization; `HandoffService` reuses the returned summary for the handoff message. Removed the independent `HandoffService._summarizer` path and the `AppContext.handoff_summarizer` property. |
+| 2 | Reshape saved content to durable facts | Done | `_auto_save_session_memory` now calls `SessionCompactionSummarizer.summarize_and_store`, producing structured task-state facts (goal, criteria, progress, pending, findings, artifacts) and skipping trivial sessions via `min_messages`. |
+| 3 | Make archive-save a fallback with dedup | Done | `SessionCompactionSummarizer._flush_task_state` dedups by exact content against existing memories for the same identity, so archive-save does not duplicate proactively-saved facts. |
+
 ## Acceptance
 - Gates green (pytest, mypy, ruff).
 - Per-item handoff accounting: each of the three items mapped to done or explicitly deferred.
