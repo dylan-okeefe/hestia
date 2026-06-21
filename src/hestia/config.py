@@ -93,6 +93,10 @@ class MemoryConfig(_ConfigFromEnv):
     """How long soft-deleted memories are kept before hard-delete."""
     recently_recalled_days: int = 7
     """Protection window for recently-recalled memories."""
+    llm_dedupe_confidence_threshold: float = 0.8
+    """Minimum LLM confidence required to merge near-duplicate memories."""
+    llm_dedupe_max_pairs_per_run: int = 10
+    """Maximum candidate pairs to send to the LLM in one maintenance run."""
 
 
 @dataclass
