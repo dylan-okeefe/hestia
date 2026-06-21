@@ -13,7 +13,6 @@ from typing import Any
 from hestia.core.clock import utcnow
 from hestia.core.types import Message, Session, SessionHandoff, SessionState
 from hestia.orchestrator.mappers import message_domain_to_dto, message_dto_to_domain
-from hestia.persistence.dto import MessageDTO
 from hestia.persistence.message_store import MessageStore
 from hestia.persistence.session_store import SessionStore
 
@@ -33,11 +32,9 @@ class HandoffService:
         self,
         session_store: SessionStore,
         message_store: MessageStore,
-        summarizer: Any | None = None,
     ) -> None:
         self._session_store = session_store
         self._message_store = message_store
-        self._summarizer = summarizer
 
     @staticmethod
     def _extract_artifact_handles(messages: list[Message]) -> list[str]:
@@ -96,32 +93,26 @@ class HandoffService:
     ) -> None:
         """Archive a session and persist its handoff as a message.
 
-        If ``summary`` is provided, it is used directly. Otherwise, if a
-        ``SessionHandoffSummarizer`` was provided at construction and the
-        session is non-trivial, an inference-generated summary is produced.
+        If ``summary`` is provided, it is used directly. Otherwise the
+        archive-time summarizer owned by the session store produces one,
+        saves structured facts to long-term memory, and returns the summary
+        text for reuse in the handoff message.
         """
         session = await self._session_store.get_session(session_id)
         if session is None:
             logger.warning("generate_handoff_summary called for missing session %s", session_id)
             return
 
-        await self._session_store.archive_session(session_id)
+        generated_summary = await self._session_store.archive_session(session_id)
 
         messages = [
             message_dto_to_domain(dto)
             for dto in await self._message_store.get_messages(session_id)
         ]
 
-        generated_summary = summary
-        if generated_summary is None and self._summarizer is not None:
-            try:
-                result = await self._summarizer.summarize_and_store(session, messages)
-                if result is not None:
-                    generated_summary = result.summary
-            except Exception:  # noqa: BLE001
-                logger.exception("Handoff summarization failed for session %s", session_id)
-
-        handoff_message = self._build_handoff_message(session, messages, generated_summary)
+        handoff_message = self._build_handoff_message(
+            session, messages, summary or generated_summary
+        )
         await self._message_store.append_message(
             session_id,
             message_domain_to_dto(handoff_message, session_id, idx=0),

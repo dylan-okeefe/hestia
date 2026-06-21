@@ -105,7 +105,7 @@ class Orchestrator:
         self._message_store = message_store or MessageStore(session_store._db)
         self._turn_store = turn_store or TurnStore(session_store._db)
         self._handoff_service = handoff_service or HandoffService(
-            session_store, self._message_store, summarizer=None
+            session_store, self._message_store
         )
         message_store = self._message_store
         turn_store = self._turn_store

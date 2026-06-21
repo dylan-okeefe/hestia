@@ -26,7 +26,6 @@ from hestia.identity import IdentityCompiler
 from hestia.inference import SlotManager
 from hestia.memory import MemoryEpochCompiler, MemoryStore
 from hestia.memory.compaction_summarizer import SessionCompactionSummarizer
-from hestia.memory.handoff import SessionHandoffSummarizer
 from hestia.orchestrator import Orchestrator
 from hestia.orchestrator.compaction import SessionCompactor
 from hestia.orchestrator.engine import ConfirmCallback
@@ -214,12 +213,8 @@ class AppContext:
         self.artifact_store = ArtifactStore(config.storage.artifacts_dir)
         self.event_bus = EventBus()
         self.lock_manager = SessionLockManager()
-        self.session_store = SessionStore(self.db, event_bus=self.event_bus)
         self.message_store = MessageStore(self.db)
         self.turn_store = TurnStore(self.db)
-        self.handoff_service = HandoffService(
-            self.session_store, self.message_store, summarizer=None
-        )
         self.user_store = UserStore(self.db)
         self.policy = _make_policy(config)
         self.memory_store = MemoryStore(self.db)
@@ -231,6 +226,16 @@ class AppContext:
         self.error_resolution_store = ErrorResolutionStore(self.db)
         self.job_alert_store = JobAlertStore(self.db)
         self.capability_event_store = CapabilityEventStore(self.db)
+        self.session_store = SessionStore(
+            self.db,
+            event_bus=self.event_bus,
+            message_store=self.message_store,
+            memory_store=self.memory_store,
+            inference_factory=lambda: self.inference,
+        )
+        self.handoff_service = HandoffService(
+            self.session_store, self.message_store
+        )
         self.blocked_actions_digest = BlockedActionsDigest(
             self.capability_event_store,
             self.session_store,
@@ -307,18 +312,6 @@ class AppContext:
             slot_dir=self.config.slots.slot_dir,
             pool_size=self.config.slots.pool_size,
         )
-
-    @functools.cached_property
-    def handoff_summarizer(self) -> SessionHandoffSummarizer | None:
-        """Lazy handoff summarizer — created on first access if enabled."""
-        if self.config.handoff.enabled:
-            return SessionHandoffSummarizer(
-                inference=self.inference,
-                memory_store=self.memory_store,
-                max_chars=self.config.handoff.max_chars,
-                min_messages=self.config.handoff.min_messages,
-            )
-        return None
 
     @functools.cached_property
     def compaction_summarizer(self) -> SessionCompactionSummarizer:
@@ -434,7 +427,6 @@ class AppContext:
         handoff_service = HandoffService(
             self.session_store,
             self.message_store,
-            summarizer=self.handoff_summarizer,
         )
 
         return Orchestrator(

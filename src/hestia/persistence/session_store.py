@@ -4,16 +4,25 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
 from sqlalchemy import select
 
 from hestia.core.clock import utcnow
-from hestia.core.types import Session, SessionState, SessionTemperature
+from hestia.core.types import Message, Session, SessionState, SessionTemperature
 from hestia.errors import PersistenceError
+from hestia.memory.compaction_summarizer import (
+    SessionCompactionSummarizer,
+)
 from hestia.persistence.db import Database
+from hestia.persistence.message_store import MessageStore
 from hestia.persistence.schema import sessions
+
+if TYPE_CHECKING:  # pragma: no cover
+    from hestia.core.inference import InferenceClient
+    from hestia.memory.store import MemoryStore
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +41,40 @@ class SessionStore:
         self,
         db: Database,
         event_bus: Any | None = None,
+        message_store: MessageStore | None = None,
+        memory_store: MemoryStore | None = None,
+        archive_summarizer: SessionCompactionSummarizer | None = None,
+        inference_factory: Callable[[], InferenceClient] | None = None,
     ) -> None:
         self._db = db
         self._event_bus = event_bus
+        self._message_store = message_store
+        self._memory_store = memory_store
+        self._archive_summarizer = archive_summarizer
+        self._inference_factory = inference_factory
+        self._summarizer_created = False
+
+    def _get_archive_summarizer(self) -> SessionCompactionSummarizer | None:
+        """Return the configured archive summarizer, creating it lazily."""
+        if self._archive_summarizer is not None:
+            return self._archive_summarizer
+        if self._summarizer_created or self._inference_factory is None:
+            return None
+        self._summarizer_created = True
+        try:
+            inference = self._inference_factory()
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "Failed to create inference client for archive summarizer"
+            )
+            return None
+        if self._memory_store is None:
+            return None
+        self._archive_summarizer = SessionCompactionSummarizer(
+            inference=inference,
+            memory_store=self._memory_store,
+        )
+        return self._archive_summarizer
 
     def _emit_session_started(self, session: Session) -> None:
         if self._event_bus is not None:
@@ -199,8 +239,8 @@ class SessionStore:
             rows = result.fetchall()
             return [self._row_to_session(row) for row in rows]
 
-    async def archive_session(self, session_id: str) -> None:
-        """Mark a session as archived."""
+    async def archive_session(self, session_id: str) -> str | None:
+        """Mark a session as archived and return any archive summary text."""
         update = (
             sessions.update()
             .where(sessions.c.id == session_id)
@@ -209,11 +249,51 @@ class SessionStore:
         async with self._db.engine.connect() as conn:
             await conn.execute(update)
             await conn.commit()
+        return await self._auto_save_session_memory(session_id)
 
-    async def end_session(self, session_id: str, reason: str) -> None:
+    async def end_session(self, session_id: str, reason: str) -> str | None:
         """Archive a session (reason is logged but not persisted here)."""
         logger.debug("Ending session %s: %s", session_id, reason)
-        await self.archive_session(session_id)
+        return await self.archive_session(session_id)
+
+    async def _auto_save_session_memory(self, session_id: str) -> str | None:
+        """Generate structured facts and persist them to long-term memory.
+
+        This is a best-effort operation: failures are logged and swallowed so
+        that session archival never blocks on the memory subsystem. The
+        compaction summarizer already dedups against existing memories for the
+        same identity.
+        """
+        if self._message_store is None:
+            return None
+
+        summarizer = self._get_archive_summarizer()
+        if summarizer is None:
+            return None
+
+        try:
+            session = await self.get_session(session_id)
+            if session is None:
+                return None
+
+            dtos = await self._message_store.get_messages(session_id)
+            messages = [
+                Message(
+                    role=dto.role,  # type: ignore[arg-type]
+                    content=dto.content or "",
+                    created_at=dto.created_at,
+                )
+                for dto in dtos
+            ]
+            result = await summarizer.summarize_and_store(session, messages)
+            if result is None:
+                return None
+            return result.summary.summary
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "Failed to auto-save session memory for session %s", session_id
+            )
+            return None
 
     async def assign_slot(
         self,

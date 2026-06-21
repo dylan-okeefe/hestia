@@ -1,21 +1,19 @@
-"""L21 wiring: cli.py must honour HandoffConfig and CompressionConfig.
+"""L21 wiring: cli.py must honour CompressionConfig.
 
-Regression guard for the review finding that `HandoffConfig` /
-`CompressionConfig` were defined but never read by `cli.py`, so the
-L21 features were dead code in the real runtime.
+Regression guard for the review finding that `CompressionConfig` was
+defined but never read by `cli.py`, so the L21 feature was dead code in
+the real runtime.
 """
 
 from __future__ import annotations
 
-from hestia.config import CompressionConfig, HandoffConfig, HestiaConfig
+from hestia.config import CompressionConfig, HestiaConfig
 from hestia.context.compressor import InferenceHistoryCompressor
-from hestia.memory.handoff import SessionHandoffSummarizer
 
 
 def test_compression_config_disabled_by_default() -> None:
     cfg = HestiaConfig()
     assert cfg.compression.enabled is False
-    assert cfg.handoff.enabled is False
 
 
 def test_cli_wires_compression_when_enabled(tmp_path, monkeypatch) -> None:
@@ -40,31 +38,3 @@ def test_cli_wires_compression_when_enabled(tmp_path, monkeypatch) -> None:
     assert builder._compress_on_overflow is True  # type: ignore[attr-defined]
 
 
-def test_cli_builds_handoff_summarizer_when_enabled() -> None:
-    """HandoffConfig.enabled=True must produce a SessionHandoffSummarizer in cli.py.
-
-    We don't spin up the full CLI here; we assert the construction path used
-    in cli.py (a dataclass-driven conditional) produces the expected object.
-    """
-    from hestia.core.inference import InferenceClient
-    from hestia.memory import MemoryStore
-
-    cfg = HandoffConfig(enabled=True, min_messages=4, max_chars=350)
-    inference = InferenceClient(base_url="http://127.0.0.1:1", model_name="x")
-
-    class _DB:
-        pass
-
-    memory_store = MemoryStore(_DB())  # type: ignore[arg-type]
-
-    summarizer: SessionHandoffSummarizer | None = None
-    if cfg.enabled:
-        summarizer = SessionHandoffSummarizer(
-            inference=inference,
-            memory_store=memory_store,
-            max_chars=cfg.max_chars,
-            min_messages=cfg.min_messages,
-        )
-    assert summarizer is not None
-    assert summarizer._max_chars == 350  # type: ignore[attr-defined]
-    assert summarizer._min_messages == 4  # type: ignore[attr-defined]

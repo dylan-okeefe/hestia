@@ -55,7 +55,7 @@ class WebContext:
             self.turn_store = TurnStore(self.session_store._db)
         if self.handoff_service is None:
             self.handoff_service = HandoffService(
-                self.session_store, self.message_store, summarizer=None
+                self.session_store, self.message_store
             )
 
 
