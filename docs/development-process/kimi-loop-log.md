@@ -6,6 +6,24 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-06-21 — L228 Complete (Memory Maintenance: Deterministic Prune)
+
+**Outcome:** Implemented the second memory maintenance pass: a conservative, unattended prune that soft-deletes clear junk and unscoped/orphaned memories while preserving valid old facts and the protected set.
+
+**Branch:** `feature/l228-memory-deterministic-prune`
+- Added `DeterministicPruner` in `src/hestia/memory/maintenance/prune.py`:
+  - Loads active memories for an identity (or all active memories when no identity is supplied) and skips the protected set.
+  - Junk rule: content that would be rejected by `MemorySanitizer.sanitize()` is soft-deleted with `reason="junk"`.
+  - Orphan rule: memories with NULL `platform`, NULL `platform_user`, or empty/whitespace-only content are soft-deleted with `reason="orphan"`.
+  - Returns `PruneResult(junk_count, orphan_count)`.
+- Added `MemoryMaintenance.run_deterministic_prune(platform, platform_user)` in `src/hestia/memory/maintenance/service.py`.
+- Updated `src/hestia/memory/maintenance/__init__.py` to export the new prune API.
+- Added unit tests in `tests/unit/memory/maintenance/test_deterministic_prune.py` covering junk pruning, orphan pruning, valid-memory preservation, protected-memory preservation, and identity scoping.
+
+**Quality gates:** `uv run pytest tests/unit/memory/ -q` 50 passed; `uv run mypy src/hestia` 0 errors; ruff clean on L228 files. Full-repo ruff still reports pre-existing issues in unrelated files; no new issues introduced by L228.
+
+**Next:** Orchestrator should validate and advance `KIMI_CURRENT.md` to L229.
+
 ## 2026-06-21 — L227 Complete (Memory Maintenance: Deterministic Dedupe)
 
 **Outcome:** Implemented the first memory maintenance pass: deterministic deduplication that merges exact normalized-text duplicates and high-overlap FTS pairs while preserving protected memories and soft-deleting losers with a winner reference.
