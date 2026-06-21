@@ -6,6 +6,23 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-06-21 — L226 Complete (Memory Maintenance: Soft-Delete + Protected Set)
+
+**Outcome:** Added the storage foundation for memory maintenance: soft-delete with retention window and protected-set flags so that later loops can merge/prune/supersede without losing data.
+
+**Branch:** `feature/l226-memory-soft-delete-protected`
+- Extended the memory schema in `src/hestia/memory/store.py` with `is_active`, `deleted_at`, `deleted_reason`, `superseded_by`, `is_pinned`, `is_user_authored`, and `last_recalled_at`.
+- Updated FTS5 and regular-table DDL, the old-schema migration path, and the runtime schema check.
+- Extended the `Memory` dataclass and `_row_to_memory` with the new fields.
+- Added `soft_delete`, `restore`, `pin`, `mark_user_authored`, `mark_recalled`, `list_active_memories`, `list_inactive_memories`, and `is_protected` helpers.
+- Changed `list_memories` and `search` to active-only by default, with optional `include_inactive=False`.
+- Added `MemoryConfig.retention_days` and `MemoryConfig.recently_recalled_days` in `src/hestia/config.py`.
+- Added unit tests in `tests/unit/memory/test_memory_store.py` covering soft-delete, restore, protected flags, and active/inactive listing.
+
+**Quality gates:** `uv run pytest tests/unit/memory/ -q` 40 passed; `uv run mypy src/hestia` 0 errors; ruff clean on L226 files.
+
+**Next:** Orchestrator should validate and advance `KIMI_CURRENT.md` to L227.
+
 ## 2026-06-19 — L224 Complete (Manual `/compact` command)
 
 **Outcome:** Implemented a user-invoked `/compact` meta-command that compacts the current session in place, without ending it. It produces a task-aware summary, archives the original messages, keeps the last K turns verbatim, erases the KV slot, and flushes structured task-state fields to memory through the L225 sanitizer.
