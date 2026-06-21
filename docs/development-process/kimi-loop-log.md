@@ -6,6 +6,25 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-06-21 — L229 Complete (Memory Maintenance: LLM Near-Duplicate Merge)
+
+**Outcome:** Implemented the infrequent LLM-assisted maintenance pass that reviews paraphrase/near-duplicate memory pairs and merges them when the model is highly confident.
+
+**Branch:** `feature/l229-memory-llm-near-duplicate-merge`
+- Added `LLMDeduper` in `src/hestia/memory/maintenance/llm_dedupe.py`:
+  - Loads active memories by recency, skips protected memories, and generates candidate pairs from FTS near-misses with Jaccard 0.5–0.8.
+  - Calls the LLM with a structured JSON prompt (`duplicate`, `confidence`, `merged_content`).
+  - Merges only when `duplicate` is true and `confidence >= 0.8`, soft-deleting the loser with `reason="llm-deduplicated"` and a winner reference.
+- Added `src/hestia/memory/maintenance/prompts.py` with the system prompt, few-shot examples, and a robust parser with JSON + regex fallback.
+- Added `MemoryMaintenance.run_llm_dedupe(platform, platform_user)` in `src/hestia/memory/maintenance/service.py`.
+- Extended `MemoryConfig` in `src/hestia/config.py` with `llm_dedupe_confidence_threshold` and `llm_dedupe_max_pairs_per_run`.
+- Wired `MemoryMaintenance` into `AppContext` via a lazy `memory_maintenance` cached property in `src/hestia/app.py`.
+- Added unit tests in `tests/unit/memory/maintenance/test_llm_dedupe.py` covering confident merge, low-confidence leave-alone, non-duplicate leave-alone, and protected-memory skipping.
+
+**Quality gates:** `uv run pytest tests/unit/memory/ -q` 54 passed; `uv run mypy src/hestia` 0 errors; ruff clean on L229 files. Full-repo ruff still reports pre-existing issues in unrelated files; no new issues introduced by L229.
+
+**Next:** Cursor review and advance `KIMI_CURRENT.md` to L230.
+
 ## 2026-06-21 — L228 Complete (Memory Maintenance: Deterministic Prune)
 
 **Outcome:** Implemented the second memory maintenance pass: a conservative, unattended prune that soft-deletes clear junk and unscoped/orphaned memories while preserving valid old facts and the protected set.
