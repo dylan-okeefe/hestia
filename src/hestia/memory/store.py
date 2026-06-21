@@ -616,6 +616,58 @@ class MemoryStore:
             await conn.commit()
             return result.rowcount > 0
 
+    async def update(
+        self,
+        memory_id: str,
+        *,
+        content: str | None = None,
+        tags: list[str] | None = None,
+        platform: str | None = None,
+        platform_user: str | None = None,
+    ) -> bool:
+        """Update content and/or tags of an active memory.
+
+        Only active memories can be updated; soft-deleted rows are ignored.
+        Returns True if the memory was found and updated.
+        """
+        platform, platform_user = self._resolve_scope(platform, platform_user)
+
+        set_clauses: list[str] = []
+        params: dict[str, Any] = {"id": memory_id, "is_active": 1}
+
+        if content is not None:
+            sanitized = self._sanitizer.sanitize(content)
+            if sanitized.rejected:
+                logger.warning(
+                    "Memory update rejected by sanitizer: %s",
+                    sanitized.reason,
+                )
+                return False
+            set_clauses.append("content = :content")
+            params["content"] = sanitized.content or content
+
+        if tags is not None:
+            set_clauses.append("tags = :tags")
+            params["tags"] = "|".join(tags)
+
+        if not set_clauses:
+            return False
+
+        where_clauses = ["id = :id", "is_active = :is_active"]
+        if platform is not None and platform_user is not None:
+            where_clauses.append("platform = :platform AND platform_user = :platform_user")
+            params["platform"] = platform
+            params["platform_user"] = platform_user
+
+        sql = sa.text(
+            f"UPDATE memory SET {', '.join(set_clauses)} WHERE {' AND '.join(where_clauses)}"
+        )
+
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(sql, params)
+            await conn.commit()
+            return result.rowcount > 0
+
     async def pin(self, memory_id: str, pinned: bool = True) -> bool:
         """Set the pinned flag on a memory by ID."""
         sql = sa.text(
