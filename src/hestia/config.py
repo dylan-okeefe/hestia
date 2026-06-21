@@ -89,6 +89,10 @@ class MemoryConfig(_ConfigFromEnv):
 
     epoch_max_tokens: int = 500
     """Maximum tokens for the compiled memory epoch injected into the system prompt."""
+    retention_days: int = 30
+    """How long soft-deleted memories are kept before hard-delete."""
+    recently_recalled_days: int = 7
+    """Protection window for recently-recalled memories."""
 
 
 @dataclass
