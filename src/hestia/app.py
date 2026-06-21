@@ -26,6 +26,7 @@ from hestia.identity import IdentityCompiler
 from hestia.inference import SlotManager
 from hestia.memory import MemoryEpochCompiler, MemoryStore
 from hestia.memory.compaction_summarizer import SessionCompactionSummarizer
+from hestia.memory.maintenance import MemoryMaintenance
 from hestia.orchestrator import Orchestrator
 from hestia.orchestrator.compaction import SessionCompactor
 from hestia.orchestrator.engine import ConfirmCallback
@@ -333,6 +334,15 @@ class AppContext:
             summarizer=self.compaction_summarizer,
             lock_manager=self.lock_manager,
             config=self.config.compaction,
+        )
+
+    @functools.cached_property
+    def memory_maintenance(self) -> MemoryMaintenance:
+        """Lazy memory maintenance orchestrator."""
+        return MemoryMaintenance(
+            memory_store=self.memory_store,
+            inference=self.inference,
+            memory_config=self.config.memory,
         )
 
     # --- Lazy feature subsystems ---
