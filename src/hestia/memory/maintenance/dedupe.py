@@ -65,16 +65,19 @@ def _pick_winner(*memories: Memory) -> Memory:
 
 
 def _merge_contents(contents: list[str]) -> str:
-    """Combine contents, deduplicating lines while preserving order."""
+    """Combine contents, deduplicating normalized lines while preserving order."""
     seen: set[str] = set()
     ordered: list[str] = []
     for content in contents:
         for line in content.splitlines():
             line = line.strip()
-            if not line or line in seen:
+            if not line:
                 continue
-            seen.add(line)
-            ordered.append(line)
+            normalized = re.sub(r"\s+", " ", line.lower())
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            ordered.append(re.sub(r"\s+", " ", line))
     return "\n\n".join(ordered)
 
 
@@ -194,7 +197,7 @@ class DeterministicDeduper:
                     continue
 
                 winner = _pick_winner(memory, candidate)
-                loser = candidate if winner.id == candidate.id else memory
+                loser = memory if winner.id == candidate.id else candidate
 
                 merged_content = _merge_contents([winner.content, loser.content])
                 merged_tags = _merge_tags(winner, loser)
