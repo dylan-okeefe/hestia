@@ -6,6 +6,27 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-06-21 — L227 Complete (Memory Maintenance: Deterministic Dedupe)
+
+**Outcome:** Implemented the first memory maintenance pass: deterministic deduplication that merges exact normalized-text duplicates and high-overlap FTS pairs while preserving protected memories and soft-deleting losers with a winner reference.
+
+**Branch:** `feature/l227-memory-deterministic-dedupe`
+- Added `MemoryStore.update()` in `src/hestia/memory/store.py` to mutate content/tags of an active memory with sanitizer enforcement and identity scoping.
+- Added `DeterministicDeduper` in `src/hestia/memory/maintenance/dedupe.py`:
+  - Loads active memories for an identity and skips the protected set.
+  - Phase 1 groups by normalized content hash (lowercase, strip, collapse spaces) and merges exact duplicates.
+  - Phase 2 searches a sanitized excerpt of each remaining memory and merges pairs with Jaccard word overlap > 0.8.
+  - Winner chosen by newest `created_at`, then longest content, then lower id.
+  - Winner content rebuilt from deduplicated normalized lines; tags unioned in order.
+  - Losers soft-deleted with `reason="deduplicated"` and `superseded_by` set to the winner id.
+- Added `MemoryMaintenance` service stub in `src/hestia/memory/maintenance/service.py` exposing `run_deterministic_dedupe(platform, platform_user)`.
+- Added `src/hestia/memory/maintenance/__init__.py` exporting the public API.
+- Added unit tests in `tests/unit/memory/maintenance/test_deterministic_dedupe.py` covering exact duplicates, FTS overlap, protected-memory skipping, non-duplicates, and winner/tag behavior.
+
+**Quality gates:** `uv run pytest tests/unit/memory/ -q` 45 passed; `uv run mypy src/hestia` 0 errors; ruff clean on L227 files. Full-repo ruff still reports pre-existing issues in unrelated files; no new issues introduced by L227.
+
+**Next:** Orchestrator should validate and advance `KIMI_CURRENT.md` to L228.
+
 ## 2026-06-21 — L226 Complete (Memory Maintenance: Soft-Delete + Protected Set)
 
 **Outcome:** Added the storage foundation for memory maintenance: soft-delete with retention window and protected-set flags so that later loops can merge/prune/supersede without losing data.
