@@ -6,6 +6,27 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-06-21 — L230 Complete (Memory Maintenance: Contradiction / Supersession)
+
+**Outcome:** Implemented the LLM-assisted contradiction detection pass: when two active memories conflict on the same attribute, the newer fact supersedes the older with full reasoning recorded.
+
+**Branch:** `feature/l230-memory-contradiction-supersession`
+- Added `ContradictionResolver` in `src/hestia/memory/maintenance/contradictions.py`:
+  - Loads active memories by recency, skips the protected set, and generates candidate pairs from FTS near-misses using a short 3-word excerpt.
+  - Calls the LLM with a structured JSON prompt (`contradiction`, `confidence`, `attribute`, `reasoning`).
+  - Supersedes only when `contradiction` is true and `confidence >= 0.8`, soft-deleting the older memory with `reason="superseded"` and `superseded_by` set to the newer memory id.
+  - Appends the LLM's reasoning to the superseded memory's content for auditability.
+- Added the contradiction prompt, examples, and parser to `src/hestia/memory/maintenance/prompts.py`, with examples that distinguish same-attribute updates from genuinely separate facts.
+- Added `MemoryMaintenance.run_contradiction_resolution(platform, platform_user)` in `src/hestia/memory/maintenance/service.py`.
+- Extended `MemoryConfig` in `src/hestia/config.py` with `contradiction_confidence_threshold` and `contradiction_max_pairs_per_run`.
+- Updated `src/hestia/memory/maintenance/__init__.py` to export the new API.
+- Added unit tests in `tests/unit/memory/maintenance/test_contradictions.py` covering confident supersession, low-confidence leave-alone, separate-facts non-contradiction, protected-memory skipping, and reasoning recording.
+- Hardened FTS5 query sanitization in `src/hestia/memory/store.py` to quote queries containing non-word/non-whitespace characters (e.g., periods), preventing syntax errors when search excerpts contain sentence punctuation. Added a matching unit test in `tests/unit/test_memory_store.py`.
+
+**Quality gates:** `uv run pytest tests/unit/memory/ -q` 59 passed; `uv run mypy src/hestia` 0 errors; ruff clean on L230 files. Full-repo ruff still reports pre-existing issues in unrelated files; no new issues introduced by L230.
+
+**Next:** Cursor review and advance `KIMI_CURRENT.md` to L231.
+
 ## 2026-06-21 — L229 Complete (Memory Maintenance: LLM Near-Duplicate Merge)
 
 **Outcome:** Implemented the infrequent LLM-assisted maintenance pass that reviews paraphrase/near-duplicate memory pairs and merges them when the model is highly confident.
