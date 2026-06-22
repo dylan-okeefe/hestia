@@ -271,6 +271,9 @@ class TestFts5Sanitization:
         assert _sanitize_fts5_query("foo OR bar") == "foo OR bar"
         assert _sanitize_fts5_query("foo NOT bar") == "foo NOT bar"
 
+    def test_period_query_gets_quoted(self):
+        assert _sanitize_fts5_query("User lives in LA.") == '"User lives in LA."'
+
 
 class TestMemoryStoreHyphenSearch:
     @pytest.fixture

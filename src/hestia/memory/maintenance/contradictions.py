@@ -134,7 +134,7 @@ class ContradictionResolver:
             if len(pairs) >= self._max_pairs_per_run:
                 break
 
-            excerpt = _search_excerpt(memory.content)
+            excerpt = _search_excerpt(memory.content, max_words=3)
             if not excerpt:
                 continue
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -23,10 +24,10 @@ logger = logging.getLogger(__name__)
 def _sanitize_fts5_query(query: str) -> str:
     """Escape a raw query so FTS5 does not misinterpret special characters.
 
-    FTS5 treats hyphens, colons, asterisks, carets, and other punctuation
-    as operators or column specifiers. Wrapping the query in double quotes
-    forces FTS5 to treat it as a literal phrase, which is what users expect
-    for simple keyword/tag searches.
+    FTS5 treats hyphens, colons, periods, asterisks, carets, and other
+    punctuation as operators or column specifiers. Wrapping the query in
+    double quotes forces FTS5 to treat it as a literal phrase, which is what
+    users expect for simple keyword/tag searches.
 
     If the query already contains explicit FTS5 operators (AND, OR, NOT)
     or is already quoted, it is returned unchanged so advanced syntax
@@ -37,9 +38,10 @@ def _sanitize_fts5_query(query: str) -> str:
         return query
     if any(op in stripped.upper() for op in (" AND ", " OR ", " NOT ")):
         return query
-    # Hyphens, colons, asterisks, and carets are the most common characters
-    # that trigger "no such column" or syntax errors in FTS5.
-    if "-" in stripped or ":" in stripped or "*" in stripped or "^" in stripped:
+    # Any non-word, non-whitespace character can trigger an FTS5 syntax error
+    # (e.g., "fts5: syntax error near '.'"). Quote the whole phrase so these
+    # characters are treated literally.
+    if re.search(r"[^\w\s]", stripped):
         escaped = stripped.replace('"', '""')
         return f'"{escaped}"'
     return query
