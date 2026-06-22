@@ -6,6 +6,27 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-06-22 — L231 Complete (Memory Maintenance: Trace, Digest, and Scheduler Wiring)
+
+**Outcome:** Wired the L226–L230 maintenance passes into a unified trace/digest/scheduler surface so every destructive action is auditable and operators receive a periodic summary.
+
+**Branch:** `feature/l231-memory-trace-digest-scheduler`
+- Added `MaintenanceAction` trace model in `src/hestia/memory/maintenance/trace.py` and `MaintenanceTraceStore` in `src/hestia/persistence/maintenance_trace_store.py` with create/record/list/get operations.
+- Added the `maintenance_trace` table to `src/hestia/persistence/schema.py` so it is created by `Database.create_tables()`.
+- Wired tracing into `dedupe.py`, `prune.py`, `llm_dedupe.py`, and `contradictions.py`; each engine now accepts an optional `trace_store` and falls back to INFO logging when none is provided.
+- Wired `undo_retention_days` from `MemoryMaintenanceConfig` through the `MemoryMaintenance` service into every engine.
+- Added `MemoryMaintenanceDigest` in `src/hestia/memory/maintenance/digest.py`: formats total actions, merges, prunes, and prominently highlighted supersessions, plus the soonest undo deadline; returns `"SILENT"` when the window is empty.
+- Added `ensure_memory_maintenance_tasks` in `src/hestia/memory/maintenance/scheduler.py` to create/update deterministic nightly and weekly LLM scheduler tasks idempotently.
+- Extended `MemoryMaintenance` with `run_deterministic_pass` and `run_llm_pass` entry points.
+- Wired both maintenance task types into `src/hestia/scheduler/engine.py` and injected the services into Scheduler construction sites (`commands/scheduler.py`, `platforms/runners.py`).
+- Extended `AppContext` with `memory_maintenance`, `memory_maintenance_digest`, and `memory_maintenance_undo` cached properties plus `ensure_memory_maintenance_tasks`.
+- Implemented undo support in `src/hestia/memory/maintenance/undo.py`: restores loser memories and records an undo trace; exposed via `hestia memory maintenance undo <action-id>`.
+- Added unit tests in `tests/unit/memory/maintenance/test_trace.py`, `tests/unit/memory/maintenance/test_maintenance_digest.py`, and `tests/unit/scheduler/test_memory_maintenance_tasks.py`.
+
+**Quality gates:** targeted maintenance tests 13 passed; full `tests/unit/ tests/integration/` 1719 passed with 1 unrelated failure in `test_browser_ssrf.py::test_fetch_url_allows_public_url`; `mypy src/hestia` 0 errors; ruff clean on changed files; no new repo-wide ruff issues introduced.
+
+**Next:** Cursor review and advance `KIMI_CURRENT.md` to the next loop.
+
 ## 2026-06-21 — L230 Complete (Memory Maintenance: Contradiction / Supersession)
 
 **Outcome:** Implemented the LLM-assisted contradiction detection pass: when two active memories conflict on the same attribute, the newer fact supersedes the older with full reasoning recorded.

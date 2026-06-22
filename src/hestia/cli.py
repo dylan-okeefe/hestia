@@ -414,6 +414,42 @@ async def memory_remove(app: AppContext, memory_id: str) -> None:
     click.echo(f"Deleted: {memory_id}")
 
 
+@memory.group(name="maintenance")
+def memory_maintenance_group() -> None:
+    """Memory maintenance passes and scheduling."""
+    pass
+
+
+@memory_maintenance_group.command(name="ensure-tasks")
+@click.option("--platform", default="cli", help="Target platform identity")
+@click.option("--user", default="default", help="Target platform user identity")
+@click.pass_obj
+@async_command
+async def memory_maintenance_ensure_tasks(
+    app: AppContext, platform: str, user: str
+) -> None:
+    """Create or update scheduled memory maintenance tasks for an identity."""
+    await app.ensure_memory_maintenance_tasks(platform, user)
+    click.echo(f"Ensured memory maintenance tasks for {platform}/{user}")
+
+
+@memory_maintenance_group.command(name="undo")
+@click.argument("action_id")
+@click.pass_obj
+@async_command
+async def memory_maintenance_undo(app: AppContext, action_id: str) -> None:
+    """Undo a maintenance action while it is still within the undo window."""
+    try:
+        result = await app.memory_maintenance_undo.undo(action_id)
+    except ValueError as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
+    click.echo(
+        f"Undid {result.action_id}: restored {result.restored_count} memory(s). "
+        f"Undo trace: {result.undo_action_id}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Artifacts
 # ---------------------------------------------------------------------------
