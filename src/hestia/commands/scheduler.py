@@ -198,6 +198,8 @@ async def cmd_schedule_run(app: AppContext, task_id: str) -> None:
         system_prompt=app.config.system_prompt,
         notifier=notifier,
         blocked_actions_digest=app.blocked_actions_digest,
+        memory_maintenance=app.memory_maintenance,
+        memory_maintenance_digest=app.memory_maintenance_digest,
     )
     try:
         await scheduler.run_now(task_id)
@@ -255,6 +257,8 @@ def cmd_schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None
             system_prompt=app.config.system_prompt,
             notifier=notifier,
             blocked_actions_digest=app.blocked_actions_digest,
+            memory_maintenance=app.memory_maintenance,
+            memory_maintenance_digest=app.memory_maintenance_digest,
         )
         await scheduler.start()
         click.echo(f"Scheduler daemon started (tick={tick}s). Press Ctrl-C to stop.")

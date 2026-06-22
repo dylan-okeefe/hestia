@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import logging
+import uuid
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
+from hestia.core.clock import utcnow
 from hestia.core.types import Message
 from hestia.memory.maintenance.dedupe import _pick_winner, _search_excerpt
 from hestia.memory.maintenance.prompts import (
@@ -12,10 +16,14 @@ from hestia.memory.maintenance.prompts import (
     build_contradiction_prompt,
     parse_contradiction_response,
 )
+from hestia.memory.maintenance.trace import MaintenanceAction
 from hestia.memory.store import Memory, MemoryStore
 
 if TYPE_CHECKING:
     from hestia.core.inference import InferenceClient
+    from hestia.persistence.maintenance_trace_store import MaintenanceTraceStore
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -42,12 +50,57 @@ class ContradictionResolver:
         confidence_threshold: float = 0.8,
         max_pairs_per_run: int = 10,
         chunk_size: int = 500,
+        trace_store: MaintenanceTraceStore | None = None,
+        undo_retention_days: int = 7,
     ) -> None:
         self._store = memory_store
         self._inference = inference
         self._confidence_threshold = confidence_threshold
         self._max_pairs_per_run = max_pairs_per_run
         self._chunk_size = chunk_size
+        self._trace_store = trace_store
+        self._undo_retention_days = undo_retention_days
+
+    async def _record_supersede(
+        self,
+        platform: str,
+        platform_user: str,
+        winner: Memory,
+        loser: Memory,
+        attribute: str | None,
+        reasoning: str | None,
+        confidence: float,
+    ) -> None:
+        """Record a supersession action in the trace store, if configured."""
+        if self._trace_store is None:
+            logger.info(
+                "Maintenance supersede: %s superseded by %s on attribute=%s",
+                loser.id,
+                winner.id,
+                attribute,
+            )
+            return
+        now = utcnow()
+        action = MaintenanceAction(
+            id=f"maint_{uuid.uuid4().hex[:16]}",
+            action="supersede",
+            identity_platform=platform,
+            identity_user=platform_user,
+            winner_memory_id=winner.id,
+            loser_memory_ids=[loser.id],
+            reason="superseded",
+            created_at=now,
+            undoable_until=now + timedelta(days=self._undo_retention_days),
+            details={
+                "attribute": attribute,
+                "reasoning": reasoning,
+                "confidence": confidence,
+            },
+        )
+        try:
+            await self._trace_store.record(action)
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to record contradiction supersession trace")
 
     async def run(self, platform: str, platform_user: str) -> SupersessionResult:
         """Run the contradiction resolution pass for a single identity.
@@ -109,6 +162,15 @@ class ContradictionResolver:
                 platform_user=platform_user,
                 reason="superseded",
                 superseded_by=winner.id,
+            )
+            await self._record_supersede(
+                platform,
+                platform_user,
+                winner,
+                loser,
+                attribute,
+                reasoning,
+                confidence,
             )
 
             processed_ids.add(winner.id)

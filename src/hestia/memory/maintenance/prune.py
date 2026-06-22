@@ -2,10 +2,21 @@
 
 from __future__ import annotations
 
+import logging
+import uuid
 from dataclasses import dataclass
+from datetime import timedelta
+from typing import TYPE_CHECKING
 
+from hestia.core.clock import utcnow
+from hestia.memory.maintenance.trace import MaintenanceAction
 from hestia.memory.sanitizer import MemorySanitizer
 from hestia.memory.store import Memory, MemoryStore
+
+if TYPE_CHECKING:
+    from hestia.persistence.maintenance_trace_store import MaintenanceTraceStore
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -27,9 +38,46 @@ class DeterministicPruner:
         self,
         memory_store: MemoryStore,
         sanitizer: MemorySanitizer | None = None,
+        trace_store: MaintenanceTraceStore | None = None,
+        undo_retention_days: int = 7,
     ) -> None:
         self._store = memory_store
         self._sanitizer = sanitizer or MemorySanitizer()
+        self._trace_store = trace_store
+        self._undo_retention_days = undo_retention_days
+
+    async def _record_prune(
+        self,
+        platform: str | None,
+        platform_user: str | None,
+        memory: Memory,
+        reason: str,
+    ) -> None:
+        """Record a prune action in the trace store, if configured."""
+        if self._trace_store is None:
+            logger.info(
+                "Maintenance prune: %s (%s)",
+                memory.id,
+                reason,
+            )
+            return
+        now = utcnow()
+        action = MaintenanceAction(
+            id=f"maint_{uuid.uuid4().hex[:16]}",
+            action="prune",
+            identity_platform=platform,
+            identity_user=platform_user,
+            winner_memory_id=None,
+            loser_memory_ids=[memory.id],
+            reason=reason,
+            created_at=now,
+            undoable_until=now + timedelta(days=self._undo_retention_days),
+            details={},
+        )
+        try:
+            await self._trace_store.record(action)
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to record maintenance prune trace")
 
     async def run(
         self,
@@ -65,6 +113,7 @@ class DeterministicPruner:
                     platform_user=platform_user,
                     reason="junk",
                 )
+                await self._record_prune(platform, platform_user, memory, "junk")
                 junk_count += 1
                 continue
 
@@ -75,6 +124,7 @@ class DeterministicPruner:
                     platform_user=platform_user,
                     reason="orphan",
                 )
+                await self._record_prune(platform, platform_user, memory, "orphan")
                 orphan_count += 1
 
         return PruneResult(junk_count=junk_count, orphan_count=orphan_count)

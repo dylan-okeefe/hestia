@@ -2,11 +2,22 @@
 
 from __future__ import annotations
 
+import logging
 import re
+import uuid
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import timedelta
+from typing import TYPE_CHECKING
 
+from hestia.core.clock import utcnow
+from hestia.memory.maintenance.trace import MaintenanceAction
 from hestia.memory.store import Memory, MemoryStore
+
+if TYPE_CHECKING:
+    from hestia.persistence.maintenance_trace_store import MaintenanceTraceStore
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -102,8 +113,51 @@ def _search_excerpt(content: str, max_words: int = 10) -> str:
 class DeterministicDeduper:
     """Exact-normalized and high-overlap FTS duplicate merger."""
 
-    def __init__(self, memory_store: MemoryStore) -> None:
+    def __init__(
+        self,
+        memory_store: MemoryStore,
+        trace_store: MaintenanceTraceStore | None = None,
+        undo_retention_days: int = 7,
+    ) -> None:
         self._store = memory_store
+        self._trace_store = trace_store
+        self._undo_retention_days = undo_retention_days
+
+    async def _record_merge(
+        self,
+        platform: str,
+        platform_user: str,
+        winner: Memory,
+        loser: Memory,
+        reason: str,
+        details: dict[str, object] | None = None,
+    ) -> None:
+        """Record a merge action in the trace store, if configured."""
+        if self._trace_store is None:
+            logger.info(
+                "Maintenance merge: %s superseded by %s (%s)",
+                loser.id,
+                winner.id,
+                reason,
+            )
+            return
+        now = utcnow()
+        action = MaintenanceAction(
+            id=f"maint_{uuid.uuid4().hex[:16]}",
+            action="merge",
+            identity_platform=platform,
+            identity_user=platform_user,
+            winner_memory_id=winner.id,
+            loser_memory_ids=[loser.id],
+            reason=reason,
+            created_at=now,
+            undoable_until=now + timedelta(days=self._undo_retention_days),
+            details=details or {},
+        )
+        try:
+            await self._trace_store.record(action)
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to record maintenance merge trace")
 
     async def run(self, platform: str, platform_user: str) -> DedupeResult:
         """Run the deterministic dedupe pass for a single identity.
@@ -160,6 +214,14 @@ class DeterministicDeduper:
                     reason="deduplicated",
                     superseded_by=winner.id,
                 )
+                await self._record_merge(
+                    platform,
+                    platform_user,
+                    winner,
+                    memory,
+                    "deduplicated",
+                    details={"phase": "exact", "merged_content": merged_content},
+                )
                 processed_ids.add(memory.id)
                 merged_count += 1
 
@@ -214,6 +276,14 @@ class DeterministicDeduper:
                     platform_user=platform_user,
                     reason="deduplicated",
                     superseded_by=winner.id,
+                )
+                await self._record_merge(
+                    platform,
+                    platform_user,
+                    winner,
+                    loser,
+                    "deduplicated",
+                    details={"phase": "fts_overlap", "merged_content": merged_content},
                 )
                 processed_ids.add(loser.id)
                 merged_count += 1

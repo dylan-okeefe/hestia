@@ -360,3 +360,25 @@ capability_events = sa.Table(
         "created_at",
     ),
 )
+
+maintenance_trace = sa.Table(
+    "maintenance_trace",
+    metadata,
+    sa.Column("id", sa.String, primary_key=True),
+    sa.Column("action", sa.String, nullable=False),
+    sa.Column("identity_platform", sa.String, nullable=True),
+    sa.Column("identity_user", sa.String, nullable=True),
+    sa.Column("winner_memory_id", sa.String, nullable=True),
+    sa.Column("loser_memory_ids", sa.Text, nullable=False),
+    sa.Column("reason", sa.Text, nullable=False),
+    sa.Column("created_at", sa.DateTime, nullable=False),
+    sa.Column("undoable_until", sa.DateTime, nullable=False),
+    sa.Column("details", sa.Text, nullable=False, default="{}"),
+    sa.Index(
+        "idx_maintenance_trace_user",
+        "identity_platform",
+        "identity_user",
+        "created_at",
+    ),
+    sa.Index("idx_maintenance_trace_created", "created_at"),
+)

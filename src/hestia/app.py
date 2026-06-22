@@ -19,6 +19,7 @@ from hestia.context.builder import ContextBuilder
 from hestia.context.compressor import InferenceHistoryCompressor
 from hestia.core.inference import InferenceClient
 from hestia.core.rate_limiter import SessionRateLimiter
+from hestia.core.types import ScheduledTask
 from hestia.core.validators import validate_inference_model_name
 from hestia.email.adapter import EmailAdapter
 from hestia.events.bus import EventBus
@@ -27,6 +28,11 @@ from hestia.inference import SlotManager
 from hestia.memory import MemoryEpochCompiler, MemoryStore
 from hestia.memory.compaction_summarizer import SessionCompactionSummarizer
 from hestia.memory.maintenance import MemoryMaintenance
+from hestia.memory.maintenance.digest import MemoryMaintenanceDigest
+from hestia.memory.maintenance.scheduler import (
+    ensure_memory_maintenance_tasks as _ensure_memory_maintenance_tasks,
+)
+from hestia.memory.maintenance.undo import MaintenanceUndo
 from hestia.orchestrator import Orchestrator
 from hestia.orchestrator.compaction import SessionCompactor
 from hestia.orchestrator.engine import ConfirmCallback
@@ -37,6 +43,7 @@ from hestia.persistence.db import Database
 from hestia.persistence.error_resolution_store import ErrorResolutionStore
 from hestia.persistence.failure_store import FailureStore
 from hestia.persistence.job_alert_store import JobAlertStore
+from hestia.persistence.maintenance_trace_store import MaintenanceTraceStore
 from hestia.persistence.message_store import MessageStore
 from hestia.persistence.scheduler import SchedulerStore
 from hestia.persistence.session_store import SessionStore
@@ -227,6 +234,7 @@ class AppContext:
         self.error_resolution_store = ErrorResolutionStore(self.db)
         self.job_alert_store = JobAlertStore(self.db)
         self.capability_event_store = CapabilityEventStore(self.db)
+        self.maintenance_trace_store = MaintenanceTraceStore(self.db)
         self.session_store = SessionStore(
             self.db,
             event_bus=self.event_bus,
@@ -343,6 +351,24 @@ class AppContext:
             memory_store=self.memory_store,
             inference=self.inference,
             memory_config=self.config.memory,
+            trace_store=self.maintenance_trace_store,
+        )
+
+    @functools.cached_property
+    def memory_maintenance_digest(self) -> MemoryMaintenanceDigest:
+        """Lazy assembler for the memory maintenance digest."""
+        return MemoryMaintenanceDigest(
+            trace_store=self.maintenance_trace_store,
+            session_store=self.session_store,
+        )
+
+    @functools.cached_property
+    def memory_maintenance_undo(self) -> MaintenanceUndo:
+        """Lazy maintenance undo helper."""
+        return MaintenanceUndo(
+            memory_store=self.memory_store,
+            trace_store=self.maintenance_trace_store,
+            undo_retention_days=self.config.memory.maintenance.undo_retention_days,
         )
 
     # --- Lazy feature subsystems ---
@@ -390,12 +416,28 @@ class AppContext:
         await self.memory_store.create_table()
         await self.failure_store.create_table()
         await self.trace_store.create_table()
+        await self.maintenance_trace_store.create_table()
         await self.proposal_store.create_table()
         await self.style_store.create_table()
         await self.workflow_store.create_tables()
         await self.execution_store.create_tables()
         await self.job_alert_store.create_table()
         self._bootstrapped = True
+
+    async def ensure_memory_maintenance_tasks(
+        self,
+        platform: str = "cli",
+        platform_user: str = "default",
+    ) -> tuple[ScheduledTask, ScheduledTask]:
+        """Ensure scheduled maintenance tasks exist for an identity."""
+        session = await self.session_store.get_or_create_session(platform, platform_user)
+        return await _ensure_memory_maintenance_tasks(
+            self.scheduler_store,
+            session.id,
+            self.config.memory.maintenance,
+            platform,
+            platform_user,
+        )
 
     def make_injection_scanner(self) -> InjectionScanner:
         """Create an InjectionScanner from config (cached on instance)."""

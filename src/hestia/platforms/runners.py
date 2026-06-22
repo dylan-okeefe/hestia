@@ -376,6 +376,8 @@ async def run_platform(
             system_prompt=config.system_prompt,
             event_bus=app.event_bus,
             blocked_actions_digest=app.blocked_actions_digest,
+            memory_maintenance=app.memory_maintenance,
+            memory_maintenance_digest=app.memory_maintenance_digest,
         )
         await scheduler.start()
 

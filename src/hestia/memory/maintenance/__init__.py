@@ -8,6 +8,8 @@ from hestia.memory.maintenance.dedupe import DedupeResult, DeterministicDeduper
 from hestia.memory.maintenance.llm_dedupe import LLMDeduper, LLMDedupeResult
 from hestia.memory.maintenance.prune import DeterministicPruner, PruneResult
 from hestia.memory.maintenance.service import MemoryMaintenance
+from hestia.memory.maintenance.trace import MaintenanceAction
+from hestia.memory.maintenance.undo import MaintenanceUndo, UndoResult
 
 __all__ = [
     "ContradictionResolver",
@@ -19,4 +21,7 @@ __all__ = [
     "DeterministicPruner",
     "SupersessionResult",
     "MemoryMaintenance",
+    "MaintenanceAction",
+    "MaintenanceUndo",
+    "UndoResult",
 ]

@@ -13,6 +13,9 @@ from hestia.blocked_actions.digest import BlockedActionsDigest
 from hestia.core.clock import utcnow
 from hestia.core.types import Message, ScheduledTask, SessionState
 from hestia.events.bus import EventBus
+from hestia.memory.maintenance import MemoryMaintenance
+from hestia.memory.maintenance.digest import MemoryMaintenanceDigest
+from hestia.memory.maintenance.scheduler import _parse_task_prompt
 from hestia.orchestrator import Orchestrator
 from hestia.persistence.scheduler import (
     _MIN_RETRY_BACKOFF_SECONDS,
@@ -45,6 +48,8 @@ class Scheduler:
         notifier: PlatformNotifier | None = None,
         event_bus: EventBus | None = None,
         blocked_actions_digest: BlockedActionsDigest | None = None,
+        memory_maintenance: MemoryMaintenance | None = None,
+        memory_maintenance_digest: MemoryMaintenanceDigest | None = None,
     ):
         self._scheduler_store = scheduler_store
         self._session_store = session_store
@@ -55,6 +60,8 @@ class Scheduler:
         self._notifier = notifier
         self._event_bus = event_bus
         self._blocked_actions_digest = blocked_actions_digest
+        self._memory_maintenance = memory_maintenance
+        self._memory_maintenance_digest = memory_maintenance_digest
         self._tick_lock = asyncio.Lock()
         self._stop_event = asyncio.Event()
         self._loop_task: asyncio.Task[Any] | None = None
@@ -184,6 +191,32 @@ class Scheduler:
                     await self._deliver(task, text)
                 except Exception as e:  # noqa: BLE001
                     logger.exception("Task %s failed during digest", task.id)
+                    turn_error = str(e)
+        elif task.task_type == "memory_maintenance_deterministic":
+            if self._memory_maintenance is None or self._memory_maintenance_digest is None:
+                turn_error = "Memory maintenance service not configured"
+            else:
+                try:
+                    platform, platform_user = _parse_task_prompt(task.prompt)
+                    await self._memory_maintenance.run_deterministic_pass(
+                        platform, platform_user
+                    )
+                    text = await self._memory_maintenance_digest.send_digest_for_task(task)
+                    await self._deliver(task, text)
+                except Exception as e:  # noqa: BLE001
+                    logger.exception("Task %s failed during memory maintenance", task.id)
+                    turn_error = str(e)
+        elif task.task_type == "memory_maintenance_llm":
+            if self._memory_maintenance is None or self._memory_maintenance_digest is None:
+                turn_error = "Memory maintenance service not configured"
+            else:
+                try:
+                    platform, platform_user = _parse_task_prompt(task.prompt)
+                    await self._memory_maintenance.run_llm_pass(platform, platform_user)
+                    text = await self._memory_maintenance_digest.send_digest_for_task(task)
+                    await self._deliver(task, text)
+                except Exception as e:  # noqa: BLE001
+                    logger.exception("Task %s failed during memory maintenance", task.id)
                     turn_error = str(e)
         else:
             user_message = Message(role="user", content=task.prompt)

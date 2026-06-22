@@ -82,6 +82,20 @@ class SlotConfig(_ConfigFromEnv):
 
 
 @dataclass
+class MemoryMaintenanceConfig(_ConfigFromEnv):
+    """Configuration for memory maintenance scheduling and undo policy."""
+
+    _ENV_PREFIX = "MEMORY_MAINTENANCE"
+
+    deterministic_cron: str = "0 3 * * *"
+    """Cron expression for the nightly deterministic maintenance pass."""
+    llm_cron: str = "0 4 * * 0"
+    """Cron expression for the weekly LLM-assisted maintenance pass."""
+    undo_retention_days: int = 7
+    """How long an operator has to undo a maintenance action."""
+
+
+@dataclass
 class MemoryConfig(_ConfigFromEnv):
     """Configuration for the long-term memory subsystem."""
 
@@ -101,6 +115,8 @@ class MemoryConfig(_ConfigFromEnv):
     """Minimum LLM confidence required to supersede a contradicting memory."""
     contradiction_max_pairs_per_run: int = 10
     """Maximum candidate pairs to send to the LLM in one contradiction run."""
+    maintenance: MemoryMaintenanceConfig = field(default_factory=MemoryMaintenanceConfig)
+    """Maintenance cadence and undo policy configuration."""
 
 
 @dataclass
