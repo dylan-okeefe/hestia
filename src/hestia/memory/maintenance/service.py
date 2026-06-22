@@ -5,6 +5,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from hestia.config import MemoryConfig
+from hestia.memory.maintenance.contradictions import (
+    ContradictionResolver,
+    SupersessionResult,
+)
 from hestia.memory.maintenance.dedupe import DedupeResult, DeterministicDeduper
 from hestia.memory.maintenance.llm_dedupe import LLMDeduper, LLMDedupeResult
 from hestia.memory.maintenance.prune import DeterministicPruner, PruneResult
@@ -61,3 +65,22 @@ class MemoryMaintenance:
             confidence_threshold=self._memory_config.llm_dedupe_confidence_threshold,
         )
         return await deduper.run(platform, platform_user)
+
+    async def run_contradiction_resolution(
+        self, platform: str, platform_user: str
+    ) -> SupersessionResult:
+        """Run the LLM contradiction supersession pass for the given identity.
+
+        Raises:
+            RuntimeError: If the service was created without an inference client.
+        """
+        if self._inference is None:
+            raise RuntimeError("Contradiction resolution requires an inference client")
+
+        resolver = ContradictionResolver(
+            self._memory_store,
+            self._inference,
+            max_pairs_per_run=self._memory_config.contradiction_max_pairs_per_run,
+            confidence_threshold=self._memory_config.contradiction_confidence_threshold,
+        )
+        return await resolver.run(platform, platform_user)

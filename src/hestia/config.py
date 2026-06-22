@@ -96,7 +96,11 @@ class MemoryConfig(_ConfigFromEnv):
     llm_dedupe_confidence_threshold: float = 0.8
     """Minimum LLM confidence required to merge near-duplicate memories."""
     llm_dedupe_max_pairs_per_run: int = 10
-    """Maximum candidate pairs to send to the LLM in one maintenance run."""
+    """Maximum candidate pairs to send to the LLM in one dedupe run."""
+    contradiction_confidence_threshold: float = 0.8
+    """Minimum LLM confidence required to supersede a contradicting memory."""
+    contradiction_max_pairs_per_run: int = 10
+    """Maximum candidate pairs to send to the LLM in one contradiction run."""
 
 
 @dataclass
