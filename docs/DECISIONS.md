@@ -52,6 +52,9 @@ references the old one rather than editing history.
 | [ADR-044](adr/ADR-044-blocked-actions-audit-and-digest.md) | Blocked-actions audit events and scheduled digest | Accepted |
 | [ADR-045](adr/ADR-045-authenticated-browser-fetch-ssrf-and-result-categories.md) | Authenticated browser fetch, SSRF guard, and structured result categories | Accepted |
 | [ADR-046](adr/ADR-046-chunked-large-file-writes-with-truncation-recovery.md) | Chunked large-file writes with truncated-write recovery | Accepted |
+| [ADR-047](adr/ADR-047-manual-in-session-compaction.md) | Manual in-session compaction with `/compact` | Accepted |
+| [ADR-048](adr/ADR-048-session-end-fact-extraction.md) | Session-end fact extraction and proactive memory capture | Accepted |
+| [ADR-049](adr/ADR-049-overnight-memory-maintenance.md) | Overnight memory maintenance (dedupe, prune, supersede) | Accepted |
 
 ---
 
