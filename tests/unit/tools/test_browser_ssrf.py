@@ -111,7 +111,7 @@ async def test_fetch_url_allows_public_url(
     assert result.category == ToolResultCategory.SUCCESS
     mock_playwright["page"].goto.assert_awaited_once_with(
         "https://example.com/page",
-        wait_until="networkidle",
+        wait_until="domcontentloaded",
         timeout=30000,
     )
 
