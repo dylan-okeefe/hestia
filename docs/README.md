@@ -15,7 +15,7 @@ Getting Hestia running and keeping it healthy:
 
 Understanding why Hestia is built the way it is:
 
-- **[Architecture Decisions](adr/)** — 39 ADRs covering everything from "why Python" to "why FTS5 over vector search."
+- **[Architecture Decisions](adr/)** — 49 ADRs covering everything from "why Python" to "why FTS5 over vector search."
 - **[Design Documents](design/)** — Deep dives on Matrix integration, browser session management, inference analytics, and the revised architecture.
 - **[Handoffs](handoffs/)** — Cross-session continuity notes for major subsystem work.
 - **[Development Process](development-process/)** — Internal development record: loop specs, review notes, and the Kimi/Cursor workflow. This is project archaeology, not user-facing documentation. Operators and contributors should start with Guides and ADRs instead.

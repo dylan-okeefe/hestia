@@ -111,7 +111,7 @@ upgrade path. Running `hestia init` is sufficient.
 
 - **[User Guides](docs/guides/)** — setup, platforms, security, voice, email, browser
   sessions, workflows, multi-user, custom tools
-- **[Architecture Decisions](docs/adr/)** — 39 ADRs covering design rationale
+- **[Architecture Decisions](docs/adr/)** — 49 ADRs covering design rationale
 - **[Changelog](CHANGELOG.md)** — version history
 - **[Release Notes](docs/releases/)** — human-facing release summaries
 - **[Security](SECURITY.md)** — threat model and responsible disclosure
@@ -131,12 +131,14 @@ src/hestia/
   artifacts/          # Artifact storage
   persistence/        # Database layer (SQLite/PostgreSQL)
   platforms/          # Platform ABC + Telegram, Matrix, Email, CLI adapters
-  policy/             # Policy engine with trust presets and capability labels
+  policy/             # Unified CapabilityGate, trust presets, capability labels
+  blocked_actions/    # Capability-gate deny/escalate audit + digest
   web/                # FastAPI routes, auth middleware, static assets
   voice/              # STT/TTS pipeline (faster-whisper + Piper)
   email/              # IMAP/SMTP adapter
   events/             # Event bus and trigger registry
   memory/             # Long-term memory store and epoch generation
+  memory/maintenance/ # Overnight dedupe / prune / supersede
   reflection/         # Background analysis and proposal generation
   style/              # Per-user interaction-style learning
   security/           # Injection scanner, egress audit

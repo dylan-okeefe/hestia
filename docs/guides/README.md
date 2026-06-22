@@ -15,6 +15,8 @@ These guides walk through setup, configuration, and day-to-day operation of Hest
 9. **[Security](security.md)** — Threat model, trust presets, and hardening checklist.
 10. **[Reflection tuning](reflection-tuning.md)** — Configure the background analysis loop.
 11. **[Telegram conversation audit](telegram-conversation-audit.md)** — Review and export chat history.
+12. **[Long-term memory](memory.md)** — How facts are captured, the write-time sanitizer, and overnight maintenance.
+13. **[Chat commands](chat-commands.md)** — `/compact` and other in-session slash commands.
 
 ## Also available
 

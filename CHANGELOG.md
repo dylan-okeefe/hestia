@@ -5,6 +5,8 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.15.0] — 2026-06-22
+
 ### Memory
 
 - **Overnight memory maintenance** — new `hestia.memory.maintenance` subsystem runs scheduled dedupe, prune, and supersede passes over long-term memory:

@@ -15,6 +15,47 @@ but not implemented as of v0.10.0.
 
 ---
 
+## v0.15.0
+
+**Released:** 2026-06-22  
+**Full notes:** [`CHANGELOG.md`](CHANGELOG.md)
+
+A large release (foundation work plus new subsystems). Because it adds several
+tables and columns at once, back up and verify the upgrade on a copy of your
+runtime database before pointing your live instance at it.
+
+### 1. Back up
+
+```bash
+cp -r ~/.hestia ~/.hestia-backup-$(date +%Y%m%d)
+```
+
+### 2. Schema changes (applied automatically)
+
+Startup runs `create_tables()` plus idempotent runtime migrations. This release
+adds soft-delete and protected-set columns plus the maintenance trace table for
+memory maintenance, the compaction-archive table, the `correction` column on
+`messages`, and the split session/message/turn stores. No manual migration is
+needed; `hestia init` or a normal startup applies them.
+
+### 3. Enable overnight memory maintenance (optional)
+
+```bash
+hestia memory-maintenance ensure-tasks
+```
+
+Registers the nightly deterministic and weekly LLM maintenance passes. Undo any
+action with `hestia memory-maintenance undo <action-id>`.
+
+### 4. Heads-up
+
+- The unified `CapabilityGate` now enforces per-user trust and gates destructive
+  tools on unattended and injection-flagged paths. Review your trust config and
+  any per-user presets after upgrading.
+- New `/compact` meta-command compacts the current session in place.
+- `persistence/sessions.py` is now a deprecated re-export facade and will be
+  removed in v0.16.0; update any external imports to the split stores.
+
 ## v0.14.0
 
 **Released:** 2026-06-15  
