@@ -85,6 +85,31 @@ def make_matrix_confirm_callback(
     return callback
 
 
+def make_serve_scheduler_callback(
+    adapters: dict[str, Any], session_store: SessionStore
+) -> Callable[[ScheduledTask, str], Coroutine[Any, Any, None]]:
+    """Create a scheduler response callback that routes to any started adapter.
+
+    Used by ``hestia serve`` so a single scheduler can deliver scheduled
+    messages to Telegram, Matrix, or other platforms.
+    """
+
+    async def callback(task: ScheduledTask, text: str) -> None:
+        session = await session_store.get_session(task.session_id)
+        if session is None:
+            logger.warning("Scheduler task %s: session not found", task.id)
+            return
+        adapter = adapters.get(session.platform)
+        if adapter is None:
+            logger.warning(
+                "Scheduler task %s: no adapter for platform %s", task.id, session.platform
+            )
+            return
+        await adapter.send_message(session.platform_user, text)
+
+    return callback
+
+
 def make_telegram_scheduler_callback(
     adapter: TelegramAdapter, session_store: SessionStore
 ) -> Callable[[ScheduledTask, str], Coroutine[Any, Any, None]]:
@@ -393,7 +418,12 @@ async def run_platform(
         await app.inference.close()
 
 
-async def run_telegram(app: Any, config: HestiaConfig, adapter: TelegramAdapter | None = None) -> None:
+async def run_telegram(
+    app: Any,
+    config: HestiaConfig,
+    adapter: TelegramAdapter | None = None,
+    start_scheduler: bool = True,
+) -> None:
     """Run Hestia as a Telegram bot (blocks until Ctrl-C)."""
     if not config.inference.model_name:
         raise ValueError(
@@ -410,7 +440,11 @@ async def run_telegram(app: Any, config: HestiaConfig, adapter: TelegramAdapter 
         adapter = TelegramAdapter(config.telegram)
     current_telegram_user: ContextVar[str] = ContextVar("current_telegram_user", default="")
     confirm_callback = make_telegram_confirm_callback(adapter, current_telegram_user)
-    scheduler_callback = make_telegram_scheduler_callback(adapter, app.session_store)
+    scheduler_response_callback: (
+        Callable[[ScheduledTask, str], Coroutine[Any, Any, None]] | None
+    ) = None
+    if start_scheduler:
+        scheduler_response_callback = make_telegram_scheduler_callback(adapter, app.session_store)
 
     await run_platform(
         app,
@@ -419,12 +453,17 @@ async def run_telegram(app: Any, config: HestiaConfig, adapter: TelegramAdapter 
         confirm_callback=confirm_callback,
         platform_name="telegram",
         user_label="user",
-        scheduler_response_callback=scheduler_callback,
+        scheduler_response_callback=scheduler_response_callback,
         user_context_var=current_telegram_user,
     )
 
 
-async def run_matrix(app: Any, config: HestiaConfig, adapter: MatrixAdapter | None = None) -> None:
+async def run_matrix(
+    app: Any,
+    config: HestiaConfig,
+    adapter: MatrixAdapter | None = None,
+    start_scheduler: bool = True,
+) -> None:
     """Run Hestia as a Matrix bot (blocks until Ctrl-C)."""
     if not config.inference.model_name:
         raise ValueError(
@@ -445,7 +484,11 @@ async def run_matrix(app: Any, config: HestiaConfig, adapter: MatrixAdapter | No
         adapter = MatrixAdapter(config.matrix)
     current_matrix_room: ContextVar[str] = ContextVar("current_matrix_room", default="")
     confirm_callback = make_matrix_confirm_callback(adapter, current_matrix_room)
-    scheduler_callback = make_matrix_scheduler_callback(adapter, app.session_store)
+    scheduler_response_callback: (
+        Callable[[ScheduledTask, str], Coroutine[Any, Any, None]] | None
+    ) = None
+    if start_scheduler:
+        scheduler_response_callback = make_matrix_scheduler_callback(adapter, app.session_store)
 
     await run_platform(
         app,
@@ -454,6 +497,6 @@ async def run_matrix(app: Any, config: HestiaConfig, adapter: MatrixAdapter | No
         confirm_callback=confirm_callback,
         platform_name="matrix",
         user_label="room",
-        scheduler_response_callback=scheduler_callback,
+        scheduler_response_callback=scheduler_response_callback,
         user_context_var=current_matrix_room,
     )
