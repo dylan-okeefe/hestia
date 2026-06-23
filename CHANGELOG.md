@@ -5,6 +5,12 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `MemoryStore.create_table()` now migrates any prior schema variant (including tables that already had `platform`/`platform_user` but lacked the soft-delete columns from L226) instead of failing with `no such column: is_active`.
+- `hestia serve` now starts the scheduler loop, so proposals, style profiles, and memory maintenance actually run without needing a separate `hestia schedule daemon` or platform-only runner.
+- `run_telegram` / `run_matrix` gained a `start_scheduler` flag so `serve` can own the scheduler while standalone platform commands keep their platform-specific scheduler.
+
 ## [0.15.0] — 2026-06-22
 
 ### Memory
