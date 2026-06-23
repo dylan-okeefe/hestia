@@ -66,3 +66,7 @@ docs/development-process/reviews/smallcode-littlecoder-review.md
 
 # Local research clones
 .harness-research/
+
+# Demo/screenshot instance local state (see docs/development-process/screenshot-workflow.md)
+config.demo.py
+demo-data/

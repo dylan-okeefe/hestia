@@ -18,9 +18,13 @@ from hestia.errors import (
     PolicyFailureError,
     ThinkingBudgetExceededError,
 )
+from hestia.orchestrator.mappers import message_domain_to_dto
 from hestia.orchestrator.quality import Correction, DegeneratePattern, classify_turn
 from hestia.orchestrator.types import TransitionCallback, Turn, TurnContext, TurnState
+from hestia.policy.channel import Channel
 from hestia.policy.engine import PolicyEngine, RetryAction
+from hestia.policy.gate import CapabilityGate, CapabilityRequest
+from hestia.policy.identity import Identity
 from hestia.security import InjectionScanner
 from hestia.tools.metadata import ToolMetadata
 from hestia.tools.registry import ToolNotFoundError, ToolRegistry
@@ -30,13 +34,16 @@ from hestia.tools.types import ToolCallResult
 if TYPE_CHECKING:
     from hestia.events.bus import EventBus
 
+from hestia.persistence.message_store import MessageStore
+
 if TYPE_CHECKING:
     from hestia.context.builder import ContextBuilder
-    from hestia.persistence.sessions import SessionStore
+    from hestia.persistence.message_store import MessageStore
+    from hestia.persistence.session_store import SessionStore
 
 logger = logging.getLogger(__name__)
 
-ConfirmCallback = Callable[[str, dict[str, Any]], Awaitable[bool]]
+ConfirmCallback = Callable[[str, dict[str, Any], str | None], Awaitable[bool]]
 TypingCallback = Callable[[bool], Awaitable[None]]
 
 # Inter-chunk timeout: once the model has started emitting tokens, if no chunk
@@ -54,6 +61,11 @@ _STREAM_FIRST_CHUNK_TIMEOUT = 120.0
 _TIMEOUT_ESCALATION_SCHEDULE = (15.0, 30.0, 60.0)
 _MAX_PER_ATTEMPT_TIMEOUT = 90.0
 _DEFAULT_URL_TIME_BUDGET = 120.0
+
+# Maximum consecutive degenerate tool-call turns before failing the turn.
+# A degenerate turn is when the model returns finish_reason="tool_calls"
+# but the structured tool-call batch is empty (e.g. all calls failed JSON validation).
+_MAX_DEGENERATE_TOOL_CALL_RETRIES = 3
 
 
 _ToolCallKey = tuple[str, tuple[tuple[str, Any], ...]]
@@ -206,7 +218,9 @@ class TurnExecution:
         policy: PolicyEngine,
         context_builder: "ContextBuilder",
         session_store: "SessionStore",
+        message_store: "MessageStore | None" = None,
         confirm_callback: ConfirmCallback | None = None,
+        capability_gate: CapabilityGate | None = None,
         injection_scanner: InjectionScanner | None = None,
         max_iterations: int = 10,
         max_tool_calls_per_turn: int = 10,
@@ -220,7 +234,9 @@ class TurnExecution:
         self._policy = policy
         self._builder = context_builder
         self._store = session_store
+        self._message_store = message_store or MessageStore(session_store._db)
         self._confirm_callback = confirm_callback
+        self._capability_gate = capability_gate
         self._injection_scanner = injection_scanner
         self._max_iterations = max_iterations
         self._max_tool_calls_per_turn = max_tool_calls_per_turn
@@ -231,7 +247,7 @@ class TurnExecution:
 
         # Meta-tool dispatch table — adding a new meta-tool is one line.
         self._meta_tools: dict[
-            str, Callable[[Session, ToolCall, list[str] | None], Awaitable[ToolCallResult]]
+            str, Callable[[Session, ToolCall, list[str] | None, TurnContext | None], Awaitable[ToolCallResult]]
         ] = {
             "list_tools": self._meta_list_tools,
             "describe_tool": self._meta_describe_tool,
@@ -281,7 +297,9 @@ class TurnExecution:
                     ),
                     created_at=utcnow(),
                 )
-                await self._store.append_message(session.id, nudge)
+                await self._message_store.append_message(
+                    session.id, message_domain_to_dto(nudge, session.id, idx=0)
+                )
                 ctx.running_history.append(nudge)
                 self._builder.set_style_prefix(ctx.style_prefix)
                 ctx.build_result = await self._builder.build(
@@ -304,7 +322,34 @@ class TurnExecution:
                 reasoning_content=chat_response.reasoning_content,
                 created_at=utcnow(),
             )
-            await self._store.append_message(session.id, assistant_msg)
+
+            # Guardrail: degenerate tool-call turn. The model emitted
+            # finish_reason="tool_calls" but every structured call failed JSON
+            # validation, leaving an empty batch. Do not persist a useless
+            # assistant message; retry a bounded number of times instead.
+            if (
+                chat_response.finish_reason == "tool_calls"
+                and not chat_response.tool_calls
+            ):
+                ctx._degenerate_tool_call_retries += 1
+                if ctx._degenerate_tool_call_retries > _MAX_DEGENERATE_TOOL_CALL_RETRIES:
+                    raise PolicyFailureError(
+                        f"Model returned finish_reason='tool_calls' with no valid tool calls "
+                        f"{ctx._degenerate_tool_call_retries} times; giving up."
+                    )
+                logger.warning(
+                    "Degenerate tool-call turn (finish_reason='tool_calls' with no calls); "
+                    "retry %d/%d",
+                    ctx._degenerate_tool_call_retries,
+                    _MAX_DEGENERATE_TOOL_CALL_RETRIES,
+                )
+                await transition(turn, TurnState.RETRYING, "")
+                turn.iterations += 1
+                continue
+
+            await self._message_store.append_message(
+                session.id, message_domain_to_dto(assistant_msg, session.id, idx=0)
+            )
 
             # Guardrail: model is reasoning extensively but not acting
             if (
@@ -503,7 +548,9 @@ class TurnExecution:
             created_at=utcnow(),
             correction=True,
         )
-        await self._store.append_message(ctx.session.id, msg)
+        await self._message_store.append_message(
+            ctx.session.id, message_domain_to_dto(msg, ctx.session.id, idx=0)
+        )
         ctx.running_history.append(msg)
         self._builder.set_style_prefix(ctx.style_prefix)
         ctx.build_result = await self._builder.build(
@@ -596,7 +643,9 @@ class TurnExecution:
             ctx.artifact_handles.extend(handles)
 
         for result_msg in tool_results:
-            await self._store.append_message(ctx.session.id, result_msg)
+            await self._message_store.append_message(
+                ctx.session.id, message_domain_to_dto(result_msg, ctx.session.id, idx=0)
+            )
 
         await transition(turn, TurnState.BUILDING_CONTEXT, "")
 
@@ -1123,7 +1172,7 @@ class TurnExecution:
             async def _run_one(idx: int) -> tuple[int, ToolCallResult]:
                 tc = tool_calls[idx]
                 try:
-                    result = await self._dispatch_tool_call(session, tc, allowed_tools)
+                    result = await self._dispatch_tool_call(session, tc, allowed_tools, ctx=ctx)
                 except Exception as exc:  # noqa: BLE001 — concurrent tool shield
                     logger.exception("Tool call %s failed during concurrent dispatch", tc.name)
                     result = ToolCallResult.error(
@@ -1152,7 +1201,7 @@ class TurnExecution:
         serial_results: dict[int, ToolCallResult] = {}
         for idx in serial_indices:
             tc = tool_calls[idx]
-            result = await self._dispatch_tool_call(session, tc, allowed_tools)
+            result = await self._dispatch_tool_call(session, tc, allowed_tools, ctx=ctx)
             serial_results[idx] = result
 
         # Reassemble in original emission order for trace consistency
@@ -1291,9 +1340,20 @@ class TurnExecution:
         tool_name: str,
         arguments: dict[str, Any],
         session: Session,
+        ctx: "TurnContext | None" = None,
     ) -> ToolCallResult | None:
         """Return None if approved (or if the tool does not require confirmation),
         or a ToolCallResult(error=...) if denied / unable to confirm."""
+        # L222: unified capability gate runs first.
+        gate_result = await self._run_capability_gate(
+            tool_name=tool_name,
+            arguments=arguments,
+            session=session,
+            ctx=ctx,
+        )
+        if gate_result is not None:
+            return gate_result
+
         if not tool.requires_confirmation:
             return None
 
@@ -1312,7 +1372,8 @@ class TurnExecution:
                 ),
             )
 
-        confirmed = await self._confirm_callback(tool_name, arguments)
+        request_token = ctx.request_token if ctx is not None else None
+        confirmed = await self._confirm_callback(tool_name, arguments, request_token)
         if not confirmed:
             return ToolCallResult.error(
                 "Tool execution was cancelled by user.",
@@ -1320,8 +1381,75 @@ class TurnExecution:
 
         return None
 
+    async def _run_capability_gate(
+        self,
+        *,
+        tool_name: str,
+        arguments: dict[str, Any],
+        session: Session,
+        ctx: "TurnContext | None",
+    ) -> ToolCallResult | None:
+        """Check CapabilityGate and return a ToolCallResult if blocked.
+
+        Returns None when the gate allows the call (including when no gate is
+        configured). When the gate requires confirmation but the call is
+        otherwise allowed, this method returns None so the normal confirmation
+        path (with the gate's request_token) can take over.
+        """
+        if self._capability_gate is None:
+            return None
+
+        channel = ctx.channel if ctx is not None and ctx.channel is not None else Channel.CLI
+        platform_user = (
+            ctx.platform_user
+            if ctx is not None and ctx.platform_user is not None
+            else session.platform_user
+        )
+        actor = Identity(
+            platform=session.platform,
+            platform_user=platform_user,
+            user_id=ctx.resolved_user.id if ctx is not None and ctx.resolved_user is not None else None,
+        )
+
+        injection_flagged = False
+        if ctx is not None:
+            injection_flagged = any(
+                "[SECURITY NOTE:" in (m.content or "")
+                for m in ctx.running_history
+            )
+
+        request = CapabilityRequest(
+            actor=actor,
+            channel=channel,
+            tool_name=tool_name,
+            inputs=arguments,
+            session_id=session.id,
+        )
+        result = await self._capability_gate.check(
+            request, injection_flagged=injection_flagged
+        )
+
+        if not result.allowed:
+            return ToolCallResult.error(
+                f"[CATEGORY: BLOCKED] Capability gate denied '{tool_name}': {result.reason}"
+            )
+
+        # Gate has approved. If it requires confirmation, fall through to the
+        # normal confirmation flow; the callback will receive the request_token.
+        if result.requires_confirmation:
+            # Store token on the context for the confirmation callback to use.
+            if ctx is not None:
+                ctx.request_token = result.request_token
+            return None
+
+        return None
+
     async def _meta_list_tools(
-        self, _session: Session, tc: ToolCall, allowed_tools: list[str] | None
+        self,
+        _session: Session,
+        tc: ToolCall,
+        allowed_tools: list[str] | None,
+        ctx: "TurnContext | None" = None,
     ) -> ToolCallResult:
         tag = tc.arguments.get("tag") if tc.arguments else None
         content = await self._tools.meta_list_tools(tag, allowed_names=allowed_tools)
@@ -1333,7 +1461,11 @@ class TurnExecution:
         )
 
     async def _meta_describe_tool(
-        self, _session: Session, tc: ToolCall, allowed_tools: list[str] | None
+        self,
+        _session: Session,
+        tc: ToolCall,
+        allowed_tools: list[str] | None,
+        ctx: "TurnContext | None" = None,
     ) -> ToolCallResult:
         raw_names = tc.arguments.get("names") if tc.arguments else []
         names: str | list[str] = raw_names if isinstance(raw_names, (str, list)) else []
@@ -1346,7 +1478,11 @@ class TurnExecution:
         )
 
     async def _meta_call_tool(
-        self, session: Session, tc: ToolCall, allowed_tools: list[str] | None
+        self,
+        session: Session,
+        tc: ToolCall,
+        allowed_tools: list[str] | None,
+        ctx: "TurnContext | None" = None,
     ) -> ToolCallResult:
         name = tc.arguments.get("name") if tc.arguments else None
         arguments = tc.arguments.get("arguments") if tc.arguments else {}
@@ -1374,7 +1510,11 @@ class TurnExecution:
             )
 
         confirm_result = await self._check_confirmation(
-            tool=inner_meta, tool_name=name, arguments=arguments, session=session
+            tool=inner_meta,
+            tool_name=name,
+            arguments=arguments,
+            session=session,
+            ctx=ctx,
         )
         if confirm_result is not None:
             return confirm_result
@@ -1382,7 +1522,11 @@ class TurnExecution:
         return await self._tools.meta_call_tool(name, arguments)
 
     async def _dispatch_tool_call(
-        self, session: Session, tc: ToolCall, allowed_tools: list[str] | None = None
+        self,
+        session: Session,
+        tc: ToolCall,
+        allowed_tools: list[str] | None = None,
+        ctx: "TurnContext | None" = None,
     ) -> ToolCallResult:
         """Dispatch a single tool call, handling meta-tools and direct tool calls.
 
@@ -1403,7 +1547,7 @@ class TurnExecution:
         # Handle meta-tools via dispatch table
         handler = self._meta_tools.get(tc.name)
         if handler is not None:
-            return await handler(session, tc, allowed_tools)
+            return await handler(session, tc, allowed_tools, ctx)
 
         # Direct tool call (non-meta-tool)
         # Check if tool exists and handle confirmation
@@ -1415,7 +1559,11 @@ class TurnExecution:
             )
 
         confirm_result = await self._check_confirmation(
-            tool=meta, tool_name=tc.name, arguments=tc.arguments or {}, session=session
+            tool=meta,
+            tool_name=tc.name,
+            arguments=tc.arguments or {},
+            session=session,
+            ctx=ctx,
         )
         if confirm_result is not None:
             return confirm_result

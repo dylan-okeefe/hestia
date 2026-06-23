@@ -85,9 +85,13 @@ async def test_scanner_annotates_injected_tool_result(
     """When a tool result matches an injection pattern, the orchestrator wraps it."""
     scanner = InjectionScanner(enabled=True)
 
+    message_store = AsyncMock()
+    turn_store = AsyncMock()
     orchestrator = Orchestrator(
         inference=mock_inference,
         session_store=AsyncMock(),
+        message_store=message_store,
+        turn_store=turn_store,
         context_builder=mock_context_builder,
         tool_registry=mock_tool_registry,
         policy=mock_policy,
@@ -102,7 +106,7 @@ async def test_scanner_annotates_injected_tool_result(
     )
 
     # The turn should have stored the tool result message
-    calls = orchestrator._store.append_message.call_args_list
+    calls = orchestrator._message_store.append_message.call_args_list
     tool_msgs = [c[0][1] for c in calls if c[0][1].role == "tool"]
     assert len(tool_msgs) == 1
     assert "SECURITY NOTE" in tool_msgs[0].content
@@ -120,9 +124,13 @@ async def test_scanner_disabled_leaves_content_untouched(
     """When the scanner is disabled, tool results are passed through unchanged."""
     scanner = InjectionScanner(enabled=False)
 
+    message_store = AsyncMock()
+    turn_store = AsyncMock()
     orchestrator = Orchestrator(
         inference=mock_inference,
         session_store=AsyncMock(),
+        message_store=message_store,
+        turn_store=turn_store,
         context_builder=mock_context_builder,
         tool_registry=mock_tool_registry,
         policy=mock_policy,
@@ -136,7 +144,7 @@ async def test_scanner_disabled_leaves_content_untouched(
         respond_callback=AsyncMock(),
     )
 
-    calls = orchestrator._store.append_message.call_args_list
+    calls = orchestrator._message_store.append_message.call_args_list
     tool_msgs = [c[0][1] for c in calls if c[0][1].role == "tool"]
     assert len(tool_msgs) == 1
     assert "SECURITY NOTE" not in tool_msgs[0].content

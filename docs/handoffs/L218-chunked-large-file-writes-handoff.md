@@ -1,5 +1,9 @@
 # L218 Handoff: Chunked Large-File Writes
 
+> **Loop-numbering note:** The git commits that landed this work are labeled
+> `L189` ("Chunked large-file writes"). It was later renumbered to `L218` to avoid
+> colliding with earlier `L189`/`L190` loops already recorded in the loop log.
+
 ## Status
 Implemented on `feature/develop-review-2026-06-12`.
 
@@ -24,7 +28,7 @@ Implemented on `feature/develop-review-2026-06-12`.
 - `uv run mypy src/hestia`: no new errors introduced.
 - `uv run ruff check src/ tests/`: no new lint errors introduced.
 
-## Pre-existing Baseline Failures (not introduced by L189)
+## Pre-existing Baseline Failures (not introduced by L218)
 - `tests/unit/test_web_routes.py::TestDoctorRoute::test_doctor_check`
 - `tests/unit/tools/test_browser_session_store.py::TestBrowserSessionStore::test_list_domains`
 - `tests/unit/web/test_browser_stream.py::TestStartSession::test_start_session_launches_browser_and_returns_id`

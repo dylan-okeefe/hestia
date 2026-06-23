@@ -2,6 +2,7 @@
 
 import json
 import shutil
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -59,6 +60,7 @@ class SessionMetadata:
     health_status: str = "unknown"  # "healthy", "stale", "expired", "unknown"
     health_check_url: str = ""
     cookie_count: int = 0
+    requires_headed: bool = False
 
 
 class BrowserSessionStore:
@@ -153,6 +155,7 @@ class BrowserSessionStore:
                 health_status=data.get("health_status", "unknown"),
                 health_check_url=data.get("health_check_url", ""),
                 cookie_count=data.get("cookie_count", 0),
+                requires_headed=bool(data.get("requires_headed", False)),
             )
         except (json.JSONDecodeError, KeyError, TypeError):
             return None
@@ -168,28 +171,28 @@ class BrowserSessionStore:
         self.save_metadata(domain, metadata)
         return metadata
 
-    def save_cookies(self, domain: str, cookies: list[dict[str, Any]]) -> None:
+    def save_cookies(self, domain: str, cookies: Sequence[Mapping[str, Any]]) -> None:
         path = self._session_dir(domain) / "cookies.json"
         path.write_text(json.dumps(cookies, indent=2))
         self.update_metadata(
             domain, last_saved=datetime.now(UTC), cookie_count=len(cookies)
         )
 
-    def load_cookies(self, domain: str) -> list[dict[str, Any]]:
+    def load_cookies(self, domain: str) -> list[Mapping[str, Any]]:
         # Try exact domain first, then www variant for backward compatibility.
         path = self._session_dir(domain, create=False) / "cookies.json"
         if path.exists():
-            return cast(list[dict[str, Any]], json.loads(path.read_text()))
+            return cast(list[Mapping[str, Any]], json.loads(path.read_text()))
 
         existing_dir = self._find_existing_dir(domain)
         if existing_dir is not None:
             alt_path = existing_dir / "cookies.json"
             if alt_path.exists():
-                return cast(list[dict[str, Any]], json.loads(alt_path.read_text()))
+                return cast(list[Mapping[str, Any]], json.loads(alt_path.read_text()))
 
         return []
 
-    def save_storage(self, domain: str, storage_state: dict[str, Any]) -> None:
+    def save_storage(self, domain: str, storage_state: Mapping[str, Any]) -> None:
         path = self._session_dir(domain) / "storage_state.json"
         path.write_text(json.dumps(storage_state, indent=2))
         cookie_count = len(storage_state.get("cookies", []))
@@ -267,19 +270,23 @@ class BrowserSessionStore:
                         existing.health_check_url = metadata.health_check_url
                     if metadata.cookie_count > existing.cookie_count:
                         existing.cookie_count = metadata.cookie_count
+                    if metadata.requires_headed:
+                        existing.requires_headed = True
         return list(by_domain.values())
 
     def clear(self, domain: str) -> None:
         shutil.rmtree(self._session_dir(domain), ignore_errors=True)
 
-    async def check_health(self, domain: str, timeout_seconds: int = 30) -> str:
+    async def check_health(
+        self, domain: str, *, timeout_seconds: int = 30, force: bool = False
+    ) -> str:
         """Run a health check on the stored session for a domain.
 
         Launches a headless browser with the stored session, navigates to the
         health_check_url (default https://domain/), and checks whether the
         session is still authenticated.
 
-        Rate-limited to once per hour per domain.
+        Rate-limited to once per hour per domain unless *force* is True.
 
         Returns "healthy" or "expired".
         """
@@ -292,8 +299,9 @@ class BrowserSessionStore:
         if metadata is None:
             metadata = SessionMetadata(domain=domain)
 
-        # Rate limiting: enforce minimum 1 hour between checks
-        if metadata.last_health_check is not None:
+        # Rate limiting: enforce minimum 1 hour between automatic checks.
+        # Force-checks bypass the throttle.
+        if not force and metadata.last_health_check is not None:
             elapsed = datetime.now(UTC) - metadata.last_health_check
             if elapsed.total_seconds() < 3600:
                 raise ValueError(
@@ -308,53 +316,59 @@ class BrowserSessionStore:
             if cookies:
                 storage_state = {"cookies": cookies, "origins": []}
 
-        status = "unknown"
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(
-                headless=True,
-                args=STEALTH_LAUNCH_ARGS,
-            )
-            context = await browser.new_context(
-                **stealth_context_kwargs(storage_state)
-            )
-            page = await context.new_page()
-            await apply_stealth_async(page)
-            try:
-                await page.goto(
-                    health_check_url,
-                    timeout=timeout_seconds * 1000,
-                    wait_until="networkidle",
+        status = metadata.health_status or "unknown"
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(
+                    headless=True,
+                    args=STEALTH_LAUNCH_ARGS,
                 )
-                url = page.url
-                title = await page.title()
-
-                # Detect login redirects
-                login_in_path = any(
-                    path in url.lower()
-                    for path in ("/login", "/signin", "/auth")
+                context = await browser.new_context(
+                    **stealth_context_kwargs(storage_state)
                 )
-                login_in_title = any(
-                    phrase in title.lower()
-                    for phrase in ("sign in", "log in", "login")
-                )
-                status = "expired" if login_in_path or login_in_title else "healthy"
-
-                # Save refreshed cookies/storage_state
+                page = await context.new_page()
+                await apply_stealth_async(page)
                 try:
-                    refreshed_storage = await context.storage_state()
-                    self.save_storage(domain, refreshed_storage)
-                    refreshed_cookies = await context.cookies()
-                    self.save_cookies(domain, refreshed_cookies)
-                except Exception:
-                    pass
+                    await page.goto(
+                        health_check_url,
+                        timeout=timeout_seconds * 1000,
+                        wait_until="networkidle",
+                    )
+                    url = page.url
+                    title = await page.title()
 
-            except Exception:
-                status = "expired"
-            finally:
-                await context.close()
-                await browser.close()
+                    # Detect login redirects
+                    login_in_path = any(
+                        path in url.lower()
+                        for path in ("/login", "/signin", "/auth")
+                    )
+                    login_in_title = any(
+                        phrase in title.lower()
+                        for phrase in ("sign in", "log in", "login")
+                    )
+                    status = "expired" if login_in_path or login_in_title else "healthy"
+
+                    # Save refreshed cookies/storage_state
+                    try:
+                        refreshed_storage = await context.storage_state()
+                        self.save_storage(domain, refreshed_storage)
+                        refreshed_cookies = await context.cookies()
+                        self.save_cookies(domain, refreshed_cookies)
+                    except Exception:
+                        pass
+                finally:
+                    await context.close()
+                    await browser.close()
+        except Exception:
+            # Launch/navigation/browser errors do not prove the session is
+            # expired; the site may block headless access or be unreachable.
+            # Preserve the previous status so a flaky check doesn't wipe a
+            # known-good (or freshly saved) session down to "unknown".
+            pass
 
         metadata.last_health_check = datetime.now(UTC)
-        metadata.health_status = status
+        # Only overwrite a known status when we actually got a fresh result.
+        if status != metadata.health_status or status in ("healthy", "expired"):
+            metadata.health_status = status
         self.save_metadata(domain, metadata)
         return status

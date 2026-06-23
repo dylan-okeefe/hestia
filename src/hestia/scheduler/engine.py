@@ -9,17 +9,22 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 from typing import Any
 
+from hestia.blocked_actions.digest import BlockedActionsDigest
 from hestia.core.clock import utcnow
 from hestia.core.types import Message, ScheduledTask, SessionState
 from hestia.events.bus import EventBus
+from hestia.memory.maintenance import MemoryMaintenance
+from hestia.memory.maintenance.digest import MemoryMaintenanceDigest
+from hestia.memory.maintenance.scheduler import _parse_task_prompt
 from hestia.orchestrator import Orchestrator
 from hestia.persistence.scheduler import (
+    _MIN_RETRY_BACKOFF_SECONDS,
     SchedulerStore,
     _calculate_next_run,
-    _MIN_RETRY_BACKOFF_SECONDS,
 )
-from hestia.persistence.sessions import SessionStore
+from hestia.persistence.session_store import SessionStore
 from hestia.platforms.notifier import PlatformNotifier
+from hestia.policy.channel import Channel
 from hestia.runtime_context import scheduler_tick_active
 
 logger = logging.getLogger(__name__)
@@ -42,6 +47,9 @@ class Scheduler:
         system_prompt: str | None = None,
         notifier: PlatformNotifier | None = None,
         event_bus: EventBus | None = None,
+        blocked_actions_digest: BlockedActionsDigest | None = None,
+        memory_maintenance: MemoryMaintenance | None = None,
+        memory_maintenance_digest: MemoryMaintenanceDigest | None = None,
     ):
         self._scheduler_store = scheduler_store
         self._session_store = session_store
@@ -51,6 +59,9 @@ class Scheduler:
         self._system_prompt = system_prompt or "You are a helpful assistant."
         self._notifier = notifier
         self._event_bus = event_bus
+        self._blocked_actions_digest = blocked_actions_digest
+        self._memory_maintenance = memory_maintenance
+        self._memory_maintenance_digest = memory_maintenance_digest
         self._tick_lock = asyncio.Lock()
         self._stop_event = asyncio.Event()
         self._loop_task: asyncio.Task[Any] | None = None
@@ -113,6 +124,18 @@ class Scheduler:
         async with self._tick_lock:
             due = await self._scheduler_store.list_due_tasks(now)
             for task in due:
+                # If the target session is already inside process_turn, skip this
+                # tick and leave next_run_at untouched so the next tick retries.
+                # Never await the session lock from inside the tick loop.
+                lock_manager = getattr(self._orchestrator, "_lock_manager", None)
+                if lock_manager is not None and lock_manager.is_locked(task.session_id):
+                    logger.info(
+                        "Scheduler skipping task %s: session %s lock is held",
+                        task.id,
+                        task.session_id,
+                    )
+                    continue
+
                 # Mark in-flight before the long-running process_turn so the next
                 # tick cannot re-list the same task while it is already dispatched.
                 in_flight_next_run = self._in_flight_next_run(task, now)
@@ -158,39 +181,63 @@ class Scheduler:
             )
             return
 
-        user_message = Message(role="user", content=task.prompt)
-
-        async def deliver(text: str) -> None:
-            await self._response_callback(task, text)
-            if task.notify and self._notifier is not None:
-                if text.strip() == "SILENT":
-                    return
-                session_for_notify = await self._session_store.get_session(task.session_id)
-                if session_for_notify is not None:
-                    await self._notifier.send(
-                        session_for_notify.platform,
-                        session_for_notify.platform_user,
-                        text,
-                    )
-
         turn_error: str | None = None
-        tick_token = scheduler_tick_active.set(True)
-        try:
-            turn = await self._orchestrator.process_turn(
-                session=session,
-                user_message=user_message,
-                respond_callback=deliver,
-                system_prompt=self._system_prompt,
-            )
-            turn_error = turn.error
-        except Exception as e:  # noqa: BLE001
-            # Catch-all to record any failure during task execution
-            logger.exception(
-                "Task %s failed during process_turn", task.id
-            )  # Outermost boundary — intentionally broad
-            turn_error = str(e)
-        finally:
-            scheduler_tick_active.reset(tick_token)
+        if task.task_type == "blocked_digest":
+            if self._blocked_actions_digest is None:
+                turn_error = "Blocked-actions digest service not configured"
+            else:
+                try:
+                    text = await self._blocked_actions_digest.send_digest_for_task(task)
+                    await self._deliver(task, text)
+                except Exception as e:  # noqa: BLE001
+                    logger.exception("Task %s failed during digest", task.id)
+                    turn_error = str(e)
+        elif task.task_type == "memory_maintenance_deterministic":
+            if self._memory_maintenance is None or self._memory_maintenance_digest is None:
+                turn_error = "Memory maintenance service not configured"
+            else:
+                try:
+                    platform, platform_user = _parse_task_prompt(task.prompt)
+                    await self._memory_maintenance.run_deterministic_pass(
+                        platform, platform_user
+                    )
+                    text = await self._memory_maintenance_digest.send_digest_for_task(task)
+                    await self._deliver(task, text)
+                except Exception as e:  # noqa: BLE001
+                    logger.exception("Task %s failed during memory maintenance", task.id)
+                    turn_error = str(e)
+        elif task.task_type == "memory_maintenance_llm":
+            if self._memory_maintenance is None or self._memory_maintenance_digest is None:
+                turn_error = "Memory maintenance service not configured"
+            else:
+                try:
+                    platform, platform_user = _parse_task_prompt(task.prompt)
+                    await self._memory_maintenance.run_llm_pass(platform, platform_user)
+                    text = await self._memory_maintenance_digest.send_digest_for_task(task)
+                    await self._deliver(task, text)
+                except Exception as e:  # noqa: BLE001
+                    logger.exception("Task %s failed during memory maintenance", task.id)
+                    turn_error = str(e)
+        else:
+            user_message = Message(role="user", content=task.prompt)
+            tick_token = scheduler_tick_active.set(True)
+            try:
+                turn = await self._orchestrator.process_turn(
+                    session=session,
+                    user_message=user_message,
+                    respond_callback=lambda text: self._deliver(task, text),
+                    system_prompt=self._system_prompt,
+                    channel=Channel.SCHEDULER,
+                )
+                turn_error = turn.error
+            except Exception as e:  # noqa: BLE001
+                # Catch-all to record any failure during task execution
+                logger.exception(
+                    "Task %s failed during process_turn", task.id
+                )  # Outermost boundary — intentionally broad
+                turn_error = str(e)
+            finally:
+                scheduler_tick_active.reset(tick_token)
 
         # Compute next run: on error use a capped backoff, otherwise cron tasks
         # advance and one-shot tasks are disabled.
@@ -204,3 +251,16 @@ class Scheduler:
         await self._scheduler_store.update_after_run(
             task.id, error=turn_error, now=now, next_run_at=next_run
         )
+
+    async def _deliver(self, task: ScheduledTask, text: str) -> None:
+        await self._response_callback(task, text)
+        if task.notify and self._notifier is not None:
+            if text.strip() == "SILENT":
+                return
+            session_for_notify = await self._session_store.get_session(task.session_id)
+            if session_for_notify is not None:
+                await self._notifier.send(
+                    session_for_notify.platform,
+                    session_for_notify.platform_user,
+                    text,
+                )

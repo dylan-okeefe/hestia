@@ -493,7 +493,6 @@ class TestHandoffRoutes:
             ]
         )
 
-        # Replace session_store with one that returns handoffs
         handoffs = [
             {
                 "session_id": "sess_1",
@@ -506,11 +505,11 @@ class TestHandoffRoutes:
                 "created_at": "2026-05-09T10:00:00+00:00",
             },
         ]
-        session_store = AsyncMock()
-        session_store.list_handoffs_for_identities = AsyncMock(return_value=handoffs)
+        handoff_service = AsyncMock()
+        handoff_service.list_handoffs_for_identities = AsyncMock(return_value=handoffs)
 
         ctx = WebContext(
-            session_store=session_store,
+            session_store=AsyncMock(),
             proposal_store=AsyncMock(),
             style_store=AsyncMock(),
             scheduler_store=AsyncMock(),
@@ -522,6 +521,7 @@ class TestHandoffRoutes:
             app=MagicMock(),
             auth_manager=auth_manager,
             user_store=user_store,
+            handoff_service=handoff_service,
         )
         set_web_context(ctx)
 
@@ -534,7 +534,7 @@ class TestHandoffRoutes:
         assert len(data) == 2
         assert data[0]["session_id"] == "sess_1"
         assert data[0]["summary"] == "User asked about weather..."
-        session_store.list_handoffs_for_identities.assert_awaited_once_with(
+        handoff_service.list_handoffs_for_identities.assert_awaited_once_with(
             [("telegram", "12345")], limit=3
         )
 

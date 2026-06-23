@@ -63,6 +63,8 @@ def _parse_json_tool_calls(text: str) -> list[ToolCall]:
             except json.JSONDecodeError:
                 continue
 
+        if not isinstance(data, dict):
+            continue
         name = data.get("name") or data.get("function", {}).get("name")
         arguments = data.get("arguments") or data.get("function", {}).get("arguments")
         if name and isinstance(arguments, dict):
@@ -219,6 +221,8 @@ def _parse_bare_json_tool_calls(text: str) -> list[ToolCall]:
         except json.JSONDecodeError:
             continue
 
+        if not isinstance(data, dict):
+            continue
         name = data.get("name") or data.get("function", {}).get("name")
         arguments = data.get("arguments") or data.get("function", {}).get("arguments")
         if name and isinstance(arguments, dict):

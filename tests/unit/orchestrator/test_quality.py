@@ -351,15 +351,16 @@ async def test_execution_loop_quality_monitor_injection() -> None:
     builder = MagicMock()
     builder.build = AsyncMock(return_value=MagicMock(messages=[]))
 
-    store = MagicMock()
-    store.append_message = AsyncMock()
+    message_store = MagicMock()
+    message_store.append_message = AsyncMock()
 
     execution = TurnExecution(
         tool_registry=MagicMock(),
         inference_client=inference_client,
         policy=policy,
         context_builder=builder,
-        session_store=store,
+        session_store=MagicMock(),
+        message_store=message_store,
     )
 
     transition = AsyncMock()
@@ -373,10 +374,10 @@ async def test_execution_loop_quality_monitor_injection() -> None:
     # 3. Second call returns text
     assert inference_client.chat.call_count == 2
 
-    # Correction should have been appended to store
-    assert store.append_message.call_count >= 2
+    # Correction should have been appended to the message store
+    assert message_store.append_message.call_count >= 2
     # The last call should be the correction message
-    correction_msg = store.append_message.call_args_list[-2][0][1]
+    correction_msg = message_store.append_message.call_args_list[-2][0][1]
     assert correction_msg.role == "user"
     assert "Respond with text or a tool call." in correction_msg.content
 
@@ -438,15 +439,16 @@ async def test_correction_count_capped_at_three() -> None:
     builder = MagicMock()
     builder.build = AsyncMock(return_value=MagicMock(messages=[]))
 
-    store = MagicMock()
-    store.append_message = AsyncMock()
+    message_store = MagicMock()
+    message_store.append_message = AsyncMock()
 
     execution = TurnExecution(
         tool_registry=MagicMock(),
         inference_client=inference_client,
         policy=policy,
         context_builder=builder,
-        session_store=store,
+        session_store=MagicMock(),
+        message_store=message_store,
     )
 
     transition = AsyncMock()
@@ -613,6 +615,7 @@ async def test_truncated_write_file_recovery_resumes_at_line_boundary(session: S
 @pytest.mark.asyncio
 async def test_truncated_write_file_recovery_is_byte_for_byte_with_real_file(
     session: Session,
+    tmp_path: Path,
 ) -> None:
     """A mid-line truncation of a real source file recovers to the exact original."""
     known_path = Path(__file__).parents[3] / "src" / "hestia" / "orchestrator" / "execution.py"
@@ -627,12 +630,11 @@ async def test_truncated_write_file_recovery_is_byte_for_byte_with_real_file(
         partial = partial[:-1]
     assert "\n" in partial
 
-    tmp_path = Path("/tmp/recovered-byte-for-byte.py")
-    tmp_path.unlink(missing_ok=True)
+    recovered = tmp_path / "recovered-byte-for-byte.py"
 
     body = (
         '<tool_call>\n<function=write_file>\n<parameter=arguments>\n'
-        f'{{"path": "{tmp_path}", "content": "{partial}'
+        f'{{"path": "{recovered}", "content": "{partial}'
     )
     msg = Message(role="assistant", content=body)
 
@@ -658,8 +660,8 @@ async def test_truncated_write_file_recovery_is_byte_for_byte_with_real_file(
     assert result.pattern == DegeneratePattern.TRUNCATED_WRITE_FILE
 
     # Continue from where recovery left off.
-    written = tmp_path.read_text(encoding="utf-8")
+    written = recovered.read_text(encoding="utf-8")
     remaining = original_content[len(written):]
-    await fake_append_to_file(path=str(tmp_path), content=remaining)
+    await fake_append_to_file(path=str(recovered), content=remaining)
 
-    assert tmp_path.read_text(encoding="utf-8") == original_content
+    assert recovered.read_text(encoding="utf-8") == original_content

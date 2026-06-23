@@ -5,6 +5,49 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.15.0] — 2026-06-22
+
+### Memory
+
+- **Overnight memory maintenance** — new `hestia.memory.maintenance` subsystem runs scheduled dedupe, prune, and supersede passes over long-term memory:
+  - Soft-delete with retention window and protected-set flags (user-authored, pinned, recently-recalled).
+  - Deterministic dedupe via exact normalized match and high-overlap FTS similarity.
+  - Deterministic prune for raw turn dumps, empty, and unscoped/orphaned memories.
+  - LLM-assisted paraphrase/near-duplicate merge with confidence threshold.
+  - LLM-assisted contradiction resolution that supersedes older facts with reasoning.
+  - Trace store records every action with undo deadline and full context.
+  - Operator digest reuses the blocked-actions digest surface, highlighting supersessions.
+  - Scheduler wiring for nightly deterministic and weekly LLM cadences.
+  - CLI `memory-maintenance ensure-tasks` and `memory-maintenance undo <action-id>` commands.
+- **Session-end fact extraction** — `SessionStore` now archives sessions through `SessionCompactionSummarizer`, producing structured task-state facts (goal, criteria, progress, findings, artifacts) and returning the summary for reuse by `HandoffService`.
+
+### Manual Compaction & Memory Sanitizer
+
+- New `/compact` meta-command on CLI, Telegram, and Matrix with `SessionCompactor` service (archive, lock, slot erase).
+- Task-aware compaction summarizer that flushes narrow task-state memories.
+- Memory write-time sanitizer rejects raw turn dumps and role-marker spam at the shared store boundary.
+
+### Persistence, Trust, and Digest
+
+- Split `sessions.py` into `SessionStore`, `MessageStore`, and `TurnStore`.
+- Serialize per-session turns and fix slot/cache/sequence races.
+- Unified `CapabilityGate` trust boundary across all tool paths.
+- Blocked-actions digest and deny subagent injection escalation.
+
+### Browser Stream & Fetch Reliability
+
+- Active stream banner with end-session action.
+- URL navigation, resizable stream, responsive layout, removal of auto-start.
+- Persist `requires_headed` per site and switch to headed mid-stream.
+- Save stream with original domain URL; preserve known session status on health-check failures.
+- Honor `requires_headed` hint in `browser_fetch` and use `domcontentloaded` wait.
+
+### Tooling
+
+- Chunked `read_artifact` with `start_at`/`length` support.
+- Browser fetch rate-limiter and browser pool improvements.
+- Marker-only result classifier and `write_file` recovery fixes.
+
 ## [0.14.0] — 2026-06-15
 
 ### Browser Automation

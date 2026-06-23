@@ -4,6 +4,12 @@
 **Review source:** docs/reviews/develop-review-2026-06-12.md (Backend correctness / Security sections)  
 **Scope:** One coherent spec for all concurrency/session-lifecycle findings. Do NOT split into independent loops.
 
+## Changes since this spec was written
+
+- `tools/browser/fetch.py` now uses a warm `_BrowserPool` that reuses a single Playwright browser across calls and closes contexts per fetch. This does **not** change the concurrency model: the pool is process-scoped and still allows multiple sessions to fetch concurrently; per-session turn serialization remains the load-bearing invariant.
+- Tool results now carry `[CATEGORY: ...]` markers. The `correction` column work and message-sequence validator should treat marked tool results as first-class content and preserve them without re-interpreting the text.
+- The `error_resolutions` bootstrap gap noted in the parent review is still unaddressed; the messages-table migration for `correction=True` should use the same schema-ownership path as the store-split spec.
+
 ## Problem statement
 
 Three independent drivers can currently execute turns against the same session at the same time:
@@ -108,7 +114,7 @@ class SessionLockManager:
 ## Files likely to change
 
 - New: `src/hestia/orchestrator/lock.py`, `src/hestia/context/sequence_validator.py`
-- Modify: `src/hestia/orchestrator/engine.py`, `src/hestia/orchestrator/execution.py`, `src/hestia/orchestrator/finalization.py`, `src/hestia/platforms/runners.py`, `src/hestia/platforms/telegram_adapter.py`, `src/hestia/platforms/matrix_adapter.py`, `src/hestia/scheduler/engine.py`, `src/hestia/email/adapter.py`, `src/hestia/context/history_window_selector.py`, `src/hestia/persistence/schema.py`, `src/hestia/persistence/sessions.py`
+- Modify: `src/hestia/orchestrator/engine.py`, `src/hestia/orchestrator/execution.py`, `src/hestia/orchestrator/finalization.py`, `src/hestia/platforms/runners.py`, `src/hestia/platforms/telegram_adapter.py`, `src/hestia/platforms/matrix_adapter.py`, `src/hestia/scheduler/engine.py`, `src/hestia/email/adapter.py`, `src/hestia/context/history_window_selector.py`, `src/hestia/persistence/schema.py`, `src/hestia/persistence/message_store.py`
 - Tests: `tests/unit/orchestrator/test_concurrency.py`, `tests/unit/email/test_adapter_concurrency.py`, `tests/unit/inference/test_slot_lifecycle.py`, `tests/unit/context/test_sequence_validator.py`
 
 ## Risks & open questions
@@ -121,4 +127,4 @@ class SessionLockManager:
 ## Dependency
 
 - Must land **after** the `error_resolutions` schema bootstrap fix if the messages schema migration uses the same bootstrap path.
-- Should land **before** or together with the `persistence/sessions.py` store split, because the store split will move message/turn persistence and the correction column work should be in the new `MessageStore`.
+- Must land **after** the `persistence/sessions.py` store split, because the `correction` column migration belongs in the new `MessageStore` (see `docs/reviews/decisions-store-split.md` decision #1).

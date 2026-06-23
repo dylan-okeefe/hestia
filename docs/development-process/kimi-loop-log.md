@@ -6,6 +6,211 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-06-22 — L231 Complete (Memory Maintenance: Trace, Digest, and Scheduler Wiring)
+
+**Outcome:** Wired the L226–L230 maintenance passes into a unified trace/digest/scheduler surface so every destructive action is auditable and operators receive a periodic summary.
+
+**Branch:** `feature/l231-memory-trace-digest-scheduler`
+- Added `MaintenanceAction` trace model in `src/hestia/memory/maintenance/trace.py` and `MaintenanceTraceStore` in `src/hestia/persistence/maintenance_trace_store.py` with create/record/list/get operations.
+- Added the `maintenance_trace` table to `src/hestia/persistence/schema.py` so it is created by `Database.create_tables()`.
+- Wired tracing into `dedupe.py`, `prune.py`, `llm_dedupe.py`, and `contradictions.py`; each engine now accepts an optional `trace_store` and falls back to INFO logging when none is provided.
+- Wired `undo_retention_days` from `MemoryMaintenanceConfig` through the `MemoryMaintenance` service into every engine.
+- Added `MemoryMaintenanceDigest` in `src/hestia/memory/maintenance/digest.py`: formats total actions, merges, prunes, and prominently highlighted supersessions, plus the soonest undo deadline; returns `"SILENT"` when the window is empty.
+- Added `ensure_memory_maintenance_tasks` in `src/hestia/memory/maintenance/scheduler.py` to create/update deterministic nightly and weekly LLM scheduler tasks idempotently.
+- Extended `MemoryMaintenance` with `run_deterministic_pass` and `run_llm_pass` entry points.
+- Wired both maintenance task types into `src/hestia/scheduler/engine.py` and injected the services into Scheduler construction sites (`commands/scheduler.py`, `platforms/runners.py`).
+- Extended `AppContext` with `memory_maintenance`, `memory_maintenance_digest`, and `memory_maintenance_undo` cached properties plus `ensure_memory_maintenance_tasks`.
+- Implemented undo support in `src/hestia/memory/maintenance/undo.py`: restores loser memories and records an undo trace; exposed via `hestia memory maintenance undo <action-id>`.
+- Added unit tests in `tests/unit/memory/maintenance/test_trace.py`, `tests/unit/memory/maintenance/test_maintenance_digest.py`, and `tests/unit/scheduler/test_memory_maintenance_tasks.py`.
+
+**Quality gates:** targeted maintenance tests 13 passed; full `tests/unit/ tests/integration/` 1719 passed with 1 unrelated failure in `test_browser_ssrf.py::test_fetch_url_allows_public_url`; `mypy src/hestia` 0 errors; ruff clean on changed files; no new repo-wide ruff issues introduced.
+
+**Next:** Cursor review and advance `KIMI_CURRENT.md` to the next loop.
+
+## 2026-06-21 — L230 Complete (Memory Maintenance: Contradiction / Supersession)
+
+**Outcome:** Implemented the LLM-assisted contradiction detection pass: when two active memories conflict on the same attribute, the newer fact supersedes the older with full reasoning recorded.
+
+**Branch:** `feature/l230-memory-contradiction-supersession`
+- Added `ContradictionResolver` in `src/hestia/memory/maintenance/contradictions.py`:
+  - Loads active memories by recency, skips the protected set, and generates candidate pairs from FTS near-misses using a short 3-word excerpt.
+  - Calls the LLM with a structured JSON prompt (`contradiction`, `confidence`, `attribute`, `reasoning`).
+  - Supersedes only when `contradiction` is true and `confidence >= 0.8`, soft-deleting the older memory with `reason="superseded"` and `superseded_by` set to the newer memory id.
+  - Appends the LLM's reasoning to the superseded memory's content for auditability.
+- Added the contradiction prompt, examples, and parser to `src/hestia/memory/maintenance/prompts.py`, with examples that distinguish same-attribute updates from genuinely separate facts.
+- Added `MemoryMaintenance.run_contradiction_resolution(platform, platform_user)` in `src/hestia/memory/maintenance/service.py`.
+- Extended `MemoryConfig` in `src/hestia/config.py` with `contradiction_confidence_threshold` and `contradiction_max_pairs_per_run`.
+- Updated `src/hestia/memory/maintenance/__init__.py` to export the new API.
+- Added unit tests in `tests/unit/memory/maintenance/test_contradictions.py` covering confident supersession, low-confidence leave-alone, separate-facts non-contradiction, protected-memory skipping, and reasoning recording.
+- Hardened FTS5 query sanitization in `src/hestia/memory/store.py` to quote queries containing non-word/non-whitespace characters (e.g., periods), preventing syntax errors when search excerpts contain sentence punctuation. Added a matching unit test in `tests/unit/test_memory_store.py`.
+
+**Quality gates:** `uv run pytest tests/unit/memory/ -q` 59 passed; `uv run mypy src/hestia` 0 errors; ruff clean on L230 files. Full-repo ruff still reports pre-existing issues in unrelated files; no new issues introduced by L230.
+
+**Next:** Cursor review and advance `KIMI_CURRENT.md` to L231.
+
+## 2026-06-21 — L229 Complete (Memory Maintenance: LLM Near-Duplicate Merge)
+
+**Outcome:** Implemented the infrequent LLM-assisted maintenance pass that reviews paraphrase/near-duplicate memory pairs and merges them when the model is highly confident.
+
+**Branch:** `feature/l229-memory-llm-near-duplicate-merge`
+- Added `LLMDeduper` in `src/hestia/memory/maintenance/llm_dedupe.py`:
+  - Loads active memories by recency, skips protected memories, and generates candidate pairs from FTS near-misses with Jaccard 0.5–0.8.
+  - Calls the LLM with a structured JSON prompt (`duplicate`, `confidence`, `merged_content`).
+  - Merges only when `duplicate` is true and `confidence >= 0.8`, soft-deleting the loser with `reason="llm-deduplicated"` and a winner reference.
+- Added `src/hestia/memory/maintenance/prompts.py` with the system prompt, few-shot examples, and a robust parser with JSON + regex fallback.
+- Added `MemoryMaintenance.run_llm_dedupe(platform, platform_user)` in `src/hestia/memory/maintenance/service.py`.
+- Extended `MemoryConfig` in `src/hestia/config.py` with `llm_dedupe_confidence_threshold` and `llm_dedupe_max_pairs_per_run`.
+- Wired `MemoryMaintenance` into `AppContext` via a lazy `memory_maintenance` cached property in `src/hestia/app.py`.
+- Added unit tests in `tests/unit/memory/maintenance/test_llm_dedupe.py` covering confident merge, low-confidence leave-alone, non-duplicate leave-alone, and protected-memory skipping.
+
+**Quality gates:** `uv run pytest tests/unit/memory/ -q` 54 passed; `uv run mypy src/hestia` 0 errors; ruff clean on L229 files. Full-repo ruff still reports pre-existing issues in unrelated files; no new issues introduced by L229.
+
+**Next:** Cursor review and advance `KIMI_CURRENT.md` to L230.
+
+## 2026-06-21 — L228 Complete (Memory Maintenance: Deterministic Prune)
+
+**Outcome:** Implemented the second memory maintenance pass: a conservative, unattended prune that soft-deletes clear junk and unscoped/orphaned memories while preserving valid old facts and the protected set.
+
+**Branch:** `feature/l228-memory-deterministic-prune`
+- Added `DeterministicPruner` in `src/hestia/memory/maintenance/prune.py`:
+  - Loads active memories for an identity (or all active memories when no identity is supplied) and skips the protected set.
+  - Junk rule: content that would be rejected by `MemorySanitizer.sanitize()` is soft-deleted with `reason="junk"`.
+  - Orphan rule: memories with NULL `platform`, NULL `platform_user`, or empty/whitespace-only content are soft-deleted with `reason="orphan"`.
+  - Returns `PruneResult(junk_count, orphan_count)`.
+- Added `MemoryMaintenance.run_deterministic_prune(platform, platform_user)` in `src/hestia/memory/maintenance/service.py`.
+- Updated `src/hestia/memory/maintenance/__init__.py` to export the new prune API.
+- Added unit tests in `tests/unit/memory/maintenance/test_deterministic_prune.py` covering junk pruning, orphan pruning, valid-memory preservation, protected-memory preservation, and identity scoping.
+
+**Quality gates:** `uv run pytest tests/unit/memory/ -q` 50 passed; `uv run mypy src/hestia` 0 errors; ruff clean on L228 files. Full-repo ruff still reports pre-existing issues in unrelated files; no new issues introduced by L228.
+
+**Next:** Orchestrator should validate and advance `KIMI_CURRENT.md` to L229.
+
+## 2026-06-21 — L227 Complete (Memory Maintenance: Deterministic Dedupe)
+
+**Outcome:** Implemented the first memory maintenance pass: deterministic deduplication that merges exact normalized-text duplicates and high-overlap FTS pairs while preserving protected memories and soft-deleting losers with a winner reference.
+
+**Branch:** `feature/l227-memory-deterministic-dedupe`
+- Added `MemoryStore.update()` in `src/hestia/memory/store.py` to mutate content/tags of an active memory with sanitizer enforcement and identity scoping.
+- Added `DeterministicDeduper` in `src/hestia/memory/maintenance/dedupe.py`:
+  - Loads active memories for an identity and skips the protected set.
+  - Phase 1 groups by normalized content hash (lowercase, strip, collapse spaces) and merges exact duplicates.
+  - Phase 2 searches a sanitized excerpt of each remaining memory and merges pairs with Jaccard word overlap > 0.8.
+  - Winner chosen by newest `created_at`, then longest content, then lower id.
+  - Winner content rebuilt from deduplicated normalized lines; tags unioned in order.
+  - Losers soft-deleted with `reason="deduplicated"` and `superseded_by` set to the winner id.
+- Added `MemoryMaintenance` service stub in `src/hestia/memory/maintenance/service.py` exposing `run_deterministic_dedupe(platform, platform_user)`.
+- Added `src/hestia/memory/maintenance/__init__.py` exporting the public API.
+- Added unit tests in `tests/unit/memory/maintenance/test_deterministic_dedupe.py` covering exact duplicates, FTS overlap, protected-memory skipping, non-duplicates, and winner/tag behavior.
+
+**Quality gates:** `uv run pytest tests/unit/memory/ -q` 45 passed; `uv run mypy src/hestia` 0 errors; ruff clean on L227 files. Full-repo ruff still reports pre-existing issues in unrelated files; no new issues introduced by L227.
+
+**Next:** Orchestrator should validate and advance `KIMI_CURRENT.md` to L228.
+
+## 2026-06-21 — L226 Complete (Memory Maintenance: Soft-Delete + Protected Set)
+
+**Outcome:** Added the storage foundation for memory maintenance: soft-delete with retention window and protected-set flags so that later loops can merge/prune/supersede without losing data.
+
+**Branch:** `feature/l226-memory-soft-delete-protected`
+- Extended the memory schema in `src/hestia/memory/store.py` with `is_active`, `deleted_at`, `deleted_reason`, `superseded_by`, `is_pinned`, `is_user_authored`, and `last_recalled_at`.
+- Updated FTS5 and regular-table DDL, the old-schema migration path, and the runtime schema check.
+- Extended the `Memory` dataclass and `_row_to_memory` with the new fields.
+- Added `soft_delete`, `restore`, `pin`, `mark_user_authored`, `mark_recalled`, `list_active_memories`, `list_inactive_memories`, and `is_protected` helpers.
+- Changed `list_memories` and `search` to active-only by default, with optional `include_inactive=False`.
+- Added `MemoryConfig.retention_days` and `MemoryConfig.recently_recalled_days` in `src/hestia/config.py`.
+- Added unit tests in `tests/unit/memory/test_memory_store.py` covering soft-delete, restore, protected flags, and active/inactive listing.
+
+**Quality gates:** `uv run pytest tests/unit/memory/ -q` 40 passed; `uv run mypy src/hestia` 0 errors; ruff clean on L226 files.
+
+**Next:** Orchestrator should validate and advance `KIMI_CURRENT.md` to L227.
+
+## 2026-06-19 — L224 Complete (Manual `/compact` command)
+
+**Outcome:** Implemented a user-invoked `/compact` meta-command that compacts the current session in place, without ending it. It produces a task-aware summary, archives the original messages, keeps the last K turns verbatim, erases the KV slot, and flushes structured task-state fields to memory through the L225 sanitizer.
+
+**Branch:** `feature/l224-manual-compact-command`
+- Added `CompactionConfig` in `src/hestia/config.py` (`enabled`, `verbatim_turns`, `summary_max_chars`, `min_messages`).
+- Added `compaction_archive` table in `src/hestia/persistence/schema.py` plus additive runtime migration `m008_compaction_archive`.
+- Added `MessageStore.archive_and_replace_messages()` for atomic archive-delete-replace.
+- Added `SessionCompactionSummarizer` in `src/hestia/memory/compaction_summarizer.py` for structured JSON task-state summaries and narrow memory flush with exact-match dedup.
+- Added `SessionCompactor` in `src/hestia/orchestrator/compaction.py` to orchestrate lock acquisition, summarization, archive/replace, slot erase, and memory flush.
+- Wired shared `SessionLockManager` and the compactor into `AppContext`; injected compactor into Telegram/Matrix adapters.
+- Added `/compact` and `/compact <instruction>` handling on CLI (`commands/meta.py`), Telegram (`telegram_adapter.py`), and Matrix (`matrix_adapter.py`).
+- Added unit tests in `tests/unit/orchestrator/test_compaction.py` and integration tests in `tests/integration/test_compaction_command.py`.
+
+**Quality gates:** Targeted tests 11 passed; unit suite 1915 passed; integration suite 88 passed, 6 skipped; `mypy src/hestia` clean; ruff no new issues introduced by L224 files.
+
+**Note:** The combined `pytest tests/unit/ tests/integration/` run exceeded the 300-second shell tool limit in this environment, but the same tests pass when run separately.
+
+**Next:** Dylan review; merge to `develop` when approved; update `~/Hestia-runtime`.
+
+## 2026-06-19 — L225 Complete (Memory-write sanitizer)
+
+**Outcome:** Added a write-time sanitizer at the shared memory-store boundary that rejects junk (tool-call XML, unclosed tags, raw turn dumps, trivial content) before it is stored. Clean prose facts and structured key-value summaries are preserved. All memory writers (`memory_write` tool, reflection loop, future `/compact` flush) now benefit.
+
+**Branch:** `feature/l225-memory-write-sanitizer`
+- Added `MemorySanitizer`/`SanitizerResult` in `src/hestia/memory/sanitizer.py`.
+- Wired sanitizer into `MemoryStore.save()`; returns `Memory | None`, logs and drops rejected writes by default, `strict=True` raises.
+- Updated `save_memory` tool and CLI `memory add` to handle rejected results gracefully.
+- Updated `SessionHandoffSummarizer` to tolerate a rejected handoff memory.
+- Added unit tests for every sanitizer rule and integration tests for the write boundary, tool path, and compaction-style summaries.
+
+**Quality gates:** 88 memory-related tests passed; mypy/ruff clean on changed files. Full suite: 1873 passed, 6 skipped, 3 pre-existing browser/web unrelated failures.
+
+**Next:** Orchestrator should validate and advance `KIMI_CURRENT.md` to L224.
+
+## 2026-06-17 — L222–L223 Complete (Trust Boundary & Blocked-Actions Digest)
+
+**Outcome:** Closed the L222 trust/capability boundary wiring, fixed a subagent injection-escalation bug, and implemented the L223 blocked-actions digest on top of the gate's audit store.
+
+### L222 — Trust/Capability Boundary (final wiring + security fix)
+**Branch:** `feature/l222-trust-capability-boundary`
+- Wired `CapabilityGate` into `TurnExecution` and the workflow executor; `TurnContext` carries `channel` and `request_token`.
+- Added `tests/unit/orchestrator/test_execution_gate.py` and `tests/unit/workflows/test_executor_trust.py`.
+- Fixed confirmation-callback signature drift across unit/integration/platform tests.
+- **Security correction:** removed `Channel.SUBAGENT` from the injection-escalation trusted branch so a destructive, injection-flagged subagent call is denied, while non-injection subagent calls still inherit operator trust.
+
+**Quality gates:** 1933 pytest passed (unit + integration), mypy 0 errors, ruff clean on touched files.
+
+### L223 — Blocked-Actions Digest
+**Branch:** `feature/l223-blocked-actions-digest`
+- Reused the L222 `capability_events` audit table and added `CapabilityEventStore.list_since()`.
+- Added `NotificationsConfig` with `blocked_digest_time`/`blocked_digest_channel`.
+- Added `task_type` to `scheduled_tasks` (schema + migration) and extended `Scheduler` to route `blocked_digest` tasks to the new `BlockedActionsDigest` service.
+- Implemented `BlockedActionsDigest` (query, format, send, cron helper, task upsert) in `src/hestia/blocked_actions/digest.py`.
+- Added on-demand `blocked_actions_summary` tool with a 24-hour default window.
+- Added tests under `tests/unit/blocked_actions/`, `tests/unit/scheduler/`, and `tests/unit/tools/`.
+- Deferred approval-queue / workflow suspend-and-resume to a stub in `docs/roadmap/future-systems-deferred-roadmap.md`.
+
+**Quality gates:** 1946 pytest passed (unit + integration), mypy 0 errors, ruff clean on touched files.
+
+## 2026-06-16 — L220–L221 Complete (Persistence Store Split & Session Concurrency)
+
+**Outcome:** Split the monolithic `SessionStore` into message/turn/session stores, added a handoff service, then built per-session turn serialization, IMAP serialization, slot cleanup on failures, cache invalidation, and chat-template sequence validation.
+
+### L220 — Persistence Store Split
+**Branch:** `feature/l220-persistence-store-split`
+- Introduced `MessageDTO`, `TurnDTO`, `TurnTransitionDTO` and mappers in `src/hestia/orchestrator/mappers.py`.
+- Implemented `MessageStore`, `TurnStore`, and a trimmed `SessionStore`.
+- Added `HandoffService` to archive sessions and persist handoff summaries as messages.
+- Converted `src/hestia/persistence/sessions.py` to a deprecation re-export facade.
+- Wired split stores through `Orchestrator`, `TurnExecution`, `TurnAssembly`, `TurnFinalization`, web context, and platform runners.
+- Fixed a `TurnAssembly` bug where raw `MessageDTO`s were passed to `ContextBuilder.build` instead of mapped domain messages.
+
+**Quality gates:** 1773 pytest passed, mypy clean, ruff improved.
+
+### L221 — Per-session Concurrency Model
+**Branch:** `feature/l221-session-concurrency`
+- Added `SessionLockManager` and held a per-session lock across `process_turn`.
+- Serialized IMAP operations in the email adapter.
+- Erased live slots on non-DONE turn finalization.
+- Invalidated the platform runner `user_sessions` cache on reset/archive and added Matrix `/reset` parity.
+- Handled degenerate `finish_reason=tool_calls` with zero valid tool calls.
+- Persisted the `correction` flag on messages and excluded corrections from read-only streak detection.
+- Added a chat-template sequence validator in `ContextBuilder.build`.
+- **Post-review fixes:** scheduler now skips (not blocks) when the target session lock is held; `process_turn` has an explicit re-entrancy guard; `append_message` restored `last_active_at=utcnow()`; lock pruning wired into cache invalidation; added "no silently skipped work" policy to skill and `AGENTS.md`.
+
+**Quality gates:** 1895 pytest passed (unit + integration), mypy 0 errors, ruff 67 errors (all pre-existing).
+
 ## 2026-06-15 — L218–L219 Complete (Tool Reliability Follow-ups)
 
 **Outcome:** Hardened the truncated-write recovery seam, expanded the regression fixture scrubber to cover authenticated-session cookies and high-entropy tokens, made the VRAM check honest about llama.cpp's pre-allocated KV cache, and renumbered the two new loops to avoid collisions with already-merged L189/L189.

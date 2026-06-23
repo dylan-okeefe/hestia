@@ -17,7 +17,9 @@ def make_read_file_tool(config: StorageConfig) -> Any:
     @tool(
         name="read_file",
         public_description=(
-            "Read the contents of a local text file. Large files are stored as artifacts."
+            "Read the contents of a local text file. "
+            "Files larger than 4000 characters are stored as artifacts; "
+            "use read_artifact(handle, start_at=4000, length=4000) to read the rest in chunks."
         ),
         parameters_schema={
             "type": "object",

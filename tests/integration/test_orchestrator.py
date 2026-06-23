@@ -8,8 +8,11 @@ from hestia.artifacts.store import ArtifactStore
 from hestia.context.builder import ContextBuilder
 from hestia.core.types import Message
 from hestia.orchestrator import Orchestrator, TurnState
+from hestia.orchestrator.mappers import turn_dto_to_domain
 from hestia.persistence.db import Database
+from hestia.persistence.message_store import MessageStore
 from hestia.persistence.sessions import SessionStore
+from hestia.persistence.turn_store import TurnStore
 from hestia.tools.builtin.current_time import current_time
 from hestia.tools.builtin.terminal import make_terminal_tool
 from hestia.tools.registry import ToolRegistry
@@ -116,6 +119,18 @@ async def store(tmp_path):
     store = SessionStore(db)
     yield store
     await db.close()
+
+
+@pytest.fixture
+async def message_store(store):
+    """Create a MessageStore bound to the same database."""
+    return MessageStore(store._db)
+
+
+@pytest.fixture
+async def turn_store(store):
+    """Create a TurnStore bound to the same database."""
+    return TurnStore(store._db)
 
 
 @pytest.fixture
@@ -285,6 +300,7 @@ async def test_turn_with_tool_calls(
 @pytest.mark.asyncio
 async def test_turn_persisted_to_database(
     store,
+    turn_store,
     fake_inference,
     fake_policy,
     context_builder,
@@ -324,14 +340,16 @@ async def test_turn_persisted_to_database(
     )
 
     # Verify turn was persisted
-    persisted_turn = await store.get_turn(turn.id)
-    assert persisted_turn is not None
+    persisted_turn_dto = await turn_store.get_turn(turn.id)
+    assert persisted_turn_dto is not None
+    persisted_turn = turn_dto_to_domain(persisted_turn_dto)
     assert persisted_turn.state == TurnState.DONE
 
 
 @pytest.mark.asyncio
 async def test_two_tool_chain_time_and_file_count(
     store,
+    message_store,
     fake_policy,
     context_builder,
     artifact_store,
@@ -461,7 +479,7 @@ async def test_two_tool_chain_time_and_file_count(
     assert "12" in final_response or "files" in final_response
 
     # Verify the tool calls actually executed (check message history)
-    messages = await store.get_messages(session.id)
+    messages = await message_store.get_messages(session.id)
     tool_messages = [m for m in messages if m.role == "tool"]
     assert len(tool_messages) == 2
 
@@ -474,7 +492,7 @@ async def test_two_tool_chain_time_and_file_count(
 
 @pytest.mark.asyncio
 async def test_turn_fetches_message_history_at_most_once(
-    store, artifact_store, fake_policy
+    store, message_store, artifact_store, fake_policy
 ):
     """M-2: an N-iteration turn hits SessionStore.get_messages exactly once.
 
@@ -485,8 +503,8 @@ async def test_turn_fetches_message_history_at_most_once(
     """
     from hestia.core.types import ChatResponse, Session, SessionState, SessionTemperature, ToolCall
 
-    class _CountingStore:
-        """Transparent SessionStore wrapper that counts get_messages calls."""
+    class _CountingMessageStore:
+        """Transparent MessageStore wrapper that counts get_messages calls."""
 
         def __init__(self, inner):
             self._inner = inner
@@ -499,7 +517,7 @@ async def test_turn_fetches_message_history_at_most_once(
             self.get_messages_calls += 1
             return await self._inner.get_messages(session_id)
 
-    counting_store = _CountingStore(store)
+    counting_store = _CountingMessageStore(message_store)
 
     registry = ToolRegistry(artifact_store)
     registry.register(current_time)
@@ -569,7 +587,8 @@ async def test_turn_fetches_message_history_at_most_once(
 
     orchestrator = Orchestrator(
         inference=inference,
-        session_store=counting_store,  # type: ignore[arg-type]
+        session_store=store,
+        message_store=counting_store,  # type: ignore[arg-type]
         context_builder=builder,
         tool_registry=registry,
         policy=fake_policy,
@@ -596,6 +615,7 @@ async def test_turn_fetches_message_history_at_most_once(
 @pytest.mark.asyncio
 async def test_process_turn_persists_reasoning_budget(
     store,
+    turn_store,
     fake_inference,
     fake_policy,
     context_builder,
@@ -632,8 +652,10 @@ async def test_process_turn_persists_reasoning_budget(
         respond_callback=respond_callback,
     )
 
-    # The turn object may be updated each iteration by the policy, but the
-    # value persisted at turn start should match the configured default.
-    fetched = await store.get_turn(turn.id)
-    assert fetched is not None
-    assert fetched.reasoning_budget == 8192
+    # The turn object may be updated each iteration by the policy, so the
+    # persisted budget reflects the policy value applied during execution.
+    fetched_dto = await turn_store.get_turn(turn.id)
+    assert fetched_dto is not None
+    fetched = turn_dto_to_domain(fetched_dto)
+    expected_budget = fake_policy.reasoning_budget(session, fetched.iterations)
+    assert fetched.reasoning_budget == expected_budget

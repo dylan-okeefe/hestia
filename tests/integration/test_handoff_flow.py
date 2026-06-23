@@ -1,15 +1,15 @@
 """Integration test for session handoff summary flow."""
 
-from datetime import datetime
-
 import pytest
 
-from hestia.core.types import ChatResponse, Message, Session, SessionState, SessionTemperature
-from hestia.memory.handoff import SessionHandoffSummarizer
+from hestia.core.types import ChatResponse, Message, SessionState
 from hestia.memory.store import MemoryStore
 from hestia.orchestrator.engine import Orchestrator
+from hestia.orchestrator.handoff_service import HandoffService
+from hestia.orchestrator.mappers import message_domain_to_dto
 from hestia.persistence.db import Database
-from hestia.persistence.sessions import SessionStore
+from hestia.persistence.message_store import MessageStore
+from hestia.persistence.session_store import SessionStore
 
 
 class FakeInferenceClient:
@@ -83,8 +83,13 @@ async def db(tmp_path):
 
 
 @pytest.fixture
-async def session_store(db):
-    store = SessionStore(db)
+async def session_store(db, message_store, memory_store):
+    store = SessionStore(
+        db,
+        message_store=message_store,
+        memory_store=memory_store,
+        inference_factory=lambda: FakeInferenceClient(),
+    )
     yield store
 
 
@@ -95,8 +100,13 @@ async def memory_store(db):
     yield store
 
 
+@pytest.fixture
+async def message_store(db):
+    return MessageStore(db)
+
+
 @pytest.mark.asyncio
-async def test_full_handoff_cycle(session_store, memory_store):
+async def test_full_handoff_cycle(session_store, message_store, memory_store):
     """Full cycle: start session, record turns, close, assert handoff memory."""
     from pathlib import Path
 
@@ -110,11 +120,7 @@ async def test_full_handoff_cycle(session_store, memory_store):
     artifact_store = ArtifactStore(Path("/tmp/artifacts"))
     registry = ToolRegistry(artifact_store)
 
-    summarizer = SessionHandoffSummarizer(
-        inference=inference,
-        memory_store=memory_store,
-        min_messages=4,
-    )
+    handoff_service = HandoffService(session_store, message_store)
 
     orchestrator = Orchestrator(
         inference=inference,
@@ -122,19 +128,7 @@ async def test_full_handoff_cycle(session_store, memory_store):
         context_builder=builder,
         tool_registry=registry,
         policy=policy,
-        handoff_summarizer=summarizer,
-    )
-
-    test_session = Session(
-        id="handoff_test_session",
-        platform="test",
-        platform_user="user1",
-        started_at=datetime.now(),
-        last_active_at=datetime.now(),
-        slot_id=None,
-        slot_saved_path=None,
-        state=SessionState.ACTIVE,
-        temperature=SessionTemperature.COLD,
+        handoff_service=handoff_service,
     )
 
     # Create a session directly
@@ -142,21 +136,30 @@ async def test_full_handoff_cycle(session_store, memory_store):
 
     # Record enough turns to meet min_messages
     for i in range(4):
-        await session_store.append_message(
-            created.id, Message(role="user", content=f"Message {i}")
+        await message_store.append_message(
+            created.id,
+            message_domain_to_dto(Message(role="user", content=f"Message {i}"), created.id, idx=0),
         )
-        await session_store.append_message(
-            created.id, Message(role="assistant", content=f"Reply {i}")
+        await message_store.append_message(
+            created.id,
+            message_domain_to_dto(
+                Message(role="assistant", content=f"Reply {i}"), created.id, idx=0
+            ),
         )
 
     # Close the session
     await orchestrator.close_session(created.id)
 
-    # Assert handoff memory exists
-    memories = await memory_store.list_memories(tag="handoff")
+    # Assert structured archive memory exists
+    memories = await memory_store.list_memories(tag="task-state")
     assert len(memories) == 1
-    assert "Python" in memories[0].content or "project" in memories[0].content
+    assert "project" in memories[0].content.lower() or "python" in memories[0].content.lower()
     assert memories[0].session_id == created.id
+
+    # Assert handoff message exists
+    handoffs = await message_store.get_handoff_messages(created.id)
+    assert len(handoffs) == 1
+    assert "project" in handoffs[0].content.lower() or "python" in handoffs[0].content.lower()
 
     # Assert session is archived
     archived = await session_store.get_session(created.id)

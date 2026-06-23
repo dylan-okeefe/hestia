@@ -10,6 +10,7 @@ from hestia.core.types import ChatResponse, Message, ToolCall
 from hestia.orchestrator import Orchestrator, TurnState
 from hestia.orchestrator.types import Turn
 from hestia.persistence.db import Database
+from hestia.persistence.message_store import MessageStore
 from hestia.persistence.sessions import SessionStore
 from hestia.policy.constants import PLATFORM_SUBAGENT
 from hestia.policy.default import DefaultPolicyEngine
@@ -41,6 +42,11 @@ async def store(tmp_path):
     st = SessionStore(db)
     yield st
     await db.close()
+
+
+@pytest.fixture
+async def message_store(store):
+    return MessageStore(store._db)
 
 
 @pytest.mark.asyncio
@@ -133,7 +139,7 @@ async def test_delegate_task_surfaces_artifact_refs_from_turn(store, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_orchestrator_policy_delegation_replaces_tool_batch(store, tmp_path):
+async def test_orchestrator_policy_delegation_replaces_tool_batch(store, message_store, tmp_path):
     """When policy delegates, delegate_task runs and tool results map to each tool_call id."""
     artifact_store = ArtifactStore(tmp_path / "art")
 
@@ -223,7 +229,7 @@ async def test_orchestrator_policy_delegation_replaces_tool_batch(store, tmp_pat
     assert parent_inf.call_count == 2
     assert child_inf.call_count == 1
     assert "Parent synthesis" in responses[-1]
-    msgs = await store.get_messages(session.id)
+    msgs = await message_store.get_messages(session.id)
     tool_msgs = [m for m in msgs if m.role == "tool" and m.tool_call_id == "tc1"]
     assert tool_msgs
     assert "Subagent result" in tool_msgs[0].content or "complete" in tool_msgs[0].content.lower()

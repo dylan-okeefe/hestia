@@ -14,7 +14,6 @@
 .browser-stream-canvas {
   display: block;
   width: 100%;
-  max-width: 960px;
   height: auto;
   aspect-ratio: 16 / 9;
   border: var(--border-thin);
@@ -69,5 +68,30 @@
 
 .browser-stream-mobile-input {
   margin-top: var(--space-4);
-  max-width: 960px;
+}
+
+.browser-stream-url-bar,
+.browser-stream-size-bar {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.browser-stream-url-bar .form-input,
+.browser-stream-size-bar .form-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.browser-stream-size-bar .form-input--number {
+  flex: 0 0 auto;
+  width: 6rem;
+}
+
+.browser-stream-url-bar .form-label,
+.browser-stream-size-bar .form-label {
+  margin: 0;
+  white-space: nowrap;
 }

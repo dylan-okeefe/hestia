@@ -7,29 +7,46 @@ from typing import TYPE_CHECKING
 import click
 
 from hestia.core.types import Session
-from hestia.persistence.sessions import SessionStore
+from hestia.persistence.message_store import MessageStore
+from hestia.persistence.session_store import SessionStore
 
 if TYPE_CHECKING:
     from hestia.app import AppContext
 from hestia.commands._shared import _format_token_usage, _format_utc
 
 
+def _parse_meta_command(cmd: str) -> tuple[str, str | None]:
+    """Split a /command from its optional trailing instruction.
+
+    Examples:
+      "/compact" -> ("/compact", None)
+      "/compact keep the job criteria" -> ("/compact", "keep the job criteria")
+    """
+    stripped = cmd.strip()
+    parts = stripped.split(None, 1)
+    base = parts[0].lower() if parts else ""
+    instruction = parts[1] if len(parts) > 1 else None
+    return base, instruction
+
+
 async def _handle_meta_command(
     cmd: str,
     session: Session,
     session_store: SessionStore,
+    message_store: MessageStore | None = None,
     app: AppContext | None = None,
 ) -> tuple[bool, Session]:
     """Handle a /meta command. Returns (should_exit, possibly_new_session)."""
-    cmd = cmd.strip().lower()
+    base, instruction = _parse_meta_command(cmd)
 
-    if cmd in ("/quit", "/exit"):
+    if base in ("/quit", "/exit"):
         return True, session
 
-    if cmd == "/help":
+    if base == "/help":
         click.echo("Meta-commands:")
         click.echo("  /quit, /exit     Exit the REPL")
         click.echo("  /reset           Start a new session")
+        click.echo("  /compact         Compact the current session history")
         click.echo("  /history         Print the current session message history")
         click.echo("  /session         Print the current session metadata")
         click.echo("  /refresh         Refresh the memory epoch")
@@ -37,7 +54,7 @@ async def _handle_meta_command(
         click.echo("  /help            Show this help")
         return False, session
 
-    if cmd == "/session":
+    if base == "/session":
         click.echo(f"Session ID: {session.id}")
         click.echo(f"Platform: {session.platform}")
         click.echo(f"Platform User: {session.platform_user}")
@@ -53,8 +70,9 @@ async def _handle_meta_command(
             click.echo(f"Turn budget: {app.policy.turn_token_budget(session)} tokens")
         return False, session
 
-    if cmd == "/history":
-        messages = await session_store.get_messages(session.id)
+    if base == "/history":
+        assert message_store is not None
+        messages = await message_store.get_messages(session.id)
         if not messages:
             click.echo("(empty)")
         else:
@@ -64,7 +82,16 @@ async def _handle_meta_command(
                 click.echo(f"  [{role}] {content}")
         return False, session
 
-    if cmd == "/reset":
+    if base == "/compact":
+        if app is None or app.compactor is None:
+            click.echo("Compaction is not available right now.")
+            return False, session
+        click.echo("Compacting session...")
+        outcome = await app.compactor.compact(session.id, instruction=instruction)
+        click.echo(outcome.message)
+        return False, session
+
+    if base == "/reset":
         new_session = await session_store.create_session(
             platform=session.platform,
             platform_user=session.platform_user,
@@ -80,7 +107,7 @@ async def _handle_meta_command(
                 click.echo("Memory epoch refreshed.")
         return False, new_session
 
-    if cmd == "/refresh":
+    if base == "/refresh":
         if app is not None:
             from hestia.persistence.memory_epochs import _compile_and_set_memory_epoch
 
@@ -93,7 +120,7 @@ async def _handle_meta_command(
             click.echo("Cannot refresh: app context not available.")
         return False, session
 
-    if cmd == "/tokens":
+    if base == "/tokens":
         if app is None:
             click.echo("Cannot show tokens: app context not available.")
             return False, session
@@ -111,5 +138,5 @@ async def _handle_meta_command(
             click.echo(usage)
         return False, session
 
-    click.echo(f"Unknown command: {cmd}. Type /help for a list.")
+    click.echo(f"Unknown command: {base}. Type /help for a list.")
     return False, session

@@ -81,15 +81,19 @@ async def test_refuses_without_auto_approve_and_no_callback():
         requires_confirmation=True, capabilities=["shell_exec"]
     )
 
-    mock_session_store.insert_turn = AsyncMock()
-    mock_session_store.update_turn = AsyncMock()
-    mock_session_store.append_transition = AsyncMock()
-    mock_session_store.append_message = AsyncMock()
-    mock_session_store.get_messages = AsyncMock(return_value=[])
+    mock_message_store = MagicMock()
+    mock_message_store.get_messages = AsyncMock(return_value=[])
+    mock_message_store.append_message = AsyncMock()
+    mock_turn_store = MagicMock()
+    mock_turn_store.insert_turn = AsyncMock()
+    mock_turn_store.update_turn = AsyncMock()
+    mock_turn_store.append_transition = AsyncMock()
 
     orchestrator = Orchestrator(
         inference=mock_inference,
         session_store=mock_session_store,
+        message_store=mock_message_store,
+        turn_store=mock_turn_store,
         context_builder=mock_context_builder,
         tool_registry=mock_tool_registry,
         policy=mock_policy,
@@ -108,7 +112,7 @@ async def test_refuses_without_auto_approve_and_no_callback():
 
     assert turn.state == TurnState.DONE
     # The tool result message should contain the rejection reason
-    calls = mock_session_store.append_message.call_args_list
+    calls = mock_message_store.append_message.call_args_list
     tool_msgs = []
     for c in calls:
         msg = c.kwargs.get("message") or c.args[1] if len(c.args) > 1 else c.args[0]
@@ -169,15 +173,19 @@ async def test_auto_approves_without_callback():
         )
     )
 
-    mock_session_store.insert_turn = AsyncMock()
-    mock_session_store.update_turn = AsyncMock()
-    mock_session_store.append_transition = AsyncMock()
-    mock_session_store.append_message = AsyncMock()
-    mock_session_store.get_messages = AsyncMock(return_value=[])
+    mock_message_store = MagicMock()
+    mock_message_store.get_messages = AsyncMock(return_value=[])
+    mock_message_store.append_message = AsyncMock()
+    mock_turn_store = MagicMock()
+    mock_turn_store.insert_turn = AsyncMock()
+    mock_turn_store.update_turn = AsyncMock()
+    mock_turn_store.append_transition = AsyncMock()
 
     orchestrator = Orchestrator(
         inference=mock_inference,
         session_store=mock_session_store,
+        message_store=mock_message_store,
+        turn_store=mock_turn_store,
         context_builder=mock_context_builder,
         tool_registry=mock_tool_registry,
         policy=mock_policy,
@@ -245,17 +253,21 @@ async def test_uses_callback_when_present():
         requires_confirmation=True, capabilities=["shell_exec"]
     )
 
-    mock_session_store.insert_turn = AsyncMock()
-    mock_session_store.update_turn = AsyncMock()
-    mock_session_store.append_transition = AsyncMock()
-    mock_session_store.append_message = AsyncMock()
-    mock_session_store.get_messages = AsyncMock(return_value=[])
+    mock_message_store = MagicMock()
+    mock_message_store.get_messages = AsyncMock(return_value=[])
+    mock_message_store.append_message = AsyncMock()
+    mock_turn_store = MagicMock()
+    mock_turn_store.insert_turn = AsyncMock()
+    mock_turn_store.update_turn = AsyncMock()
+    mock_turn_store.append_transition = AsyncMock()
 
     confirm_callback = AsyncMock(return_value=False)  # User denies
 
     orchestrator = Orchestrator(
         inference=mock_inference,
         session_store=mock_session_store,
+        message_store=mock_message_store,
+        turn_store=mock_turn_store,
         context_builder=mock_context_builder,
         tool_registry=mock_tool_registry,
         policy=mock_policy,
@@ -274,4 +286,4 @@ async def test_uses_callback_when_present():
 
     assert turn.state == TurnState.DONE
     # The callback should have been consulted when auto_approve is False
-    confirm_callback.assert_awaited_once_with("terminal", {"command": "echo hi"})
+    confirm_callback.assert_awaited_once_with("terminal", {"command": "echo hi"}, None)

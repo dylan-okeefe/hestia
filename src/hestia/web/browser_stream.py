@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 
 from fastapi import WebSocket
 
+from hestia.security.ssrf import SSRFBlockedError, assert_url_safe
 from hestia.tools.browser.session_store import BrowserSessionStore, normalize_domain
 from hestia.tools.browser.stealth import (
     STEALTH_LAUNCH_ARGS,
@@ -31,6 +32,7 @@ _TIMEOUT_SECONDS = 600  # 10 minutes
 class _StreamSession:
     session_id: str
     domain: str
+    url: str
     page: Any  # Playwright Page
     browser: Any  # Playwright Browser
     playwright: Any  # Playwright instance
@@ -57,6 +59,17 @@ class SessionStreamManager:
         """Return the active session ID, or None."""
         return self._session.session_id if self._session is not None else None
 
+    def get_active_session(self) -> dict[str, Any] | None:
+        """Return metadata for the active session, or None."""
+        if self._session is None:
+            return None
+        return {
+            "session_id": self._session.session_id,
+            "domain": self._session.domain,
+            "url": self._session.url,
+            "started_at": self._session.started_at.isoformat(),
+        }
+
     async def start(self, url: str, headed: bool = False) -> str:
         """Launch browser, navigate to URL, start screencast. Returns session_id.
 
@@ -76,6 +89,11 @@ class SessionStreamManager:
             domain = normalize_domain(parsed.hostname or "")
             if not domain:
                 raise ValueError(f"Invalid URL: {url}")
+
+            try:
+                await assert_url_safe(url)
+            except SSRFBlockedError as exc:
+                raise SSRFBlockedError(f"SSRF blocked: {exc}") from exc
 
             session_id = str(uuid.uuid4())
             playwright = None
@@ -120,6 +138,7 @@ class SessionStreamManager:
                 session = _StreamSession(
                     session_id=session_id,
                     domain=domain,
+                    url=url,
                     page=page,
                     browser=browser,
                     playwright=playwright,
@@ -205,6 +224,21 @@ class SessionStreamManager:
             except Exception:
                 logger.exception("Failed to stop screencast")
 
+            # When saving from a live stream, the user explicitly chose to save,
+            # so treat the session as healthy. Do not use the current page URL as
+            # the health-check URL: the user may be on an OAuth redirect page
+            # (e.g. accounts.google.com) that is unrelated to the target domain.
+            # Fall back to the session's original URL or the domain root.
+            current_url = getattr(session.page, "url", "")
+            if not isinstance(current_url, str):
+                current_url = ""
+            current_domain = normalize_domain(urlparse(current_url).hostname or "")
+            if current_domain and current_domain == session.domain:
+                health_check_url = current_url
+            else:
+                health_check_url = session.url or f"https://{session.domain}/"
+            health_status = "healthy"
+
             cookies: list[dict[str, Any]] = []
             storage_state: dict[str, Any] | None = None
             try:
@@ -218,7 +252,13 @@ class SessionStreamManager:
             if cookies:
                 self._store.save_cookies(session.domain, cookies)
 
-            self._store.update_metadata(session.domain, last_saved=datetime.now(UTC))
+            self._store.update_metadata(
+                session.domain,
+                last_saved=datetime.now(UTC),
+                health_status=health_status,
+                health_check_url=health_check_url,
+                requires_headed=False,
+            )
 
             await self._cleanup(
                 session.playwright,
@@ -234,6 +274,86 @@ class SessionStreamManager:
                 "cookie_count": len(cookies),
                 "saved": True,
             }
+
+    async def restart_headed(self, session_id: str) -> None:
+        """Restart the active stream in a visible (headed) browser.
+
+        Keeps the same session ID and WebSocket clients. The current page
+        URL and storage state are preserved so the user can continue where
+        they left off.
+        """
+        async with self._lock:
+            if self._session is None or self._session.session_id != session_id:
+                raise ValueError("Session not found or ID mismatch")
+
+            session = self._session
+
+            try:
+                await session.cdp_session.send("Page.stopScreencast")
+            except Exception:
+                logger.exception("Failed to stop screencast before restart")
+
+            current_url = ""
+            storage_state: dict[str, Any] | None = None
+            try:
+                current_url = getattr(session.page, "url", session.url) or session.url
+                if not isinstance(current_url, str):
+                    current_url = session.url
+                storage_state = await session.context.storage_state()
+            except Exception:
+                logger.exception("Failed to capture state for headed restart")
+
+            try:
+                await session.context.close()
+                await session.browser.close()
+            except Exception:
+                logger.exception("Failed to close headless browser")
+
+            try:
+                browser = await session.playwright.chromium.launch(
+                    headless=False,
+                    args=STEALTH_LAUNCH_ARGS,
+                )
+                context = await browser.new_context(
+                    **stealth_context_kwargs(storage_state)
+                )
+                page = await context.new_page()
+                await apply_stealth_async(page)
+                await page.goto(
+                    current_url or session.url,
+                    wait_until="domcontentloaded",
+                )
+
+                cdp_session = await page.context.new_cdp_session(page)
+                await cdp_session.send(
+                    "Page.startScreencast",
+                    {
+                        "format": "jpeg",
+                        "quality": 80,
+                        "maxWidth": 1920,
+                        "maxHeight": 1080,
+                        "everyNthFrame": 1,
+                    },
+                )
+
+                def _on_frame(params: dict[str, Any]) -> None:
+                    asyncio.create_task(self._handle_frame(session, params))
+
+                cdp_session.on("Page.screencastFrame", _on_frame)
+
+                session.browser = browser
+                session.context = context
+                session.page = page
+                session.cdp_session = cdp_session
+
+                if self._timeout_task is not None:
+                    self._timeout_task.cancel()
+                self._timeout_task = asyncio.create_task(
+                    self._auto_stop(session_id)
+                )
+            except Exception:
+                logger.exception("Failed to restart stream in headed mode")
+                raise
 
     async def _cleanup(
         self, playwright: Any, browser: Any, context: Any, page: Any
@@ -286,6 +406,15 @@ class SessionStreamManager:
                 delta_y = event.get("deltaY", 0)
                 await session.page.mouse.move(x, y)
                 await session.page.mouse.wheel(delta_x, delta_y)
+            elif event_type == "navigate":
+                target_url = event.get("url", "").strip()
+                if target_url:
+                    if not target_url.startswith(("http://", "https://")):
+                        target_url = f"https://{target_url}"
+                    await assert_url_safe(target_url)
+                    await session.page.goto(target_url, wait_until="domcontentloaded")
+                    session.url = target_url
+                    session.domain = normalize_domain(urlparse(target_url).hostname or "")
         except Exception:
             logger.exception("Failed to forward input event")
 
@@ -305,5 +434,11 @@ class SessionStreamManager:
                     disconnected.add(ws)
             if disconnected:
                 session.ws_clients -= disconnected
-        except Exception:
-            logger.exception("Failed to broadcast input mode")
+        except Exception as exc:
+            # Ignore transient errors during navigation; the next frame/interaction
+            # will re-broadcast once the execution context is stable.
+            msg = str(exc)
+            if "Execution context was destroyed" in msg or "Frame was detached" in msg:
+                logger.debug("Skipping input-mode broadcast during navigation: %s", msg)
+            else:
+                logger.exception("Failed to broadcast input mode")

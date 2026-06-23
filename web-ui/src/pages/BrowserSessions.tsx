@@ -1,13 +1,15 @@
-import { useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useApiQuery, useApiMutation } from '../hooks/useApi';
 import { useToast } from '../hooks/useToast';
 import {
   fetchBrowserSessions,
+  fetchActiveBrowserStream,
   deleteBrowserSession,
   checkBrowserSession,
-  headedLoginBrowserSession,
+  setBrowserSessionRequiresHeaded,
+  stopBrowserStream,
   type BrowserSession,
+  type StreamSession,
 } from '../api/client';
 import PageCard from '../components/layout/PageCard';
 import LoadingSkeleton from '../components/layout/LoadingSkeleton';
@@ -44,7 +46,6 @@ function statusLabel(status: string): string {
 
 export default function BrowserSessions() {
   const navigate = useNavigate();
-  const location = useLocation();
   const { addToast } = useToast();
   const {
     data: sessions,
@@ -53,23 +54,27 @@ export default function BrowserSessions() {
     error,
     refetch,
   } = useApiQuery<BrowserSession[]>('browser-sessions', fetchBrowserSessions);
+  const {
+    data: activeStream,
+    isLoading: isLoadingActive,
+    refetch: refetchActive,
+  } = useApiQuery<StreamSession | null>('browser-sessions-active', fetchActiveBrowserStream, {
+    refetchInterval: 5000,
+  });
 
-  useEffect(() => {
-    const state = location.state as { checkedDomain?: string } | null;
-    const domain = state?.checkedDomain;
-    if (domain) {
-      handleCheck(domain);
-      navigate(location.pathname, { replace: true, state: {} });
-    }
-  }, [location.state]);
-
-  const checkMut = useApiMutation(checkBrowserSession);
+  const checkMut = useApiMutation(
+    ({ domain, force }: { domain: string; force: boolean }) => checkBrowserSession(domain, force)
+  );
   const deleteMut = useApiMutation(deleteBrowserSession);
-  const headedLoginMut = useApiMutation(headedLoginBrowserSession);
+  const stopStreamMut = useApiMutation(stopBrowserStream);
+  const requiresHeadedMut = useApiMutation(
+    ({ domain, requires_headed }: { domain: string; requires_headed: boolean }) =>
+      setBrowserSessionRequiresHeaded(domain, requires_headed)
+  );
 
   const handleCheck = async (domain: string) => {
     try {
-      await checkMut.mutateAsync(domain);
+      await checkMut.mutateAsync({ domain, force: true });
       addToast({ message: `Health check passed for ${domain}`, type: 'success', duration: 3000 });
       refetch();
     } catch (err: any) {
@@ -90,23 +95,38 @@ export default function BrowserSessions() {
     }
   };
 
+  const handleStopStream = async () => {
+    if (!window.confirm('End the active browser stream?')) {
+      return;
+    }
+    try {
+      await stopStreamMut.mutateAsync();
+      addToast({ message: 'Stream ended', type: 'success', duration: 3000 });
+      refetchActive();
+      refetch();
+    } catch (err: any) {
+      addToast({ message: err.message || 'Failed to end stream', type: 'error', duration: 5000 });
+    }
+  };
+
   const handleReauth = (session: BrowserSession) => {
     const targetUrl = session.health_check_url || `https://${session.domain}/`;
-    navigate(`/browser-sessions/stream?domain=${encodeURIComponent(session.domain)}&url=${encodeURIComponent(targetUrl)}`);
+    const params = new URLSearchParams({
+      domain: session.domain,
+      url: targetUrl,
+    });
+    if (session.requires_headed) {
+      params.set('headed', 'true');
+    }
+    navigate(`/browser-sessions/stream?${params.toString()}`);
   };
 
-  const handleHeadedReauth = (session: BrowserSession) => {
-    const targetUrl = session.health_check_url || `https://${session.domain}/`;
-    navigate(`/browser-sessions/stream?domain=${encodeURIComponent(session.domain)}&url=${encodeURIComponent(targetUrl)}&headed=true`);
-  };
-
-  const handleHeadedLogin = async (session: BrowserSession) => {
-    const targetUrl = session.health_check_url || `https://${session.domain}/`;
+  const handleRequiresHeadedChange = async (session: BrowserSession, checked: boolean) => {
     try {
-      const result = await headedLoginMut.mutateAsync(targetUrl);
-      addToast({ message: result.message, type: 'success', duration: 5000 });
+      await requiresHeadedMut.mutateAsync({ domain: session.domain, requires_headed: checked });
+      refetch();
     } catch (err: any) {
-      addToast({ message: err.message || 'Failed to launch headed browser', type: 'error', duration: 5000 });
+      addToast({ message: err.message || 'Failed to update headed preference', type: 'error', duration: 5000 });
     }
   };
 
@@ -117,6 +137,48 @@ export default function BrowserSessions() {
         <button onClick={() => navigate('/browser-sessions/stream')}>
           + New Session
         </button>
+      </div>
+
+      <div className="browser-sessions-active-banner">
+        <div className="browser-sessions-active-banner__content">
+          {isLoadingActive ? (
+            <span className="browser-sessions-active-banner__inactive">Checking active stream…</span>
+          ) : activeStream ? (
+            <>
+              <span className="browser-sessions-active-banner__dot" />
+              <span>
+                Active stream on <strong>{activeStream.domain}</strong>
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="browser-sessions-active-banner__dot browser-sessions-active-banner__dot--inactive" />
+              <span className="browser-sessions-active-banner__inactive">No active browser stream</span>
+            </>
+          )}
+        </div>
+        <div className="browser-sessions-active-banner__actions">
+          {!isLoadingActive && activeStream ? (
+            <>
+              <button
+                onClick={() => navigate(`/browser-sessions/stream?domain=${encodeURIComponent(activeStream.domain)}`)}
+              >
+                View Stream
+              </button>
+              <button
+                onClick={handleStopStream}
+                disabled={stopStreamMut.isPending}
+                className="text-danger border-danger"
+              >
+                {stopStreamMut.isPending ? 'Ending…' : 'End Session'}
+              </button>
+            </>
+          ) : !isLoadingActive ? (
+            <button onClick={() => navigate('/browser-sessions/stream')}>
+              + New Session
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {isLoading && (
@@ -148,6 +210,7 @@ export default function BrowserSessions() {
                 <th>Last Saved</th>
                 <th>Last Used</th>
                 <th>Last Checked</th>
+                <th>Headed</th>
                 <th className="text-right">Actions</th>
               </tr>
             </thead>
@@ -173,26 +236,25 @@ export default function BrowserSessions() {
                   <td data-label="Last Checked">
                     {s.last_health_check ? formatRelativeDate(s.last_health_check) : 'Never'}
                   </td>
+                  <td data-label="Headed">
+                    <input
+                      type="checkbox"
+                      checked={s.requires_headed}
+                      onChange={(e) => handleRequiresHeadedChange(s, e.target.checked)}
+                      disabled={requiresHeadedMut.isPending}
+                      title="Always use a headed (visible) browser for this site"
+                    />
+                  </td>
                   <td data-label="Actions" className="text-right">
                     <div className="browser-sessions-actions">
                       <button onClick={() => handleCheck(s.domain)} disabled={checkMut.isPending}>
                         Check Now
                       </button>
-                      <button onClick={() => handleReauth(s)}>
-                        Authenticate
-                      </button>
                       <button
-                        onClick={() => handleHeadedReauth(s)}
-                        title="Stream a real browser window for sites that block headless browsers"
+                        onClick={() => handleReauth(s)}
+                        title="Open a browser stream for this site; toggle headed mode on the next screen"
                       >
-                        Headed Stream
-                      </button>
-                      <button
-                        onClick={() => handleHeadedLogin(s)}
-                        disabled={headedLoginMut.isPending}
-                        title="Opens a real browser window on the server"
-                      >
-                        {headedLoginMut.isPending ? 'Launching…' : 'Headed Login'}
+                        Stream
                       </button>
                       <button
                         onClick={() => handleDelete(s.domain)}

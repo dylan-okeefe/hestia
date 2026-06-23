@@ -8,6 +8,7 @@ import pytest
 from hestia.tools.browser.fetch import (
     BrowserFetchResult,
     ToolResultCategory,
+    _BrowserPool,
     fetch_url,
 )
 
@@ -74,6 +75,13 @@ def no_delays() -> Any:
         yield
 
 
+@pytest.fixture(autouse=True)
+def isolated_browser_pool() -> Any:
+    """Give each test a fresh browser pool so per-test mocks are used."""
+    with patch("hestia.tools.browser.fetch._pool", _BrowserPool()):
+        yield
+
+
 @pytest.mark.asyncio
 async def test_successful_fetch_returns_text(
     mock_playwright: Any, mock_store: Any
@@ -89,7 +97,7 @@ async def test_successful_fetch_returns_text(
     assert result.final_url == "https://example.com/page"
     mock_playwright["page"].goto.assert_awaited_once_with(
         "https://example.com/page",
-        wait_until="networkidle",
+        wait_until="domcontentloaded",
         timeout=30000,
     )
     mock_store.update_metadata.assert_called()
@@ -108,6 +116,24 @@ async def test_login_url_detection_returns_blocked_login(
     assert result.category == ToolResultCategory.BLOCKED
     assert "[BLOCKED - LOGIN_REQUIRED]" in result.text
     assert "login" in result.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_requires_headed_returns_blocked_with_headed_hint(
+    mock_playwright: Any, mock_store: Any
+) -> None:
+    metadata = MagicMock()
+    metadata.requires_headed = True
+    metadata.last_used = None
+    mock_store.load_metadata = MagicMock(return_value=metadata)
+
+    result = await fetch_url("https://example.com/page", domain="example.com")
+
+    assert result.ok is False
+    assert result.category == ToolResultCategory.BLOCKED
+    assert "[BLOCKED - HEADED_LOGIN_REQUIRED]" in result.text
+    assert "Browser Stream UI" in result.text
+    mock_playwright["page"].goto.assert_not_awaited()
 
 
 @pytest.mark.asyncio

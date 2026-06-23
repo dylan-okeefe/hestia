@@ -28,3 +28,9 @@ cd web-ui && grep -r "style={{" src/ | grep -v "node_modules" | wc -l
 ```
 
 The count must stay under 20.
+
+## Mandatory policy: specified work cannot be skipped
+
+Anything explicitly called for in the planning document, spec, decision record, or loop scope is **mandatory**. If a piece is too large to finish now, break it into one or more **additional named loops** and flag it in the handoff and any active tracking file. Quietly omitting specified work, or implementing only the easy parts, is a **loop failure** even if tests pass.
+
+Before declaring a loop done, compare the diff against the spec/decision/loop docs item by item. Every item must be either **done** or **deferred to a named follow-up loop**. An item that is neither is a blocker.

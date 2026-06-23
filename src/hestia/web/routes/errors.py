@@ -7,6 +7,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
+from hestia.core.types import Session
 from hestia.web.context import WebContext, get_web_context
 from hestia.web.dependencies import require_admin
 
@@ -45,11 +46,12 @@ async def list_errors(
 
     # Fetch error sources concurrently — these four calls are independent.
     # Batch session lookups below depend on the IDs returned here.
+    assert ctx.turn_store is not None
     failed_executions, workflows, scheduler_tasks, turns = await asyncio.gather(
         ctx.execution_store.list_failed(limit=50),
         ctx.workflow_store.list_workflows(),
         ctx.scheduler_store.list_tasks_with_errors(limit=50),
-        ctx.session_store.list_turns_with_errors(limit=50),
+        ctx.turn_store.list_turns_with_errors(limit=50),
     )
 
     workflow_names = {w.id: w.name for w in workflows}
@@ -78,12 +80,12 @@ async def list_errors(
 
     # Scheduler tasks with errors — session batch lookup depends on task IDs.
     task_session_ids = list({t.session_id for t in scheduler_tasks})
-    task_sessions = (
+    task_sessions: dict[str, Session] = (
         await ctx.session_store.get_sessions_batch(task_session_ids)
         if task_session_ids
-        else []
+        else {}
     )
-    task_session_owners = {s.id: s.platform_user for s in task_sessions}
+    task_session_owners = {s.id: s.platform_user for s in task_sessions.values()}
 
     for task in scheduler_tasks:
         if not is_admin and task_session_owners.get(task.session_id) != caller_platform_user:
@@ -107,12 +109,12 @@ async def list_errors(
 
     # Session turns with errors — session batch lookup depends on turn IDs.
     turn_session_ids = list({t.session_id for t in turns})
-    turn_sessions = (
+    turn_sessions: dict[str, Session] = (
         await ctx.session_store.get_sessions_batch(turn_session_ids)
         if turn_session_ids
-        else []
+        else {}
     )
-    turn_session_owners = {s.id: s.platform_user for s in turn_sessions}
+    turn_session_owners = {s.id: s.platform_user for s in turn_sessions.values()}
 
     for turn in turns:
         if not is_admin and turn_session_owners.get(turn.session_id) != caller_platform_user:
@@ -214,11 +216,15 @@ async def debug_error(
         else:
             prompt_parts.append("Task record not found.")
     elif source_type == "session_turn":
-        messages = await ctx.session_store.get_turn_messages(source_id)
-        if messages:
-            prompt_parts.append(f"Session: {messages['session_id']}")
-            prompt_parts.append(f"State: {messages['state']}")
-            prompt_parts.append(f"Error: {messages['error']}")
+        assert ctx.turn_store is not None
+        turn = await ctx.turn_store.get_turn(source_id)
+        if turn is not None:
+            session = await ctx.session_store.get_session(turn.session_id)
+            prompt_parts.append(f"Session: {turn.session_id}")
+            prompt_parts.append(f"State: {turn.state}")
+            prompt_parts.append(f"Error: {turn.error}")
+            if session is not None:
+                prompt_parts.append(f"Platform user: {session.platform_user}")
         else:
             prompt_parts.append("Turn record not found.")
     else:

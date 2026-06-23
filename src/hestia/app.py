@@ -13,29 +13,45 @@ from typing import Any
 import click
 
 from hestia.artifacts.store import ArtifactStore
+from hestia.blocked_actions.digest import BlockedActionsDigest
 from hestia.config import HestiaConfig
 from hestia.context.builder import ContextBuilder
 from hestia.context.compressor import InferenceHistoryCompressor
 from hestia.core.inference import InferenceClient
 from hestia.core.rate_limiter import SessionRateLimiter
+from hestia.core.types import ScheduledTask
 from hestia.core.validators import validate_inference_model_name
 from hestia.email.adapter import EmailAdapter
 from hestia.events.bus import EventBus
 from hestia.identity import IdentityCompiler
 from hestia.inference import SlotManager
 from hestia.memory import MemoryEpochCompiler, MemoryStore
-from hestia.memory.handoff import SessionHandoffSummarizer
+from hestia.memory.compaction_summarizer import SessionCompactionSummarizer
+from hestia.memory.maintenance import MemoryMaintenance
+from hestia.memory.maintenance.digest import MemoryMaintenanceDigest
+from hestia.memory.maintenance.scheduler import (
+    ensure_memory_maintenance_tasks as _ensure_memory_maintenance_tasks,
+)
+from hestia.memory.maintenance.undo import MaintenanceUndo
 from hestia.orchestrator import Orchestrator
+from hestia.orchestrator.compaction import SessionCompactor
 from hestia.orchestrator.engine import ConfirmCallback
+from hestia.orchestrator.handoff_service import HandoffService
+from hestia.orchestrator.lock import SessionLockManager
+from hestia.persistence.capability_events import CapabilityEventStore
 from hestia.persistence.db import Database
 from hestia.persistence.error_resolution_store import ErrorResolutionStore
 from hestia.persistence.failure_store import FailureStore
 from hestia.persistence.job_alert_store import JobAlertStore
+from hestia.persistence.maintenance_trace_store import MaintenanceTraceStore
+from hestia.persistence.message_store import MessageStore
 from hestia.persistence.scheduler import SchedulerStore
-from hestia.persistence.sessions import SessionStore
+from hestia.persistence.session_store import SessionStore
 from hestia.persistence.trace_store import TraceStore
+from hestia.persistence.turn_store import TurnStore
 from hestia.persistence.users import UserStore
 from hestia.policy.default import DefaultPolicyEngine
+from hestia.policy.gate import CapabilityGate
 from hestia.reflection.runner import ReflectionRunner
 from hestia.reflection.scheduler import ReflectionScheduler
 from hestia.reflection.store import ProposalStore
@@ -50,6 +66,7 @@ from hestia.tools.builtin import (
     current_time,
     make_accept_proposal_tool,
     make_append_to_file_tool,
+    make_blocked_actions_summary_tool,
     make_create_scheduled_task_tool,
     make_defer_proposal_tool,
     make_delegate_task_tool,
@@ -175,7 +192,9 @@ class CliResponseHandler:
 class CliConfirmHandler:
     """Handles tool confirmation in CLI mode."""
 
-    async def __call__(self, tool_name: str, arguments: dict[str, Any]) -> bool:
+    async def __call__(
+        self, tool_name: str, arguments: dict[str, Any], request_token: str | None = None
+    ) -> bool:
         """Prompt user for confirmation."""
         click.echo(f"\nTool call requested: {tool_name}")
         click.echo(f"Arguments: {arguments}")
@@ -201,7 +220,9 @@ class AppContext:
         self.db = Database(config.storage.database_url)
         self.artifact_store = ArtifactStore(config.storage.artifacts_dir)
         self.event_bus = EventBus()
-        self.session_store = SessionStore(self.db, event_bus=self.event_bus)
+        self.lock_manager = SessionLockManager()
+        self.message_store = MessageStore(self.db)
+        self.turn_store = TurnStore(self.db)
         self.user_store = UserStore(self.db)
         self.policy = _make_policy(config)
         self.memory_store = MemoryStore(self.db)
@@ -212,12 +233,34 @@ class AppContext:
         self.execution_store = ExecutionStore(self.db)
         self.error_resolution_store = ErrorResolutionStore(self.db)
         self.job_alert_store = JobAlertStore(self.db)
+        self.capability_event_store = CapabilityEventStore(self.db)
+        self.maintenance_trace_store = MaintenanceTraceStore(self.db)
+        self.session_store = SessionStore(
+            self.db,
+            event_bus=self.event_bus,
+            message_store=self.message_store,
+            memory_store=self.memory_store,
+            inference_factory=lambda: self.inference,
+        )
+        self.handoff_service = HandoffService(
+            self.session_store, self.message_store
+        )
+        self.blocked_actions_digest = BlockedActionsDigest(
+            self.capability_event_store,
+            self.session_store,
+        )
         self.trigger_registry: Any = None
         self.epoch_compiler = MemoryEpochCompiler(
             self.memory_store, max_tokens=self.config.memory.epoch_max_tokens
         )
         self.tool_registry = ToolRegistry(self.artifact_store)
         self.checkpoint_manager = CheckpointManager()
+        self.capability_gate = CapabilityGate(
+            config=config,
+            user_store=self.user_store,
+            registry=self.tool_registry,
+            event_store=self.capability_event_store,
+        )
 
         # Eager feature subsystems (lightweight; always available for status queries)
         self.proposal_store = ProposalStore(self.db)
@@ -280,16 +323,53 @@ class AppContext:
         )
 
     @functools.cached_property
-    def handoff_summarizer(self) -> SessionHandoffSummarizer | None:
-        """Lazy handoff summarizer — created on first access if enabled."""
-        if self.config.handoff.enabled:
-            return SessionHandoffSummarizer(
-                inference=self.inference,
-                memory_store=self.memory_store,
-                max_chars=self.config.handoff.max_chars,
-                min_messages=self.config.handoff.min_messages,
-            )
-        return None
+    def compaction_summarizer(self) -> SessionCompactionSummarizer:
+        """Lazy compaction summarizer for the /compact meta-command."""
+        return SessionCompactionSummarizer(
+            inference=self.inference,
+            memory_store=self.memory_store,
+            max_chars=self.config.compaction.summary_max_chars,
+            min_messages=self.config.compaction.min_messages,
+        )
+
+    @functools.cached_property
+    def compactor(self) -> SessionCompactor:
+        """Lazy session compactor for the /compact meta-command."""
+        return SessionCompactor(
+            session_store=self.session_store,
+            message_store=self.message_store,
+            slot_manager=self.slot_manager,
+            summarizer=self.compaction_summarizer,
+            lock_manager=self.lock_manager,
+            config=self.config.compaction,
+        )
+
+    @functools.cached_property
+    def memory_maintenance(self) -> MemoryMaintenance:
+        """Lazy memory maintenance orchestrator."""
+        return MemoryMaintenance(
+            memory_store=self.memory_store,
+            inference=self.inference,
+            memory_config=self.config.memory,
+            trace_store=self.maintenance_trace_store,
+        )
+
+    @functools.cached_property
+    def memory_maintenance_digest(self) -> MemoryMaintenanceDigest:
+        """Lazy assembler for the memory maintenance digest."""
+        return MemoryMaintenanceDigest(
+            trace_store=self.maintenance_trace_store,
+            session_store=self.session_store,
+        )
+
+    @functools.cached_property
+    def memory_maintenance_undo(self) -> MaintenanceUndo:
+        """Lazy maintenance undo helper."""
+        return MaintenanceUndo(
+            memory_store=self.memory_store,
+            trace_store=self.maintenance_trace_store,
+            undo_retention_days=self.config.memory.maintenance.undo_retention_days,
+        )
 
     # --- Lazy feature subsystems ---
 
@@ -336,12 +416,28 @@ class AppContext:
         await self.memory_store.create_table()
         await self.failure_store.create_table()
         await self.trace_store.create_table()
+        await self.maintenance_trace_store.create_table()
         await self.proposal_store.create_table()
         await self.style_store.create_table()
         await self.workflow_store.create_tables()
         await self.execution_store.create_tables()
         await self.job_alert_store.create_table()
         self._bootstrapped = True
+
+    async def ensure_memory_maintenance_tasks(
+        self,
+        platform: str = "cli",
+        platform_user: str = "default",
+    ) -> tuple[ScheduledTask, ScheduledTask]:
+        """Ensure scheduled maintenance tasks exist for an identity."""
+        session = await self.session_store.get_or_create_session(platform, platform_user)
+        return await _ensure_memory_maintenance_tasks(
+            self.scheduler_store,
+            session.id,
+            self.config.memory.maintenance,
+            platform,
+            platform_user,
+        )
 
     def make_injection_scanner(self) -> InjectionScanner:
         """Create an InjectionScanner from config (cached on instance)."""
@@ -380,21 +476,30 @@ class AppContext:
 
         checkpoint_scope = self.config.storage.checkpoint_scope or None
 
+        handoff_service = HandoffService(
+            self.session_store,
+            self.message_store,
+        )
+
         return Orchestrator(
             inference=self.inference,
             session_store=self.session_store,
+            message_store=self.message_store,
+            turn_store=self.turn_store,
+            handoff_service=handoff_service,
             context_builder=self.context_builder,
             tool_registry=self.tool_registry,
             policy=self.policy,
             confirm_callback=self.confirm_callback,
+            capability_gate=self.capability_gate,
             max_iterations=self.config.max_iterations,
             max_tool_calls_per_turn=self.config.policy.max_tool_calls_per_turn,
             max_tokens=self.config.inference.max_tokens,
             default_reasoning_budget=self.config.inference.default_reasoning_budget,
             slot_manager=self.slot_manager,
+            lock_manager=self.lock_manager,
             failure_store=self.failure_store,
             trace_store=self.trace_store,
-            handoff_summarizer=self.handoff_summarizer,
             injection_scanner=self.make_injection_scanner(),
             proposal_store=self.proposal_store,
             style_store=self.style_store,
@@ -427,6 +532,7 @@ class AppContext:
         reg.register(make_glob_tool(cfg.storage))
         reg.register(make_grep_tool(cfg.storage))
         reg.register(make_rollback_turn_tool(self.checkpoint_manager))
+        reg.register(make_blocked_actions_summary_tool(self.blocked_actions_digest))
         reg.register(make_search_memory_tool(self.memory_store))
         reg.register(make_save_memory_tool(self.memory_store))
         reg.register(make_list_memories_tool(self.memory_store))

@@ -42,16 +42,20 @@ async def test_tool_chain_unbound_error():
     mock_turn.tool_calls_made = 0
     mock_turn.transitions = []
 
-    mock_session_store.insert_turn = AsyncMock(return_value=None)
-    mock_session_store.update_turn = AsyncMock(return_value=None)
-    mock_session_store.append_transition = AsyncMock(return_value=None)
-    mock_session_store.append_message = AsyncMock(return_value=None)
-    mock_session_store.get_messages = AsyncMock(return_value=[])
+    mock_message_store = MagicMock()
+    mock_message_store.get_messages = AsyncMock(return_value=[])
+    mock_message_store.append_message = AsyncMock(return_value=None)
+    mock_turn_store = MagicMock()
+    mock_turn_store.insert_turn = AsyncMock(return_value=None)
+    mock_turn_store.update_turn = AsyncMock(return_value=None)
+    mock_turn_store.append_transition = AsyncMock(return_value=None)
 
     # Create orchestrator
     orchestrator = Orchestrator(
         inference=mock_inference,
         session_store=mock_session_store,
+        message_store=mock_message_store,
+        turn_store=mock_turn_store,
         context_builder=mock_context_builder,
         tool_registry=mock_tool_registry,
         policy=mock_policy,
@@ -118,11 +122,13 @@ async def test_failure_bundle_enriched_fields_populated():
     mock_turn.tool_calls_made = 0
     mock_turn.transitions = []
 
-    mock_session_store.insert_turn = AsyncMock(return_value=None)
-    mock_session_store.update_turn = AsyncMock(return_value=None)
-    mock_session_store.append_transition = AsyncMock(return_value=None)
-    mock_session_store.append_message = AsyncMock(return_value=None)
-    mock_session_store.get_messages = AsyncMock(return_value=[])
+    mock_message_store = MagicMock()
+    mock_message_store.get_messages = AsyncMock(return_value=[])
+    mock_message_store.append_message = AsyncMock(return_value=None)
+    mock_turn_store = MagicMock()
+    mock_turn_store.insert_turn = AsyncMock(return_value=None)
+    mock_turn_store.update_turn = AsyncMock(return_value=None)
+    mock_turn_store.append_transition = AsyncMock(return_value=None)
 
     mock_policy.reasoning_budget.return_value = 2048
     mock_policy.turn_token_budget.return_value = 4000
@@ -130,6 +136,8 @@ async def test_failure_bundle_enriched_fields_populated():
     orchestrator = Orchestrator(
         inference=mock_inference,
         session_store=mock_session_store,
+        message_store=mock_message_store,
+        turn_store=mock_turn_store,
         context_builder=mock_context_builder,
         tool_registry=mock_tool_registry,
         policy=mock_policy,
@@ -231,15 +239,19 @@ async def test_post_done_respond_callback_error_no_illegal_transition() -> None:
     mock_turn.transitions = []
     mock_turn.state = TurnState.RECEIVED
 
-    mock_session_store.insert_turn = AsyncMock(return_value=None)
-    mock_session_store.update_turn = AsyncMock(return_value=None)
-    mock_session_store.append_transition = AsyncMock(return_value=None)
-    mock_session_store.append_message = AsyncMock(return_value=None)
-    mock_session_store.get_messages = AsyncMock(return_value=[])
+    mock_message_store = MagicMock()
+    mock_message_store.get_messages = AsyncMock(return_value=[])
+    mock_message_store.append_message = AsyncMock(return_value=None)
+    mock_turn_store = MagicMock()
+    mock_turn_store.insert_turn = AsyncMock(return_value=None)
+    mock_turn_store.update_turn = AsyncMock(return_value=None)
+    mock_turn_store.append_transition = AsyncMock(return_value=None)
 
     orchestrator = Orchestrator(
         inference=mock_inference,
         session_store=mock_session_store,
+        message_store=mock_message_store,
+        turn_store=mock_turn_store,
         context_builder=mock_context_builder,
         tool_registry=mock_tool_registry,
         policy=mock_policy,
@@ -303,15 +315,19 @@ async def test_illegal_transition_results_in_failed_and_user_notice():
     mock_turn.transitions = []
     mock_turn.state = TurnState.RECEIVED
 
-    mock_session_store.insert_turn = AsyncMock(return_value=None)
-    mock_session_store.update_turn = AsyncMock(return_value=None)
-    mock_session_store.append_transition = AsyncMock(return_value=None)
-    mock_session_store.append_message = AsyncMock(return_value=None)
-    mock_session_store.get_messages = AsyncMock(return_value=[])
+    mock_message_store = MagicMock()
+    mock_message_store.get_messages = AsyncMock(return_value=[])
+    mock_message_store.append_message = AsyncMock(return_value=None)
+    mock_turn_store = MagicMock()
+    mock_turn_store.insert_turn = AsyncMock(return_value=None)
+    mock_turn_store.update_turn = AsyncMock(return_value=None)
+    mock_turn_store.append_transition = AsyncMock(return_value=None)
 
     orchestrator = Orchestrator(
         inference=mock_inference,
         session_store=mock_session_store,
+        message_store=mock_message_store,
+        turn_store=mock_turn_store,
         context_builder=mock_context_builder,
         tool_registry=mock_tool_registry,
         policy=mock_policy,

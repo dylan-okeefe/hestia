@@ -19,6 +19,7 @@ The runtime config on this box deliberately uses `TrustConfig(..., auto_approve_
 - `User.trust_preset` / `role` stored but not enforced in `policy/default.py`.
 - Workflow executor bypasses confirmation (`workflows/executor.py:549` calls `tool_registry.call` directly).
 - Workflow tool nodes can run `email_send`, `terminal`, `write_file` unattended.
+- `tools/browser/fetch.py` is the single front door for all browser access (`browser_get`, `browser_get_links`, and the recovery path all route through `fetch_url`), but it has **no SSRF guard** — it hands arbitrary URLs directly to Playwright.
 - Per-user trust keyed on room/chat, not sender (Matrix `sender_platform_user=None`; Telegram groups key on `chat.id`).
 - Confirmation buttons not bound to requester in groups.
 - Webhook secrets leak via `GET /api/workflows` (`list_workflows` returns full `trigger_config`).
@@ -33,7 +34,7 @@ Introduce `src/hestia/policy/gate.py`:
 ```python
 class CapabilityRequest:
     actor: Identity          # platform + platform_user + user_id (if resolved)
-    channel: Channel         # telegram | matrix | email | webhook | scheduler | workflow | cli
+    channel: Channel         # telegram | matrix | email | webhook | scheduler | workflow | browser | cli
     tool_name: str
     inputs: dict[str, Any]
     session_id: str | None
@@ -96,6 +97,23 @@ Decision order inside `check()`:
 - Add `require_admin` to `/api/doctor`, `/api/audit`, `/api/config`, `/api/tools`, `/api/egress`, and the traces/egress/memory routes.
 - For routes that can legitimately return global data, require admin or scope by resolved identity.
 
+### 7. Browser SSRF protection
+
+`src/hestia/tools/browser/fetch.py` is now the single front door for browser access. It must share the SSRF boundary already implemented for `http_get`:
+
+- Reuse the IP guard from `src/hestia/tools/builtin/http_get.py` (`_assert_ip_allowed` / `_BLOCKED_RANGES`), or move both into a shared `src/hestia/security/ssrf.py` helper.
+- In `fetch_url`, resolve the hostname and reject loopback, link-local, cloud-metadata (`169.254.169.254`), and RFC1918/private ranges **before** calling `page.goto()`.
+- Return a structured failure prefixed with `[CATEGORY: BLOCKED]` so downstream classification is deterministic and the model sees a clear, safe error.
+- Apply the same helper to `web/browser_stream.py` (`SessionStreamManager.start`) if it is kept as a separate browser entry point.
+
+### 8. Tool-result category markers
+
+`classify_tool_result` was tightened to trust only `[CATEGORY: <NAME>]` markers. The gate and retry logic should lean on this instead of substring scanning:
+
+- `CapabilityGate` categorizes the previous tool result by parsing its marker (or defaulting to `SUCCESS` for unmarked legacy content).
+- Retry/deny decisions in the orchestrator and workflow executor use the parsed category directly.
+- New tool implementations must emit markers for `TIMEOUT`, `TRANSIENT_OTHER`, `BLOCKED`, and `NOT_FOUND`; unmarked tool results are treated as successful.
+
 ## Tests that must pass before merging
 
 1. A workflow node calling `terminal` or `email_send` hits the confirmation gate and requires approval.
@@ -103,13 +121,15 @@ Decision order inside `check()`:
 3. `list_workflows` response does not contain `trigger_config.secret` for non-owner/non-admin callers.
 4. Confirmation approval by a different user in the same room is rejected.
 5. An email-triggered workflow with a destructive tool requires confirmation; the same tool in a Telegram DM to the owner auto-approves (under developer preset).
-6. All existing trust/orchestrator/workflow tests still pass.
+6. `fetch_url("http://127.0.0.1:8001")` and `fetch_url("http://169.254.169.254")` return `[CATEGORY: BLOCKED]` without launching a browser.
+7. A tool result containing `[CATEGORY: TIMEOUT]` is treated as retryable; a bare "Timeout" string is not.
+8. All existing trust/orchestrator/workflow tests still pass.
 
 ## Files likely to change
 
 - New: `src/hestia/policy/gate.py`, `src/hestia/policy/channel.py`, `src/hestia/policy/identity.py`
-- Modify: `src/hestia/policy/default.py`, `src/hestia/orchestrator/execution.py`, `src/hestia/workflows/executor.py`, `src/hestia/platforms/matrix_adapter.py`, `src/hestia/platforms/telegram_adapter.py`, `src/hestia/platforms/runners.py`, `src/hestia/web/routes/workflows.py`, `src/hestia/web/routes/doctor.py`, `src/hestia/web/routes/audit.py`, `src/hestia/web/routes/config.py`, `src/hestia/web/routes/tools.py`, `src/hestia/web/routes/egress.py`, `src/hestia/web/routes/traces.py`, `src/hestia/web/routes/memory.py`
-- Tests: `tests/unit/policy/test_gate.py`, `tests/unit/workflows/test_executor_trust.py`, `tests/unit/test_web_routes.py`
+- Modify: `src/hestia/policy/default.py`, `src/hestia/orchestrator/execution.py`, `src/hestia/workflows/executor.py`, `src/hestia/tools/browser/fetch.py`, `src/hestia/tools/builtin/http_get.py` (or a shared SSRF helper), `src/hestia/platforms/matrix_adapter.py`, `src/hestia/platforms/telegram_adapter.py`, `src/hestia/platforms/runners.py`, `src/hestia/web/routes/workflows.py`, `src/hestia/web/routes/doctor.py`, `src/hestia/web/routes/audit.py`, `src/hestia/web/routes/config.py`, `src/hestia/web/routes/tools.py`, `src/hestia/web/routes/egress.py`, `src/hestia/web/routes/traces.py`, `src/hestia/web/routes/memory.py`
+- Tests: `tests/unit/policy/test_gate.py`, `tests/unit/workflows/test_executor_trust.py`, `tests/unit/test_web_routes.py`, `tests/unit/tools/test_browser_ssrf.py`
 
 ## Risks & open questions
 

@@ -1,11 +1,52 @@
-"""Tests for session archival auto-save to memory store."""
+"""Tests for session persistence."""
 
+import json
 
 import pytest
 
-from hestia.core.types import Message, SessionState, ToolCall
+from hestia.core.types import ChatResponse, Message, SessionState
+from hestia.memory.compaction_summarizer import SessionCompactionSummarizer
+from hestia.memory.store import MemoryStore
 from hestia.persistence.db import Database
-from hestia.persistence.sessions import SessionStore
+from hestia.persistence.message_store import MessageStore
+from hestia.persistence.session_store import SessionStore
+
+
+class FakeInferenceClient:
+    """Inference client that returns a deterministic compaction JSON summary."""
+
+    model_name = "fake-model"
+
+    def __init__(self, summary_json: dict | None = None):
+        self._summary_json = summary_json or {
+            "goal": "Plan a trip",
+            "criteria": "Prefer warm weather",
+            "progress_done": "Discussed dates",
+            "pending": "Book flights",
+            "key_findings": "User likes direct flights",
+            "artifact_paths": ["art_abc123def4"],
+            "summary": "Planning a warm-weather trip; direct flights preferred.",
+        }
+
+    async def tokenize(self, text: str) -> list[int]:
+        return [0] * (len(text) // 4 + 1)
+
+    async def count_request(self, messages, tools):
+        return sum(10 + len(m.content) // 4 for m in messages) + 50 * len(tools)
+
+    async def chat(self, messages, tools=None, slot_id=None, **kwargs):
+        return ChatResponse(
+            content=json.dumps(self._summary_json),
+            reasoning_content=None,
+            tool_calls=[],
+            finish_reason="stop",
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+        )
+
+    async def close(self):
+        pass
 
 
 @pytest.fixture
@@ -22,40 +63,56 @@ async def store(tmp_path):
     await db.close()
 
 
+@pytest.fixture
+async def message_store(store):
+    """Create a MessageStore bound to the same database."""
+    return MessageStore(store._db)
+
+
+@pytest.fixture
+async def memory_store(store):
+    """Create a MemoryStore bound to the same database."""
+    ms = MemoryStore(store._db)
+    await ms.create_table()
+    return ms
+
+
+def make_archive_store(store, message_store, memory_store, inference=None):
+    """Build a SessionStore wired for archive-time memory extraction."""
+    if inference is None:
+        inference = FakeInferenceClient()
+    summarizer = SessionCompactionSummarizer(
+        inference=inference,
+        memory_store=memory_store,
+        min_messages=4,
+    )
+    return SessionStore(
+        store._db,
+        event_bus=store._event_bus,
+        message_store=message_store,
+        memory_store=memory_store,
+        archive_summarizer=summarizer,
+    )
+
+
+async def populate_session(message_store, session_id, turns=4):
+    """Add enough user/assistant turns to pass the trivial-session gate."""
+    for i in range(turns):
+        await message_store.append_message(
+            session_id,
+            Message(role="user", content=f"User message {i}"),
+        )
+        await message_store.append_message(
+            session_id,
+            Message(role="assistant", content=f"Assistant reply {i}"),
+        )
+
+
 class TestSessionStore:
     @pytest.mark.asyncio
-    async def test_archive_session_with_messages(self, store):
-        session = await store.get_or_create_session("cli", "testuser")
-        await store.append_message(
-            session.id, Message(role="user", content="Find me a job")
-        )
-        await store.append_message(
-            session.id, Message(role="assistant", content="Here are some roles...")
-        )
-
-        await store.archive_session(session.id)
-
-        fetched = await store.get_session(session.id)
-        assert fetched.state == SessionState.ARCHIVED
-
-    @pytest.mark.asyncio
-    async def test_archive_session_with_no_messages(self, store):
+    async def test_archive_session(self, store):
         session = await store.get_or_create_session("cli", "testuser")
 
-        await store.archive_session(session.id)
-
-        fetched = await store.get_session(session.id)
-        assert fetched.state == SessionState.ARCHIVED
-
-    @pytest.mark.asyncio
-    async def test_archive_session_does_not_crash(self, store):
-        session = await store.get_or_create_session("cli", "testuser")
-        await store.append_message(session.id, Message(role="user", content="Hello"))
-        await store.append_message(
-            session.id, Message(role="assistant", content="Hi")
-        )
-
-        # Should not raise
         await store.archive_session(session.id)
 
         fetched = await store.get_session(session.id)
@@ -64,12 +121,6 @@ class TestSessionStore:
     @pytest.mark.asyncio
     async def test_create_session_with_archive(self, store):
         session1 = await store.get_or_create_session("cli", "testuser")
-        await store.append_message(
-            session1.id, Message(role="user", content="What's the weather?")
-        )
-        await store.append_message(
-            session1.id, Message(role="assistant", content="It's sunny.")
-        )
 
         session2 = await store.create_session(
             "cli", "testuser", archive_previous=session1
@@ -84,10 +135,6 @@ class TestSessionStore:
     @pytest.mark.asyncio
     async def test_end_session_archives(self, store):
         session = await store.get_or_create_session("cli", "testuser")
-        await store.append_message(session.id, Message(role="user", content="Hello"))
-        await store.append_message(
-            session.id, Message(role="assistant", content="Hi")
-        )
 
         await store.end_session(session.id, "test cleanup")
 
@@ -114,29 +161,119 @@ class TestSessionStore:
         assert other_active.id == other.id
 
     @pytest.mark.asyncio
-    async def test_tool_call_arguments_non_dict_coerced_on_load(self, store):
-        """Legacy/corrupt tool_call arguments that are not dicts become {}."""
+    async def test_archive_session_bumps_last_active_via_message_store(
+        self, store, message_store
+    ):
         session = await store.get_or_create_session("cli", "testuser")
-        await store.append_message(
+        await message_store.append_message(
             session.id,
-            Message(
-                role="assistant",
-                content="",
-                tool_calls=[
-                    ToolCall(id="tc1", name="test_tool", arguments="string-args"),
-                    ToolCall(id="tc2", name="test_tool", arguments=None),
-                    ToolCall(id="tc3", name="test_tool", arguments=["list-arg"]),
-                    ToolCall(id="tc4", name="test_tool", arguments={"ok": True}),
-                ],
-            ),
+            Message(role="user", content="hello"),
         )
 
-        messages = await store.get_messages(session.id)
-        assert len(messages) == 1
-        loaded = messages[0].tool_calls
-        assert loaded is not None
-        assert len(loaded) == 4
-        assert loaded[0].arguments == {}
-        assert loaded[1].arguments == {}
-        assert loaded[2].arguments == {}
-        assert loaded[3].arguments == {"ok": True}
+        await store.archive_session(session.id)
+
+        fetched = await store.get_session(session.id)
+        assert fetched.state == SessionState.ARCHIVED
+
+    @pytest.mark.asyncio
+    async def test_archive_session_saves_structured_facts(
+        self, store, message_store, memory_store
+    ):
+        store_with_memory = make_archive_store(store, message_store, memory_store)
+        session = await store_with_memory.get_or_create_session("cli", "testuser")
+        await populate_session(message_store, session.id)
+
+        summary = await store_with_memory.archive_session(session.id)
+
+        assert summary == "Planning a warm-weather trip; direct flights preferred."
+        memories = await memory_store.list_memories(platform="cli", platform_user="testuser")
+        assert len(memories) == 1
+        memory = memories[0]
+        assert "compaction" in memory.tags
+        assert "task-state" in memory.tags
+        assert "Goal: Plan a trip" in memory.content
+        assert "Findings: User likes direct flights" in memory.content
+        assert memory.session_id == session.id
+
+    @pytest.mark.asyncio
+    async def test_archive_session_skips_trivial_session(
+        self, store, message_store, memory_store
+    ):
+        store_with_memory = make_archive_store(store, message_store, memory_store)
+        session = await store_with_memory.get_or_create_session("cli", "testuser")
+        # Only two messages, below the default min_messages threshold.
+        await message_store.append_message(
+            session.id, Message(role="user", content="hello")
+        )
+        await message_store.append_message(
+            session.id, Message(role="assistant", content="hi")
+        )
+
+        summary = await store_with_memory.archive_session(session.id)
+
+        assert summary is None
+        memories = await memory_store.list_memories(platform="cli", platform_user="testuser")
+        assert memories == []
+
+    @pytest.mark.asyncio
+    async def test_archive_session_without_summarizer_does_not_create_memory(
+        self, store, message_store, memory_store
+    ):
+        store_with_memory = SessionStore(
+            store._db,
+            event_bus=store._event_bus,
+            message_store=message_store,
+            memory_store=memory_store,
+        )
+
+        session = await store_with_memory.get_or_create_session("cli", "testuser")
+        await populate_session(message_store, session.id)
+        summary = await store_with_memory.archive_session(session.id)
+
+        assert summary is None
+        memories = await memory_store.list_memories(platform="cli", platform_user="testuser")
+        assert memories == []
+
+    @pytest.mark.asyncio
+    async def test_archive_session_dedups_existing_memory(
+        self, store, message_store, memory_store
+    ):
+        store_with_memory = make_archive_store(store, message_store, memory_store)
+        session = await store_with_memory.get_or_create_session("cli", "testuser")
+        await populate_session(message_store, session.id)
+
+        # Pre-seed the exact memory the archive summarizer will produce.
+        expected_memory = (
+            "Goal: Plan a trip\n"
+            "Criteria: Prefer warm weather\n"
+            "Done: Discussed dates\n"
+            "Pending: Book flights\n"
+            "Findings: User likes direct flights\n"
+            "Artifacts: art_abc123def4"
+        )
+        await memory_store.save(
+            content=expected_memory,
+            tags=["compaction", "task-state"],
+            session_id=session.id,
+            platform=session.platform,
+            platform_user=session.platform_user,
+        )
+
+        await store_with_memory.archive_session(session.id)
+
+        memories = await memory_store.list_memories(platform="cli", platform_user="testuser")
+        assert len(memories) == 1
+
+    @pytest.mark.asyncio
+    async def test_archive_session_twice_does_not_duplicate(
+        self, store, message_store, memory_store
+    ):
+        store_with_memory = make_archive_store(store, message_store, memory_store)
+        session = await store_with_memory.get_or_create_session("cli", "testuser")
+        await populate_session(message_store, session.id)
+
+        await store_with_memory.archive_session(session.id)
+        await store_with_memory.archive_session(session.id)
+
+        memories = await memory_store.list_memories(platform="cli", platform_user="testuser")
+        assert len(memories) == 1

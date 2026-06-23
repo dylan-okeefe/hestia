@@ -106,7 +106,10 @@ class TestStartSession:
         assert manager.is_active()
         assert manager.get_session_id() == session_id
 
-        mock_playwright.chromium.launch.assert_called_once_with(headless=True)
+        mock_playwright.chromium.launch.assert_called_once()
+        launch_call = mock_playwright.chromium.launch.call_args
+        assert launch_call.kwargs.get("headless") is True
+        assert isinstance(launch_call.kwargs.get("args"), list)
         mock_browser.new_context.assert_awaited_once()
         mock_context.new_page.assert_awaited_once()
         mock_page.goto.assert_called_once_with(
@@ -168,8 +171,98 @@ class TestStopSession:
         with pytest.raises(ValueError, match="Session not found or ID mismatch"):
             await manager.stop("nonexistent-id")
 
+    @pytest.mark.asyncio
+    async def test_stop_marks_healthy_when_page_is_feed(
+        self, manager: SessionStreamManager, mock_store: BrowserSessionStore
+    ) -> None:
+        mock_cm, *_ = _make_mock_playwright()
+        _inject_playwright_module(mock_cm)
+
+        session_id = await manager.start("https://linkedin.com/feed")
+        # Make the mock page look like an authenticated feed.
+        mock_page = manager._session.page
+        mock_page.url = "https://www.linkedin.com/feed/"
+        mock_page.title = AsyncMock(return_value="LinkedIn")
+
+        await manager.stop(session_id)
+
+        metadata = mock_store.load_metadata("linkedin.com")
+        assert metadata is not None
+        assert metadata.health_status == "healthy"
+        assert metadata.health_check_url == "https://www.linkedin.com/feed/"
+
+    @pytest.mark.asyncio
+    async def test_stop_falls_back_to_session_url_on_oauth_redirect(
+        self, manager: SessionStreamManager, mock_store: BrowserSessionStore
+    ) -> None:
+        mock_cm, *_ = _make_mock_playwright()
+        _inject_playwright_module(mock_cm)
+
+        session_id = await manager.start("https://builtin.com/jobs")
+        # User is on an OAuth redirect page when they stop the stream.
+        mock_page = manager._session.page
+        mock_page.url = "https://accounts.google.com/signin/identifier"
+        mock_page.title = AsyncMock(return_value="Sign in - Google Accounts")
+
+        await manager.stop(session_id)
+
+        metadata = mock_store.load_metadata("builtin.com")
+        assert metadata is not None
+        assert metadata.health_status == "healthy"
+        assert metadata.health_check_url == "https://builtin.com/jobs"
+
+    @pytest.mark.asyncio
+    async def test_stop_clears_requires_headed(
+        self, manager: SessionStreamManager, mock_store: BrowserSessionStore
+    ) -> None:
+        mock_cm, *_ = _make_mock_playwright()
+        _inject_playwright_module(mock_cm)
+
+        mock_store.update_metadata("linkedin.com", requires_headed=True)
+        session_id = await manager.start("https://linkedin.com/feed")
+
+        await manager.stop(session_id)
+
+        metadata = mock_store.load_metadata("linkedin.com")
+        assert metadata is not None
+        assert metadata.requires_headed is False
+
 
 class TestForwardInput:
+    @pytest.mark.asyncio
+    async def test_forward_input_navigates_to_url(
+        self, manager: SessionStreamManager
+    ) -> None:
+        mock_cm, *_rest = _make_mock_playwright()
+        mock_page = _rest[3]
+        _inject_playwright_module(mock_cm)
+        session_id = await manager.start("https://example.com/login")
+
+        await manager.forward_input(
+            session_id, {"type": "navigate", "url": "https://example.com/otp-link"}
+        )
+
+        mock_page.goto.assert_called_with(
+            "https://example.com/otp-link", wait_until="domcontentloaded"
+        )
+
+    @pytest.mark.asyncio
+    async def test_forward_input_navigate_adds_https_scheme(
+        self, manager: SessionStreamManager
+    ) -> None:
+        mock_cm, *_rest = _make_mock_playwright()
+        mock_page = _rest[3]
+        _inject_playwright_module(mock_cm)
+        session_id = await manager.start("https://example.com/login")
+
+        await manager.forward_input(
+            session_id, {"type": "navigate", "url": "example.com/otp-link"}
+        )
+
+        mock_page.goto.assert_called_with(
+            "https://example.com/otp-link", wait_until="domcontentloaded"
+        )
+
     @pytest.mark.asyncio
     async def test_forward_input_dispatches_click(
         self, manager: SessionStreamManager
@@ -320,6 +413,44 @@ class TestFrameDelivery:
         assert mock_ws not in manager._session.ws_clients
 
 
+@pytest.fixture
+def api_client(manager: SessionStreamManager) -> TestClient:
+    auth_manager = MagicMock()
+    web_session = MagicMock()
+    web_session.user_id = "admin-user-id"
+    auth_manager.validate_token = MagicMock(return_value=("valid", web_session))
+
+    mock_user = MagicMock()
+    mock_user.role = "admin"
+
+    user_store = AsyncMock()
+    user_store.get_user = AsyncMock(return_value=mock_user)
+
+    mock_app = MagicMock()
+    mock_app.config = MagicMock()
+    mock_app.config.features.web.auth_enabled = False
+
+    ctx = WebContext(
+        session_store=AsyncMock(),
+        proposal_store=AsyncMock(),
+        style_store=AsyncMock(),
+        scheduler_store=AsyncMock(),
+        trace_store=AsyncMock(),
+        failure_store=AsyncMock(),
+        workflow_store=AsyncMock(),
+        execution_store=AsyncMock(),
+        error_resolution_store=AsyncMock(),
+        app=mock_app,
+        auth_manager=auth_manager,
+        user_store=user_store,
+        browser_session_store=manager._store,
+        stream_manager=manager,
+    )
+    set_web_context(ctx)
+    app = create_web_app()
+    return TestClient(app)
+
+
 class TestWebSocketEndpoint:
     @pytest.fixture
     def client(self, manager: SessionStreamManager) -> TestClient:
@@ -336,6 +467,7 @@ class TestWebSocketEndpoint:
 
         mock_app = MagicMock()
         mock_app.config = MagicMock()
+        mock_app.config.features.web.auth_enabled = False
 
         ctx = WebContext(
             session_store=AsyncMock(),
@@ -437,6 +569,98 @@ class TestWebSocketEndpoint:
             )
 
         mock_page.mouse.click.assert_called_once_with(50, 50)
+
+    @pytest.mark.asyncio
+    async def test_patch_requires_headed_persists_preference(
+        self, client: TestClient
+    ) -> None:
+        res = client.patch(
+            "/api/browser-sessions/example.com/requires-headed",
+            json={"requires_headed": True},
+            headers={"Authorization": "Bearer valid_token"},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["requires_headed"] is True
+
+    @pytest.mark.asyncio
+    async def test_restart_headed_relaunches_visible_browser(
+        self, client: TestClient, manager: SessionStreamManager
+    ) -> None:
+        mock_cm, mock_playwright, mock_browser, mock_context, mock_page, mock_cdp = (
+            _make_mock_playwright()
+        )
+        _inject_playwright_module(mock_cm)
+        session_id = await manager.start("https://example.com/login")
+
+        res = client.post(
+            "/api/browser-sessions/restart-headed",
+            headers={"Authorization": "Bearer valid_token"},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["session_id"] == session_id
+
+        assert manager.is_active()
+        launch_calls = mock_playwright.chromium.launch.call_args_list
+        assert len(launch_calls) == 2
+        assert launch_calls[0].kwargs.get("headless") is True
+        assert launch_calls[1].kwargs.get("headless") is False
+
+
+class TestGetActiveSession:
+    @pytest.mark.asyncio
+    async def test_get_active_session_returns_metadata(
+        self, manager: SessionStreamManager
+    ) -> None:
+        mock_cm, *_ = _make_mock_playwright()
+        _inject_playwright_module(mock_cm)
+
+        session_id = await manager.start("https://example.com/login")
+        active = manager.get_active_session()
+
+        assert active is not None
+        assert active["session_id"] == session_id
+        assert active["domain"] == "example.com"
+        assert active["url"] == "https://example.com/login"
+        assert "started_at" in active
+
+    @pytest.mark.asyncio
+    async def test_get_active_session_returns_none_when_inactive(
+        self, manager: SessionStreamManager
+    ) -> None:
+        assert manager.get_active_session() is None
+
+    @pytest.mark.asyncio
+    async def test_api_active_endpoint_returns_session(
+        self, api_client: TestClient, manager: SessionStreamManager
+    ) -> None:
+        mock_cm, *_ = _make_mock_playwright()
+        _inject_playwright_module(mock_cm)
+        session_id = await manager.start("https://example.com/login")
+
+        res = api_client.get(
+            "/api/browser-sessions/active",
+            headers={"Authorization": "Bearer valid_token"},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["active"] is not None
+        assert data["active"]["session_id"] == session_id
+        assert data["active"]["domain"] == "example.com"
+        assert data["active"]["url"] == "https://example.com/login"
+
+    @pytest.mark.asyncio
+    async def test_api_active_endpoint_returns_null_when_inactive(
+        self, api_client: TestClient
+    ) -> None:
+        res = api_client.get(
+            "/api/browser-sessions/active",
+            headers={"Authorization": "Bearer valid_token"},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["active"] is None
 
 
 class TestAutoTimeout:

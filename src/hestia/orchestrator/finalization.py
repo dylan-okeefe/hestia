@@ -14,16 +14,18 @@ from hestia.errors import (
     PersistenceError,
     classify_error,
 )
+from hestia.orchestrator.mappers import turn_domain_to_dto
 from hestia.orchestrator.types import TransitionCallback, Turn, TurnContext, TurnState
 from hestia.persistence.failure_store import FailureBundle
 from hestia.tools.checkpoint import CheckpointManager
 
 if TYPE_CHECKING:
     from hestia.inference.slot_manager import SlotManager
-    from hestia.memory.handoff import SessionHandoffSummarizer
+    from hestia.orchestrator.handoff_service import HandoffService
     from hestia.persistence.failure_store import FailureStore
-    from hestia.persistence.sessions import SessionStore
+    from hestia.persistence.session_store import SessionStore
     from hestia.persistence.trace_store import TraceStore
+    from hestia.persistence.turn_store import TurnStore
     from hestia.policy.engine import PolicyEngine
 
 logger = logging.getLogger(__name__)
@@ -39,18 +41,20 @@ class TurnFinalization:
         slot_manager: "SlotManager | None" = None,
         failure_store: "FailureStore | None" = None,
         trace_store: "TraceStore | None" = None,
-        handoff_summarizer: "SessionHandoffSummarizer | None" = None,
+        handoff_service: "HandoffService | None" = None,
         policy: "PolicyEngine | None" = None,
         session_store: "SessionStore | None" = None,
+        turn_store: "TurnStore | None" = None,
         checkpoint_manager: CheckpointManager | None = None,
         auto_rollback_on_failure: bool = False,
     ):
         self._slot_manager = slot_manager
         self._failure_store = failure_store
         self._trace_store = trace_store
-        self._handoff_summarizer = handoff_summarizer
+        self._handoff_service = handoff_service
         self._policy = policy
         self._store = session_store
+        self._turn_store = turn_store
         self._checkpoint_manager = checkpoint_manager
         self._auto_rollback_on_failure = auto_rollback_on_failure
 
@@ -105,13 +109,18 @@ class TurnFinalization:
                 await self._slot_manager.save(session)
             except (OSError, PersistenceError, InferenceServerError) as e:
                 logger.warning("Failed to save slot for session %s: %s", session.id, e)
+        elif session.slot_id is not None and self._slot_manager is not None:
+            try:
+                await self._slot_manager.erase(session)
+            except (OSError, PersistenceError, InferenceServerError) as e:
+                logger.warning("Failed to erase slot for session %s: %s", session.id, e)
 
         turn_end_time = utcnow()
         total_duration_ms = int((turn_end_time - turn_start_time).total_seconds() * 1000)
 
         turn.completed_at = turn_end_time
-        if self._store is not None:
-            await self._store.update_turn(turn)
+        if self._turn_store is not None:
+            await self._turn_store.update_turn(turn_domain_to_dto(turn))
 
         if self._trace_store is not None:
             try:
@@ -120,10 +129,9 @@ class TurnFinalization:
                 # user_input_summary may contain PII (user messages are intentionally
                 # stored in the trace store for debugging and session analysis).
                 raw_summary = ctx.user_message.content or ""
-                if len(raw_summary) > 200:
-                    user_input_summary = raw_summary[:200] + "..."
-                else:
-                    user_input_summary = raw_summary
+                user_input_summary = (
+                    raw_summary[:200] + "..." if len(raw_summary) > 200 else raw_summary
+                )
 
                 outcome = "success" if turn.state == TurnState.DONE else "failed"
                 if turn.state not in (TurnState.DONE, TurnState.FAILED):
@@ -366,16 +374,14 @@ class TurnFinalization:
     async def summarize_handoff(self, session: Session) -> None:
         """Generate and store a handoff summary for the session (best-effort).
 
-        If a handoff summarizer is configured, fetches the session history
-        and generates a summary before archiving.
+        Delegates to ``HandoffService`` so the persistence boundary stays clean.
         """
-        if self._handoff_summarizer is None or self._store is None:
+        if self._handoff_service is None:
             return
         try:
-            history = await self._store.get_messages(session.id)
-            await self._handoff_summarizer.summarize_and_store(session, history)
+            await self._handoff_service.generate_handoff_summary(session.id)
         except Exception:  # noqa: BLE001
-            logger.warning("Handoff summarizer failed for %s", session.id, exc_info=True)
+            logger.warning("Handoff summary failed for %s", session.id, exc_info=True)
 
 
 # Module-level alias for convenient import by callers that don't need the class.

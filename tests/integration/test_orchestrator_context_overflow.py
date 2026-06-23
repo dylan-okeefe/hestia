@@ -6,12 +6,14 @@ import pytest
 from hestia.artifacts.store import ArtifactStore
 from hestia.context.builder import ContextBuilder
 from hestia.core.types import ChatResponse, Message
-from hestia.memory.handoff import SessionHandoffSummarizer
 from hestia.memory.store import MemoryStore
 from hestia.orchestrator.engine import Orchestrator
+from hestia.orchestrator.handoff_service import HandoffService
+from hestia.orchestrator.mappers import message_domain_to_dto
 from hestia.persistence.db import Database
 from hestia.persistence.failure_store import FailureStore
-from hestia.persistence.sessions import SessionStore
+from hestia.persistence.message_store import MessageStore
+from hestia.persistence.session_store import SessionStore
 from hestia.tools.registry import ToolRegistry
 
 
@@ -85,10 +87,6 @@ async def db(tmp_path):
     await database.close()
 
 
-@pytest.fixture
-async def session_store(db):
-    store = SessionStore(db)
-    yield store
 
 
 @pytest.fixture
@@ -105,9 +103,16 @@ async def memory_store(db):
     yield store
 
 
+@pytest.fixture
+async def message_store(db):
+    return MessageStore(db)
+
+
 @pytest.mark.asyncio
-async def test_overflow_records_failure_and_warns(session_store, failure_store, memory_store):
-    """End-to-end: force context overflow, assert failure record and handoff summary."""
+async def test_overflow_records_failure_and_warns(
+    db, message_store, failure_store, memory_store
+):
+    """End-to-end: force context overflow, assert failure record and archive memory."""
     from pathlib import Path
 
     inference = ExplodingInferenceClient()
@@ -116,11 +121,13 @@ async def test_overflow_records_failure_and_warns(session_store, failure_store, 
     artifact_store = ArtifactStore(Path("/tmp/artifacts"))
     registry = ToolRegistry(artifact_store)
 
-    summarizer = SessionHandoffSummarizer(
-        inference=inference,
+    session_store = SessionStore(
+        db,
+        message_store=message_store,
         memory_store=memory_store,
-        min_messages=2,
+        inference_factory=lambda: inference,
     )
+    handoff_service = HandoffService(session_store, message_store)
 
     orchestrator = Orchestrator(
         inference=inference,
@@ -129,16 +136,24 @@ async def test_overflow_records_failure_and_warns(session_store, failure_store, 
         tool_registry=registry,
         policy=policy,
         failure_store=failure_store,
-        handoff_summarizer=summarizer,
+        handoff_service=handoff_service,
     )
 
     session = await session_store.create_session("test", "user1")
 
     # Add enough messages to meet min_messages for handoff
-    await session_store.append_message(session.id, Message(role="user", content="Hello"))
-    await session_store.append_message(session.id, Message(role="assistant", content="Hi"))
-    await session_store.append_message(session.id, Message(role="user", content="Question"))
-    await session_store.append_message(session.id, Message(role="assistant", content="Answer"))
+    await message_store.append_message(
+        session.id, message_domain_to_dto(Message(role="user", content="Hello"), session.id, idx=0)
+    )
+    await message_store.append_message(
+        session.id, message_domain_to_dto(Message(role="assistant", content="Hi"), session.id, idx=0)
+    )
+    await message_store.append_message(
+        session.id, message_domain_to_dto(Message(role="user", content="Question"), session.id, idx=0)
+    )
+    await message_store.append_message(
+        session.id, message_domain_to_dto(Message(role="assistant", content="Answer"), session.id, idx=0)
+    )
 
     responses = []
 
@@ -169,6 +184,6 @@ async def test_overflow_records_failure_and_warns(session_store, failure_store, 
     assert failures[0].failure_class == "context_overflow"
     assert failures[0].session_id == session.id
 
-    # Handoff summary should exist
-    memories = await memory_store.list_memories(tag="handoff")
+    # Archive-time memory should exist
+    memories = await memory_store.list_memories(tag="task-state")
     assert len(memories) >= 1

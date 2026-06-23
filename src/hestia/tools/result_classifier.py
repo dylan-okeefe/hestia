@@ -17,14 +17,14 @@ class ToolResultCategory(Enum):
 def classify_tool_result(content: str, tool_name: str = "") -> ToolResultCategory:
     """Classify a tool-result string.
 
-    Rules are case-insensitive substring matches, ordered from most-specific
-    permanent failures to generic transient errors. ``SUCCESS`` is the default
-    when no failure marker is present.
+    The preferred signal is an explicit ``[CATEGORY: <name>]`` marker emitted by
+    the tool.  If no marker is present, the content is treated as ``SUCCESS``;
+    this avoids misfiring on legitimate output that happens to contain words like
+    "error", "404", or "login".  Tools that want a non-success classification
+    must embed the marker.
     """
     lowered = (content or "").lower()
 
-    # If the tool explicitly embedded its category (e.g. browser_fetch), trust it
-    # instead of re-guessing from the human-readable text.
     marker_match = re.search(r"\[category:\s*([a-z_]+)\]", lowered)
     if marker_match:
         name = marker_match.group(1).upper()
@@ -32,47 +32,5 @@ def classify_tool_result(content: str, tool_name: str = "") -> ToolResultCategor
             return ToolResultCategory[name]
         except KeyError:
             pass
-
-    if any(marker in lowered for marker in ("timeout", "timed out")):
-        return ToolResultCategory.TIMEOUT
-
-    if any(
-        marker in lowered
-        for marker in (
-            "404",
-            "not found",
-            "page doesn't exist",
-            "page is gone",
-            "url returns 404",
-        )
-    ):
-        return ToolResultCategory.NOT_FOUND
-
-    if any(
-        marker in lowered
-        for marker in (
-            "403",
-            "blocked",
-            "bot protection",
-            "cloudflare",
-            "captcha",
-            "humans only",
-            "login",
-            "sign in",
-            "unauthorized",
-            "access denied",
-            "[blocked - login_required]",
-            "[challenge]",
-            "verify your identity",
-            "checkpoint",
-            "welcome back",
-        )
-    ):
-        return ToolResultCategory.BLOCKED
-
-    if any(
-        marker in lowered for marker in ("error", "failed", "partial failure")
-    ):
-        return ToolResultCategory.TRANSIENT_OTHER
 
     return ToolResultCategory.SUCCESS

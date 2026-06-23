@@ -75,6 +75,9 @@ async def _build_report(
     )
 
     # --- build prefixes ------------------------------------------------------
+    effective_platform = platform or "preview"
+    effective_platform_user = platform_user or "preview-user"
+
     identity_cfg = IdentityConfig(
         soul_path=cfg.identity.soul_path,
         max_tokens=id_tokens,
@@ -88,8 +91,8 @@ async def _build_report(
     # Memory epoch — scoped to the provided user when available.
     session = Session(
         id="preview-session",
-        platform=platform,
-        platform_user=platform_user,
+        platform=effective_platform,
+        platform_user=effective_platform_user,
         started_at=datetime.now(timezone.utc),
         last_active_at=datetime.now(timezone.utc),
         slot_id=None,

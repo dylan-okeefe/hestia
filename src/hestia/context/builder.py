@@ -12,6 +12,7 @@ from typing import Any
 from hestia.context.compressed_summary_strategy import CompressedSummaryStrategy
 from hestia.context.compressor import HistoryCompressor
 from hestia.context.history_window_selector import HistoryWindowSelector
+from hestia.context.sequence_validator import validate_chat_template_sequence
 from hestia.core.inference import InferenceClient
 from hestia.core.serialization import message_to_dict
 from hestia.core.types import Message, Session, ToolCall, ToolSchema
@@ -460,6 +461,8 @@ class ContextBuilder:
         final_messages = list(protected_top)
         final_messages.extend(included)
         final_messages.extend(protected_bottom)
+
+        final_messages = validate_chat_template_sequence(final_messages)
 
         if self._compressor is not None and self._compress_on_overflow and dropped:
             strategy = CompressedSummaryStrategy(self._compressor)

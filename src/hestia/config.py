@@ -82,6 +82,20 @@ class SlotConfig(_ConfigFromEnv):
 
 
 @dataclass
+class MemoryMaintenanceConfig(_ConfigFromEnv):
+    """Configuration for memory maintenance scheduling and undo policy."""
+
+    _ENV_PREFIX = "MEMORY_MAINTENANCE"
+
+    deterministic_cron: str = "0 3 * * *"
+    """Cron expression for the nightly deterministic maintenance pass."""
+    llm_cron: str = "0 4 * * 0"
+    """Cron expression for the weekly LLM-assisted maintenance pass."""
+    undo_retention_days: int = 7
+    """How long an operator has to undo a maintenance action."""
+
+
+@dataclass
 class MemoryConfig(_ConfigFromEnv):
     """Configuration for the long-term memory subsystem."""
 
@@ -89,6 +103,20 @@ class MemoryConfig(_ConfigFromEnv):
 
     epoch_max_tokens: int = 500
     """Maximum tokens for the compiled memory epoch injected into the system prompt."""
+    retention_days: int = 30
+    """How long soft-deleted memories are kept before hard-delete."""
+    recently_recalled_days: int = 7
+    """Protection window for recently-recalled memories."""
+    llm_dedupe_confidence_threshold: float = 0.8
+    """Minimum LLM confidence required to merge near-duplicate memories."""
+    llm_dedupe_max_pairs_per_run: int = 10
+    """Maximum candidate pairs to send to the LLM in one dedupe run."""
+    contradiction_confidence_threshold: float = 0.8
+    """Minimum LLM confidence required to supersede a contradicting memory."""
+    contradiction_max_pairs_per_run: int = 10
+    """Maximum candidate pairs to send to the LLM in one contradiction run."""
+    maintenance: MemoryMaintenanceConfig = field(default_factory=MemoryMaintenanceConfig)
+    """Maintenance cadence and undo policy configuration."""
 
 
 @dataclass
@@ -211,6 +239,10 @@ class TrustConfig(_ConfigFromEnv):
     # the tool's built-in defaults.
     blocked_shell_patterns: list[str] = field(default_factory=list)
 
+    # Global emergency killswitch: tool names in this set are denied by the
+    # capability gate regardless of channel, preset, or trust overrides.
+    blocked_tools: set[str] = field(default_factory=set)
+
     # When True, write_file refuses to overwrite existing files and
     # suggests using edit_file instead.
     write_guard_enabled: bool = True
@@ -311,6 +343,35 @@ class CompressionConfig(_ConfigFromEnv):
 
     enabled: bool = False
     max_chars: int = 400
+
+
+@dataclass
+class CompactionConfig(_ConfigFromEnv):
+    """Manual in-session compaction via the /compact meta-command."""
+
+    _ENV_PREFIX = "COMPACTION"
+
+    enabled: bool = True
+    """Enable the /compact meta-command."""
+
+    verbatim_turns: int = 5
+    """Number of recent user/assistant turns to keep verbatim after compaction."""
+
+    summary_max_chars: int = 1500
+    """Maximum length of the synthetic compaction summary message."""
+
+    min_messages: int = 4
+    """Minimum number of messages required before compaction will run."""
+
+    def __post_init__(self) -> None:
+        if self.verbatim_turns < 0:
+            raise ValueError(
+                f"CompactionConfig.verbatim_turns must be non-negative, got {self.verbatim_turns}"
+            )
+        if self.summary_max_chars < 100:
+            raise ValueError(
+                f"CompactionConfig.summary_max_chars must be at least 100, got {self.summary_max_chars}"
+            )
 
 
 @dataclass
@@ -504,6 +565,22 @@ class WebSearchConfig(_ConfigFromEnv):
     time_range: str | None = None  # Tavily: "day" | "week" | "month" | "year" | None
 
 
+@dataclass
+class NotificationsConfig(_ConfigFromEnv):
+    """Scheduled notification / digest configuration."""
+
+    _ENV_PREFIX = "NOTIFICATIONS"
+
+    blocked_digest_time: str = "09:00"
+    """Local time of day (HH:MM) at which to send the blocked-actions digest."""
+
+    blocked_digest_channel: str = ""
+    """Platform identifier for the operator's primary channel (e.g. 'telegram', 'matrix').
+
+    The actual recipient is the session bound to the digest scheduled task.
+    """
+
+
 # ---------------------------------------------------------------------------
 # Grouped config containers
 # ---------------------------------------------------------------------------
@@ -538,12 +615,14 @@ class FeatureConfig:
     web_search: WebSearchConfig = field(default_factory=WebSearchConfig)
     handoff: HandoffConfig = field(default_factory=HandoffConfig)
     compression: CompressionConfig = field(default_factory=CompressionConfig)
+    compaction: CompactionConfig = field(default_factory=CompactionConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
     reflection: ReflectionConfig = field(default_factory=ReflectionConfig)
     style: StyleConfig = field(default_factory=StyleConfig)
     policy: PolicyConfig = field(default_factory=PolicyConfig)
     rate_limit: RateLimitConfig = field(default_factory=RateLimitConfig)
     web: WebConfig = field(default_factory=WebConfig)
+    notifications: NotificationsConfig = field(default_factory=NotificationsConfig)
 
 
 # ---------------------------------------------------------------------------
@@ -575,7 +654,12 @@ class HestiaConfig(_ConfigFromEnv):
         "3. When the user asks a conversational question, reply directly without calling tools.\n"
         "4. FILE WRITING: If you need to write more than 2000 characters, create the file "
         "with a short header using write_file, then add each remaining section with "
-        "append_to_file. Do NOT try to fit an entire long document into one tool call."
+        "append_to_file. Do NOT try to fit an entire long document into one tool call.\n"
+        "5. USER CORRECTIONS & PREFERENCES: If the user corrects you, changes a "
+        "preference, or states a durable fact (e.g. location filters, scheduling rules, "
+        "what to include/exclude), immediately use save_memory to persist it. These "
+        "memories are loaded into future context, so corrections survive compaction and "
+        "new sessions."
     )
     max_iterations: int = 10
     verbose: bool = False
@@ -602,7 +686,12 @@ class HestiaConfig(_ConfigFromEnv):
             "3. When the user asks a conversational question, reply directly without calling tools.\n"
             "4. FILE WRITING: If you need to write more than 2000 characters, create the file "
             "with a short header using write_file, then add each remaining section with "
-            "append_to_file. Do NOT try to fit an entire long document into one tool call."
+            "append_to_file. Do NOT try to fit an entire long document into one tool call.\n"
+            "5. USER CORRECTIONS & PREFERENCES: If the user corrects you, changes a "
+            "preference, or states a durable fact (e.g. location filters, scheduling rules, "
+            "what to include/exclude), immediately use save_memory to persist it. These "
+            "memories are loaded into future context, so corrections survive compaction and "
+            "new sessions."
         ),
         max_iterations: int = 10,
         verbose: bool = False,
@@ -621,12 +710,14 @@ class HestiaConfig(_ConfigFromEnv):
         web_search: WebSearchConfig | None = None,
         handoff: HandoffConfig | None = None,
         compression: CompressionConfig | None = None,
+        compaction: CompactionConfig | None = None,
         security: SecurityConfig | None = None,
         reflection: ReflectionConfig | None = None,
         style: StyleConfig | None = None,
         policy: PolicyConfig | None = None,
         rate_limit: RateLimitConfig | None = None,
         web: WebConfig | None = None,
+        notifications: NotificationsConfig | None = None,
     ) -> None:
         if core is None:
             core = CoreConfig(
@@ -649,12 +740,14 @@ class HestiaConfig(_ConfigFromEnv):
                 web_search=web_search or WebSearchConfig(),
                 handoff=handoff or HandoffConfig(),
                 compression=compression or CompressionConfig(),
+                compaction=compaction or CompactionConfig(),
                 security=security or SecurityConfig(),
                 reflection=reflection or ReflectionConfig(),
                 style=style or StyleConfig(),
                 policy=policy or PolicyConfig(),
                 rate_limit=rate_limit or RateLimitConfig(),
                 web=web or WebConfig(),
+                notifications=notifications or NotificationsConfig(),
             )
         self.core = core
         self.platforms = platforms
@@ -787,6 +880,15 @@ class HestiaConfig(_ConfigFromEnv):
         self.features.compression = value
 
     @property
+    def compaction(self) -> CompactionConfig:
+        """Deprecated: use features.compaction instead."""
+        return self.features.compaction
+
+    @compaction.setter
+    def compaction(self, value: CompactionConfig) -> None:
+        self.features.compaction = value
+
+    @property
     def security(self) -> SecurityConfig:
         """Deprecated: use features.security instead."""
         return self.features.security
@@ -839,6 +941,15 @@ class HestiaConfig(_ConfigFromEnv):
     @web.setter
     def web(self, value: WebConfig) -> None:
         self.features.web = value
+
+    @property
+    def notifications(self) -> NotificationsConfig:
+        """Deprecated: use features.notifications instead."""
+        return self.features.notifications
+
+    @notifications.setter
+    def notifications(self, value: NotificationsConfig) -> None:
+        self.features.notifications = value
 
     @classmethod
     def from_file(cls, path: Path) -> HestiaConfig:

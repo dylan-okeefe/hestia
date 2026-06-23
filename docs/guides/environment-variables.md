@@ -160,6 +160,41 @@ Prefix: `HANDOFF`
 | `HESTIA_HANDOFF_MIN_MESSAGES` | int | `4` |
 | `HESTIA_HANDOFF_MAX_CHARS` | int | `350` |
 
+### Memory (`HESTIA_MEMORY_*`)
+
+Prefix: `MEMORY`
+
+| Variable | Type | Default |
+|----------|------|---------|
+| `HESTIA_MEMORY_EPOCH_MAX_TOKENS` | int | `500` |
+| `HESTIA_MEMORY_RETENTION_DAYS` | int | `30` |
+| `HESTIA_MEMORY_RECENTLY_RECALLED_DAYS` | int | `7` |
+| `HESTIA_MEMORY_LLM_DEDUPE_CONFIDENCE_THRESHOLD` | float | `0.8` |
+| `HESTIA_MEMORY_LLM_DEDUPE_MAX_PAIRS_PER_RUN` | int | `10` |
+| `HESTIA_MEMORY_CONTRADICTION_CONFIDENCE_THRESHOLD` | float | `0.8` |
+| `HESTIA_MEMORY_CONTRADICTION_MAX_PAIRS_PER_RUN` | int | `10` |
+
+### Memory Maintenance (`HESTIA_MEMORY_MAINTENANCE_*`)
+
+Prefix: `MEMORY_MAINTENANCE`
+
+| Variable | Type | Default |
+|----------|------|---------|
+| `HESTIA_MEMORY_MAINTENANCE_DETERMINISTIC_CRON` | str | `0 3 * * *` |
+| `HESTIA_MEMORY_MAINTENANCE_LLM_CRON` | str | `0 4 * * 0` |
+| `HESTIA_MEMORY_MAINTENANCE_UNDO_RETENTION_DAYS` | int | `7` |
+
+### Compaction (`HESTIA_COMPACTION_*`)
+
+Prefix: `COMPACTION`
+
+| Variable | Type | Default |
+|----------|------|---------|
+| `HESTIA_COMPACTION_ENABLED` | bool | `true` |
+| `HESTIA_COMPACTION_VERBATIM_TURNS` | int | `5` |
+| `HESTIA_COMPACTION_SUMMARY_MAX_CHARS` | int | `1500` |
+| `HESTIA_COMPACTION_MIN_MESSAGES` | int | `4` |
+
 ### Compression (`HESTIA_COMPRESSION_*`)
 
 Prefix: `COMPRESSION`

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -11,8 +12,10 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy.exc import DatabaseError, OperationalError
 
+from hestia.config import MemoryConfig
 from hestia.core.clock import utcnow
 from hestia.errors import PersistenceError
+from hestia.memory.sanitizer import MemorySanitizer
 from hestia.persistence.db import Database
 
 logger = logging.getLogger(__name__)
@@ -21,10 +24,10 @@ logger = logging.getLogger(__name__)
 def _sanitize_fts5_query(query: str) -> str:
     """Escape a raw query so FTS5 does not misinterpret special characters.
 
-    FTS5 treats hyphens, colons, asterisks, carets, and other punctuation
-    as operators or column specifiers. Wrapping the query in double quotes
-    forces FTS5 to treat it as a literal phrase, which is what users expect
-    for simple keyword/tag searches.
+    FTS5 treats hyphens, colons, periods, asterisks, carets, and other
+    punctuation as operators or column specifiers. Wrapping the query in
+    double quotes forces FTS5 to treat it as a literal phrase, which is what
+    users expect for simple keyword/tag searches.
 
     If the query already contains explicit FTS5 operators (AND, OR, NOT)
     or is already quoted, it is returned unchanged so advanced syntax
@@ -35,9 +38,10 @@ def _sanitize_fts5_query(query: str) -> str:
         return query
     if any(op in stripped.upper() for op in (" AND ", " OR ", " NOT ")):
         return query
-    # Hyphens, colons, asterisks, and carets are the most common characters
-    # that trigger "no such column" or syntax errors in FTS5.
-    if "-" in stripped or ":" in stripped or "*" in stripped or "^" in stripped:
+    # Any non-word, non-whitespace character can trigger an FTS5 syntax error
+    # (e.g., "fts5: syntax error near '.'"). Quote the whole phrase so these
+    # characters are treated literally.
+    if re.search(r"[^\w\s]", stripped):
         escaped = stripped.replace('"', '""')
         return f'"{escaped}"'
     return query
@@ -54,6 +58,13 @@ class Memory:
     session_id: str | None  # which session created this memory
     platform: str | None = None  # platform identifier (e.g. "cli", "matrix")
     platform_user: str | None = None  # user identifier on that platform
+    is_active: bool = True
+    deleted_at: datetime | None = None
+    deleted_reason: str | None = None
+    superseded_by: str | None = None
+    is_pinned: bool = False
+    is_user_authored: bool = False
+    last_recalled_at: datetime | None = None
 
 
 class MemoryStore:
@@ -68,10 +79,12 @@ class MemoryStore:
     with SessionStore and SchedulerStore. No timezone handling.
     """
 
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, config: MemoryConfig | None = None) -> None:
         self._db = db
+        self._config = config or MemoryConfig()
         self._fts5_available = True
         self._fts5_probed = False
+        self._sanitizer = MemorySanitizer()
 
     async def _probe_fts5(self, conn: Any) -> None:
         """Detect FTS5 support once per instance."""
@@ -139,9 +152,12 @@ class MemoryStore:
                 await conn.execute(
                     sa.text(
                         "INSERT INTO memory(id, content, tags, session_id, "
-                        "created_at, platform, platform_user) "
+                        "created_at, platform, platform_user, is_active, "
+                        "deleted_at, deleted_reason, superseded_by, is_pinned, "
+                        "is_user_authored, last_recalled_at) "
                         "SELECT id, content, tags, session_id, "
-                        "created_at, NULL, NULL FROM _memory_backup"
+                        "created_at, NULL, NULL, 1, NULL, NULL, NULL, 0, 0, NULL "
+                        "FROM _memory_backup"
                     )
                 )
                 await conn.execute(sa.text("DROP TABLE _memory_backup"))
@@ -153,12 +169,18 @@ class MemoryStore:
             # Runtime schema version check: verify expected columns exist
             try:
                 await conn.execute(
-                    sa.text("SELECT platform, platform_user FROM memory LIMIT 1")
+                    sa.text(
+                        "SELECT platform, platform_user, is_active, deleted_at, "
+                        "deleted_reason, superseded_by, is_pinned, is_user_authored, "
+                        "last_recalled_at FROM memory LIMIT 1"
+                    )
                 )
             except OperationalError as exc:
                 raise PersistenceError(
                     "Memory table schema mismatch: expected columns "
-                    "'platform' and 'platform_user'. Run 'hestia init' to recreate."
+                    "'platform', 'platform_user', is_active, deleted_at, "
+                    "deleted_reason, superseded_by, is_pinned, is_user_authored, "
+                    "last_recalled_at. Run 'hestia init' to recreate."
                 ) from exc
 
             await conn.commit()
@@ -172,7 +194,14 @@ class MemoryStore:
             session_id UNINDEXED,
             created_at UNINDEXED,
             platform UNINDEXED,
-            platform_user UNINDEXED
+            platform_user UNINDEXED,
+            is_active UNINDEXED,
+            deleted_at UNINDEXED,
+            deleted_reason UNINDEXED,
+            superseded_by UNINDEXED,
+            is_pinned UNINDEXED,
+            is_user_authored UNINDEXED,
+            last_recalled_at UNINDEXED
         )
         """
         await conn.execute(sa.text(ddl))
@@ -186,7 +215,14 @@ class MemoryStore:
             session_id TEXT,
             created_at TEXT,
             platform TEXT,
-            platform_user TEXT
+            platform_user TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            deleted_at TEXT,
+            deleted_reason TEXT,
+            superseded_by TEXT,
+            is_pinned INTEGER NOT NULL DEFAULT 0,
+            is_user_authored INTEGER NOT NULL DEFAULT 0,
+            last_recalled_at TEXT
         )
         """
         await conn.execute(sa.text(ddl))
@@ -239,7 +275,8 @@ class MemoryStore:
         session_id: str | None = None,
         platform: str | None = None,
         platform_user: str | None = None,
-    ) -> Memory:
+        strict: bool = False,
+    ) -> Memory | None:
         """Save a memory entry.
 
         Args:
@@ -248,10 +285,26 @@ class MemoryStore:
             session_id: Optional session ID that created this memory
             platform: Optional platform identifier; falls back to runtime ContextVar
             platform_user: Optional user identifier; falls back to runtime ContextVar
+            strict: If True, raise PersistenceError when content is rejected.
 
         Returns:
-            The created Memory
+            The created Memory, or None when the content is rejected by the sanitizer.
         """
+        result = self._sanitizer.sanitize(content)
+        if result.rejected:
+            logger.warning(
+                "Memory content rejected by sanitizer: %s",
+                result.reason,
+            )
+            if strict:
+                raise PersistenceError(
+                    f"Memory content rejected by sanitizer: {result.reason}"
+                )
+            return None
+
+        # Use the cleaned content from the sanitizer (e.g., stripped whitespace).
+        clean_content = result.content or content
+
         platform, platform_user = self._resolve_scope(platform, platform_user)
         if platform is None or platform_user is None:
             logger.warning(
@@ -267,28 +320,37 @@ class MemoryStore:
 
         insert = sa.text(
             "INSERT INTO memory (id, content, tags, session_id, created_at, "
-            "platform, platform_user) "
+            "platform, platform_user, is_active, deleted_at, deleted_reason, "
+            "superseded_by, is_pinned, is_user_authored, last_recalled_at) "
             "VALUES (:id, :content, :tags, :session_id, :created_at, "
-            ":platform, :platform_user)"
+            ":platform, :platform_user, :is_active, :deleted_at, :deleted_reason, "
+            ":superseded_by, :is_pinned, :is_user_authored, :last_recalled_at)"
         )
         async with self._db.engine.connect() as conn:
             await conn.execute(
                 insert,
                 {
                     "id": memory_id,
-                    "content": content,
+                    "content": clean_content,
                     "tags": tag_str,
                     "session_id": session_id,
                     "created_at": now.isoformat(),
                     "platform": platform,
                     "platform_user": platform_user,
+                    "is_active": 1,
+                    "deleted_at": None,
+                    "deleted_reason": None,
+                    "superseded_by": None,
+                    "is_pinned": 0,
+                    "is_user_authored": 0,
+                    "last_recalled_at": None,
                 },
             )
             await conn.commit()
 
         return Memory(
             id=memory_id,
-            content=content,
+            content=clean_content,
             tags=tags if tags else [],
             session_id=session_id,
             created_at=now,
@@ -302,6 +364,7 @@ class MemoryStore:
         limit: int = 5,
         platform: str | None = None,
         platform_user: str | None = None,
+        include_inactive: bool = False,
     ) -> list[Memory]:
         """Search memories using FTS5 full-text search or LIKE fallback.
 
@@ -310,23 +373,30 @@ class MemoryStore:
             limit: Maximum number of results
             platform: Optional platform filter; falls back to runtime ContextVar
             platform_user: Optional user filter; falls back to runtime ContextVar
+            include_inactive: If True, also return soft-deleted memories.
 
         Returns:
             List of matching memories, ordered by relevance (BM25 rank) or recency
         """
         platform, platform_user = self._resolve_scope(platform, platform_user)
 
-        params: dict[str, Any] = {"limit": limit}
+        params: dict[str, Any] = {"limit": limit, "is_active": 1 if not include_inactive else None}
 
         if platform is None or platform_user is None:
             # Fail closed: unscoped queries are not allowed
             return []
 
+        active_clause = ""
+        if not include_inactive:
+            active_clause = "AND is_active = :is_active"
+
         if self._fts5_available:
             params["query"] = _sanitize_fts5_query(query)
             sql = sa.text(
-                "SELECT id, content, tags, session_id, created_at, platform, platform_user "
-                "FROM memory WHERE memory MATCH :query "
+                "SELECT id, content, tags, session_id, created_at, platform, platform_user, "
+                "is_active, deleted_at, deleted_reason, superseded_by, is_pinned, "
+                "is_user_authored, last_recalled_at "
+                f"FROM memory WHERE memory MATCH :query {active_clause} "
                 "AND platform = :platform AND platform_user = :platform_user "
                 "ORDER BY rank LIMIT :limit"
             )
@@ -336,8 +406,10 @@ class MemoryStore:
             # LIKE fallback for SQLite builds without FTS5
             params["query"] = f"%{query}%"
             sql = sa.text(
-                "SELECT id, content, tags, session_id, created_at, platform, platform_user "
-                "FROM memory WHERE content LIKE :query "
+                "SELECT id, content, tags, session_id, created_at, platform, platform_user, "
+                "is_active, deleted_at, deleted_reason, superseded_by, is_pinned, "
+                "is_user_authored, last_recalled_at "
+                f"FROM memory WHERE content LIKE :query {active_clause} "
                 "AND platform = :platform AND platform_user = :platform_user "
                 "ORDER BY created_at DESC LIMIT :limit"
             )
@@ -355,6 +427,7 @@ class MemoryStore:
         limit: int = 20,
         platform: str | None = None,
         platform_user: str | None = None,
+        include_inactive: bool = False,
     ) -> list[Memory]:
         """List memories, optionally filtered by tag and user scope.
 
@@ -363,6 +436,7 @@ class MemoryStore:
             limit: Maximum number of results
             platform: Optional platform filter; falls back to runtime ContextVar
             platform_user: Optional user filter; falls back to runtime ContextVar
+            include_inactive: If True, also return soft-deleted memories.
 
         Returns:
             List of memories, newest first
@@ -376,6 +450,9 @@ class MemoryStore:
         # the f-string assembly below safe.
         params: dict[str, Any] = {"limit": limit}
         where_clauses: list[str] = []
+
+        if not include_inactive:
+            where_clauses.append("is_active = 1")
 
         if tag:
             if self._fts5_available:
@@ -402,7 +479,9 @@ class MemoryStore:
             where_str = "WHERE " + " AND ".join(where_clauses)
 
         sql = sa.text(
-            "SELECT id, content, tags, session_id, created_at, platform, platform_user "
+            "SELECT id, content, tags, session_id, created_at, platform, platform_user, "
+            "is_active, deleted_at, deleted_reason, superseded_by, is_pinned, "
+            "is_user_authored, last_recalled_at "
             f"FROM memory {where_str} "
             "ORDER BY created_at DESC LIMIT :limit"
         )
@@ -419,7 +498,9 @@ class MemoryStore:
             The Memory, or None if not found.
         """
         sql = sa.text(
-            "SELECT id, content, tags, session_id, created_at, platform, platform_user "
+            "SELECT id, content, tags, session_id, created_at, platform, platform_user, "
+            "is_active, deleted_at, deleted_reason, superseded_by, is_pinned, "
+            "is_user_authored, last_recalled_at "
             "FROM memory WHERE id = :id"
         )
         async with self._db.engine.connect() as conn:
@@ -459,6 +540,252 @@ class MemoryStore:
             await conn.commit()
             return result.rowcount > 0
 
+    async def soft_delete(
+        self,
+        memory_id: str,
+        *,
+        platform: str | None = None,
+        platform_user: str | None = None,
+        reason: str = "pruned",
+        superseded_by: str | None = None,
+    ) -> bool:
+        """Soft-delete a memory by ID.
+
+        Marks the memory inactive and records deletion metadata. Returns True
+        if the memory was found and updated.
+        """
+        platform, platform_user = self._resolve_scope(platform, platform_user)
+
+        where_clauses = ["id = :id"]
+        params: dict[str, Any] = {
+            "id": memory_id,
+            "is_active": 0,
+            "deleted_at": utcnow().isoformat(),
+            "deleted_reason": reason,
+            "superseded_by": superseded_by,
+        }
+        if platform is not None and platform_user is not None:
+            where_clauses.append("platform = :platform AND platform_user = :platform_user")
+            params["platform"] = platform
+            params["platform_user"] = platform_user
+
+        sql = sa.text(
+            "UPDATE memory SET is_active = :is_active, deleted_at = :deleted_at, "
+            "deleted_reason = :deleted_reason, superseded_by = :superseded_by "
+            f"WHERE {' AND '.join(where_clauses)}"
+        )
+
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(sql, params)
+            await conn.commit()
+            return result.rowcount > 0
+
+    async def restore(
+        self,
+        memory_id: str,
+        *,
+        platform: str | None = None,
+        platform_user: str | None = None,
+    ) -> bool:
+        """Restore a soft-deleted memory by ID.
+
+        Clears inactive/deleted flags. Returns True if the memory was found
+        and updated.
+        """
+        platform, platform_user = self._resolve_scope(platform, platform_user)
+
+        where_clauses = ["id = :id"]
+        params: dict[str, Any] = {
+            "id": memory_id,
+            "is_active": 1,
+            "deleted_at": None,
+            "deleted_reason": None,
+            "superseded_by": None,
+        }
+        if platform is not None and platform_user is not None:
+            where_clauses.append("platform = :platform AND platform_user = :platform_user")
+            params["platform"] = platform
+            params["platform_user"] = platform_user
+
+        sql = sa.text(
+            "UPDATE memory SET is_active = :is_active, deleted_at = :deleted_at, "
+            "deleted_reason = :deleted_reason, superseded_by = :superseded_by "
+            f"WHERE {' AND '.join(where_clauses)}"
+        )
+
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(sql, params)
+            await conn.commit()
+            return result.rowcount > 0
+
+    async def update(
+        self,
+        memory_id: str,
+        *,
+        content: str | None = None,
+        tags: list[str] | None = None,
+        platform: str | None = None,
+        platform_user: str | None = None,
+    ) -> bool:
+        """Update content and/or tags of an active memory.
+
+        Only active memories can be updated; soft-deleted rows are ignored.
+        Returns True if the memory was found and updated.
+        """
+        platform, platform_user = self._resolve_scope(platform, platform_user)
+
+        set_clauses: list[str] = []
+        params: dict[str, Any] = {"id": memory_id, "is_active": 1}
+
+        if content is not None:
+            sanitized = self._sanitizer.sanitize(content)
+            if sanitized.rejected:
+                logger.warning(
+                    "Memory update rejected by sanitizer: %s",
+                    sanitized.reason,
+                )
+                return False
+            set_clauses.append("content = :content")
+            params["content"] = sanitized.content or content
+
+        if tags is not None:
+            set_clauses.append("tags = :tags")
+            params["tags"] = "|".join(tags)
+
+        if not set_clauses:
+            return False
+
+        where_clauses = ["id = :id", "is_active = :is_active"]
+        if platform is not None and platform_user is not None:
+            where_clauses.append("platform = :platform AND platform_user = :platform_user")
+            params["platform"] = platform
+            params["platform_user"] = platform_user
+
+        sql = sa.text(
+            f"UPDATE memory SET {', '.join(set_clauses)} WHERE {' AND '.join(where_clauses)}"
+        )
+
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(sql, params)
+            await conn.commit()
+            return result.rowcount > 0
+
+    async def pin(self, memory_id: str, pinned: bool = True) -> bool:
+        """Set the pinned flag on a memory by ID."""
+        sql = sa.text(
+            "UPDATE memory SET is_pinned = :is_pinned WHERE id = :id"
+        )
+        params = {"id": memory_id, "is_pinned": 1 if pinned else 0}
+
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(sql, params)
+            await conn.commit()
+            return result.rowcount > 0
+
+    async def mark_user_authored(self, memory_id: str) -> bool:
+        """Mark a memory as user-authored by ID."""
+        sql = sa.text(
+            "UPDATE memory SET is_user_authored = 1 WHERE id = :id"
+        )
+
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(sql, {"id": memory_id})
+            await conn.commit()
+            return result.rowcount > 0
+
+    async def mark_recalled(self, memory_id: str) -> bool:
+        """Set last_recalled_at to now for a memory by ID."""
+        sql = sa.text(
+            "UPDATE memory SET last_recalled_at = :now WHERE id = :id"
+        )
+        params = {"id": memory_id, "now": utcnow().isoformat()}
+
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(sql, params)
+            await conn.commit()
+            return result.rowcount > 0
+
+    async def list_active_memories(
+        self,
+        tag: str | None = None,
+        limit: int = 20,
+        platform: str | None = None,
+        platform_user: str | None = None,
+    ) -> list[Memory]:
+        """List active memories, optionally filtered by tag and user scope."""
+        return await self.list_memories(
+            tag=tag,
+            limit=limit,
+            platform=platform,
+            platform_user=platform_user,
+            include_inactive=False,
+        )
+
+    async def list_inactive_memories(
+        self,
+        tag: str | None = None,
+        limit: int = 20,
+        platform: str | None = None,
+        platform_user: str | None = None,
+    ) -> list[Memory]:
+        """List soft-deleted memories within the retention window."""
+        from datetime import timedelta
+
+        platform, platform_user = self._resolve_scope(platform, platform_user)
+
+        cutoff = (utcnow() - timedelta(days=self._config.retention_days)).isoformat()
+
+        params: dict[str, Any] = {"limit": limit, "cutoff": cutoff}
+        where_clauses: list[str] = ["is_active = 0", "deleted_at >= :cutoff"]
+
+        if tag:
+            if self._fts5_available:
+                quoted_tag = f'"{tag}"'
+                where_clauses.append("tags MATCH :tag")
+                params["tag"] = quoted_tag
+            else:
+                where_clauses.append(
+                    "(tags = :tag OR tags LIKE :p0 OR tags LIKE :p1 OR tags LIKE :p2)"
+                )
+                params["tag"] = tag
+                params["p0"] = f"{tag}|%"
+                params["p1"] = f"%|{tag}|%"
+                params["p2"] = f"%|{tag}"
+
+        if platform is not None and platform_user is not None:
+            where_clauses.append("platform = :platform AND platform_user = :platform_user")
+            params["platform"] = platform
+            params["platform_user"] = platform_user
+
+        where_str = "WHERE " + " AND ".join(where_clauses)
+
+        sql = sa.text(
+            "SELECT id, content, tags, session_id, created_at, platform, platform_user, "
+            "is_active, deleted_at, deleted_reason, superseded_by, is_pinned, "
+            "is_user_authored, last_recalled_at "
+            f"FROM memory {where_str} "
+            "ORDER BY deleted_at DESC LIMIT :limit"
+        )
+
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(sql, params)
+            rows = result.fetchall()
+            return [self._row_to_memory(row) for row in rows]
+
+    def _is_protected(self, memory: Memory) -> bool:
+        """Return True when a memory should not be soft-deleted."""
+        if memory.is_user_authored or memory.is_pinned:
+            return True
+        if memory.last_recalled_at is not None:
+            age_days = (utcnow() - memory.last_recalled_at).days
+            if age_days < self._config.recently_recalled_days:
+                return True
+        return False
+
+    def is_protected(self, memory: Memory) -> bool:
+        """Public helper: return True when a memory is in the protected set."""
+        return self._is_protected(memory)
+
     async def count(
         self,
         platform: str | None = None,
@@ -483,6 +810,16 @@ class MemoryStore:
 
     def _row_to_memory(self, row: Any) -> Memory:
         """Convert a database row to a Memory dataclass."""
+
+        def _parse_dt(value: Any) -> datetime | None:
+            if value is None:
+                return None
+            if isinstance(value, datetime):
+                return value
+            if isinstance(value, str):
+                return datetime.fromisoformat(value)
+            return None
+
         created_at = row.created_at
         if isinstance(created_at, str):
             created_at = datetime.fromisoformat(created_at)
@@ -501,4 +838,11 @@ class MemoryStore:
             created_at=created_at,
             platform=row.platform,
             platform_user=row.platform_user,
+            is_active=bool(row.is_active),
+            deleted_at=_parse_dt(row.deleted_at),
+            deleted_reason=row.deleted_reason,
+            superseded_by=row.superseded_by,
+            is_pinned=bool(row.is_pinned),
+            is_user_authored=bool(row.is_user_authored),
+            last_recalled_at=_parse_dt(row.last_recalled_at),
         )

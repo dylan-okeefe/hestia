@@ -13,7 +13,6 @@ from hestia.errors import PersistenceError
 from hestia.persistence.db import Database
 from hestia.persistence.schema import scheduled_tasks
 
-
 # Retry backoff for failed scheduled-task runs. Capped to avoid hammering.
 _MIN_RETRY_BACKOFF_SECONDS = 30
 _MAX_RETRY_BACKOFF_SECONDS = 300
@@ -101,6 +100,7 @@ class SchedulerStore:
         fire_at: datetime | None = None,
         enabled: bool = True,
         notify: bool = False,
+        task_type: str = "chat",
     ) -> ScheduledTask:
         """Create a new scheduled task.
 
@@ -111,6 +111,7 @@ class SchedulerStore:
             cron_expression: Cron expression for recurring tasks (e.g., "0 9 * * *")
             fire_at: Exact datetime for one-time tasks
             enabled: Whether the task is initially enabled
+            task_type: Task handler key ("chat" or "blocked_digest")
 
         Returns:
             The created ScheduledTask
@@ -134,6 +135,7 @@ class SchedulerStore:
         insert = sa.insert(scheduled_tasks).values(
             id=task_id,
             session_id=session_id,
+            task_type=task_type,
             prompt=prompt,
             description=description,
             cron_expression=cron_expression,
@@ -163,6 +165,7 @@ class SchedulerStore:
             next_run_at=next_run_at,
             last_error=None,
             notify=notify,
+            task_type=task_type,
         )
 
     async def list_due_tasks(
@@ -299,6 +302,8 @@ class SchedulerStore:
                 last_run_at=now,
                 next_run_at=next_run_at,
                 last_error=error,
+                notify=task.notify,
+                task_type=task.task_type,
             )
 
     async def set_next_run_at(self, task_id: str, next_run_at: datetime | None) -> bool:
@@ -415,6 +420,7 @@ class SchedulerStore:
             last_run_at=_ensure_utc(row.last_run_at),
             next_run_at=_ensure_utc(row.next_run_at),
             last_error=row.last_error,
+            task_type=str(getattr(row, "task_type", "chat")),
         )
 
     async def update_task(

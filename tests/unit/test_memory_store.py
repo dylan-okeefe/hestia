@@ -2,6 +2,7 @@
 
 import pytest
 
+from hestia.errors import PersistenceError
 from hestia.memory.store import Memory, MemoryStore, _sanitize_fts5_query
 from hestia.persistence.db import Database
 
@@ -97,16 +98,54 @@ class TestMemoryStore:
     async def test_count(self, memory_store):
         """Count returns the number of memories."""
         assert await memory_store.count() == 0
-        await memory_store.save("One")
+        await memory_store.save("First memory entry")
         assert await memory_store.count() == 1
-        await memory_store.save("Two")
+        await memory_store.save("Second memory entry")
         assert await memory_store.count() == 2
 
     @pytest.mark.asyncio
     async def test_save_with_session_id(self, memory_store):
         """Memory records which session created it."""
         mem = await memory_store.save("Session note", session_id="session_123")
+        assert mem is not None
         assert mem.session_id == "session_123"
+
+    @pytest.mark.asyncio
+    async def test_save_rejects_junk_content(self, memory_store):
+        """Junk content is dropped and not stored."""
+        mem = await memory_store.save("<tool_call>foo</tool_call>")
+        assert mem is None
+        assert await memory_store.count() == 0
+
+    @pytest.mark.asyncio
+    async def test_save_accepts_compaction_summary(self, memory_store):
+        """A compaction-style task-state summary is stored."""
+        content = (
+            "Goal: find backend engineering roles.\n"
+            "Criteria: remote, senior level, Python.\n"
+            "Progress: reviewed 15 postings, saved 3 leads.\n"
+            "Pending: follow up with two recruiters.\n"
+            "Key findings: Company X and Company Y are hiring.\n"
+            "Artifact paths: /tmp/jobs-leads.json"
+        )
+        mem = await memory_store.save(content, platform="cli", platform_user="test")
+        assert mem is not None
+        assert "Goal:" in mem.content
+        results = await memory_store.search("Company X", platform="cli", platform_user="test")
+        assert len(results) == 1
+
+    @pytest.mark.asyncio
+    async def test_save_strict_raises_on_rejection(self, memory_store):
+        """Strict mode raises when content is rejected."""
+        with pytest.raises(PersistenceError):
+            await memory_store.save("ok", strict=True)
+
+    @pytest.mark.asyncio
+    async def test_save_normalizes_whitespace(self, memory_store):
+        """Accepted content is stored with leading/trailing whitespace stripped."""
+        mem = await memory_store.save("  A clean fact  ", platform="cli", platform_user="test")
+        assert mem is not None
+        assert mem.content == "A clean fact"
 
     @pytest.mark.asyncio
     async def test_search_limit(self, memory_store):
@@ -231,6 +270,9 @@ class TestFts5Sanitization:
         assert _sanitize_fts5_query("foo AND bar") == "foo AND bar"
         assert _sanitize_fts5_query("foo OR bar") == "foo OR bar"
         assert _sanitize_fts5_query("foo NOT bar") == "foo NOT bar"
+
+    def test_period_query_gets_quoted(self):
+        assert _sanitize_fts5_query("User lives in LA.") == '"User lives in LA."'
 
 
 class TestMemoryStoreHyphenSearch:
