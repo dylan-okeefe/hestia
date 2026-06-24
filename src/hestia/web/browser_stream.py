@@ -26,6 +26,8 @@ logger = logging.getLogger(__name__)
 
 _VIEWPORT = {"width": 1920, "height": 1080}
 _TIMEOUT_SECONDS = 600  # 10 minutes
+_HEADED_LAUNCH_TIMEOUT_SECONDS = 30  # headed launch can hang without a display
+_IDLE_TIMEOUT_SECONDS = 60  # stop if no WebSocket client is connected
 
 
 @dataclass
@@ -40,6 +42,7 @@ class _StreamSession:
     started_at: datetime
     cdp_session: Any  # Playwright CDPSession
     ws_clients: set[WebSocket] = field(default_factory=set)
+    last_client_seen_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 class SessionStreamManager:
@@ -50,6 +53,7 @@ class SessionStreamManager:
         self._session: _StreamSession | None = None
         self._lock = asyncio.Lock()
         self._timeout_task: asyncio.Task[Any] | None = None
+        self._idle_timeout_task: asyncio.Task[Any] | None = None
 
     def is_active(self) -> bool:
         """Return True if a session is currently running."""
@@ -145,6 +149,7 @@ class SessionStreamManager:
                     context=context,
                     started_at=datetime.now(UTC),
                     cdp_session=cdp_session,
+                    last_client_seen_at=datetime.now(UTC),
                 )
 
                 def _on_frame(params: dict[str, Any]) -> None:
@@ -155,6 +160,9 @@ class SessionStreamManager:
                 self._session = session
                 self._timeout_task = asyncio.create_task(
                     self._auto_stop(session_id)
+                )
+                self._idle_timeout_task = asyncio.create_task(
+                    self._idle_stop(session_id)
                 )
                 return session_id
             except Exception:
@@ -176,6 +184,7 @@ class SessionStreamManager:
         if not session.ws_clients:
             logger.debug("No WS clients for session %s, skipping frame", session.session_id)
         else:
+            session.last_client_seen_at = datetime.now(UTC)
             logger.debug("Broadcasting frame to %d clients for session %s", len(session.ws_clients), session.session_id)
 
         disconnected: set[WebSocket] = set()
@@ -196,7 +205,7 @@ class SessionStreamManager:
             logger.exception("Failed to ack screencast frame")
 
     async def _auto_stop(self, session_id: str) -> None:
-        """Auto-stop the session after timeout."""
+        """Auto-stop the session after absolute timeout."""
         await asyncio.sleep(_TIMEOUT_SECONDS)
         if self._session is not None and self._session.session_id == session_id:
             logger.info("Browser stream session %s auto-timed out", session_id)
@@ -204,6 +213,26 @@ class SessionStreamManager:
                 await self.stop(session_id)
             except Exception:
                 logger.exception("Auto-stop failed for session %s", session_id)
+
+    async def _idle_stop(self, session_id: str) -> None:
+        """Auto-stop the session if no WebSocket client is connected."""
+        while True:
+            await asyncio.sleep(10)
+            session = self._session
+            if session is None or session.session_id != session_id:
+                return
+            idle_seconds = (datetime.now(UTC) - session.last_client_seen_at).total_seconds()
+            if idle_seconds >= _IDLE_TIMEOUT_SECONDS:
+                logger.info(
+                    "Browser stream session %s idle for %.0fs; stopping",
+                    session_id,
+                    idle_seconds,
+                )
+                try:
+                    await self.stop(session_id)
+                except Exception:
+                    logger.exception("Idle stop failed for session %s", session_id)
+                return
 
     async def stop(self, session_id: str) -> dict[str, Any]:
         """Stop screencast, save cookies/storage, close browser. Returns save summary."""
@@ -216,6 +245,12 @@ class SessionStreamManager:
                 with contextlib.suppress(asyncio.CancelledError):
                     await self._timeout_task
                 self._timeout_task = None
+
+            if self._idle_timeout_task is not None:
+                self._idle_timeout_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await self._idle_timeout_task
+                self._idle_timeout_task = None
 
             session = self._session
 
@@ -303,57 +338,101 @@ class SessionStreamManager:
             except Exception:
                 logger.exception("Failed to capture state for headed restart")
 
-            try:
-                await session.context.close()
-                await session.browser.close()
-            except Exception:
-                logger.exception("Failed to close headless browser")
+            old_playwright = session.playwright
+            old_browser = session.browser
+            old_context = session.context
+            old_page = session.page
+            old_cdp_session = session.cdp_session
+            old_timeout_task = self._timeout_task
+            self._timeout_task = None
 
-            try:
-                browser = await session.playwright.chromium.launch(
+        # Do the heavy launch outside the lock so a hang cannot deadlock
+        # stop() / auto_stop(). Headed launch can hang without a display.
+        browser = None
+        context = None
+        page = None
+        cdp_session = None
+        try:
+            browser = await asyncio.wait_for(
+                old_playwright.chromium.launch(
                     headless=False,
                     args=STEALTH_LAUNCH_ARGS,
-                )
-                context = await browser.new_context(
-                    **stealth_context_kwargs(storage_state)
-                )
-                page = await context.new_page()
-                await apply_stealth_async(page)
-                await page.goto(
-                    current_url or session.url,
-                    wait_until="domcontentloaded",
-                )
+                ),
+                timeout=_HEADED_LAUNCH_TIMEOUT_SECONDS,
+            )
+            context = await browser.new_context(
+                **stealth_context_kwargs(storage_state)
+            )
+            page = await context.new_page()
+            await apply_stealth_async(page)
+            await page.goto(
+                current_url or session.url,
+                wait_until="domcontentloaded",
+            )
 
-                cdp_session = await page.context.new_cdp_session(page)
-                await cdp_session.send(
-                    "Page.startScreencast",
-                    {
-                        "format": "jpeg",
-                        "quality": 80,
-                        "maxWidth": 1920,
-                        "maxHeight": 1080,
-                        "everyNthFrame": 1,
-                    },
-                )
+            cdp_session = await page.context.new_cdp_session(page)
+            await cdp_session.send(
+                "Page.startScreencast",
+                {
+                    "format": "jpeg",
+                    "quality": 80,
+                    "maxWidth": 1920,
+                    "maxHeight": 1080,
+                    "everyNthFrame": 1,
+                },
+            )
+        except Exception:
+            logger.exception("Failed to restart stream in headed mode")
+            # Clean up any partially launched resources.
+            await self._cleanup(None, browser, context, page)
+            # Restore the prior session so the user still has a stream, and
+            # make sure the absolute timeout is running again.
+            async with self._lock:
+                if self._session is session:
+                    session.browser = old_browser
+                    session.context = old_context
+                    session.page = old_page
+                    session.cdp_session = old_cdp_session
+                    self._timeout_task = old_timeout_task or asyncio.create_task(
+                        self._auto_stop(session_id)
+                    )
+                    try:
+                        await old_cdp_session.send("Page.startScreencast", {
+                            "format": "jpeg",
+                            "quality": 80,
+                            "maxWidth": 1920,
+                            "maxHeight": 1080,
+                            "everyNthFrame": 1,
+                        })
+                    except Exception:
+                        logger.exception("Failed to resume screencast after headed restart failure")
+            raise
 
-                def _on_frame(params: dict[str, Any]) -> None:
-                    asyncio.create_task(self._handle_frame(session, params))
+        def _on_frame(params: dict[str, Any]) -> None:
+            asyncio.create_task(self._handle_frame(session, params))
 
-                cdp_session.on("Page.screencastFrame", _on_frame)
+        cdp_session.on("Page.screencastFrame", _on_frame)
 
-                session.browser = browser
-                session.context = context
-                session.page = page
-                session.cdp_session = cdp_session
-
-                if self._timeout_task is not None:
-                    self._timeout_task.cancel()
-                self._timeout_task = asyncio.create_task(
+        async with self._lock:
+            if self._session is not session:
+                # Session changed while we were launching; clean up new one.
+                await self._cleanup(None, browser, context, page)
+                self._timeout_task = old_timeout_task or asyncio.create_task(
                     self._auto_stop(session_id)
                 )
-            except Exception:
-                logger.exception("Failed to restart stream in headed mode")
-                raise
+                return
+
+            # Close the old headless browser only after the new one is ready.
+            await self._cleanup(None, old_browser, old_context, old_page)
+
+            session.browser = browser
+            session.context = context
+            session.page = page
+            session.cdp_session = cdp_session
+
+            if old_timeout_task is not None:
+                old_timeout_task.cancel()
+            self._timeout_task = asyncio.create_task(self._auto_stop(session_id))
 
     async def _cleanup(
         self, playwright: Any, browser: Any, context: Any, page: Any
