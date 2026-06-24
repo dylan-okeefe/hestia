@@ -47,6 +47,7 @@ from hestia.tools.builtin.proposal_tools import (
     make_show_proposal_tool,
 )
 from hestia.tools.builtin.read_artifact import make_read_artifact_tool
+from hestia.tools.builtin.read_clipboard import read_clipboard
 from hestia.tools.builtin.read_file import make_read_file_tool
 from hestia.tools.builtin.rollback import make_rollback_turn_tool
 from hestia.tools.builtin.scheduler_tools import (
@@ -103,6 +104,7 @@ __all__ = [
     "make_list_scheduled_tasks_tool",
     "make_read_artifact_tool",
     "make_read_file_tool",
+    "read_clipboard",
     "make_save_memory_tool",
     "make_search_memory_tool",
     "search_web",

@@ -100,6 +100,7 @@ from hestia.tools.builtin import (
     make_terminal_tool,
     make_web_search_tool,
     make_write_file_tool,
+    read_clipboard,
 )
 from hestia.tools.checkpoint import CheckpointManager
 from hestia.tools.registry import ToolRegistry
@@ -518,6 +519,7 @@ class AppContext:
         reg = self.tool_registry
 
         reg.register(current_time)
+        reg.register(read_clipboard)
         reg.register(
             make_http_get_tool(
                 cfg.use_curl_cffi_fallback, cfg.security.egress_audit_enabled

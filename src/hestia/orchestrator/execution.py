@@ -594,6 +594,14 @@ class TurnExecution:
                         tool_names.append(f"describe_tool:{n}")
                 else:
                     tool_names.append("describe_tool")
+            elif tc.name == "call_tool" and tc.arguments and tc.arguments.get("name"):
+                # Unwrap the meta-tool wrapper so users see "read_file" instead
+                # of the generic "call_tool" name in status messages.
+                nested_name = tc.arguments["name"]
+                if isinstance(nested_name, str):
+                    tool_names.append(nested_name)
+                else:
+                    tool_names.append("call_tool")
             else:
                 tool_names.append(tc.name)
         ctx.tool_chain.extend(tool_names)
@@ -1597,6 +1605,7 @@ class TurnExecution:
             "delete_memory": "🧠",
             "read_artifact": "📦",
             "current_time": "🕐",
+            "read_clipboard": "📋",
             "web_search": "🔍",
             "email_search_and_read": "📧",
             "send_email": "📧",
