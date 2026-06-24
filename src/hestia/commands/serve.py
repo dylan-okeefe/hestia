@@ -12,6 +12,8 @@ import uvicorn
 
 from hestia.app import AppContext
 from hestia.config import HestiaConfig
+from hestia.persistence.scheduler import SchedulerStore
+from hestia.scheduler import Scheduler
 from hestia.scheduler.cleanup import run_error_resolution_cleanup
 
 logger = logging.getLogger(__name__)
@@ -34,13 +36,39 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
     adapters: dict[str, Any] = {}
 
     try:
+        # Start a single scheduler for all background tasks (proposals, style
+        # profiles, scheduled messages, memory maintenance). Platform runners are
+        # told not to start their own scheduler since serve owns it.
+        scheduler: Scheduler | None = None
+        from hestia.platforms.runners import make_serve_scheduler_callback
+
+        scheduler = Scheduler(
+            scheduler_store=SchedulerStore(app.db),
+            session_store=app.session_store,
+            orchestrator=app.make_orchestrator(),
+            response_callback=make_serve_scheduler_callback(adapters, app.session_store),
+            tick_interval_seconds=config.scheduler.tick_interval_seconds,
+            system_prompt=config.system_prompt,
+            event_bus=app.event_bus,
+            blocked_actions_digest=app.blocked_actions_digest,
+            memory_maintenance=app.memory_maintenance,
+            memory_maintenance_digest=app.memory_maintenance_digest,
+        )
+        await scheduler.start()
+
         if config.telegram.bot_token:
             from hestia.platforms.runners import run_telegram
             from hestia.platforms.telegram_adapter import TelegramAdapter
 
             telegram_adapter = TelegramAdapter(config.telegram)
             adapters["telegram"] = telegram_adapter
-            tasks.append(asyncio.create_task(run_telegram(app, config, adapter=telegram_adapter)))
+            tasks.append(
+                asyncio.create_task(
+                    run_telegram(
+                        app, config, adapter=telegram_adapter, start_scheduler=False
+                    )
+                )
+            )
 
         if config.matrix.access_token:
             from hestia.platforms.matrix_adapter import MatrixAdapter
@@ -48,7 +76,13 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
 
             matrix_adapter = MatrixAdapter(config.matrix)
             adapters["matrix"] = matrix_adapter
-            tasks.append(asyncio.create_task(run_matrix(app, config, adapter=matrix_adapter)))
+            tasks.append(
+                asyncio.create_task(
+                    run_matrix(
+                        app, config, adapter=matrix_adapter, start_scheduler=False
+                    )
+                )
+            )
 
         if config.email.imap_host:
             from hestia.email.adapter import EmailAdapter
@@ -123,5 +157,7 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
                 task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+        if scheduler is not None:
+            await scheduler.stop()
         app.inference.close = original_close  # type: ignore[method-assign]
         await app.inference.close()

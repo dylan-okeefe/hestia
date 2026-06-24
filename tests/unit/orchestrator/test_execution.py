@@ -1856,3 +1856,21 @@ async def test_timeout_retry_budget_blocks_before_exceeding():
     assert result_messages[0].tool_call_id == "tc1"
     assert "DISABLED" in result_messages[0].content
     assert "http_get" in result_messages[0].content
+
+
+def test_format_tool_status_shows_actual_tool_names() -> None:
+    """Status should show real tool names, not the meta wrapper."""
+    execution = TurnExecution(
+        tool_registry=MagicMock(),
+        inference_client=MagicMock(),
+        policy=MagicMock(),
+        context_builder=MagicMock(),
+        session_store=MagicMock(),
+    )
+    # In practice _execute_tools unwraps call_tool before calling this; the
+    # formatter should never be asked to render "call_tool" as a status item.
+    status = execution._format_tool_status(["read_file", "write_file", "read_clipboard"])
+    assert "read_file" in status
+    assert "write_file" in status
+    assert "read_clipboard" in status
+    assert "📋" in status

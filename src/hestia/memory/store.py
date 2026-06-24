@@ -128,43 +128,25 @@ class MemoryStore:
         async with self._db.engine.connect() as conn:
             await self._probe_fts5(conn)
 
-            # Check if an old-schema table exists (no platform/platform_user)
-            old_schema_exists = False
-            try:
-                await conn.execute(sa.text("SELECT 1 FROM memory LIMIT 1"))
-                try:
-                    await conn.execute(sa.text("SELECT platform FROM memory LIMIT 1"))
-                except sa.exc.OperationalError:
-                    old_schema_exists = True
-            except sa.exc.OperationalError:
-                logger.debug("memory table does not exist (fresh database)", exc_info=True)
+            table_exists = await self._memory_table_exists(conn)
+            needs_recreate = False
+            if table_exists:
+                missing = await self._missing_memory_columns(conn)
+                if missing:
+                    if self._fts5_available:
+                        needs_recreate = True
+                    else:
+                        # Regular table: use ALTER TABLE for missing columns.
+                        for col in missing:
+                            await self._add_memory_column(conn, col)
 
-            if old_schema_exists and self._fts5_available:
-                await conn.execute(sa.text("DROP TABLE IF EXISTS _memory_backup"))
-                await conn.execute(
-                    sa.text(
-                        "CREATE TABLE _memory_backup AS "
-                        "SELECT id, content, tags, session_id, created_at FROM memory"
-                    )
-                )
-                await conn.execute(sa.text("DROP TABLE memory"))
-                await self._create_fts5_table(conn)
-                await conn.execute(
-                    sa.text(
-                        "INSERT INTO memory(id, content, tags, session_id, "
-                        "created_at, platform, platform_user, is_active, "
-                        "deleted_at, deleted_reason, superseded_by, is_pinned, "
-                        "is_user_authored, last_recalled_at) "
-                        "SELECT id, content, tags, session_id, "
-                        "created_at, NULL, NULL, 1, NULL, NULL, NULL, 0, 0, NULL "
-                        "FROM _memory_backup"
-                    )
-                )
-                await conn.execute(sa.text("DROP TABLE _memory_backup"))
-            elif self._fts5_available:
-                await self._create_fts5_table(conn)
-            else:
-                await self._create_regular_table(conn)
+            if needs_recreate:
+                await self._recreate_memory_table_with_backup(conn)
+            elif not table_exists:
+                if self._fts5_available:
+                    await self._create_fts5_table(conn)
+                else:
+                    await self._create_regular_table(conn)
 
             # Runtime schema version check: verify expected columns exist
             try:
@@ -184,6 +166,107 @@ class MemoryStore:
                 ) from exc
 
             await conn.commit()
+
+    @staticmethod
+    async def _memory_table_exists(conn: Any) -> bool:
+        try:
+            await conn.execute(sa.text("SELECT 1 FROM memory LIMIT 1"))
+            return True
+        except sa.exc.OperationalError:
+            return False
+
+    _EXPECTED_MEMORY_COLUMNS = [
+        "id",
+        "content",
+        "tags",
+        "session_id",
+        "created_at",
+        "platform",
+        "platform_user",
+        "is_active",
+        "deleted_at",
+        "deleted_reason",
+        "superseded_by",
+        "is_pinned",
+        "is_user_authored",
+        "last_recalled_at",
+    ]
+
+    async def _missing_memory_columns(self, conn: Any) -> list[str]:
+        """Return expected columns that are not present in the existing table."""
+        present: set[str] = set()
+        for col in self._EXPECTED_MEMORY_COLUMNS:
+            try:
+                await conn.execute(sa.text(f"SELECT {col} FROM memory LIMIT 1"))
+                present.add(col)
+            except sa.exc.OperationalError:
+                pass
+        return [col for col in self._EXPECTED_MEMORY_COLUMNS if col not in present]
+
+    async def _add_memory_column(self, conn: Any, column: str) -> None:
+        """Add a single column to a regular (non-FTS5) memory table."""
+        defaults: dict[str, str] = {
+            "is_active": "INTEGER NOT NULL DEFAULT 1",
+            "is_pinned": "INTEGER NOT NULL DEFAULT 0",
+            "is_user_authored": "INTEGER NOT NULL DEFAULT 0",
+            "deleted_at": "TEXT",
+            "deleted_reason": "TEXT",
+            "superseded_by": "TEXT",
+            "last_recalled_at": "TEXT",
+            "platform": "TEXT",
+            "platform_user": "TEXT",
+        }
+        ddl = defaults.get(column)
+        if ddl is None:
+            raise PersistenceError(f"Unknown memory column to add: {column}")
+        await conn.execute(sa.text(f"ALTER TABLE memory ADD COLUMN {column} {ddl}"))
+
+    async def _recreate_memory_table_with_backup(self, conn: Any) -> None:
+        """Backup all existing columns, recreate FTS5 table, restore data.
+
+        Handles migration from any prior schema variant by introspecting which
+        columns are present before backing up.
+        """
+        existing = [
+            col
+            for col in self._EXPECTED_MEMORY_COLUMNS
+            if col in await self._present_memory_columns(conn)
+        ]
+        # id/content/tags/session_id/created_at have always existed.
+        select_cols = ", ".join(existing)
+        await conn.execute(sa.text("DROP TABLE IF EXISTS _memory_backup"))
+        await conn.execute(
+            sa.text(f"CREATE TABLE _memory_backup AS SELECT {select_cols} FROM memory")
+        )
+        await conn.execute(sa.text("DROP TABLE memory"))
+        await self._create_fts5_table(conn)
+
+        # Build INSERT that provides defaults for any missing columns.
+        all_cols = ", ".join(self._EXPECTED_MEMORY_COLUMNS)
+        source_cols = []
+        for col in self._EXPECTED_MEMORY_COLUMNS:
+            if col in existing:
+                source_cols.append(col)
+            elif col in ("is_active", "is_pinned", "is_user_authored"):
+                source_cols.append("1" if col == "is_active" else "0")
+            else:
+                source_cols.append("NULL")
+        values = ", ".join(source_cols)
+        await conn.execute(
+            sa.text(f"INSERT INTO memory({all_cols}) SELECT {values} FROM _memory_backup")
+        )
+        await conn.execute(sa.text("DROP TABLE _memory_backup"))
+
+    async def _present_memory_columns(self, conn: Any) -> set[str]:
+        """Return the set of columns that exist in the current memory table."""
+        present: set[str] = set()
+        for col in self._EXPECTED_MEMORY_COLUMNS:
+            try:
+                await conn.execute(sa.text(f"SELECT {col} FROM memory LIMIT 1"))
+                present.add(col)
+            except sa.exc.OperationalError:
+                pass
+        return present
 
     async def _create_fts5_table(self, conn: Any) -> None:
         ddl = """
