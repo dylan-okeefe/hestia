@@ -13,6 +13,11 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Browser stream `restart_headed` no longer holds the lock during headed browser launch (which can hang without a display) and always restores the timeout guard on failure.
 - Browser stream now stops automatically if no WebSocket client is connected for 60 seconds, preventing abandoned streams from leaking Playwright processes.
 
+### Added
+
+- `read_clipboard` tool — reads the system clipboard using `pbpaste` (macOS), `wl-paste`/`xclip`/`xsel` (Linux), or PowerShell (Windows).
+- Tool-call status messages in Telegram/Matrix/CLI now show the actual nested tool name (e.g. `read_file`) instead of the generic `call_tool` meta-wrapper.
+
 ## [0.15.0] — 2026-06-22
 
 ### Memory
