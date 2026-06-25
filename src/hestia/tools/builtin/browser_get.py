@@ -19,7 +19,9 @@ from hestia.tools.metadata import tool
         "Params: url (str), wait_for_selector (str, optional) — "
         "CSS selector to wait for before returning. "
         "wait_seconds (int, default 3) — extra time to let JS hydrate. "
-        "timeout_seconds (int, default 30)."
+        "timeout_seconds (int, default 30), "
+        "headless (bool, default true) — set false to open a visible browser "
+        "for sites that detect headless automation."
     ),
     parameters_schema={
         "type": "object",
@@ -28,6 +30,10 @@ from hestia.tools.metadata import tool
             "wait_for_selector": {"type": "string", "description": "CSS selector to wait for."},
             "wait_seconds": {"type": "integer", "description": "Extra seconds for JS hydration."},
             "timeout_seconds": {"type": "integer", "description": "Load timeout in seconds."},
+            "headless": {
+                "type": "boolean",
+                "description": "Run headless (default true). Set false for sites that block headless browsers.",
+            },
         },
         "required": ["url"],
     },
@@ -40,6 +46,7 @@ async def browser_get(
     wait_for_selector: str = "",
     wait_seconds: int = 3,
     timeout_seconds: int = 30,
+    headless: bool = True,
 ) -> str:
     """Fetch a URL using Playwright with session persistence."""
     parsed = urlparse(url)
@@ -53,5 +60,6 @@ async def browser_get(
         wait_for_selector=wait_for_selector,
         wait_seconds=wait_seconds,
         timeout_seconds=timeout_seconds,
+        headless=headless,
     )
     return result.text

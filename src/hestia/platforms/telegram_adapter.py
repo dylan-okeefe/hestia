@@ -309,6 +309,12 @@ class TelegramAdapter(Platform):
                     text=text,
                     parse_mode=None,
                 )
+            logger.warning(
+                "Telegram send failed for chat %s (%d chars): %s",
+                chat_id,
+                len(text),
+                e,
+            )
             raise
 
     async def send_message(self, user: str, text: str) -> str:
@@ -338,7 +344,9 @@ class TelegramAdapter(Platform):
         for k in stale:
             del self._last_edit_times[k]
 
-    async def edit_message(self, user: str, msg_id: str, text: str) -> None:
+    async def edit_message(
+        self, user: str, msg_id: str, text: str, **kwargs: Any
+    ) -> None:
         """Edit a message in-place, rate-limited to avoid 429s.
 
         If the new text exceeds Telegram's message length limit, the first
@@ -348,6 +356,7 @@ class TelegramAdapter(Platform):
         if self._app is None:
             raise RuntimeError("Telegram adapter not started")
 
+        fallback_to_new_message = bool(kwargs.get("fallback_to_new_message", False))
         self._prune_last_edit_times()
 
         # Rate limiting: max 1 edit per rate_limit_edits_seconds per message
@@ -360,6 +369,7 @@ class TelegramAdapter(Platform):
 
         chat_id = int(user)
         chunks = _split_long_text(text)
+        edit_ok = False
         try:
             try:
                 await self._edit_message_text(
@@ -381,14 +391,33 @@ class TelegramAdapter(Platform):
                 else:
                     raise
             self._last_edit_times[msg_id] = time.monotonic()
+            edit_ok = True
             for chunk in chunks[1:]:
                 await self._send_chunk(chat_id, chunk)
         except TelegramError as e:
             # Telegram returns 400 if message content is unchanged
             if "message is not modified" in str(e).lower():
                 logger.debug("Message %s not modified, skipping edit", msg_id)
+                edit_ok = True
             else:
-                logger.warning("Failed to edit message %s: %s", msg_id, e)
+                logger.warning(
+                    "Failed to edit message %s (%d chars): %s",
+                    msg_id,
+                    len(text),
+                    e,
+                )
+                if fallback_to_new_message:
+                    logger.info(
+                        "Falling back to sending %d chunk(s) as new messages",
+                        len(chunks),
+                    )
+                    for chunk in chunks:
+                        await self._send_chunk(chat_id, chunk)
+                    edit_ok = True
+        if not edit_ok and fallback_to_new_message:
+            # Safety net: if any other path left edit_ok False, send anyway.
+            for chunk in chunks:
+                await self._send_chunk(chat_id, chunk)
 
     async def _edit_message_text(
         self,
@@ -477,12 +506,18 @@ class TelegramAdapter(Platform):
         accumulated or 500 ms have elapsed, then sends a new message.
         Subsequent chunks trigger rate-limited in-place edits (max one
         edit per config.rate_limit_edits_seconds per message).
+
+        The callback never raises: a Telegram error during streaming is
+        logged and streaming continues. The final ``respond`` callback will
+        deliver the complete text, either by editing the streamed message or
+        by sending it as a new message if editing failed.
         """
         state: dict[str, Any] = {
             "accumulated": "",
             "message_id": None,
             "last_edit": 0.0,
             "first_chunk_time": None,
+            "last_text": "",
         }
         self._stream_states[chat_id] = state
         min_edit_interval = self._config.rate_limit_edits_seconds
@@ -496,16 +531,38 @@ class TelegramAdapter(Platform):
 
                 elapsed = time.monotonic() - state["first_chunk_time"]
                 if len(state["accumulated"]) >= 20 or elapsed >= 0.5:
-                    state["message_id"] = await self.send_message(
-                        chat_id, state["accumulated"]
-                    )
-                    state["last_edit"] = time.monotonic()
+                    try:
+                        state["message_id"] = await self.send_message(
+                            chat_id, state["accumulated"]
+                        )
+                        state["last_edit"] = time.monotonic()
+                        state["last_text"] = state["accumulated"]
+                    except Exception as e:  # noqa: BLE001 — progressive delivery boundary
+                        logger.warning(
+                            "Failed to send initial streamed message to %s: %s",
+                            chat_id,
+                            e,
+                        )
                 return
 
             now = time.monotonic()
             if now - state["last_edit"] >= min_edit_interval:
-                await self.edit_message(chat_id, state["message_id"], state["accumulated"])
-                state["last_edit"] = now
+                current = state["accumulated"]
+                if current == state["last_text"]:
+                    # Nothing changed since the last successful edit; skip the
+                    # API call to avoid Telegram's "message is not modified" 400.
+                    return
+                try:
+                    await self.edit_message(chat_id, state["message_id"], current)
+                    state["last_edit"] = now
+                    state["last_text"] = current
+                except Exception as e:  # noqa: BLE001 — progressive delivery boundary
+                    logger.warning(
+                        "Failed to edit streamed message %s for %s: %s",
+                        state["message_id"],
+                        chat_id,
+                        e,
+                    )
 
         return callback
 

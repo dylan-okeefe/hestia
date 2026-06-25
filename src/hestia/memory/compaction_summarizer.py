@@ -25,6 +25,12 @@ Read the conversation below and emit a single JSON object with these exact keys:
 - "summary": a concise paragraph synthesizing the task state for the next turn.
   Keep it under {max_chars} characters.
 
+IMPORTANT: The most recent user message represents the user's current intent.
+Prioritize it over older messages. If the most recent user message contains a
+directive, request, or correction, make sure the "goal", "pending", and
+"summary" fields reflect that latest intent rather than reverting to an earlier
+plan. Include any critical facts from earlier turns only as supporting context.
+
 Return ONLY the JSON object. Do not wrap it in markdown, code fences, or explanation.
 """
 

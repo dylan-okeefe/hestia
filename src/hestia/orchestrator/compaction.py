@@ -178,16 +178,36 @@ class SessionCompactor:
         )
 
     def _select_verbatim_tail(self, messages: list[MessageDTO]) -> list[MessageDTO]:
-        """Return the last verbatim_turns*2 messages to preserve recent context.
+        """Return a verbatim tail that preserves the most recent user request.
 
-        Keeps the tail contiguous so the immediate conversational context
-        survives compaction. Replacement indexes are reassigned later.
+        Keeps at least ``verbatim_turns * 2`` recent messages, but extends
+        backward to include the last user message if the fixed window would
+        have cut it off. This prevents a /compact from dropping the user's
+        latest directive while the agent is still mid-turn.
         """
+        if not messages:
+            return []
+
         keep_count = self._config.verbatim_turns * 2
         if keep_count <= 0:
             return []
-        tail = messages[-keep_count:]
+
+        # Find the most recent user message; without it the agent loses the
+        # current directive after compaction.
+        last_user_idx = -1
+        for i in range(len(messages) - 1, -1, -1):
+            if messages[i].role == "user":
+                last_user_idx = i
+                break
+
+        start = max(0, len(messages) - keep_count)
+        if last_user_idx >= 0 and start > last_user_idx:
+            start = last_user_idx
+
+        tail = messages[start:]
+
         # Ensure the tail starts with a user message for clean turn pairing.
-        if tail and tail[0].role != "user":
+        while tail and tail[0].role != "user":
             tail = tail[1:]
+
         return tail

@@ -5,18 +5,30 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### Fixed
-
-- `MemoryStore.create_table()` now migrates any prior schema variant (including tables that already had `platform`/`platform_user` but lacked the soft-delete columns from L226) instead of failing with `no such column: is_active`.
-- `hestia serve` now starts the scheduler loop, so proposals, style profiles, and memory maintenance actually run without needing a separate `hestia schedule daemon` or platform-only runner.
-- `run_telegram` / `run_matrix` gained a `start_scheduler` flag so `serve` can own the scheduler while standalone platform commands keep their platform-specific scheduler.
-- Browser stream `restart_headed` no longer holds the lock during headed browser launch (which can hang without a display) and always restores the timeout guard on failure.
-- Browser stream now stops automatically if no WebSocket client is connected for 60 seconds, preventing abandoned streams from leaking Playwright processes.
+## [0.15.1] — 2026-06-25
 
 ### Added
 
+- `browser_get_json` tool — extract embedded `window.*` JSON variables from rendered pages (e.g. Indeed's `window.mosaic.providerData`).
+- `browser_interact` tool — drive real-browser interactions (fill, click, select, press, wait) for JavaScript-heavy forms and filters.
+- `http_get` gained a `use_curl_cffi` parameter for TLS/HTTP fingerprint impersonation to bypass Cloudflare-style bot blocks.
+- `browser_get` and `browser_get_links` gained a `headless` parameter for headed-browser sessions.
 - `read_clipboard` tool — reads the system clipboard using `pbpaste` (macOS), `wl-paste`/`xclip`/`xsel` (Linux), or PowerShell (Windows).
-- Tool-call status messages in Telegram/Matrix/CLI now show the actual nested tool name (e.g. `read_file`) instead of the generic `call_tool` meta-wrapper.
+
+### Fixed
+
+- Telegram streaming no longer stops mid-message due to repeated "message is not modified" 400s; edit failures are caught and the final response falls back to a new message if needed.
+- `/compact` no longer drops the user's latest directive when the agent produced many assistant/tool messages after it. The verbatim tail now extends back to include the most recent user message.
+- Compaction summarizer prompt now explicitly prioritizes the most recent user message/intent.
+- `hestia serve` now starts the scheduler loop, so proposals, style profiles, and memory maintenance actually run without needing a separate `hestia schedule daemon` or platform-only runner.
+- `run_telegram` / `run_matrix` gained a `start_scheduler` flag so `serve` can own the scheduler while standalone platform commands keep their platform-specific scheduler.
+- Browser stream `restart_headed` no longer holds the lock during headed browser launch and always restores the timeout guard on failure.
+- Browser stream now stops automatically if no WebSocket client is connected for 60 seconds, preventing abandoned streams from leaking Playwright processes.
+- Tool-call status messages in Telegram/Matrix/CLI now show the actual nested tool name instead of the generic `call_tool` meta-wrapper.
+
+### Configuration
+
+- Runtime `allowed_roots` updated to `/home/dylan/Documents/Hestia-documents` to match the moved document tree.
 
 ## [0.15.0] — 2026-06-22
 

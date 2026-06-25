@@ -161,7 +161,9 @@ class MatrixAdapter(Platform):
             logger.error("Failed to send message to %s: %s", room_id, response)
             raise PlatformError(f"Failed to send message: {response}")
 
-    async def edit_message(self, user: str, msg_id: str, text: str) -> None:
+    async def edit_message(
+        self, user: str, msg_id: str, text: str, **kwargs: Any
+    ) -> None:
         """Edit a message in-place, rate-limited to avoid abuse flags."""
         if self._client is None:
             raise RuntimeError("Matrix adapter not started")
