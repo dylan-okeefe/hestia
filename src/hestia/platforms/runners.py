@@ -268,14 +268,28 @@ class PlatformRunner:
                 stream_callback = self.adapter._make_stream_callback(platform_user)
 
             async def respond(response_text: str) -> None:
-                if stream_callback is not None:
-                    state = getattr(self.adapter, "_stream_states", {}).get(
-                        platform_user, {}
-                    )
-                    msg_id = state.get("message_id")
-                    if msg_id is not None:
-                        await self.adapter.edit_message(platform_user, msg_id, response_text)
+                stream_states = getattr(self.adapter, "_stream_states", {})
+                state = stream_states.get(platform_user, {})
+                msg_id = state.get("message_id")
+                if stream_callback is not None and msg_id is not None:
+                    try:
+                        await self.adapter.edit_message(
+                            platform_user,
+                            msg_id,
+                            response_text,
+                            fallback_to_new_message=True,
+                        )
                         return
+                    except Exception as e:  # noqa: BLE001 — delivery boundary
+                        logger.warning(
+                            "Final stream edit failed for %s, sending new message: %s",
+                            platform_user,
+                            e,
+                        )
+                    finally:
+                        # Clear the streamed message id so the next turn starts
+                        # fresh even if this edit or send raises.
+                        state.pop("message_id", None)
                 await self.adapter.send_message(platform_user, response_text)
 
             channel = (

@@ -45,6 +45,7 @@ async def test_extracts_links(mock_fetch_url: Any) -> None:
         pattern="",
         wait_seconds=3,
         timeout_seconds=60,
+        headless=True,
     )
 
 
@@ -73,6 +74,33 @@ async def test_respects_selector_and_pattern(mock_fetch_url: Any) -> None:
         pattern="Engineer",
         wait_seconds=3,
         timeout_seconds=60,
+        headless=True,
+    )
+
+
+@pytest.mark.asyncio
+async def test_headed_mode_passed_through(mock_fetch_url: Any) -> None:
+    """headless=False is forwarded to fetch_url."""
+    mock_fetch_url.return_value = BrowserFetchResult(
+        ok=True,
+        category=ToolResultCategory.SUCCESS,
+        text="",
+        links=[],
+        final_url="https://builtinboston.com/jobs",
+        title="Jobs",
+    )
+
+    await browser_get_links("https://builtinboston.com/jobs", headless=False)
+
+    mock_fetch_url.assert_awaited_once_with(
+        "https://builtinboston.com/jobs",
+        domain="builtinboston.com",
+        selector="a",
+        extract_links=True,
+        pattern="",
+        wait_seconds=3,
+        timeout_seconds=60,
+        headless=False,
     )
 
 

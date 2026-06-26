@@ -49,6 +49,11 @@ _NOT_FOUND_PHRASES = (
 #: page rather than a content page that happens to mention logging in.
 _LOGIN_BODY_OCCURRENCE_THRESHOLD = 3
 
+#: Number of bot-phrase occurrences in the body that indicate a bot-protection
+#: page. A single mention (e.g. a reCAPTCHA footer notice on an otherwise valid
+#: page) is not enough.
+_BOT_BODY_OCCURRENCE_THRESHOLD = 2
+
 
 
 @dataclass
@@ -186,8 +191,14 @@ def _classify_page(url: str, title: str, text: str) -> tuple[bool, ToolResultCat
     if not lower_text:
         return False, ToolResultCategory.SUCCESS, ""
 
-    # 3. Bot protection is usually explicit in the body.
-    if any(phrase in lower_text for phrase in _BOT_PHRASES):
+    # 3. Bot protection is usually explicit in the body, but a single mention
+    #    in a footer (e.g. "reCAPTCHA") is not enough to discard a real page.
+    bot_occurrences = sum(lower_text.count(phrase) for phrase in _BOT_PHRASES)
+    dominated_by_bot_protection = (
+        bot_occurrences >= _BOT_BODY_OCCURRENCE_THRESHOLD
+        or (len(text) < 200 and bot_occurrences >= 1)
+    )
+    if dominated_by_bot_protection:
         return (
             True,
             ToolResultCategory.BLOCKED,
@@ -300,7 +311,8 @@ def _close_browser_pool_sync() -> None:
 atexit.register(_close_browser_pool_sync)
 
 
-async def fetch_url(
+async def _fetch_in_context(
+    context: Any,
     url: str,
     *,
     domain: str,
@@ -311,48 +323,14 @@ async def fetch_url(
     wait_seconds: int = 3,
     timeout_seconds: int = 30,
 ) -> BrowserFetchResult:
-    """Fetch *url* using a real browser with persistent session reuse.
+    """Navigate *url* inside an already-created browser context.
 
-    Rate-limited per domain, stealth-launched, and returns classified results
-    for login/challenge/bot/not-found/timeout outcomes.
+    Returns classified results for login/challenge/bot/not-found/timeout outcomes.
+    Session persistence is the caller's responsibility.
     """
-    store = BrowserSessionStore()
-    metadata = store.load_metadata(domain)
-    await _rate_limit_sleep(metadata)
-
-    try:
-        await assert_url_safe(url)
-    except SSRFBlockedError as exc:
-        return BrowserFetchResult(
-            ok=False,
-            category=ToolResultCategory.BLOCKED,
-            text=_format_failure_message(
-                ToolResultCategory.BLOCKED, f"SSRF blocked: {exc}"
-            ),
-            final_url="",
-            title="",
-        )
-
-    if metadata is not None and metadata.requires_headed:
-        return BrowserFetchResult(
-            ok=False,
-            category=ToolResultCategory.BLOCKED,
-            text=_format_failure_message(
-                ToolResultCategory.BLOCKED,
-                f"[BLOCKED - HEADED_LOGIN_REQUIRED] {domain} is flagged as requiring a "
-                f"headed browser. Log in via the Browser Stream UI for {domain}, then retry.",
-            ),
-            final_url="",
-            title="",
-        )
-
-    storage_state = _load_session(store, domain)
-
     page: Any | None = None
-    context: Any | None = None
 
     try:
-        context = await _pool.new_context(storage_state)
         page = await context.new_page()
         await apply_stealth_async(page)
 
@@ -410,15 +388,6 @@ async def fetch_url(
         if extract_links:
             links = await _extract_links(page, selector, pattern)
 
-        # Persist refreshed session state so subsequent calls stay authenticated.
-        try:
-            refreshed_storage = cast(dict[str, Any], await context.storage_state())
-            store.save_storage(domain, refreshed_storage)
-            refreshed_cookies = cast(list[dict[str, Any]], await context.cookies())
-            store.save_cookies(domain, refreshed_cookies)
-        except Exception as exc:
-            logger.warning("Failed to persist session for %s: %s", domain, exc)
-
         return BrowserFetchResult(
             ok=True,
             category=ToolResultCategory.SUCCESS,
@@ -453,9 +422,155 @@ async def fetch_url(
         )
 
     finally:
+        if page is not None:
+            try:
+                await page.close()
+            except Exception as exc:
+                logger.warning("Error closing page: %s", exc)
+
+
+async def fetch_url(
+    url: str,
+    *,
+    domain: str,
+    selector: str = "a",
+    extract_links: bool = False,
+    pattern: str = "",
+    wait_for_selector: str = "",
+    wait_seconds: int = 3,
+    timeout_seconds: int = 30,
+    headless: bool = True,
+) -> BrowserFetchResult:
+    """Fetch *url* using a real browser with persistent session reuse.
+
+    Rate-limited per domain, stealth-launched, and returns classified results
+    for login/challenge/bot/not-found/timeout outcomes.
+
+    Args:
+        headless: When False, launch a visible browser window. Useful for sites
+            that detect and block headless automation.
+    """
+    store = BrowserSessionStore()
+    metadata = store.load_metadata(domain)
+    await _rate_limit_sleep(metadata)
+
+    try:
+        await assert_url_safe(url)
+    except SSRFBlockedError as exc:
+        return BrowserFetchResult(
+            ok=False,
+            category=ToolResultCategory.BLOCKED,
+            text=_format_failure_message(
+                ToolResultCategory.BLOCKED, f"SSRF blocked: {exc}"
+            ),
+            final_url="",
+            title="",
+        )
+
+    if headless and metadata is not None and metadata.requires_headed:
+        return BrowserFetchResult(
+            ok=False,
+            category=ToolResultCategory.BLOCKED,
+            text=_format_failure_message(
+                ToolResultCategory.BLOCKED,
+                f"[BLOCKED - HEADED_LOGIN_REQUIRED] {domain} is flagged as requiring a "
+                f"headed browser. Log in via the Browser Stream UI for {domain}, then retry.",
+            ),
+            final_url="",
+            title="",
+        )
+
+    storage_state = _load_session(store, domain)
+
+    context: Any | None = None
+    headed_playwright: Any | None = None
+    headed_browser: Any | None = None
+
+    try:
+        if headless:
+            context = await _pool.new_context(storage_state)
+            result = await _fetch_in_context(
+                context,
+                url,
+                domain=domain,
+                selector=selector,
+                extract_links=extract_links,
+                pattern=pattern,
+                wait_for_selector=wait_for_selector,
+                wait_seconds=wait_seconds,
+                timeout_seconds=timeout_seconds,
+            )
+            # Persist refreshed session state so subsequent calls stay authenticated.
+            if result.ok:
+                try:
+                    refreshed_storage = cast(dict[str, Any], await context.storage_state())
+                    store.save_storage(domain, refreshed_storage)
+                    refreshed_cookies = cast(list[dict[str, Any]], await context.cookies())
+                    store.save_cookies(domain, refreshed_cookies)
+                except Exception as exc:
+                    logger.warning("Failed to persist session for %s: %s", domain, exc)
+        else:
+            logger.info("Launching headed browser for %s", url)
+            headed_playwright = await async_playwright().__aenter__()
+            headed_browser = await headed_playwright.chromium.launch(
+                headless=False,
+                args=STEALTH_LAUNCH_ARGS,
+            )
+            context = await headed_browser.new_context(
+                **stealth_context_kwargs(storage_state)
+            )
+            result = await _fetch_in_context(
+                context,
+                url,
+                domain=domain,
+                selector=selector,
+                extract_links=extract_links,
+                pattern=pattern,
+                wait_for_selector=wait_for_selector,
+                wait_seconds=wait_seconds,
+                timeout_seconds=timeout_seconds,
+            )
+            if result.ok:
+                try:
+                    refreshed_storage = cast(dict[str, Any], await context.storage_state())
+                    store.save_storage(domain, refreshed_storage)
+                    refreshed_cookies = cast(list[dict[str, Any]], await context.cookies())
+                    store.save_cookies(domain, refreshed_cookies)
+                except Exception as exc:
+                    logger.warning("Failed to persist headed session for %s: %s", domain, exc)
+
+        return result
+
+    except Exception as exc:
+        logger.warning("browser_fetch failure for %s: %s", url, exc)
+        return BrowserFetchResult(
+            ok=False,
+            category=ToolResultCategory.TRANSIENT_OTHER,
+            text=_format_failure_message(
+                ToolResultCategory.TRANSIENT_OTHER,
+                f"Error fetching {url}: {exc}",
+            ),
+            final_url="",
+            title="",
+        )
+
+    finally:
         try:
             store.update_metadata(domain, last_used=datetime.now(UTC))
         except Exception as exc:
             logger.warning("Failed to update metadata for %s: %s", domain, exc)
         if context is not None:
-            await _pool.close_context(context)
+            try:
+                await context.close()
+            except Exception as exc:
+                logger.warning("Error closing browser context: %s", exc)
+        if headed_browser is not None:
+            try:
+                await headed_browser.close()
+            except Exception as exc:
+                logger.warning("Error closing headed browser: %s", exc)
+        if headed_playwright is not None:
+            try:
+                await headed_playwright.stop()
+            except Exception as exc:
+                logger.warning("Error stopping headed playwright: %s", exc)

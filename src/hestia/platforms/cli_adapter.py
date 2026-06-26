@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import click
 
 from hestia.platforms.base import IncomingMessageCallback, Platform
@@ -26,7 +28,9 @@ class CliPlatform(Platform):
         click.echo(f"\nAssistant: {text}\n")
         return "cli-msg"  # CLI doesn't support editing
 
-    async def edit_message(self, user: str, msg_id: str, text: str) -> None:
+    async def edit_message(
+        self, user: str, msg_id: str, text: str, **kwargs: Any
+    ) -> None:
         """CLI doesn't support in-place editing. Print new line instead."""
         click.echo(f"\nAssistant: {text}\n")
 

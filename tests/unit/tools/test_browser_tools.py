@@ -147,6 +147,7 @@ class TestBrowserGet:
             wait_for_selector="",
             wait_seconds=3,
             timeout_seconds=30,
+            headless=True,
         )
 
     @pytest.mark.asyncio
@@ -170,6 +171,30 @@ class TestBrowserGet:
             wait_for_selector="#content",
             wait_seconds=5,
             timeout_seconds=30,
+            headless=True,
+        )
+
+    @pytest.mark.asyncio
+    async def test_headless_false_passed_through(self, mock_fetch_url):
+        """headless=False is forwarded to the shared fetch helper."""
+        mock_fetch_url.return_value = BrowserFetchResult(
+            ok=True,
+            category=ToolResultCategory.SUCCESS,
+            text="Headed content",
+            final_url="https://example.com/page",
+            title="Example",
+        )
+
+        result = await browser_get("https://example.com/page", headless=False)
+
+        assert result == "Headed content"
+        mock_fetch_url.assert_awaited_once_with(
+            "https://example.com/page",
+            domain="example.com",
+            wait_for_selector="",
+            wait_seconds=3,
+            timeout_seconds=30,
+            headless=False,
         )
 
     @pytest.mark.asyncio

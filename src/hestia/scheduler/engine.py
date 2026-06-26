@@ -70,8 +70,16 @@ class Scheduler:
         """Start the background loop. Returns immediately."""
         if self._loop_task is not None:
             raise RuntimeError("Scheduler is already running")
+        logger.info(
+            "Scheduler starting background loop (tick=%.1fs)", self._tick_interval
+        )
         self._stop_event.clear()
         self._loop_task = asyncio.create_task(self._run_loop())
+
+    @property
+    def is_running(self) -> bool:
+        """Return True if the scheduler loop task is active."""
+        return self._loop_task is not None and not self._loop_task.done()
 
     async def stop(self) -> None:
         """Signal the loop to stop and wait for it to exit."""

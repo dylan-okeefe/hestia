@@ -17,6 +17,7 @@ from hestia.web.routes import (
     doctor,
     egress,
     errors,
+    health,
     memory,
     proposals,
     scheduler,
@@ -38,10 +39,11 @@ def create_web_app() -> FastAPI:
 
     Security note: authentication is configurable via WebConfig.auth_enabled.
     When enabled, Bearer token auth is enforced on all /api/* routes except
-    /api/auth/*. The dashboard binds to 127.0.0.1 by default.
+    /api/auth/* and /api/health. The dashboard binds to 127.0.0.1 by default.
     """
     app = FastAPI(title="Hestia Dashboard", docs_url=None, redoc_url=None)
 
+    app.include_router(health.router, prefix="/api")
     app.include_router(auth.router, prefix="/api/auth")
     app.include_router(sessions.router, prefix="/api/sessions")
     app.include_router(proposals.router, prefix="/api/proposals")

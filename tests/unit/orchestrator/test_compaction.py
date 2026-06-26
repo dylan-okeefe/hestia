@@ -372,3 +372,40 @@ async def test_compact_too_short(session_store, message_store, compactor):
 
     assert not outcome.success
     assert "Not enough history" in outcome.message
+
+
+@pytest.mark.asyncio
+async def test_compact_preserves_last_user_message(
+    session_store, message_store, compactor
+):
+    """The verbatim tail extends backward to include the latest user directive."""
+    session = await session_store.get_or_create_session("cli", "testuser")
+    # A long agent turn with many assistant/tool messages after the last user
+    # message. With verbatim_turns=2 the fixed window would drop the user.
+    messages = [
+        Message(role="user", content="start the report"),
+        Message(role="assistant", content="ok"),
+        Message(role="user", content="run C-1 on LinkedIn"),
+        # 6 assistant/tool messages after the last user message
+        Message(role="assistant", content="step 1"),
+        Message(role="tool", content="result 1"),
+        Message(role="assistant", content="step 2"),
+        Message(role="tool", content="result 2"),
+        Message(role="assistant", content="step 3"),
+        Message(role="tool", content="result 3"),
+    ]
+    for i, msg in enumerate(messages):
+        await message_store.append_message(
+            session.id,
+            message_domain_to_dto(msg, session.id, idx=i),
+        )
+
+    outcome = await compactor.compact(session.id)
+
+    assert outcome.success
+    active = await message_store.get_messages(session.id)
+    contents = " ".join(m.content for m in active)
+    assert "run C-1 on LinkedIn" in contents
+    # The tail should start with the last user message.
+    assert active[1].role == "user"
+    assert "run C-1 on LinkedIn" in active[1].content

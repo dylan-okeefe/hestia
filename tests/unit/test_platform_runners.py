@@ -500,7 +500,9 @@ class TestRunPlatformStreaming:
                 platform_name="fake",
             )
 
-        adapter.edit_message.assert_awaited_once_with("u1", "42", "final response")
+        adapter.edit_message.assert_awaited_once_with(
+            "u1", "42", "final response", fallback_to_new_message=True
+        )
 
     @pytest.mark.asyncio
     async def test_uses_send_message_for_final_when_not_streaming(self):

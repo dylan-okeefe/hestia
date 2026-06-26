@@ -17,7 +17,8 @@ from hestia.tools.metadata import tool
         "Params: url (str), selector (str, optional) — CSS selector limiting "
         "which links to extract (e.g. 'a.job-card'). "
         "pattern (str, optional) — regex to filter link text. "
-        "wait_seconds (int, default 3), timeout_seconds (int, default 60)."
+        "wait_seconds (int, default 3), timeout_seconds (int, default 60), "
+        "headless (bool, default true) — set false to open a visible browser."
     ),
     parameters_schema={
         "type": "object",
@@ -33,6 +34,10 @@ from hestia.tools.metadata import tool
             },
             "wait_seconds": {"type": "integer", "description": "Extra seconds for JS hydration."},
             "timeout_seconds": {"type": "integer", "description": "Load timeout in seconds."},
+            "headless": {
+                "type": "boolean",
+                "description": "Run headless (default true). Set false for sites that block headless browsers.",
+            },
         },
         "required": ["url"],
     },
@@ -46,6 +51,7 @@ async def browser_get_links(
     pattern: str = "",
     wait_seconds: int = 3,
     timeout_seconds: int = 60,
+    headless: bool = True,
 ) -> str:
     """Fetch a URL with Playwright and return a list of direct link URLs.
 
@@ -64,6 +70,7 @@ async def browser_get_links(
         pattern=pattern,
         wait_seconds=wait_seconds,
         timeout_seconds=timeout_seconds,
+        headless=headless,
     )
 
     if not result.ok:

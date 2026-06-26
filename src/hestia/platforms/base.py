@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
+from typing import Any
 
 # Callback type for incoming messages from the platform
 IncomingMessageCallback = Callable[[str, str, str, str | None, str | None], Awaitable[None]]
@@ -51,7 +52,9 @@ class Platform(ABC):
         ...
 
     @abstractmethod
-    async def edit_message(self, user: str, msg_id: str, text: str) -> None:
+    async def edit_message(
+        self, user: str, msg_id: str, text: str, **kwargs: Any
+    ) -> None:
         """Edit a previously sent message in-place.
 
         For platforms that don't support editing (CLI), this is a no-op
@@ -75,8 +78,8 @@ class Platform(ABC):
 
     async def set_typing(self, user: str, typing: bool = True) -> None:
         """Set typing indicator for a user/room. No-op by default."""
-        pass
+        return None
 
     async def delete_message(self, user: str, msg_id: str) -> None:
         """Delete a previously sent message. No-op by default."""
-        pass
+        return None

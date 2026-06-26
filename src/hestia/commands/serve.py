@@ -125,6 +125,7 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
                     user_store=app.user_store,
                     browser_session_store=browser_session_store,
                     stream_manager=SessionStreamManager(browser_session_store),
+                    scheduler=scheduler,
                 )
             )
             add_auth_middleware(web_app, auth_manager, config.web)
