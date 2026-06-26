@@ -120,7 +120,7 @@ config = HestiaConfig(
         database_url=f"sqlite+aiosqlite:///{_DB_PATH}",
         artifacts_dir=_ROOT / "artifacts",
         allowed_roots=[
-            os.path.expanduser("~/Documents/Hestia-documents"),
+            os.path.expanduser("~/Documents/Job Search"),
             str(_ROOT / "artifacts"),
         ],
     ),

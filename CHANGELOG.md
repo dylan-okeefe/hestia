@@ -30,10 +30,6 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Tool-call status messages in Telegram/Matrix/CLI now show the actual nested tool name instead of the generic `call_tool` meta-wrapper.
 - Browser page classifier now requires bot phrases to dominate the page (≥2 occurrences or a very short page), so a single footer mention no longer discards real content.
 
-### Configuration
-
-- Runtime `allowed_roots` updated to `/home/dylan/Documents/Hestia-documents` to match the moved document tree.
-
 ## [0.15.0] — 2026-06-22
 
 ### Memory

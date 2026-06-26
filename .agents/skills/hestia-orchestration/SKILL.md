@@ -93,6 +93,22 @@ See `references/review-checklist.md` for the detailed version with examples.
 
 ## Release discipline
 
+### Privacy: no personal or task-specific details in release artifacts
+
+Release notes, changelogs, commit messages, and any files pushed to GitHub must
+never include Dylan's personal setup details (home paths, allowed roots,
+Matrix/Telegram IDs, tokens, runtime hostnames, etc.) or task-specific context
+that belongs outside the repo (e.g. job-search run-type documents, private
+conversations, personal file paths).
+
+- Keep `CHANGELOG.md` and `docs/releases/v*.md` focused on code/tool behavior.
+- Do not mention where files live on Dylan's filesystem.
+- Do not list external/private documents (e.g. `run_types/*.md`, Telegram chat
+  content) as repo deliverables.
+- `config.runtime.py` is runtime-specific; do not commit personal path changes
+  from `~/Hestia-runtime` back to `~/Hestia`. The runtime worktree may keep its
+  own copy, but those values must not reach `origin`.
+
 After a release tag is placed on `develop` (and especially after push), **no feature branch merges to develop** until a release-prep document exists that names every `feature/*` branch by exact name.
 
 **Pre-release integration branches:** Completed loops merge to `release/vX.Y.Z` first. That branch later merges to `develop` as a single unit. See the live tracker at `docs/development-process/v0.9.1-progress.md`.
