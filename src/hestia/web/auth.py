@@ -318,11 +318,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
     ) -> Response:
         path = request.url.path
 
-        # Skip non-API routes and auth routes
+        # Skip non-API routes, auth routes, and public health checks
         if (
             not path.startswith("/api/")
             or path.startswith("/api/auth/")
             or path.startswith("/api/webhooks/")
+            or path == "/api/health"
         ):
             return await call_next(request)
 

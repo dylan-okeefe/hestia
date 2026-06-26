@@ -15,6 +15,7 @@ from hestia.persistence.trace_store import TraceStore
 from hestia.persistence.turn_store import TurnStore
 from hestia.persistence.users import UserStore
 from hestia.reflection.store import ProposalStore
+from hestia.scheduler.engine import Scheduler
 from hestia.style.store import StyleProfileStore
 from hestia.tools.browser.session_store import BrowserSessionStore
 from hestia.web.auth import AuthManager
@@ -46,6 +47,7 @@ class WebContext:
     trigger_registry: TriggerRegistry | None = field(default=None)
     browser_session_store: BrowserSessionStore | None = field(default=None)
     stream_manager: SessionStreamManager | None = field(default=None)
+    scheduler: Scheduler | None = field(default=None)
 
     def __post_init__(self) -> None:
         """Derive split stores from the session store when not provided."""

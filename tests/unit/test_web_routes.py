@@ -87,6 +87,7 @@ def client(mock_app: MagicMock) -> TestClient:
         app=mock_app,
         auth_manager=None,
         user_store=AsyncMock(),
+        scheduler=None,
     )
     ctx.execution_store.get_last_execution_per_workflow = AsyncMock(return_value={})
     set_web_context(ctx)
@@ -1676,3 +1677,61 @@ class TestWebConfigDefaults:
 
         config = WebConfig()
         assert config.host == "127.0.0.1"
+
+
+
+class TestHealth:
+    """Tests for the public /api/health endpoint."""
+
+    def test_health_ok_when_scheduler_running(
+        self, client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """GET /api/health reports ok when the scheduler loop is active."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        scheduler = MagicMock()
+        scheduler.is_running = True
+        ctx.scheduler = scheduler
+
+        response = client.get("/api/health")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "ok"
+        assert data["scheduler"]["running"] is True
+        assert "timestamp" in data
+
+    def test_health_degraded_when_scheduler_stopped(
+        self, client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """GET /api/health reports degraded when the scheduler is not running."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        scheduler = MagicMock()
+        scheduler.is_running = False
+        ctx.scheduler = scheduler
+
+        response = client.get("/api/health")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "degraded"
+        assert data["scheduler"]["running"] is False
+
+    def test_health_degraded_when_no_scheduler(
+        self, client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """GET /api/health reports degraded if no scheduler is wired."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.scheduler = None
+
+        response = client.get("/api/health")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "degraded"
+        assert data["scheduler"]["running"] is False

@@ -13,6 +13,9 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `browser_interact` tool — drive real-browser interactions (fill, click, select, press, wait) for JavaScript-heavy forms and filters.
 - `http_get` gained a `use_curl_cffi` parameter for TLS/HTTP fingerprint impersonation to bypass Cloudflare-style bot blocks.
 - `browser_get` and `browser_get_links` gained a `headless` parameter for headed-browser sessions.
+- Shared browser fetch helper (`hestia.tools.browser.fetch.fetch_url`) now implements `headless=False` with visible Playwright launch and session persistence for both modes.
+- Public `/api/health` endpoint reports process liveness and scheduler state; auth middleware exempts it for external monitors.
+- `Scheduler` gained an `is_running` property and startup log line.
 - `read_clipboard` tool — reads the system clipboard using `pbpaste` (macOS), `wl-paste`/`xclip`/`xsel` (Linux), or PowerShell (Windows).
 
 ### Fixed
@@ -25,6 +28,7 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Browser stream `restart_headed` no longer holds the lock during headed browser launch and always restores the timeout guard on failure.
 - Browser stream now stops automatically if no WebSocket client is connected for 60 seconds, preventing abandoned streams from leaking Playwright processes.
 - Tool-call status messages in Telegram/Matrix/CLI now show the actual nested tool name instead of the generic `call_tool` meta-wrapper.
+- Browser page classifier now requires bot phrases to dominate the page (≥2 occurrences or a very short page), so a single footer mention no longer discards real content.
 
 ### Configuration
 
