@@ -306,6 +306,100 @@ class TestAutoApprove:
             scheduler_tick_active.reset(token)
 
 
+class TestFilterReadClipboard:
+    """Tests for READ_CLIPBOARD capability gating."""
+
+    def test_read_clipboard_available_for_cli_owner(self, sample_session, tmp_path):
+        from hestia.artifacts.store import ArtifactStore
+        from hestia.config import TrustConfig
+        from hestia.policy.default import DefaultPolicyEngine
+        from hestia.tools.builtin.read_clipboard import read_clipboard
+        from hestia.tools.registry import ToolRegistry
+
+        policy = DefaultPolicyEngine(trust=TrustConfig.paranoid())
+        reg = ToolRegistry(ArtifactStore(tmp_path / "art"))
+        reg.register(read_clipboard)
+        names = reg.list_names()
+        filtered = policy.filter_tools(sample_session, names, reg)
+        assert "read_clipboard" in filtered
+
+    def test_read_clipboard_available_for_subagent_by_default(self, sample_session, tmp_path):
+        from dataclasses import replace
+
+        from hestia.artifacts.store import ArtifactStore
+        from hestia.config import TrustConfig
+        from hestia.policy.default import DefaultPolicyEngine
+        from hestia.tools.builtin.read_clipboard import read_clipboard
+        from hestia.tools.registry import ToolRegistry
+
+        policy = DefaultPolicyEngine(trust=TrustConfig.paranoid())
+        reg = ToolRegistry(ArtifactStore(tmp_path / "art"))
+        reg.register(read_clipboard)
+        names = reg.list_names()
+        sub = replace(sample_session, platform="subagent")
+        filtered = policy.filter_tools(sub, names, reg)
+        assert "read_clipboard" in filtered
+
+    def test_read_clipboard_blocked_for_subagent_when_flag_false(self, sample_session, tmp_path):
+        from dataclasses import replace
+
+        from hestia.artifacts.store import ArtifactStore
+        from hestia.config import TrustConfig
+        from hestia.policy.default import DefaultPolicyEngine
+        from hestia.tools.builtin.read_clipboard import read_clipboard
+        from hestia.tools.registry import ToolRegistry
+
+        trust = TrustConfig.paranoid()
+        trust.subagent_read_clipboard = False
+        policy = DefaultPolicyEngine(trust=trust)
+        reg = ToolRegistry(ArtifactStore(tmp_path / "art"))
+        reg.register(read_clipboard)
+        names = reg.list_names()
+        sub = replace(sample_session, platform="subagent")
+        filtered = policy.filter_tools(sub, names, reg)
+        assert "read_clipboard" not in filtered
+
+    def test_read_clipboard_blocked_for_scheduler_tick(self, sample_session, tmp_path):
+        from hestia.artifacts.store import ArtifactStore
+        from hestia.config import TrustConfig
+        from hestia.policy.default import DefaultPolicyEngine
+        from hestia.runtime_context import scheduler_tick_active
+        from hestia.tools.builtin.read_clipboard import read_clipboard
+        from hestia.tools.registry import ToolRegistry
+
+        policy = DefaultPolicyEngine(trust=TrustConfig.paranoid())
+        reg = ToolRegistry(ArtifactStore(tmp_path / "art"))
+        reg.register(read_clipboard)
+        names = reg.list_names()
+        token = scheduler_tick_active.set(True)
+        try:
+            filtered = policy.filter_tools(sample_session, names, reg)
+        finally:
+            scheduler_tick_active.reset(token)
+        assert "read_clipboard" not in filtered
+
+    def test_read_clipboard_allowed_for_scheduler_when_flag_true(self, sample_session, tmp_path):
+        from hestia.artifacts.store import ArtifactStore
+        from hestia.config import TrustConfig
+        from hestia.policy.default import DefaultPolicyEngine
+        from hestia.runtime_context import scheduler_tick_active
+        from hestia.tools.builtin.read_clipboard import read_clipboard
+        from hestia.tools.registry import ToolRegistry
+
+        trust = TrustConfig.paranoid()
+        trust.scheduler_read_clipboard = True
+        policy = DefaultPolicyEngine(trust=trust)
+        reg = ToolRegistry(ArtifactStore(tmp_path / "art"))
+        reg.register(read_clipboard)
+        names = reg.list_names()
+        token = scheduler_tick_active.set(True)
+        try:
+            filtered = policy.filter_tools(sample_session, names, reg)
+        finally:
+            scheduler_tick_active.reset(token)
+        assert "read_clipboard" in filtered
+
+
 class TestFilterToolsTrust:
     """Tests for filter_tools with TrustConfig."""
 

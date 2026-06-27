@@ -10,6 +10,9 @@ READ_LOCAL = "read_local"
 WRITE_LOCAL = "write_local"
 EDIT_FILE = "edit_file"
 
+# Clipboard access (interactive-only; scheduler ticks should not read clipboard)
+READ_CLIPBOARD = "read_clipboard"
+
 # Code execution
 SHELL_EXEC = "shell_exec"
 

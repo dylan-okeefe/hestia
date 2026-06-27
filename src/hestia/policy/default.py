@@ -273,6 +273,7 @@ class DefaultPolicyEngine(PolicyEngine):
         from hestia.tools.capabilities import (
             EDIT_FILE,
             EMAIL_SEND,
+            READ_CLIPBOARD,
             SELF_MANAGEMENT,
             SHELL_EXEC,
             WRITE_LOCAL,
@@ -300,6 +301,11 @@ class DefaultPolicyEngine(PolicyEngine):
                 blocked.add(WRITE_LOCAL)
             if not trust.scheduler_email_send:
                 blocked.add(EMAIL_SEND)
+            if not trust.scheduler_read_clipboard:
+                blocked.add(READ_CLIPBOARD)
+
+        if session.platform == PLATFORM_SUBAGENT and not trust.subagent_read_clipboard:
+            blocked.add(READ_CLIPBOARD)
 
         if not blocked:
             return tool_names

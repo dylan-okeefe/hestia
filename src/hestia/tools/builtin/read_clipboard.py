@@ -4,6 +4,7 @@ import asyncio
 import shutil
 import sys
 
+from hestia.tools.capabilities import READ_CLIPBOARD
 from hestia.tools.metadata import tool
 
 
@@ -31,7 +32,7 @@ async def _run(args: list[str]) -> str | None:
     },
     max_inline_chars=2000,
     tags=["utility"],
-    capabilities=[],
+    capabilities=[READ_CLIPBOARD],
 )
 async def read_clipboard() -> str:
     """Read the system clipboard, trying common providers across platforms."""

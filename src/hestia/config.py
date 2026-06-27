@@ -230,6 +230,16 @@ class TrustConfig(_ConfigFromEnv):
     # Allow scheduler ticks to trigger email_send.
     scheduler_email_send: bool = False
 
+    # Allow scheduler ticks to read the system clipboard.
+    # Clipboard reads are interactive by nature, so headless scheduler ticks
+    # default to False.
+    scheduler_read_clipboard: bool = False
+
+    # Allow subagent sessions to read the system clipboard.
+    # Subagents legitimately read the clipboard for job-search flows (e.g. a
+    # copied job-post URL), so this defaults to True.
+    subagent_read_clipboard: bool = True
+
     # Allow self-management tools (proposal/style) for this trust profile.
     self_management: bool = False
 
@@ -268,6 +278,7 @@ class TrustConfig(_ConfigFromEnv):
             and not self.subagent_write_local
             and not self.subagent_email_send
             and not self.scheduler_email_send
+            and not self.scheduler_read_clipboard
             and not self.self_management
             and self.blocked_shell_patterns == []
         )
