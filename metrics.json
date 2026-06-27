@@ -1,8 +1,9 @@
 {
-  "python_loc": 80737,
+  "python_loc": 80752,
   "tests": 2142,
   "test_files": 232,
   "adrs": 49,
-  "loops": 178,
+  "loops": 231,
+  "loop_spec_files": 178,
   "updated": "2026-06-27"
 }

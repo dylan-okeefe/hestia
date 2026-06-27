@@ -29,6 +29,7 @@ ADR_DIRS   = ["docs/adr", "docs/adrs", "docs/decisions", "adr", "doc/adr"]   # f
 LOOPS_DIRS = ["docs/development-process/loops", "loops", "docs/loops", ".loops"]  # loop docs live here
 LOOPS_GLOB = "docs/development-process/**/L[0-9]*.md"  # used to detect strays outside LOOPS_DIRS
 LOOPS_COUNTER = ".loop_count"   # OR a plain-text file holding a single integer (takes priority if present)
+_LOOP_NUM_RE = re.compile(r"^L(\d+)")
 # ---------------------------------------------------------------------------
 
 
@@ -70,11 +71,8 @@ def adrs() -> int:
     return 0
 
 
-def loops() -> int:
-    counter = ROOT / LOOPS_COUNTER
-    if counter.exists():
-        with contextlib.suppress(Exception):
-            return int(counter.read_text().strip())
+def loop_spec_files() -> int:
+    """Count actual loop-spec Markdown files in the canonical directory."""
     for d in LOOPS_DIRS:
         path = ROOT / d
         if path.is_dir():
@@ -82,6 +80,24 @@ def loops() -> int:
                 1 for f in path.glob("*.md")
                 if f.stem.lower() not in {"readme", "index", "template"}
             )
+    return 0
+
+
+def loops() -> int:
+    """Return the highest loop number used (the fair 'loops' count)."""
+    counter = ROOT / LOOPS_COUNTER
+    if counter.exists():
+        with contextlib.suppress(Exception):
+            return int(counter.read_text().strip())
+    highest = 0
+    for d in LOOPS_DIRS:
+        path = ROOT / d
+        if path.is_dir():
+            for f in path.glob("*.md"):
+                m = _LOOP_NUM_RE.match(f.stem)
+                if m:
+                    highest = max(highest, int(m.group(1)))
+            return highest
     return 0
 
 
@@ -103,6 +119,7 @@ def collect() -> dict[str, object]:
         "test_files": tf,
         "adrs": adrs(),
         "loops": loops(),
+        "loop_spec_files": loop_spec_files(),
         "updated": date.today().isoformat(),
     }
 
