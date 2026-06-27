@@ -467,6 +467,30 @@ class TestGrep:
         result = await grep("[invalid", str(tmp_path))
         assert "Invalid regex" in result
 
+    @pytest.mark.asyncio
+    async def test_grep_accepts_file_path(self, tmp_path):
+        """grep can search a single file, not just a directory."""
+        grep = make_grep_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
+        target = tmp_path / "a.py"
+        target.write_text("def foo():\n    pass\n")
+
+        result = await grep(r"^def ", str(target))
+
+        assert "a.py:1:def foo():" in result
+
+    @pytest.mark.asyncio
+    async def test_grep_truncates_long_lines(self, tmp_path):
+        """grep truncates very long matching lines to avoid huge output."""
+        grep = make_grep_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
+        target = tmp_path / "long.txt"
+        target.write_text("prefix " + "x" * 5000 + " suffix\n")
+
+        result = await grep("prefix", str(target))
+
+        assert "prefix" in result
+        assert "(5014 chars total)" in result
+        assert "x" * 5000 not in result
+
 
 class TestHttpGet:
     """Tests for http_get tool."""
@@ -527,13 +551,14 @@ class TestHttpGet:
         transport = SSRFSafeTransport()
         request = httpx.Request("GET", "http://example.com/")
 
-        with patch("asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
-            # We need the inner transport to not actually make a request
-            with patch.object(
+        with (
+            patch("asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread,
+            patch.object(
                 transport._inner, "handle_async_request", new_callable=AsyncMock
-            ) as mock_inner:
-                mock_inner.return_value = httpx.Response(200, text="ok")
-                await transport.handle_async_request(request)
+            ) as mock_inner,
+        ):
+            mock_inner.return_value = httpx.Response(200, text="ok")
+            await transport.handle_async_request(request)
 
         mock_to_thread.assert_awaited_once()
         assert mock_to_thread.call_args[0][0] == _assert_ip_allowed
