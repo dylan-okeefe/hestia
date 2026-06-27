@@ -618,6 +618,79 @@ async def test_repeated_identical_call_allows_different_arguments():
 
 
 @pytest.mark.asyncio
+async def test_repeated_identical_call_allowed_after_new_user_message():
+    """A repeat from an earlier turn is allowed when the user explicitly re-asks."""
+    registry = MagicMock()
+    registry.describe.return_value = MagicMock(
+        requires_confirmation=False, ordering="concurrent"
+    )
+
+    policy = MagicMock()
+    policy.tool_result_max_chars.return_value = 8000
+
+    execution = TurnExecution(
+        tool_registry=registry,
+        inference_client=MagicMock(),
+        policy=policy,
+        context_builder=MagicMock(),
+        session_store=MagicMock(),
+    )
+
+    user_msg = Message(role="user", content="try that search again")
+    ctx = TurnContext(
+        turn=_make_turn(),
+        user_message=user_msg,
+        system_prompt="",
+        respond_callback=AsyncMock(),
+        session=_make_session(),
+        build_result=MagicMock(messages=[]),
+    )
+    ctx.running_history = [
+        Message(role="user", content="find jobs"),
+        Message(
+            role="assistant",
+            content=None,
+            tool_calls=[
+                ToolCall(
+                    id="prev1",
+                    name="search_memory",
+                    arguments={"query": "job search job title target role"},
+                )
+            ],
+        ),
+        Message(role="tool", content="no results", tool_call_id="prev1"),
+        user_msg,
+    ]
+
+    tool_calls = [
+        ToolCall(
+            id="tc1",
+            name="search_memory",
+            arguments={"query": "job search job title target role"},
+        ),
+    ]
+
+    with patch.object(
+        execution, "_dispatch_tool_call", new_callable=AsyncMock
+    ) as mock_dispatch:
+        mock_dispatch.return_value = ToolCallResult(
+            status="ok",
+            content="results",
+            artifact_handle=None,
+            truncated=False,
+        )
+
+        result_messages, _artifact_handles = await execution._execute_tool_calls(
+            _make_session(), tool_calls, ctx=ctx
+        )
+
+        assert mock_dispatch.call_count == 1
+        assert len(result_messages) == 1
+        assert result_messages[0].content == "results"
+        assert not getattr(ctx, "_repeated_tools_blocked", None)
+
+
+@pytest.mark.asyncio
 async def test_repeated_identical_call_blocked_across_non_consecutive_steps():
     """A repeat of an earlier-turn tool call is blocked even if not consecutive."""
     registry = MagicMock()

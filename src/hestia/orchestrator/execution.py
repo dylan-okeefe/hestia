@@ -1026,7 +1026,18 @@ class TurnExecution:
             previous_keys: set[_ToolCallKey] = set()
             result_categories = _latest_tool_result_categories(ctx.running_history)
             previous_key_categories: dict[_ToolCallKey, ToolResultCategory] = {}
-            for msg in ctx.running_history:
+
+            # Only block repeats that occurred within the current turn (after the
+            # original user message). This lets a user explicitly ask for a retry
+            # while still preventing the assistant from looping on its own.
+            history_window = ctx.running_history
+            if ctx.user_message is not None:
+                for i, msg in enumerate(ctx.running_history):
+                    if msg == ctx.user_message:
+                        history_window = ctx.running_history[i:]
+                        break
+
+            for msg in history_window:
                 if msg.role == "assistant" and msg.tool_calls:
                     for tc in msg.tool_calls:
                         key = _tool_call_key(tc)
