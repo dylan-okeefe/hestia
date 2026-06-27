@@ -1,5 +1,7 @@
 {
-  "python_loc": 80752,
+  "python_loc": 35967,
+  "test_loc": 44799,
+  "total_loc": 80766,
   "tests": 2142,
   "test_files": 232,
   "adrs": 49,

@@ -18,13 +18,15 @@ import argparse
 import contextlib
 import json
 import re
+from collections.abc import Iterator
 from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 
 # ---- CONFIG: adjust these to match the repo -------------------------------
-PY_EXCLUDE = {".git", ".venv", "venv", "node_modules", "dist", "build", "__pycache__", ".mypy_cache"}
+PY_EXCLUDE = {".git", ".venv", "venv", "env", "node_modules", "dist", "build",
+              "__pycache__", ".mypy_cache", ".pytest_cache", ".tox", "site-packages"}
 ADR_DIRS   = ["docs/adr", "docs/adrs", "docs/decisions", "adr", "doc/adr"]   # first match wins
 LOOPS_DIRS = ["docs/development-process/loops", "loops", "docs/loops", ".loops"]  # loop docs live here
 LOOPS_GLOB = "docs/development-process/**/L[0-9]*.md"  # used to detect strays outside LOOPS_DIRS
@@ -33,24 +35,39 @@ _LOOP_NUM_RE = re.compile(r"^L(\d+)")
 # ---------------------------------------------------------------------------
 
 
-def python_loc() -> int:
-    total = 0
+def _is_test(p: Path) -> bool:
+    return p.name.startswith("test_") or p.name.endswith("_test.py") or "tests" in p.parts
+
+
+def _nonblank(p: Path) -> int:
+    with contextlib.suppress(Exception):
+        return sum(1 for line in p.read_text(encoding="utf-8", errors="ignore").splitlines() if line.strip())
+    return 0
+
+
+def _py_files() -> Iterator[Path]:
     for p in ROOT.rglob("*.py"):
-        if any(part in PY_EXCLUDE for part in p.parts):
-            continue
-        with contextlib.suppress(Exception):
-            total += sum(1 for line in p.read_text(encoding="utf-8", errors="ignore").splitlines() if line.strip())
-    return total
+        if not any(part in PY_EXCLUDE for part in p.parts):
+            yield p
+
+
+def loc() -> tuple[int, int]:
+    """Return (source LOC, test LOC) for Python files."""
+    src = test = 0
+    for p in _py_files():
+        if _is_test(p):
+            test += _nonblank(p)
+        else:
+            src += _nonblank(p)
+    return src, test
 
 
 def tests() -> tuple[int, int]:
     files: set[Path] = set()
     count = 0
     pat = re.compile(r"^\s*(?:async\s+)?def\s+test_", re.M)
-    for p in ROOT.rglob("*.py"):
-        if any(part in PY_EXCLUDE for part in p.parts):
-            continue
-        if p.name.startswith("test_") or p.name.endswith("_test.py") or "tests" in p.parts:
+    for p in _py_files():
+        if _is_test(p):
             hits = 0
             with contextlib.suppress(Exception):
                 hits = len(pat.findall(p.read_text(encoding="utf-8", errors="ignore")))
@@ -112,9 +129,12 @@ def stray_loops() -> list[Path]:
 
 
 def collect() -> dict[str, object]:
+    src, test_loc = loc()
     t, tf = tests()
     return {
-        "python_loc": python_loc(),
+        "python_loc": src,            # source only
+        "test_loc": test_loc,         # test code, reported separately
+        "total_loc": src + test_loc,  # source + test
         "tests": t,
         "test_files": tf,
         "adrs": adrs(),
