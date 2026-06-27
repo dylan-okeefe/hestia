@@ -73,6 +73,10 @@ Then commit the resulting `metrics.json` alongside the related changes. The `--c
 uv run hestia_metrics.py --check
 ```
 
+### Loop-spec location
+
+Loop specs must live in `docs/development-process/loops/` and be named `L<NNN>-<slug>.md`. Do not leave new loop specs in `docs/development-process/` root or in `docs/development-process/prompts/`. If `hestia_metrics.py --check` warns about loop files outside the canonical directory, move them into `docs/development-process/loops/` before pushing.
+
 ## Self-review checklist
 
 Before declaring a chunk done, verify:

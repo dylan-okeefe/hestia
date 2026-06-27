@@ -27,6 +27,7 @@ ROOT = Path(__file__).resolve().parent
 PY_EXCLUDE = {".git", ".venv", "venv", "node_modules", "dist", "build", "__pycache__", ".mypy_cache"}
 ADR_DIRS   = ["docs/adr", "docs/adrs", "docs/decisions", "adr", "doc/adr"]   # first match wins
 LOOPS_DIRS = ["docs/development-process/loops", "loops", "docs/loops", ".loops"]  # loop docs live here
+LOOPS_GLOB = "docs/development-process/**/L[0-9]*.md"  # used to detect strays outside LOOPS_DIRS
 LOOPS_COUNTER = ".loop_count"   # OR a plain-text file holding a single integer (takes priority if present)
 # ---------------------------------------------------------------------------
 
@@ -84,6 +85,16 @@ def loops() -> int:
     return 0
 
 
+def stray_loops() -> list[Path]:
+    """Return loop-spec files found outside the canonical loops directory."""
+    canonical = ROOT / LOOPS_DIRS[0]
+    return [
+        p for p in ROOT.glob(LOOPS_GLOB)
+        if "reviews" not in p.parts
+        and not p.resolve().is_relative_to(canonical.resolve())
+    ]
+
+
 def collect() -> dict[str, object]:
     t, tf = tests()
     return {
@@ -106,6 +117,13 @@ def main() -> None:
     print("Hestia metrics:")
     for k, v in m.items():
         print(f"  {k.ljust(width)} : {v}")
+
+    strays = stray_loops()
+    if strays:
+        print("\nWarning: loop files found outside the canonical loops directory:")
+        for p in sorted(strays):
+            print(f"  - {p.relative_to(ROOT)}")
+        print(f"\nMove them into {LOOPS_DIRS[0]}/ so the loop count stays accurate.")
 
     if not args.check:
         (ROOT / "metrics.json").write_text(json.dumps(m, indent=2) + "\n", encoding="utf-8")
