@@ -59,6 +59,20 @@ uv run ruff check src/ tests/
 
 All three must pass before advancing. If ruff has pre-existing baseline issues, note the count and ensure no new issues were introduced. The project line-length is **120** (`tool.ruff.line-length` in `pyproject.toml`); do not reformat to 100.
 
+## Metrics refresh (run before pushing)
+
+Before pushing a feature branch or `develop`, update the repo's `metrics.json` so the resume generator on dylanokeefe.dev stays current:
+
+```bash
+uv run hestia_metrics.py
+```
+
+Then commit the resulting `metrics.json` alongside the related changes. The `--check` flag prints the counts without writing the file:
+
+```bash
+uv run hestia_metrics.py --check
+```
+
 ## Self-review checklist
 
 Before declaring a chunk done, verify:
