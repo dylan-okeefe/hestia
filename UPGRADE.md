@@ -15,6 +15,28 @@ but not implemented as of v0.10.0.
 
 ---
 
+## v0.15.1
+
+**Released:** 2026-06-24  
+**Full notes:** [`CHANGELOG.md`](CHANGELOG.md)
+
+A small patch release. No schema migrations are required; pull, sync, and
+restart.
+
+### 1. Pull and sync
+
+```bash
+git fetch --tags
+git checkout v0.15.1
+uv sync --all-extras
+```
+
+### 2. Restart services
+
+```bash
+systemctl --user restart hestia-serve.service
+```
+
 ## v0.15.0
 
 **Released:** 2026-06-22  
@@ -45,7 +67,7 @@ hestia memory-maintenance ensure-tasks
 ```
 
 Registers the nightly deterministic and weekly LLM maintenance passes. Undo any
-action with `hestia memory-maintenance undo <action-id>`.
+action with `hestia memory maintenance undo <action-id>`.
 
 ### 4. Heads-up
 
