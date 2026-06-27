@@ -82,6 +82,7 @@ from hestia.tools.builtin import (
     make_glob_tool,
     make_grep_tool,
     make_http_get_tool,
+    indeed_search_jobs,
     make_list_dir_tool,
     make_list_memories_tool,
     make_list_pending_alerts_tool,
@@ -527,6 +528,7 @@ class AppContext:
                 cfg.use_curl_cffi_fallback, cfg.security.egress_audit_enabled
             )
         )
+        reg.register(indeed_search_jobs)
         reg.register(make_list_dir_tool(cfg.storage))
         reg.register(make_terminal_tool(cfg.trust.blocked_shell_patterns or None))
         reg.register(make_read_file_tool(cfg.storage))

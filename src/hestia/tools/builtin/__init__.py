@@ -29,6 +29,7 @@ from hestia.tools.builtin.email_tools import make_email_search_and_read_tool, ma
 from hestia.tools.builtin.glob import make_glob_tool
 from hestia.tools.builtin.grep import make_grep_tool
 from hestia.tools.builtin.http_get import http_get, make_http_get_tool
+from hestia.tools.builtin.indeed_search import indeed_search_jobs
 from hestia.tools.builtin.job_alert_tools import (
     make_list_pending_alerts_tool,
     make_mark_alerts_sent_tool,
@@ -92,6 +93,7 @@ __all__ = [
     "current_trace_store",
     "current_time",
     "http_get",
+    "indeed_search_jobs",
     "make_blocked_actions_summary_tool",
     "make_http_get_tool",
     "make_list_dir_tool",
