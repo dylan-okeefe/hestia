@@ -215,12 +215,21 @@ class SessionStreamManager:
                 logger.exception("Auto-stop failed for session %s", session_id)
 
     async def _idle_stop(self, session_id: str) -> None:
-        """Auto-stop the session if no WebSocket client is connected."""
+        """Auto-stop the session if no WebSocket client is connected.
+
+        A visually static page produces no CDP screencast frames, so we must
+        base idle detection on actual client presence, not frame flow. As long
+        as at least one WebSocket client is connected, the session is alive.
+        """
         while True:
             await asyncio.sleep(10)
             session = self._session
             if session is None or session.session_id != session_id:
                 return
+            if session.ws_clients:
+                # Active viewer; keep alive and reset the idle clock.
+                session.last_client_seen_at = datetime.now(UTC)
+                continue
             idle_seconds = (datetime.now(UTC) - session.last_client_seen_at).total_seconds()
             if idle_seconds >= _IDLE_TIMEOUT_SECONDS:
                 logger.info(
