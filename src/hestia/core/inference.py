@@ -119,13 +119,18 @@ def _parse_adhoc_xml_tool_calls(text: str) -> list[ToolCall]:
         # --- NSC-ACE-SABER wrapper unwrap ---
         # Some agentic-tuned models emit <function=call_tool> with inner
         # <parameter=name>TOOL_NAME</parameter> and <parameter=arguments>{...}</parameter>.
-        # Unwrap to the real tool name and arguments.
+        # Unwrap to the real tool name and arguments, stripping stray '>' or
+        # nested XML fragments the model sometimes appends to the name value.
         if name == "call_tool" and "name" in adhoc_args and "arguments" in adhoc_args:
             inner_name = adhoc_args["name"]
             inner_args = adhoc_args["arguments"]
-            if isinstance(inner_name, str) and isinstance(inner_args, dict):
-                name = inner_name
-                adhoc_args = inner_args
+            if isinstance(inner_name, str):
+                # The model may emit "browser_interact>" or
+                # "glob>\n<parameter=arguments>{...}". Clean it up.
+                inner_name = inner_name.split("\n")[0].strip().rstrip(">")
+                if isinstance(inner_args, dict):
+                    name = inner_name
+                    adhoc_args = inner_args
         # Also handle the case where the model puts a single JSON object
         # inside <parameter=arguments> that contains both name and arguments.
         elif name == "call_tool" and "arguments" in adhoc_args:
@@ -133,9 +138,11 @@ def _parse_adhoc_xml_tool_calls(text: str) -> list[ToolCall]:
             if isinstance(inner, dict) and "name" in inner and "arguments" in inner:
                 inner_name = inner["name"]
                 inner_args = inner["arguments"]
-                if isinstance(inner_name, str) and isinstance(inner_args, dict):
-                    name = inner_name
-                    adhoc_args = inner_args
+                if isinstance(inner_name, str):
+                    inner_name = inner_name.split("\n")[0].strip().rstrip(">")
+                    if isinstance(inner_args, dict):
+                        name = inner_name
+                        adhoc_args = inner_args
 
         # Some models emit a direct tool call like <function=grep>
         # <parameter=arguments>{"path": "...", "pattern": "..."}</parameter>.

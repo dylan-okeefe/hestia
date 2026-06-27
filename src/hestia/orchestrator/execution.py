@@ -1503,6 +1503,12 @@ class TurnExecution:
                 "Missing 'name' argument for call_tool",
             )
 
+        # Models sometimes emit the inner name with a stray '>' or a nested
+        # XML fragment (e.g. "glob>\n<parameter=arguments>..."). Clean it up
+        # before lookup/dispatch.
+        if isinstance(name, str):
+            name = name.split("\n")[0].strip().rstrip(">")
+
         # Check if inner tool is allowed
         if allowed_tools is not None and name not in allowed_tools:
             return ToolCallResult.error(
