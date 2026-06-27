@@ -3,6 +3,7 @@ import type { Node, Edge } from 'reactflow';
 import NodeTypeDropdown from '../forms/NodeTypeDropdown';
 import PlatformDropdown from '../forms/PlatformDropdown';
 import UserDropdown from '../forms/UserDropdown';
+import ConversationDropdown from '../forms/ConversationDropdown';
 import ToolDropdown from '../forms/ToolDropdown';
 import type { ToolSchema } from '../../api/client';
 import { TEXT } from '../../lib/text';
@@ -244,6 +245,15 @@ export default function NodePropertiesPanel({
               includeEmpty
             />
             <span className="node-properties__helper">{TEXT.workflowEditor.platformHelper}</span>
+          </div>
+          <div className="node-properties__section">
+            <label className="node-properties__label">{TEXT.workflowEditor.conversationLabel}</label>
+            <ConversationDropdown
+              value={(selectedNode.data.target_conversation as string) || ''}
+              onChange={(value: string) => onUpdateNodeData('target_conversation', value)}
+              platform={(selectedNode.data.platform as string) || undefined}
+            />
+            <span className="node-properties__helper">{TEXT.workflowEditor.conversationHelper}</span>
           </div>
           <div className="node-properties__section">
             <label className="node-properties__label">{TEXT.workflowEditor.targetUserLabel}</label>

@@ -48,6 +48,7 @@ async def list_sessions(
                 "id": s.id,
                 "platform": s.platform,
                 "platform_user": s.platform_user,
+                "title": s.title,
                 "started_at": s.started_at.isoformat() if s.started_at else None,
                 "last_active_at": s.last_active_at.isoformat() if s.last_active_at else None,
                 "state": s.state.value if s.state else None,

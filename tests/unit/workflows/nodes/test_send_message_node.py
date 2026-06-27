@@ -150,6 +150,33 @@ async def test_new_fields_preferred_over_legacy_in_inputs(app: AppContext) -> No
 
 
 @pytest.mark.asyncio
+async def test_target_conversation_preferred_over_target_user(app: AppContext) -> None:
+    """target_conversation is used as the destination when provided."""
+    node = WorkflowNode(
+        id="n1",
+        type="send_message",
+        label="Notify",
+        config={
+            "platform": "telegram",
+            "target_conversation": "-5180445128",
+            "target_user": "legacy_user",
+            "message": "Hello",
+        },
+    )
+
+    with patch(
+        "hestia.workflows.nodes.send_message.PlatformNotifier.send",
+        return_value=True,
+    ) as mock_send:
+        executor = SendMessageNode()
+        result = await executor.execute(app, node, {})
+
+    assert result["user"] == "-5180445128"
+    assert result["text"] == "Hello"
+    mock_send.assert_awaited_once_with("telegram", "-5180445128", "Hello")
+
+
+@pytest.mark.asyncio
 async def test_missing_platform_raises(app: AppContext) -> None:
     node = WorkflowNode(
         id="n1",

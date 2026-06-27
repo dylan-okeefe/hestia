@@ -273,6 +273,8 @@ export const TEXT = {
     platformHelper: 'Which adapter sends the message.',
     targetUserLabel: 'Target User',
     targetUserHelper: 'The user or room that receives the message.',
+    conversationLabel: 'Target Conversation',
+    conversationHelper: 'Choose a known conversation/session for this platform. Overrides Target User.',
     messageLabel: 'Message',
     previewLabel: 'Preview',
     characterCount: (count: number) => `${count} characters`,

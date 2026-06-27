@@ -439,6 +439,25 @@ export async function fetchUsers() {
   return res.json() as Promise<{ users: User[] }>;
 }
 
+export interface Conversation {
+  id: string;
+  platform: string;
+  platform_user: string;
+  title: string | null;
+  started_at: string | null;
+  last_active_at: string | null;
+  state: string | null;
+  message_count: number;
+}
+
+export async function fetchConversations(platform: string, limit = 100) {
+  const res = await apiFetch(
+    `${API_BASE}/sessions?platform=${encodeURIComponent(platform)}&limit=${limit}`
+  );
+  if (!res.ok) throw new Error('Failed to fetch conversations');
+  return res.json() as Promise<{ sessions: Conversation[] }>;
+}
+
 export async function fetchUser(userId: string) {
   const res = await apiFetch(`${API_BASE}/users/${userId}`);
   if (!res.ok) throw new Error('Failed to fetch user');

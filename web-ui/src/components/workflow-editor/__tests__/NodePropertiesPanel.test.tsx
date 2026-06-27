@@ -10,6 +10,7 @@ vi.mock('../../../api/client', async () => {
     ...actual,
     fetchAuthStatus: vi.fn(),
     fetchUsers: vi.fn(),
+    fetchConversations: vi.fn(),
     fetchTools: vi.fn(),
   };
 });
@@ -36,6 +37,11 @@ describe('NodePropertiesPanel', () => {
         { id: 'u1', display_name: 'Alice', role: 'admin', trust_preset: null, notes: null, created_at: '', identity_count: 0, room_count: 0, identities: [] },
       ],
     });
+    vi.mocked(client.fetchConversations).mockResolvedValue({
+      sessions: [
+        { id: 's1', platform: 'telegram', platform_user: '-123', title: 'Hestia Chat', started_at: null, last_active_at: null, state: 'active', message_count: 5 },
+      ],
+    });
     vi.mocked(client.fetchTools).mockResolvedValue({
       tools: [
         { name: 'weather', description: 'Get weather', parameters: { properties: { city: { description: 'City name' } } }, requires_confirmation: false, tags: [] },
@@ -46,7 +52,7 @@ describe('NodePropertiesPanel', () => {
   it('renders node type dropdown', () => {
     render(
       <NodePropertiesPanel
-        selectedNode={makeNode('send_message', { platform: '', message: '', target_user: '' })}
+        selectedNode={makeNode('condition', { expression: '' })}
         nodes={[]}
         edges={[]}
         onDeleteNode={vi.fn()}
@@ -60,7 +66,7 @@ describe('NodePropertiesPanel', () => {
     expect(screen.getByRole('combobox')).toBeInTheDocument();
   });
 
-  it('shows platform and user dropdowns for send_message', async () => {
+  it('shows platform, conversation and user dropdowns for send_message', async () => {
     render(
       <NodePropertiesPanel
         selectedNode={makeNode('send_message', { platform: '', message: '', target_user: '' })}
@@ -74,8 +80,9 @@ describe('NodePropertiesPanel', () => {
         triggerType="manual"
       />
     );
-    await waitFor(() => expect(screen.getAllByRole('combobox').length).toBeGreaterThanOrEqual(2));
+    await waitFor(() => expect(screen.getAllByRole('combobox').length).toBeGreaterThanOrEqual(3));
     expect(screen.getByText(TEXT.workflowEditor.platformHelper)).toBeInTheDocument();
+    expect(screen.getByText(TEXT.workflowEditor.conversationHelper)).toBeInTheDocument();
     expect(screen.getByText(TEXT.workflowEditor.targetUserHelper)).toBeInTheDocument();
   });
 
