@@ -111,9 +111,11 @@ class CheckpointManager:
         git_root: Path,
         file_hashes: dict[str, str],
     ) -> Checkpoint:
-        # Only stash if the working tree is dirty.
+        # Only stash the scoped paths. Stashing the entire working tree would
+        # capture (and later drop) unrelated changes like source/config edits
+        # that happen to live in the same git repo.
         status = subprocess.run(
-            ["git", "-C", str(git_root), "status", "--porcelain"],
+            ["git", "-C", str(git_root), "status", "--porcelain", "--"] + [str(p) for p in paths],
             capture_output=True,
             text=True,
             check=True,
@@ -121,7 +123,17 @@ class CheckpointManager:
         stash_ref: str | None = None
         if status.stdout.strip():
             subprocess.run(
-                ["git", "-C", str(git_root), "stash", "push", "-m", f"hestia-checkpoint-{turn_id}"],
+                [
+                    "git",
+                    "-C",
+                    str(git_root),
+                    "stash",
+                    "push",
+                    "-m",
+                    f"hestia-checkpoint-{turn_id}",
+                    "--",
+                ]
+                + [str(p) for p in paths],
                 capture_output=True,
                 check=True,
             )
