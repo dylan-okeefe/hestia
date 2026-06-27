@@ -288,12 +288,21 @@ def make_http_get_tool(
             "DuckDuckGo (html.duckduckgo.com/html/?q=...). DOES NOT work on "
             "JavaScript-heavy sites like Google Search, Google Maps, or Yelp. "
             "For general web searches, use the search_web tool instead. "
-            "Params: url (str), timeout_seconds (int, default 30)."
+            "Params: url (str), use_curl_cffi (bool, default false) — impersonate a "
+            "real Chrome TLS/HTTP fingerprint to bypass Cloudflare-style bot blocks, "
+            "timeout_seconds (int, default 30)."
         ),
         parameters_schema={
             "type": "object",
             "properties": {
                 "url": {"type": "string", "description": "Full URL to fetch (e.g. https://example.com)."},
+                "use_curl_cffi": {
+                    "type": "boolean",
+                    "description": (
+                        "Impersonate a real Chrome TLS/HTTP fingerprint via curl_cffi. "
+                        "Useful for sites that block based on fingerprints (e.g. Cloudflare)."
+                    ),
+                },
                 "timeout_seconds": {
                     "type": "integer",
                     "description": "Request timeout in seconds (default 30).",
@@ -305,12 +314,14 @@ def make_http_get_tool(
         tags=["network", "builtin"],
         capabilities=[NETWORK_EGRESS],
     )
-    async def http_get(url: str, timeout_seconds: int = 30) -> str:
+    async def http_get(
+        url: str, timeout_seconds: int = 30, use_curl_cffi: bool = False
+    ) -> str:
         """Fetch a URL and return its text content."""
         return await _http_get_impl(
             url,
             timeout_seconds,
-            use_curl_cffi=False,
+            use_curl_cffi=use_curl_cffi,
             egress_audit_enabled=egress_audit_enabled,
             curl_cffi_fallback=use_curl_cffi_fallback,
         )
