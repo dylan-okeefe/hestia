@@ -6,7 +6,7 @@
 
 ## What changed
 
-Implemented the per-session concurrency model spec from `docs/development-process/L221-session-concurrency.md`.
+Implemented the per-session concurrency model spec from `docs/development-process/loops/L221-session-concurrency.md`.
 
 ### §1 — `SessionLockManager`
 - Added `src/hestia/orchestrator/lock.py` with a per-`session_id` `asyncio.Lock` factory.
