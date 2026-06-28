@@ -28,3 +28,14 @@ def __getattr__(name: str) -> Any:
         from hestia.cli import cli as _cli
         return _cli
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+# Runtime-introspectable command registry exports for platform adapters.
+from hestia.commands.meta import get_default_registry  # noqa: E402, F401
+from hestia.commands.registry import (  # noqa: E402, F401
+    Command,
+    CommandRegistry,
+    validate_registry,
+)
+
+__all__.extend(["get_default_registry", "Command", "CommandRegistry", "validate_registry"])
