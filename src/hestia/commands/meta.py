@@ -13,6 +13,7 @@ from hestia.commands.registry import (
     CommandRegistry,
     command_from_handler,
 )
+from hestia.commands.tour import _cmd_continue, _cmd_endtour, _cmd_tour
 
 if TYPE_CHECKING:
     from hestia.app import AppContext
@@ -198,6 +199,27 @@ def _build_default_registry() -> CommandRegistry:
             category="meta",
         )
     )
+    reg.register(
+        command_from_handler(
+            name="/tour",
+            handler=_cmd_tour,
+            category="meta",
+        )
+    )
+    reg.register(
+        command_from_handler(
+            name="/continue",
+            handler=_cmd_continue,
+            category="meta",
+        )
+    )
+    reg.register(
+        command_from_handler(
+            name="/endtour",
+            handler=_cmd_endtour,
+            category="meta",
+        )
+    )
     return reg
 
 
@@ -210,6 +232,7 @@ async def _handle_meta_command(
     session_store: SessionStore,
     message_store: MessageStore | None = None,
     app: AppContext | None = None,
+    group_room: bool = False,
 ) -> tuple[bool, Session]:
     """Handle a /meta command. Returns (should_exit, possibly_new_session).
 
@@ -217,7 +240,9 @@ async def _handle_meta_command(
     command registry so existing callers (CLI REPL, tests, app re-exports)
     continue to work without changes.
     """
-    return await _default_registry.handle(cmd, session, session_store, message_store, app)
+    return await _default_registry.handle(
+        cmd, session, session_store, message_store, app, group_room=group_room
+    )
 
 
 # Public entry points for platform adapters and external callers.
