@@ -563,6 +563,85 @@ class TestTelegramAdapterReset:
         mock_message.reply_text.assert_called_once_with("Not authorized.")
 
 
+class TestTelegramAdapterCommands:
+    """Tests for the /commands and /help command handlers."""
+
+    @pytest.mark.asyncio
+    async def test_handle_commands_renders_registry_catalog(
+        self,
+        telegram_config: TelegramConfig,
+    ) -> None:
+        """Verify /commands replies with the registry catalog."""
+        telegram_config.allowed_users = ["12345"]
+        adapter = TelegramAdapter(telegram_config)
+
+        mock_update = MagicMock(spec=Update)
+        mock_user = MagicMock(spec=User)
+        mock_user.id = 12345
+        mock_user.username = "testuser"
+        mock_update.effective_user = mock_user
+
+        mock_message = MagicMock(spec=Message)
+        mock_message.reply_text = AsyncMock()
+        mock_update.effective_message = mock_message
+
+        await adapter._handle_commands(mock_update, None)
+
+        mock_message.reply_text.assert_called_once()
+        text = mock_message.reply_text.call_args[0][0]
+        assert "Available commands:" in text
+        assert "/commands" in text
+        assert "/help" in text
+
+    @pytest.mark.asyncio
+    async def test_handle_help_aliases_commands(
+        self,
+        telegram_config: TelegramConfig,
+    ) -> None:
+        """Verify /help replies with the same catalog as /commands."""
+        telegram_config.allowed_users = ["12345"]
+        adapter = TelegramAdapter(telegram_config)
+
+        mock_update = MagicMock(spec=Update)
+        mock_user = MagicMock(spec=User)
+        mock_user.id = 12345
+        mock_user.username = "testuser"
+        mock_update.effective_user = mock_user
+
+        mock_message = MagicMock(spec=Message)
+        mock_message.reply_text = AsyncMock()
+        mock_update.effective_message = mock_message
+
+        await adapter._handle_help(mock_update, None)
+
+        mock_message.reply_text.assert_called_once()
+        text = mock_message.reply_text.call_args[0][0]
+        assert "Available commands:" in text
+
+    @pytest.mark.asyncio
+    async def test_handle_commands_rejects_unauthorized(
+        self,
+        telegram_config: TelegramConfig,
+    ) -> None:
+        """Verify /commands rejects unauthorized users."""
+        telegram_config.allowed_users = ["allowed_user"]
+        adapter = TelegramAdapter(telegram_config)
+
+        mock_update = MagicMock(spec=Update)
+        mock_user = MagicMock(spec=User)
+        mock_user.id = 12345
+        mock_user.username = "unauthorized_user"
+        mock_update.effective_user = mock_user
+
+        mock_message = MagicMock(spec=Message)
+        mock_message.reply_text = AsyncMock()
+        mock_update.effective_message = mock_message
+
+        await adapter._handle_commands(mock_update, None)
+
+        mock_message.reply_text.assert_called_once_with("Not authorized.")
+
+
 class TestTelegramAdapterStreaming:
     """Tests for TelegramAdapter progressive streaming delivery."""
 

@@ -148,10 +148,11 @@ def test_default_registry_has_expected_commands():
         "/session",
         "/refresh",
         "/tokens",
-        "/help",
+        "/commands",
     }
     assert expected <= names
     assert reg.get("/exit") is reg.get("/quit")
+    assert reg.get("/help") is reg.get("/commands")
 
 
 def test_default_registry_passes_validation():
@@ -179,9 +180,10 @@ async def test_command_help_lists_all_commands(store, sample_session, capsys):
     should_exit, _ = await _handle_meta_command("/help", sample_session, store)
     assert should_exit is False
     captured = capsys.readouterr()
-    assert "Meta-commands:" in captured.out
-    for name in ("/quit", "/reset", "/compact", "/history", "/session", "/refresh", "/tokens", "/help"):
+    assert "Available commands:" in captured.out
+    for name in ("/quit", "/reset", "/compact", "/history", "/session", "/refresh", "/tokens", "/commands"):
         assert name in captured.out
+    assert "/help" in captured.out
 
 
 @pytest.mark.asyncio
