@@ -817,14 +817,14 @@ class TestAuditRoute:
         from unittest.mock import patch
         with patch(
             "hestia.web.routes.audit.SecurityAuditor",
-        ) as MockAuditor:
-            instance = MockAuditor.return_value
+        ) as mock_auditor:
+            instance = mock_auditor.return_value
             instance.run_audit = AsyncMock(return_value=mock_report)
             response = client.get("/api/audit")
             assert response.status_code == 200
             assert response.json()["findings"] == []
             assert response.json()["cached"] is False
-            MockAuditor.assert_called_once_with(
+            mock_auditor.assert_called_once_with(
                 config=mock_app.config,
                 tool_registry=mock_app.tool_registry,
                 trace_store=ctx.trace_store,
@@ -1183,8 +1183,8 @@ class TestWorkflowsRoutes:
             )
         )
 
-        with patch("hestia.web.routes.workflows.WorkflowExecutor") as MockExecutor:
-            instance = MockExecutor.return_value
+        with patch("hestia.web.routes.workflows.WorkflowExecutor") as mock_executor:
+            instance = mock_executor.return_value
             instance.execute = AsyncMock(return_value=MagicMock(
                 workflow_id="wf1",
                 status="ok",

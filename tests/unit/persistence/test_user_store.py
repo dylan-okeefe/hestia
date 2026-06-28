@@ -158,7 +158,7 @@ class TestUserStore:
         user = await user_store.create_user("Alice")
         await user_store.add_identity(user.id, "telegram", "12345")
 
-        with pytest.raises(Exception):
+        with pytest.raises(sa.exc.IntegrityError):
             await user_store.add_identity(user.id, "telegram", "12345")
 
     @pytest.mark.asyncio
@@ -249,7 +249,7 @@ class TestUserStore:
     @pytest.mark.asyncio
     async def test_duplicate_room_fails(self, user_store):
         await user_store.create_room("telegram", "-100123")
-        with pytest.raises(Exception):
+        with pytest.raises(sa.exc.IntegrityError):
             await user_store.create_room("telegram", "-100123")
 
     @pytest.mark.asyncio
