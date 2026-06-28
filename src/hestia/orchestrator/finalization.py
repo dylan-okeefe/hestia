@@ -90,6 +90,10 @@ class TurnFinalization:
         if isinstance(error, MaxIterationsError):
             return "I'm having trouble responding right now. Please try again."
         if isinstance(error, PolicyFailureError):
+            # Policy failures can carry actionable context; surface it when present.
+            message = str(error)
+            if message:
+                return message
             return "I'm having trouble responding right now. Please try again."
         if isinstance(error, HestiaError):
             return str(error)
