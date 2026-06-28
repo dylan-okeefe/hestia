@@ -1,68 +1,37 @@
-# Decisions — /tour and /commands
+# Decisions: tour commands, command registry, and `/commands`
 
-**Status:** Resolved 2026-06-27. Implement against these. Spec:
-`docs/reviews/spec-tour-commands.md`.
+## Status
 
-## Context
+Resolved 2026-06-27. These decisions apply to Loop A, Loop B, and Loop C of the tour/commands arc.
 
-Add two chat-surface features: a narrated capability walkthrough (`/tour`) and a
-generated command reference (`/commands`). Today `/help` is a hardcoded, already
-stale list inside the CLI REPL handler (`src/hestia/commands/meta.py`); it never
-gained `/add-topic`, `/remove-topic`, `/topic`, or `/remember-global`, and
-meta-commands have no registry. Rather than add more hand-maintained lists, this
-work introduces a docstring-driven command registry so the reference and the tour
-both generate from one source.
+## 1. Registry design
 
-## 1. Commands and interaction
+- Commands are registered by **runtime introspection** of the handler function:
+  - `name` — canonical command name (e.g. `/compact`).
+  - `aliases` — list of alias strings (e.g. `["/c"]`).
+  - `summary` — one-line description, taken from the first line of `func.__doc__`.
+  - `long_help` — full docstring.
+- NO source-comment parsing, JSDoc-style annotations, or AST walks. The registry is plain Python dataclasses/classes populated by a decorator or explicit call.
+- The registry must be reachable from **all platform entry points** (CLI REPL, Telegram, Matrix), not only `src/hestia/commands/meta.py`.
 
-- `/tour` starts the walkthrough; `/continue` advances one step; `/endtour` ends it.
-- Pure narration. Progression NEVER depends on the user doing anything: `/continue`
-  always advances, `/endtour` always ends. There is no "try it to proceed" gating.
-- Do NOT overload `/exit`. It already means quit-the-REPL in `meta.py` (`/quit` and
-  `/exit` are treated identically). The bail command is `/endtour`.
+## 2. `/help` becomes an alias for `/commands`
 
-## 2. /tour state
+- The existing hardcoded `/help` list in `meta.py` is removed.
+- `/help` resolves through the registry and renders the same output as `/commands`.
 
-- Ephemeral cursor keyed to (conversation, user). Not persisted across sessions; a
-  fresh `/tour` restarts from the top.
-- DM / single-user only for v1. In a multi-user room `/tour` is disabled and replies
-  that it is DM-only, so there is no shared cursor in group chats.
-- `/continue` and `/endtour` are only meaningful while a tour is active. Outside an
-  active tour they no-op with a gentle "no tour running" message.
-- `/tour` is a fast-path: it returns the next step's text without an inference turn
-  (the way `/compact` short-circuits). Steps are static curated prose; the model
-  never improvises them.
+## 3. `/tour` design
 
-## 3. /commands reference
+- Pure narration. Progression is **never gated on user action**.
+- Ephemeral cursor keyed to `(conversation_id, platform_user_id)`.
+- `/tour` starts from step 1; a second `/tour` resets to step 1.
+- `/continue` advances one step.
+- `/endtour` clears the cursor.
+- `/continue` and `/endtour` outside an active tour are no-ops with a friendly "no tour running" message.
+- Group rooms: `/tour` does not start; replies DM-only. `/continue` and `/endtour` in a group behave as outside a tour.
+- Reuse existing per-conversation state storage; no new persistence table.
 
-- `/commands` prints the generated command catalog: name, aliases, one-line summary.
-- `/help` becomes an alias to `/commands`. Remove the hardcoded help list.
-- Scope for v1: meta-commands only. Tools already carry `public_description` via the
-  `@tool` decorator; surfacing them in `/commands` is a later option, not v1.
+## 4. `/commands` output
 
-## 4. The command registry (foundation)
-
-- Introduce a lightweight per-command registration (a `@command` decorator or a
-  registry object) capturing: name, aliases, a one-line summary, and the longer help
-  taken from the handler's docstring (`func.__doc__`). This is the JSDoc-style idea
-  but runtime-introspectable and unit-testable; NO source-comment parsing.
-- Single source of truth: `/commands` renders the summaries; `/tour` narrates from
-  the longer descriptions (or a curated step list that references the same registry).
-  The two cannot drift.
-- Served on the cross-platform command path (CLI REPL, Telegram, Matrix), not just
-  the CLI REPL handler. `/compact` already works across platforms, so follow that
-  path, not the click/echo REPL-only branch.
-- Migrating the existing meta-commands onto the registry must preserve their current
-  behavior exactly.
-
-## 5. Drift guard
-
-- A test asserts every registered command appears in `/commands`, and every major
-  command/capability appears somewhere in `/tour`. Adding a command without catalog
-  coverage fails the test.
-
-## Critical rules
-
-- No merge/push without Dylan's okay.
-- Tests assert the invariants first (see spec), then implement.
-- No silent skips; per-item handoff accounting per the orchestration SKILL.
+- Renders the registry catalog: name, aliases, summary.
+- Grouped readably (by category if categories are provided, otherwise alphabetically).
+- Works on CLI, Telegram, and Matrix.
