@@ -209,7 +209,10 @@ async def add_identity(
             status_code=400, detail="platform and platform_user are required"
         )
 
-    await ctx.user_store.add_identity(user_id, platform, platform_user)
+    try:
+        await ctx.user_store.add_identity(user_id, platform, platform_user)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"added": True, "platform": platform, "platform_user": platform_user}
 
 
