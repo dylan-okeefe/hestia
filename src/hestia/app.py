@@ -66,6 +66,7 @@ from hestia.tools.builtin import (
     browser_interact,
     browser_login,
     current_time,
+    indeed_search_jobs,
     make_accept_proposal_tool,
     make_append_to_file_tool,
     make_blocked_actions_summary_tool,
@@ -82,7 +83,6 @@ from hestia.tools.builtin import (
     make_glob_tool,
     make_grep_tool,
     make_http_get_tool,
-    indeed_search_jobs,
     make_list_dir_tool,
     make_list_memories_tool,
     make_list_pending_alerts_tool,
@@ -762,3 +762,4 @@ def async_command(coro: Callable[..., Awaitable[Any]]) -> Callable[..., Any]:
 
 # Backward-compatible re-export (tests import from app.py)
 from hestia.commands.meta import _handle_meta_command  # noqa: E402, F401
+from hestia.commands.registry import Command, CommandRegistry  # noqa: E402, F401

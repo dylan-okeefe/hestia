@@ -59,10 +59,10 @@ supersessions, since overwriting one fact with another is the riskiest decision.
 
 ```bash
 # Register the nightly + weekly maintenance tasks for an identity
-hestia memory-maintenance ensure-tasks --platform telegram --user <id>
+hestia memory maintenance ensure-tasks --platform telegram --user <id>
 
 # Undo a maintenance action (within the undo retention window)
-hestia memory-maintenance undo <action-id>
+hestia memory maintenance undo <action-id>
 ```
 
 Action ids and the reasoning behind each merge/prune/supersede appear in the

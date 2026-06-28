@@ -269,6 +269,76 @@ class TestMatrixAdapter:
         callback.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_handle_room_message_routes_commands_to_reference(self):
+        """/commands should not reach the orchestrator callback."""
+        from nio import RoomSendResponse
+
+        cfg = MatrixConfig(
+            access_token="test_token",
+            user_id="@bot:matrix.org",
+            allowed_rooms=["!room:matrix.org"],
+        )
+        adapter = MatrixAdapter(cfg)
+
+        callback = AsyncMock()
+        adapter._on_message = callback
+
+        mock_client = AsyncMock()
+        mock_response = RoomSendResponse(event_id="$event1", room_id="!room:matrix.org")
+        mock_client.room_send.return_value = mock_response
+        adapter._client = mock_client
+
+        mock_room = MagicMock()
+        mock_room.room_id = "!room:matrix.org"
+
+        mock_event = MagicMock()
+        mock_event.sender = "@user:matrix.org"
+        mock_event.body = "/commands"
+
+        await adapter._handle_room_message(mock_room, mock_event)
+
+        callback.assert_not_called()
+        mock_client.room_send.assert_called_once()
+        content = mock_client.room_send.call_args.kwargs["content"]
+        assert "Available commands:" in content["body"]
+        assert "/commands" in content["body"]
+
+    @pytest.mark.asyncio
+    async def test_handle_room_message_routes_help_to_reference(self):
+        """/help should not reach the orchestrator callback."""
+        from nio import RoomSendResponse
+
+        cfg = MatrixConfig(
+            access_token="test_token",
+            user_id="@bot:matrix.org",
+            allowed_rooms=["!room:matrix.org"],
+        )
+        adapter = MatrixAdapter(cfg)
+
+        callback = AsyncMock()
+        adapter._on_message = callback
+
+        mock_client = AsyncMock()
+        mock_response = RoomSendResponse(event_id="$event1", room_id="!room:matrix.org")
+        mock_client.room_send.return_value = mock_response
+        adapter._client = mock_client
+
+        mock_room = MagicMock()
+        mock_room.room_id = "!room:matrix.org"
+
+        mock_event = MagicMock()
+        mock_event.sender = "@user:matrix.org"
+        mock_event.body = "/help"
+
+        await adapter._handle_room_message(mock_room, mock_event)
+
+        callback.assert_not_called()
+        mock_client.room_send.assert_called_once()
+        content = mock_client.room_send.call_args.kwargs["content"]
+        assert "Available commands:" in content["body"]
+        assert "/help" in content["body"]
+
+    @pytest.mark.asyncio
     async def test_stop_closes_client(self):
         """stop() should close the Matrix client."""
         cfg = MatrixConfig(access_token="test_token", user_id="@bot:matrix.org")

@@ -9,9 +9,18 @@ from hestia.app import AppContext
 
 async def cmd_migrate_users(app: AppContext) -> None:
     """Migrate existing config users to the database."""
-    from hestia.persistence.users import User, UserStore
+    from hestia.persistence.users import User, UserStore, is_matrix_room_id
 
     store = UserStore(app.db)
+
+    # Idempotent cleanup: earlier versions of this command accidentally created
+    # User records for Matrix room IDs (ADR-039 risk). Remove those stale rows.
+    cleaned_identities, cleaned_users = await store.cleanup_matrix_room_id_identities()
+    if cleaned_identities:
+        click.echo(
+            f"Cleaned up {cleaned_identities} Matrix room-ID identity(s) "
+            f"and {cleaned_users} stale user(s)."
+        )
 
     # Find existing admin if any
     admin_user: User | None = None
@@ -55,8 +64,8 @@ async def cmd_migrate_users(app: AppContext) -> None:
     # Process Matrix entries
     for entry in matrix_entries:
         platform_user = str(entry)
-        if platform_user.startswith("!"):
-            # Room ID - create Room record
+        if is_matrix_room_id(platform_user):
+            # Room ID/alias - create Room record
             existing_room = await store.get_room_by_platform("matrix", platform_user)
             if existing_room:
                 continue

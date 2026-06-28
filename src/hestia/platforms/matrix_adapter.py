@@ -17,6 +17,13 @@ from nio import (
     SyncResponse,
 )
 
+from hestia.commands.meta import get_default_registry, render_commands_reference
+from hestia.commands.tour import (
+    get_tour_store,
+    render_tour_continue,
+    render_tour_end,
+    render_tour_start,
+)
 from hestia.config import MatrixConfig
 from hestia.errors import PlatformError
 from hestia.platforms.allowlist import (
@@ -324,13 +331,25 @@ class MatrixAdapter(Platform):
 
         stripped_body = body.strip()
 
-        # Handle /reset and /compact commands before routing to the orchestrator
+        # Handle local slash commands before routing to the orchestrator
         lower_body = stripped_body.lower()
         if lower_body.startswith("/reset"):
             await self._handle_reset(room, event)
             return
         if lower_body.startswith("/compact"):
             await self._handle_compact(room, event)
+            return
+        if lower_body.startswith("/commands") or lower_body.startswith("/help"):
+            await self._handle_commands(room, event)
+            return
+        if lower_body.startswith("/tour"):
+            await self._handle_tour(room, event)
+            return
+        if lower_body.startswith("/continue"):
+            await self._handle_continue(room, event)
+            return
+        if lower_body.startswith("/endtour"):
+            await self._handle_endtour(room, event)
             return
 
         # Check if this is a reply to a pending confirmation (internal adapter concern)
@@ -435,6 +454,36 @@ class MatrixAdapter(Platform):
         await self.send_message(platform_user, "Compacting session...")
         outcome = await self._compactor.compact(session.id, instruction=instruction)
         await self.send_message(platform_user, outcome.message)
+
+    async def _handle_commands(self, room: MatrixRoom, event: RoomMessageText) -> None:
+        """Handle /commands and /help: render the registry catalog."""
+        platform_user = room.room_id
+        text = render_commands_reference(get_default_registry())
+        await self.send_message(platform_user, text)
+
+    async def _handle_tour(self, room: MatrixRoom, event: RoomMessageText) -> None:
+        """Handle /tour: Matrix rooms are treated as group chats, so reply DM-only."""
+        platform_user = room.room_id
+        text = render_tour_start(
+            get_tour_store(), "matrix", platform_user, group_room=True
+        )
+        await self.send_message(platform_user, text)
+
+    async def _handle_continue(self, room: MatrixRoom, event: RoomMessageText) -> None:
+        """Handle /continue: behaves as outside a tour in a Matrix room."""
+        platform_user = room.room_id
+        text = render_tour_continue(
+            get_tour_store(), "matrix", platform_user, group_room=True
+        )
+        await self.send_message(platform_user, text)
+
+    async def _handle_endtour(self, room: MatrixRoom, event: RoomMessageText) -> None:
+        """Handle /endtour: behaves as outside a tour in a Matrix room."""
+        platform_user = room.room_id
+        text = render_tour_end(
+            get_tour_store(), "matrix", platform_user, group_room=True
+        )
+        await self.send_message(platform_user, text)
 
     @staticmethod
     def _extract_in_reply_to(event: RoomMessageText) -> str | None:
