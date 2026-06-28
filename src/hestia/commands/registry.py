@@ -52,6 +52,7 @@ class CommandContext:
     message_store: MessageStore | None = None
     app: AppContext | None = None
     instruction: str | None = None
+    group_room: bool = False
 
 
 class CommandRegistry:
@@ -102,6 +103,7 @@ class CommandRegistry:
         session_store: SessionStore,
         message_store: MessageStore | None = None,
         app: AppContext | None = None,
+        group_room: bool = False,
     ) -> tuple[bool, Session]:
         """Parse ``cmd`` and dispatch to the matching handler.
 
@@ -120,6 +122,7 @@ class CommandRegistry:
             message_store=message_store,
             app=app,
             instruction=instruction,
+            group_room=group_room,
         )
         return await command.handler(ctx)
 

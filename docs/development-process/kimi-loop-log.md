@@ -6,6 +6,28 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-06-27 — L234–L236 Complete (Tour Commands Arc: Registry, /commands, /tour)
+
+**Outcome:** Implemented a runtime-introspectable command registry and built `/commands`, `/help`, and `/tour` on top of it across CLI, Telegram, and Matrix.
+
+**Branches:**
+- `feature/l234-tour-commands-registry` — registry + migrated meta-commands
+- `feature/l235-tour-commands-reference` — `/commands` reference and `/help` alias
+- `feature/l236-tour-walkthrough` — `/tour`, `/continue`, `/endtour` narrated walkthrough
+
+**Changes:**
+- Added `src/hestia/commands/registry.py` with `Command`, `CommandContext`, `CommandRegistry`, `command_from_handler()`, and `validate_registry()`.
+- Migrated all meta-commands onto the registry in `src/hestia/commands/meta.py`.
+- Added `render_commands_reference()` and registered `/commands`; aliased `/help` to it.
+- Added `src/hestia/commands/tour.py` with 9 narrated steps and drift guards covering every registry command and major capability.
+- Routed `/commands`, `/help`, `/tour`, `/continue`, `/endtour` in Telegram and Matrix adapters.
+- Added ADR-050: runtime-introspectable command registry.
+- Added/updated tests in `tests/unit/commands/test_registry.py`, `test_commands_reference.py`, `test_tour.py`, plus adapter tests.
+
+**Quality gates:** Targeted command/adapter tests 122 passed; `ruff` and `mypy` clean on changed files. Full repo gates not run due to 300s tool timeout on the large suite.
+
+**Next:** Cursor review and merge to develop when Dylan approves.
+
 ## 2026-06-22 — L231 Complete (Memory Maintenance: Trace, Digest, and Scheduler Wiring)
 
 **Outcome:** Wired the L226–L230 maintenance passes into a unified trace/digest/scheduler surface so every destructive action is auditable and operators receive a periodic summary.
