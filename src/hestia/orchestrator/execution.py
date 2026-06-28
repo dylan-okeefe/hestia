@@ -522,14 +522,30 @@ class TurnExecution:
             corrected_tools.update(repeated_tools)
             ctx._repeated_tools_corrected = corrected_tools
 
+        if correction.pattern == DegeneratePattern.EMPTY_RESPONSE:
+            empty_count = getattr(ctx, "_empty_correction_count", 0) + 1
+            ctx._empty_correction_count = empty_count
+            if empty_count >= 2:
+                # The model has gone blank twice in this turn. Stop looping and
+                # tell the user what happened so they can recover.
+                raise PolicyFailureError(
+                    "I got stuck: the model returned an empty response repeatedly. "
+                    "This usually happens when the conversation context is very large "
+                    "or a tool result was too big to process. Try /compact to summarize "
+                    "the session, /reset to start fresh, or rephrase your request."
+                )
+
         if ctx.correction_count < 3:
             await self._inject_correction(ctx, turn, correction)
             ctx.correction_count += 1
             return True
         if correction.pattern == DegeneratePattern.EMPTY_RESPONSE:
-            # Empty responses are transient; let the policy engine decide whether
-            # to retry or fail rather than forcing an immediate hard failure.
-            return False
+            # Defensive: if the empty-response counter somehow didn't trip above,
+            # stop the loop with an actionable message instead of a generic failure.
+            raise PolicyFailureError(
+                "I got stuck: the model returned an empty response repeatedly. "
+                "Try /compact, /reset, or rephrase your request."
+            )
         raise PolicyFailureError(
             f"Degenerate pattern persisted after {ctx.correction_count} corrections: "
             f"{correction.pattern.value}. {correction.message}"
