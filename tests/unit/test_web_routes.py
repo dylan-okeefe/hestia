@@ -1735,3 +1735,61 @@ class TestHealth:
         data = response.json()
         assert data["status"] == "degraded"
         assert data["scheduler"]["running"] is False
+
+
+class TestUserIdentityRoutes:
+    """Tests for /api/users identity management endpoints."""
+
+    @pytest.fixture
+    def users_client(self, mock_app: MagicMock) -> TestClient:
+        """Create a TestClient with admin auth bypassed for user routes."""
+        async_mock = AsyncMock()
+        with patch("hestia.web.routes.users.require_admin", new=async_mock):
+            ctx = WebContext(
+                session_store=AsyncMock(),
+                message_store=AsyncMock(),
+                turn_store=AsyncMock(),
+                handoff_service=AsyncMock(),
+                proposal_store=AsyncMock(),
+                style_store=AsyncMock(),
+                scheduler_store=AsyncMock(),
+                trace_store=AsyncMock(),
+                failure_store=AsyncMock(),
+                workflow_store=AsyncMock(),
+                execution_store=AsyncMock(),
+                error_resolution_store=AsyncMock(),
+                app=mock_app,
+                auth_manager=None,
+                user_store=AsyncMock(),
+                scheduler=None,
+            )
+            ctx.execution_store.get_last_execution_per_workflow = AsyncMock(
+                return_value={}
+            )
+            set_web_context(ctx)
+            app = create_web_app()
+            yield TestClient(app)
+
+    def test_add_identity_rejects_matrix_room_id(
+        self, users_client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """POST /api/users/{id}/identities returns 400 for Matrix room IDs."""
+        from hestia.web import context as ctx_mod
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        ctx.user_store.add_identity = AsyncMock(
+            side_effect=ValueError(
+                "Refusing to add Matrix room ID/alias '!room:matrix.org' as a user identity"
+            )
+        )
+
+        response = users_client.post(
+            "/api/users/u1/identities",
+            json={"platform": "matrix", "platform_user": "!room:matrix.org"},
+        )
+        assert response.status_code == 400
+        assert "Matrix room ID" in response.json()["detail"]
+        ctx.user_store.add_identity.assert_awaited_once_with(
+            "u1", "matrix", "!room:matrix.org"
+        )

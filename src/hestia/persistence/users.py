@@ -12,6 +12,15 @@ import sqlalchemy as sa
 from hestia.core.clock import utcnow
 from hestia.persistence.schema import room_members, rooms, user_identities
 
+
+def is_matrix_room_id(value: str) -> bool:
+    """Return True if ``value`` is a Matrix room ID or alias.
+
+    Matrix room IDs start with ``!`` and aliases start with ``#``.
+    Neither is a valid user identity.
+    """
+    return bool(value) and value.startswith(("!", "#"))
+
 if TYPE_CHECKING:
     from hestia.persistence.db import Database
 
@@ -173,6 +182,10 @@ class UserStore:
     async def add_identity(
         self, user_id: str, platform: str, platform_user: str, verified: bool = False
     ) -> None:
+        if is_matrix_room_id(platform_user):
+            raise ValueError(
+                f"Refusing to add Matrix room ID/alias {platform_user!r} as a user identity"
+            )
         sql = sa.text(
             "INSERT INTO user_identities (user_id, platform, platform_user, verified, created_at) "
             "VALUES (:user_id, :platform, :platform_user, :verified, :created_at)"
@@ -246,6 +259,60 @@ class UserStore:
             room = self._row_to_room(row)
             grouped.setdefault(row.user_id, []).append(room)
         return grouped
+
+    async def cleanup_matrix_room_id_identities(self) -> tuple[int, int]:
+        """Remove identities that are Matrix room IDs/aliases and any now-empty users.
+
+        Returns the number of removed identities and removed users. Idempotent:
+        repeated calls remove nothing once the bad rows are gone.
+        """
+        removed_identities = 0
+        removed_users = 0
+
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(
+                sa.text(
+                    "SELECT user_id, platform_user FROM user_identities "
+                    "WHERE platform = :platform AND (platform_user LIKE '!%' OR platform_user LIKE '#%')"
+                ),
+                {"platform": "matrix"},
+            )
+            bad_rows = result.fetchall()
+
+            affected_user_ids = {row.user_id for row in bad_rows}
+
+            for platform_user in {row.platform_user for row in bad_rows}:
+                result = await conn.execute(
+                    sa.text(
+                        "DELETE FROM user_identities "
+                        "WHERE platform = :platform AND platform_user = :platform_user"
+                    ),
+                    {"platform": "matrix", "platform_user": platform_user},
+                )
+                removed_identities += result.rowcount
+
+            for user_id in affected_user_ids:
+                remaining = await conn.execute(
+                    sa.text(
+                        "SELECT COUNT(*) AS count FROM user_identities WHERE user_id = :user_id"
+                    ),
+                    {"user_id": user_id},
+                )
+                row = remaining.fetchone()
+                if row is not None and row[0] == 0:
+                    await conn.execute(
+                        sa.text("DELETE FROM room_members WHERE user_id = :user_id"),
+                        {"user_id": user_id},
+                    )
+                    result = await conn.execute(
+                        sa.text("DELETE FROM users WHERE id = :id"),
+                        {"id": user_id},
+                    )
+                    removed_users += result.rowcount
+
+            await conn.commit()
+
+        return removed_identities, removed_users
 
     # --- Room methods ---
 

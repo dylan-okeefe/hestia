@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+import sqlalchemy as sa
 
 from hestia.persistence.db import Database
 from hestia.persistence.users import UserStore
@@ -288,3 +289,53 @@ class TestUserStore:
     @pytest.mark.asyncio
     async def test_get_rooms_for_users_empty(self, user_store):
         assert await user_store.get_rooms_for_users([]) == {}
+
+    @pytest.mark.asyncio
+    async def test_add_identity_rejects_matrix_room_id(self, user_store):
+        user = await user_store.create_user("Alice")
+
+        with pytest.raises(ValueError, match="Matrix room ID"):
+            await user_store.add_identity(user.id, "matrix", "!room:matrix.org")
+
+        with pytest.raises(ValueError, match="Matrix room ID"):
+            await user_store.add_identity(user.id, "matrix", "#room:matrix.org")
+
+        identities = await user_store.get_identities(user.id)
+        assert identities == []
+
+    @pytest.mark.asyncio
+    async def test_cleanup_matrix_room_id_identities(self, user_store):
+        stale_user = await user_store.create_user("!room:matrix.org", role="admin")
+        real_user = await user_store.create_user("Bob")
+        await user_store.add_identity(real_user.id, "matrix", "@bob:matrix.org")
+
+        # Simulate stale data created before the room-ID guard existed.
+        async with user_store._db.engine.connect() as conn:
+            await conn.execute(
+                sa.text(
+                    "INSERT INTO user_identities "
+                    "(user_id, platform, platform_user, verified, created_at) "
+                    "VALUES (:user_id, :platform, :platform_user, :verified, :created_at)"
+                ),
+                {
+                    "user_id": stale_user.id,
+                    "platform": "matrix",
+                    "platform_user": "!room:matrix.org",
+                    "verified": 0,
+                    "created_at": "2024-01-01T00:00:00+00:00",
+                },
+            )
+            await conn.commit()
+
+        removed_identities, removed_users = await user_store.cleanup_matrix_room_id_identities()
+        assert removed_identities == 1
+        assert removed_users == 1
+
+        assert await user_store.get_user(stale_user.id) is None
+        assert await user_store.get_user_by_identity("matrix", "!room:matrix.org") is None
+        assert await user_store.get_user_by_identity("matrix", "@bob:matrix.org") is not None
+
+        # Idempotent: second run removes nothing
+        removed_identities, removed_users = await user_store.cleanup_matrix_room_id_identities()
+        assert removed_identities == 0
+        assert removed_users == 0

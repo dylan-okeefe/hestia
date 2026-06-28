@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
+import sqlalchemy as sa
 
 from hestia.commands.users import cmd_migrate_users
 from hestia.config import HestiaConfig
@@ -198,3 +199,54 @@ class TestMigrateUsers:
         members = await store.get_room_members(room.id)
         assert len(members) == 1
         assert members[0].id == tg_user.id
+
+    @pytest.mark.asyncio
+    async def test_migrate_cleans_stale_matrix_room_id_users(self, migrate_setup):
+        app, db = migrate_setup
+        store = UserStore(db)
+
+        stale = await store.create_user("!room1:matrix.org", role="admin")
+        # Simulate stale data created before the room-ID guard existed.
+        async with db.engine.connect() as conn:
+            await conn.execute(
+                sa.text(
+                    "INSERT INTO user_identities "
+                    "(user_id, platform, platform_user, verified, created_at) "
+                    "VALUES (:user_id, :platform, :platform_user, :verified, :created_at)"
+                ),
+                {
+                    "user_id": stale.id,
+                    "platform": "matrix",
+                    "platform_user": "!room1:matrix.org",
+                    "verified": 0,
+                    "created_at": "2024-01-01T00:00:00+00:00",
+                },
+            )
+            await conn.commit()
+
+        app.config.telegram.bot_token = "token"
+        app.config.telegram.allowed_users = ["111"]
+        app.config.matrix.access_token = "token"
+        app.config.matrix.allowed_rooms = ["!room1:matrix.org"]
+
+        await cmd_migrate_users(app)
+
+        assert await store.get_user(stale.id) is None
+        assert await store.get_user_by_identity("matrix", "!room1:matrix.org") is None
+
+        room = await store.get_room_by_platform("matrix", "!room1:matrix.org")
+        assert room is not None
+
+    @pytest.mark.asyncio
+    async def test_migrate_matrix_alias_treated_as_room(self, migrate_setup):
+        app, db = migrate_setup
+        app.config.matrix.access_token = "token"
+        app.config.matrix.allowed_rooms = ["#room1:matrix.org"]
+
+        await cmd_migrate_users(app)
+
+        store = UserStore(db)
+        assert len(await store.list_users()) == 0
+
+        room = await store.get_room_by_platform("matrix", "#room1:matrix.org")
+        assert room is not None
