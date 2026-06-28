@@ -8,6 +8,7 @@ import click
 
 from hestia.commands._shared import _format_token_usage, _format_utc
 from hestia.commands.registry import (
+    Command,
     CommandContext,
     CommandRegistry,
     command_from_handler,
@@ -129,20 +130,53 @@ async def _cmd_tokens(ctx: CommandContext) -> tuple[bool, Session]:
     return False, ctx.session
 
 
-async def _cmd_help(ctx: CommandContext) -> tuple[bool, Session]:
-    """Show this help."""
-    commands = _default_registry.commands()
-    displays = []
-    for command in commands:
-        aliases = ", ".join(command.aliases)
-        display = f"{command.name}, {aliases}" if aliases else command.name
-        displays.append((display, command.summary))
+def _command_display(command: Command) -> str:
+    """Return the command name followed by its aliases."""
+    if command.aliases:
+        return f"{command.name}, {', '.join(command.aliases)}"
+    return command.name
 
-    width = max(len(display) for display, _ in displays) + 5 if displays else 0
-    lines = ["Meta-commands:"]
-    for display, summary in displays:
-        lines.append(f"  {display:<{width}} {summary}")
-    click.echo("\n".join(lines))
+
+def render_commands_reference(registry: CommandRegistry) -> str:
+    """Render the registry catalog as formatted help text.
+
+    Groups by category when any command has a category; otherwise lists
+    commands alphabetically. Each line shows the canonical name, aliases,
+    and one-line summary.
+    """
+    commands = registry.commands()
+    if not commands:
+        return "No commands available."
+
+    displays = [_command_display(command) for command in commands]
+    width = max(len(display) for display in displays) + 4 if displays else 0
+
+    lines: list[str] = ["Available commands:", ""]
+    has_category = any(command.category is not None for command in commands)
+
+    if has_category:
+        by_category: dict[str, list[Command]] = {}
+        for command in commands:
+            category = command.category or "Other"
+            by_category.setdefault(category, []).append(command)
+        for category in sorted(by_category):
+            lines.append(f"{category}:")
+            for command in sorted(by_category[category], key=lambda c: c.name):
+                lines.append(
+                    f"  {_command_display(command):<{width}} {command.summary}"
+                )
+            lines.append("")
+    else:
+        for command in sorted(commands, key=lambda c: c.name):
+            lines.append(f"  {_command_display(command):<{width}} {command.summary}")
+        lines.append("")
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+async def _cmd_commands(ctx: CommandContext) -> tuple[bool, Session]:
+    """Show available commands and their descriptions."""
+    click.echo(render_commands_reference(_default_registry))
     return False, ctx.session
 
 
@@ -156,7 +190,14 @@ def _build_default_registry() -> CommandRegistry:
     reg.register(command_from_handler(name="/session", handler=_cmd_session, category="session"))
     reg.register(command_from_handler(name="/refresh", handler=_cmd_refresh, category="memory"))
     reg.register(command_from_handler(name="/tokens", handler=_cmd_tokens, category="session"))
-    reg.register(command_from_handler(name="/help", handler=_cmd_help, category="meta"))
+    reg.register(
+        command_from_handler(
+            name="/commands",
+            handler=_cmd_commands,
+            aliases=("/help",),
+            category="meta",
+        )
+    )
     return reg
 
 

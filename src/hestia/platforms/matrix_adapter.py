@@ -17,6 +17,7 @@ from nio import (
     SyncResponse,
 )
 
+from hestia.commands.meta import get_default_registry, render_commands_reference
 from hestia.config import MatrixConfig
 from hestia.errors import PlatformError
 from hestia.platforms.allowlist import (
@@ -324,13 +325,16 @@ class MatrixAdapter(Platform):
 
         stripped_body = body.strip()
 
-        # Handle /reset and /compact commands before routing to the orchestrator
+        # Handle local slash commands before routing to the orchestrator
         lower_body = stripped_body.lower()
         if lower_body.startswith("/reset"):
             await self._handle_reset(room, event)
             return
         if lower_body.startswith("/compact"):
             await self._handle_compact(room, event)
+            return
+        if lower_body.startswith("/commands") or lower_body.startswith("/help"):
+            await self._handle_commands(room, event)
             return
 
         # Check if this is a reply to a pending confirmation (internal adapter concern)
@@ -435,6 +439,12 @@ class MatrixAdapter(Platform):
         await self.send_message(platform_user, "Compacting session...")
         outcome = await self._compactor.compact(session.id, instruction=instruction)
         await self.send_message(platform_user, outcome.message)
+
+    async def _handle_commands(self, room: MatrixRoom, event: RoomMessageText) -> None:
+        """Handle /commands and /help: render the registry catalog."""
+        platform_user = room.room_id
+        text = render_commands_reference(get_default_registry())
+        await self.send_message(platform_user, text)
 
     @staticmethod
     def _extract_in_reply_to(event: RoomMessageText) -> str | None:

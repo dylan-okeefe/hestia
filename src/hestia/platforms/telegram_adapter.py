@@ -18,6 +18,7 @@ from telegram import Chat, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import RetryAfter, TelegramError
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
+from hestia.commands.meta import get_default_registry, render_commands_reference
 from hestia.config import TelegramConfig
 from hestia.core.types import Message as HestiaMessage
 from hestia.orchestrator.finalization import sanitize_user_error
@@ -238,6 +239,8 @@ class TelegramAdapter(Platform):
         self._app.add_handler(CommandHandler("start", self._handle_start))
         self._app.add_handler(CommandHandler("reset", self._handle_reset))
         self._app.add_handler(CommandHandler("compact", self._handle_compact))
+        self._app.add_handler(CommandHandler("commands", self._handle_commands))
+        self._app.add_handler(CommandHandler("help", self._handle_help))
         self._app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message))
         if self._config.voice_messages:
             self._app.add_handler(MessageHandler(filters.VOICE, self._handle_voice_message))
@@ -743,6 +746,30 @@ class TelegramAdapter(Platform):
             )
         except TelegramError:
             await update.effective_message.reply_text(outcome.message)
+
+    async def _handle_commands(self, update: Update, context: Any) -> None:
+        """Handle /commands: render the registry catalog."""
+        if update.effective_user is None or update.effective_message is None:
+            return
+
+        user_id = update.effective_user.id
+        username = update.effective_user.username or str(user_id)
+        chat = update.effective_chat
+        in_group = chat is not None and chat.type in (Chat.GROUP, Chat.SUPERGROUP)
+
+        if not self._is_allowed(user_id, username):
+            if in_group:
+                return
+            await update.effective_message.reply_text("Not authorized.")
+            return
+
+        # Render the catalog from the registry so /help and /commands share one source.
+        text = render_commands_reference(get_default_registry())
+        await update.effective_message.reply_text(text)
+
+    async def _handle_help(self, update: Update, context: Any) -> None:
+        """Handle /help: alias for /commands."""
+        await self._handle_commands(update, context)
 
     async def _handle_message(self, update: Update, context: Any) -> None:
         """Handle incoming text messages."""
