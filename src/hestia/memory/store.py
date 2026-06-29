@@ -803,6 +803,38 @@ class MemoryStore:
             await conn.commit()
             return result.rowcount > 0
 
+    async def get_topic_ids_for_memories(
+        self,
+        memory_ids: list[str],
+    ) -> dict[str, list[str]]:
+        """Return the topic IDs associated with each memory ID.
+
+        Non-global memories without associations return an empty list. Global
+        memories also return an empty list because their scope is the global
+        pool, independent of any topic associations.
+        """
+        if not memory_ids:
+            return {}
+
+        placeholders = ", ".join(f":mid_{i}" for i in range(len(memory_ids)))
+        params: dict[str, Any] = {
+            f"mid_{i}": memory_id for i, memory_id in enumerate(memory_ids)
+        }
+        sql = sa.text(
+            "SELECT memory_id, topic_id FROM memory_topics "
+            f"WHERE memory_id IN ({placeholders}) "
+            "ORDER BY memory_id, topic_id"
+        )
+
+        result: dict[str, list[str]] = {
+            memory_id: [] for memory_id in memory_ids
+        }
+        async with self._db.engine.connect() as conn:
+            query_result = await conn.execute(sql, params)
+            for row in query_result.fetchall():
+                result.setdefault(row.memory_id, []).append(row.topic_id)
+        return result
+
     async def soft_delete(
         self,
         memory_id: str,
