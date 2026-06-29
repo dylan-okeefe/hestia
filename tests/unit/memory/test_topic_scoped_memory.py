@@ -669,3 +669,57 @@ class TestNonFts5Migration:
         assert memory is not None
         assert memory.is_global is True
         await db.close()
+
+
+class TestTopicManagement:
+    @pytest.mark.asyncio
+    async def test_list_topics_excludes_implicit_room_topics(self, topic_store):
+        """list_topics returns user-named topics only, omitting room:* topics."""
+        await topic_store.get_or_create_topic("cli", "alice", "project-x")
+        await topic_store.get_or_create_topic("cli", "alice", "recipes")
+        await topic_store.get_or_create_topic("cli", "alice", "room:conv-1")
+
+        topics = await topic_store.list_topics("cli", "alice")
+        names = {t.name for t in topics}
+        assert names == {"project-x", "recipes"}
+
+    @pytest.mark.asyncio
+    async def test_rename_topic(self, topic_store):
+        """Renaming a topic updates its name."""
+        topic = await topic_store.get_or_create_topic("cli", "alice", "old-name")
+        renamed = await topic_store.rename_topic(topic.id, "new-name")
+
+        assert renamed is not None
+        assert renamed.name == "new-name"
+        fetched = await topic_store.get_topic_by_id(topic.id)
+        assert fetched is not None
+        assert fetched.name == "new-name"
+
+    @pytest.mark.asyncio
+    async def test_delete_topic_removes_topic_and_associations(self, topic_store, memory_store):
+        """Deleting a topic removes it without deleting associated memories."""
+        topic = await topic_store.get_or_create_topic("cli", "alice", "to-delete")
+        mem = await memory_store.save(
+            content="Linked memory",
+            platform="cli",
+            platform_user="alice",
+            topic_ids=[topic.id],
+        )
+
+        deleted = await topic_store.delete_topic(topic.id)
+        assert deleted is True
+
+        assert await topic_store.get_topic_by_id(topic.id) is None
+        topic_ids = await memory_store.get_topic_ids_for_memories([mem.id])
+        assert topic_ids[mem.id] == []
+
+    @pytest.mark.asyncio
+    async def test_list_topic_conversations(self, topic_store):
+        """list_topic_conversations returns subscribed conversation IDs."""
+        topic = await topic_store.get_or_create_topic("cli", "alice", "shared")
+        await topic_store.subscribe_conversation("conv-1", topic.id)
+        await topic_store.subscribe_conversation("conv-2", topic.id)
+
+        conversations = await topic_store.list_topic_conversations(topic.id)
+        conv_ids = {c["conversation_id"] for c in conversations}
+        assert conv_ids == {"conv-1", "conv-2"}
