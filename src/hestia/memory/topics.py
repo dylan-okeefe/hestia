@@ -266,6 +266,30 @@ class TopicStore:
             platform, platform_user, implicit_topic_name(conversation_id)
         )
 
+    async def resolve_capture_topic_ids(
+        self,
+        conversation_id: str,
+        platform: str,
+        platform_user: str,
+    ) -> list[str]:
+        """Return the topic IDs a new memory in this conversation should target.
+
+        If the conversation already has explicit topic subscriptions, return those.
+        Otherwise, get-or-create the implicit per-conversation topic, subscribe the
+        conversation to it, and return the implicit topic ID. This ensures every
+        non-global memory is reachable by the read path and by later migration when
+        the user adds their first explicit topic.
+        """
+        topic_ids = await self.get_conversation_topic_ids(conversation_id)
+        if topic_ids:
+            return topic_ids
+
+        implicit = await self.get_or_create_implicit_topic(
+            platform, platform_user, conversation_id
+        )
+        await self.subscribe_conversation(conversation_id, implicit.id)
+        return [implicit.id]
+
     def _row_to_topic(self, row: Any) -> Topic:
         created_at = row.created_at
         if isinstance(created_at, str):
