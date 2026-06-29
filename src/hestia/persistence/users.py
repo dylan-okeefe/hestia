@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -11,6 +12,8 @@ import sqlalchemy as sa
 
 from hestia.core.clock import utcnow
 from hestia.persistence.schema import room_members, rooms, user_identities
+
+logger = logging.getLogger(__name__)
 
 
 def is_matrix_room_id(value: str) -> bool:
@@ -265,6 +268,9 @@ class UserStore:
 
         Returns the number of removed identities and removed users. Idempotent:
         repeated calls remove nothing once the bad rows are gone.
+
+        Emits structured INFO audit logs for every removed identity and user so the
+        cleanup is traceable.
         """
         removed_identities = 0
         removed_users = 0
@@ -280,8 +286,11 @@ class UserStore:
             bad_rows = result.fetchall()
 
             affected_user_ids = {row.user_id for row in bad_rows}
+            # platform_user is unique per platform, so this maps cleanly to one user_id.
+            identity_user_map = {row.platform_user: row.user_id for row in bad_rows}
 
-            for platform_user in {row.platform_user for row in bad_rows}:
+            for platform_user in identity_user_map:
+                user_id = identity_user_map[platform_user]
                 result = await conn.execute(
                     sa.text(
                         "DELETE FROM user_identities "
@@ -290,6 +299,10 @@ class UserStore:
                     {"platform": "matrix", "platform_user": platform_user},
                 )
                 removed_identities += result.rowcount
+                logger.info(
+                    "cleanup_matrix_room_id_identities removed identity",
+                    extra={"user_id": user_id, "platform_user": platform_user},
+                )
 
             for user_id in affected_user_ids:
                 remaining = await conn.execute(
@@ -309,6 +322,10 @@ class UserStore:
                         {"id": user_id},
                     )
                     removed_users += result.rowcount
+                    logger.info(
+                        "cleanup_matrix_room_id_identities removed user",
+                        extra={"user_id": user_id},
+                    )
 
             await conn.commit()
 
