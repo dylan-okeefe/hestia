@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from hestia.core.inference import InferenceClient
 from hestia.core.types import Message, Session
 from hestia.memory.store import MemoryStore
+from hestia.memory.topics import TopicStore
 
 logger = logging.getLogger(__name__)
 
@@ -69,12 +70,14 @@ class SessionCompactionSummarizer:
         self,
         inference: InferenceClient,
         memory_store: MemoryStore,
+        topic_store: TopicStore | None = None,
         *,
         max_chars: int = 1500,
         min_messages: int = 4,
     ) -> None:
         self._inference = inference
         self._memory = memory_store
+        self._topic_store = topic_store
         self._max_chars = max_chars
         self._min_messages = min_messages
 
@@ -226,11 +229,18 @@ class SessionCompactionSummarizer:
                 )
                 return existing_memory.id
 
+        topic_ids: list[str] = []
+        if self._topic_store is not None:
+            topic_ids = await self._topic_store.resolve_capture_topic_ids(
+                session.id, session.platform, session.platform_user
+            )
+
         memory = await self._memory.save(
             content=content,
             tags=["compaction", "task-state"],
             session_id=session.id,
             platform=session.platform,
             platform_user=session.platform_user,
+            topic_ids=topic_ids,
         )
         return memory.id if memory else None
