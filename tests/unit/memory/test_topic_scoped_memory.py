@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
+import sqlalchemy as sa
 
 from hestia.commands.meta import get_default_registry
 from hestia.core.types import Session, SessionState, SessionTemperature
@@ -539,3 +542,130 @@ class TestTopicCommands:
         )
         assert len(topics_) == 1
         assert topics_[0].id == mem.id
+
+
+
+class TestCaptureWiring:
+    """Tests for capture paths that must associate memories with topics."""
+
+    @pytest.fixture
+    async def summarizer_env(self, db):
+        """MemoryStore, TopicStore, and a mock inference for compaction tests."""
+
+        memory_store = MemoryStore(db)
+        await memory_store.create_table()
+        topic_store = TopicStore(db)
+
+        class FakeInference:
+            """Minimal fake for SessionCompactionSummarizer."""
+
+            async def chat(self, messages, tools, slot_id, reasoning_budget):
+                from hestia.core.types import ChatResponse
+
+                compact_json = (
+                    '{"goal":"g","criteria":"c","progress_done":"d",'
+                    '"pending":"p","key_findings":"kf","artifact_paths":[],'
+                    '"summary":"compaction summary"}'
+                )
+                return ChatResponse(
+                    content=compact_json,
+                    reasoning_content=None,
+                    tool_calls=[],
+                    finish_reason="stop",
+                    prompt_tokens=10,
+                    completion_tokens=5,
+                    total_tokens=15,
+                )
+
+        yield memory_store, topic_store, FakeInference()
+
+    @pytest.mark.asyncio
+    async def test_compaction_summarizer_saves_to_topics(self, summarizer_env):
+        """Session-end compaction summaries are topic-scoped and appear in epoch."""
+        from hestia.core.types import Message
+        from hestia.memory.compaction_summarizer import SessionCompactionSummarizer
+
+        memory_store, topic_store, inference = summarizer_env
+        summarizer = SessionCompactionSummarizer(
+            inference=inference,
+            memory_store=memory_store,
+            topic_store=topic_store,
+            min_messages=0,
+        )
+
+        session = Session(
+            id="compact_session",
+            platform="test",
+            platform_user="test_user",
+            started_at=datetime.now(UTC),
+            last_active_at=datetime.now(UTC),
+            slot_id=None,
+            slot_saved_path=None,
+            state=SessionState.ACTIVE,
+            temperature=SessionTemperature.COLD,
+        )
+
+        history = [Message(role="user", content="We are working on topic scoped memory")]
+        result = await summarizer.summarize_and_store(session, history)
+        assert result is not None
+        assert result.memory_id is not None
+
+        memory = await memory_store.get(result.memory_id)
+        assert memory is not None
+        assert memory.is_global is False
+
+        topic_ids = await topic_store.get_conversation_topic_ids(session.id)
+        assert len(topic_ids) == 1
+
+        compiler = MemoryEpochCompiler(memory_store, max_tokens=500)
+        epoch = await compiler.compile(session, topic_ids=topic_ids)
+        assert "Goal: g" in epoch.compiled_text
+        assert "Findings: kf" in epoch.compiled_text
+
+
+class TestNonFts5Migration:
+    """Regression tests for non-FTS5 memory table migration."""
+
+    @pytest.mark.asyncio
+    async def test_regular_table_existing_memory_becomes_global(self, tmp_path):
+        """When the memory table is a regular table and already has rows, adding
+        the is_global column must mark existing rows as global."""
+        from sqlalchemy.ext.asyncio import create_async_engine
+
+        db_path = tmp_path / "legacy_memory.db"
+        db_url = f"sqlite+aiosqlite:///{db_path}"
+        engine = create_async_engine(db_url)
+        async with engine.connect() as conn:
+            await conn.execute(
+                sa.text(
+                    "CREATE TABLE memory ("
+                    "id TEXT PRIMARY KEY, content TEXT, tags TEXT, session_id TEXT, "
+                    "created_at TEXT, platform TEXT, platform_user TEXT"
+                    ")"
+                )
+            )
+            await conn.execute(
+                sa.text(
+                    "INSERT INTO memory (id, content, created_at, platform, platform_user) "
+                    "VALUES (:id, :content, :created_at, :platform, :platform_user)"
+                ),
+                {
+                    "id": "legacy_mem",
+                    "content": "legacy fact",
+                    "created_at": "2024-01-01T00:00:00+00:00",
+                    "platform": "test",
+                    "platform_user": "test_user",
+                },
+            )
+            await conn.commit()
+        await engine.dispose()
+
+        db = Database(db_url)
+        await db.connect()
+        store = MemoryStore(db)
+        await store.create_table()
+
+        memory = await store.get("legacy_mem")
+        assert memory is not None
+        assert memory.is_global is True
+        await db.close()
