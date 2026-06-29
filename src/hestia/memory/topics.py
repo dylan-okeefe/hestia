@@ -114,6 +114,88 @@ class TopicStore:
                 return None
             return self._row_to_topic(row)
 
+    async def list_topics(
+        self,
+        platform: str,
+        platform_user: str,
+    ) -> list[Topic]:
+        """Return all user-named topics for an identity, ordered by name.
+
+        Excludes implicit per-conversation topics (``room:*``) from the list
+        because they are implementation details, not user-curated scopes.
+        """
+        sql = sa.text(
+            "SELECT id, platform, platform_user, name, created_at FROM topics "
+            "WHERE platform = :platform AND platform_user = :platform_user "
+            "AND name NOT LIKE 'room:%' "
+            "ORDER BY name"
+        )
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(
+                sql, {"platform": platform, "platform_user": platform_user}
+            )
+            return [self._row_to_topic(row) for row in result.fetchall()]
+
+    async def rename_topic(self, topic_id: str, new_name: str) -> Topic | None:
+        """Rename a topic. Returns the updated topic, or None if not found."""
+        topic = await self.get_topic_by_id(topic_id)
+        if topic is None:
+            return None
+
+        sql = sa.text(
+            "UPDATE topics SET name = :name "
+            "WHERE id = :id AND platform = :platform AND platform_user = :platform_user"
+        )
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(
+                sql,
+                {
+                    "id": topic_id,
+                    "name": new_name,
+                    "platform": topic.platform,
+                    "platform_user": topic.platform_user,
+                },
+            )
+            await conn.commit()
+            if result.rowcount == 0:
+                return None
+        return await self.get_topic_by_id(topic_id)
+
+    async def delete_topic(self, topic_id: str) -> bool:
+        """Delete a topic and its subscriptions/associations.
+
+        Returns True if the topic existed and was deleted. Memory rows are not
+        deleted; they simply lose their association with the removed topic.
+        """
+        async with self._db.engine.connect() as conn:
+            await conn.execute(
+                sa.text("DELETE FROM memory_topics WHERE topic_id = :topic_id"),
+                {"topic_id": topic_id},
+            )
+            await conn.execute(
+                sa.text("DELETE FROM conversation_topics WHERE topic_id = :topic_id"),
+                {"topic_id": topic_id},
+            )
+            result = await conn.execute(
+                sa.text("DELETE FROM topics WHERE id = :id"), {"id": topic_id}
+            )
+            await conn.commit()
+            return result.rowcount > 0
+
+    async def list_topic_conversations(self, topic_id: str) -> list[dict[str, Any]]:
+        """Return conversations subscribed to a topic."""
+        sql = sa.text(
+            "SELECT conversation_id, created_at FROM conversation_topics "
+            "WHERE topic_id = :topic_id ORDER BY created_at DESC"
+        )
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(sql, {"topic_id": topic_id})
+            rows = result.fetchall()
+        return [
+            {"conversation_id": row.conversation_id, "created_at": row.created_at}
+            for row in rows
+        ]
+
     async def subscribe_conversation(
         self,
         conversation_id: str,

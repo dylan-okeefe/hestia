@@ -919,10 +919,12 @@ class MemoryStore:
         *,
         content: str | None = None,
         tags: list[str] | None = None,
+        is_global: bool | None = None,
+        topic_ids: list[str] | None = None,
         platform: str | None = None,
         platform_user: str | None = None,
     ) -> bool:
-        """Update content and/or tags of an active memory.
+        """Update content, tags, scope, and/or topic associations of an active memory.
 
         Only active memories can be updated; soft-deleted rows are ignored.
         Returns True if the memory was found and updated.
@@ -947,7 +949,14 @@ class MemoryStore:
             set_clauses.append("tags = :tags")
             params["tags"] = "|".join(tags)
 
-        if not set_clauses:
+        if is_global is not None:
+            set_clauses.append("is_global = :is_global")
+            params["is_global"] = 1 if is_global else 0
+            # Global memories are independent of topic associations.
+            if is_global and topic_ids is None:
+                topic_ids = []
+
+        if not set_clauses and topic_ids is None:
             return False
 
         where_clauses = ["id = :id", "is_active = :is_active"]
@@ -956,14 +965,28 @@ class MemoryStore:
             params["platform"] = platform
             params["platform_user"] = platform_user
 
-        sql = sa.text(
-            f"UPDATE memory SET {', '.join(set_clauses)} WHERE {' AND '.join(where_clauses)}"
-        )
-
         async with self._db.engine.connect() as conn:
-            result = await conn.execute(sql, params)
+            if set_clauses:
+                sql = sa.text(
+                    f"UPDATE memory SET {', '.join(set_clauses)} WHERE {' AND '.join(where_clauses)}"
+                )
+                result = await conn.execute(sql, params)
+                if result.rowcount == 0:
+                    await conn.rollback()
+                    return False
+
+            if topic_ids is not None:
+                await conn.execute(
+                    sa.text("DELETE FROM memory_topics WHERE memory_id = :memory_id"),
+                    {"memory_id": memory_id},
+                )
+                if topic_ids:
+                    await self._associate_memory_with_topics(
+                        conn, memory_id, topic_ids, utcnow()
+                    )
+
             await conn.commit()
-            return result.rowcount > 0
+            return True
 
     async def pin(self, memory_id: str, pinned: bool = True) -> bool:
         """Set the pinned flag on a memory by ID."""
