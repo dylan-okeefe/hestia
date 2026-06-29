@@ -14,6 +14,7 @@ from hestia.commands.registry import (
     command_from_handler,
 )
 from hestia.commands.tour import _cmd_continue, _cmd_endtour, _cmd_tour
+from hestia.memory.topics import TopicStore, implicit_topic_name
 
 if TYPE_CHECKING:
     from hestia.app import AppContext
@@ -181,6 +182,135 @@ async def _cmd_commands(ctx: CommandContext) -> tuple[bool, Session]:
     return False, ctx.session
 
 
+def _topic_store_from_ctx(ctx: CommandContext) -> TopicStore | None:
+    """Return a TopicStore if the app context is available."""
+    app = ctx.app
+    if app is None:
+        return None
+    return app.topic_store
+
+
+async def _cmd_add_topic(ctx: CommandContext) -> tuple[bool, Session]:
+    """Subscribe this conversation to a topic, migrating implicit memories once."""
+    instruction = ctx.instruction or ""
+    name = instruction.strip()
+    if not name:
+        click.echo("Usage: /add-topic <name>")
+        return False, ctx.session
+
+    store = _topic_store_from_ctx(ctx)
+    memory_store = ctx.app.memory_store if ctx.app is not None else None
+    if store is None or memory_store is None:
+        click.echo("Topic management is not available right now.")
+        return False, ctx.session
+
+    session = ctx.session
+    topic = await store.get_or_create_topic(
+        session.platform, session.platform_user, name
+    )
+
+    existing = await store.list_conversation_topics(session.id)
+    implicit_name = implicit_topic_name(session.id)
+    is_first_explicit = all(t.name == implicit_name for t in existing)
+
+    await store.subscribe_conversation(session.id, topic.id)
+
+    if is_first_explicit:
+        migrated = await store.migrate_implicit_memories(
+            session.id,
+            topic.id,
+            platform=session.platform,
+            platform_user=session.platform_user,
+        )
+        if migrated:
+            click.echo(
+                f"Subscribed to topic '{name}' and migrated {migrated} "
+                f"implicit memory{'ies' if migrated != 1 else 'y'}."
+            )
+        else:
+            click.echo(f"Subscribed to topic '{name}'.")
+    else:
+        click.echo(f"Subscribed to topic '{name}'.")
+
+    return False, ctx.session
+
+
+async def _cmd_remove_topic(ctx: CommandContext) -> tuple[bool, Session]:
+    """Unsubscribe this conversation from a topic."""
+    instruction = ctx.instruction or ""
+    name = instruction.strip()
+    if not name:
+        click.echo("Usage: /remove-topic <name>")
+        return False, ctx.session
+
+    store = _topic_store_from_ctx(ctx)
+    if store is None:
+        click.echo("Topic management is not available right now.")
+        return False, ctx.session
+
+    session = ctx.session
+    topic = await store.get_topic(session.platform, session.platform_user, name)
+    if topic is None:
+        click.echo(f"Topic '{name}' not found.")
+        return False, ctx.session
+
+    unsubscribed = await store.unsubscribe_conversation(session.id, topic.id)
+    if unsubscribed:
+        click.echo(
+            f"Unsubscribed from topic '{name}'. Existing memory associations remain."
+        )
+    else:
+        click.echo(f"Not subscribed to topic '{name}'.")
+    return False, ctx.session
+
+
+async def _cmd_topic(ctx: CommandContext) -> tuple[bool, Session]:
+    """Show the conversation's current topic subscriptions."""
+    store = _topic_store_from_ctx(ctx)
+    if store is None:
+        click.echo("Topic management is not available right now.")
+        return False, ctx.session
+
+    session = ctx.session
+    topics = await store.list_conversation_topics(session.id)
+    if not topics:
+        implicit = implicit_topic_name(session.id)
+        click.echo(f"No explicit topics. Implicit pool: {implicit}")
+    else:
+        click.echo("Subscribed topics:")
+        for topic in topics:
+            click.echo(f"  - {topic.name}")
+    return False, ctx.session
+
+
+async def _cmd_remember_global(ctx: CommandContext) -> tuple[bool, Session]:
+    """Save a fact to global memory."""
+    instruction = ctx.instruction or ""
+    fact = instruction.strip()
+    if not fact:
+        click.echo("Usage: /remember-global <fact>")
+        return False, ctx.session
+
+    memory_store = ctx.app.memory_store if ctx.app is not None else None
+    if memory_store is None:
+        click.echo("Memory store is not available right now.")
+        return False, ctx.session
+
+    session = ctx.session
+    mem = await memory_store.save_global(
+        content=fact,
+        session_id=session.id,
+        platform=session.platform,
+        platform_user=session.platform_user,
+    )
+    if mem is None:
+        click.echo("Memory rejected: content did not pass the write-time sanitizer.")
+    else:
+        preview = fact[:80] + ("..." if len(fact) > 80 else "")
+        click.echo(f"Saved global memory {mem.id}: {preview}")
+    return False, ctx.session
+
+
 def _build_default_registry() -> CommandRegistry:
     """Create the registry populated with CLI REPL meta-commands."""
     reg = CommandRegistry()
@@ -191,6 +321,10 @@ def _build_default_registry() -> CommandRegistry:
     reg.register(command_from_handler(name="/session", handler=_cmd_session, category="session"))
     reg.register(command_from_handler(name="/refresh", handler=_cmd_refresh, category="memory"))
     reg.register(command_from_handler(name="/tokens", handler=_cmd_tokens, category="session"))
+    reg.register(command_from_handler(name="/add-topic", handler=_cmd_add_topic, category="memory"))
+    reg.register(command_from_handler(name="/remove-topic", handler=_cmd_remove_topic, category="memory"))
+    reg.register(command_from_handler(name="/topic", handler=_cmd_topic, category="memory"))
+    reg.register(command_from_handler(name="/remember-global", handler=_cmd_remember_global, category="memory"))
     reg.register(
         command_from_handler(
             name="/commands",

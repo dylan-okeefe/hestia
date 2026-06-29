@@ -230,6 +230,9 @@ class AppContext:
         self.user_store = UserStore(self.db)
         self.policy = _make_policy(config)
         self.memory_store = MemoryStore(self.db)
+        from hestia.memory.topics import TopicStore
+
+        self.topic_store = TopicStore(self.db)
         self.failure_store = FailureStore(self.db)
         self.trace_store = TraceStore(self.db)
         self.scheduler_store = SchedulerStore(self.db)
