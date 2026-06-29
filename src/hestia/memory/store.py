@@ -228,7 +228,8 @@ class MemoryStore:
             "is_active": "INTEGER NOT NULL DEFAULT 1",
             "is_pinned": "INTEGER NOT NULL DEFAULT 0",
             "is_user_authored": "INTEGER NOT NULL DEFAULT 0",
-            "is_global": "INTEGER NOT NULL DEFAULT 0",
+            # Legacy memories must become global on migration (decision #10).
+            "is_global": "INTEGER NOT NULL DEFAULT 1",
             "deleted_at": "TEXT",
             "deleted_reason": "TEXT",
             "superseded_by": "TEXT",
