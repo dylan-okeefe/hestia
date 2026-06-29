@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from hestia.memory.store import MemoryStore
+from hestia.memory.topics import TopicStore
 from hestia.persistence.db import Database
 
 
@@ -181,3 +182,94 @@ class TestActiveInactiveLists:
             platform="cli", platform_user="alice", include_inactive=True
         )
         assert len(results) == 2
+
+
+class TestMemoryUpdate:
+    @pytest.mark.asyncio
+    async def test_update_content_and_tags(self, memory_store):
+        """Updating content and tags persists changes."""
+        mem = await memory_store.save(
+            content="Original content here", tags=["a"], platform="cli", platform_user="alice"
+        )
+
+        updated = await memory_store.update(
+            mem.id,
+            content="Updated content here",
+            tags=["a", "b"],
+            platform="cli",
+            platform_user="alice",
+        )
+        assert updated is True
+
+        fetched = await memory_store.get(mem.id)
+        assert fetched is not None
+        assert fetched.content == "Updated content here"
+        assert fetched.tags == ["a", "b"]
+
+    @pytest.mark.asyncio
+    async def test_update_is_global_promotes_and_clears_topics(self, memory_store):
+        """Promoting a memory to global clears topic associations."""
+        topic_store = TopicStore(memory_store._db)
+        topic = await topic_store.get_or_create_topic("cli", "alice", "hobbies")
+        mem = await memory_store.save(
+            content="I like chess",
+            platform="cli",
+            platform_user="alice",
+            topic_ids=[topic.id],
+        )
+        topic_ids = await memory_store.get_topic_ids_for_memories([mem.id])
+        assert topic_ids[mem.id] == [topic.id]
+
+        updated = await memory_store.update(
+            mem.id,
+            is_global=True,
+            platform="cli",
+            platform_user="alice",
+        )
+        assert updated is True
+
+        fetched = await memory_store.get(mem.id)
+        assert fetched is not None
+        assert fetched.is_global is True
+        topic_ids = await memory_store.get_topic_ids_for_memories([mem.id])
+        assert topic_ids[mem.id] == []
+
+    @pytest.mark.asyncio
+    async def test_update_topic_ids_changes_retrieval_scope(self, memory_store):
+        """Changing a memory's topic IDs moves it between topic scopes."""
+        topic_store = TopicStore(memory_store._db)
+        topic_a = await topic_store.get_or_create_topic("cli", "alice", "a")
+        topic_b = await topic_store.get_or_create_topic("cli", "alice", "b")
+        mem = await memory_store.save(
+            content="Scoped to a",
+            platform="cli",
+            platform_user="alice",
+            topic_ids=[topic_a.id],
+        )
+
+        updated = await memory_store.update(
+            mem.id,
+            topic_ids=[topic_b.id],
+            platform="cli",
+            platform_user="alice",
+        )
+        assert updated is True
+
+        topic_ids = await memory_store.get_topic_ids_for_memories([mem.id])
+        assert topic_ids[mem.id] == [topic_b.id]
+
+    @pytest.mark.asyncio
+    async def test_update_ignores_soft_deleted_memory(self, memory_store):
+        """Updates are rejected for soft-deleted memories."""
+        mem = await memory_store.save(
+            content="Soon gone", platform="cli", platform_user="alice"
+        )
+        await memory_store.soft_delete(mem.id, platform="cli", platform_user="alice")
+
+        updated = await memory_store.update(
+            mem.id,
+            content="Updated content here",
+            platform="cli",
+            platform_user="alice",
+        )
+        assert updated is False

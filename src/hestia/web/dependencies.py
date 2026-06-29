@@ -9,7 +9,7 @@ from hestia.web.context import WebContext, get_web_context
 
 async def require_admin(
     request: Request,
-    ctx: WebContext = Depends(get_web_context),
+    ctx: WebContext = Depends(get_web_context),  # noqa: B008
 ) -> None:
     """Raise 401/403 if the caller is not an admin."""
     user_id = getattr(request.state, "user_id", None)
@@ -40,7 +40,7 @@ class RequireOwner:
     async def __call__(
         self,
         request: Request,
-        ctx: WebContext = Depends(get_web_context),
+        ctx: WebContext = Depends(get_web_context),  # noqa: B008
     ) -> None:
         """Raise 403 if the caller does not own the resource (unless admin)."""
         caller_platform_user = getattr(request.state, "platform_user", None)

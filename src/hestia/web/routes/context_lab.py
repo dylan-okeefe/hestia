@@ -15,7 +15,7 @@ router = APIRouter()
 @router.post("/context-lab/preview")
 async def preview_prompt(
     request: Request,
-    ctx: WebContext = Depends(get_web_context),
+    ctx: WebContext = Depends(get_web_context),  # noqa: B008
     payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Dry-run the prompt assembly and return layer breakdown + budget.
