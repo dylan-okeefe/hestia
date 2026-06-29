@@ -1,11 +1,11 @@
 {
-  "python_loc": 37490,
-  "test_loc": 46687,
-  "total_loc": 84177,
-  "tests": 2220,
-  "test_files": 237,
+  "python_loc": 37791,
+  "test_loc": 47056,
+  "total_loc": 84847,
+  "tests": 2233,
+  "test_files": 238,
   "adrs": 50,
   "loops": 231,
   "loop_spec_files": 178,
-  "updated": "2026-06-28"
+  "updated": "2026-06-29"
 }
