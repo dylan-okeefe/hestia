@@ -111,7 +111,7 @@ upgrade path. Running `hestia init` is sufficient.
 
 - **[User Guides](docs/guides/)** — setup, platforms, security, voice, email, browser
   sessions, workflows, multi-user, custom tools
-- **[Architecture Decisions](docs/adr/)** — 49 ADRs covering design rationale
+- **[Architecture Decisions](docs/adr/)** — 51 ADRs covering design rationale
 - **[Changelog](CHANGELOG.md)** — version history
 - **[Release Notes](docs/releases/)** — human-facing release summaries
 - **[Security](SECURITY.md)** — threat model and responsible disclosure
