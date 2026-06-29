@@ -6,6 +6,26 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-06-29 — L238: Scope-Aware Memory Maintenance
+
+**Outcome:** Extended the ADR-049 maintenance subsystem to respect Loop A's two-tier global/topic memory scope. Dedupe, LLM dedupe, and contradiction supersession now operate within scope; protected-set isolation is enforced by scope-key grouping; undo restores only the losers of the scoped action. The scope-promotion pass is explicitly deferred.
+
+**Branch:** `feature/l238-scope-aware-memory-maintenance`
+
+**Changes:**
+- Added `src/hestia/memory/maintenance/scopes.py` with scope-key helpers.
+- Added `MemoryStore.get_topic_ids_for_memories()` batch lookup in `src/hestia/memory/store.py`.
+- Updated `DeterministicDeduper` and `LLMDeduper` to group/judge duplicates within a scope key and record scope in trace details.
+- Updated `ContradictionResolver` to generate and judge candidate pairs only within the same scope.
+- Updated `MaintenanceUndo` to propagate the original scope into undo trace details.
+- Added a TODO in `src/hestia/memory/maintenance/service.py` for the deferred topic → global promotion pass.
+- Added `tests/unit/memory/maintenance/test_scope_aware_maintenance.py` covering cross-scope preservation, within-scope merges, supersession boundaries, protected-set isolation, and scoped undo.
+- Created handoff: `docs/handoffs/L238-scope-aware-memory-maintenance-handoff.md`.
+
+**Quality gates:** targeted tests 68 passed; `ruff` and `mypy` clean on changed files.
+
+**Next:** Cursor/Dylan review and merge to `develop` when approved. Scope-promotion pass remains a future Proposals-gated loop.
+
 ## 2026-06-29 — L237 Fix: Wire Topic-Scoped Memory Capture Paths
 
 **Outcome:** Fixed a blocking regression in the Loop A topic-scoped memory backend before merge. All new capture paths now resolve topics through a shared resolver, and legacy non-FTS5 databases correctly mark existing memories as global.

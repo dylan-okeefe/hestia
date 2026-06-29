@@ -22,6 +22,7 @@ from hestia.memory.maintenance.prompts import (
     build_llm_dedupe_prompt,
     parse_llm_dedupe_response,
 )
+from hestia.memory.maintenance.scopes import format_scope_key, memory_scope_key
 from hestia.memory.maintenance.trace import MaintenanceAction
 from hestia.memory.store import Memory, MemoryStore
 
@@ -70,6 +71,7 @@ class LLMDeduper:
         loser: Memory,
         confidence: float,
         merged_content: str | None,
+        scope: str = "global",
     ) -> None:
         """Record an LLM merge action in the trace store, if configured."""
         if self._trace_store is None:
@@ -94,6 +96,7 @@ class LLMDeduper:
             details={
                 "confidence": confidence,
                 "merged_content": merged_content,
+                "scope": scope,
             },
         )
         try:
@@ -117,13 +120,22 @@ class LLMDeduper:
             limit=self._chunk_size,
         )
 
+        topic_ids_map = await self._store.get_topic_ids_for_memories(
+            [memory.id for memory in active]
+        )
+
         unprotected = [
             memory for memory in active if not self._store.is_protected(memory)
         ]
 
         pairs = await self._generate_candidate_pairs(
-            unprotected, platform, platform_user
+            unprotected, platform, platform_user, topic_ids_map
         )
+
+        def _scope_key(memory: Memory) -> tuple[str, ...]:
+            return memory_scope_key(
+                memory, topic_ids_map.get(memory.id, [])
+            )
 
         merged_count = 0
         examined_count = 0
@@ -131,6 +143,9 @@ class LLMDeduper:
 
         for memory_a, memory_b in pairs:
             if memory_a.id in processed_ids or memory_b.id in processed_ids:
+                continue
+
+            if _scope_key(memory_a) != _scope_key(memory_b):
                 continue
 
             examined_count += 1
@@ -150,6 +165,7 @@ class LLMDeduper:
                 else _merge_contents([winner.content, loser.content])
             )
             final_tags = _merge_tags(winner, loser)
+            scope_str = format_scope_key(_scope_key(winner))
 
             await self._store.update(
                 winner.id,
@@ -172,6 +188,7 @@ class LLMDeduper:
                 loser,
                 confidence,
                 final_content,
+                scope=scope_str,
             )
 
             processed_ids.add(winner.id)
@@ -188,10 +205,16 @@ class LLMDeduper:
         memories: list[Memory],
         platform: str,
         platform_user: str,
+        topic_ids_map: dict[str, list[str]],
     ) -> list[tuple[Memory, Memory]]:
         """Build candidate pairs from FTS near-misses with Jaccard 0.5–0.8."""
         pairs: list[tuple[Memory, Memory]] = []
         seen_pair_ids: set[frozenset[str]] = set()
+
+        def _scope_key(memory: Memory) -> tuple[str, ...]:
+            return memory_scope_key(
+                memory, topic_ids_map.get(memory.id, [])
+            )
 
         for memory in memories:
             if len(pairs) >= self._max_pairs_per_run:
@@ -214,6 +237,8 @@ class LLMDeduper:
                 if candidate.id == memory.id:
                     continue
                 if self._store.is_protected(candidate):
+                    continue
+                if _scope_key(candidate) != _scope_key(memory):
                     continue
 
                 pair_key = frozenset({memory.id, candidate.id})
