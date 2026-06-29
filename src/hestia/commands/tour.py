@@ -69,7 +69,7 @@ def _step_welcome() -> str:
 
 
 def _step_commands_reference() -> str:
-        return (
+    return (
         "Hestia understands slash commands. Type /commands (or /help) any time "
         "to see the full list with short descriptions. It's the fastest way to "
         "remember what's available without guessing."
@@ -315,20 +315,12 @@ def validate_tour_coverage(
         AssertionError: If any command or capability is missing from the tour.
     """
     commands_found = tour_command_coverage()
-    missing_commands = sorted(
-        name for name in command_names if name.lower() not in {c.lower() for c in commands_found}
-    )
+    missing_commands = sorted(name for name in command_names if name.lower() not in {c.lower() for c in commands_found})
     if missing_commands:
-        raise AssertionError(
-            f"Tour is missing coverage for commands: {', '.join(missing_commands)}"
-        )
+        raise AssertionError(f"Tour is missing coverage for commands: {', '.join(missing_commands)}")
 
     if required_capabilities is not None:
         capabilities_found = tour_capability_coverage()
-        missing_capabilities = sorted(
-            cap for cap in required_capabilities if cap.lower() not in capabilities_found
-        )
+        missing_capabilities = sorted(cap for cap in required_capabilities if cap.lower() not in capabilities_found)
         if missing_capabilities:
-            raise AssertionError(
-                f"Tour is missing coverage for capabilities: {', '.join(missing_capabilities)}"
-            )
+            raise AssertionError(f"Tour is missing coverage for capabilities: {', '.join(missing_capabilities)}")

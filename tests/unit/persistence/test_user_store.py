@@ -304,7 +304,9 @@ class TestUserStore:
         assert identities == []
 
     @pytest.mark.asyncio
-    async def test_cleanup_matrix_room_id_identities(self, user_store):
+    async def test_cleanup_matrix_room_id_identities(self, user_store, caplog):
+        import logging
+
         stale_user = await user_store.create_user("!room:matrix.org", role="admin")
         real_user = await user_store.create_user("Bob")
         await user_store.add_identity(real_user.id, "matrix", "@bob:matrix.org")
@@ -327,7 +329,8 @@ class TestUserStore:
             )
             await conn.commit()
 
-        removed_identities, removed_users = await user_store.cleanup_matrix_room_id_identities()
+        with caplog.at_level(logging.INFO):
+            removed_identities, removed_users = await user_store.cleanup_matrix_room_id_identities()
         assert removed_identities == 1
         assert removed_users == 1
 
@@ -335,7 +338,28 @@ class TestUserStore:
         assert await user_store.get_user_by_identity("matrix", "!room:matrix.org") is None
         assert await user_store.get_user_by_identity("matrix", "@bob:matrix.org") is not None
 
-        # Idempotent: second run removes nothing
-        removed_identities, removed_users = await user_store.cleanup_matrix_room_id_identities()
+        # Audit trail: one identity-removal log and one user-removal log.
+        identity_logs = [
+            r for r in caplog.records
+            if r.message == "cleanup_matrix_room_id_identities removed identity"
+        ]
+        user_logs = [
+            r for r in caplog.records
+            if r.message == "cleanup_matrix_room_id_identities removed user"
+        ]
+        assert len(identity_logs) == 1
+        assert identity_logs[0].user_id == stale_user.id
+        assert identity_logs[0].platform_user == "!room:matrix.org"
+        assert len(user_logs) == 1
+        assert user_logs[0].user_id == stale_user.id
+
+        # Idempotent: second run removes nothing and emits no new audit logs.
+        caplog.clear()
+        with caplog.at_level(logging.INFO):
+            removed_identities, removed_users = await user_store.cleanup_matrix_room_id_identities()
         assert removed_identities == 0
         assert removed_users == 0
+        assert not [
+            r for r in caplog.records
+            if "cleanup_matrix_room_id_identities removed" in r.message
+        ]

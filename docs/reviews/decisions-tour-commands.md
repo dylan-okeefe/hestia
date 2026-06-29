@@ -30,6 +30,10 @@ Resolved 2026-06-27. These decisions apply to Loop A, Loop B, and Loop C of the 
 - Group rooms: `/tour` does not start; replies DM-only. `/continue` and `/endtour` in a group behave as outside a tour.
 - Reuse existing per-conversation state storage; no new persistence table.
 
+### Known limitation: Matrix
+
+The Matrix adapter currently treats every Matrix room as a group room (`group_room=True`) because Matrix rooms have no reliable way to distinguish a 1:1 DM from a multi-user room without inspecting member count. As a result, `/tour` is unavailable on Matrix in v1 and always replies with the DM-only message. This is an acceptable v1 reading of "DM-only," but it leaves open the question of whether 1:1 Matrix rooms should be treated as DMs in a future iteration (e.g., by checking `room.member_count == 2`).
+
 ## 4. `/commands` output
 
 - Renders the registry catalog: name, aliases, summary.
