@@ -6,6 +6,26 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-06-29 — L237 Fix: Wire Topic-Scoped Memory Capture Paths
+
+**Outcome:** Fixed a blocking regression in the Loop A topic-scoped memory backend before merge. All new capture paths now resolve topics through a shared resolver, and legacy non-FTS5 databases correctly mark existing memories as global.
+
+**Branch:** `feature/l237-thread-scoped-memory-backend`
+
+**Changes:**
+- Added `TopicStore.resolve_capture_topic_ids()` in `src/hestia/memory/topics.py` so every non-global capture path scopes consistently.
+- Changed non-FTS5 `ALTER TABLE ... ADD COLUMN is_global` default to `1` in `src/hestia/memory/store.py`, ensuring existing rows become global.
+- Wired `save_memory` tool with a `scope` parameter (`global`/`topic`) and topic resolution in `src/hestia/tools/builtin/memory_tools.py`; updated `src/hestia/app.py` to inject `topic_store`.
+- Wired `SessionCompactionSummarizer` and `SessionHandoffSummarizer` to resolve capture topics before saving.
+- Changed `hestia memory add` to save globally (operator-asserted durable fact).
+- Added system prompt rule #6 in `src/hestia/config.py`: identity/durable preferences → `scope=global`, everything else → topic-scoped.
+- Added regression/integration tests: topic-scoped tool save appears in epoch, two-topic subscription, global scope always loaded, cross-conversation isolation, compaction summarizer wiring, and non-FTS5 migration.
+- Created handoff: `docs/handoffs/L237-thread-scoped-memory-backend-handoff.md`.
+
+**Quality gates:** targeted tests 138 passed; `ruff` and `mypy` clean on changed files.
+
+**Next:** Cursor/Dylan review and merge to `develop` when approved. Do not start Loop B until L237 lands.
+
 ## 2026-06-27 — L234–L236 Complete (Tour Commands Arc: Registry, /commands, /tour)
 
 **Outcome:** Implemented a runtime-introspectable command registry and built `/commands`, `/help`, and `/tour` on top of it across CLI, Telegram, and Matrix.
