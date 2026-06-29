@@ -516,15 +516,74 @@ export async function fetchRooms() {
 }
 
 // Memories
-export async function fetchMemories(limit = 20) {
-  const res = await apiFetch(`${API_BASE}/memory?limit=${limit}`);
+export interface Memory {
+  id: string;
+  content: string;
+  tags: string[];
+  created_at: string | null;
+  session_id: string | null;
+  platform: string | null;
+  platform_user: string | null;
+  is_global: boolean;
+  is_pinned: boolean;
+  is_active: boolean;
+  deleted_at: string | null;
+  deleted_reason: string | null;
+  last_recalled_at: string | null;
+  topic_ids: string[];
+}
+
+export async function fetchMemories(limit = 100, includeInactive = false) {
+  const qs = new URLSearchParams();
+  qs.set('limit', String(limit));
+  if (includeInactive) qs.set('include_inactive', 'true');
+  const res = await apiFetch(`${API_BASE}/memory?${qs}`);
   if (!res.ok) throw new Error('Failed to fetch memories');
+  return res.json() as Promise<{ memories: Memory[] }>;
+}
+
+export async function fetchMemoriesForUser(platform: string, platformUser: string, limit = 100, includeInactive = false) {
+  const qs = new URLSearchParams();
+  qs.set('platform', platform);
+  qs.set('platform_user', platformUser);
+  qs.set('limit', String(limit));
+  if (includeInactive) qs.set('include_inactive', 'true');
+  const res = await apiFetch(`${API_BASE}/memory?${qs}`);
+  if (!res.ok) throw new Error('Failed to fetch memories');
+  return res.json() as Promise<{ memories: Memory[] }>;
+}
+
+export async function updateMemory(memoryId: string, updates: Partial<Pick<Memory, 'content' | 'tags' | 'is_global' | 'topic_ids'>>) {
+  const res = await apiFetch(`${API_BASE}/memory/${encodeURIComponent(memoryId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) throw new Error('Failed to update memory');
+  return res.json() as Promise<{ memory: Memory }>;
+}
+
+export async function pinMemory(memoryId: string) {
+  const res = await apiFetch(`${API_BASE}/memory/${encodeURIComponent(memoryId)}/pin`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to pin memory');
   return res.json();
 }
 
-export async function fetchMemoriesForUser(platform: string, platformUser: string, limit = 20) {
-  const res = await apiFetch(`${API_BASE}/memory?platform=${encodeURIComponent(platform)}&platform_user=${encodeURIComponent(platformUser)}&limit=${limit}`);
-  if (!res.ok) throw new Error('Failed to fetch memories');
+export async function unpinMemory(memoryId: string) {
+  const res = await apiFetch(`${API_BASE}/memory/${encodeURIComponent(memoryId)}/unpin`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to unpin memory');
+  return res.json();
+}
+
+export async function softDeleteMemory(memoryId: string) {
+  const res = await apiFetch(`${API_BASE}/memory/${encodeURIComponent(memoryId)}/soft-delete`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to soft-delete memory');
+  return res.json();
+}
+
+export async function restoreMemory(memoryId: string) {
+  const res = await apiFetch(`${API_BASE}/memory/${encodeURIComponent(memoryId)}/restore`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to restore memory');
   return res.json();
 }
 
@@ -534,6 +593,53 @@ export async function deleteMemory(memoryId: string) {
   });
   if (!res.ok) throw new Error('Failed to delete memory');
   return res.json();
+}
+
+// Topics
+export interface Topic {
+  id: string;
+  platform: string;
+  platform_user: string;
+  name: string;
+  created_at: string | null;
+}
+
+export async function fetchTopics(platform: string, platformUser: string) {
+  const res = await apiFetch(`${API_BASE}/topics?platform=${encodeURIComponent(platform)}&platform_user=${encodeURIComponent(platformUser)}`);
+  if (!res.ok) throw new Error('Failed to fetch topics');
+  return res.json() as Promise<{ topics: Topic[] }>;
+}
+
+export async function createTopic(platform: string, platformUser: string, name: string) {
+  const res = await apiFetch(`${API_BASE}/topics`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ platform, platform_user: platformUser, name }),
+  });
+  if (!res.ok) throw new Error('Failed to create topic');
+  return res.json() as Promise<{ topic: Topic }>;
+}
+
+export async function renameTopic(topicId: string, name: string) {
+  const res = await apiFetch(`${API_BASE}/topics/${encodeURIComponent(topicId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) throw new Error('Failed to rename topic');
+  return res.json() as Promise<{ topic: Topic }>;
+}
+
+export async function deleteTopic(topicId: string) {
+  const res = await apiFetch(`${API_BASE}/topics/${encodeURIComponent(topicId)}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete topic');
+  return res.json();
+}
+
+export async function fetchTopicConversations(topicId: string) {
+  const res = await apiFetch(`${API_BASE}/topics/${encodeURIComponent(topicId)}/conversations`);
+  if (!res.ok) throw new Error('Failed to fetch topic conversations');
+  return res.json() as Promise<{ conversations: Array<{ conversation_id: string; created_at: string }> }>;
 }
 
 // Sessions
