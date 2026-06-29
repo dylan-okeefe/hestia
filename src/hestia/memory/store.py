@@ -65,6 +65,7 @@ class Memory:
     is_pinned: bool = False
     is_user_authored: bool = False
     last_recalled_at: datetime | None = None
+    is_global: bool = False  # always-inject scope; migrated existing memories are True
 
 
 class MemoryStore:
@@ -154,7 +155,7 @@ class MemoryStore:
                     sa.text(
                         "SELECT platform, platform_user, is_active, deleted_at, "
                         "deleted_reason, superseded_by, is_pinned, is_user_authored, "
-                        "last_recalled_at FROM memory LIMIT 1"
+                        "last_recalled_at, is_global FROM memory LIMIT 1"
                     )
                 )
             except OperationalError as exc:
@@ -162,8 +163,11 @@ class MemoryStore:
                     "Memory table schema mismatch: expected columns "
                     "'platform', 'platform_user', is_active, deleted_at, "
                     "deleted_reason, superseded_by, is_pinned, is_user_authored, "
-                    "last_recalled_at. Run 'hestia init' to recreate."
+                    "last_recalled_at, is_global. Run 'hestia init' to recreate."
                 ) from exc
+
+            # Migrate any pre-topic-scoped memories to global on first startup.
+            await self._migrate_existing_to_global(conn)
 
             await conn.commit()
 
@@ -190,6 +194,7 @@ class MemoryStore:
         "is_pinned",
         "is_user_authored",
         "last_recalled_at",
+        "is_global",
     ]
 
     async def _missing_memory_columns(self, conn: Any) -> list[str]:
@@ -203,12 +208,27 @@ class MemoryStore:
                 pass
         return [col for col in self._EXPECTED_MEMORY_COLUMNS if col not in present]
 
+    async def _migrate_existing_to_global(self, conn: Any) -> None:
+        """Set is_global=1 for any legacy rows where the flag is NULL.
+
+        Idempotent: rows already marked global or non-global are untouched.
+        This implements the Loop A rollout rule that all pre-existing memories
+        become global so nothing is dropped or re-scoped automatically.
+        """
+        await conn.execute(
+            sa.text(
+                "UPDATE memory SET is_global = 1 "
+                "WHERE is_global IS NULL"
+            )
+        )
+
     async def _add_memory_column(self, conn: Any, column: str) -> None:
         """Add a single column to a regular (non-FTS5) memory table."""
         defaults: dict[str, str] = {
             "is_active": "INTEGER NOT NULL DEFAULT 1",
             "is_pinned": "INTEGER NOT NULL DEFAULT 0",
             "is_user_authored": "INTEGER NOT NULL DEFAULT 0",
+            "is_global": "INTEGER NOT NULL DEFAULT 0",
             "deleted_at": "TEXT",
             "deleted_reason": "TEXT",
             "superseded_by": "TEXT",
@@ -247,8 +267,13 @@ class MemoryStore:
         for col in self._EXPECTED_MEMORY_COLUMNS:
             if col in existing:
                 source_cols.append(col)
-            elif col in ("is_active", "is_pinned", "is_user_authored"):
-                source_cols.append("1" if col == "is_active" else "0")
+            elif col == "is_active":
+                source_cols.append("1")
+            elif col in ("is_pinned", "is_user_authored"):
+                source_cols.append("0")
+            elif col == "is_global":
+                # Pre-topic-scoped memories become global on migration.
+                source_cols.append("1")
             else:
                 source_cols.append("NULL")
         values = ", ".join(source_cols)
@@ -284,7 +309,8 @@ class MemoryStore:
             superseded_by UNINDEXED,
             is_pinned UNINDEXED,
             is_user_authored UNINDEXED,
-            last_recalled_at UNINDEXED
+            last_recalled_at UNINDEXED,
+            is_global UNINDEXED
         )
         """
         await conn.execute(sa.text(ddl))
@@ -305,7 +331,8 @@ class MemoryStore:
             superseded_by TEXT,
             is_pinned INTEGER NOT NULL DEFAULT 0,
             is_user_authored INTEGER NOT NULL DEFAULT 0,
-            last_recalled_at TEXT
+            last_recalled_at TEXT,
+            is_global INTEGER NOT NULL DEFAULT 0
         )
         """
         await conn.execute(sa.text(ddl))
@@ -359,6 +386,8 @@ class MemoryStore:
         platform: str | None = None,
         platform_user: str | None = None,
         strict: bool = False,
+        is_global: bool = False,
+        topic_ids: list[str] | None = None,
     ) -> Memory | None:
         """Save a memory entry.
 
@@ -369,6 +398,9 @@ class MemoryStore:
             platform: Optional platform identifier; falls back to runtime ContextVar
             platform_user: Optional user identifier; falls back to runtime ContextVar
             strict: If True, raise PersistenceError when content is rejected.
+            is_global: When True, the memory is always injected regardless of topic.
+            topic_ids: Topic IDs to associate with this memory. Ignored when
+                is_global is True.
 
         Returns:
             The created Memory, or None when the content is rejected by the sanitizer.
@@ -404,10 +436,10 @@ class MemoryStore:
         insert = sa.text(
             "INSERT INTO memory (id, content, tags, session_id, created_at, "
             "platform, platform_user, is_active, deleted_at, deleted_reason, "
-            "superseded_by, is_pinned, is_user_authored, last_recalled_at) "
+            "superseded_by, is_pinned, is_user_authored, last_recalled_at, is_global) "
             "VALUES (:id, :content, :tags, :session_id, :created_at, "
             ":platform, :platform_user, :is_active, :deleted_at, :deleted_reason, "
-            ":superseded_by, :is_pinned, :is_user_authored, :last_recalled_at)"
+            ":superseded_by, :is_pinned, :is_user_authored, :last_recalled_at, :is_global)"
         )
         async with self._db.engine.connect() as conn:
             await conn.execute(
@@ -427,8 +459,20 @@ class MemoryStore:
                     "is_pinned": 0,
                     "is_user_authored": 0,
                     "last_recalled_at": None,
+                    "is_global": 1 if is_global else 0,
                 },
             )
+
+            if not is_global and topic_ids:
+                await self._associate_memory_with_topics(
+                    conn, memory_id, topic_ids, now
+                )
+            elif not is_global and not topic_ids:
+                logger.debug(
+                    "Saving non-global memory %s without topic associations",
+                    memory_id,
+                )
+
             await conn.commit()
 
         return Memory(
@@ -439,7 +483,142 @@ class MemoryStore:
             created_at=now,
             platform=platform,
             platform_user=platform_user,
+            is_global=is_global,
         )
+
+    async def save_global(
+        self,
+        content: str,
+        tags: list[str] | None = None,
+        session_id: str | None = None,
+        platform: str | None = None,
+        platform_user: str | None = None,
+        strict: bool = False,
+    ) -> Memory | None:
+        """Save a memory as global (always-inject scope).
+
+        Convenience wrapper around :meth:`save` with ``is_global=True``.
+        """
+        return await self.save(
+            content=content,
+            tags=tags,
+            session_id=session_id,
+            platform=platform,
+            platform_user=platform_user,
+            strict=strict,
+            is_global=True,
+        )
+
+    async def _associate_memory_with_topics(
+        self,
+        conn: Any,
+        memory_id: str,
+        topic_ids: list[str],
+        created_at: datetime,
+    ) -> None:
+        """Insert memory_topics rows associating a memory with topics.
+
+        Duplicate topic IDs are ignored (PRIMARY KEY prevents duplicates).
+        """
+        if not topic_ids:
+            return
+        seen = set()
+        values = []
+        for topic_id in topic_ids:
+            if topic_id in seen:
+                continue
+            seen.add(topic_id)
+            values.append(
+                {
+                    "memory_id": memory_id,
+                    "topic_id": topic_id,
+                    "created_at": created_at.isoformat(),
+                }
+            )
+        if values:
+            await conn.execute(
+                sa.text(
+                    "INSERT OR IGNORE INTO memory_topics "
+                    "(memory_id, topic_id, created_at) "
+                    "VALUES (:memory_id, :topic_id, :created_at)"
+                ),
+                values,
+            )
+
+    async def get_for_epoch(
+        self,
+        *,
+        platform: str,
+        platform_user: str,
+        topic_ids: list[str] | None = None,
+        active_sender_platform_user: str | None = None,
+        include_inactive: bool = False,
+    ) -> tuple[list[Memory], list[Memory]]:
+        """Fetch memories for epoch composition.
+
+        Returns two buckets: global memories and topic-scoped memories. Global
+        memories use the active sender's identity in group chats; topic memories
+        use the room/conversation identity. The caller applies the global cap
+        and token budget.
+
+        Args:
+            platform: Platform identifier for both scopes.
+            platform_user: Conversation/room user identifier for topic memories.
+            topic_ids: Subscribed topic IDs. Empty list fetches no topic memories.
+            active_sender_platform_user: In group chats, the user whose global
+                memories should be included. Defaults to ``platform_user``.
+            include_inactive: If True, include soft-deleted memories.
+
+        Returns:
+            Tuple of (global_memories, topic_memories), each newest-first.
+        """
+        global_user = active_sender_platform_user or platform_user
+        active_clause = "AND is_active = :is_active" if not include_inactive else ""
+        params: dict[str, Any] = {
+            "platform": platform,
+            "global_user": global_user,
+            "room_user": platform_user,
+            "is_active": 0 if include_inactive else 1,
+        }
+
+        global_sql = sa.text(
+            "SELECT id, content, tags, session_id, created_at, platform, platform_user, "
+            "is_active, deleted_at, deleted_reason, superseded_by, is_pinned, "
+            "is_user_authored, last_recalled_at, is_global "
+            "FROM memory "
+            "WHERE platform = :platform AND platform_user = :global_user "
+            "AND is_global = 1 "
+            f"{active_clause} "
+            "ORDER BY created_at DESC"
+        )
+
+        topic_memories: list[Memory] = []
+        if topic_ids:
+            placeholders = ", ".join(f":tid_{i}" for i in range(len(topic_ids)))
+            for i, topic_id in enumerate(topic_ids):
+                params[f"tid_{i}"] = topic_id
+            topic_sql = sa.text(
+                "SELECT DISTINCT m.id, m.content, m.tags, m.session_id, m.created_at, "
+                "m.platform, m.platform_user, m.is_active, m.deleted_at, "
+                "m.deleted_reason, m.superseded_by, m.is_pinned, "
+                "m.is_user_authored, m.last_recalled_at, m.is_global "
+                "FROM memory m "
+                "JOIN memory_topics mt ON m.id = mt.memory_id "
+                "WHERE m.platform = :platform AND m.platform_user = :room_user "
+                f"AND mt.topic_id IN ({placeholders}) "
+                "AND m.is_global = 0 "
+                f"{active_clause} "
+                "ORDER BY m.created_at DESC"
+            )
+            async with self._db.engine.connect() as conn:
+                result = await conn.execute(topic_sql, params)
+                topic_memories = [self._row_to_memory(row) for row in result.fetchall()]
+
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(global_sql, params)
+            global_memories = [self._row_to_memory(row) for row in result.fetchall()]
+
+        return global_memories, topic_memories
 
     async def search(
         self,
@@ -478,7 +657,7 @@ class MemoryStore:
             sql = sa.text(
                 "SELECT id, content, tags, session_id, created_at, platform, platform_user, "
                 "is_active, deleted_at, deleted_reason, superseded_by, is_pinned, "
-                "is_user_authored, last_recalled_at "
+                "is_user_authored, last_recalled_at, is_global "
                 f"FROM memory WHERE memory MATCH :query {active_clause} "
                 "AND platform = :platform AND platform_user = :platform_user "
                 "ORDER BY rank LIMIT :limit"
@@ -491,7 +670,7 @@ class MemoryStore:
             sql = sa.text(
                 "SELECT id, content, tags, session_id, created_at, platform, platform_user, "
                 "is_active, deleted_at, deleted_reason, superseded_by, is_pinned, "
-                "is_user_authored, last_recalled_at "
+                "is_user_authored, last_recalled_at, is_global "
                 f"FROM memory WHERE content LIKE :query {active_clause} "
                 "AND platform = :platform AND platform_user = :platform_user "
                 "ORDER BY created_at DESC LIMIT :limit"
@@ -564,7 +743,7 @@ class MemoryStore:
         sql = sa.text(
             "SELECT id, content, tags, session_id, created_at, platform, platform_user, "
             "is_active, deleted_at, deleted_reason, superseded_by, is_pinned, "
-            "is_user_authored, last_recalled_at "
+            "is_user_authored, last_recalled_at, is_global "
             f"FROM memory {where_str} "
             "ORDER BY created_at DESC LIMIT :limit"
         )
@@ -583,7 +762,7 @@ class MemoryStore:
         sql = sa.text(
             "SELECT id, content, tags, session_id, created_at, platform, platform_user, "
             "is_active, deleted_at, deleted_reason, superseded_by, is_pinned, "
-            "is_user_authored, last_recalled_at "
+            "is_user_authored, last_recalled_at, is_global "
             "FROM memory WHERE id = :id"
         )
         async with self._db.engine.connect() as conn:
@@ -845,7 +1024,7 @@ class MemoryStore:
         sql = sa.text(
             "SELECT id, content, tags, session_id, created_at, platform, platform_user, "
             "is_active, deleted_at, deleted_reason, superseded_by, is_pinned, "
-            "is_user_authored, last_recalled_at "
+            "is_user_authored, last_recalled_at, is_global "
             f"FROM memory {where_str} "
             "ORDER BY deleted_at DESC LIMIT :limit"
         )
@@ -928,4 +1107,5 @@ class MemoryStore:
             is_pinned=bool(row.is_pinned),
             is_user_authored=bool(row.is_user_authored),
             last_recalled_at=_parse_dt(row.last_recalled_at),
+            is_global=bool(row.is_global),
         )
