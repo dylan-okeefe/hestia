@@ -3189,5 +3189,16 @@ Goal: clean up before public release (r/LocalLLM, r/LocalLLama post).
 - History table filtering by status, date, node name
 - Branch: `feature/l217-workflow-ux-polish`
 
+### L239 — Memory UI Redesign (Loop C)
+- Redesigned Knowledge page as scope/topic curation tool
+- Grouped memories by Global + per-topic sections
+- Per-memory edit, pin/unpin, soft-delete/restore
+- Topic management panel: create/rename/delete
+- Distinct rendering for descriptive tags vs topic badges
+- Backend REST endpoints for memory/topic curation
+- Backend tests for MemoryStore scope/topic updates and TopicStore CRUD
+- UI tests for scope grouping, tag/topic distinction, delete/restore, scope edit
+- Branch: `feature/l239-memory-ui-redesign`
+
 ### Test count
 1709 passed, 6 skipped, 1 pre-existing flaky failure (test_doctor_check)
