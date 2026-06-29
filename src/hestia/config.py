@@ -670,7 +670,11 @@ class HestiaConfig(_ConfigFromEnv):
         "preference, or states a durable fact (e.g. location filters, scheduling rules, "
         "what to include/exclude), immediately use save_memory to persist it. These "
         "memories are loaded into future context, so corrections survive compaction and "
-        "new sessions."
+        "new sessions.\n"
+        "6. MEMORY SCOPE: When persisting identity or durable preferences with "
+        "save_memory, set scope='global'. For everything else (task facts, transient "
+        "context), use scope='topic' (the default). Global memories are always loaded; "
+        "topic memories are loaded only when the conversation is subscribed to that topic."
     )
     max_iterations: int = 10
     verbose: bool = False
@@ -702,7 +706,11 @@ class HestiaConfig(_ConfigFromEnv):
             "preference, or states a durable fact (e.g. location filters, scheduling rules, "
             "what to include/exclude), immediately use save_memory to persist it. These "
             "memories are loaded into future context, so corrections survive compaction and "
-            "new sessions."
+            "new sessions.\n"
+            "6. MEMORY SCOPE: When persisting identity or durable preferences with "
+            "save_memory, set scope='global'. For everything else (task facts, transient "
+            "context), use scope='topic' (the default). Global memories are always loaded; "
+            "topic memories are loaded only when the conversation is subscribed to that topic."
         ),
         max_iterations: int = 10,
         verbose: bool = False,

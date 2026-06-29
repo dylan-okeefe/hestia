@@ -149,6 +149,10 @@ def test_default_registry_has_expected_commands():
         "/refresh",
         "/tokens",
         "/commands",
+        "/add-topic",
+        "/remove-topic",
+        "/topic",
+        "/remember-global",
     }
     assert expected <= names
     assert reg.get("/exit") is reg.get("/quit")

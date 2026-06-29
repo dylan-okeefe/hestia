@@ -382,3 +382,38 @@ maintenance_trace = sa.Table(
     ),
     sa.Index("idx_maintenance_trace_created", "created_at"),
 )
+
+# Topic-scoped memory tables (Loop A: thread/topic-scoped memory).
+# Memories themselves live in the FTS5 ``memory`` table managed by MemoryStore.
+topics = sa.Table(
+    "topics",
+    metadata,
+    sa.Column("id", sa.String, primary_key=True),
+    sa.Column("platform", sa.String, nullable=False),
+    sa.Column("platform_user", sa.String, nullable=False),
+    sa.Column("name", sa.String, nullable=False),
+    sa.Column("created_at", sa.DateTime, nullable=False),
+    sa.UniqueConstraint("platform", "platform_user", "name"),
+    sa.Index("idx_topics_user_name", "platform", "platform_user", "name"),
+)
+
+conversation_topics = sa.Table(
+    "conversation_topics",
+    metadata,
+    sa.Column("conversation_id", sa.String, nullable=False),
+    sa.Column("topic_id", sa.String, sa.ForeignKey("topics.id", ondelete="CASCADE"), nullable=False),
+    sa.Column("created_at", sa.DateTime, nullable=False),
+    sa.PrimaryKeyConstraint("conversation_id", "topic_id"),
+    sa.Index("idx_conversation_topics_topic", "topic_id"),
+)
+
+memory_topics = sa.Table(
+    "memory_topics",
+    metadata,
+    sa.Column("memory_id", sa.String, nullable=False),
+    sa.Column("topic_id", sa.String, sa.ForeignKey("topics.id", ondelete="CASCADE"), nullable=False),
+    sa.Column("created_at", sa.DateTime, nullable=False),
+    sa.PrimaryKeyConstraint("memory_id", "topic_id"),
+    sa.Index("idx_memory_topics_memory", "memory_id"),
+    sa.Index("idx_memory_topics_topic", "topic_id"),
+)

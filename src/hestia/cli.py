@@ -395,7 +395,8 @@ async def memory_list(app: AppContext, tag: str | None, limit: int) -> None:
 async def memory_add(app: AppContext, content: str, tags: str) -> None:
     """Add a memory manually."""
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
-    mem = await app.memory_store.save(content=content, tags=tag_list)
+    # Manual CLI additions are operator-asserted durable facts, so save as global.
+    mem = await app.memory_store.save_global(content=content, tags=tag_list)
     if mem is None:
         click.echo("Memory rejected: content did not pass the write-time sanitizer.")
         return

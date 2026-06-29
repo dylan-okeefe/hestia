@@ -230,6 +230,9 @@ class AppContext:
         self.user_store = UserStore(self.db)
         self.policy = _make_policy(config)
         self.memory_store = MemoryStore(self.db)
+        from hestia.memory.topics import TopicStore
+
+        self.topic_store = TopicStore(self.db)
         self.failure_store = FailureStore(self.db)
         self.trace_store = TraceStore(self.db)
         self.scheduler_store = SchedulerStore(self.db)
@@ -244,6 +247,7 @@ class AppContext:
             event_bus=self.event_bus,
             message_store=self.message_store,
             memory_store=self.memory_store,
+            archive_summarizer=self.compaction_summarizer,
             inference_factory=lambda: self.inference,
         )
         self.handoff_service = HandoffService(
@@ -332,6 +336,7 @@ class AppContext:
         return SessionCompactionSummarizer(
             inference=self.inference,
             memory_store=self.memory_store,
+            topic_store=self.topic_store,
             max_chars=self.config.compaction.summary_max_chars,
             min_messages=self.config.compaction.min_messages,
         )
@@ -540,7 +545,7 @@ class AppContext:
         reg.register(make_rollback_turn_tool(self.checkpoint_manager))
         reg.register(make_blocked_actions_summary_tool(self.blocked_actions_digest))
         reg.register(make_search_memory_tool(self.memory_store))
-        reg.register(make_save_memory_tool(self.memory_store))
+        reg.register(make_save_memory_tool(self.memory_store, self.topic_store))
         reg.register(make_list_memories_tool(self.memory_store))
         reg.register(make_delete_memory_tool(self.memory_store))
         reg.register(make_save_job_alert_tool(self.job_alert_store))

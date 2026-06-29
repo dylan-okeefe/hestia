@@ -4,6 +4,7 @@ from collections.abc import Callable, Coroutine
 from typing import Any
 
 from hestia.memory.store import MemoryStore
+from hestia.memory.topics import TopicStore
 from hestia.runtime_context import (
     current_platform,
     current_platform_user,
@@ -60,12 +61,16 @@ def make_search_memory_tool(
 
 def make_save_memory_tool(
     memory_store: MemoryStore,
+    topic_store: TopicStore,
 ) -> Callable[..., Coroutine[Any, Any, str]]:
-    """Create a save_memory tool bound to a MemoryStore instance."""
+    """Create a save_memory tool bound to a MemoryStore and TopicStore."""
 
     @tool(
         name="save_memory",
-        public_description="Save a note to memory. Params: content (str), tags (str or list, default '').",
+        public_description=(
+            "Save a note to memory. Params: content (str), tags (str or list, default ''), "
+            "scope ('global' | 'topic', default 'topic')."
+        ),
         parameters_schema={
             "type": "object",
             "properties": {
@@ -77,19 +82,31 @@ def make_save_memory_tool(
                         "(e.g. 'project, todo')."
                     ),
                 },
+                "scope": {
+                    "type": "string",
+                    "enum": ["global", "topic"],
+                    "description": (
+                        "'global' for identity/durable preferences (always loaded). "
+                        "'topic' for conversation-scoped facts (default)."
+                    ),
+                },
             },
             "required": ["content"],
         },
         tags=["memory", "builtin"],
         capabilities=[MEMORY_WRITE],
     )
-    async def save_memory(content: str, tags: str | list[str] = "") -> str:
+    async def save_memory(
+        content: str, tags: str | list[str] = "", scope: str = "topic"
+    ) -> str:
         """Save a note to long-term memory.
 
         Args:
             content: The text content to remember
             tags: Comma-separated tags or list of tags for categorization
                   (e.g., "project, todo" or ["project", "todo"])
+            scope: 'global' for identity/durable preferences (always loaded),
+                   'topic' for conversation-scoped facts (default).
 
         Returns:
             Confirmation with the memory ID.
@@ -104,13 +121,33 @@ def make_save_memory_tool(
         session_id = current_session_id.get()
         platform = current_platform.get()
         platform_user = current_platform_user.get()
-        mem = await memory_store.save(
-            content=content,
-            tags=tag_list,
-            session_id=session_id,
-            platform=platform,
-            platform_user=platform_user,
-        )
+
+        if scope == "global":
+            mem = await memory_store.save_global(
+                content=content,
+                tags=tag_list,
+                session_id=session_id,
+                platform=platform,
+                platform_user=platform_user,
+            )
+        else:
+            topic_ids: list[str] = []
+            if (
+                session_id is not None
+                and platform is not None
+                and platform_user is not None
+            ):
+                topic_ids = await topic_store.resolve_capture_topic_ids(
+                    session_id, platform, platform_user
+                )
+            mem = await memory_store.save(
+                content=content,
+                tags=tag_list,
+                session_id=session_id,
+                platform=platform,
+                platform_user=platform_user,
+                topic_ids=topic_ids,
+            )
         if mem is None:
             return "Memory rejected: content did not pass the write-time sanitizer."
         preview = content[:80] + ("..." if len(content) > 80 else "")
