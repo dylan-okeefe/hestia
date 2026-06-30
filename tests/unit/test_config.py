@@ -29,6 +29,7 @@ class TestDefaultConfig:
         assert cfg.inference.model_name == ""
         assert cfg.inference.default_reasoning_budget == 2048
         assert cfg.inference.max_tokens == 1024
+        assert cfg.inference.request_timeout == 300.0
 
         # Slot defaults
         assert cfg.slots.slot_dir == Path("slots")
@@ -232,6 +233,10 @@ class TestConfigFromEnvMixin:
     def test_negative_inference_max_tokens_rejected(self):
         with pytest.raises(ValueError, match="non-negative"):
             InferenceConfig(max_tokens=-1)
+
+    def test_negative_inference_request_timeout_rejected(self):
+        with pytest.raises(ValueError, match="non-negative"):
+            InferenceConfig(request_timeout=-1.0)
 
     def test_unparseable_style_cron_rejected(self):
         with pytest.raises(ValueError, match="cron"):

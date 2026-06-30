@@ -1,6 +1,7 @@
 """Turn assembly phase: prepares context, tools, slot, and history."""
 
 import logging
+import re
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
@@ -23,6 +24,29 @@ if TYPE_CHECKING:
     from hestia.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
+
+# Lightweight heuristic: first-turn greetings/small-talk should not trigger
+# the meta-tool round-trip (list_tools / describe_tool / call_tool). This
+# avoids the "Working: list_tools..." status and the extra latency on a
+# simple "hey".
+_GREETING_RE = re.compile(
+    r"^\s*("
+    r"hey|hi|hello|yo|hiya|howdy|"
+    r"good\s+(morning|afternoon|evening)|"
+    r"what'?s\s+up|sup|"
+    r"how\s+(are|r)\s+(you|u|ya)|"
+    r"how'?s\s+it\s+going|how\s+do\s+you\s+do"
+    r")\s*[!?.]*\s*$",
+    re.IGNORECASE,
+)
+
+
+def _is_greeting_or_smalltalk(text: str | None) -> bool:
+    if not text:
+        return False
+    stripped = text.strip()
+    return len(stripped) <= 60 and _GREETING_RE.match(stripped) is not None
+
 
 class TurnAssembly:
     """Prepares a turn for execution by building context, injecting style and
@@ -119,6 +143,10 @@ class TurnAssembly:
             effective_system_prompt = f"{user_context}\n\n{effective_system_prompt}"
 
         ctx.tools = self._tools.meta_tool_schemas()
+        if not history and _is_greeting_or_smalltalk(ctx.user_message.content):
+            logger.debug("First message looks like a greeting; removing tools for direct reply")
+            ctx.tools = []
+
         self._builder.set_style_prefix(style_prefix)
         ctx.build_result = await self._builder.build(
             session=session,

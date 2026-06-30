@@ -702,5 +702,5 @@ class InferenceClient:
         await self._request(
             "POST",
             f"/slots/{slot_id}?action=erase",
-            timeout=10.0,
+            timeout=60.0,
         )

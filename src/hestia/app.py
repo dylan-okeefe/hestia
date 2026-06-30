@@ -299,7 +299,11 @@ class AppContext:
                 "filename (e.g. 'my-model-Q4_K_M.gguf'), or for tests only set "
                 "HESTIA_ALLOW_DUMMY_MODEL=1 and use model_name='dummy'."
             )
-        return InferenceClient(self.config.inference.base_url, model_name)
+        return InferenceClient(
+            self.config.inference.base_url,
+            model_name,
+            timeout=self.config.inference.request_timeout,
+        )
 
     @functools.cached_property
     def context_builder(self) -> ContextBuilder:

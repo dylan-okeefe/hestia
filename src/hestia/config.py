@@ -53,6 +53,8 @@ class InferenceConfig(_ConfigFromEnv):
     default_reasoning_budget: int = 2048
     max_tokens: int = 1024
     stream: bool = False
+    request_timeout: float = 300.0
+    """HTTP timeout (seconds) for chat completion requests to llama-server."""
 
     def __post_init__(self) -> None:
         # Reject literal "dummy" at config-load (see H-5).
@@ -67,6 +69,10 @@ class InferenceConfig(_ConfigFromEnv):
         if self.max_tokens < 0:
             raise ValueError(
                 f"InferenceConfig.max_tokens must be non-negative, got {self.max_tokens}"
+            )
+        if self.request_timeout < 0:
+            raise ValueError(
+                f"InferenceConfig.request_timeout must be non-negative, got {self.request_timeout}"
             )
 
 
@@ -663,15 +669,17 @@ class HestiaConfig(_ConfigFromEnv):
         "2. If a tool is unavailable, blocked, or returns an error, STOP and tell the user "
         "or choose a different action. Do not keep retrying the same call.\n"
         "3. When the user asks a conversational question, reply directly without calling tools.\n"
-        "4. FILE WRITING: If you need to write more than 2000 characters, create the file "
+        "4. For greetings, casual chat, or anything that does not require a tool, "
+        "reply directly. Do not call list_tools, describe_tool, or call_tool.\n"
+        "5. FILE WRITING: If you need to write more than 2000 characters, create the file "
         "with a short header using write_file, then add each remaining section with "
         "append_to_file. Do NOT try to fit an entire long document into one tool call.\n"
-        "5. USER CORRECTIONS & PREFERENCES: If the user corrects you, changes a "
+        "6. USER CORRECTIONS & PREFERENCES: If the user corrects you, changes a "
         "preference, or states a durable fact (e.g. location filters, scheduling rules, "
         "what to include/exclude), immediately use save_memory to persist it. These "
         "memories are loaded into future context, so corrections survive compaction and "
         "new sessions.\n"
-        "6. MEMORY SCOPE: When persisting identity or durable preferences with "
+        "7. MEMORY SCOPE: When persisting identity or durable preferences with "
         "save_memory, set scope='global'. For everything else (task facts, transient "
         "context), use scope='topic' (the default). Global memories are always loaded; "
         "topic memories are loaded only when the conversation is subscribed to that topic."
@@ -699,15 +707,17 @@ class HestiaConfig(_ConfigFromEnv):
             "2. If a tool is unavailable, blocked, or returns an error, STOP and tell the user "
             "or choose a different action. Do not keep retrying the same call.\n"
             "3. When the user asks a conversational question, reply directly without calling tools.\n"
-            "4. FILE WRITING: If you need to write more than 2000 characters, create the file "
+            "4. For greetings, casual chat, or anything that does not require a tool, "
+            "reply directly. Do not call list_tools, describe_tool, or call_tool.\n"
+            "5. FILE WRITING: If you need to write more than 2000 characters, create the file "
             "with a short header using write_file, then add each remaining section with "
             "append_to_file. Do NOT try to fit an entire long document into one tool call.\n"
-            "5. USER CORRECTIONS & PREFERENCES: If the user corrects you, changes a "
+            "6. USER CORRECTIONS & PREFERENCES: If the user corrects you, changes a "
             "preference, or states a durable fact (e.g. location filters, scheduling rules, "
             "what to include/exclude), immediately use save_memory to persist it. These "
             "memories are loaded into future context, so corrections survive compaction and "
             "new sessions.\n"
-            "6. MEMORY SCOPE: When persisting identity or durable preferences with "
+            "7. MEMORY SCOPE: When persisting identity or durable preferences with "
             "save_memory, set scope='global'. For everything else (task facts, transient "
             "context), use scope='topic' (the default). Global memories are always loaded; "
             "topic memories are loaded only when the conversation is subscribed to that topic."

@@ -48,14 +48,14 @@ TypingCallback = Callable[[bool], Awaitable[None]]
 
 # Inter-chunk timeout: once the model has started emitting tokens, if no chunk
 # arrives for this long we assume the stream is dead and finish.  Tool-call
-# argument JSON can be large, so this needs to be generous enough for the
-# server to finish emitting a complete chunk.
-_STREAM_INACTIVITY_TIMEOUT = 60.0
+# argument JSON can be large, and local models can stall between tokens, so
+# this needs to be generous enough for the server to finish emitting a chunk.
+_STREAM_INACTIVITY_TIMEOUT = 120.0
 
 # First-chunk timeout: prompt processing for long contexts can take tens of
-# seconds without emitting any tokens.  We allow up to two minutes for the
+# seconds without emitting any tokens.  We allow up to three minutes for the
 # first chunk before giving up, while keeping the inter-chunk timeout tight.
-_STREAM_FIRST_CHUNK_TIMEOUT = 120.0
+_STREAM_FIRST_CHUNK_TIMEOUT = 180.0
 
 # Timeout escalation schedule for repeated TIMEOUT retries (seconds).
 _TIMEOUT_ESCALATION_SCHEDULE = (15.0, 30.0, 60.0)
