@@ -1,7 +1,7 @@
 {
-  "python_loc": 37673,
+  "python_loc": 37608,
   "test_loc": 47322,
-  "total_loc": 84995,
+  "total_loc": 84930,
   "tests": 2244,
   "test_files": 240,
   "adrs": 52,
