@@ -107,6 +107,7 @@ from hestia.tools.builtin import (
     read_clipboard,
 )
 from hestia.tools.checkpoint import CheckpointManager
+from hestia.tools.external_context import ExternalToolModuleContext
 from hestia.tools.registry import ToolRegistry
 from hestia.workflows.execution_store import ExecutionStore
 from hestia.workflows.store import WorkflowStore
@@ -534,6 +535,16 @@ class AppContext:
                     "Failed to import external tool module %r: %s", dotted_path, exc
                 )
                 continue
+            setup = getattr(module, "setup", None)
+            if callable(setup):
+                try:
+                    context = ExternalToolModuleContext(db=self.db, config=cfg)
+                    setup(context)
+                except Exception as exc:  # noqa: BLE001 — external hook failure must not crash startup
+                    logger.warning(
+                        "External tool module %r setup failed: %s", dotted_path, exc
+                    )
+                    continue
             register = getattr(module, "register", None)
             if register is None or not callable(register):
                 logger.warning(
