@@ -7,24 +7,23 @@
 
 ## Current task
 
-**Status:** Complete pending Dylan review — external tool modules extension point
-**Branch:** `feature/l240-external-tool-modules`
-**Handoff:** `docs/handoffs/L240-external-tool-modules-handoff.md`
-**ADR:** `docs/adr/ADR-051-external-tool-modules.md`
-**TaskView:** Card #25 — "External tool modules (custom-tool extension point)"
+**Status:** Complete pending Dylan review — external tool module persistence seam
+**Branch:** `feature/l241-external-tool-module-setup`
+**Handoff:** `docs/handoffs/L241-external-tool-module-setup-handoff.md`
+**TaskView:** Card #27 — "Decision: how to get the job_alert subsystem out of the public core"
+**Decision:** Option 1 — extend the external-tool-modules seam with a minimal `setup(context)` hook so external modules can own their own persistence. Full external-schema framework deferred until after H2 schema-ownership consolidation.
 
 ### Summary
 
-Implemented an opt-in seam that lets external Python packages contribute `@tool` callables via a `register(registry)` hook, loaded from the new `extra_tool_modules` config field. External tools are registered in the same `ToolRegistry` as built-ins and remain fully subject to `CapabilityGate` and `DefaultPolicyEngine` filtering.
+Added `ExternalToolModuleContext` and an optional `setup(context)` hook that runs before `register(registry)` in external tool modules. The context exposes `db` and `config` so a plugin can create its own store (e.g., `JobAlertStore`) without the public core owning that persistence. The job_alert subsystem itself was not migrated yet; this card only builds the seam.
 
 ### Quality gates
 
-- `uv run pytest tests/unit/tools/test_external_tool_modules.py -q`: **6 passed**
-- `uv run pytest tests/unit/tools/ tests/unit/policy/ tests/unit/test_config.py tests/unit/test_config_env.py -q`: **179 passed**
+- `uv run pytest tests/unit/tools/test_external_tool_modules.py tests/unit/tools/test_external_tool_setup.py -q`: **11 passed**
 - `uv run mypy` on changed files: **0 errors**
 - `uv run ruff check` on changed files: **clean**
 - Full-repo gates show only pre-existing issues; no new issues introduced.
 
 ### Next step
 
-Dylan review of `feature/l240-external-tool-modules`; merge to `develop` when approved. Do not merge without Dylan's okay.
+Dylan review of `feature/l241-external-tool-module-setup`; merge to `develop` when approved. Do not merge without Dylan's okay.
