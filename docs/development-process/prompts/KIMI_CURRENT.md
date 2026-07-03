@@ -7,23 +7,22 @@
 
 ## Current task
 
-**Status:** Complete pending Dylan review — external tool module persistence seam
-**Branch:** `feature/l241-external-tool-module-setup`
-**Handoff:** `docs/handoffs/L241-external-tool-module-setup-handoff.md`
-**TaskView:** Card #27 — "Decision: how to get the job_alert subsystem out of the public core"
-**Decision:** Option 1 — extend the external-tool-modules seam with a minimal `setup(context)` hook so external modules can own their own persistence. Full external-schema framework deferred until after H2 schema-ownership consolidation.
+**Status:** Complete pending Dylan review — migrate `indeed_search_jobs` to private repo
+**Branch:** `feature/l242-migrate-indeed-search`
+**Handoff:** `docs/handoffs/L242-migrate-indeed-search-handoff.md`
+**Private repo:** `git@github.com-personal:dylan-okeefe/hestia-tools.git` (`~/code/hestia-tools`)
 
 ### Summary
 
-Added `ExternalToolModuleContext` and an optional `setup(context)` hook that runs before `register(registry)` in external tool modules. The context exposes `db` and `config` so a plugin can create its own store (e.g., `JobAlertStore`) without the public core owning that persistence. The job_alert subsystem itself was not migrated yet; this card only builds the seam.
+Migrated `indeed_search_jobs` out of the publishable Hestia core into the private `hestia-tools` package. Made `http_get_impl` public so external modules can reuse Hestia's SSRF-guarded fetch path. The private repo is installed in Hestia's environment and loaded via `extra_tool_modules=["hestia_tools"]`.
 
 ### Quality gates
 
-- `uv run pytest tests/unit/tools/test_external_tool_modules.py tests/unit/tools/test_external_tool_setup.py -q`: **11 passed**
-- `uv run mypy` on changed files: **0 errors**
-- `uv run ruff check` on changed files: **clean**
-- Full-repo gates show only pre-existing issues; no new issues introduced.
+- Hestia external-tool tests: **11 passed**
+- Hestia unit/tools: **110 passed, 15 warnings**
+- `mypy` / `ruff` on changed Hestia files: clean
+- Private repo test (run inside Hestia venv): **1 passed**
 
 ### Next step
 
-Dylan review of `feature/l241-external-tool-module-setup`; merge to `develop` when approved. Do not merge without Dylan's okay.
+Dylan review of `feature/l242-migrate-indeed-search`; merge to `develop` when approved. Do not merge without Dylan's okay.

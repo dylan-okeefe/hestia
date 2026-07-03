@@ -25,7 +25,37 @@
 - `mypy` and `ruff` clean on changed files.
 - Full-repo gates show only pre-existing issues.
 
-**Merged:** Merged to `develop` and pushed (commit `1097fce9`). The job_alert migration to a private repo can now proceed.
+**Merged:** Merged to `develop` and pushed (commit `1097fce9`).
+
+## 2026-07-03 — L242: Migrate `indeed_search_jobs` to Private Repo
+
+**Outcome:** Moved `indeed_search_jobs` out of the publishable Hestia core into the private `hestia-tools` package. Made `http_get_impl` public so external modules can reuse Hestia's SSRF-guarded HTTP fetch path. Personal taxonomy ("A-IN-1") was scrubbed from the tool description.
+
+**Branch:** `feature/l242-migrate-indeed-search`
+**Private repo:** `git@github.com-personal:dylan-okeefe/hestia-tools.git`
+
+**Changes:**
+- Public Hestia core:
+  - Made `http_get_impl` public in `src/hestia/tools/builtin/http_get.py` (with backward-compatible `_http_get_impl` alias).
+  - Removed `src/hestia/tools/builtin/indeed_search.py`.
+  - Removed `indeed_search_jobs` from `src/hestia/tools/builtin/__init__.py` and `src/hestia/app.py` registration.
+  - Regenerated `metrics.json`.
+- Private `hestia-tools` repo:
+  - Added `hestia_tools/indeed_search.py` with scrubbed descriptions.
+  - Added `register(registry)` in `hestia_tools/__init__.py`.
+  - Added `tests/test_indeed_search.py`.
+  - Documented test instructions for running inside Hestia's venv.
+- Created handoff: `docs/handoffs/L242-migrate-indeed-search-handoff.md`.
+
+**Quality gates:**
+- Hestia external-tool tests: 11 passed.
+- Hestia unit/tools: 110 passed, 15 warnings.
+- `mypy` / `ruff` clean on changed Hestia files.
+- Private repo test (inside Hestia venv): 1 passed.
+
+**Next:** Dylan/Cursor review and merge to `develop`. The remaining four branch job-search tools and the `job_alert` subsystem can be migrated in follow-up loops.
+
+## 2026-07-03 — L241: External Tool Module Persistence Seam
 
 ## 2026-07-03 — L240: External Tool Modules
 
