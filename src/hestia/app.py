@@ -43,7 +43,6 @@ from hestia.persistence.capability_events import CapabilityEventStore
 from hestia.persistence.db import Database
 from hestia.persistence.error_resolution_store import ErrorResolutionStore
 from hestia.persistence.failure_store import FailureStore
-from hestia.persistence.job_alert_store import JobAlertStore
 from hestia.persistence.maintenance_trace_store import MaintenanceTraceStore
 from hestia.persistence.message_store import MessageStore
 from hestia.persistence.scheduler import SchedulerStore
@@ -85,17 +84,14 @@ from hestia.tools.builtin import (
     make_http_get_tool,
     make_list_dir_tool,
     make_list_memories_tool,
-    make_list_pending_alerts_tool,
     make_list_proposals_tool,
     make_list_scheduled_tasks_tool,
-    make_mark_alerts_sent_tool,
     make_read_artifact_tool,
     make_read_file_tool,
     make_reject_proposal_tool,
     make_reset_style_metric_tool,
     make_reset_style_profile_tool,
     make_rollback_turn_tool,
-    make_save_job_alert_tool,
     make_save_memory_tool,
     make_search_memory_tool,
     make_show_proposal_tool,
@@ -148,10 +144,7 @@ def _build_capabilities_prefix(cfg: HestiaConfig, registry: ToolRegistry) -> str
 
     lines = ["Deployment context:"]
     lines.append(f"- Model: {cfg.inference.model_name}")
-    lines.append(
-        f"- Context window: {cfg.inference.context_length} tokens per slot; "
-        f"{cfg.slots.pool_size} slots"
-    )
+    lines.append(f"- Context window: {cfg.inference.context_length} tokens per slot; {cfg.slots.pool_size} slots")
     lines.append(f"- Inference endpoint: {cfg.inference.base_url}")
 
     surfaces = ["CLI"]
@@ -197,9 +190,7 @@ class CliResponseHandler:
 class CliConfirmHandler:
     """Handles tool confirmation in CLI mode."""
 
-    async def __call__(
-        self, tool_name: str, arguments: dict[str, Any], request_token: str | None = None
-    ) -> bool:
+    async def __call__(self, tool_name: str, arguments: dict[str, Any], request_token: str | None = None) -> bool:
         """Prompt user for confirmation."""
         click.echo(f"\nTool call requested: {tool_name}")
         click.echo(f"Arguments: {arguments}")
@@ -240,7 +231,6 @@ class AppContext:
         self.workflow_store = WorkflowStore(self.db)
         self.execution_store = ExecutionStore(self.db)
         self.error_resolution_store = ErrorResolutionStore(self.db)
-        self.job_alert_store = JobAlertStore(self.db)
         self.capability_event_store = CapabilityEventStore(self.db)
         self.maintenance_trace_store = MaintenanceTraceStore(self.db)
         self.session_store = SessionStore(
@@ -251,17 +241,13 @@ class AppContext:
             archive_summarizer=self.compaction_summarizer,
             inference_factory=lambda: self.inference,
         )
-        self.handoff_service = HandoffService(
-            self.session_store, self.message_store
-        )
+        self.handoff_service = HandoffService(self.session_store, self.message_store)
         self.blocked_actions_digest = BlockedActionsDigest(
             self.capability_event_store,
             self.session_store,
         )
         self.trigger_registry: Any = None
-        self.epoch_compiler = MemoryEpochCompiler(
-            self.memory_store, max_tokens=self.config.memory.epoch_max_tokens
-        )
+        self.epoch_compiler = MemoryEpochCompiler(self.memory_store, max_tokens=self.config.memory.epoch_max_tokens)
         self.tool_registry = ToolRegistry(self.artifact_store)
         self.checkpoint_manager = CheckpointManager()
         self.capability_gate = CapabilityGate(
@@ -310,14 +296,10 @@ class AppContext:
         if self._compiled_identity:
             cb.set_identity_prefix(self._compiled_identity)
         if self.config.identity.capabilities_prefix_enabled:
-            cb.set_capabilities_prefix(
-                _build_capabilities_prefix(self.config, self.tool_registry)
-            )
+            cb.set_capabilities_prefix(_build_capabilities_prefix(self.config, self.tool_registry))
         if self.config.compression.enabled:
             cb.enable_compression(
-                InferenceHistoryCompressor(
-                    self.inference, max_chars=self.config.compression.max_chars
-                )
+                InferenceHistoryCompressor(self.inference, max_chars=self.config.compression.max_chars)
             )
         return cb
 
@@ -431,7 +413,6 @@ class AppContext:
         await self.style_store.create_table()
         await self.workflow_store.create_tables()
         await self.execution_store.create_tables()
-        await self.job_alert_store.create_table()
         self._bootstrapped = True
 
     async def ensure_memory_maintenance_tasks(
@@ -473,7 +454,7 @@ class AppContext:
 
     async def close(self) -> None:
         """Close lazily-created resources."""
-        if 'inference' in self.__dict__:
+        if "inference" in self.__dict__:
             await self.inference.close()
         if self.email_adapter is not None:
             self.email_adapter.close()
@@ -530,9 +511,7 @@ class AppContext:
             try:
                 module = importlib.import_module(dotted_path)
             except ImportError as exc:
-                logger.warning(
-                    "Failed to import external tool module %r: %s", dotted_path, exc
-                )
+                logger.warning("Failed to import external tool module %r: %s", dotted_path, exc)
                 continue
             setup = getattr(module, "setup", None)
             if callable(setup):
@@ -540,9 +519,7 @@ class AppContext:
                     context = ExternalToolModuleContext(db=self.db, config=cfg)
                     setup(context)
                 except Exception as exc:  # noqa: BLE001 — external hook failure must not crash startup
-                    logger.warning(
-                        "External tool module %r setup failed: %s", dotted_path, exc
-                    )
+                    logger.warning("External tool module %r setup failed: %s", dotted_path, exc)
                     continue
             register = getattr(module, "register", None)
             if register is None or not callable(register):
@@ -554,9 +531,7 @@ class AppContext:
             try:
                 register(reg)
             except ValueError as exc:
-                logger.warning(
-                    "External tool module %r registration failed: %s", dotted_path, exc
-                )
+                logger.warning("External tool module %r registration failed: %s", dotted_path, exc)
                 continue
 
     def register_tools(self) -> None:
@@ -566,11 +541,7 @@ class AppContext:
 
         reg.register(current_time)
         reg.register(read_clipboard)
-        reg.register(
-            make_http_get_tool(
-                cfg.use_curl_cffi_fallback, cfg.security.egress_audit_enabled
-            )
-        )
+        reg.register(make_http_get_tool(cfg.use_curl_cffi_fallback, cfg.security.egress_audit_enabled))
         reg.register(make_list_dir_tool(cfg.storage))
         reg.register(make_terminal_tool(cfg.trust.blocked_shell_patterns or None))
         reg.register(make_read_file_tool(cfg.storage))
@@ -585,9 +556,6 @@ class AppContext:
         reg.register(make_save_memory_tool(self.memory_store, self.topic_store))
         reg.register(make_list_memories_tool(self.memory_store))
         reg.register(make_delete_memory_tool(self.memory_store))
-        reg.register(make_save_job_alert_tool(self.job_alert_store))
-        reg.register(make_list_pending_alerts_tool(self.job_alert_store))
-        reg.register(make_mark_alerts_sent_tool(self.job_alert_store))
         reg.register(make_read_artifact_tool(self.artifact_store))
 
         # Proposal tools (bound to proposal store)
@@ -602,19 +570,14 @@ class AppContext:
         reg.register(make_reset_style_metric_tool(self.style_store))
         reg.register(make_reset_style_profile_tool(self.style_store))
 
-        web_search_tool = make_web_search_tool(
-            cfg.web_search, cfg.security.egress_audit_enabled
-        )
+        web_search_tool = make_web_search_tool(cfg.web_search, cfg.security.egress_audit_enabled)
         if web_search_tool is not None:
             reg.register(web_search_tool)
 
         for email_tool in make_email_tools(cfg.email, adapter=self.email_adapter):
             reg.register(email_tool)
 
-        email_search_and_read = (
-            make_email_search_and_read_tool(self.email_adapter)
-            if self.email_adapter else None
-        )
+        email_search_and_read = make_email_search_and_read_tool(self.email_adapter) if self.email_adapter else None
         if email_search_and_read is not None:
             reg.register(email_search_and_read)
 
@@ -627,9 +590,7 @@ class AppContext:
                 ),
                 err=True,
             )
-            logger.warning(
-                "email.password is set in plaintext. Consider using email.password_env."
-            )
+            logger.warning("email.password is set in plaintext. Consider using email.password_env.")
 
         # Scheduler tools (bound to scheduler and session stores)
         if self.scheduler_store is not None:
@@ -679,13 +640,11 @@ def _validate_config_at_startup(cfg: HestiaConfig) -> None:
     if cfg.email.imap_host or cfg.email.smtp_host:
         if not cfg.email.imap_host:
             raise HestiaConfigError(
-                "email.smtp_host is set but email.imap_host is empty. "
-                "Set email.imap_host to your IMAP server hostname."
+                "email.smtp_host is set but email.imap_host is empty. Set email.imap_host to your IMAP server hostname."
             )
         if not cfg.email.smtp_host:
             raise HestiaConfigError(
-                "email.imap_host is set but email.smtp_host is empty. "
-                "Set email.smtp_host to your SMTP server hostname."
+                "email.imap_host is set but email.smtp_host is empty. Set email.smtp_host to your SMTP server hostname."
             )
 
     # Database URL: if it's a file path, ensure parent directory exists
@@ -697,22 +656,16 @@ def _validate_config_at_startup(cfg: HestiaConfig) -> None:
             db_path = Path(path_part)
             if db_path.parent != Path(".") and not db_path.parent.exists():
                 raise HestiaConfigError(
-                    f"Database directory does not exist: {db_path.parent}. "
-                    f"Create it or update storage.database_url."
+                    f"Database directory does not exist: {db_path.parent}. Create it or update storage.database_url."
                 )
 
 
-def _load_and_validate_config(
-    cfg: HestiaConfig | None = None, config_path: Path | None = None
-) -> HestiaConfig:
+def _load_and_validate_config(cfg: HestiaConfig | None = None, config_path: Path | None = None) -> HestiaConfig:
     """Load config from file or default locations, apply env overrides, and validate."""
     if cfg is None:
         cfg = HestiaConfig.from_file(config_path) if config_path else HestiaConfig.default()
 
-    if (
-        not cfg.inference.model_name.strip()
-        and os.environ.get("HESTIA_ALLOW_DUMMY_MODEL") == "1"
-    ):
+    if not cfg.inference.model_name.strip() and os.environ.get("HESTIA_ALLOW_DUMMY_MODEL") == "1":
         cfg.inference.model_name = "dummy"
     validate_inference_model_name(cfg.inference.model_name)
     _validate_config_at_startup(cfg)
@@ -730,9 +683,7 @@ def _warn_on_missing_files(cfg: HestiaConfig, calibration_path: Path) -> None:
     soul_path = cfg.identity.soul_path
     if soul_path is not None and not soul_path.exists():
         click.echo(
-            click.style(
-                f"Warning: personality file not found at {soul_path}", fg="yellow"
-            ),
+            click.style(f"Warning: personality file not found at {soul_path}", fg="yellow"),
             err=True,
         )
         logger.warning("SOUL.md not found at %s", soul_path)
@@ -746,7 +697,6 @@ def _warn_on_missing_files(cfg: HestiaConfig, calibration_path: Path) -> None:
             err=True,
         )
         logger.warning("Calibration file not found at %s", calibration_path)
-
 
 
 def make_app(cfg: HestiaConfig | None = None, config_path: Path | None = None) -> AppContext:
@@ -772,9 +722,7 @@ def make_app(cfg: HestiaConfig | None = None, config_path: Path | None = None) -
 def _require_scheduler_store(app: AppContext) -> SchedulerStore:
     """Return the scheduler store or raise a clear error."""
     if app.scheduler_store is None:
-        raise click.UsageError(
-            "Scheduler is not configured. Set `scheduler.enabled = True` in your config."
-        )
+        raise click.UsageError("Scheduler is not configured. Set `scheduler.enabled = True` in your config.")
     return app.scheduler_store
 
 

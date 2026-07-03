@@ -7,24 +7,24 @@
 
 ## Current task
 
-**Status:** Complete pending Dylan review — pull job-URL extraction out of workflows/executor.py into a private tool
-**Branch:** `feature/l243-extract-job-url-private-tool`
-**Handoff:** `docs/handoffs/L243-extract-job-url-private-tool-handoff.md`
-**TaskView:** Card #28 — "Pull job-URL extraction out of workflows/executor.py into a private tool"
+**Status:** Complete pending Dylan review — migrate `job_alert` subsystem to private repo
+**Branch:** `feature/l244-migrate-job-alert-handoff`
+**Handoff:** `docs/handoffs/L244-migrate-job-alert-handoff.md`
+**TaskView:** Card #26 — "Migrate remaining job-search machinery to private repo (job_alert)"
 **Private repo:** `git@github.com-personal:dylan-okeefe/hestia-tools.git` (`~/code/hestia-tools`)
 
 ### Summary
 
-Moved the job-board URL extraction logic out of the publishable Hestia workflow executor into the private `hestia-tools` package as the `extract_job_url` tool. The executor now only does generic URL cleanup from LLM output; the stored job-search workflow must be updated to call `extract_job_url` to recover the body-scan fallback.
+Moved the job-alert queue (`JobAlertStore` + `save_job_alert`, `list_pending_alerts`, `mark_alerts_sent`) out of the publishable Hestia core and into the private `hestia-tools` package. The public core no longer contains any job-alert code, table, or registration. The private package uses the L241 `setup(context)` hook to bind a store to Hestia's DB and creates the `job_alerts` table lazily on the first tool call.
 
 ### Quality gates
 
-- Hestia `mypy src/hestia/workflows/executor.py`: clean
-- Hestia `ruff check src/hestia/workflows/executor.py`: clean
+- Hestia `ruff check/format src/hestia/app.py src/hestia/tools/builtin/__init__.py src/hestia/persistence/schema.py`: clean
+- Hestia `mypy` on changed files: clean (2 pre-existing errors in `src/hestia/voice/pipeline.py`)
+- Hestia `pytest tests/unit/tools/test_external_tool_modules.py tests/unit/tools/test_external_tool_setup.py -q`: 11 passed
 - Hestia `pytest tests/unit/tools/ -q`: 110 passed, 15 warnings
-- Hestia `pytest tests/unit/workflows/ -q`: blocked by pre-existing `AppContext` fixture config issue (`inference.model_name` empty)
-- Private repo `pytest tests/test_job_url_extraction.py -q` (inside Hestia venv): 8 passed
+- Private repo `pytest tests/ -q` (inside Hestia venv): 13 passed
 
 ### Next step
 
-Dylan review of `feature/l243-extract-job-url-private-tool`; merge to `develop` when approved. Update the stored job-search workflow to use the new `extract_job_url` tool node.
+Dylan review of `feature/l244-migrate-job-alert-handoff`; merge to `develop` when approved. Ensure the runtime Hestia config includes `extra_tool_modules=["hestia_tools"]` so the migrated tools are loaded.
