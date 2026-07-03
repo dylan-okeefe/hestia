@@ -646,6 +646,9 @@ class HestiaConfig(_ConfigFromEnv):
     """Top-level Hestia configuration."""
 
     _ENV_PREFIX = "HESTIA"
+    _ENV_KEY_OVERRIDES = {
+        "extra_tool_modules": "HESTIA_EXTRA_TOOL_MODULES",
+    }
 
     core: CoreConfig = field(default_factory=CoreConfig)
     platforms: PlatformConfig = field(default_factory=PlatformConfig)
@@ -679,6 +682,8 @@ class HestiaConfig(_ConfigFromEnv):
     max_iterations: int = 10
     verbose: bool = False
     use_curl_cffi_fallback: bool = False
+    extra_tool_modules: list[str] = field(default_factory=list)
+    """Dotted Python import paths of external packages that contribute tools."""
 
     def __init__(
         self,
@@ -715,6 +720,7 @@ class HestiaConfig(_ConfigFromEnv):
         max_iterations: int = 10,
         verbose: bool = False,
         use_curl_cffi_fallback: bool = False,
+        extra_tool_modules: list[str] | None = None,
         # Deprecated flat fields (backward compat)
         inference: InferenceConfig | None = None,
         slots: SlotConfig | None = None,
@@ -778,6 +784,7 @@ class HestiaConfig(_ConfigFromEnv):
         self.max_iterations = max_iterations
         self.verbose = verbose
         self.use_curl_cffi_fallback = use_curl_cffi_fallback
+        self.extra_tool_modules = extra_tool_modules if extra_tool_modules is not None else []
 
     # -- Deprecated flat aliases (delegate to grouped versions) -----------------
 

@@ -6,6 +6,27 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-07-03 — L240: External Tool Modules
+
+**Outcome:** Added an opt-in extension point so external Python packages can contribute `@tool` callables without forking Hestia. External tools register through the same `ToolRegistry` and are subject to the same `CapabilityGate` and `DefaultPolicyEngine` filtering as built-ins.
+
+**Branch:** `feature/l240-external-tool-modules`
+
+**Changes:**
+- Added `extra_tool_modules: list[str]` to `HestiaConfig` (`src/hestia/config.py`), loadable from `HESTIA_EXTRA_TOOL_MODULES`.
+- Wired `_register_external_tool_modules()` in `AppContext.register_tools()` (`src/hestia/app.py`) with warning-and-skip handling for import errors, missing `register`, and registration `ValueError`.
+- Added fixture package `tests/fixtures/external_tool_module/` and `tests/unit/tools/test_external_tool_modules.py` covering load, error handling, capability gating, empty config, and env loading.
+- Added `docs/adr/ADR-051-external-tool-modules.md` and updated `docs/guides/custom-tools.md` with setup steps and trust warning.
+- Created handoff: `docs/handoffs/L240-external-tool-modules-handoff.md`.
+
+**Quality gates:**
+- New tests: 6 passed.
+- Targeted tests (tools, policy, config): 179 passed.
+- `mypy` and `ruff` clean on changed files.
+- Full-repo `mypy` and `ruff` show only pre-existing issues; no new issues introduced.
+
+**Next:** Dylan/Cursor review and merge to `develop` when approved. This unblocks migrating the job-search scrapers to a private repo loaded via `extra_tool_modules`.
+
 ## 2026-06-29 — L238: Scope-Aware Memory Maintenance
 
 **Outcome:** Extended the ADR-049 maintenance subsystem to respect Loop A's two-tier global/topic memory scope. Dedupe, LLM dedupe, and contradiction supersession now operate within scope; protected-set isolation is enforced by scope-key grouping; undo restores only the losers of the scoped action. The scope-promotion pass is explicitly deferred.
