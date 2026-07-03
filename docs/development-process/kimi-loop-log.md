@@ -6,6 +6,27 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-07-03 — L241: External Tool Module Persistence Seam
+
+**Outcome:** Extended the L240 external-tool-modules seam with an optional `setup(context)` hook so external packages can own their own persistence (stores, tables). The context exposes only `db` and `config`; the full `AppContext` is intentionally not passed. The public-core `job_alert` subsystem was not migrated yet; this loop builds the seam required for that migration.
+
+**Branch:** `feature/l241-external-tool-module-setup`
+
+**Changes:**
+- Added `src/hestia/tools/external_context.py` with `ExternalToolModuleContext`.
+- Updated `src/hestia/app.py` `_register_external_tool_modules()` to call `setup(context)` before `register(registry)`, with warning-and-skip on any setup exception.
+- Added fixture modules `setup_tools.py` and `setup_fails.py`.
+- Added `tests/unit/tools/test_external_tool_setup.py` covering setup-before-register, setup failure, missing setup, context fields, and capability gating.
+- Updated `docs/adr/ADR-051-external-tool-modules.md` and `docs/guides/custom-tools.md` with the setup hook and database-handle trust warning.
+- Created handoff: `docs/handoffs/L241-external-tool-module-setup-handoff.md`.
+
+**Quality gates:**
+- External-tool tests: 11 passed.
+- `mypy` and `ruff` clean on changed files.
+- Full-repo gates show only pre-existing issues.
+
+**Next:** Dylan/Cursor review and merge to `develop`. The job_alert migration to a private repo can follow once this seam lands.
+
 ## 2026-07-03 — L240: External Tool Modules
 
 **Outcome:** Added an opt-in extension point so external Python packages can contribute `@tool` callables without forking Hestia. External tools register through the same `ToolRegistry` and are subject to the same `CapabilityGate` and `DefaultPolicyEngine` filtering as built-ins.
