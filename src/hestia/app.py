@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import importlib
 import logging
 import os
 from collections.abc import Awaitable, Callable
@@ -521,6 +522,33 @@ class AppContext:
             auto_rollback_on_failure=self.config.trust.auto_rollback_on_failure,
         )
 
+    def _register_external_tool_modules(self) -> None:
+        """Import and register tools from configured external packages."""
+        cfg = self.config
+        reg = self.tool_registry
+        for dotted_path in cfg.extra_tool_modules:
+            try:
+                module = importlib.import_module(dotted_path)
+            except ImportError as exc:
+                logger.warning(
+                    "Failed to import external tool module %r: %s", dotted_path, exc
+                )
+                continue
+            register = getattr(module, "register", None)
+            if register is None or not callable(register):
+                logger.warning(
+                    "External tool module %r has no callable register() function; skipping",
+                    dotted_path,
+                )
+                continue
+            try:
+                register(reg)
+            except ValueError as exc:
+                logger.warning(
+                    "External tool module %r registration failed: %s", dotted_path, exc
+                )
+                continue
+
     def register_tools(self) -> None:
         """Register built-in and conditional tools."""
         cfg = self.config
@@ -612,6 +640,8 @@ class AppContext:
             reg.register(browser_get_json)
             reg.register(browser_get_links)
             reg.register(browser_interact)
+
+        self._register_external_tool_modules()
 
 
 # Backward-compatible aliases (deprecated, will be removed in a future release)
