@@ -25,7 +25,7 @@
 - `mypy` and `ruff` clean on changed files.
 - Full-repo `mypy` and `ruff` show only pre-existing issues; no new issues introduced.
 
-**Next:** Dylan/Cursor review and merge to `develop` when approved. This unblocks migrating the job-search scrapers to a private repo loaded via `extra_tool_modules`.
+**Merged:** Merged to `develop` and pushed (commit `403f2aa2`). This unblocks migrating the job-search scrapers to a private repo loaded via `extra_tool_modules`.
 
 ## 2026-06-29 — L238: Scope-Aware Memory Maintenance
 
