@@ -45,6 +45,7 @@ async def workflow_store(db: Database) -> WorkflowStore:
 def app(tmp_path: Path, db: Database) -> AppContext:
     """Create a minimal AppContext with mocked inference and tool registry."""
     cfg = HestiaConfig.default()
+    cfg.inference.model_name = "dummy"
     cfg.storage.database_url = "sqlite+aiosqlite:///:memory:"
     cfg.storage.artifacts_dir = tmp_path / "artifacts"
     app = AppContext(cfg)
@@ -288,9 +289,7 @@ async def test_workflow_allow_list_passed_to_gate(
         return await original_check(request, **kwargs)
 
     executor = WorkflowExecutor(gated_app)
-    with patch.object(
-        gated_app.capability_gate, "check", AsyncMock(side_effect=_checked)
-    ) as check_mock:
+    with patch.object(gated_app.capability_gate, "check", AsyncMock(side_effect=_checked)) as check_mock:
         await executor.execute("wf_audit", {})
 
     call_args = check_mock.call_args
