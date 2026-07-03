@@ -6,6 +6,36 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-07-03 — L243: Pull Job-URL Extraction into Private Tool
+
+**Outcome:** Moved the job-board URL extraction logic out of the publishable workflow executor and into a private `extract_job_url` tool in `hestia-tools`. The executor is now domain-agnostic; the generic `_extract_url_from_text` LLM-output cleanup remains.
+
+**Branch:** `feature/l243-extract-job-url-private-tool`
+**Private repo:** `git@github.com-personal:dylan-okeefe/hestia-tools.git`
+
+**Changes:**
+- Public Hestia core:
+  - Removed `_JOB_URL_PATTERNS`, `_IGNORE_URL_PATTERNS`, `_extract_best_job_url`, and the `extract_url` inference-node special case from `src/hestia/workflows/executor.py`.
+  - Kept `_extract_url_from_text` for generic URL cleanup.
+  - Verified no remaining references to the removed symbols.
+  - Regenerated `metrics.json`.
+- Private `hestia-tools` repo:
+  - Added `hestia_tools/job_url_extraction.py` with the `extract_job_url` `@tool`.
+  - Registered it in `hestia_tools/__init__.py`.
+  - Added `tests/test_job_url_extraction.py` with 8 cases covering scoring, fallback, and hint handling.
+  - Updated `README.md`.
+- Docs:
+  - Created `docs/handoffs/L243-extract-job-url-private-tool-handoff.md`.
+  - Updated `docs/development-process/prompts/KIMI_CURRENT.md`.
+
+**Quality gates:**
+- Hestia `mypy` / `ruff` on `src/hestia/workflows/executor.py`: clean.
+- Hestia `tests/unit/tools/`: 110 passed, 15 warnings.
+- Hestia `tests/unit/workflows/`: blocked by pre-existing `AppContext` fixture config issue (`inference.model_name` empty).
+- Private repo tests (inside Hestia venv): 8 passed.
+
+**Next:** Dylan/Cursor review and merge to `develop`. Update the stored job-search workflow to use the new `extract_job_url` tool node; until then, the `extract_url` inference node loses its body-scan fallback.
+
 ## 2026-07-03 — L241: External Tool Module Persistence Seam
 
 **Outcome:** Extended the L240 external-tool-modules seam with an optional `setup(context)` hook so external packages can own their own persistence (stores, tables). The context exposes only `db` and `config`; the full `AppContext` is intentionally not passed. The public-core `job_alert` subsystem was not migrated yet; this loop builds the seam required for that migration.
