@@ -45,14 +45,19 @@ The policy engine uses these labels to restrict access by context. For example, 
 
 You can package custom tools in a separate Python package and load them at runtime without modifying Hestia.
 
-### 1. Create a package with a `register` hook
+### 1. Create a package with `setup` and `register` hooks
 
-Your package must expose a callable named `register` that accepts a `ToolRegistry`:
+Your package must expose a callable named `register` that accepts a `ToolRegistry`. It may also expose an optional `setup(context)` hook that runs before `register`; the context exposes `db` and `config` so your module can create its own stores or tables.
 
 ```python
 # my_private_tools/__init__.py
+from hestia.tools.external_context import ExternalToolModuleContext
 from hestia.tools.metadata import tool
 from hestia.tools.registry import ToolRegistry
+
+# Module-level state created in setup()
+_store: dict[str, str] = {}
+
 
 @tool(
     name="deploy_internal_service",
@@ -62,8 +67,24 @@ from hestia.tools.registry import ToolRegistry
 async def deploy_internal_service(service: str) -> str:
     ...
 
+
+@tool(
+    name="lookup_private_note",
+    public_description="Look up a private note stored by this module.",
+    capabilities=["memory_read"],
+)
+async def lookup_private_note(key: str) -> str:
+    return _store.get(key, "")
+
+
+def setup(context: ExternalToolModuleContext) -> None:
+    """Create module-owned persistence before registering tools."""
+    _store["welcome"] = "external module is set up"
+
+
 def register(registry: ToolRegistry) -> None:
     registry.register(deploy_internal_service)
+    registry.register(lookup_private_note)
 ```
 
 ### 2. Add the dotted path to config
@@ -87,4 +108,6 @@ On startup, Hestia imports each configured module and calls `register(registry)`
 ### Trust warning
 
 External tools are **not** sandboxed or exempt from Hestia's capability system. They share the same `CapabilityGate` and `DefaultPolicyEngine` filtering as built-in tools. If your tool declares `shell_exec` or `write_local`, it will be denied in subagent and scheduler sessions by default, and the capability gate will still enforce confirmation and channel rules. Choose capability labels carefully.
+
+If your module implements `setup(context)`, Hestia passes it a live database handle (`context.db`). This is a wide trust grant: the module can read or mutate any table in the database. Only list modules you fully control in `extra_tool_modules`, and avoid sharing that config across untrusted deployments.
 
