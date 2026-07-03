@@ -21,9 +21,7 @@ async def _require_workflow_access(
     """Raise 403 if caller is not the workflow owner and not an admin."""
     caller_platform_user = getattr(request.state, "platform_user", None)
     if caller_platform_user is None:
-        auth_enabled = getattr(
-            ctx.app.config.features.web, "auth_enabled", True
-        )
+        auth_enabled = getattr(ctx.app.config.features.web, "auth_enabled", True)
         if auth_enabled:
             raise HTTPException(status_code=401, detail="Not authenticated")
         return
@@ -38,6 +36,7 @@ async def _require_workflow_access(
 
     raise HTTPException(status_code=403, detail="Access denied")
 
+
 router = APIRouter()
 
 _CTX_DEP = Depends(get_web_context)
@@ -46,18 +45,52 @@ _CTX_DEP = Depends(get_web_context)
 _TRUST_LEVELS = {"paranoid", "prompt_on_mobile", "household", "developer"}
 
 
-def _workflow_to_api(wf: Workflow) -> dict[str, Any]:
+def _redact_trigger_config(trigger_config: dict[str, Any]) -> dict[str, Any]:
+    """Return a copy of *trigger_config* with the webhook secret redacted.
+
+    Exposes ``has_secret`` so the UI can indicate whether a secret is set
+    without revealing its value.
+    """
+    redacted = dict(trigger_config)
+    has_secret = bool(redacted.get("secret"))
+    if "secret" in redacted:
+        redacted["secret"] = "__redacted__"
+    redacted["has_secret"] = has_secret
+    return redacted
+
+
+def _workflow_to_api(wf: Workflow, redact_secret: bool = True) -> dict[str, Any]:
     """Serialize a Workflow to the API response shape expected by the frontend."""
+    trigger_config = _redact_trigger_config(wf.trigger_config) if redact_secret else dict(wf.trigger_config)
+    if "has_secret" not in trigger_config:
+        trigger_config["has_secret"] = bool(wf.trigger_config.get("secret"))
     return {
         "id": wf.id,
         "name": wf.name,
         "trigger_type": wf.trigger_type,
-        "trigger_config": wf.trigger_config,
+        "trigger_config": trigger_config,
         "owner_id": wf.owner_id,
         "trust_level": wf.trust_level,
         "last_edited_at": wf.updated_at.isoformat() if wf.updated_at else None,
         "active_version_id": None,  # populated by list/get where versions are loaded
     }
+
+
+async def _is_admin(request: Request, ctx: WebContext) -> bool:
+    """Return True if the authenticated caller is an admin."""
+    caller_user_id = getattr(request.state, "user_id", None)
+    if caller_user_id is None:
+        return False
+    caller = await ctx.user_store.get_user(caller_user_id)
+    return caller is not None and caller.role == "admin"
+
+
+async def _caller_owner_id(request: Request, ctx: WebContext) -> str | None:
+    """Return the caller's platform user id, or None when unauthenticated.
+
+    When auth is disabled the route may fall back to listing all workflows.
+    """
+    return getattr(request.state, "platform_user", None) or None
 
 
 def _version_to_api(v: WorkflowVersion) -> dict[str, Any]:
@@ -96,14 +129,15 @@ def _version_to_api(v: WorkflowVersion) -> dict[str, Any]:
 
 @router.get("/workflows")
 async def list_workflows(
+    request: Request,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
-    """List all workflows."""
-    workflows = await ctx.workflow_store.list_workflows()
+    """List workflows visible to the caller."""
+    owner_id = await _caller_owner_id(request, ctx)
+    is_admin = await _is_admin(request, ctx)
+    workflows = await ctx.workflow_store.list_workflows_for_owner(owner_id, is_admin)
     active_map = await ctx.workflow_store.get_active_versions_batch([wf.id for wf in workflows])
-    last_exec_map = await ctx.execution_store.get_last_execution_per_workflow(
-        [wf.id for wf in workflows]
-    )
+    last_exec_map = await ctx.execution_store.get_last_execution_per_workflow([wf.id for wf in workflows])
     result = []
     for wf in workflows:
         api_wf = _workflow_to_api(wf)
@@ -154,7 +188,11 @@ async def create_workflow(
     await ctx.workflow_store.save_workflow(wf)
     if ctx.trigger_registry is not None:
         await ctx.trigger_registry.reload_one(wf.id)
-    return _workflow_to_api(wf)
+    # Reveal the webhook secret once on creation so the user can copy it.
+    api_wf = _workflow_to_api(wf, redact_secret=False)
+    if wf.trigger_type == "webhook" and "has_secret" not in api_wf["trigger_config"]:
+        api_wf["trigger_config"]["has_secret"] = bool(wf.trigger_config.get("secret"))
+    return api_wf
 
 
 @router.get("/workflows/{workflow_id}")
@@ -174,10 +212,9 @@ async def get_workflow(
     active = await ctx.workflow_store.get_active_version(workflow_id)
     if active is not None:
         api_wf["active_version_id"] = f"{active.workflow_id}:{active.version}"
-    if api_wf["trigger_type"] == "webhook":
+    if api_wf["trigger_type"] == "webhook" and api_wf["trigger_config"].get("has_secret"):
         endpoint = api_wf["trigger_config"].get("endpoint") or workflow_id
         api_wf["webhook_url"] = f"{request.base_url}api/webhooks/{endpoint}"
-        api_wf["secret"] = api_wf["trigger_config"].get("secret", "")
     return api_wf
 
 
@@ -205,7 +242,14 @@ async def update_workflow(
     if "trigger_type" in payload:
         workflow.trigger_type = payload["trigger_type"]
     if "trigger_config" in payload:
-        workflow.trigger_config = payload["trigger_config"]
+        new_config = dict(payload["trigger_config"])
+        # Preserve an existing webhook secret unless the payload explicitly
+        # provides a new one, so UI edits don't accidentally clear it.
+        if workflow.trigger_type == "webhook" or new_config.get("trigger_type") == "webhook":
+            old_secret = workflow.trigger_config.get("secret")
+            if "secret" not in new_config and old_secret:
+                new_config["secret"] = old_secret
+        workflow.trigger_config = new_config
     if "owner_id" in payload:
         workflow.owner_id = payload["owner_id"]
     if "trust_level" in payload:
@@ -221,6 +265,37 @@ async def update_workflow(
     if ctx.trigger_registry is not None:
         await ctx.trigger_registry.reload_one(workflow_id)
     return _workflow_to_api(workflow)
+
+
+@router.post("/workflows/{workflow_id}/rotate-secret")
+async def rotate_workflow_secret(
+    workflow_id: str,
+    request: Request,
+    ctx: WebContext = _CTX_DEP,
+) -> dict[str, Any]:
+    """Rotate the webhook secret for a workflow.
+
+    Returns the new secret once; subsequent list/get/update responses will
+    redact it.
+    """
+    workflow = await ctx.workflow_store.get_workflow(workflow_id)
+    if workflow is None:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    await _require_workflow_access(request, ctx, workflow)
+
+    if workflow.trigger_type != "webhook":
+        raise HTTPException(status_code=400, detail="Only webhook workflows have a secret")
+
+    new_secret = secrets.token_urlsafe(32)
+    workflow.trigger_config = {**workflow.trigger_config, "secret": new_secret}
+    await ctx.workflow_store.save_workflow(workflow)
+    if ctx.trigger_registry is not None:
+        await ctx.trigger_registry.reload_one(workflow_id)
+
+    api_wf = _workflow_to_api(workflow, redact_secret=False)
+    api_wf["trigger_config"]["has_secret"] = True
+    return {"workflow": api_wf, "secret": new_secret}
 
 
 @router.delete("/workflows/{workflow_id}")
@@ -287,14 +362,10 @@ async def create_version(
             type=n.get("type", "default"),
             label=n.get("data", {}).get("label", "") if isinstance(n.get("data"), dict) else "",
             config=(
-                {k: v for k, v in n.get("data", {}).items() if k != "label"}
-                if isinstance(n.get("data"), dict)
-                else {}
+                {k: v for k, v in n.get("data", {}).items() if k != "label"} if isinstance(n.get("data"), dict) else {}
             ),
             position=n.get("position", {"x": 0, "y": 0}),
-            capabilities=(
-                n.get("capabilities", []) if isinstance(n.get("capabilities"), list) else []
-            ),
+            capabilities=(n.get("capabilities", []) if isinstance(n.get("capabilities"), list) else []),
         )
         for n in nodes_raw
     ]

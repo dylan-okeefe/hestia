@@ -265,9 +265,7 @@ class TestWebhookHMAC:
         )
         assert response.status_code == 202
 
-    def test_replay_attack_same_signature_twice(
-        self, client: TestClient, mock_app: MagicMock
-    ) -> None:
+    def test_replay_attack_same_signature_twice(self, client: TestClient, mock_app: MagicMock) -> None:
         """Same valid signature sent twice — second request is rejected."""
         from hestia.web import context as ctx_mod
         from hestia.web.routes import webhooks as webhooks_mod
@@ -317,9 +315,7 @@ class TestWebhookHMAC:
         assert response.status_code == 409
         assert "duplicate" in response.json()["detail"].lower()
 
-    def test_replay_with_stale_timestamp_returns_401(
-        self, client: TestClient, mock_app: MagicMock
-    ) -> None:
+    def test_replay_with_stale_timestamp_returns_401(self, client: TestClient, mock_app: MagicMock) -> None:
         """A replay with a timestamp outside the ±5-minute window is rejected."""
         from hestia.web import context as ctx_mod
         from hestia.workflows.models import Workflow
@@ -369,9 +365,7 @@ class TestWebhookHMAC:
         response = client.post("/api/webhooks/arbitrary", json={"key": "value"})
         assert response.status_code == 404
 
-    def test_secretless_workflow_returns_401(
-        self, client: TestClient, mock_app: MagicMock
-    ) -> None:
+    def test_secretless_workflow_returns_401(self, client: TestClient, mock_app: MagicMock) -> None:
         """A workflow with no configured secret is un-triggerable (fail-closed)."""
         from hestia.web import context as ctx_mod
         from hestia.workflows.models import Workflow
@@ -397,9 +391,7 @@ class TestWebhookHMAC:
         assert response.status_code == 401
         assert "secret" in response.json()["detail"].lower()
 
-    def test_auth_headers_stripped_from_event(
-        self, client: TestClient, mock_app: MagicMock
-    ) -> None:
+    def test_auth_headers_stripped_from_event(self, client: TestClient, mock_app: MagicMock) -> None:
         """Sensitive auth headers are not published in the event payload."""
         from hestia.web import context as ctx_mod
         from hestia.workflows.models import Workflow
@@ -465,9 +457,7 @@ class TestAutoGenerateSecret:
         assert len(data["trigger_config"]["secret"]) > 0
         ctx.workflow_store.save_workflow.assert_awaited_once()
 
-    def test_does_not_override_provided_secret(
-        self, client: TestClient, mock_app: MagicMock
-    ) -> None:
+    def test_does_not_override_provided_secret(self, client: TestClient, mock_app: MagicMock) -> None:
         """Creating a webhook workflow with an explicit secret preserves it."""
         from hestia.web import context as ctx_mod
 
@@ -491,9 +481,7 @@ class TestAutoGenerateSecret:
 class TestExposeWebhookURL:
     """Tests for exposing webhook URL and secret in GET workflow response."""
 
-    def test_get_workflow_includes_webhook_fields(
-        self, client: TestClient, mock_app: MagicMock
-    ) -> None:
+    def test_get_workflow_includes_webhook_fields(self, client: TestClient, mock_app: MagicMock) -> None:
         """GET /workflows/{id} includes webhook_url and secret for webhook triggers."""
         from hestia.web import context as ctx_mod
         from hestia.workflows.models import Workflow
@@ -513,11 +501,10 @@ class TestExposeWebhookURL:
         assert response.status_code == 200
         data = response.json()
         assert data["webhook_url"] == "http://testserver/api/webhooks/deploy"
-        assert data["secret"] == "shh"
+        assert data["trigger_config"]["has_secret"] is True
+        assert "secret" not in data
 
-    def test_get_workflow_omits_webhook_fields_for_non_webhook(
-        self, client: TestClient, mock_app: MagicMock
-    ) -> None:
+    def test_get_workflow_omits_webhook_fields_for_non_webhook(self, client: TestClient, mock_app: MagicMock) -> None:
         """GET /workflows/{id} omits webhook_url and secret for non-webhook triggers."""
         from hestia.web import context as ctx_mod
         from hestia.workflows.models import Workflow
