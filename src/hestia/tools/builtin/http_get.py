@@ -183,7 +183,7 @@ async def _fetch_with_curl_cffi(
     raise RuntimeError(f"Too many redirects (>{max_redirects})")
 
 
-async def _http_get_impl(
+async def http_get_impl(
     url: str,
     timeout_seconds: int,
     use_curl_cffi: bool,
@@ -271,7 +271,7 @@ async def http_get(url: str, timeout_seconds: int = 30, use_curl_cffi: bool = Fa
     real Chrome TLS/HTTP fingerprint. This is useful for bypassing bot-detection
     that flags standard HTTP clients.
     """
-    return await _http_get_impl(url, timeout_seconds, use_curl_cffi=use_curl_cffi)
+    return await http_get_impl(url, timeout_seconds, use_curl_cffi=use_curl_cffi)
 
 
 def make_http_get_tool(
@@ -318,7 +318,7 @@ def make_http_get_tool(
         url: str, timeout_seconds: int = 30, use_curl_cffi: bool = False
     ) -> str:
         """Fetch a URL and return its text content."""
-        return await _http_get_impl(
+        return await http_get_impl(
             url,
             timeout_seconds,
             use_curl_cffi=use_curl_cffi,
@@ -355,3 +355,7 @@ async def _record_egress(url: str, status: int, size: int, enabled: bool = True)
         except Exception:  # noqa: BLE001
             # Egress audit is best-effort; never fail the tool call because of it.
             logger.warning("Failed to record egress event", exc_info=True)
+
+
+# Backward-compatible alias (deprecated; remove once all internal callers migrate)
+_http_get_impl = http_get_impl

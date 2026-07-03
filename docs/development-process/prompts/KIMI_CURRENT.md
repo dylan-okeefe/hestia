@@ -7,23 +7,24 @@
 
 ## Current task
 
-**Status:** Complete pending Dylan review — external tool module persistence seam
-**Branch:** `feature/l241-external-tool-module-setup`
-**Handoff:** `docs/handoffs/L241-external-tool-module-setup-handoff.md`
-**TaskView:** Card #27 — "Decision: how to get the job_alert subsystem out of the public core"
-**Decision:** Option 1 — extend the external-tool-modules seam with a minimal `setup(context)` hook so external modules can own their own persistence. Full external-schema framework deferred until after H2 schema-ownership consolidation.
+**Status:** Complete pending Dylan review — pull job-URL extraction out of workflows/executor.py into a private tool
+**Branch:** `feature/l243-extract-job-url-private-tool`
+**Handoff:** `docs/handoffs/L243-extract-job-url-private-tool-handoff.md`
+**TaskView:** Card #28 — "Pull job-URL extraction out of workflows/executor.py into a private tool"
+**Private repo:** `git@github.com-personal:dylan-okeefe/hestia-tools.git` (`~/code/hestia-tools`)
 
 ### Summary
 
-Added `ExternalToolModuleContext` and an optional `setup(context)` hook that runs before `register(registry)` in external tool modules. The context exposes `db` and `config` so a plugin can create its own store (e.g., `JobAlertStore`) without the public core owning that persistence. The job_alert subsystem itself was not migrated yet; this card only builds the seam.
+Moved the job-board URL extraction logic out of the publishable Hestia workflow executor into the private `hestia-tools` package as the `extract_job_url` tool. The executor now only does generic URL cleanup from LLM output; the stored job-search workflow must be updated to call `extract_job_url` to recover the body-scan fallback.
 
 ### Quality gates
 
-- `uv run pytest tests/unit/tools/test_external_tool_modules.py tests/unit/tools/test_external_tool_setup.py -q`: **11 passed**
-- `uv run mypy` on changed files: **0 errors**
-- `uv run ruff check` on changed files: **clean**
-- Full-repo gates show only pre-existing issues; no new issues introduced.
+- Hestia `mypy src/hestia/workflows/executor.py`: clean
+- Hestia `ruff check src/hestia/workflows/executor.py`: clean
+- Hestia `pytest tests/unit/tools/ -q`: 110 passed, 15 warnings
+- Hestia `pytest tests/unit/workflows/ -q`: blocked by pre-existing `AppContext` fixture config issue (`inference.model_name` empty)
+- Private repo `pytest tests/test_job_url_extraction.py -q` (inside Hestia venv): 8 passed
 
 ### Next step
 
-Dylan review of `feature/l241-external-tool-module-setup`; merge to `develop` when approved. Do not merge without Dylan's okay.
+Dylan review of `feature/l243-extract-job-url-private-tool`; merge to `develop` when approved. Update the stored job-search workflow to use the new `extract_job_url` tool node.
