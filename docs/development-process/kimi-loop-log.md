@@ -25,7 +25,7 @@
 - `mypy` and `ruff` clean on changed files.
 - Full-repo gates show only pre-existing issues.
 
-**Next:** Dylan/Cursor review and merge to `develop`. The job_alert migration to a private repo can follow once this seam lands.
+**Merged:** Merged to `develop` and pushed (commit `1097fce9`). The job_alert migration to a private repo can now proceed.
 
 ## 2026-07-03 — L240: External Tool Modules
 
