@@ -31,7 +31,7 @@
 
 **Outcome:** Moved `indeed_search_jobs` out of the publishable Hestia core into the private `hestia-tools` package. Made `http_get_impl` public so external modules can reuse Hestia's SSRF-guarded HTTP fetch path. Personal taxonomy ("A-IN-1") was scrubbed from the tool description.
 
-**Branch:** `feature/l242-migrate-indeed-search`
+**Branch:** `feature/l242-private-tool-migration`
 **Private repo:** `git@github.com-personal:dylan-okeefe/hestia-tools.git`
 
 **Changes:**

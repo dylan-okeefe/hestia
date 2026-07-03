@@ -1,6 +1,6 @@
 # L242 — Migrate `indeed_search_jobs` to Private Repo
 
-**Branch:** `feature/l242-migrate-indeed-search`
+**Branch:** `feature/l242-private-tool-migration`
 **Status:** Implementation complete; ready for review.
 **Private repo:** `git@github.com-personal:dylan-okeefe/hestia-tools.git` (`~/code/hestia-tools`)
 

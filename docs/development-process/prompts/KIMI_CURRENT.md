@@ -8,7 +8,7 @@
 ## Current task
 
 **Status:** Complete pending Dylan review — migrate `indeed_search_jobs` to private repo
-**Branch:** `feature/l242-migrate-indeed-search`
+**Branch:** `feature/l242-private-tool-migration`
 **Handoff:** `docs/handoffs/L242-migrate-indeed-search-handoff.md`
 **Private repo:** `git@github.com-personal:dylan-okeefe/hestia-tools.git` (`~/code/hestia-tools`)
 
