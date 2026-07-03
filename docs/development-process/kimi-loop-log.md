@@ -6,6 +6,39 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-07-03 — L244: Migrate `job_alert` Subsystem to Private Repo
+
+**Outcome:** Moved the job-alert queue (`JobAlertStore` + `save_job_alert`, `list_pending_alerts`, `mark_alerts_sent`) out of the publishable Hestia core and into the private `hestia-tools` package. The migration uses the L241 `setup(context)` / `register(registry)` seam; the table is created lazily on the first tool call.
+
+**Branch:** `feature/l244-migrate-job-alert-handoff`
+**Private repo:** `git@github.com-personal:dylan-okeefe/hestia-tools.git`
+
+**Changes:**
+- Public Hestia core:
+  - Removed `src/hestia/persistence/job_alert_store.py`.
+  - Removed `src/hestia/tools/builtin/job_alert_tools.py`.
+  - Removed the `job_alerts` table from `src/hestia/persistence/schema.py`.
+  - Removed all `JobAlertStore` and job-alert tool references from `src/hestia/app.py` and `src/hestia/tools/builtin/__init__.py`.
+  - Regenerated `metrics.json`.
+- Private `hestia-tools` repo:
+  - Added `hestia_tools/job_alert_store.py` with the migrated `JobAlertStore` and a local `job_alerts` table definition.
+  - Added `hestia_tools/job_alert_tools.py` with the three migrated tools.
+  - Added `setup(context)` to `hestia_tools/__init__.py` to bind the store to Hestia's DB.
+  - Registered the three tools in `register(registry)`.
+  - Added `tests/test_job_alert_tools.py` with registration and round-trip tests.
+  - Updated `README.md`.
+- Docs:
+  - Created `docs/handoffs/L244-migrate-job-alert-handoff.md`.
+  - Updated `docs/development-process/prompts/KIMI_CURRENT.md`.
+
+**Quality gates:**
+- Hestia `mypy` / `ruff` on changed files: clean (2 pre-existing `voice/pipeline.py` mypy errors remain).
+- Hestia `tests/unit/tools/test_external_tool_modules.py` + `test_external_tool_setup.py`: 11 passed.
+- Hestia `tests/unit/tools/`: 110 passed, 15 warnings.
+- Private repo tests (inside Hestia venv): 13 passed.
+
+**Next:** Dylan/Cursor review and merge to `develop`. Ensure the runtime Hestia config lists `hestia_tools` in `extra_tool_modules`.
+
 ## 2026-07-03 — L243: Pull Job-URL Extraction into Private Tool
 
 **Outcome:** Moved the job-board URL extraction logic out of the publishable workflow executor and into a private `extract_job_url` tool in `hestia-tools`. The executor is now domain-agnostic; the generic `_extract_url_from_text` LLM-output cleanup remains.
