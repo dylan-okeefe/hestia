@@ -38,51 +38,6 @@ def _extract_url_from_text(text: str) -> str | None:
     return match.group(0) if match else None
 
 
-# Patterns that indicate a URL is a job listing (not unsubscribe, home page, etc.)
-_JOB_URL_PATTERNS = [
-    re.compile(r"/jobs?/|/job/|jobListing|viewjob|job-detail|/km/|/ekm/|/clk\?", re.I),
-    re.compile(r"dice\.com/job-detail/", re.I),
-    re.compile(r"glassdoor\.com/partner/jobListing", re.I),
-    re.compile(r"indeed\.com/(?:viewjob|pagead/clk)", re.I),
-    re.compile(r"ziprecruiter\.com/(?:km/|ekm/)", re.I),
-    re.compile(r"linkedin\.com/(?:jobs/|comm/jobs/view)", re.I),
-    re.compile(r"builtin\.com/job/", re.I),
-]
-
-# Patterns that indicate a URL should be ignored
-_IGNORE_URL_PATTERNS = [
-    re.compile(
-        r"unsubscribe|preferences|alert|notification|privacy|terms|login|signin|account",
-        re.I,
-    ),
-    re.compile(r"linkedin\.com/comm/jobs/alerts", re.I),
-    re.compile(r"linkedin\.com/comm/feed/update", re.I),
-    re.compile(r"profile-views", re.I),
-]
-
-
-def _extract_best_job_url(body: str) -> str | None:
-    """Scan email body and return the best job-listing URL."""
-    all_urls: list[str] = re.findall(r"https?://[^\s<>\"\')\]]+", body)
-    candidates: list[tuple[int, str]] = []
-    for url in all_urls:
-        if any(p.search(url) for p in _IGNORE_URL_PATTERNS):
-            continue
-        # Also check URL-decoded version for embedded job paths
-        from urllib.parse import unquote
-        decoded = unquote(url)
-        score = 0
-        for pattern in _JOB_URL_PATTERNS:
-            if pattern.search(url) or pattern.search(decoded):
-                score += 1
-        if score > 0:
-            candidates.append((score, url))
-    if not candidates:
-        return None
-    candidates.sort(key=lambda x: x[0], reverse=True)
-    return candidates[0][1]
-
-
 def _topological_sort(
     nodes: list[WorkflowNode], edges: list[WorkflowEdge]
 ) -> list[WorkflowNode]:
@@ -447,32 +402,6 @@ class WorkflowExecutor:
                     url = _extract_url_from_text(content)
                     if url:
                         content = url
-
-            # For extract_url node: if LLM didn't return a clean URL,
-            # scan the email body directly for job-related URLs.
-            if node.id == "extract_url":
-                url = _extract_url_from_text(content)
-                # If LLM rambled (long response), returned NONE, or gave a
-                # broken/partial URL, fall back to scanning the body.
-                use_fallback = not url or url == "NONE" or len(content) > 200
-                if use_fallback:
-                    data = inputs.get("data", {})
-                    body = data.get("body", "") if isinstance(data, dict) else ""
-                    if body:
-                        fallback = _extract_best_job_url(body)
-                        if fallback:
-                            content = fallback
-                        elif url and url != "NONE":
-                            content = url
-                        else:
-                            content = "NONE"
-                    elif url and url != "NONE":
-                        content = url
-                    else:
-                        content = "NONE"
-                else:
-                    assert url is not None
-                    content = url
 
             return _NodeOutput(
                 value=content,
