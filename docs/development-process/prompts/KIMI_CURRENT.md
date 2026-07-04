@@ -5,26 +5,22 @@
 
 ---
 
-## Current task
+## Current tasks
 
-**Status:** Complete pending Dylan review — migrate `job_alert` subsystem to private repo
-**Branch:** `feature/l244-migrate-job-alert-handoff`
-**Handoff:** `docs/handoffs/L244-migrate-job-alert-handoff.md`
-**TaskView:** Card #26 — "Migrate remaining job-search machinery to private repo (job_alert)"
-**Private repo:** `git@github.com-personal:dylan-okeefe/hestia-tools.git` (`~/code/hestia-tools`)
+Both cards are **In Review** pending Dylan approval/merge.
 
-### Summary
+### #30 C2: redact workflow webhook secrets + owner-scope workflow lists
+- **Branch:** `feature/c2-workflow-secret-scoping`
+- **Commit:** `55198c75`
+- **Fix:** redacted secret sentinel `"__redacted__"` no longer corrupts the real secret on GET→PUT round trips; frontend strips the sentinel before saving.
+- **Gates:** `pytest tests/unit/test_workflow_secret_scoping.py tests/unit/test_web_routes.py` 83 passed; ruff/mypy clean.
 
-Moved the job-alert queue (`JobAlertStore` + `save_job_alert`, `list_pending_alerts`, `mark_alerts_sent`) out of the publishable Hestia core and into the private `hestia-tools` package. The public core no longer contains any job-alert code, table, or registration. The private package uses the L241 `setup(context)` hook to bind a store to Hestia's DB and creates the `job_alerts` table lazily on the first tool call.
+### #31 C1/C3 security re-posture (auth loopback-guard + auto-approve guard)
+- **Branch:** `feature/c1-c3-security-reposture`
+- **Commit:** `b9ae8e2d`
+- **Fix:** verified `_validate_web_security_posture` is already wired into `make_app` via `_validate_config_at_startup`; added `test_c1_aborts_at_make_app_startup` regression test proving the guard fires through the public startup path.
+- **Gates:** `pytest tests/unit/test_config.py tests/unit/test_web_auth.py` 93 passed; ruff/mypy clean.
 
-### Quality gates
-
-- Hestia `ruff check/format src/hestia/app.py src/hestia/tools/builtin/__init__.py src/hestia/persistence/schema.py`: clean
-- Hestia `mypy` on changed files: clean (2 pre-existing errors in `src/hestia/voice/pipeline.py`)
-- Hestia `pytest tests/unit/tools/test_external_tool_modules.py tests/unit/tools/test_external_tool_setup.py -q`: 11 passed
-- Hestia `pytest tests/unit/tools/ -q`: 110 passed, 15 warnings
-- Private repo `pytest tests/ -q` (inside Hestia venv): 13 passed
-
-### Next step
-
-Dylan review of `feature/l244-migrate-job-alert-handoff`; merge to `develop` when approved. Ensure the runtime Hestia config includes `extra_tool_modules=["hestia_tools"]` so the migrated tools are loaded.
+### Notes
+- Full `pytest tests/unit/ tests/integration/` has pre-existing failures unrelated to these changes (memory-tool signature drift, etc.).
+- Dylan to review/merge both branches to `develop` when ready.
