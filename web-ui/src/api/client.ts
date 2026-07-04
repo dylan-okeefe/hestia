@@ -245,7 +245,7 @@ export interface Workflow {
   last_edited_at: string;
   active_version_id: string | null;
   webhook_url?: string;
-  secret?: string;
+  has_secret?: boolean;
   last_execution_status?: string;
   last_execution_at?: string;
 }

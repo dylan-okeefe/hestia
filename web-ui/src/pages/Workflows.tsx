@@ -100,7 +100,7 @@ export default function Workflows() {
                     <span>{TRIGGER_ICONS[wf.trigger_type] || '•'}</span>
                     {wf.trigger_type}
                   </span>
-                  {wf.trigger_type === 'webhook' && (
+                  {wf.trigger_type === 'webhook' && wf.has_secret && (
                     <a
                       href={`${window.location.origin}/api/webhooks/${wf.id}`}
                       target="_blank"

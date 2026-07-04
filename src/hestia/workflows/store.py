@@ -63,14 +63,10 @@ class WorkflowStore:
                     set_={k: values[k] for k in update_keys},
                 )
             else:
-                where_clause = sa.and_(
-                    *(table.c[k] == values[k] for k in conflict_keys)
-                )
+                where_clause = sa.and_(*(table.c[k] == values[k] for k in conflict_keys))
                 result = await conn.execute(sa.select(table).where(where_clause))
                 if result.fetchone() is not None:
-                    await conn.execute(
-                        sa.update(table).where(where_clause).values(**values)
-                    )
+                    await conn.execute(sa.update(table).where(where_clause).values(**values))
                 else:
                     await conn.execute(sa.insert(table).values(**values))
                 await conn.commit()
@@ -134,18 +130,26 @@ class WorkflowStore:
             rows = result.fetchall()
             return [self._row_to_workflow(row) for row in rows]
 
+    async def list_workflows_for_owner(self, owner_id: str | None, is_admin: bool = False) -> list[Workflow]:
+        """List workflows visible to *owner_id*.
+
+        Admins see all workflows; unauthenticated callers (owner_id is None)
+        see all workflows to preserve behavior when auth is disabled.
+        """
+        if is_admin or owner_id is None:
+            return await self.list_workflows()
+        query = sa.select(workflows).where(workflows.c.owner_id == owner_id).order_by(workflows.c.name)
+        async with self._db.engine.connect() as conn:
+            result = await conn.execute(query)
+            rows = result.fetchall()
+            return [self._row_to_workflow(row) for row in rows]
+
     async def delete_workflow(self, workflow_id: str) -> bool:
         """Delete a workflow and all its versions."""
         async with self._db.engine.connect() as conn:
             # Versions are deleted by FK cascade (if supported) or manually
-            await conn.execute(
-                sa.delete(workflow_versions).where(
-                    workflow_versions.c.workflow_id == workflow_id
-                )
-            )
-            result = await conn.execute(
-                sa.delete(workflows).where(workflows.c.id == workflow_id)
-            )
+            await conn.execute(sa.delete(workflow_versions).where(workflow_versions.c.workflow_id == workflow_id))
+            result = await conn.execute(sa.delete(workflows).where(workflows.c.id == workflow_id))
             await conn.commit()
             return result.rowcount > 0
 
@@ -202,13 +206,10 @@ class WorkflowStore:
 
     async def get_version(self, workflow_id: str, version: int) -> WorkflowVersion | None:
         """Get a specific version for a workflow."""
-        query = (
-            sa.select(workflow_versions)
-            .where(
-                sa.and_(
-                    workflow_versions.c.workflow_id == workflow_id,
-                    workflow_versions.c.version == version,
-                )
+        query = sa.select(workflow_versions).where(
+            sa.and_(
+                workflow_versions.c.workflow_id == workflow_id,
+                workflow_versions.c.version == version,
             )
         )
         async with self._db.engine.connect() as conn:
@@ -238,9 +239,7 @@ class WorkflowStore:
                 return None
             return self._row_to_version(row)
 
-    async def get_active_versions_batch(
-        self, workflow_ids: list[str]
-    ) -> dict[str, WorkflowVersion | None]:
+    async def get_active_versions_batch(self, workflow_ids: list[str]) -> dict[str, WorkflowVersion | None]:
         """Fetch the active version for multiple workflows in a single query."""
         if not workflow_ids:
             return {}
@@ -298,8 +297,7 @@ class WorkflowStore:
         async with self._db.engine.connect() as conn:
             # Verify the version exists
             result = await conn.execute(
-                sa.select(workflow_versions)
-                .where(
+                sa.select(workflow_versions).where(
                     sa.and_(
                         workflow_versions.c.workflow_id == workflow_id,
                         workflow_versions.c.version == version,

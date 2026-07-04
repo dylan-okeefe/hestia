@@ -381,7 +381,11 @@ export function useWorkflowEditor(workflowId: string | undefined) {
     if (!workflowId) return;
     setTriggerSaving(true);
     try {
-      await updateWorkflow(workflowId, { trigger_type: triggerType, trigger_config: triggerConfig });
+      const cleanTriggerConfig = { ...triggerConfig };
+      if (cleanTriggerConfig.secret === '__redacted__') {
+        delete cleanTriggerConfig.secret;
+      }
+      await updateWorkflow(workflowId, { trigger_type: triggerType, trigger_config: cleanTriggerConfig });
     } catch (err) {
       addToast({ message: err instanceof Error ? err.message : 'Failed to save trigger', type: 'error', duration: 5000 });
     } finally {
