@@ -11,6 +11,7 @@ from hestia.errors import (
     ContextTooLargeError,
     HestiaError,
     InferenceServerError,
+    InferenceTimeoutError,
     PersistenceError,
     classify_error,
 )
@@ -111,12 +112,12 @@ class TurnFinalization:
         if turn.state == TurnState.DONE and self._slot_manager is not None:
             try:
                 await self._slot_manager.save(session)
-            except (OSError, PersistenceError, InferenceServerError) as e:
+            except (OSError, PersistenceError, InferenceServerError, InferenceTimeoutError) as e:
                 logger.warning("Failed to save slot for session %s: %s", session.id, e)
         elif session.slot_id is not None and self._slot_manager is not None:
             try:
                 await self._slot_manager.erase(session)
-            except (OSError, PersistenceError, InferenceServerError) as e:
+            except (OSError, PersistenceError, InferenceServerError, InferenceTimeoutError) as e:
                 logger.warning("Failed to erase slot for session %s: %s", session.id, e)
 
         turn_end_time = utcnow()

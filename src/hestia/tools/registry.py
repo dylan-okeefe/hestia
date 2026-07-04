@@ -172,8 +172,10 @@ class ToolRegistry:
                 name="list_tools",
                 description=(
                     "List all available tools. Returns tool names and one-line descriptions. "
-                    "Call this before call_tool to discover what's available. "
-                    "Also call this when the user asks about your capabilities or what you can do."
+                    "Only call this when the user asks about your capabilities or when you "
+                    "genuinely do not know which tool to use. "
+                    "For greetings, casual chat, or questions you can answer directly, reply "
+                    "without calling any tool."
                 ),
                 parameters={
                     "type": "object",
@@ -193,9 +195,10 @@ class ToolRegistry:
                 name="describe_tool",
                 description=(
                     "Get the full JSON parameter schema and description for one or more tools. "
-                    "Call this after list_tools when you need to know the exact argument names, "
-                    "types, and defaults for a specific tool before calling it. "
-                    "Much cheaper than fetching all schemas at once."
+                    "Only call this when you already intend to use a specific tool and need "
+                    "to know its exact argument names, types, and defaults. "
+                    "Do not call this for greetings, casual chat, or questions you can answer "
+                    "directly."
                 ),
                 parameters={
                     "type": "object",
@@ -216,11 +219,13 @@ class ToolRegistry:
             function=FunctionSchema(
                 name="call_tool",
                 description=(
-                    "Invoke a tool by name with arguments. Use list_tools first to "
-                    "discover what exists, then describe_tool if you need exact parameter names. "
-                    "Arguments must be a valid JSON object. "
+                    "Invoke a tool by name with arguments. You do not need to call list_tools "
+                    "first if you already know the tool name. Use describe_tool only when you "
+                    "need exact parameter names. Arguments must be a valid JSON object. "
                     "Example: call_tool({\"name\": \"write_file\", "
                     "\"arguments\": {\"path\": \"<path>\", \"content\": \"# Notes\\n\"}}). "
+                    "For greetings, casual chat, or anything that does not require a tool, "
+                    "reply directly instead of calling a tool. "
                     "Each write_file or append_to_file call MUST have content shorter than 2000 characters. "
                     "For large files, first create the file with a short header using write_file, "
                     "then add sections with append_to_file. "
