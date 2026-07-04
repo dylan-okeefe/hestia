@@ -624,6 +624,60 @@ FeatureAppContext = AppContext
 CliAppContext = AppContext
 
 
+def _validate_web_security_posture(cfg: HestiaConfig) -> None:
+    """Enforce C1/C3 security guards for the web dashboard.
+
+    Raises HestiaConfigError for hard-fail combinations. Logs a warning for
+    the auth-on + exposed + wildcard case so Dylan's runtime keeps booting.
+    """
+    from hestia.errors import HestiaConfigError
+    from hestia.web.auth import is_loopback_host
+
+    if not cfg.web.enabled:
+        return
+
+    exposed = not is_loopback_host(cfg.web.host)
+    if not exposed or cfg.web.allow_insecure:
+        return
+
+    # C1: auth disabled on an exposed interface is not allowed.
+    if not cfg.web.auth_enabled:
+        raise HestiaConfigError(
+            f"web.auth_enabled is False but web.host is set to the exposed "
+            f"interface {cfg.web.host!r}. Either bind to a loopback address "
+            f"(e.g. 127.0.0.1), enable web.auth_enabled, or explicitly accept "
+            f"the risk by setting web.allow_insecure=True (or "
+            f"HESTIA_WEB_ALLOW_INSECURE=1)."
+        )
+
+    # C3: wildcard or destructive auto-approval on an exposed interface.
+    auto_approve = cfg.trust.auto_approve_tools
+    destructive = {"terminal", "write_file", "email_send"}
+    flagged = [tool for tool in auto_approve if tool == "*" or tool in destructive]
+    if flagged:
+        flagged_str = ", ".join(sorted(set(flagged)))
+        if cfg.web.auth_enabled:
+            logger.warning(
+                "web.host=%s is exposed and trust.auto_approve_tools includes "
+                "%s. Anyone who can reach the dashboard can invoke destructive "
+                "tools without confirmation. Bind to a loopback address or "
+                "remove the wildcard/destructive tools from auto_approve_tools. "
+                "Set web.allow_insecure=True only if you understand the risk.",
+                cfg.web.host,
+                flagged_str,
+            )
+        else:
+            # auth_enabled is False here only if allow_insecure is True, which
+            # we already checked above, so this branch is defensive.
+            raise HestiaConfigError(
+                f"web.host={cfg.web.host!r} is exposed and "
+                f"trust.auto_approve_tools includes {flagged_str!r}, but "
+                f"web.auth_enabled is False. Either enable auth, bind to a "
+                f"loopback address, or set web.allow_insecure=True to accept "
+                f"the risk."
+            )
+
+
 def _validate_config_at_startup(cfg: HestiaConfig) -> None:
     """Validate config before creating subsystems. Raises HestiaConfigError on failure."""
     from hestia.errors import HestiaConfigError
@@ -639,6 +693,8 @@ def _validate_config_at_startup(cfg: HestiaConfig) -> None:
             "telegram.allowed_users is set but telegram.bot_token is empty. "
             "Set telegram.bot_token to your Telegram bot token."
         )
+
+    _validate_web_security_posture(cfg)
 
     # Email: if any host is configured, both should be present
     if cfg.email.imap_host or cfg.email.smtp_host:

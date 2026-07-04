@@ -26,9 +26,7 @@ class IdentityConfig(_ConfigFromEnv):
     _ENV_PREFIX = "IDENTITY"
 
     soul_path: Path | None = field(default_factory=lambda: DEFAULT_SOUL_MD_PATH)
-    compiled_cache_path: Path = field(
-        default_factory=lambda: Path(".hestia/compiled_identity.txt")
-    )
+    compiled_cache_path: Path = field(default_factory=lambda: Path(".hestia/compiled_identity.txt"))
     max_tokens: int = 300
     recompile_on_change: bool = True
     capabilities_prefix_enabled: bool = False
@@ -36,9 +34,7 @@ class IdentityConfig(_ConfigFromEnv):
 
     def __post_init__(self) -> None:
         if self.max_tokens < 0:
-            raise ValueError(
-                f"IdentityConfig.max_tokens must be non-negative, got {self.max_tokens}"
-            )
+            raise ValueError(f"IdentityConfig.max_tokens must be non-negative, got {self.max_tokens}")
 
 
 @dataclass
@@ -382,13 +378,9 @@ class CompactionConfig(_ConfigFromEnv):
 
     def __post_init__(self) -> None:
         if self.verbatim_turns < 0:
-            raise ValueError(
-                f"CompactionConfig.verbatim_turns must be non-negative, got {self.verbatim_turns}"
-            )
+            raise ValueError(f"CompactionConfig.verbatim_turns must be non-negative, got {self.verbatim_turns}")
         if self.summary_max_chars < 100:
-            raise ValueError(
-                f"CompactionConfig.summary_max_chars must be at least 100, got {self.summary_max_chars}"
-            )
+            raise ValueError(f"CompactionConfig.summary_max_chars must be at least 100, got {self.summary_max_chars}")
 
 
 @dataclass
@@ -420,8 +412,7 @@ class EmailConfig(_ConfigFromEnv):
             val = os.environ.get(self.password_env)
             if val is None:
                 raise EmailConfigError(
-                    f"Email password_env '{self.password_env}' is set "
-                    "but the environment variable is not defined"
+                    f"Email password_env '{self.password_env}' is set but the environment variable is not defined"
                 )
             return val
         return self.password
@@ -487,9 +478,7 @@ class StyleConfig(_ConfigFromEnv):
         try:
             croniter(self.cron)
         except ValueError as exc:
-            raise ValueError(
-                f"StyleConfig.cron is not a valid cron expression: {self.cron}"
-            ) from exc
+            raise ValueError(f"StyleConfig.cron is not a valid cron expression: {self.cron}") from exc
 
 
 @dataclass
@@ -512,9 +501,7 @@ class ReflectionConfig(_ConfigFromEnv):
         try:
             croniter(self.cron)
         except ValueError as exc:
-            raise ValueError(
-                f"ReflectionConfig.cron is not a valid cron expression: {self.cron}"
-            ) from exc
+            raise ValueError(f"ReflectionConfig.cron is not a valid cron expression: {self.cron}") from exc
 
 
 @dataclass
@@ -532,9 +519,7 @@ class VoiceConfig(_ConfigFromEnv):
     tts_engine: str = "piper"
     tts_voice: str = "en_US-amy-medium"
     tts_speed: float = 1.0
-    model_cache_dir: Path = field(
-        default_factory=lambda: Path.home() / ".cache" / "hestia" / "voice"
-    )
+    model_cache_dir: Path = field(default_factory=lambda: Path.home() / ".cache" / "hestia" / "voice")
 
 
 @dataclass
@@ -547,6 +532,10 @@ class WebConfig(_ConfigFromEnv):
     host: str = "127.0.0.1"
     port: int = 8765
     auth_enabled: bool = True
+    allow_insecure: bool = False
+    """Bypass the C1/C3 startup security guards. Set True only for isolated
+    development environments where you intentionally run without auth or with
+    wildcard auto-approval on an exposed interface."""
     debug_login: bool = False
     session_lifetime_hours: int = 72
     code_expiry_seconds: int = 300
@@ -560,9 +549,7 @@ class BrowserConfig(_ConfigFromEnv):
     _ENV_PREFIX = "BROWSER"
 
     enabled: bool = False
-    session_dir: Path = field(
-        default_factory=lambda: Path.home() / ".hestia" / "browser-sessions"
-    )
+    session_dir: Path = field(default_factory=lambda: Path.home() / ".hestia" / "browser-sessions")
     headless: bool = True
     default_timeout_seconds: int = 30
     min_fetch_delay_seconds: float = 3.0
@@ -1003,8 +990,7 @@ class HestiaConfig(_ConfigFromEnv):
         config = getattr(module, "config", None)
         if not isinstance(config, HestiaConfig):
             raise TypeError(
-                f"Config file must define a `config` variable of type HestiaConfig, "
-                f"got {type(config).__name__}"
+                f"Config file must define a `config` variable of type HestiaConfig, got {type(config).__name__}"
             )
         validate_inference_model_name(config.inference.model_name)
         return config

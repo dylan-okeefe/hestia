@@ -70,3 +70,6 @@ docs/development-process/reviews/smallcode-littlecoder-review.md
 # Demo/screenshot instance local state (see docs/development-process/screenshot-workflow.md)
 config.demo.py
 demo-data/
+
+# Personal runtime config — copy from config.runtime.example.py
+config.runtime.py

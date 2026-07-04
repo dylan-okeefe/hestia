@@ -1,5 +1,13 @@
 # Agent Guidelines
 
+## Tooling Conventions
+
+### Hugging Face CLI
+
+The Hugging Face Hub command-line tool is installed as `hf` (not the legacy
+`huggingface-cli`). Use `hf download <repo_id> <filename> --local-dir <dir>`
+for model downloads.
+
 ## Web UI Conventions
 
 ### No Inline Styles
