@@ -44,6 +44,9 @@ _CTX_DEP = Depends(get_web_context)
 
 _TRUST_LEVELS = {"paranoid", "prompt_on_mobile", "household", "developer"}
 
+REDACTED_SECRET = "__redacted__"
+"""Sentinel value exposed in place of a real webhook secret."""
+
 
 def _redact_trigger_config(trigger_config: dict[str, Any]) -> dict[str, Any]:
     """Return a copy of *trigger_config* with the webhook secret redacted.
@@ -54,7 +57,7 @@ def _redact_trigger_config(trigger_config: dict[str, Any]) -> dict[str, Any]:
     redacted = dict(trigger_config)
     has_secret = bool(redacted.get("secret"))
     if "secret" in redacted:
-        redacted["secret"] = "__redacted__"
+        redacted["secret"] = REDACTED_SECRET
     redacted["has_secret"] = has_secret
     return redacted
 
@@ -244,11 +247,15 @@ async def update_workflow(
     if "trigger_config" in payload:
         new_config = dict(payload["trigger_config"])
         # Preserve an existing webhook secret unless the payload explicitly
-        # provides a new one, so UI edits don't accidentally clear it.
+        # provides a new one, so UI edits don't accidentally clear it. Treat
+        # the redacted sentinel as "preserve existing" as well.
         if workflow.trigger_type == "webhook" or new_config.get("trigger_type") == "webhook":
             old_secret = workflow.trigger_config.get("secret")
-            if "secret" not in new_config and old_secret:
-                new_config["secret"] = old_secret
+            if "secret" not in new_config or new_config.get("secret") == REDACTED_SECRET:
+                if old_secret:
+                    new_config["secret"] = old_secret
+                else:
+                    new_config.pop("secret", None)
         workflow.trigger_config = new_config
     if "owner_id" in payload:
         workflow.owner_id = payload["owner_id"]

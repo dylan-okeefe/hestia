@@ -287,6 +287,35 @@ class TestUpdateWorkflowSecretHandling:
         saved_config = ctx.workflow_store.save_workflow.call_args[0][0].trigger_config
         assert saved_config["secret"] == "new-secret"
 
+    def test_update_workflow_preserves_secret_on_redacted_round_trip(self, client: TestClient) -> None:
+        """GET returns a redacted secret; PUTting that payload must not overwrite the real secret."""
+        from hestia.web import context as ctx_mod
+        from hestia.web.routes.workflows import REDACTED_SECRET
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        wf = _webhook_workflow()
+        ctx.workflow_store.get_workflow = AsyncMock(return_value=wf)
+        ctx.workflow_store.save_workflow = AsyncMock(return_value=None)
+        ctx.workflow_store.get_active_version = AsyncMock(return_value=None)
+
+        get_response = client.get("/api/workflows/wf_hook", headers={"X-Test-Platform-User": "owner_a"})
+        assert get_response.status_code == 200
+        payload = get_response.json()
+        assert payload["trigger_config"]["secret"] == REDACTED_SECRET
+
+        response = client.put(
+            "/api/workflows/wf_hook",
+            json={"trigger_config": payload["trigger_config"]},
+            headers={"X-Test-Platform-User": "owner_a"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["trigger_config"]["has_secret"] is True
+        assert data["trigger_config"].get("secret") != "super-secret"
+        saved_config = ctx.workflow_store.save_workflow.call_args[0][0].trigger_config
+        assert saved_config["secret"] == "super-secret"
+
 
 class TestRotateWorkflowSecret:
     """POST /api/workflows/{id}/rotate-secret must rotate secrets with access control."""
