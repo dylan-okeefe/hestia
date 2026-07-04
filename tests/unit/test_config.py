@@ -385,3 +385,18 @@ class TestWebSecurityGuards:
             _validate_config_at_startup(cfg)
 
         assert "exposed" in caplog.text
+
+    def test_c1_aborts_at_make_app_startup(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The guard must run through the public startup path, not only when called directly."""
+        from hestia.app import make_app
+        from hestia.errors import HestiaConfigError
+
+        monkeypatch.setenv("HESTIA_ALLOW_DUMMY_MODEL", "1")
+        cfg = HestiaConfig.default()
+        cfg.inference.model_name = "dummy"
+        cfg.web.enabled = True
+        cfg.web.host = "0.0.0.0"
+        cfg.web.auth_enabled = False
+
+        with pytest.raises(HestiaConfigError, match="web.auth_enabled is False"):
+            make_app(cfg)
