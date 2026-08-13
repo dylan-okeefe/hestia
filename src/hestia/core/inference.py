@@ -15,7 +15,11 @@ import httpx
 from hestia.core.json_repair import repair_json
 from hestia.core.serialization import message_to_dict
 from hestia.core.types import ChatResponse, Message, StreamDelta, ToolCall, ToolSchema
-from hestia.errors import InferenceServerError, InferenceTimeoutError
+from hestia.errors import (
+    InferenceConnectionError,
+    InferenceServerError,
+    InferenceTimeoutError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -330,6 +334,13 @@ class InferenceClient:
         except httpx.HTTPStatusError as e:
             raise InferenceServerError(
                 f"{method} {path} returned {e.response.status_code}: {e.response.text}"
+            ) from e
+        except httpx.TransportError as e:
+            # Connection refused / dropped / cut mid-body (e.g. llama-server
+            # crashed). Note: httpx.TimeoutException is a TransportError
+            # subclass, so this clause must come after the timeout one.
+            raise InferenceConnectionError(
+                f"{method} {path}", f"{type(e).__name__}: {e}"
             ) from e
 
     async def health(self) -> dict[str, Any]:
@@ -677,6 +688,13 @@ class InferenceClient:
         except httpx.TimeoutException as e:
             raise InferenceTimeoutError(
                 "POST /v1/chat/completions timed out"
+            ) from e
+        except httpx.TransportError as e:
+            # Connection dropped mid-stream (e.g. llama-server crashed
+            # mid-response). TimeoutException is a TransportError subclass,
+            # so this clause must come after the timeout one.
+            raise InferenceConnectionError(
+                "POST /v1/chat/completions", f"{type(e).__name__}: {e}"
             ) from e
 
     async def slot_save(self, slot_id: int, filename: str) -> None:

@@ -70,12 +70,22 @@ class TurnFinalization:
         """
         from hestia.errors import (
             ContextTooLargeError,
+            InferenceConnectionError,
             InferenceTimeoutError,
             MaxIterationsError,
             PolicyFailureError,
             ToolExecutionError,
         )
 
+        if isinstance(error, InferenceConnectionError):
+            # Surface the real cause — the operator needs to know the
+            # inference server dropped the connection (e.g. crashed), not
+            # a generic "something went wrong".
+            return (
+                "I lost the connection to the inference server mid-response "
+                f"({error.detail}). It may have crashed or be restarting — "
+                "try again in a few seconds."
+            )
         if isinstance(error, InferenceTimeoutError):
             return "The AI is taking longer than expected. Try again in a moment."
         if isinstance(error, ContextTooLargeError):
