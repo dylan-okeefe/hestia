@@ -472,6 +472,248 @@ async def test_describe_tool_repeated_name_is_blocked():
 
 
 @pytest.mark.asyncio
+async def test_call_tool_list_tools_is_blocked_after_direct_list_tools():
+    """call_tool(name='list_tools') is treated as list_tools and blocked
+    once list_tools has already executed in this turn."""
+    registry = MagicMock()
+    registry.describe.return_value = MagicMock(
+        requires_confirmation=False, ordering="concurrent"
+    )
+
+    policy = MagicMock()
+    policy.tool_result_max_chars.return_value = 8000
+
+    execution = TurnExecution(
+        tool_registry=registry,
+        inference_client=MagicMock(),
+        policy=policy,
+        context_builder=MagicMock(),
+        session_store=MagicMock(),
+    )
+
+    ctx = TurnContext(
+        turn=_make_turn(),
+        user_message=Message(role="user", content="hello"),
+        system_prompt="",
+        respond_callback=AsyncMock(),
+        session=_make_session(),
+        build_result=MagicMock(messages=[]),
+    )
+    # list_tools was already called earlier in this turn.  _handle_tool_calls
+    # has already extended tool_chain with the current batch, so the last entry
+    # is the effective name of the call_tool we are about to execute.
+    ctx.tool_chain = ["list_tools", "list_tools"]
+
+    tool_calls = [
+        ToolCall(
+            id="tc1",
+            name="call_tool",
+            arguments={"name": "list_tools", "arguments": {}},
+        ),
+    ]
+
+    with patch.object(
+        execution, "_dispatch_tool_call", new_callable=AsyncMock
+    ) as mock_dispatch:
+        result_messages, _artifact_handles = await execution._execute_tool_calls(
+            _make_session(), tool_calls, ctx=ctx
+        )
+
+        # The wrapped list_tools must not be dispatched.
+        assert mock_dispatch.call_count == 0
+        assert len(result_messages) == 1
+        assert "list_tools is now DISABLED" in result_messages[0].content
+        assert "call_tool(name='list_tools')" in result_messages[0].content
+        assert ctx._list_tools_blocked is True
+
+
+@pytest.mark.asyncio
+async def test_list_tools_blocked_after_non_meta_tool_result():
+    """Once a non-meta tool has produced a result this turn, list_tools is
+    hard-blocked (direct or wrapped in call_tool)."""
+    registry = MagicMock()
+    registry.describe.return_value = MagicMock(
+        requires_confirmation=False, ordering="concurrent"
+    )
+
+    policy = MagicMock()
+    policy.tool_result_max_chars.return_value = 8000
+
+    execution = TurnExecution(
+        tool_registry=registry,
+        inference_client=MagicMock(),
+        policy=policy,
+        context_builder=MagicMock(),
+        session_store=MagicMock(),
+    )
+
+    ctx = TurnContext(
+        turn=_make_turn(),
+        user_message=Message(role="user", content="hello"),
+        system_prompt="",
+        respond_callback=AsyncMock(),
+        session=_make_session(),
+        build_result=MagicMock(messages=[]),
+    )
+    # A real tool already ran and produced a result this turn.
+    # The two trailing entries represent the current batch that
+    # _handle_tool_calls has already appended to tool_chain.
+    ctx.tool_chain = ["http_get", "list_tools", "list_tools"]
+
+    tool_calls = [
+        ToolCall(id="tc1", name="list_tools", arguments={}),
+        ToolCall(
+            id="tc2",
+            name="call_tool",
+            arguments={"name": "list_tools", "arguments": {}},
+        ),
+    ]
+
+    with patch.object(
+        execution, "_dispatch_tool_call", new_callable=AsyncMock
+    ) as mock_dispatch:
+        result_messages, _artifact_handles = await execution._execute_tool_calls(
+            _make_session(), tool_calls, ctx=ctx
+        )
+
+        assert mock_dispatch.call_count == 0
+        assert len(result_messages) == 2
+        assert "a non-meta tool already produced a result" in result_messages[0].content
+        assert "a non-meta tool already produced a result" in result_messages[1].content
+        assert ctx._list_tools_blocked is True
+
+
+@pytest.mark.asyncio
+async def test_call_tool_describe_tool_is_blocked_after_non_meta_tool():
+    """call_tool(name='describe_tool') is treated as describe_tool and blocked
+    once a non-meta tool has produced a result this turn."""
+    registry = MagicMock()
+    registry.describe.return_value = MagicMock(
+        requires_confirmation=False, ordering="concurrent"
+    )
+
+    policy = MagicMock()
+    policy.tool_result_max_chars.return_value = 8000
+
+    execution = TurnExecution(
+        tool_registry=registry,
+        inference_client=MagicMock(),
+        policy=policy,
+        context_builder=MagicMock(),
+        session_store=MagicMock(),
+    )
+
+    ctx = TurnContext(
+        turn=_make_turn(),
+        user_message=Message(role="user", content="hello"),
+        system_prompt="",
+        respond_callback=AsyncMock(),
+        session=_make_session(),
+        build_result=MagicMock(messages=[]),
+    )
+    # write_file already produced a result; current batch describe_tool entry
+    # has already been appended by _handle_tool_calls.
+    ctx.tool_chain = ["write_file", "describe_tool"]
+
+    tool_calls = [
+        ToolCall(
+            id="tc1",
+            name="call_tool",
+            arguments={
+                "name": "describe_tool",
+                "arguments": {"names": ["http_get"]},
+            },
+        ),
+    ]
+
+    with patch.object(
+        execution, "_dispatch_tool_call", new_callable=AsyncMock
+    ) as mock_dispatch:
+        result_messages, _artifact_handles = await execution._execute_tool_calls(
+            _make_session(), tool_calls, ctx=ctx
+        )
+
+        assert mock_dispatch.call_count == 0
+        assert len(result_messages) == 1
+        assert "a non-meta tool already produced a result" in result_messages[0].content
+        assert "call_tool(name='describe_tool')" in result_messages[0].content
+        assert ctx._describe_tool_blocked is True
+
+
+@pytest.mark.asyncio
+async def test_tool_chain_records_effective_meta_tool_names():
+    """_handle_tool_records records call_tool(name=...) as the inner tool name
+    so the circuit breaker can detect repeated meta-tools."""
+    registry = MagicMock()
+    registry.describe.return_value = MagicMock(
+        requires_confirmation=False, ordering="concurrent"
+    )
+
+    execution = TurnExecution(
+        tool_registry=registry,
+        inference_client=MagicMock(),
+        policy=MagicMock(),
+        context_builder=MagicMock(),
+        session_store=MagicMock(),
+    )
+
+    ctx = TurnContext(
+        turn=_make_turn(),
+        user_message=Message(role="user", content="hello"),
+        system_prompt="",
+        respond_callback=AsyncMock(),
+        session=_make_session(),
+        build_result=MagicMock(messages=[]),
+    )
+
+    chat_response = MagicMock()
+    chat_response.content = ""
+    chat_response.reasoning_content = None
+    chat_response.tool_calls = [
+        ToolCall(
+            id="tc1",
+            name="call_tool",
+            arguments={"name": "list_tools", "arguments": {}},
+        ),
+        ToolCall(
+            id="tc2",
+            name="call_tool",
+            arguments={
+                "name": "describe_tool",
+                "arguments": {"names": ["read_file"]},
+            },
+        ),
+        ToolCall(
+            id="tc3",
+            name="call_tool",
+            arguments={"name": "write_file", "arguments": {}},
+        ),
+    ]
+
+    execution._builder.build = AsyncMock()
+    execution._message_store.append_message = AsyncMock()
+    execution._policy.should_delegate = MagicMock(return_value=False)
+
+    with patch.object(
+        execution, "_execute_tool_calls", new_callable=AsyncMock
+    ) as mock_execute:
+        mock_execute.return_value = ([], [])
+        await execution._handle_tool_calls(
+            ctx,
+            _make_turn(),
+            chat_response,
+            AsyncMock(),
+            AsyncMock(),
+            MagicMock(),
+        )
+
+    assert "list_tools" in ctx.tool_chain
+    assert "describe_tool:read_file" in ctx.tool_chain
+    assert "write_file" in ctx.tool_chain
+    assert "call_tool" not in ctx.tool_chain
+
+
+@pytest.mark.asyncio
 async def test_repeated_identical_call_is_blocked_and_schema_dropped():
     """A tool call identical to the previous assistant message is blocked."""
     registry = MagicMock()

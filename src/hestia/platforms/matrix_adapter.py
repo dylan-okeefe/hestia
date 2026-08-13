@@ -35,6 +35,7 @@ from hestia.platforms.confirmation import ConfirmationStore, render_args_for_hum
 
 if TYPE_CHECKING:
     from hestia.orchestrator.compaction import SessionCompactor
+    from hestia.orchestrator.handoff_service import HandoffService
     from hestia.persistence.session_store import SessionStore
 
 logger = logging.getLogger(__name__)
@@ -69,6 +70,7 @@ class MatrixAdapter(Platform):
         self._pending_confirmations: dict[str, str] = {}
         # Runtime deps are injected by run_platform after the orchestrator is built.
         self._session_store: SessionStore | None = None
+        self._handoff_service: HandoffService | None = None
         self._reset_callback: Callable[[str], Awaitable[None]] | None = None
         self._compactor: SessionCompactor | None = None
 
@@ -91,6 +93,10 @@ class MatrixAdapter(Platform):
     def set_session_store(self, session_store: SessionStore) -> None:
         """Inject session store for /reset command handling."""
         self._session_store = session_store
+
+    def set_handoff_service(self, handoff_service: HandoffService) -> None:
+        """Inject handoff service so /reset can plant a clean-slate marker."""
+        self._handoff_service = handoff_service
 
     def set_compactor(self, compactor: SessionCompactor) -> None:
         """Inject the session compactor for /compact handling."""
@@ -417,6 +423,18 @@ class MatrixAdapter(Platform):
             return
 
         await self._session_store.archive_session(session.id)
+
+        # Plant a reset marker handoff so the next session starts truly fresh
+        # instead of replaying the previous (potentially large) handoff summary.
+        if self._handoff_service is not None:
+            try:
+                await self._handoff_service.generate_handoff_summary(
+                    session.id,
+                    summary="[RESET] User requested a fresh start. Do not carry forward prior context.",
+                    key_messages_override=[],
+                )
+            except Exception:
+                logger.exception("Failed to plant reset handoff for %s", platform_user)
 
         if self._reset_callback is not None:
             try:

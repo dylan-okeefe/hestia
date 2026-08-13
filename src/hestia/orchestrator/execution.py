@@ -67,6 +67,10 @@ _DEFAULT_URL_TIME_BUDGET = 120.0
 # but the structured tool-call batch is empty (e.g. all calls failed JSON validation).
 _MAX_DEGENERATE_TOOL_CALL_RETRIES = 3
 
+# Tool-chain names that are meta-tools.  ``describe_tool:foo`` entries are
+# expanded by _handle_tool_calls so the circuit breaker can count them.
+_META_TOOL_CHAIN_NAMES = {"list_tools", "describe_tool", "call_tool"}
+
 
 _ToolCallKey = tuple[str, tuple[tuple[str, Any], ...]]
 
@@ -87,6 +91,54 @@ def _tool_call_key(tc: ToolCall) -> _ToolCallKey:
 
     args = tuple(sorted((k, _freeze(v)) for k, v in (tc.arguments or {}).items()))
     return (tc.name, args)
+
+
+def _effective_meta_name(tc: ToolCall) -> str | None:
+    """If ``tc`` is ``call_tool(name=...)``, return the cleaned inner name.
+
+    Small models sometimes emit the inner name with a stray ``>`` or a nested
+    XML fragment (e.g. ``"glob>\n<parameter=arguments>..."``).  We clean it
+    the same way ``_meta_call_tool`` does so that status messages and circuit
+    breakers see the intended target.
+    """
+    if tc.name == "call_tool" and tc.arguments:
+        name = tc.arguments.get("name")
+        if isinstance(name, str):
+            return name.split("\n")[0].strip().rstrip(">")
+    return None
+
+
+def _is_list_tools_call(tc: ToolCall) -> bool:
+    """True for direct ``list_tools`` or ``call_tool(name="list_tools")``."""
+    if tc.name == "list_tools":
+        return True
+    return _effective_meta_name(tc) == "list_tools"
+
+
+def _is_describe_tool_call(tc: ToolCall) -> bool:
+    """True for direct ``describe_tool`` or ``call_tool(name="describe_tool")``."""
+    if tc.name == "describe_tool":
+        return True
+    return _effective_meta_name(tc) == "describe_tool"
+
+
+def _describe_tool_names(tc: ToolCall) -> set[str]:
+    """Return the names described by a ``describe_tool`` call (direct or wrapped)."""
+    if not _is_describe_tool_call(tc):
+        return set()
+    # For a wrapped describe_tool the arguments are nested under the call_tool
+    # payload: {"name": "describe_tool", "arguments": {"names": [...]}}.
+    # For a direct describe_tool the names are at the top level.
+    if tc.name == "call_tool" and tc.arguments:
+        inner = tc.arguments.get("arguments") or {}
+        raw_names = inner.get("names") if isinstance(inner, dict) else []
+    else:
+        raw_names = tc.arguments.get("names") if tc.arguments else []
+    if isinstance(raw_names, str):
+        return {raw_names}
+    if isinstance(raw_names, list):
+        return set(raw_names)
+    return set()
 
 
 def _extract_url_from_tool_call(tc: ToolCall) -> str | None:
@@ -601,23 +653,20 @@ class TurnExecution:
 
         tool_names: list[str] = []
         for tc in chat_response.tool_calls:
-            if tc.name == "describe_tool":
-                raw_names = tc.arguments.get("names") if tc.arguments else []
-                if isinstance(raw_names, str):
-                    tool_names.append(f"describe_tool:{raw_names}")
-                elif isinstance(raw_names, list):
+            effective = _effective_meta_name(tc)
+            if _is_describe_tool_call(tc):
+                # Direct describe_tool: names live in tc.arguments. Wrapped
+                # describe_tool: names live in tc.arguments["arguments"].
+                raw_names = _describe_tool_names(tc)
+                if raw_names:
                     for n in raw_names:
                         tool_names.append(f"describe_tool:{n}")
                 else:
                     tool_names.append("describe_tool")
-            elif tc.name == "call_tool" and tc.arguments and tc.arguments.get("name"):
+            elif effective is not None:
                 # Unwrap the meta-tool wrapper so users see "read_file" instead
                 # of the generic "call_tool" name in status messages.
-                nested_name = tc.arguments["name"]
-                if isinstance(nested_name, str):
-                    tool_names.append(nested_name)
-                else:
-                    tool_names.append("call_tool")
+                tool_names.append(effective)
             else:
                 tool_names.append(tc.name)
         ctx.tool_chain.extend(tool_names)
@@ -923,6 +972,12 @@ class TurnExecution:
         # one real execution so the model sees the tool list, but every repeat
         # is replaced with a synthetic result that includes the complete list
         # and a forceful instruction to stop.
+        #
+        # Models also bypass a removed ``list_tools`` schema by calling
+        # ``call_tool(name="list_tools")``; we treat those as list_tools for
+        # this guard.  Finally, once a non-meta tool has already produced a
+        # result in this turn, there is no reason to inspect the tool list
+        # again, so we hard-block list_tools in that case too.
         # Note: ctx.tool_chain has already been extended with the current batch
         # by _handle_tool_calls, so we look at the slice before this batch.
         current_batch_size = len(original_tool_calls)
@@ -933,27 +988,41 @@ class TurnExecution:
         )
         prior_list_tools_count = prior_tool_chain.count("list_tools")
         seen_list_tools = prior_list_tools_count > 0
+        non_meta_tool_already_used = any(
+            name not in _META_TOOL_CHAIN_NAMES
+            and not name.startswith("describe_tool:")
+            for name in prior_tool_chain
+        )
         list_tools_block_results: dict[str, Message] = {}
         blocked_any_list_tools = False
-        if seen_list_tools or any(tc.name == "list_tools" for tc in original_tool_calls):
+        if (
+            seen_list_tools
+            or non_meta_tool_already_used
+            or any(_is_list_tools_call(tc) for tc in original_tool_calls)
+        ):
             list_tools_deduped: list[ToolCall] = []
             for tc in original_tool_calls:
-                if tc.name == "list_tools":
-                    if seen_list_tools:
+                if _is_list_tools_call(tc):
+                    if seen_list_tools or non_meta_tool_already_used:
                         # Any list_tools after the first one in the session is a
                         # degenerate loop. Hard-block it and mark that we need to
                         # drop the list_tools schema from the next prompt.
                         blocked_any_list_tools = True
+                        reason = (
+                            "a non-meta tool already produced a result this turn"
+                            if non_meta_tool_already_used
+                            else "you have already called list_tools"
+                        )
                         list_tools_block_results[tc.id] = Message(
                             role="tool",
                             content=(
-                                "🛑 STOP. You have already called list_tools. "
-                                "The complete tool list is in the system prompt "
-                                "and in the previous list_tools result. "
-                                "list_tools is now DISABLED for the rest of this "
-                                "turn. Do not call it again. Choose a "
-                                "specific tool from the list and call it, or reply "
-                                "directly to the user."
+                                f"🛑 STOP. {reason}. The complete tool list is in "
+                                "the system prompt and in the previous list_tools "
+                                "result. list_tools is now DISABLED for the rest of "
+                                "this turn. Do not call it again (including via "
+                                "call_tool(name='list_tools')). Choose a specific "
+                                "tool from the list and call it, or reply directly "
+                                "to the user."
                             ),
                             tool_call_id=tc.id,
                             created_at=utcnow(),
@@ -973,6 +1042,11 @@ class TurnExecution:
         # keep executing it but mark that the describe_tool schema should be
         # dropped from the next prompt so the model cannot binge on it.
         #
+        # Models may also wrap describe_tool inside call_tool(name="describe_tool");
+        # we treat those as describe_tool for this guard.  Like list_tools,
+        # describe_tool is pointless once a non-meta tool has already produced a
+        # result in this turn, so we hard-block it then too.
+        #
         # Build the set of already-described names from previous assistant
         # messages. We cannot slice ctx.tool_chain because describe_tool entries
         # are expanded to one entry per name, so the batch size in tool_chain
@@ -982,40 +1056,41 @@ class TurnExecution:
             for msg in ctx.running_history:
                 if msg.role == "assistant" and msg.tool_calls:
                     for prev_tc in msg.tool_calls:
-                        if prev_tc.name != "describe_tool":
+                        if not _is_describe_tool_call(prev_tc):
                             continue
-                        raw = prev_tc.arguments.get("names") if prev_tc.arguments else []
-                        if isinstance(raw, str):
-                            prior_describe_tool_names.add(raw)
-                        elif isinstance(raw, list):
-                            prior_describe_tool_names.update(raw)
+                        prior_describe_tool_names.update(_describe_tool_names(prev_tc))
         describe_tool_block_results: dict[str, Message] = {}
         blocked_describe_tool_binge = False
-        if any(tc.name == "describe_tool" for tc in original_tool_calls):
+        if any(_is_describe_tool_call(tc) for tc in original_tool_calls):
             describe_tool_deduped: list[ToolCall] = []
             for tc in original_tool_calls:
-                if tc.name == "describe_tool":
-                    raw_names = tc.arguments.get("names") if tc.arguments else []
-                    if isinstance(raw_names, str):
-                        names = {raw_names}
-                    elif isinstance(raw_names, list):
-                        names = set(raw_names)
-                    else:
-                        names = set()
+                if _is_describe_tool_call(tc):
+                    names = _describe_tool_names(tc)
                     # Block if we've already described 3+ unique tools in this
-                    # session, or if this call repeats any name we've seen
-                    # (including within the current batch).
+                    # session, if this call repeats any name we've seen
+                    # (including within the current batch), or if a non-meta
+                    # tool has already produced a result this turn.
                     already_seen = bool(names & prior_describe_tool_names)
-                    if len(prior_describe_tool_names) >= 3 or already_seen:
+                    if (
+                        non_meta_tool_already_used
+                        or len(prior_describe_tool_names) >= 3
+                        or already_seen
+                    ):
                         blocked_describe_tool_binge = True
+                        reason = (
+                            "a non-meta tool already produced a result this turn"
+                            if non_meta_tool_already_used
+                            else "you have already called describe_tool enough"
+                        )
                         describe_tool_block_results[tc.id] = Message(
                             role="tool",
                             content=(
-                                "🛑 STOP. You have already called describe_tool enough. "
-                                "The tool schemas are in the previous describe_tool results. "
-                                "describe_tool is now DISABLED for the rest of this "
-                                "turn. Stop inspecting tools and call one, or "
-                                "reply directly to the user."
+                                f"🛑 STOP. {reason}. The tool schemas are in the "
+                                "previous describe_tool results. describe_tool is "
+                                "now DISABLED for the rest of this turn (including "
+                                "via call_tool(name='describe_tool')). Stop "
+                                "inspecting tools and call one, or reply directly "
+                                "to the user."
                             ),
                             tool_call_id=tc.id,
                             created_at=utcnow(),

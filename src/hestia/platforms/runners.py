@@ -391,6 +391,7 @@ async def run_platform(
         adapter.set_compactor(app.compactor)
     elif isinstance(adapter, MatrixAdapter):
         adapter.set_session_store(app.session_store)
+        adapter.set_handoff_service(app.handoff_service)
         adapter.register_reset_callback(_reset_callback)
         adapter.set_compactor(app.compactor)
 

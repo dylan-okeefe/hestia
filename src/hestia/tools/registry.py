@@ -226,7 +226,7 @@ class ToolRegistry:
                     "\"arguments\": {\"path\": \"<path>\", \"content\": \"# Notes\\n\"}}). "
                     "For greetings, casual chat, or anything that does not require a tool, "
                     "reply directly instead of calling a tool. "
-                    "Each write_file or append_to_file call MUST have content shorter than 2000 characters. "
+                    "Each write_file call can write up to 50000 characters; use append_to_file for additional chunks. "
                     "For large files, first create the file with a short header using write_file, "
                     "then add sections with append_to_file. "
                     "When a tool result says it is stored as an artifact, use read_artifact "
