@@ -958,9 +958,11 @@ class TelegramAdapter(Platform):
         try:
             # 1. Download the .ogg file
             try:
-                voice_file = await message.voice.get_file()
+                voice_file = await message.voice.get_file(read_timeout=60.0)
                 with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as ogg:
-                    await voice_file.download_to_drive(ogg.name)
+                    await voice_file.download_to_drive(
+                        ogg.name, read_timeout=60.0, write_timeout=60.0
+                    )
                     ogg_path = ogg.name
             except Exception as e:  # noqa: BLE001 — voice download boundary
                 logger.warning("Failed to download voice message: %s", e)
