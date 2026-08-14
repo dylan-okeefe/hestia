@@ -64,6 +64,7 @@ class TestTranscribe:
         mock_whisper.assert_called_once_with(
             "tiny",
             device="cpu",
+            device_index=0,
             compute_type="int8",
             download_root=str(voice_config.model_cache_dir),
         )
@@ -105,6 +106,41 @@ class TestSynthesize:
         assert len(chunks) == 2
         assert chunks[0] == b"audio1"
         assert chunks[1] == b"audio2"
+
+
+class TestSynthesizeKokoro:
+    @pytest.mark.anyio
+    async def test_synthesize_kokoro_converts_float_to_pcm16(
+        self, tmp_path: Any
+    ) -> None:
+        voice_config = VoiceConfig(
+            stt_model="tiny",
+            stt_device="cpu",
+            stt_compute_type="int8",
+            tts_engine="kokoro",
+            tts_voice="am_puck",
+            tts_sample_rate=24000,
+            model_cache_dir=tmp_path / "voice_cache",
+        )
+
+        import numpy as np
+
+        fake_pipeline = MagicMock()
+        fake_pipeline.return_value = [
+            ("", "", np.array([0.0, 0.5, -0.5, 1.0, -1.0], dtype=np.float32)),
+        ]
+
+        with patch(
+            "hestia.voice.pipeline.KPipeline", return_value=fake_pipeline
+        ) as mock_kpipeline:
+            pipeline = VoicePipeline(config=voice_config)
+            chunks = [chunk async for chunk in pipeline.synthesize("Hello.")]
+
+        mock_kpipeline.assert_called_once_with(lang_code="a")
+        assert len(chunks) == 1
+        # float32 [-1, 1] -> int16 PCM via truncation toward zero.
+        expected = np.array([0, 16383, -16383, 32767, -32767], dtype=np.int16).tobytes()
+        assert chunks[0] == expected
 
 
 class TestSingleton:

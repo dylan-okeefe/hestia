@@ -27,6 +27,8 @@ postgres = ["asyncpg>=0.31.0"]
 voice = [
     "faster-whisper>=1.0.0",
     "piper-tts>=1.2.0",
+    "kokoro>=0.9.0",
+    "soundfile>=0.12.0",
 ]
 browser = [
     "curl-cffi>=0.15.0",

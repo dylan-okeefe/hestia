@@ -148,8 +148,9 @@ def _md_to_tg_html(text: str) -> str:
 
 logger = logging.getLogger(__name__)
 
-# Piper outputs PCM16 mono at 22050 Hz for the default en_US-amy-medium voice.
-_TTS_SAMPLE_RATE = 22050
+# Default TTS PCM16 mono sample rate. The active voice config may override this
+# (e.g. Kokoro outputs 24000 Hz).
+_DEFAULT_TTS_SAMPLE_RATE = 22050
 
 
 class TelegramAdapter(Platform):
@@ -220,6 +221,12 @@ class TelegramAdapter(Platform):
         self._handoff_service = handoff_service
         self._system_prompt = system_prompt
         self._voice_config = voice_config
+
+    def _tts_sample_rate(self) -> int:
+        """Return the TTS output sample rate from the voice config."""
+        if self._voice_config is not None:
+            return self._voice_config.tts_sample_rate
+        return _DEFAULT_TTS_SAMPLE_RATE
 
     def register_reset_callback(
         self, callback: Callable[[str], Awaitable[None]]
@@ -1032,7 +1039,7 @@ class TelegramAdapter(Platform):
                 # 6. Telegram voice note limit handling (1 MB)
                 if len(full_audio_ogg) > 1_000_000:
                     total_pcm = b"".join(audio_chunks)
-                    duration_seconds = len(total_pcm) / (_TTS_SAMPLE_RATE * 2)
+                    duration_seconds = len(total_pcm) / (self._tts_sample_rate() * 2)
                     try:
                         truncated_ogg = await self._truncate_ogg_to_size(
                             full_audio_ogg, 1_000_000, duration_seconds
@@ -1176,7 +1183,7 @@ class TelegramAdapter(Platform):
             "-f",
             "s16le",
             "-ar",
-            str(_TTS_SAMPLE_RATE),
+            str(self._tts_sample_rate()),
             "-ac",
             "1",
             "-i",

@@ -512,6 +512,7 @@ class VoiceConfig(_ConfigFromEnv):
 
     stt_model: str = "faster-whisper/large-v3-turbo"
     stt_device: str = "cuda"
+    stt_device_index: int = 0
     stt_compute_type: str = "int8"
     stt_language: str = "en"
     stt_beam_size: int = 5
@@ -519,6 +520,7 @@ class VoiceConfig(_ConfigFromEnv):
     tts_engine: str = "piper"
     tts_voice: str = "en_US-amy-medium"
     tts_speed: float = 1.0
+    tts_sample_rate: int = 22050
     model_cache_dir: Path = field(default_factory=lambda: Path.home() / ".cache" / "hestia" / "voice")
 
 

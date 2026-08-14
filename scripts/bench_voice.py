@@ -90,25 +90,34 @@ _TENS = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy",
 
 
 def _num_to_words(n: int) -> str:
-    """0–99 only; enough for the benchmark prompt/sentence sets."""
+    """0–999; enough for the benchmark prompt/sentence sets."""
     if n < 20:
         return _UNITS[n]
-    tens, rem = divmod(n, 10)
-    return f"{_TENS[tens]} {_UNITS[rem]}" if rem else _TENS[tens]
+    if n < 100:
+        tens, rem = divmod(n, 10)
+        return f"{_TENS[tens]} {_UNITS[rem]}" if rem else _TENS[tens]
+    hundreds, rem = divmod(n, 100)
+    out = f"{_UNITS[hundreds]} hundred"
+    if rem:
+        out += f" {_num_to_words(rem)}"
+    return out
 
 
 def _normalize(text: str) -> list[str]:
     text = text.lower()
     text = re.sub(r"[^\w\s]", " ", text)
     # Normalize digit tokens to words so "2:30 PM" == "two thirty pm" and
-    # "64 degrees" == "sixty four degrees" — WER should measure recognition
+    # "512" == "five hundred (and) twelve" — WER should measure recognition
     # errors, not transcription formatting choices.
     words: list[str] = []
     for tok in text.split():
-        if tok.isdigit() and int(tok) < 100:
+        if tok.isdigit() and int(tok) < 1000:
             words.extend(_num_to_words(int(tok)).split())
         else:
             words.append(tok)
+    # Drop "and" — its optional use inside spoken numbers ("five hundred
+    # and twelve") is a formatting difference, not a recognition error.
+    words = [w for w in words if w != "and"]
     # Rejoin am/pm split apart by punctuation stripping ("p.m." -> "p m").
     out: list[str] = []
     i = 0
@@ -210,6 +219,7 @@ def mode_stt(args: argparse.Namespace) -> None:
     t0 = time.monotonic()
     model = WhisperModel(
         args.model, device=args.device, compute_type=args.compute_type,
+        device_index=args.device_index,
         download_root=str(args.model_cache_dir),
     )
     load_s = time.monotonic() - t0
@@ -242,13 +252,43 @@ def mode_stt(args: argparse.Namespace) -> None:
     _report(args, rows, load_s)
 
 
-def mode_tts(args: argparse.Namespace) -> None:
+def _load_piper_tts(args: argparse.Namespace) -> tuple[object, int]:
     from piper import PiperVoice
 
     onnx = ensure_piper_voice(args.tts_voice, args.model_cache_dir)
     t0 = time.monotonic()
     tts = PiperVoice.load(str(onnx))
     print(f"voice load: {time.monotonic() - t0:.1f}s ({args.tts_voice})")
+    return tts, tts.config.sample_rate
+
+
+def _load_kokoro_tts(args: argparse.Namespace) -> tuple[object, int]:
+    from kokoro import KPipeline
+
+    lang_code = args.tts_voice[0] if args.tts_voice else "a"
+    t0 = time.monotonic()
+    pipeline = KPipeline(lang_code=lang_code)
+    print(f"voice load: {time.monotonic() - t0:.1f}s (kokoro {args.tts_voice})")
+    return pipeline, args.tts_sample_rate
+
+
+def _synthesize_kokoro_sentence(tts: object, text: str, voice: str) -> bytes:
+    import numpy as np
+
+    pcm_chunks: list[bytes] = []
+    for _gs, _ps, audio in tts(text, voice=voice, speed=1.0, split_pattern=r"\n+"):
+        arr = np.asarray(audio)
+        pcm_chunks.append((arr * 32767).astype(np.int16).tobytes())
+    return b"".join(pcm_chunks)
+
+
+def mode_tts(args: argparse.Namespace) -> None:
+    if args.tts_engine == "piper":
+        tts, sample_rate = _load_piper_tts(args)
+    elif args.tts_engine == "kokoro":
+        tts, sample_rate = _load_kokoro_tts(args)
+    else:
+        raise SystemExit(f"unsupported TTS engine: {args.tts_engine}")
 
     ref_stt = None
     if args.roundtrip_stt:
@@ -267,14 +307,18 @@ def mode_tts(args: argparse.Namespace) -> None:
     rows = []
     for i, text in enumerate(TTS_SENTENCES, 1):
         t0 = time.monotonic()
-        pcm = b"".join(c.audio_int16_bytes for c in tts.synthesize(text))
+        if args.tts_engine == "piper":
+            pcm = b"".join(c.audio_int16_bytes for c in tts.synthesize(text))
+        else:
+            pcm = _synthesize_kokoro_sentence(tts, text, args.tts_voice)
         elapsed = time.monotonic() - t0
-        wav_bytes = _pcm_to_wav_bytes(pcm, tts.config.sample_rate)
+        wav_bytes = _pcm_to_wav_bytes(pcm, sample_rate)
         wav_path = out_dir / f"{i:02d}.wav"
         wav_path.write_bytes(wav_bytes)
-        dur = len(pcm) / 2 / tts.config.sample_rate
+        dur = len(pcm) / 2 / sample_rate
         rtf = dur / elapsed if elapsed else 0.0
         w = -1.0
+        hyp = ""
         if ref_stt is not None:
             segments, _ = ref_stt.transcribe(
                 io.BytesIO(wav_bytes), language=args.language,
@@ -283,7 +327,7 @@ def mode_tts(args: argparse.Namespace) -> None:
             hyp = " ".join(s.text for s in segments).strip()
             w = wer(text, hyp)
         rows.append({"file": wav_path.name, "dur": dur, "elapsed": elapsed,
-                     "rtf": rtf, "wer": w, "hyp": hyp if ref_stt else ""})
+                     "rtf": rtf, "wer": w, "hyp": hyp})
         wer_str = f"  roundtrip-WER {w:.1%}" if w >= 0 else ""
         print(f"{i:02d}: {dur:.1f}s audio in {elapsed:.2f}s (RTF {rtf:.1f}x){wer_str}")
         if 0 < w and ref_stt is not None:
@@ -342,11 +386,18 @@ def main() -> int:
     # STT options (defaults mirror config.runtime.py)
     ap.add_argument("--model", default="medium")
     ap.add_argument("--device", default="cpu")
+    ap.add_argument("--device-index", type=int, default=0,
+                    help="GPU index when --device cuda (default 0)")
     ap.add_argument("--compute-type", default="int8")
     ap.add_argument("--language", default="en")
     ap.add_argument("--beam-size", type=int, default=5)
     # TTS options
+    ap.add_argument("--tts-engine", default="piper",
+                    choices=["piper", "kokoro"],
+                    help="TTS backend (default: piper)")
     ap.add_argument("--tts-voice", default="en_US-amy-medium")
+    ap.add_argument("--tts-sample-rate", type=int, default=22050,
+                    help="output sample rate for TTS audio (default: 22050)")
     ap.add_argument("--roundtrip-stt", default=None,
                     help="reference STT model for TTS intelligibility WER")
     args = ap.parse_args()
