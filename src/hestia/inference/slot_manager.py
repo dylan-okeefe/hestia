@@ -252,10 +252,40 @@ class SlotManager:
         Caller must hold self._lock.
         """
         session = await self._store.get_session(session_id)
+
+        # Find the slot_id we currently think this session owns in memory.
+        # If the DB disagrees, our assignment map is stale (e.g. a previous
+        # crash left the in-memory state out of sync with the persisted state).
+        assigned_slot_id: int | None = None
+        for sid, sid_session_id in self._assignments.items():
+            if sid_session_id == session_id:
+                assigned_slot_id = sid
+                break
+
         if session is None or session.slot_id is None:
-            raise RuntimeError(f"Cannot evict session {session_id}: not assigned to a slot")
+            # DB has no slot for this session — clear stale in-memory assignment.
+            logger.warning(
+                "Session %s has no slot_id in DB; clearing stale assignment for slot %s",
+                session_id,
+                assigned_slot_id,
+            )
+            if assigned_slot_id is None:
+                raise RuntimeError(f"Cannot evict session {session_id}: not assigned to a slot")
+            del self._assignments[assigned_slot_id]
+            return assigned_slot_id
 
         slot_id = session.slot_id
+
+        # Reconcile an in-memory assignment that disagrees with the DB.
+        if assigned_slot_id is not None and assigned_slot_id != slot_id:
+            logger.warning(
+                "Session %s slot mismatch: DB says %d, assignment map says %d; using DB",
+                session_id,
+                slot_id,
+                assigned_slot_id,
+            )
+            del self._assignments[assigned_slot_id]
+
         saved_path = self._slot_path_for(session_id)
 
         # Remove from assignments BEFORE releasing lock so no other coroutine
