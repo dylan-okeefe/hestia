@@ -39,6 +39,7 @@ from hestia.config import MatrixConfig
 from hestia.context.builder import ContextBuilder
 from hestia.core.types import ChatResponse, Message, ToolCall
 from hestia.memory.store import MemoryStore
+from hestia.memory.topics import TopicStore
 from hestia.orchestrator import Orchestrator
 from hestia.persistence.db import Database
 from hestia.persistence.failure_store import FailureStore
@@ -247,6 +248,7 @@ async def e2e_setup(tmp_path):
     session_store = SessionStore(db)
     memory_store = MemoryStore(db)
     await memory_store.create_table()
+    topic_store = TopicStore(db)
     failure_store = FailureStore(db)
     await failure_store.create_table()
     trace_store = TraceStore(db)
@@ -268,7 +270,7 @@ async def e2e_setup(tmp_path):
     registry.register(make_list_dir_tool(StorageConfig(allowed_roots=[str(sandbox)])))
     registry.register(make_write_file_tool(StorageConfig(allowed_roots=[str(sandbox)])))
     registry.register(make_read_artifact_tool(artifact_store))
-    registry.register(make_save_memory_tool(memory_store))
+    registry.register(make_save_memory_tool(memory_store, topic_store))
     registry.register(make_list_memories_tool(memory_store))
     registry.register(make_search_memory_tool(memory_store))
 

@@ -42,6 +42,7 @@ class TestReadArtifactRegistered:
         from hestia.artifacts.store import ArtifactStore
         from hestia.config import HestiaConfig
         from hestia.memory import MemoryStore
+        from hestia.memory.topics import TopicStore
         from hestia.persistence.db import Database
         from hestia.tools.builtin import (
             make_delete_memory_tool,
@@ -56,10 +57,11 @@ class TestReadArtifactRegistered:
         db = Database("sqlite+aiosqlite:///:memory:")
         artifact_store = ArtifactStore(cfg.storage.artifacts_dir)
         memory_store = MemoryStore(db)
+        topic_store = TopicStore(db)
         registry = ToolRegistry(artifact_store)
 
         registry.register(make_search_memory_tool(memory_store))
-        registry.register(make_save_memory_tool(memory_store))
+        registry.register(make_save_memory_tool(memory_store, topic_store))
         registry.register(make_list_memories_tool(memory_store))
         registry.register(make_delete_memory_tool(memory_store))
         registry.register(make_read_artifact_tool(artifact_store))

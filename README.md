@@ -79,7 +79,6 @@ Memory: `save_memory`, `search_memory`, `list_memories`, `delete_memory`
 Scheduler: `create_scheduled_task`, `list_scheduled_tasks`, `disable_scheduled_task`, `enable_scheduled_task`, `delete_scheduled_task`  
 Proposals: `list_proposals`, `show_proposal`, `accept_proposal`, `reject_proposal`, `defer_proposal`  
 Style: `show_style_profile`, `reset_style_metric`, `reset_style_profile`  
-Workflow: `save_job_alert`, `list_pending_alerts`, `mark_alerts_sent`  
 System: `current_time`, `read_artifact`, `rollback_turn`, `delegate_task`
 
 ## Quick Start

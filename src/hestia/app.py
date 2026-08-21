@@ -281,11 +281,14 @@ class AppContext:
         """Lazy inference client — created on first access."""
         model_name = self.config.inference.model_name.strip()
         if not model_name:
-            raise ValueError(
-                "inference.model_name is required — set it to your llama.cpp model "
-                "filename (e.g. 'my-model-Q4_K_M.gguf'), or for tests only set "
-                "HESTIA_ALLOW_DUMMY_MODEL=1 and use model_name='dummy'."
-            )
+            if os.environ.get("HESTIA_ALLOW_DUMMY_MODEL") == "1":
+                model_name = "dummy"
+            else:
+                raise ValueError(
+                    "inference.model_name is required — set it to your llama.cpp model "
+                    "filename (e.g. 'my-model-Q4_K_M.gguf'), or for tests only set "
+                    "HESTIA_ALLOW_DUMMY_MODEL=1 and use model_name='dummy'."
+                )
         return InferenceClient(
             self.config.inference.base_url,
             model_name,

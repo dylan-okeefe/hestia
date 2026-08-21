@@ -8,6 +8,7 @@ from hestia.artifacts.store import ArtifactStore
 from hestia.config import StorageConfig
 from hestia.context.builder import ContextBuilder
 from hestia.memory.store import MemoryStore
+from hestia.memory.topics import TopicStore
 from hestia.persistence.db import Database
 from hestia.persistence.message_store import MessageStore
 from hestia.persistence.session_store import SessionStore
@@ -50,6 +51,12 @@ async def memory_store(store):
     memories = await ms.list_memories(tag="e2e_hestia_l11")
     for mem in memories:
         await ms.delete(mem.id)
+
+
+@pytest.fixture
+async def topic_store(store):
+    """Create a TopicStore bound to the same database."""
+    return TopicStore(store._db)
 
 
 @pytest.fixture
@@ -101,7 +108,7 @@ def respond_callback(responses):
 
 
 @pytest.fixture
-def tool_registry(artifact_store, memory_store, file_sandbox):
+def tool_registry(artifact_store, memory_store, topic_store, file_sandbox):
     """Tool registry with all built-in tools except delegate_task."""
     registry = ToolRegistry(artifact_store)
 
@@ -124,7 +131,7 @@ def tool_registry(artifact_store, memory_store, file_sandbox):
     registry.register(make_list_dir_tool(StorageConfig(allowed_roots=[file_sandbox])))
     registry.register(make_write_file_tool(StorageConfig(allowed_roots=[file_sandbox])))
     registry.register(make_read_artifact_tool(artifact_store))
-    registry.register(make_save_memory_tool(memory_store))
+    registry.register(make_save_memory_tool(memory_store, topic_store))
     registry.register(make_list_memories_tool(memory_store))
     registry.register(make_search_memory_tool(memory_store))
 

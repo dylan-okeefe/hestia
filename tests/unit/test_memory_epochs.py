@@ -93,18 +93,21 @@ class TestMemoryEpochCompiler:
         store = MemoryStore(db)
         await store.create_table()
 
-        # Add some memories scoped to the session user
+        # Add some global memories scoped to the session user
         await store.save(
             content="Memory 1 content", tags=["tag1"],
             session_id="session-1", platform="cli", platform_user="test",
+            is_global=True,
         )
         await store.save(
             content="Memory 2 content", tags=["tag2"],
             session_id="session-1", platform="cli", platform_user="test",
+            is_global=True,
         )
         await store.save(
             content="Memory 3 content", tags=[],
             session_id="session-2", platform="cli", platform_user="test",
+            is_global=True,
         )
 
         compiler = MemoryEpochCompiler(store, max_tokens=500)
@@ -211,10 +214,12 @@ class TestMemoryEpochCompiler:
         await store.save(
             content="Tagged memory", tags=["important", "work"],
             platform="cli", platform_user="test",
+            is_global=True,
         )
         await store.save(
             content="Untagged memory", tags=[],
             platform="cli", platform_user="test",
+            is_global=True,
         )
 
         compiler = MemoryEpochCompiler(store, max_tokens=500)
@@ -257,6 +262,7 @@ class TestMemoryEpochCompiler:
         await store.save(
             content="Recent important memory", tags=["recent"],
             platform="cli", platform_user="test",
+            is_global=True,
         )
 
         compiler = MemoryEpochCompiler(store, max_tokens=500)
@@ -315,15 +321,14 @@ class TestMemoryEpochCompilerMockStore:
         )
 
         mock_store = MagicMock(spec=MemoryStore)
-        mock_store.list_memories = AsyncMock(return_value=[shared_mem, shared_mem])
+        mock_store.get_for_epoch = AsyncMock(return_value=([shared_mem, shared_mem], []))
 
         compiler = MemoryEpochCompiler(mock_store, max_tokens=500)
         epoch = await compiler.compile(session)
 
         assert epoch.memory_count == 1
         assert "Duplicate memory" in epoch.compiled_text
-        # list_memories called twice (limit=50 then limit=100 fallback)
-        assert mock_store.list_memories.call_count == 2
+        assert mock_store.get_for_epoch.await_count == 1
 
     @pytest.mark.asyncio
     async def test_compile_truncates_to_max_tokens_mock(self, session):
@@ -343,7 +348,7 @@ class TestMemoryEpochCompilerMockStore:
         )
 
         mock_store = MagicMock(spec=MemoryStore)
-        mock_store.list_memories = AsyncMock(return_value=[mem])
+        mock_store.get_for_epoch = AsyncMock(return_value=([mem], []))
 
         compiler = MemoryEpochCompiler(mock_store, max_tokens=10)
         epoch = await compiler.compile(session)
@@ -353,31 +358,17 @@ class TestMemoryEpochCompilerMockStore:
         assert epoch.token_estimate <= 10 + 5  # small margin for header
 
     @pytest.mark.asyncio
-    async def test_compile_with_tag_filter_via_fetch(self, session):
-        """_fetch_recent_memories passes tag parameter to the store."""
-        from hestia.core.clock import utcnow
-        from hestia.memory.store import Memory
-
-        mem = Memory(
-            id="mem-tagged",
-            content="Tagged memory",
-            tags="important",
-            created_at=utcnow(),
-            session_id="s1",
-            platform="cli",
-            platform_user="test",
-        )
-
+    async def test_compile_passes_topic_ids_to_store(self, session):
+        """compile passes topic_ids through to get_for_epoch."""
         mock_store = MagicMock(spec=MemoryStore)
-        mock_store.list_memories = AsyncMock(return_value=[mem])
+        mock_store.get_for_epoch = AsyncMock(return_value=([], []))
 
         compiler = MemoryEpochCompiler(mock_store, max_tokens=500)
-        # _fetch_recent_memories is used internally; test it directly
-        result = await compiler._fetch_recent_memories(
-            limit=10, platform="cli", platform_user="test"
-        )
+        await compiler.compile(session, topic_ids=["topic_1"])
 
-        assert len(result) == 1
-        mock_store.list_memories.assert_awaited_once_with(
-            tag=None, limit=10, platform="cli", platform_user="test"
+        mock_store.get_for_epoch.assert_awaited_once_with(
+            platform=session.platform,
+            platform_user=session.platform_user,
+            topic_ids=["topic_1"],
+            active_sender_platform_user=None,
         )
