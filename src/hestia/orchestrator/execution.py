@@ -1546,45 +1546,50 @@ class TurnExecution:
         arguments: dict[str, Any],
         session: Session,
         ctx: "TurnContext | None" = None,
-    ) -> ToolCallResult | None:
-        """Return None if approved (or if the tool does not require confirmation),
-        or a ToolCallResult(error=...) if denied / unable to confirm."""
+    ) -> tuple[ToolCallResult | None, Any]:
+        """Return ``(None, cap_result)`` when approved, or
+        ``(ToolCallResult(error=...), cap_result)`` when denied / unable to
+        confirm. ``cap_result`` feeds the pre_gated chokepoint context."""
         # L222: unified capability gate runs first.
-        gate_result = await self._run_capability_gate(
+        gate_result, cap_result = await self._run_capability_gate(
             tool_name=tool_name,
             arguments=arguments,
             session=session,
             ctx=ctx,
         )
         if gate_result is not None:
-            return gate_result
+            return gate_result, cap_result
 
         if not tool.requires_confirmation:
-            return None
+            return None, cap_result
 
         if self._policy.auto_approve(tool_name, session, self._tools):
             # Trust profile auto-approves this tool for this session context.
-            return None
+            return None, cap_result
 
         if self._confirm_callback is None:
-            return ToolCallResult.error(
-                (
-                    f"Tool '{tool_name}' requires user confirmation but no "
-                    "confirm_callback is configured and the trust profile does "
-                    "not auto-approve it. Add the tool to "
-                    "TrustConfig.auto_approve_tools, or run via a platform that "
-                    "supports confirmation (CLI)."
+            return (
+                ToolCallResult.error(
+                    (
+                        f"Tool '{tool_name}' requires user confirmation but no "
+                        "confirm_callback is configured and the trust profile does "
+                        "not auto-approve it. Add the tool to "
+                        "TrustConfig.auto_approve_tools, or run via a platform that "
+                        "supports confirmation (CLI)."
+                    ),
                 ),
+                cap_result,
             )
 
         request_token = ctx.request_token if ctx is not None else None
         confirmed = await self._confirm_callback(tool_name, arguments, request_token)
         if not confirmed:
-            return ToolCallResult.error(
-                "Tool execution was cancelled by user.",
+            return (
+                ToolCallResult.error("Tool execution was cancelled by user."),
+                cap_result,
             )
 
-        return None
+        return None, cap_result
 
     async def _run_capability_gate(
         self,
@@ -1593,16 +1598,16 @@ class TurnExecution:
         arguments: dict[str, Any],
         session: Session,
         ctx: "TurnContext | None",
-    ) -> ToolCallResult | None:
-        """Check CapabilityGate and return a ToolCallResult if blocked.
+    ) -> tuple[ToolCallResult | None, Any]:
+        """Check CapabilityGate.
 
-        Returns None when the gate allows the call (including when no gate is
-        configured). When the gate requires confirmation but the call is
-        otherwise allowed, this method returns None so the normal confirmation
-        path (with the gate's request_token) can take over.
+        Returns ``(blocked_result_or_None, capability_result)``. The second
+        element feeds the caller's pre_gated ToolCallContext so the registry
+        chokepoint does not re-evaluate (L245 single-evaluation criterion).
+        ``capability_result`` is None only when no gate is configured.
         """
         if self._capability_gate is None:
-            return None
+            return None, None
 
         channel = ctx.channel if ctx is not None and ctx.channel is not None else Channel.CLI
         platform_user = (
@@ -1637,7 +1642,7 @@ class TurnExecution:
         if not result.allowed:
             return ToolCallResult.error(
                 f"[CATEGORY: BLOCKED] Capability gate denied '{tool_name}': {result.reason}"
-            )
+            ), result
 
         # Gate has approved. If it requires confirmation, fall through to the
         # normal confirmation flow; the callback will receive the request_token.
@@ -1645,9 +1650,9 @@ class TurnExecution:
             # Store token on the context for the confirmation callback to use.
             if ctx is not None:
                 ctx.request_token = result.request_token
-            return None
+            return None, result
 
-        return None
+        return None, result
 
     async def _meta_list_tools(
         self,
@@ -1720,7 +1725,7 @@ class TurnExecution:
                 f"Tool not found: {name}",
             )
 
-        confirm_result = await self._check_confirmation(
+        confirm_result, cap_result = await self._check_confirmation(
             tool=inner_meta,
             tool_name=name,
             arguments=arguments,
@@ -1730,7 +1735,24 @@ class TurnExecution:
         if confirm_result is not None:
             return confirm_result
 
-        return await self._tools.meta_call_tool(name, arguments)
+        # L245: thread the pre_gated decision into the meta-tool passthrough.
+        from hestia.tools.context import ToolCallContext
+
+        tool_context = None
+        if cap_result is not None and ctx is not None:
+            tool_context = ToolCallContext(
+                channel=ctx.channel if ctx.channel is not None else Channel.CLI,
+                actor_platform=session.platform,
+                actor_platform_user=(
+                    ctx.platform_user
+                    if ctx.platform_user is not None
+                    else session.platform_user
+                ),
+                session_id=session.id,
+                mode="pre_gated",
+                pre_gated_result=cap_result,
+            )
+        return await self._tools.meta_call_tool(name, arguments, context=tool_context)
 
     async def _dispatch_tool_call(
         self,
@@ -1769,7 +1791,7 @@ class TurnExecution:
                 f"Unknown tool: {tc.name}",
             )
 
-        confirm_result = await self._check_confirmation(
+        confirm_result, cap_result = await self._check_confirmation(
             tool=meta,
             tool_name=tc.name,
             arguments=tc.arguments or {},
@@ -1779,7 +1801,28 @@ class TurnExecution:
         if confirm_result is not None:
             return confirm_result
 
-        result = await self._tools.call(tc.name, tc.arguments or {})
+        # L245 chokepoint: hand the registry the decision the gate already
+        # made (single evaluation). The context carries who/where for audit
+        # and future enforcement; the registry does not re-evaluate.
+        from hestia.tools.context import ToolCallContext
+
+        if cap_result is not None and ctx is not None:
+            tool_context = ToolCallContext(
+                channel=ctx.channel if ctx.channel is not None else Channel.CLI,
+                actor_platform=session.platform,
+                actor_platform_user=(
+                    ctx.platform_user
+                    if ctx.platform_user is not None
+                    else session.platform_user
+                ),
+                session_id=session.id,
+                mode="pre_gated",
+                pre_gated_result=cap_result,
+            )
+        else:
+            tool_context = None  # legacy path: no gate configured
+
+        result = await self._tools.call(tc.name, tc.arguments or {}, context=tool_context)
         return result
 
     def _format_tool_status(self, tool_names: list[str]) -> str | None:

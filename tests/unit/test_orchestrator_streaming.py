@@ -264,7 +264,7 @@ async def test_streaming_tool_call_accumulation():
     assert turn.tool_calls_made == 1
 
     # Verify the tool was called with accumulated arguments
-    mock_tool_registry.call.assert_awaited_once_with("terminal", {"command": "echo hi"})
+    mock_tool_registry.call.assert_awaited_once_with("terminal", {"command": "echo hi"}, context=None)
 
     # stream_callback should have been called for the final content chunk
     stream_callback.assert_called_once_with("Done!")

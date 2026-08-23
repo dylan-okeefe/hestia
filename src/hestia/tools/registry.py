@@ -400,10 +400,16 @@ class ToolRegistry:
                 lines.append("  schema: (no explicit schema — infer from description)")
         return "\n".join(lines) if lines else "(no tools)"
 
-    async def meta_call_tool(self, name: str, arguments: dict[str, Any]) -> ToolCallResult:
+    async def meta_call_tool(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        *,
+        context: Any = None,
+    ) -> ToolCallResult:
         """Handler for the call_tool meta-tool."""
         try:
-            return await self.call(name, arguments)
+            return await self.call(name, arguments, context=context)
         except ToolNotFoundError:
             return ToolCallResult.error(
                 content=f"Tool not found: {name}. Use list_tools to see available tools.",
