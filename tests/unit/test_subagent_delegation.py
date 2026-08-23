@@ -17,6 +17,7 @@ from hestia.policy.default import DefaultPolicyEngine
 from hestia.tools.builtin.current_time import current_time
 from hestia.tools.builtin.delegate_task import make_delegate_task_tool
 from hestia.tools.registry import ToolRegistry
+from tests.gate_fakes import bind_permissive_gate
 from tests.integration.test_orchestrator import FakeInferenceClient
 
 
@@ -181,6 +182,7 @@ async def test_orchestrator_policy_delegation_replaces_tool_batch(store, message
     )
 
     tool_registry = ToolRegistry(artifact_store)
+    bind_permissive_gate(tool_registry)
     tool_registry.register(current_time)
 
     policy = AlwaysDelegatePolicy()

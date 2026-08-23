@@ -100,3 +100,25 @@ class TestDeriveAllowedSetFromJson:
         assert derive_allowed_set_from_json("not json") == set()
         assert derive_allowed_set_from_json('{"a": 1}') == set()
         assert derive_allowed_set_from_json("[]") == set()
+
+
+def test_every_node_type_is_classified():
+    """L245 review finding 3: the classification invariant must be enforced.
+
+    derive_allowed_set and the executor's effect refusal both key off this
+    classification. A future node type that lands in neither the gated set,
+    the effect markers, nor this hand-written inert set fails here instead
+    of silently bypassing authorization.
+    """
+    from hestia.workflows.nodes import NODE_TYPES
+    from hestia.workflows.tool_selection import (
+        _GATED_NODE_TYPES,
+        NODE_EFFECT_MARKERS,
+    )
+
+    explicitly_inert = {"condition", "llm_decision"}
+    assert set(NODE_TYPES) == set(_GATED_NODE_TYPES) | set(NODE_EFFECT_MARKERS) | explicitly_inert, (
+        "Unclassified node type detected. Every node type must be either "
+        "gated (tool selection feeds the allow-list), effect-marked "
+        "(activation authorizes it), or explicitly listed as inert here."
+    )

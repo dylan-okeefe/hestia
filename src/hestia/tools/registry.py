@@ -136,8 +136,8 @@ class ToolRegistry:
             context: REQUIRED :class:`~hestia.tools.context.ToolCallContext`
                 describing the caller (L245 strict mode). With a gate bound
                 and ``mode="enforce"`` the registry evaluates the gate here;
-                ``pre_gated`` carries an orchestrator-made decision;
-                ``internal`` writes an audit row.
+                ``pre_gated`` carries an orchestrator-made decision bound to
+                exactly this tool.
 
         Returns:
             ToolCallResult with status, content, and optional artifact handle
@@ -156,6 +156,17 @@ class ToolRegistry:
         if not isinstance(context, ToolCallContext):
             raise TypeError(
                 f"ToolRegistry.call requires a ToolCallContext (got {type(context).__name__})"
+            )
+
+        if self._gate is None and context.mode == "enforce":
+            # L245 review finding 1: fail closed. An unbound registry used
+            # to run enforce as passthrough - the relocated fail-open. A
+            # chokepoint that depends on remembering bind_gate is not a
+            # chokepoint; wiring that wants no policy must bind an explicit
+            # permissive fake so the choice is visible.
+            raise RuntimeError(
+                f"ToolRegistry.call('{name}') in enforce mode but no "
+                "capability gate is bound - call bind_gate() at wiring time"
             )
 
         if self._gate is not None:
@@ -190,16 +201,19 @@ class ToolRegistry:
                         result=result,
                     )
             elif context.mode == "pre_gated":
-                pre = context.pre_gated_result
-                if pre is None or not pre.allowed:
-                    raise ToolBlockedError(
-                        f"[CATEGORY: BLOCKED] pre_gated context for '{name}' "
-                        "carries no allowed decision"
+                # L245 review finding 2: a pre_gated decision is a bearer
+                # credential for exactly one tool. Assert the binding so a
+                # context built for tool X cannot authorize tool Y.
+                if (
+                    context.pre_gated_tool != name
+                    or context.pre_gated_result is None
+                    or not context.pre_gated_result.allowed
+                ):
+                    raise ValueError(
+                        f"pre_gated decision was for "
+                        f"'{context.pre_gated_tool}', not '{name}' - "
+                        "refusing to replay it for a different tool"
                     )
-            elif context.mode == "internal":
-                audit_internal = getattr(self._gate, "audit_internal", None)
-                if audit_internal is not None:
-                    await audit_internal(name, arguments, context.internal_reason)
 
         # The prior handler catch was restricted to (TypeError, ValueError, OSError),
         # so RuntimeError, httpx.HTTPError, application-level exceptions from third-party

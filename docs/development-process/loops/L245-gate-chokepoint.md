@@ -49,3 +49,28 @@ Tests-first per chunk; full gates green per commit; no push/merge without Dylan.
   cleanup in http_request.py. Then I (frontend diff dialog) and
   J (CHANGELOG breaking entry, docs notes, metrics refresh, card #44 →
   In Review).
+
+## Review follow-up (2026-08-23, Claude review)
+
+Review: docs/development-process/reviews/l245-gate-chokepoint-2026-08-23.md
+Verdict: merge after finding 1; findings 2-3 + nit fold into same branch.
+All four items landed:
+
+- [x] Finding 1 (blocking): registry.call in enforce mode with no bound
+  gate now raises RuntimeError - the relocated fail-open is dead. Bare-test
+  wiring binds tests.gate_fakes.PermissiveGate explicitly (7 files).
+  New test asserts unbound refusal.
+- [x] Finding 2: ToolCallContext.pre_gated_tool required in pre_gated
+  mode; registry refuses replaying a decision for a different tool
+  (ValueError). Both dispatch sites bind the decision to its tool.
+- [x] Finding 3: classification detector test -
+  set(NODE_TYPES) == gated | effect-markers | hand-written inert set;
+  adding an unclassified node type fails the suite.
+- [x] Nit: mode="internal" and gate.audit_internal deleted (zero call
+  sites, soft audit dependency). Tests use explicit permissive fakes.
+
+Gates at commit: ruff clean / mypy clean / pytest 2,315 passed + 6 skipped.
+
+Review-flagged NOT verified (for Dylan or a later loop): 409+confirm flow
+end-to-end in the UI beyond the dialog unit test; m011 against a copy of
+the production database.

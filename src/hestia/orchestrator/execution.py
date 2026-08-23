@@ -1861,6 +1861,7 @@ class TurnExecution:
                 session_id=session.id,
                 mode="pre_gated",
                 pre_gated_result=cap_result,
+                pre_gated_tool=name,
             )
         else:
             tool_context = ToolCallContext(
@@ -1938,10 +1939,12 @@ class TurnExecution:
                 session_id=session.id,
                 mode="pre_gated",
                 pre_gated_result=cap_result,
+                pre_gated_tool=tc.name,
             )
         else:
-            # No gate configured (bare-test wiring): still carry caller identity;
-            # an unbound registry treats enforce as passthrough.
+            # No gate decision (e.g. non-destructive tool on a trusted
+            # channel): enforce at the registry. An unbound registry refuses
+            # enforce calls outright (L245 review finding 1).
             tool_context = ToolCallContext(
                 channel=channel,
                 actor_platform=session.platform,

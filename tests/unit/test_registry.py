@@ -11,9 +11,31 @@ from hestia.tools.registry import ToolNotFoundError, ToolRegistry
 
 @pytest.fixture
 def registry(tmp_path):
-    """Create a ToolRegistry with temp artifact store."""
+    """Create a ToolRegistry with temp artifact store.
+
+    Binds an explicit PERMISSIVE fake gate: these tests exercise dispatch,
+    truncation, and artifacts - not authorization. Binding a visible fake
+    (instead of relying on the old unbound passthrough) makes the policy
+    stance of each test explicit and keeps enforce-mode honest.
+    """
     store = ArtifactStore(root=tmp_path)
-    return ToolRegistry(store)
+    registry = ToolRegistry(store)
+    registry.bind_gate(_PermissiveGate())
+    return registry
+
+
+class _PermissiveGate:
+    """Test fake: allows everything, evaluates nothing."""
+
+    async def check(self, request, *, injection_flagged=False, allow_list=None):
+        from hestia.policy.gate import CapabilityResult
+
+        return CapabilityResult(
+            allowed=True,
+            auto_approved=True,
+            requires_confirmation=False,
+            reason="permissive-test-fake",
+        )
 
 
 # --- Test fixtures: decorated tools ---
@@ -134,15 +156,57 @@ class TestListAndDescribe:
 
 
 def _ctx():
-    """Internal-mode context: unbound-gate registries pass it straight through."""
+    """Enforce-mode context; the fixture's permissive fake gate allows it."""
     from hestia.tools.context import ToolCallContext
 
     return ToolCallContext(
         channel=__import__("hestia.policy.channel", fromlist=["Channel"]).Channel.API,
         actor_platform="test",
-        internal_reason="unit-test",
-        mode="internal",
+        mode="enforce",
     )
+
+
+class TestGateChokepoint:
+    """L245 review findings: the chokepoint must not depend on wiring."""
+
+    @pytest.mark.asyncio
+    async def test_enforce_without_bound_gate_raises(self, tmp_path):
+        """An unbound registry must REFUSE enforce calls, not pass them
+        through - a chokepoint that depends on remembering bind_gate is
+        not a chokepoint."""
+        store = ArtifactStore(root=tmp_path)
+        bare = ToolRegistry(store)  # no bind_gate
+        bare.register(greet)
+        with pytest.raises(RuntimeError, match="capability gate"):
+            await bare.call("greet", {"name": "Alice"}, context=_ctx())
+
+    @pytest.mark.asyncio
+    async def test_pre_gated_decision_must_match_tool(self, registry):
+        """A pre_gated context authorizes exactly the tool that was gated;
+        reusing it for another tool is a programming error and fails loud."""
+        from hestia.policy.gate import CapabilityResult
+        from hestia.tools.context import ToolCallContext
+
+        registry.register(greet)
+        registry.register(add)
+        decision = CapabilityResult(
+            allowed=True,
+            auto_approved=True,
+            requires_confirmation=False,
+            reason="approved",
+        )
+        bound = ToolCallContext(
+            channel=__import__("hestia.policy.channel", fromlist=["Channel"]).Channel.API,
+            actor_platform="test",
+            mode="pre_gated",
+            pre_gated_result=decision,
+            pre_gated_tool="greet",
+        )
+        result = await registry.call("greet", {"name": "Bob"}, context=bound)
+        assert result.status == "ok"
+
+        with pytest.raises(ValueError, match="pre_gated decision was for 'greet'"):
+            await registry.call("add", {"a": 1, "b": 2}, context=bound)
 
 
 class TestCalling:

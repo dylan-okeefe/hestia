@@ -14,6 +14,7 @@ from hestia.persistence.sessions import SessionStore
 from hestia.policy.default import DefaultPolicyEngine
 from hestia.tools.builtin.current_time import current_time
 from hestia.tools.registry import ToolRegistry
+from tests.gate_fakes import bind_permissive_gate
 
 
 class TrackedInferenceClient:
@@ -88,6 +89,7 @@ def slot_dir(tmp_path):
 def tool_registry(artifact_store):
     """Tool registry with current_time tool."""
     registry = ToolRegistry(artifact_store)
+    bind_permissive_gate(registry)
     registry.register(current_time)
     return registry
 

@@ -22,9 +22,7 @@ def _ext_ctx():
     from hestia.policy.channel import Channel
     from hestia.tools.context import ToolCallContext
 
-    return ToolCallContext(
-        channel=Channel.API, mode="internal", internal_reason="unit-test"
-    )
+    return ToolCallContext(channel=Channel.API, mode="enforce")
 
 
 # Make tests/fixtures/external_tool_module importable as a top-level package.

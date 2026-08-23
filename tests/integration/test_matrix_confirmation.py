@@ -25,6 +25,7 @@ from hestia.core.types import (
 from hestia.orchestrator import Orchestrator, TurnState
 from hestia.platforms.matrix_adapter import MatrixAdapter
 from hestia.tools.registry import ToolRegistry
+from tests.gate_fakes import bind_permissive_gate
 
 
 def _make_session(session_id: str = "test_session") -> Session:
@@ -99,6 +100,7 @@ async def _make_orchestrator(session_store, message_store, approve: bool):
     store = session_store
 
     registry = ToolRegistry("/tmp/artifacts")
+    bind_permissive_gate(registry)
     import os
     import tempfile
 
