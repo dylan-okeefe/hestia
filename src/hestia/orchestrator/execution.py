@@ -759,7 +759,7 @@ class TurnExecution:
         if use_policy_delegation:
             await transition(turn, TurnState.AWAITING_SUBAGENT, "")
             tool_results, handles = await self._execute_policy_delegation(
-                ctx.user_message, chat_response.tool_calls
+                ctx.user_message, chat_response.tool_calls, session=ctx.session, ctx=ctx
             )
             ctx.artifact_handles.extend(handles)
             await transition(turn, TurnState.EXECUTING_TOOLS, "")
@@ -1496,15 +1496,83 @@ class TurnExecution:
         self,
         user_message: Message,
         tool_calls: list[ToolCall],
+        *,
+        session: Session,
+        ctx: "TurnContext | None" = None,
     ) -> tuple[list[Message], list[str]]:
-        """Run delegate_task once; map output to one message per model tool_call_id."""
+        """Run delegate_task once; map output to one message per model tool_call_id.
+
+        L245: delegation is a destructive-classified invocation (delegate_task
+        is in _DESTRUCTIVE_TOOL_NAMES) and previously bypassed the gate
+        entirely. It now flows through the same confirmation/gating path as
+        any other tool call.
+        """
         task = (user_message.content or "").strip() or "(no user text)"
         lines = [f"{tc.name} {json.dumps(tc.arguments or {})}" for tc in tool_calls]
         context = "\n".join(lines)
 
+        delegate_args = {"task": task, "context": context}
+
+        try:
+            meta = self._tools.describe("delegate_task")
+        except Exception:
+            meta = None
+        if meta is None:
+            messages = [
+                Message(
+                    role="tool",
+                    content="[delegation denied] delegate_task is not registered.",
+                    tool_call_id=tc.id,
+                    created_at=utcnow(),
+                )
+                for tc in tool_calls
+            ]
+            return messages, []
+
+        confirm_result, cap_result = await self._check_confirmation(
+            tool=meta,
+            tool_name="delegate_task",
+            arguments=delegate_args,
+            session=session,
+            ctx=ctx,
+        )
+        if confirm_result is not None:
+            denial = f"[delegation denied] {confirm_result.content}"
+            messages = [
+                Message(
+                    role="tool",
+                    content=denial if i == 0 else f"(Same denial as tool_call_id={tool_calls[0].id}.)\n{denial}",
+                    tool_call_id=tc.id,
+                    created_at=utcnow(),
+                )
+                for i, tc in enumerate(tool_calls)
+            ]
+            return messages, []
+
+        from hestia.tools.context import ToolCallContext
+
+        channel = ctx.channel if ctx is not None and ctx.channel is not None else Channel.CLI
+        platform_user = (
+            ctx.platform_user if ctx is not None and ctx.platform_user is not None else session.platform_user
+        )
+        # No gate configured -> legacy ungated call (removed in chunk F).
+        tool_context = (
+            ToolCallContext(
+                channel=channel,
+                actor_platform=session.platform,
+                actor_platform_user=platform_user,
+                session_id=session.id,
+                mode="pre_gated",
+                pre_gated_result=cap_result,
+            )
+            if cap_result is not None
+            else None
+        )
+
         result = await self._tools.call(
             "delegate_task",
-            {"task": task, "context": context},
+            delegate_args,
+            context=tool_context,
         )
         result = self._scan_tool_result(result)
         body = result.content
@@ -1521,14 +1589,14 @@ class TurnExecution:
         if result.artifact_handle:
             artifact_handles.append(result.artifact_handle)
 
-        messages: list[Message] = []
+        reply_messages: list[Message] = []
         for i, tc in enumerate(tool_calls):
             content = (
                 body
                 if i == 0
                 else f"(Same policy delegation as tool_call_id={tool_calls[0].id}.)\n{body}"
             )
-            messages.append(
+            reply_messages.append(
                 Message(
                     role="tool",
                     content=content,
@@ -1536,7 +1604,7 @@ class TurnExecution:
                     created_at=utcnow(),
                 )
             )
-        return messages, artifact_handles
+        return reply_messages, artifact_handles
 
     async def _check_confirmation(
         self,
