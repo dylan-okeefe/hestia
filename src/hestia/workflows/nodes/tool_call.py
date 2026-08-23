@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from hestia.app import AppContext
@@ -53,6 +54,9 @@ class ToolCallNode:
 
         result = await app.tool_registry.call(tool_name, tool_inputs)
         if result.artifact_handle:
-            full_bytes = app.artifact_store.fetch_content(result.artifact_handle)
+            # PERF-017: keep blocking disk I/O off the event loop.
+            full_bytes = await asyncio.to_thread(
+                app.artifact_store.fetch_content, result.artifact_handle
+            )
             return full_bytes.decode("utf-8", errors="replace")
         return result.content

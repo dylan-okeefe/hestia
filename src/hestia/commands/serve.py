@@ -22,6 +22,11 @@ logger = logging.getLogger(__name__)
 async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
     """Run Hestia with all configured platform adapters and the web dashboard."""
     await app.bootstrap_db()
+    # BUG-036: executions stuck RUNNING from a previous crash become failed
+    # rows so the dashboard reflects reality.
+    swept = await app.execution_store.fail_stale_running()
+    if swept:
+        click.echo(f"Marked {swept} interrupted workflow execution(s) as failed.")
     await app.start_trigger_registry()
     tasks: list[asyncio.Task[Any]] = []
 

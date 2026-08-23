@@ -94,7 +94,12 @@ class TestScheduleFired:
         executed: list[tuple[Workflow, Any]],
     ) -> None:
         """A workflow with trigger_type 'schedule' runs on schedule_fired."""
-        wf = Workflow(id="wf_1", name="Daily Report", trigger_type="schedule")
+        wf = Workflow(
+            id="wf_1",
+            name="Daily Report",
+            trigger_type="schedule",
+            trigger_config={"cron": "* * * * *"},
+        )
         await workflow_store.save_workflow(wf)
 
         async def executor(workflow: Workflow, payload: Any) -> None:
@@ -196,7 +201,11 @@ class TestChatCommand:
         event_bus: EventBus,
         executed: list[tuple[Workflow, Any]],
     ) -> None:
-        """Workflow with no command config matches any chat_command."""
+        """SEC-021: a command-less chat_command trigger fires on nothing.
+
+        It used to match every slash-command from every user, letting raw
+        user text steer workflow behavior (prompt-injection surface).
+        """
         wf = Workflow(
             id="wf_1",
             name="Catch All",
@@ -214,7 +223,7 @@ class TestChatCommand:
         await event_bus.publish("chat_command", {"command": "anything"})
         await asyncio.sleep(0.01)
 
-        assert len(executed) == 1
+        assert executed == []
 
 
 class TestWebhookReceived:
@@ -343,7 +352,10 @@ class TestScheduleMatching:
         event_bus: EventBus,
         executed: list[tuple[Workflow, Any]],
     ) -> None:
-        """A schedule workflow without a cron expression matches any schedule event."""
+        """BUG-005: a schedule workflow without a cron expression never fires.
+
+        It used to execute on *every* system-wide schedule_fired event.
+        """
         wf = Workflow(id="wf_1", name="Any Time", trigger_type="schedule")
         await workflow_store.save_workflow(wf)
 
@@ -356,7 +368,7 @@ class TestScheduleMatching:
         await event_bus.publish("schedule_fired", {"task_id": "t1"})
         await asyncio.sleep(0.01)
 
-        assert len(executed) == 1
+        assert executed == []
 
     @pytest.mark.asyncio
     async def test_schedule_cron_matches(
@@ -434,8 +446,8 @@ class TestMultipleWorkflows:
         executed: list[tuple[Workflow, Any]],
     ) -> None:
         """All matching workflows are executed."""
-        wf1 = Workflow(id="wf_1", name="A", trigger_type="schedule")
-        wf2 = Workflow(id="wf_2", name="B", trigger_type="schedule")
+        wf1 = Workflow(id="wf_1", name="A", trigger_type="schedule", trigger_config={"cron": "* * * * *"})
+        wf2 = Workflow(id="wf_2", name="B", trigger_type="schedule", trigger_config={"cron": "* * * * *"})
         await workflow_store.save_workflow(wf1)
         await workflow_store.save_workflow(wf2)
 
@@ -464,7 +476,7 @@ class TestReload:
         executed: list[tuple[Workflow, Any]],
     ) -> None:
         """reload refreshes the workflow list from the store."""
-        wf1 = Workflow(id="wf_1", name="A", trigger_type="schedule")
+        wf1 = Workflow(id="wf_1", name="A", trigger_type="schedule", trigger_config={"cron": "* * * * *"})
         await workflow_store.save_workflow(wf1)
 
         async def executor(workflow: Workflow, payload: Any) -> None:
@@ -474,7 +486,7 @@ class TestReload:
         await reg.start()
 
         # Add a new workflow after start
-        wf2 = Workflow(id="wf_2", name="B", trigger_type="schedule")
+        wf2 = Workflow(id="wf_2", name="B", trigger_type="schedule", trigger_config={"cron": "* * * * *"})
         await workflow_store.save_workflow(wf2)
 
         # Before reload, only wf1 is known

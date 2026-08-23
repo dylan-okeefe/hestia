@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import secrets
 import uuid
 from typing import Any
@@ -62,6 +63,36 @@ def _redact_trigger_config(trigger_config: dict[str, Any]) -> dict[str, Any]:
     return redacted
 
 
+_SECRET_KEY_RE = re.compile(
+    r"(?:api[_-]?key|apikey|secret|token|password|passwd|authorization)",
+    re.IGNORECASE,
+)
+
+
+def _redact_node_config(config: dict[str, Any]) -> dict[str, Any]:
+    """SEC-014: mask secret-looking keys in node configs before returning
+    them through the versions/workflow APIs. Values are replaceable — the
+    stored version keeps the real content server-side."""
+    redacted: dict[str, Any] = {}
+
+    def _walk(src: dict[str, Any], dst: dict[str, Any]) -> None:
+        for key, value in src.items():
+            if isinstance(value, dict):
+                nested: dict[str, Any] = {}
+                _walk(value, nested)
+                dst[key] = nested
+            elif isinstance(key, str) and _SECRET_KEY_RE.search(key):
+                if value:
+                    dst[key] = "__redacted__"
+                else:
+                    dst[key] = value
+            else:
+                dst[key] = value
+
+    _walk(config, redacted)
+    return redacted
+
+
 def _workflow_to_api(wf: Workflow, redact_secret: bool = True) -> dict[str, Any]:
     """Serialize a Workflow to the API response shape expected by the frontend."""
     trigger_config = _redact_trigger_config(wf.trigger_config) if redact_secret else dict(wf.trigger_config)
@@ -110,7 +141,7 @@ def _version_to_api(v: WorkflowVersion) -> dict[str, Any]:
                 "capabilities": n.capabilities,
                 "data": {
                     "label": n.label,
-                    **n.config,
+                    **_redact_node_config(n.config),
                 },
             }
             for n in v.nodes
@@ -474,7 +505,9 @@ async def test_run_workflow(
         if version is None:
             raise HTTPException(status_code=400, detail="No active version")
 
-    executor = WorkflowExecutor(ctx.app, execution_store=ctx.execution_store)
+    executor = WorkflowExecutor(
+        ctx.app, execution_store=ctx.execution_store, is_test=True
+    )
     result = await executor.execute(
         workflow_id,
         trigger_payload=payload,

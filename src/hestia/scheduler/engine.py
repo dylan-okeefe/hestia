@@ -134,6 +134,22 @@ class Scheduler:
         # at startup, so a hung turn stayed non-terminal until restart.
         await self._maybe_recover_stale_turns(now)
 
+        # BUG-005: heartbeat for cron-triggered workflows. schedule_fired used
+        # to be published only when an unrelated scheduled task fired, so a
+        # workflow's own cron was evaluated at essentially random instants —
+        # with no other tasks on the system it never fired at all.
+        if self._event_bus is not None:
+            try:
+                await self._event_bus.publish(
+                    "schedule_fired",
+                    {
+                        "heartbeat": True,
+                        "current_time": now.isoformat(),
+                    },
+                )
+            except Exception:
+                logger.exception("Failed to publish schedule_fired heartbeat")
+
         # Serialize ticks so a second rapid _tick cannot interleave between
         # listing due tasks and marking them in-flight.
         async with self._tick_lock:

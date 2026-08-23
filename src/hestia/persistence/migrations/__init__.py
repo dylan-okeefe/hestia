@@ -299,6 +299,34 @@ async def m009_hot_path_indexes(conn: AsyncConnection) -> None:
     )
 
 
+async def m010_execution_is_test(conn: AsyncConnection) -> None:
+    """BUG-041: flag test-run executions so aggregates exclude them."""
+    dialect = conn.dialect.name
+    if dialect == "sqlite":
+        result = await conn.execute(
+            sa.text(
+                "SELECT name FROM pragma_table_info('workflow_executions') WHERE name = 'is_test'"
+            )
+        )
+        has_column = result.fetchone() is not None
+    else:
+        result = await conn.execute(
+            sa.text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = 'workflow_executions' AND column_name = 'is_test'"
+            )
+        )
+        has_column = result.scalar() is not None
+    if not has_column:
+        default = "0" if dialect == "sqlite" else "FALSE"
+        await conn.execute(
+            sa.text(
+                "ALTER TABLE workflow_executions "
+                f"ADD COLUMN is_test BOOLEAN NOT NULL DEFAULT {default}"
+            )
+        )
+
+
 MIGRATIONS: list[Migration] = [
     m001_sessions_active_unique,
     m002_session_handoffs,

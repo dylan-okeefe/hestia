@@ -295,3 +295,113 @@ async def test_workflow_allow_list_passed_to_gate(
     call_args = check_mock.call_args
     assert call_args is not None
     assert call_args.kwargs.get("allow_list") == {"terminal"}
+
+
+@pytest.mark.asyncio
+async def test_tool_call_node_is_gated(
+    workflow_store: WorkflowStore,
+    gated_app: AppContext,
+) -> None:
+    """SEC-001: a tool_call node invoking a destructive tool must be denied.
+
+    The old NODE_TYPES dispatch returned before reaching the gate block, so
+    {'type': 'tool_call', 'config': {'tool_name': 'terminal'}} executed shell
+    commands unattended.
+    """
+    wf = Workflow(id="wf_tc_gate", name="TC Gate", trust_level="paranoid")
+    await workflow_store.save_workflow(wf)
+
+    version = WorkflowVersion(
+        workflow_id="wf_tc_gate",
+        version=1,
+        nodes=[
+            WorkflowNode(
+                id="n1",
+                type="tool_call",
+                label="Run Shell",
+                config={"tool_name": "terminal", "command": "echo hi"},
+            )
+        ],
+        edges=[],
+        is_active=True,
+    )
+    await workflow_store.save_version(version)
+
+    executor = WorkflowExecutor(gated_app)
+    result = await executor.execute("wf_tc_gate", {})
+
+    assert result.status == "failed"
+    error = result.node_results[0].error or ""
+    assert "BLOCKED" in error
+    gated_app.tool_registry.call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_investigate_node_tools_are_gated(
+    workflow_store: WorkflowStore,
+    gated_app: AppContext,
+) -> None:
+    """SEC-001: investigate nodes gate every configured tool."""
+    wf = Workflow(id="wf_inv_gate", name="Inv Gate", trust_level="paranoid")
+    await workflow_store.save_workflow(wf)
+
+    version = WorkflowVersion(
+        workflow_id="wf_inv_gate",
+        version=1,
+        nodes=[
+            WorkflowNode(
+                id="n1",
+                type="investigate",
+                label="Investigate",
+                config={"topic": "x", "tools": ["terminal"]},
+            )
+        ],
+        edges=[],
+        is_active=True,
+    )
+    await workflow_store.save_version(version)
+
+    executor = WorkflowExecutor(gated_app)
+    result = await executor.execute("wf_inv_gate", {})
+
+    assert result.status == "failed"
+    assert "BLOCKED" in (result.node_results[0].error or "")
+    gated_app.tool_registry.call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_tool_call_node_allowed_via_allow_list(
+    workflow_store: WorkflowStore,
+    gated_app: AppContext,
+) -> None:
+    """A workflow's allow_listed_tools permits explicitly listed tools through
+    the tool_call node path."""
+    wf = Workflow(
+        id="wf_tc_ok",
+        name="TC Allowed",
+        trust_level="household",
+        allow_listed_tools={"current_time"},
+    )
+    await workflow_store.save_workflow(wf)
+
+    version = WorkflowVersion(
+        workflow_id="wf_tc_ok",
+        version=1,
+        nodes=[
+            WorkflowNode(
+                id="n1",
+                type="tool_call",
+                label="Time",
+                config={"tool_name": "current_time"},
+            )
+        ],
+        edges=[],
+        is_active=True,
+    )
+    await workflow_store.save_version(version)
+
+    executor = WorkflowExecutor(gated_app)
+    result = await executor.execute("wf_tc_ok", {})
+
+    assert result.status == "ok"
+    gated_app.tool_registry.call.assert_awaited_once()

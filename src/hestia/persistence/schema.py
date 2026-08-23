@@ -259,6 +259,9 @@ workflow_executions = sa.Table(
     sa.Column("total_elapsed_ms", sa.Integer, nullable=False, default=0),
     sa.Column("total_prompt_tokens", sa.Integer, nullable=False, default=0),
     sa.Column("total_completion_tokens", sa.Integer, nullable=False, default=0),
+    # BUG-041: test-run executions are flagged so production aggregates can
+    # exclude them.
+    sa.Column("is_test", sa.Boolean, nullable=False, default=False),
     sa.Column("created_at", sa.DateTime, nullable=False),
     sa.Index("idx_executions_workflow", "workflow_id", "created_at"),
 )
