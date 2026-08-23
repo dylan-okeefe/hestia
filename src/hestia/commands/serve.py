@@ -14,7 +14,7 @@ from hestia.app import AppContext
 from hestia.config import HestiaConfig
 from hestia.persistence.scheduler import SchedulerStore
 from hestia.scheduler import Scheduler
-from hestia.scheduler.cleanup import run_error_resolution_cleanup
+from hestia.scheduler.cleanup import run_error_resolution_cleanup, run_maintenance_trace_cleanup
 
 logger = logging.getLogger(__name__)
 
@@ -144,6 +144,11 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
             tasks.append(
                 asyncio.create_task(
                     run_error_resolution_cleanup(app.error_resolution_store)
+                )
+            )
+            tasks.append(
+                asyncio.create_task(
+                    run_maintenance_trace_cleanup(app.maintenance_trace_store)
                 )
             )
 
