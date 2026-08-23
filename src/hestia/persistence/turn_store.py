@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import sqlalchemy as sa
@@ -92,7 +92,9 @@ class TurnStore:
         self, stale_after_minutes: int = 30
     ) -> list[TurnDTO]:
         """Return turns that look stuck in a non-terminal state."""
-        cutoff = datetime.utcnow() - timedelta(minutes=stale_after_minutes)
+        # BUG-081: use a tz-aware cutoff matching the aware timestamps written
+        # by clock.utcnow(); naive cutoffs degrade to string comparisons.
+        cutoff = datetime.now(UTC) - timedelta(minutes=stale_after_minutes)
         terminal_states = {"done", "failed"}
         query = (
             select(turns)

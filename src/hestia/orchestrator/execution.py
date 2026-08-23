@@ -417,6 +417,9 @@ class TurnExecution:
 
             ctx.total_prompt_tokens += getattr(chat_response, "prompt_tokens", 0) or 0
             ctx.total_completion_tokens += getattr(chat_response, "completion_tokens", 0) or 0
+            # BUG-079: accumulate server-reported reasoning tokens so trace
+            # records stop being permanently None on thinking-heavy turns.
+            ctx.total_reasoning_tokens += getattr(chat_response, "reasoning_tokens", 0) or 0
 
             assistant_msg = Message(
                 role="assistant",
@@ -822,6 +825,7 @@ class TurnExecution:
         prompt_tokens = 0
         completion_tokens = 0
         total_tokens = 0
+        reasoning_tokens_acc = 0
 
         assert ctx.build_result is not None
         assert ctx.stream_callback is not None
@@ -919,6 +923,8 @@ class TurnExecution:
                     prompt_tokens = delta.prompt_tokens
                     completion_tokens = delta.completion_tokens
                     total_tokens = delta.total_tokens
+                if delta.reasoning_tokens:
+                    reasoning_tokens_acc = delta.reasoning_tokens
 
             content = "".join(content_parts)
             reasoning_content = "".join(reasoning_parts) if reasoning_parts else None
@@ -989,6 +995,7 @@ class TurnExecution:
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
                 total_tokens=total_tokens,
+                reasoning_tokens=reasoning_tokens_acc,
             )
         finally:
             with contextlib.suppress(Exception):

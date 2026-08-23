@@ -24,6 +24,17 @@ from hestia.errors import (
 logger = logging.getLogger(__name__)
 
 
+
+def _reasoning_tokens_from_usage(usage: dict[str, Any]) -> int:
+    """Extract reasoning tokens from a usage payload when the server reports
+    them (OpenAI-style completion_tokens_details). Returns 0 otherwise."""
+    details = usage.get("completion_tokens_details")
+    if isinstance(details, dict):
+        value = details.get("reasoning_tokens")
+        if isinstance(value, int) and value > 0:
+            return value
+    return 0
+
 def _strip_historical_reasoning(messages: list[Message]) -> list[Message]:
     """Strip reasoning_content from all messages before sending to API.
 
@@ -593,6 +604,7 @@ class InferenceClient:
             prompt_tokens=usage.get("prompt_tokens", 0),
             completion_tokens=usage.get("completion_tokens", 0),
             total_tokens=usage.get("total_tokens", 0),
+            reasoning_tokens=_reasoning_tokens_from_usage(usage),
         )
 
     async def chat_stream(
@@ -689,6 +701,7 @@ class InferenceClient:
                                 prompt_tokens=usage.get("prompt_tokens", 0),
                                 completion_tokens=usage.get("completion_tokens", 0),
                                 total_tokens=usage.get("total_tokens", 0),
+                                reasoning_tokens=_reasoning_tokens_from_usage(usage),
                             )
                         continue
                     delta = choices[0].get("delta", {})
@@ -703,6 +716,7 @@ class InferenceClient:
                         prompt_tokens=usage.get("prompt_tokens", 0),
                         completion_tokens=usage.get("completion_tokens", 0),
                         total_tokens=usage.get("total_tokens", 0),
+                        reasoning_tokens=_reasoning_tokens_from_usage(usage),
                     )
         except httpx.TimeoutException as e:
             raise InferenceTimeoutError(

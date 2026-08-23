@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 from hestia.core.clock import utcnow
 from hestia.core.types import Message
+from hestia.diagnostics.scrub import scrub_text
 from hestia.reflection.store import ProposalStore
 from hestia.reflection.types import Proposal
 
@@ -89,8 +90,13 @@ class ReflectionRunner:
         traces = await self._trace_store.list_recent(limit=self._config.lookback_turns)
         if not traces:
             return []
+        # SEC-018: trace summaries are raw slices of user input. Scrub them
+        # (emails, IPs, tokens, cookies, high-entropy strings) before sending
+        # to the model and again before persisting mined observations into
+        # proposals, which live indefinitely and render in the dashboard.
+        scrubbed_summaries = {t.turn_id: scrub_text(t.user_input_summary) for t in traces}
         trace_text = "\n".join(
-            f"- turn_id: {t.turn_id}\n  summary: {t.user_input_summary}\n"
+            f"- turn_id: {t.turn_id}\n  summary: {scrubbed_summaries[t.turn_id]}\n"
             f"  tools: {t.tools_called}\n  outcome: {t.outcome}"
             for t in traces
         )
@@ -133,8 +139,8 @@ class ReflectionRunner:
                 proposal = Proposal(
                     id=f"prop_{uuid.uuid4().hex[:16]}",
                     type=item.get("type", "policy_tweak"),
-                    summary=item.get("summary", ""),
-                    evidence=item.get("evidence", []),
+                    summary=scrub_text(item.get("summary", "")),
+                    evidence=[scrub_text(str(e)) for e in item.get("evidence", [])],
                     action=item.get("action", {}),
                     confidence=float(item.get("confidence", 0.0)),
                     status="pending",

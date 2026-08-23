@@ -25,6 +25,16 @@ class PlatformError(HestiaError):
     pass
 
 
+class RateLimitError(PlatformError):
+    """Raised when a session exceeds its message rate limit.
+
+    The engine has already notified the user via the response callback, so
+    platform runners must not send a second (generic) error message.
+    """
+
+    already_notified = True
+
+
 class InferenceServerError(HestiaError):
     """llama-server returned a non-200 response."""
 

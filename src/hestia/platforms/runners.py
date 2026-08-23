@@ -330,7 +330,12 @@ class PlatformRunner:
                 })
         except Exception as e:  # noqa: BLE001 — outermost boundary — intentionally broad
             logger.exception("Turn failed for %s %s", self.user_label, platform_user)
-            await self.adapter.send_error(platform_user, sanitize_user_error(e))
+            # BUG-034: the engine already told the user about rate limits via
+            # the response callback; a second generic error is confusing.
+            if getattr(e, "already_notified", False):
+                pass
+            else:
+                await self.adapter.send_error(platform_user, sanitize_user_error(e))
         finally:
             if token is not None:
                 self.user_context_var.reset(token)  # type: ignore[union-attr]
