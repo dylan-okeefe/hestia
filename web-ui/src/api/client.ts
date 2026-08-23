@@ -361,10 +361,44 @@ export async function saveWorkflowVersion(id: string, nodes: WorkflowNode[], edg
   return res.json() as Promise<WorkflowVersion>;
 }
 
-export async function activateWorkflowVersion(workflowId: string, versionId: string) {
-  const res = await apiFetch(`${API_BASE}/workflows/${workflowId}/versions/${versionId}/activate`, {
-    method: 'POST',
-  });
+export interface AllowListDiff {
+  added: string[];
+  removed: string[];
+}
+
+/** L245: the server refuses activation when the authorization set changes
+ * and carries the diff in a 409. The caller must surface it for review
+ * and retry with confirmAllowListChange. */
+export class ActivationConfirmationRequired extends Error {
+  diff: AllowListDiff;
+
+  constructor(diff: AllowListDiff) {
+    super('allow_list_changed');
+    this.name = 'ActivationConfirmationRequired';
+    this.diff = diff;
+  }
+}
+
+export async function activateWorkflowVersion(
+  workflowId: string,
+  versionId: string,
+  opts?: { confirmAllowListChange?: boolean }
+) {
+  const qs = opts?.confirmAllowListChange ? '?confirm_allow_list_change=true' : '';
+  const res = await apiFetch(
+    `${API_BASE}/workflows/${workflowId}/versions/${versionId}/activate${qs}`,
+    {
+      method: 'POST',
+    }
+  );
+  if (res.status === 409) {
+    const body = await res.json().catch(() => null);
+    const diff = body?.detail?.allow_list_diff;
+    throw new ActivationConfirmationRequired({
+      added: Array.isArray(diff?.added) ? diff.added : [],
+      removed: Array.isArray(diff?.removed) ? diff.removed : [],
+    });
+  }
   if (!res.ok) throw new Error('Failed to activate workflow version');
   return res.json() as Promise<{ activated: boolean }>;
 }

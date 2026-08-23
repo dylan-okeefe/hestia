@@ -15,7 +15,7 @@ the source of truth for resume-after-interrupt.
 - [x] F. Strict mode: registry.call requires a context (legacy None fallback removed); sweep tests.
 - [x] G. Scheduler allow-list derived from TrustConfig flags via policy engine (flags become real controls).
 - [x] H. derive_allowed_set(nodes) incl. node-effect markers; save returns derived set; activate requires confirmation of changes (409 + diff); m011 backfill migration against an existing-db shaped fixture; _is_url_safe private-import cleanup in http_request.py.
-- [ ] I. Frontend: diff-on-activate dialog wired to 409 flow.
+- [x] I. Frontend: diff-on-activate dialog wired to 409 flow.
 - [ ] J. CHANGELOG breaking-change entry; REMEDIATION_SUMMARY/architecture notes; metrics refresh; card #44 → In Review.
 
 ## Rules
@@ -34,7 +34,11 @@ Tests-first per chunk; full gates green per commit; no push/merge without Dylan.
   executor refuses effect nodes without their marker (fail-closed),
   m011 backfill (empty sets only, idempotent, existing-db fixture),
   is_url_safe made public.
-- NEXT on resume: I — derive_allowed_set(nodes) incl. node-effect
+- 2026-08-23: I landed — ActivationConfirmationRequired (typed 409
+  error) in api client; AllowListDiffDialog (+css+tests); hook parks
+  changed activations in pendingActivation across all three activation
+  paths (save-and-activate, toolbar activate, version panel).
+- NEXT on resume: J — derive_allowed_set(nodes) incl. node-effect
   markers ("node:http_request" etc.), save returns derived set, activate
   requires confirmation of diff (409 flow), m011 backfill migration with
   an existing-db-shaped fixture test, _is_url_safe private-import
