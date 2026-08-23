@@ -892,7 +892,6 @@ class TestBranchingExecution:
         result = await executor.execute("wf_1", {})
 
         assert result.status == "ok"
-        executed_ids = {nr.node_id for nr in result.node_results}
         ok_ids = {nr.node_id for nr in result.node_results if nr.status == "ok"}
         assert ok_ids == {"cond", "a", "merge"}
         skipped_ids = {nr.node_id for nr in result.node_results if nr.status == "skipped"}
@@ -934,7 +933,6 @@ class TestBranchingExecution:
         result = await executor.execute("wf_1", {})
 
         assert result.status == "ok"
-        executed_ids = {nr.node_id for nr in result.node_results}
         ok_ids = {nr.node_id for nr in result.node_results if nr.status == "ok"}
         assert ok_ids == {"cond"}
         skipped_ids = {nr.node_id for nr in result.node_results if nr.status == "skipped"}
@@ -1025,7 +1023,6 @@ class TestBranchingExecution:
         result = await executor.execute("wf_1", {})
 
         assert result.status == "ok"
-        executed_ids = {nr.node_id for nr in result.node_results}
         ok_ids = {nr.node_id for nr in result.node_results if nr.status == "ok"}
         assert ok_ids == {"cond", "r1", "r2"}
         skipped_ids = {nr.node_id for nr in result.node_results if nr.status == "skipped"}

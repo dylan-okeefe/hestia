@@ -61,7 +61,11 @@ async def request_code(
     auth_manager._code_request_limits[client_ip].append(datetime.now(UTC))
 
     try:
-        result = await auth_manager.request_code(platform, platform_user)
+        result = await auth_manager.request_code(
+            platform,
+            platform_user,
+            user_id=body.get("user_id") if isinstance(body.get("user_id"), str) else None,
+        )
     except ValueError as exc:
         # SEC-023: don't disclose which platforms/users are configured to
         # anonymous callers; log the specific reason instead.
@@ -174,16 +178,19 @@ async def available_users(
 
     SEC-004: this endpoint is unauthenticated (the login page needs it to
     render the user picker), so it returns only what the picker requires:
-    user_id and display_name. Roles, platforms, and raw platform_user
-    bindings were an unauthenticated reconnaissance feed.
+    user_id, display_name, and platform *names* for the send-code buttons.
+    Roles and raw platform_user chat IDs were an unauthenticated
+    reconnaissance feed.
     """
     users = []
     if auth_manager._user_store is not None:
         all_users = await auth_manager._user_store.list_users()
         for user in all_users:
+            identities = await auth_manager._user_store.get_identities(user.id)
             users.append({
                 "user_id": user.id,
                 "display_name": user.display_name,
+                "platforms": sorted({i.platform for i in identities}),
             })
     return {"users": users}
 

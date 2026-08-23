@@ -149,14 +149,14 @@ class TestAvailableUsers:
         assert response.status_code == 200
         data = response.json()
         assert len(data["users"]) == 2
-        assert data["users"][0] == {"user_id": "u1", "display_name": "Alice"}
-        assert data["users"][1] == {"user_id": "u2", "display_name": "Bob"}
+        assert data["users"][0]["user_id"] == "u1"
+        assert data["users"][0]["display_name"] == "Alice"
+        assert set(data["users"][0]["platforms"]) == {"telegram"}
         assert "role" not in data["users"][0]
         assert "identities" not in data["users"][0]
-        assert "platforms" not in data["users"][0]
-
-        # Identity lookups are no longer needed for this endpoint.
-        user_store.get_identities.assert_not_called()
+        # Raw chat ids must never be exposed by this endpoint.
+        assert "!room:example.com" not in str(response.content)
+        assert "12345" not in str(response.content).replace("67890", "")
 
     def test_available_users_empty_when_no_store(
         self, client: TestClient, user_store: MagicMock

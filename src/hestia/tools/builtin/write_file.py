@@ -73,6 +73,7 @@ def make_write_file_tool(
         # Atomic write: crash mid-write previously left a truncated file —
         # ironic given ADR-046's purpose. Temp file + os.replace is atomic on
         # POSIX and Windows.
+        import contextlib as _contextlib
         import os as _os
         import tempfile as _tempfile
 
@@ -85,10 +86,8 @@ def make_write_file_tool(
                     fh.write(content)
                 _os.replace(tmp_name, target)
             except BaseException:
-                try:
+                with _contextlib.suppress(OSError):
                     _os.unlink(tmp_name)
-                except OSError:
-                    pass
                 raise
 
         await asyncio.to_thread(_atomic_write)

@@ -32,18 +32,6 @@ except ImportError:
     _CURL_CFFI_AVAILABLE = False
 
 # IP ranges that must never be fetched
-_BLOCKED_RANGES = [
-    ipaddress.ip_network("0.0.0.0/8"),  # current network
-    ipaddress.ip_network("10.0.0.0/8"),  # private class A
-    ipaddress.ip_network("100.64.0.0/10"),  # CGNAT
-    ipaddress.ip_network("127.0.0.0/8"),  # loopback
-    ipaddress.ip_network("169.254.0.0/16"),  # link-local / cloud metadata
-    ipaddress.ip_network("172.16.0.0/12"),  # private class B
-    ipaddress.ip_network("192.168.0.0/16"),  # private class C
-    ipaddress.ip_network("::1/128"),  # IPv6 loopback
-    ipaddress.ip_network("fc00::/7"),  # IPv6 unique local
-    ipaddress.ip_network("fe80::/10"),  # IPv6 link-local
-]
 
 
 class SSRFSafeTransport(httpx.AsyncBaseTransport):

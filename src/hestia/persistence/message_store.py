@@ -183,29 +183,6 @@ class MessageStore:
             result = await conn.execute(query)
             return bool(result.scalar_one())
 
-    async def get_turn_messages(self, turn_id: str) -> dict[str, str] | None:
-        """Return the latest assistant/user messages for a turn.
-
-        This is a convenience helper that joins against the ``turns`` table to
-        find the owning session. The heavy lifting stays in ``TurnStore``; this
-        method exists only to satisfy existing callers during the refactor.
-        """
-        from hestia.persistence.schema import turns
-
-        query = (
-            select(messages.c.role, messages.c.content)
-            .join(turns, messages.c.session_id == turns.c.session_id)
-            .where(turns.c.id == turn_id)
-            .order_by(messages.c.idx.desc())
-            .limit(20)
-        )
-        async with self._db.engine.connect() as conn:
-            result = await conn.execute(query)
-            rows = result.fetchall()
-            if not rows:
-                return None
-            return {row.role: row.content for row in rows}
-
     def _row_to_message(self, row: Any) -> MessageDTO:
         return MessageDTO(
             session_id=row.session_id,

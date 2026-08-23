@@ -79,41 +79,4 @@ async def assert_url_safe(url: str) -> None:
             ) from exc
 
 
-def is_ssrf_blocked(url: str) -> tuple[bool, str | None]:
-    """Return ``(True, reason)`` if *url* is blocked, else ``(False, None)``.
 
-    This is a synchronous convenience wrapper around the same checks used by
-    :func:`assert_url_safe`. It performs a blocking DNS lookup, so it should not
-    be called from an async event loop when avoidable.
-    """
-    try:
-        parsed = urlparse(url)
-    except ValueError:
-        return True, f"Invalid URL: {url}"
-
-    if not parsed.scheme:
-        return True, f"Missing URL scheme (use http:// or https://): {url}"
-
-    if parsed.scheme not in ("http", "https"):
-        return (
-            True,
-            f"Unsupported scheme '{parsed.scheme}' — only http and https are allowed",
-        )
-
-    hostname = parsed.hostname
-    if not hostname:
-        return True, f"No hostname in URL: {url}"
-
-    try:
-        addr_info = socket.getaddrinfo(hostname, None)
-    except socket.gaierror:
-        return True, f"Cannot resolve hostname: {hostname}"
-
-    for _family, _type, _proto, _canonical, sockaddr in addr_info:
-        ip = ipaddress.ip_address(sockaddr[0])
-        try:
-            _assert_ip_allowed(ip)
-        except SSRFBlockedError as exc:
-            return True, f"SSRF blocked: {hostname} resolves to {ip} ({exc})"
-
-    return False, None

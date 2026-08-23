@@ -212,24 +212,6 @@ class TurnStore:
             await conn.execute(update)
             await conn.commit()
 
-    async def get_turn_messages(self, turn_id: str) -> dict[str, str] | None:
-        """Return the latest assistant/user messages for a turn."""
-        from hestia.persistence.schema import messages
-
-        query = (
-            select(messages.c.role, messages.c.content)
-            .join(turns, messages.c.session_id == turns.c.session_id)
-            .where(turns.c.id == turn_id)
-            .order_by(messages.c.idx.desc())
-            .limit(20)
-        )
-        async with self._db.engine.connect() as conn:
-            result = await conn.execute(query)
-            rows = result.fetchall()
-            if not rows:
-                return None
-            return {row.role: row.content for row in rows}
-
     def _row_to_turn(self, row: Any) -> TurnDTO:
         return TurnDTO(
             id=row.id,
