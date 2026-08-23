@@ -387,6 +387,10 @@ class TurnExecution:
                         new_user_message=None,
                     )
                     turn.iterations += 1
+                    # The abort must stick across attempts: force the zeroed
+                    # budget here because this inner retry loop does not
+                    # recompute it from the policy.
+                    turn.reasoning_budget = 0
                     continue
                 except (InferenceServerError, InferenceTimeoutError) as exc:
                     # BUG-021: the policy's transient-error retry decision was
@@ -408,6 +412,7 @@ class TurnExecution:
                         inference_attempt,
                         delay,
                     )
+                    await transition(turn, TurnState.RETRYING, "")
                     await asyncio.sleep(delay)
 
             ctx.total_prompt_tokens += getattr(chat_response, "prompt_tokens", 0) or 0
