@@ -11,7 +11,7 @@ from hestia.tools.builtin.current_time import current_time
 from hestia.tools.builtin.edit_file import make_edit_file_tool
 from hestia.tools.builtin.glob import make_glob_tool
 from hestia.tools.builtin.grep import make_grep_tool
-from hestia.tools.builtin.http_get import SSRFSafeTransport, _is_url_safe, http_get
+from hestia.tools.builtin.http_get import SSRFSafeTransport, http_get, is_url_safe
 from hestia.tools.builtin.list_dir import make_list_dir_tool
 from hestia.tools.builtin.read_artifact import make_read_artifact_tool
 from hestia.tools.builtin.read_file import make_read_file_tool
@@ -535,16 +535,16 @@ class TestHttpGet:
 
     def test_preflight_blocks_invalid_schemes(self):
         """Pre-flight check blocks invalid schemes and missing hostnames."""
-        assert _is_url_safe("file:///etc/passwd") is not None
-        assert _is_url_safe("ftp://example.com/file") is not None
-        assert _is_url_safe("example.com/path") is not None
-        assert _is_url_safe("http:///path") is not None
+        assert is_url_safe("file:///etc/passwd") is not None
+        assert is_url_safe("ftp://example.com/file") is not None
+        assert is_url_safe("example.com/path") is not None
+        assert is_url_safe("http:///path") is not None
 
     def test_preflight_allows_public_and_private_hostnames(self):
         """Pre-flight allows all valid HTTP(S) URLs; transport blocks private IPs."""
-        assert _is_url_safe("http://1.1.1.1/") is None
-        assert _is_url_safe("https://93.184.216.34/") is None
-        assert _is_url_safe("http://127.0.0.1/secret") is None
+        assert is_url_safe("http://1.1.1.1/") is None
+        assert is_url_safe("https://93.184.216.34/") is None
+        assert is_url_safe("http://127.0.0.1/secret") is None
 
     @pytest.mark.asyncio
     async def test_transport_uses_asyncio_to_thread_for_assert_ip_allowed(self):

@@ -43,7 +43,7 @@ async def test_get_request(app: AppContext) -> None:
 
 @pytest.mark.asyncio
 async def test_blocks_ssrf_via_real_transport(app: AppContext) -> None:
-    """Workflow node exercises real _is_url_safe + _BLOCKED_RANGES."""
+    """Workflow node exercises real is_url_safe + _BLOCKED_RANGES."""
     node = WorkflowNode(
         id="n1",
         type="http_request",

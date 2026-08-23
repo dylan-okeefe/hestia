@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from hestia.web.context import WebContext, get_web_context
 from hestia.workflows.executor import WorkflowExecutor
 from hestia.workflows.models import Workflow, WorkflowEdge, WorkflowNode, WorkflowVersion
+from hestia.workflows.tool_selection import derive_allowed_set
 
 
 async def _require_workflow_access(
@@ -425,7 +426,11 @@ async def create_version(
         edges=edges,
     )
     await ctx.workflow_store.save_version(version)
-    return _version_to_api(version)
+    # L245: expose the graph-derived authorization set so the UI can show
+    # exactly what saving (and later activating) this version grants.
+    response = _version_to_api(version)
+    response["derived_allow_list"] = sorted(derive_allowed_set(version.nodes))
+    return response
 
 
 @router.post("/workflows/{workflow_id}/versions/{version_id}/activate")
@@ -438,6 +443,13 @@ async def activate_version(
     """Activate a specific version of a workflow.
 
     version_id is expected to be "{workflow_id}:{version}" or just the version number.
+
+    L245: activation is the authorization act. If the target version's
+    graph-derived allow-list differs from the workflow's stored set, the
+    request is rejected with **409** and a diff; the caller must repeat it
+    with ``?confirm_allow_list_change=true``. On confirmation the derived
+    set replaces the stored one *before* the version flips active, so the
+    executor's gate context always reflects what the user saw and approved.
     """
     workflow = await ctx.workflow_store.get_workflow(workflow_id)
     if workflow is None:
@@ -454,6 +466,35 @@ async def activate_version(
         version_num = int(version_str)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Invalid version ID") from exc
+
+    versions = await ctx.workflow_store.list_versions(workflow_id)
+    target = next((v for v in versions if v.version == version_num), None)
+    if target is None:
+        raise HTTPException(status_code=404, detail="Workflow or version not found")
+
+    derived = derive_allowed_set(target.nodes)
+    current = set(workflow.allow_listed_tools or set())
+    if derived != current:
+        confirm = request.query_params.get(
+            "confirm_allow_list_change", ""
+        ).strip().lower() in {"1", "true", "yes"}
+        if not confirm:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "allow_list_changed",
+                    "message": (
+                        "This version changes the workflow's authorized "
+                        "tools. Review the diff and confirm to activate."
+                    ),
+                    "allow_list_diff": {
+                        "added": sorted(derived - current),
+                        "removed": sorted(current - derived),
+                    },
+                },
+            )
+        workflow.allow_listed_tools = derived
+        await ctx.workflow_store.save_workflow(workflow)
 
     ok = await ctx.workflow_store.activate_version(workflow_id, version_num)
     if not ok:

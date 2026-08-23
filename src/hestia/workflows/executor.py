@@ -434,6 +434,22 @@ class WorkflowExecutor:
             ValueError: If the node type is not supported.
         """
         from hestia.workflows.nodes import NODE_TYPES
+        from hestia.workflows.tool_selection import NODE_EFFECT_MARKERS
+
+        # L245: effect nodes are not registry tools, so activation is their
+        # authorization. The stored (derived) allow-list must carry the
+        # marker or the node is refused - a draft/edited graph cannot sneak
+        # a new effect past an old grant.
+        if node.type in NODE_EFFECT_MARKERS:
+            allow = (
+                getattr(tool_context, "allow_list", None) or frozenset()
+            )
+            if NODE_EFFECT_MARKERS[node.type] not in allow:
+                raise PermissionError(
+                    f"Node effect '{node.type}' is not authorized for this "
+                    "workflow's active version - re-activate the version to "
+                    "grant it (L245)"
+                )
 
         executor_cls = NODE_TYPES.get(node.type)
         if executor_cls is not None:

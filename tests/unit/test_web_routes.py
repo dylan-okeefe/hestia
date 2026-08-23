@@ -1084,13 +1084,18 @@ class TestWorkflowsRoutes:
         response = client.post(
             "/api/workflows/wf1/versions",
             json={
-                "nodes": [{"id": "n1", "type": "tool_call", "position": {"x": 0, "y": 0}, "data": {"label": "Test"}}],
+                "nodes": [
+                    {"id": "n1", "type": "tool_call", "position": {"x": 0, "y": 0}, "data": {"label": "Test"}},
+                    {"id": "n2", "type": "http_request", "position": {"x": 0, "y": 0}, "data": {"label": "Fetch"}},
+                ],
                 "edges": [],
             },
         )
         assert response.status_code == 200
         data = response.json()
         assert data["version_number"] == 1
+        # L245: save responses expose the graph-derived authorization set.
+        assert sorted(data["derived_allow_list"]) == ["node:http_request"]
         ctx.workflow_store.save_version.assert_awaited_once()
 
     def test_create_version_workflow_not_found(self, client: TestClient, mock_app: MagicMock) -> None:
@@ -1107,9 +1112,25 @@ class TestWorkflowsRoutes:
     def test_activate_version(self, client: TestClient, mock_app: MagicMock) -> None:
         """POST /api/workflows/{id}/versions/{v}/activate activates version."""
         from hestia.web import context as ctx_mod
+        from hestia.workflows.models import (
+            Workflow,
+            WorkflowNode,
+            WorkflowVersion,
+        )
 
         ctx = ctx_mod._ctx
         assert ctx is not None
+        wf = Workflow(id="wf1", name="Test", allow_listed_tools={"terminal"})
+        v2 = WorkflowVersion(
+            workflow_id="wf1",
+            version=2,
+            nodes=[
+                WorkflowNode(id="n1", type="tool_call", label="", config={"tool_name": "terminal"})
+            ],
+            edges=[],
+        )
+        ctx.workflow_store.get_workflow = AsyncMock(return_value=wf)
+        ctx.workflow_store.list_versions = AsyncMock(return_value=[v2])
         ctx.workflow_store.activate_version = AsyncMock(return_value=True)
 
         response = client.post("/api/workflows/wf1/versions/wf1:2/activate")
@@ -1118,6 +1139,96 @@ class TestWorkflowsRoutes:
         assert data["activated"] is True
         assert data["version"] == 2
         ctx.workflow_store.activate_version.assert_awaited_once_with("wf1", 2)
+
+    def test_activate_version_returns_409_on_allow_list_change(
+        self, client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """L245: activating a version that changes the authorization set
+        requires explicit confirmation; unconfirmed requests get a 409 with
+        the diff."""
+        from hestia.web import context as ctx_mod
+        from hestia.workflows.models import Workflow, WorkflowNode, WorkflowVersion
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        wf = Workflow(id="wf1", name="Test", allow_listed_tools={"old_tool"})
+        v3 = WorkflowVersion(
+            workflow_id="wf1",
+            version=3,
+            nodes=[
+                WorkflowNode(id="n1", type="tool_call", label="", config={"tool_name": "terminal"}),
+                WorkflowNode(id="n2", type="send_message", label="", config={}),
+            ],
+            edges=[],
+        )
+        ctx.workflow_store.get_workflow = AsyncMock(return_value=wf)
+        ctx.workflow_store.list_versions = AsyncMock(return_value=[v3])
+        ctx.workflow_store.activate_version = AsyncMock(return_value=True)
+
+        response = client.post("/api/workflows/wf1/versions/wf1:3/activate")
+        assert response.status_code == 409
+        detail = response.json()["detail"]
+        assert detail["code"] == "allow_list_changed"
+        assert sorted(detail["allow_list_diff"]["added"]) == [
+            "node:send_message",
+            "terminal",
+        ]
+        assert detail["allow_list_diff"]["removed"] == ["old_tool"]
+        ctx.workflow_store.activate_version.assert_not_awaited()
+
+    def test_activate_version_with_confirmation_stores_derived_set(
+        self, client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """L245: confirming the diff activates AND stores the derived set."""
+        from hestia.web import context as ctx_mod
+        from hestia.workflows.models import Workflow, WorkflowNode, WorkflowVersion
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        wf = Workflow(id="wf1", name="Test", allow_listed_tools=set())
+        v1 = WorkflowVersion(
+            workflow_id="wf1",
+            version=1,
+            nodes=[
+                WorkflowNode(id="n1", type="tool_call", label="", config={"tool_name": "read_file"}),
+                WorkflowNode(id="n2", type="http_request", label="", config={}),
+            ],
+            edges=[],
+        )
+        ctx.workflow_store.get_workflow = AsyncMock(return_value=wf)
+        ctx.workflow_store.list_versions = AsyncMock(return_value=[v1])
+        ctx.workflow_store.activate_version = AsyncMock(return_value=True)
+
+        response = client.post(
+            "/api/workflows/wf1/versions/wf1:1/activate"
+            "?confirm_allow_list_change=true"
+        )
+        assert response.status_code == 200
+
+        saved = ctx.workflow_store.save_workflow.await_args.args[0]
+        assert saved.allow_listed_tools == {"read_file", "node:http_request"}
+        ctx.workflow_store.activate_version.assert_awaited_once_with("wf1", 1)
+
+    def test_activate_version_no_change_needs_no_confirmation(
+        self, client: TestClient, mock_app: MagicMock
+    ) -> None:
+        """L245: identical derived set activates without confirmation."""
+        from hestia.web import context as ctx_mod
+        from hestia.workflows.models import Workflow, WorkflowNode, WorkflowVersion
+
+        ctx = ctx_mod._ctx
+        assert ctx is not None
+        node = WorkflowNode(id="n1", type="tool_call", label="", config={"tool_name": "read_file"})
+        wf = Workflow(id="wf1", name="Test", allow_listed_tools={"read_file"})
+        v4 = WorkflowVersion(workflow_id="wf1", version=4, nodes=[node], edges=[])
+        ctx.workflow_store.get_workflow = AsyncMock(return_value=wf)
+        ctx.workflow_store.list_versions = AsyncMock(return_value=[v4])
+        ctx.workflow_store.activate_version = AsyncMock(return_value=True)
+
+        response = client.post("/api/workflows/wf1/versions/wf1:4/activate")
+        assert response.status_code == 200
+        # No authorization change -> nothing to re-store.
+        ctx.workflow_store.save_workflow.assert_not_awaited()
 
     def test_activate_version_not_found(self, client: TestClient, mock_app: MagicMock) -> None:
         """POST activation returns 404 when version missing."""

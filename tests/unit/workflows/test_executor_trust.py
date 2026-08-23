@@ -548,3 +548,70 @@ async def test_non_string_tool_list_entries_fail_closed(
     assert result.status == "failed"
     assert "must all be strings" in (result.node_results[0].error or "")
     assert gated_app.tool_registry._tools  # real registry in place
+
+
+class TestNodeEffectAuthorization:
+    """L245: effect nodes (http_request / send_message) are authorized by
+    activation - the executor refuses to run them unless the stored
+    (derived) allow-list carries their marker."""
+
+    def _effect_ctx(self, markers: set[str]) -> Any:
+        from hestia.policy.channel import Channel
+        from hestia.tools.context import ToolCallContext
+
+        return ToolCallContext(
+            channel=Channel.WORKFLOW,
+            actor_platform="workflow",
+            actor_platform_user="user-1",
+            allow_list=frozenset(markers),
+            source_workflow_id="wf_eff",
+        )
+
+    @pytest.mark.asyncio
+    async def test_http_request_denied_without_marker(
+        self, gated_app: AppContext
+    ) -> None:
+        executor = WorkflowExecutor(gated_app)
+        wf = Workflow(id="wf_eff", name="Eff")
+        node = WorkflowNode(
+            id="n1",
+            type="http_request",
+            label="",
+            config={"url": "https://example.com"},
+        )
+        with pytest.raises(PermissionError, match="re-activate"):
+            await executor._run_node(node, {}, wf, self._effect_ctx({"terminal"}))
+
+    @pytest.mark.asyncio
+    async def test_send_message_denied_without_marker(
+        self, gated_app: AppContext
+    ) -> None:
+        executor = WorkflowExecutor(gated_app)
+        wf = Workflow(id="wf_eff2", name="Eff2")
+        node = WorkflowNode(id="n1", type="send_message", label="", config={})
+        with pytest.raises(PermissionError, match="re-activate"):
+            await executor._run_node(node, {}, wf, self._effect_ctx(set()))
+
+    @pytest.mark.asyncio
+    async def test_http_request_allowed_with_marker(
+        self, gated_app: AppContext
+    ) -> None:
+        """With the marker present the node proceeds past authorization
+        (it then fails on missing URL config - a normal node error)."""
+        executor = WorkflowExecutor(gated_app)
+        wf = Workflow(id="wf_eff3", name="Eff3")
+        node = WorkflowNode(id="n1", type="http_request", label="", config={})
+        with pytest.raises(ValueError, match="requires 'url'"):
+            await executor._run_node(
+                node, {}, wf, self._effect_ctx({"node:http_request"})
+            )
+
+    @pytest.mark.asyncio
+    async def test_missing_context_fails_closed(
+        self, gated_app: AppContext
+    ) -> None:
+        executor = WorkflowExecutor(gated_app)
+        wf = Workflow(id="wf_eff4", name="Eff4")
+        node = WorkflowNode(id="n1", type="send_message", label="", config={})
+        with pytest.raises(PermissionError):
+            await executor._run_node(node, {}, wf, None)
