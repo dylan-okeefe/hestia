@@ -35,7 +35,7 @@ from nio import AsyncClient, RoomMessageText, RoomSendResponse, SyncResponse
 from nio.events.ephemeral import TypingNoticeEvent
 
 from hestia.artifacts.store import ArtifactStore
-from hestia.config import MatrixConfig
+from hestia.config import MatrixConfig, StorageConfig
 from hestia.context.builder import ContextBuilder
 from hestia.core.types import ChatResponse, Message, ToolCall
 from hestia.memory.store import MemoryStore
@@ -47,7 +47,6 @@ from hestia.persistence.sessions import SessionStore
 from hestia.persistence.trace_store import TraceStore
 from hestia.platforms.matrix_adapter import MatrixAdapter
 from hestia.tools.builtin import current_time, http_get, make_terminal_tool
-from hestia.config import StorageConfig
 from hestia.tools.builtin.list_dir import make_list_dir_tool
 from hestia.tools.builtin.memory_tools import (
     make_list_memories_tool,
@@ -370,7 +369,7 @@ async def test_matrix_e2e_ping_pong(tmp_path, e2e_setup):
     room_id = os.environ["HESTIA_MATRIX_TEST_ROOM_ID"]
     adapter = MatrixAdapter(bot_cfg)
 
-    GATE = "[t1] ping"
+    gate = "[t1] ping"
 
     e2e_setup["inference"].responses = [
         ChatResponse(
@@ -386,7 +385,7 @@ async def test_matrix_e2e_ping_pong(tmp_path, e2e_setup):
 
     orchestrator = _make_orchestrator(e2e_setup)
     await adapter.start(
-        _make_on_message(adapter, orchestrator, e2e_setup, gate_phrase=GATE)
+        _make_on_message(adapter, orchestrator, e2e_setup, gate_phrase=gate)
     )
 
     tester = await _setup_tester(_tester_config())
@@ -398,7 +397,7 @@ async def test_matrix_e2e_ping_pong(tmp_path, e2e_setup):
         send_resp = await tester.room_send(
             room_id=room_id,
             message_type="m.room.message",
-            content={"msgtype": "m.text", "body": GATE},
+            content={"msgtype": "m.text", "body": gate},
         )
         assert isinstance(send_resp, RoomSendResponse), f"Send failed: {send_resp}"
 
@@ -434,7 +433,7 @@ async def test_matrix_e2e_tool_call_clean_conversation(tmp_path, e2e_setup):
     room_id = os.environ["HESTIA_MATRIX_TEST_ROOM_ID"]
     adapter = MatrixAdapter(bot_cfg)
 
-    GATE = "[t2] what time is it?"
+    gate = "[t2] what time is it?"
 
     e2e_setup["inference"].responses = [
         ChatResponse(
@@ -465,7 +464,7 @@ async def test_matrix_e2e_tool_call_clean_conversation(tmp_path, e2e_setup):
 
     orchestrator = _make_orchestrator(e2e_setup)
     await adapter.start(
-        _make_on_message(adapter, orchestrator, e2e_setup, gate_phrase=GATE)
+        _make_on_message(adapter, orchestrator, e2e_setup, gate_phrase=gate)
     )
 
     tester = await _setup_tester(_tester_config())
@@ -477,7 +476,7 @@ async def test_matrix_e2e_tool_call_clean_conversation(tmp_path, e2e_setup):
         send_resp = await tester.room_send(
             room_id=room_id,
             message_type="m.room.message",
-            content={"msgtype": "m.text", "body": GATE},
+            content={"msgtype": "m.text", "body": gate},
         )
         assert isinstance(send_resp, RoomSendResponse)
 
@@ -515,7 +514,7 @@ async def test_matrix_e2e_memory_save(tmp_path, e2e_setup):
     room_id = os.environ["HESTIA_MATRIX_TEST_ROOM_ID"]
     adapter = MatrixAdapter(bot_cfg)
 
-    GATE = "[t3] Remember that my favorite color is blue"
+    gate = "[t3] Remember that my favorite color is blue"
 
     e2e_setup["inference"].responses = [
         ChatResponse(
@@ -552,7 +551,7 @@ async def test_matrix_e2e_memory_save(tmp_path, e2e_setup):
 
     orchestrator = _make_orchestrator(e2e_setup)
     await adapter.start(
-        _make_on_message(adapter, orchestrator, e2e_setup, gate_phrase=GATE)
+        _make_on_message(adapter, orchestrator, e2e_setup, gate_phrase=gate)
     )
 
     tester = await _setup_tester(_tester_config())
@@ -564,7 +563,7 @@ async def test_matrix_e2e_memory_save(tmp_path, e2e_setup):
         send_resp = await tester.room_send(
             room_id=room_id,
             message_type="m.room.message",
-            content={"msgtype": "m.text", "body": GATE},
+            content={"msgtype": "m.text", "body": gate},
         )
         assert isinstance(send_resp, RoomSendResponse)
 
@@ -596,8 +595,8 @@ async def test_matrix_e2e_memory_save_then_recall(tmp_path, e2e_setup):
     room_id = os.environ["HESTIA_MATRIX_TEST_ROOM_ID"]
     adapter = MatrixAdapter(bot_cfg)
 
-    GATE1 = "[t4a] Remember: Hestia typing indicators shipped"
-    GATE2 = "[t4b] What do you remember about Hestia?"
+    gate1 = "[t4a] Remember: Hestia typing indicators shipped"
+    gate2 = "[t4b] What do you remember about Hestia?"
 
     turn1_responses = [
         ChatResponse(
@@ -666,7 +665,7 @@ async def test_matrix_e2e_memory_save_then_recall(tmp_path, e2e_setup):
     fake_inference.responses = turn1_responses
 
     # Gate starts on turn 1 phrase; we'll swap the gate between turns
-    gate_ref: dict[str, str] = {"current": GATE1}
+    gate_ref: dict[str, str] = {"current": gate1}
 
     orchestrator = _make_orchestrator(e2e_setup)
 
@@ -703,7 +702,7 @@ async def test_matrix_e2e_memory_save_then_recall(tmp_path, e2e_setup):
         send1 = await tester.room_send(
             room_id=room_id,
             message_type="m.room.message",
-            content={"msgtype": "m.text", "body": GATE1},
+            content={"msgtype": "m.text", "body": gate1},
         )
         assert isinstance(send1, RoomSendResponse)
 
@@ -718,13 +717,13 @@ async def test_matrix_e2e_memory_save_then_recall(tmp_path, e2e_setup):
         # --- Turn 2: recall ---
         fake_inference.responses = turn2_responses
         fake_inference.call_count = 0
-        gate_ref["current"] = GATE2
+        gate_ref["current"] = gate2
 
         after_ts2 = int(time.time() * 1000)
         send2 = await tester.room_send(
             room_id=room_id,
             message_type="m.room.message",
-            content={"msgtype": "m.text", "body": GATE2},
+            content={"msgtype": "m.text", "body": gate2},
         )
         assert isinstance(send2, RoomSendResponse)
 
@@ -755,7 +754,7 @@ async def test_matrix_e2e_no_thinking_message(tmp_path, e2e_setup):
     room_id = os.environ["HESTIA_MATRIX_TEST_ROOM_ID"]
     adapter = MatrixAdapter(bot_cfg)
 
-    GATE = "[t5] what time is it right now?"
+    gate = "[t5] what time is it right now?"
 
     e2e_setup["inference"].responses = [
         ChatResponse(
@@ -786,7 +785,7 @@ async def test_matrix_e2e_no_thinking_message(tmp_path, e2e_setup):
 
     orchestrator = _make_orchestrator(e2e_setup)
     await adapter.start(
-        _make_on_message(adapter, orchestrator, e2e_setup, gate_phrase=GATE)
+        _make_on_message(adapter, orchestrator, e2e_setup, gate_phrase=gate)
     )
 
     tester = await _setup_tester(_tester_config())
@@ -798,7 +797,7 @@ async def test_matrix_e2e_no_thinking_message(tmp_path, e2e_setup):
         send_resp = await tester.room_send(
             room_id=room_id,
             message_type="m.room.message",
-            content={"msgtype": "m.text", "body": GATE},
+            content={"msgtype": "m.text", "body": gate},
         )
         assert isinstance(send_resp, RoomSendResponse)
 
@@ -835,7 +834,7 @@ async def test_matrix_e2e_memory_search_no_results(tmp_path, e2e_setup):
     room_id = os.environ["HESTIA_MATRIX_TEST_ROOM_ID"]
     adapter = MatrixAdapter(bot_cfg)
 
-    GATE = "[t6] search memory for xyznonexistent_e2e_test"
+    gate = "[t6] search memory for xyznonexistent_e2e_test"
 
     e2e_setup["inference"].responses = [
         ChatResponse(
@@ -869,7 +868,7 @@ async def test_matrix_e2e_memory_search_no_results(tmp_path, e2e_setup):
 
     orchestrator = _make_orchestrator(e2e_setup)
     await adapter.start(
-        _make_on_message(adapter, orchestrator, e2e_setup, gate_phrase=GATE)
+        _make_on_message(adapter, orchestrator, e2e_setup, gate_phrase=gate)
     )
 
     tester = await _setup_tester(_tester_config())
@@ -881,7 +880,7 @@ async def test_matrix_e2e_memory_search_no_results(tmp_path, e2e_setup):
         send_resp = await tester.room_send(
             room_id=room_id,
             message_type="m.room.message",
-            content={"msgtype": "m.text", "body": GATE},
+            content={"msgtype": "m.text", "body": gate},
         )
         assert isinstance(send_resp, RoomSendResponse)
 

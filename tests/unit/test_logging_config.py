@@ -1,7 +1,6 @@
 """Tests for logging configuration."""
 
 import logging
-from unittest.mock import patch
 
 from hestia.logging_config import setup_logging
 

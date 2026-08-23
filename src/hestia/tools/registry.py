@@ -311,7 +311,7 @@ class ToolRegistry:
         """Handler for the call_tool meta-tool."""
         try:
             return await self.call(name, arguments)
-        except ToolNotFoundError as e:
+        except ToolNotFoundError:
             return ToolCallResult.error(
                 content=f"Tool not found: {name}. Use list_tools to see available tools.",
                 error_type="ToolNotFoundError",

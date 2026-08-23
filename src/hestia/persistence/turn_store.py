@@ -13,7 +13,7 @@ from hestia.core.clock import utcnow
 from hestia.errors import PersistenceError
 from hestia.persistence.db import Database
 from hestia.persistence.dto import TurnDTO, TurnTransitionDTO
-from hestia.persistence.schema import sessions, turn_transitions, turns
+from hestia.persistence.schema import turn_transitions, turns
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +143,7 @@ class TurnStore:
         async with self._db.engine.connect() as conn:
             result = await conn.execute(query)
             rows = result.fetchall()
-            counts = {sid: 0 for sid in session_ids}
+            counts = dict.fromkeys(session_ids, 0)
             counts.update({row.session_id: int(row[1]) for row in rows})
             return counts
 

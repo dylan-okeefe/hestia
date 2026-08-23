@@ -93,12 +93,23 @@ module = [
     "nio",
     "asyncpg",
     "faster_whisper",
-    "piper",
     "curl_cffi",
     "playwright",
     "playwright.async_api",
 ]
 ignore_missing_imports = true
+
+# Typed-but-stubless optional dependencies: skip entirely so the gated
+# ``X = None`` import fallbacks type-check identically whether or not the
+# extra is installed.
+[[tool.mypy.overrides]]
+module = [
+    "piper",
+    "kokoro",
+    "playwright_stealth",
+]
+ignore_missing_imports = true
+follow_imports = "skip"
 
 
 

@@ -16,11 +16,6 @@ def test_facade_emits_deprecation_warning():
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         importlib.reload(hestia.persistence.sessions)
-        from hestia.persistence.sessions import (
-            MessageStore,
-            SessionStore,
-            TurnStore,
-        )
 
     assert any(issubclass(w.category, DeprecationWarning) for w in caught)
     warning_text = " ".join(str(w.message) for w in caught)
@@ -33,12 +28,16 @@ def test_facade_exports_same_classes():
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         from hestia.persistence.message_store import MessageStore as NewMessageStore
+        from hestia.persistence.session_store import SessionStore as NewSessionStore
         from hestia.persistence.sessions import (
             MessageStore as FacadeMessageStore,
+        )
+        from hestia.persistence.sessions import (
             SessionStore as FacadeSessionStore,
+        )
+        from hestia.persistence.sessions import (
             TurnStore as FacadeTurnStore,
         )
-        from hestia.persistence.session_store import SessionStore as NewSessionStore
         from hestia.persistence.turn_store import TurnStore as NewTurnStore
 
     assert FacadeSessionStore is NewSessionStore

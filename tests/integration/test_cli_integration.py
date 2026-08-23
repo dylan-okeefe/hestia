@@ -6,6 +6,7 @@ with mocked dependencies where appropriate.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import tempfile
 from datetime import UTC
@@ -30,10 +31,8 @@ def temp_db_path() -> str:
         path = f.name
     yield path
     # Cleanup
-    try:
+    with contextlib.suppress(FileNotFoundError):
         os.unlink(path)
-    except FileNotFoundError:
-        pass
 
 
 @pytest.fixture
@@ -48,56 +47,53 @@ class TestInitCommand:
 
     def test_init_creates_database(self, cli_runner: CliRunner, temp_db_path: str) -> None:
         """Run `hestia init`, verify DB file exists."""
-        with tempfile.TemporaryDirectory() as artifacts_dir:
-            with tempfile.TemporaryDirectory() as slot_dir:
-                result = cli_runner.invoke(
-                    cli,
-                    [
-                        "--db-path", temp_db_path,
-                        "--artifacts-path", artifacts_dir,
-                        "--slot-dir", slot_dir,
-                        "init",
-                    ],
-                )
+        with tempfile.TemporaryDirectory() as artifacts_dir, tempfile.TemporaryDirectory() as slot_dir:
+            result = cli_runner.invoke(
+                cli,
+                [
+                    "--db-path", temp_db_path,
+                    "--artifacts-path", artifacts_dir,
+                    "--slot-dir", slot_dir,
+                    "init",
+                ],
+            )
 
-                assert result.exit_code == 0, f"Exit code: {result.exit_code}, output: {result.output}"
-                assert "Initialized database" in result.output
-                # Verify DB file was created
-                assert Path(temp_db_path).exists()
+            assert result.exit_code == 0, f"Exit code: {result.exit_code}, output: {result.output}"
+            assert "Initialized database" in result.output
+            # Verify DB file was created
+            assert Path(temp_db_path).exists()
 
     def test_init_creates_artifacts_directory(self, cli_runner: CliRunner, temp_db_path: str) -> None:
         """Verify init creates artifacts directory."""
-        with tempfile.TemporaryDirectory() as artifacts_dir:
-            with tempfile.TemporaryDirectory() as slot_dir:
-                result = cli_runner.invoke(
-                    cli,
-                    [
-                        "--db-path", temp_db_path,
-                        "--artifacts-path", artifacts_dir,
-                        "--slot-dir", slot_dir,
-                        "init",
-                    ],
-                )
+        with tempfile.TemporaryDirectory() as artifacts_dir, tempfile.TemporaryDirectory() as slot_dir:
+            result = cli_runner.invoke(
+                cli,
+                [
+                    "--db-path", temp_db_path,
+                    "--artifacts-path", artifacts_dir,
+                    "--slot-dir", slot_dir,
+                    "init",
+                ],
+            )
 
-                assert result.exit_code == 0
-                assert Path(artifacts_dir).exists()
+            assert result.exit_code == 0
+            assert Path(artifacts_dir).exists()
 
     def test_init_creates_slot_directory(self, cli_runner: CliRunner, temp_db_path: str) -> None:
         """Verify init creates slot directory."""
-        with tempfile.TemporaryDirectory() as artifacts_dir:
-            with tempfile.TemporaryDirectory() as slot_dir:
-                result = cli_runner.invoke(
-                    cli,
-                    [
-                        "--db-path", temp_db_path,
-                        "--artifacts-path", artifacts_dir,
-                        "--slot-dir", slot_dir,
-                        "init",
-                    ],
-                )
+        with tempfile.TemporaryDirectory() as artifacts_dir, tempfile.TemporaryDirectory() as slot_dir:
+            result = cli_runner.invoke(
+                cli,
+                [
+                    "--db-path", temp_db_path,
+                    "--artifacts-path", artifacts_dir,
+                    "--slot-dir", slot_dir,
+                    "init",
+                ],
+            )
 
-                assert result.exit_code == 0
-                assert Path(slot_dir).exists()
+            assert result.exit_code == 0
+            assert Path(slot_dir).exists()
 
 
 class TestAskCommand:
@@ -124,155 +120,152 @@ class TestMemoryCommands:
 
     def test_memory_add_and_list(self, cli_runner: CliRunner, temp_db_path: str) -> None:
         """Add a memory via CLI, list it, verify found."""
-        with tempfile.TemporaryDirectory() as artifacts_dir:
-            with tempfile.TemporaryDirectory() as slot_dir:
-                # Init first
-                result = cli_runner.invoke(
-                    cli,
-                    [
-                        "--db-path", temp_db_path,
-                        "--artifacts-path", artifacts_dir,
-                        "--slot-dir", slot_dir,
-                        "init",
-                    ],
-                )
-                assert result.exit_code == 0
+        with tempfile.TemporaryDirectory() as artifacts_dir, tempfile.TemporaryDirectory() as slot_dir:
+            # Init first
+            result = cli_runner.invoke(
+                cli,
+                [
+                    "--db-path", temp_db_path,
+                    "--artifacts-path", artifacts_dir,
+                    "--slot-dir", slot_dir,
+                    "init",
+                ],
+            )
+            assert result.exit_code == 0
 
-                # Add a memory
-                result = cli_runner.invoke(
-                    cli,
-                    [
-                        "--db-path", temp_db_path,
-                        "--artifacts-path", artifacts_dir,
-                        "--slot-dir", slot_dir,
-                        "memory", "add",
-                        "My favorite programming language is Python",
-                        "--tags", "preferences programming",
-                    ],
-                )
+            # Add a memory
+            result = cli_runner.invoke(
+                cli,
+                [
+                    "--db-path", temp_db_path,
+                    "--artifacts-path", artifacts_dir,
+                    "--slot-dir", slot_dir,
+                    "memory", "add",
+                    "My favorite programming language is Python",
+                    "--tags", "preferences programming",
+                ],
+            )
 
-                assert result.exit_code == 0
-                assert "Saved:" in result.output
+            assert result.exit_code == 0
+            assert "Saved:" in result.output
 
-                # Extract the memory ID from output
-                memory_id = result.output.strip().split("Saved:")[-1].strip()
-                assert memory_id
+            # Extract the memory ID from output
+            memory_id = result.output.strip().split("Saved:")[-1].strip()
+            assert memory_id
 
-                # List memories to verify it was saved
-                result = cli_runner.invoke(
-                    cli,
-                    [
-                        "--db-path", temp_db_path,
-                        "--artifacts-path", artifacts_dir,
-                        "--slot-dir", slot_dir,
-                        "memory", "list",
-                    ],
-                )
+            # List memories to verify it was saved
+            result = cli_runner.invoke(
+                cli,
+                [
+                    "--db-path", temp_db_path,
+                    "--artifacts-path", artifacts_dir,
+                    "--slot-dir", slot_dir,
+                    "memory", "list",
+                ],
+            )
 
-                assert result.exit_code == 0
-                assert "Python" in result.output
+            assert result.exit_code == 0
+            assert "Python" in result.output
 
     def test_memory_list_shows_memories(self, cli_runner: CliRunner, temp_db_path: str) -> None:
         """Add memories, list them, verify they appear."""
-        with tempfile.TemporaryDirectory() as artifacts_dir:
-            with tempfile.TemporaryDirectory() as slot_dir:
-                # Init
-                result = cli_runner.invoke(
-                    cli,
-                    [
-                        "--db-path", temp_db_path,
-                        "--artifacts-path", artifacts_dir,
-                        "--slot-dir", slot_dir,
-                        "init",
-                    ],
-                )
-                assert result.exit_code == 0
+        with tempfile.TemporaryDirectory() as artifacts_dir, tempfile.TemporaryDirectory() as slot_dir:
+            # Init
+            result = cli_runner.invoke(
+                cli,
+                [
+                    "--db-path", temp_db_path,
+                    "--artifacts-path", artifacts_dir,
+                    "--slot-dir", slot_dir,
+                    "init",
+                ],
+            )
+            assert result.exit_code == 0
 
-                # Add a memory
-                result = cli_runner.invoke(
-                    cli,
-                    [
-                        "--db-path", temp_db_path,
-                        "--artifacts-path", artifacts_dir,
-                        "--slot-dir", slot_dir,
-                        "memory", "add",
-                        "Test memory content",
-                    ],
-                )
-                assert result.exit_code == 0
+            # Add a memory
+            result = cli_runner.invoke(
+                cli,
+                [
+                    "--db-path", temp_db_path,
+                    "--artifacts-path", artifacts_dir,
+                    "--slot-dir", slot_dir,
+                    "memory", "add",
+                    "Test memory content",
+                ],
+            )
+            assert result.exit_code == 0
 
-                # List memories
-                result = cli_runner.invoke(
-                    cli,
-                    [
-                        "--db-path", temp_db_path,
-                        "--artifacts-path", artifacts_dir,
-                        "--slot-dir", slot_dir,
-                        "memory", "list",
-                    ],
-                )
+            # List memories
+            result = cli_runner.invoke(
+                cli,
+                [
+                    "--db-path", temp_db_path,
+                    "--artifacts-path", artifacts_dir,
+                    "--slot-dir", slot_dir,
+                    "memory", "list",
+                ],
+            )
 
-                assert result.exit_code == 0
-                assert "Test memory content" in result.output
+            assert result.exit_code == 0
+            assert "Test memory content" in result.output
 
     def test_memory_remove_deletes_memory(self, cli_runner: CliRunner, temp_db_path: str) -> None:
         """Add a memory, remove it, verify it's gone."""
-        with tempfile.TemporaryDirectory() as artifacts_dir:
-            with tempfile.TemporaryDirectory() as slot_dir:
-                # Init
-                result = cli_runner.invoke(
-                    cli,
-                    [
-                        "--db-path", temp_db_path,
-                        "--artifacts-path", artifacts_dir,
-                        "--slot-dir", slot_dir,
-                        "init",
-                    ],
-                )
-                assert result.exit_code == 0
+        with tempfile.TemporaryDirectory() as artifacts_dir, tempfile.TemporaryDirectory() as slot_dir:
+            # Init
+            result = cli_runner.invoke(
+                cli,
+                [
+                    "--db-path", temp_db_path,
+                    "--artifacts-path", artifacts_dir,
+                    "--slot-dir", slot_dir,
+                    "init",
+                ],
+            )
+            assert result.exit_code == 0
 
-                # Add a memory
-                result = cli_runner.invoke(
-                    cli,
-                    [
-                        "--db-path", temp_db_path,
-                        "--artifacts-path", artifacts_dir,
-                        "--slot-dir", slot_dir,
-                        "memory", "add",
-                        "Memory to delete",
-                    ],
-                )
-                assert result.exit_code == 0
-                memory_id = result.output.strip().split("Saved:")[-1].strip()
+            # Add a memory
+            result = cli_runner.invoke(
+                cli,
+                [
+                    "--db-path", temp_db_path,
+                    "--artifacts-path", artifacts_dir,
+                    "--slot-dir", slot_dir,
+                    "memory", "add",
+                    "Memory to delete",
+                ],
+            )
+            assert result.exit_code == 0
+            memory_id = result.output.strip().split("Saved:")[-1].strip()
 
-                # Remove it
-                result = cli_runner.invoke(
-                    cli,
-                    [
-                        "--db-path", temp_db_path,
-                        "--artifacts-path", artifacts_dir,
-                        "--slot-dir", slot_dir,
-                        "memory", "remove", memory_id,
-                    ],
-                )
+            # Remove it
+            result = cli_runner.invoke(
+                cli,
+                [
+                    "--db-path", temp_db_path,
+                    "--artifacts-path", artifacts_dir,
+                    "--slot-dir", slot_dir,
+                    "memory", "remove", memory_id,
+                ],
+            )
 
-                assert result.exit_code == 0
-                assert "Deleted:" in result.output
+            assert result.exit_code == 0
+            assert "Deleted:" in result.output
 
-                # Verify it's gone by searching
-                result = cli_runner.invoke(
-                    cli,
-                    [
-                        "--db-path", temp_db_path,
-                        "--artifacts-path", artifacts_dir,
-                        "--slot-dir", slot_dir,
-                        "memory", "search", "delete",
-                    ],
-                )
+            # Verify it's gone by searching
+            result = cli_runner.invoke(
+                cli,
+                [
+                    "--db-path", temp_db_path,
+                    "--artifacts-path", artifacts_dir,
+                    "--slot-dir", slot_dir,
+                    "memory", "search", "delete",
+                ],
+            )
 
-                # Should show no results
-                assert result.exit_code == 0
-                assert "No memories found" in result.output
+            # Should show no results
+            assert result.exit_code == 0
+            assert "No memories found" in result.output
 
 
 class TestScheduleCommands:
@@ -280,92 +273,90 @@ class TestScheduleCommands:
 
     def test_schedule_add_and_list(self, cli_runner: CliRunner, temp_db_path: str) -> None:
         """Add a scheduled task, list tasks, verify it appears."""
-        with tempfile.TemporaryDirectory() as artifacts_dir:
-            with tempfile.TemporaryDirectory() as slot_dir:
-                # Init
-                result = cli_runner.invoke(
-                    cli,
-                    [
-                        "--db-path", temp_db_path,
-                        "--artifacts-path", artifacts_dir,
-                        "--slot-dir", slot_dir,
-                        "init",
-                    ],
-                )
-                assert result.exit_code == 0
+        with tempfile.TemporaryDirectory() as artifacts_dir, tempfile.TemporaryDirectory() as slot_dir:
+            # Init
+            result = cli_runner.invoke(
+                cli,
+                [
+                    "--db-path", temp_db_path,
+                    "--artifacts-path", artifacts_dir,
+                    "--slot-dir", slot_dir,
+                    "init",
+                ],
+            )
+            assert result.exit_code == 0
 
-                # Schedule a task for tomorrow
-                from datetime import datetime, timedelta
-                future_time = (datetime.now(UTC) + timedelta(days=1)).strftime(
-                    "%Y-%m-%dT%H:%M:%S"
-                )
+            # Schedule a task for tomorrow
+            from datetime import datetime, timedelta
+            future_time = (datetime.now(UTC) + timedelta(days=1)).strftime(
+                "%Y-%m-%dT%H:%M:%S"
+            )
 
-                result = cli_runner.invoke(
-                    cli,
-                    [
-                        "--db-path", temp_db_path,
-                        "--artifacts-path", artifacts_dir,
-                        "--slot-dir", slot_dir,
-                        "schedule", "add",
-                        "--at", future_time,
-                        "--description", "Test scheduled task",
-                        "What is the current time?",
-                    ],
-                )
+            result = cli_runner.invoke(
+                cli,
+                [
+                    "--db-path", temp_db_path,
+                    "--artifacts-path", artifacts_dir,
+                    "--slot-dir", slot_dir,
+                    "schedule", "add",
+                    "--at", future_time,
+                    "--description", "Test scheduled task",
+                    "What is the current time?",
+                ],
+            )
 
-                assert result.exit_code == 0
-                assert "Created task:" in result.output
+            assert result.exit_code == 0
+            assert "Created task:" in result.output
 
-                # List tasks
-                result = cli_runner.invoke(
-                    cli,
-                    [
-                        "--db-path", temp_db_path,
-                        "--artifacts-path", artifacts_dir,
-                        "--slot-dir", slot_dir,
-                        "schedule", "list",
-                    ],
-                )
+            # List tasks
+            result = cli_runner.invoke(
+                cli,
+                [
+                    "--db-path", temp_db_path,
+                    "--artifacts-path", artifacts_dir,
+                    "--slot-dir", slot_dir,
+                    "schedule", "list",
+                ],
+            )
 
-                assert result.exit_code == 0
-                assert "Test scheduled task" in result.output
+            assert result.exit_code == 0
+            assert "Test scheduled task" in result.output
 
     def test_schedule_add_rejects_past_time(self, cli_runner: CliRunner, temp_db_path: str) -> None:
         """Verify scheduling in the past is rejected."""
-        with tempfile.TemporaryDirectory() as artifacts_dir:
-            with tempfile.TemporaryDirectory() as slot_dir:
-                # Init
-                result = cli_runner.invoke(
-                    cli,
-                    [
-                        "--db-path", temp_db_path,
-                        "--artifacts-path", artifacts_dir,
-                        "--slot-dir", slot_dir,
-                        "init",
-                    ],
-                )
-                assert result.exit_code == 0
+        with tempfile.TemporaryDirectory() as artifacts_dir, tempfile.TemporaryDirectory() as slot_dir:
+            # Init
+            result = cli_runner.invoke(
+                cli,
+                [
+                    "--db-path", temp_db_path,
+                    "--artifacts-path", artifacts_dir,
+                    "--slot-dir", slot_dir,
+                    "init",
+                ],
+            )
+            assert result.exit_code == 0
 
-                # Try to schedule in the past
-                from datetime import datetime, timedelta
-                past_time = (datetime.now(UTC) - timedelta(hours=1)).strftime(
-                    "%Y-%m-%dT%H:%M:%S"
-                )
+            # Try to schedule in the past
+            from datetime import datetime, timedelta
+            past_time = (datetime.now(UTC) - timedelta(hours=1)).strftime(
+                "%Y-%m-%dT%H:%M:%S"
+            )
 
-                result = cli_runner.invoke(
-                    cli,
-                    [
-                        "--db-path", temp_db_path,
-                        "--artifacts-path", artifacts_dir,
-                        "--slot-dir", slot_dir,
-                        "schedule", "add",
-                        "--at", past_time,
-                        "Test prompt",
-                    ],
-                )
+            result = cli_runner.invoke(
+                cli,
+                [
+                    "--db-path", temp_db_path,
+                    "--artifacts-path", artifacts_dir,
+                    "--slot-dir", slot_dir,
+                    "schedule", "add",
+                    "--at", past_time,
+                    "Test prompt",
+                ],
+            )
 
-                assert result.exit_code == 1
-                assert "past" in result.output.lower()
+            assert result.exit_code == 1
+            assert "past" in result.output.lower()
 
 
 class TestHealthCommand:
@@ -373,35 +364,34 @@ class TestHealthCommand:
 
     def test_health_reports_failure_when_no_server(self, cli_runner: CliRunner, temp_db_path: str) -> None:
         """No inference server running, verify error output."""
-        with tempfile.TemporaryDirectory() as artifacts_dir:
-            with tempfile.TemporaryDirectory() as slot_dir:
-                # Init
-                result = cli_runner.invoke(
-                    cli,
-                    [
-                        "--db-path", temp_db_path,
-                        "--artifacts-path", artifacts_dir,
-                        "--slot-dir", slot_dir,
-                        "--inference-url", "http://localhost:59999",  # Non-existent server
-                        "init",
-                    ],
-                )
-                assert result.exit_code == 0
+        with tempfile.TemporaryDirectory() as artifacts_dir, tempfile.TemporaryDirectory() as slot_dir:
+            # Init
+            result = cli_runner.invoke(
+                cli,
+                [
+                    "--db-path", temp_db_path,
+                    "--artifacts-path", artifacts_dir,
+                    "--slot-dir", slot_dir,
+                    "--inference-url", "http://localhost:59999",  # Non-existent server
+                    "init",
+                ],
+            )
+            assert result.exit_code == 0
 
-                # Check health - should fail
-                result = cli_runner.invoke(
-                    cli,
-                    [
-                        "--db-path", temp_db_path,
-                        "--artifacts-path", artifacts_dir,
-                        "--slot-dir", slot_dir,
-                        "--inference-url", "http://localhost:59999",
-                        "health",
-                    ],
-                )
+            # Check health - should fail
+            result = cli_runner.invoke(
+                cli,
+                [
+                    "--db-path", temp_db_path,
+                    "--artifacts-path", artifacts_dir,
+                    "--slot-dir", slot_dir,
+                    "--inference-url", "http://localhost:59999",
+                    "health",
+                ],
+            )
 
-                assert result.exit_code == 1
-                assert "failed" in result.output.lower() or "error" in result.output.lower()
+            assert result.exit_code == 1
+            assert "failed" in result.output.lower() or "error" in result.output.lower()
 
 
 class TestCliHelp:
@@ -446,36 +436,35 @@ class TestStatusCommand:
 
     def test_status_shows_sections(self, cli_runner: CliRunner, temp_db_path: str) -> None:
         """Status shows all expected sections."""
-        with tempfile.TemporaryDirectory() as artifacts_dir:
-            with tempfile.TemporaryDirectory() as slot_dir:
-                # Init
-                result = cli_runner.invoke(
-                    cli,
-                    [
-                        "--db-path", temp_db_path,
-                        "--artifacts-path", artifacts_dir,
-                        "--slot-dir", slot_dir,
-                        "init",
-                    ],
-                )
-                assert result.exit_code == 0
+        with tempfile.TemporaryDirectory() as artifacts_dir, tempfile.TemporaryDirectory() as slot_dir:
+            # Init
+            result = cli_runner.invoke(
+                cli,
+                [
+                    "--db-path", temp_db_path,
+                    "--artifacts-path", artifacts_dir,
+                    "--slot-dir", slot_dir,
+                    "init",
+                ],
+            )
+            assert result.exit_code == 0
 
-                # Get status
-                result = cli_runner.invoke(
-                    cli,
-                    [
-                        "--db-path", temp_db_path,
-                        "--artifacts-path", artifacts_dir,
-                        "--slot-dir", slot_dir,
-                        "--inference-url", "http://localhost:59999",
-                        "status",
-                    ],
-                )
+            # Get status
+            result = cli_runner.invoke(
+                cli,
+                [
+                    "--db-path", temp_db_path,
+                    "--artifacts-path", artifacts_dir,
+                    "--slot-dir", slot_dir,
+                    "--inference-url", "http://localhost:59999",
+                    "status",
+                ],
+            )
 
-                # Should show sections even if inference is down
-                assert result.exit_code == 0
-                assert "Inference:" in result.output
-                assert "Sessions:" in result.output
-                assert "Turns (last 24h):" in result.output
-                assert "Scheduled Tasks:" in result.output
-                assert "Failures (last 24h):" in result.output
+            # Should show sections even if inference is down
+            assert result.exit_code == 0
+            assert "Inference:" in result.output
+            assert "Sessions:" in result.output
+            assert "Turns (last 24h):" in result.output
+            assert "Scheduled Tasks:" in result.output
+            assert "Failures (last 24h):" in result.output

@@ -1,6 +1,7 @@
 """Terminal/shell command tool."""
 
 import asyncio
+import contextlib
 import logging
 import os
 import re
@@ -81,10 +82,8 @@ def make_terminal_tool(blocked_patterns: list[str] | None = None) -> Any:
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
             except (PermissionError, ProcessLookupError, OSError):
-                try:
+                with contextlib.suppress(ProcessLookupError):
                     proc.kill()
-                except ProcessLookupError:
-                    pass
             await proc.wait()
             return f"TIMEOUT after {timeout}s"
 

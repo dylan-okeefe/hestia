@@ -18,9 +18,7 @@ def _is_relative(url: str) -> bool:
     """Return True for relative file paths, False for URLs/anchors."""
     if url.startswith(("http://", "https://", "mailto:", "#")):
         return False
-    if url.startswith("<") and url.endswith(">"):
-        return False
-    return True
+    return not (url.startswith("<") and url.endswith(">"))
 
 
 def _resolve(url: str) -> Path:

@@ -160,10 +160,7 @@ def render_args_for_human_review(tool_name: str, arguments: dict[str, Any]) -> s
     """
     truncated: dict[str, Any] = {}
     for key, value in arguments.items():
-        if isinstance(value, str):
-            text = value
-        else:
-            text = json.dumps(value)
+        text = value if isinstance(value, str) else json.dumps(value)
         if len(text) > MAX_ARG_LEN:
             text = text[:MAX_ARG_LEN] + "..."
         truncated[key] = text

@@ -7,6 +7,7 @@ import {
   activateWorkflowVersion,
   testRunWorkflow,
   updateWorkflow,
+  rotateWebhookSecret,
   fetchExecutions,
   fetchTools,
   fetchAuthStatus,
@@ -45,6 +46,7 @@ export function useWorkflowEditor(workflowId: string | undefined) {
   const [triggerSaving, setTriggerSaving] = useState(false);
   const [webhookUrl, setWebhookUrl] = useState('');
   const [webhookSecret, setWebhookSecret] = useState('');
+  const [hasWebhookSecret, setHasWebhookSecret] = useState(false);
   const [toolSchemas, setToolSchemas] = useState<ToolSchema[]>([]);
   const [tools, setTools] = useState<string[]>([]);
   const [platforms, setPlatforms] = useState<string[]>([]);
@@ -157,7 +159,9 @@ export function useWorkflowEditor(workflowId: string | undefined) {
         setTriggerConfig((wf.trigger_config || {}) as Record<string, string>);
         if (wf.trigger_type === 'webhook') {
           setWebhookUrl(wf.webhook_url || '');
-          setWebhookSecret(wf.secret || '');
+          // Secrets are reveal-once on the backend; only a rotation returns
+          // the value. Track whether one exists so the panel can offer it.
+          setHasWebhookSecret(Boolean((wf.trigger_config as Record<string, unknown>)?.has_secret));
         }
         setVersions(vs.versions);
         const active = vs.versions.find((v: WorkflowVersion) => v.activated_at !== null);
@@ -397,6 +401,20 @@ export function useWorkflowEditor(workflowId: string | undefined) {
     setTriggerConfig((prev) => ({ ...prev, [key]: value }));
   };
 
+  // The backend reveals webhook secrets exactly once (on create or rotate).
+  // Rotation is the only way to obtain a fresh value after the initial reveal.
+  const handleRotateSecret = async () => {
+    if (!workflowId) return;
+    try {
+      const { secret } = await rotateWebhookSecret(workflowId);
+      setWebhookSecret(secret);
+      setHasWebhookSecret(true);
+      addToast({ message: 'New webhook secret generated — copy it now; it will not be shown again.', type: 'success', duration: 8000 });
+    } catch (err) {
+      addToast({ message: err instanceof Error ? err.message : 'Failed to rotate secret', type: 'error', duration: 5000 });
+    }
+  };
+
   const updateSelectedNodeData = (key: string, value: unknown) => {
     if (!selectedNode) return;
     pushCurrentDebounced();
@@ -490,6 +508,8 @@ export function useWorkflowEditor(workflowId: string | undefined) {
     triggerSaving,
     webhookUrl,
     webhookSecret,
+    hasWebhookSecret,
+    handleRotateSecret,
     toolSchemas,
     tools,
     platforms,

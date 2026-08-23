@@ -316,6 +316,14 @@ export async function deleteWorkflow(id: string) {
   return res.json() as Promise<{ deleted: boolean }>;
 }
 
+export async function rotateWebhookSecret(id: string) {
+  const res = await apiFetch(`${API_BASE}/workflows/${id}/rotate-secret`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error('Failed to rotate webhook secret');
+  return res.json() as Promise<{ workflow: Workflow; secret: string }>;
+}
+
 export async function fetchWorkflowVersions(id: string) {
   const res = await apiFetch(`${API_BASE}/workflows/${id}/versions`);
   if (!res.ok) throw new Error('Failed to fetch workflow versions');

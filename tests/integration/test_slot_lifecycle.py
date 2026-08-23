@@ -41,7 +41,7 @@ class TrackedInferenceClient:
         total = 0
         for msg in messages:
             total += 10 + len(msg.content) // 4
-        for tool in tools:
+        for _tool in tools:
             total += 50
         return total
 
