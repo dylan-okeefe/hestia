@@ -17,6 +17,7 @@ from hestia.policy.gate import CapabilityRequest
 from hestia.policy.identity import Identity
 from hestia.workflows.models import ExecutionResult, NodeResult, Workflow, WorkflowEdge, WorkflowNode
 from hestia.workflows.store import WorkflowStore
+from hestia.workflows.tool_selection import resolve_invoked_tools
 
 if TYPE_CHECKING:
     from hestia.workflows.execution_store import ExecutionStore
@@ -397,23 +398,22 @@ class WorkflowExecutor:
         if gate is None:
             return
 
+        # Review defect 1: resolution lives in ONE place shared with the node
+        # executors, and fails closed on unrecognized shapes. The previous
+        # duplicate handled only str/list, so a dict-shaped tools value from
+        # interpolated inputs gated nothing while executing its keys.
+        try:
+            names = resolve_invoked_tools(node.type, node, inputs)
+        except ValueError as exc:
+            raise ValueError(
+                f"[CATEGORY: BLOCKED] Invalid tool selection in workflow "
+                f"{workflow.id} node {node.id}: {exc}"
+            ) from None
+
         actor = Identity(
             platform="workflow",
             platform_user=workflow.owner_id or workflow.id,
         )
-        names: list[str] = []
-        if node.type == "tool_call":
-            name = node.config.get("tool_name")
-            if isinstance(name, str) and name:
-                names.append(name)
-        elif node.type == "investigate":
-            # Mirror InvestigateNode._resolve precedence: inputs over config.
-            raw = inputs.get("tools", node.config.get("tools"))
-            if isinstance(raw, str):
-                names.extend(t.strip() for t in raw.split(",") if t.strip())
-            elif isinstance(raw, list):
-                names.extend(str(t) for t in raw)
-
         allow_list = set(workflow.allow_listed_tools or [])
         for tool_name in names:
             request = CapabilityRequest(
@@ -447,6 +447,8 @@ class WorkflowExecutor:
             ValueError: If the node type is not supported.
         """
         from hestia.workflows.nodes import NODE_TYPES
+
+
 
         if node.type in _GATED_NODE_TYPES:
             await self._gate_node_tools(node, inputs, workflow)

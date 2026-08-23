@@ -8,6 +8,7 @@ from typing import Any
 from hestia.app import AppContext
 from hestia.workflows.interpolation import interpolate
 from hestia.workflows.models import WorkflowNode
+from hestia.workflows.tool_selection import resolve_invoked_tools
 
 
 class ToolCallNode:
@@ -32,9 +33,9 @@ class ToolCallNode:
         Raises:
             ValueError: If ``tool_name`` is not specified.
         """
-        tool_name = node.config.get("tool_name")
-        if not tool_name:
-            raise ValueError("ToolCallNode requires 'tool_name' in config")
+        # Shared resolver keeps the gate and the node in agreement (SEC-001).
+        resolved_names = resolve_invoked_tools("tool_call", node, inputs)
+        tool_name = resolved_names[0]
 
         # Interpolate {{...}} templates in string inputs so that config
         # values like "{{data.from_address}}" resolve to actual values.

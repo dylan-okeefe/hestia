@@ -20,7 +20,7 @@ Commits, oldest first:
 
 ## Choices made (flagged for review)
 
-1. **Streaming stall now FAILS the turn** (raises InferenceTimeoutError) instead of delivering a truncated answer marked "stop" — mirrors non-streaming semantics already in the codebase. Partial streamed text stays on screen plus a failure notice.
+1. **Streaming stall now FAILS the turn** (raises InferenceTimeoutError) instead of delivering a truncated answer marked "stop" — mirrors non-streaming semantics already in the codebase. The partial answer that already streamed to the screen is ALSO persisted to history as an assistant message suffixed "[response interrupted — incomplete]", so what the user saw and what the model remembers stay in sync (review follow-up).
 2. **Retries are non-streaming-only.** Streaming turns fail fast on transient errors because partial text was already delivered and a retry would duplicate it in stream state.
 3. **Foreign keys remain OFF.** Measured 89 pre-existing FK violations in the live DB; enabling checks before cleanup would risk runtime failures. WAL + busy_timeout applied per connection instead.
 4. **Cron workflows fire via a per-minute scheduler heartbeat**, not first-class task registration (smaller, no user-visible scheduled_tasks clutter). Cron-less and command-less triggers now never match.

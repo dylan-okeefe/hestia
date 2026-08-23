@@ -875,6 +875,32 @@ class TurnExecution:
                             "(likely long prompt processing)",
                             _STREAM_FIRST_CHUNK_TIMEOUT,
                         )
+                    # Review item: persist the partial answer so history
+                    # matches what the user already saw on screen. Without
+                    # this, the next turn's context contains a user message
+                    # with no assistant reply and the model does not know
+                    # what it just said.
+                    partial = "".join(content_parts)
+                    if partial.strip():
+                        interrupted = Message(
+                            role="assistant",
+                            content=(
+                                f"{partial}\n\n"
+                                "[response interrupted — the model stopped "
+                                "mid-answer; this text is incomplete]"
+                            ),
+                        )
+                        try:
+                            await self._message_store.append_message(
+                                ctx.session.id,
+                                message_domain_to_dto(interrupted, ctx.session.id, idx=0),
+                            )
+                            ctx.running_history.append(interrupted)
+                        except Exception:  # noqa: BLE001 — best-effort persistence
+                            logger.warning(
+                                "Failed to persist partial streamed answer for %s",
+                                ctx.session.id,
+                            )
                     raise InferenceTimeoutError(
                         "Streaming inference stalled — no tokens received in time"
                     ) from None

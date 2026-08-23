@@ -320,11 +320,14 @@ class Orchestrator:
                 if trace_token is not None:
                     current_trace_store.reset(trace_token)
                 current_turn_id.reset(turn_token)
+                # Review defect 2: pair acquire/unref inside the finally so a
+                # cancelled turn (CancelledError is a BaseException and skips
+                # except-Exception handlers) cannot leak an interest ref and
+                # pin this session's lock for the process lifetime.
+                self._lock_manager.unref(session.id)
 
-        # Drop this turn's interest reference, then opportunistically prune.
-        # release_unused is waiter-aware (BUG-001): it never prunes while a
-        # contender is parked on or about to resume holding the lock object.
-        self._lock_manager.unref(session.id)
+        # Opportunistic prune; waiter-aware (BUG-001) so it never strands a
+        # contender parked on or about to resume holding the lock object.
         self._lock_manager.release_unused(session.id)
         return turn
 

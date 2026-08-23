@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -274,3 +275,36 @@ async def test_subagent_turn_on_different_session_does_not_raise() -> None:
         )
 
     assert turn_a.state == TurnState.DONE
+
+
+@pytest.mark.asyncio
+async def test_cancelled_turn_does_not_leak_lock_reference() -> None:
+    """Review defect 2: a cancelled turn must still drop its interest
+    reference (CancelledError bypasses except-Exception handlers), or the
+    session's lock becomes permanently unprunable."""
+    manager = SessionLockManager()
+
+    started = asyncio.Event()
+
+    async def turn() -> None:
+        # Mirrors engine.process_turn: acquire -> async with -> finally unref.
+        lock = await manager.acquire("sess-cancel")
+        try:
+            async with lock:
+                started.set()
+                await asyncio.Event().wait()  # hangs until cancelled
+        finally:
+            manager.unref("sess-cancel")
+
+    task = asyncio.create_task(turn())
+    await started.wait()
+
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+    # The cancelled turn released both the lock and its interest reference,
+    # so the entry is prunable.
+    manager.release_unused("sess-cancel")
+    assert "sess-cancel" not in manager._locks
+    assert "sess-cancel" not in manager._refs

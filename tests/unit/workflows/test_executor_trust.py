@@ -405,3 +405,90 @@ async def test_tool_call_node_allowed_via_allow_list(
 
     assert result.status == "ok"
     gated_app.tool_registry.call.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_investigate_tools_via_inputs_are_gated(
+    workflow_store: WorkflowStore,
+    gated_app: AppContext,
+) -> None:
+    """Review defect 1: 'tools' arriving through interpolated inputs (not
+    config) must still pass the gate."""
+    wf = Workflow(id="wf_inv_inputs", name="Inv Inputs", trust_level="paranoid")
+    await workflow_store.save_workflow(wf)
+
+    version = WorkflowVersion(
+        workflow_id="wf_inv_inputs",
+        version=1,
+        nodes=[
+            WorkflowNode(id="n1", type="investigate", label="Investigate", config={"topic": "x"})
+        ],
+        edges=[],
+        is_active=True,
+    )
+    await workflow_store.save_version(version)
+
+    executor = WorkflowExecutor(gated_app)
+    result = await executor.execute("wf_inv_inputs", {"tools": ["terminal"]})
+
+    assert result.status == "failed"
+    gated_app.tool_registry.call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_dict_shaped_tools_fail_closed(
+    workflow_store: WorkflowStore,
+    gated_app: AppContext,
+) -> None:
+    """Review defect 1: a dict-shaped tools value must be denied outright.
+
+    The previous gate duplicate handled only str/list, so
+    {'terminal': True} gated nothing and then executed its keys.
+    """
+    wf = Workflow(id="wf_dict", name="Dict Tools", trust_level="household")
+    await workflow_store.save_workflow(wf)
+
+    version = WorkflowVersion(
+        workflow_id="wf_dict",
+        version=1,
+        nodes=[
+            WorkflowNode(id="n1", type="investigate", label="Investigate", config={"topic": "x"})
+        ],
+        edges=[],
+        is_active=True,
+    )
+    await workflow_store.save_version(version)
+
+    executor = WorkflowExecutor(gated_app)
+    result = await executor.execute("wf_dict", {"tools": {"terminal": True}})
+
+    assert result.status == "failed"
+    error = result.node_results[0].error or ""
+    assert "BLOCKED" in error or "refusing to execute" in error
+    gated_app.tool_registry.call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_non_string_tool_list_entries_fail_closed(
+    workflow_store: WorkflowStore,
+    gated_app: AppContext,
+) -> None:
+    wf = Workflow(id="wf_ints", name="Int Tools", trust_level="household")
+    await workflow_store.save_workflow(wf)
+
+    version = WorkflowVersion(
+        workflow_id="wf_ints",
+        version=1,
+        nodes=[
+            WorkflowNode(id="n1", type="investigate", label="Investigate", config={"topic": "x"})
+        ],
+        edges=[],
+        is_active=True,
+    )
+    await workflow_store.save_version(version)
+
+    executor = WorkflowExecutor(gated_app)
+    result = await executor.execute("wf_ints", {"tools": [123]})
+
+    assert result.status == "failed"
+    gated_app.tool_registry.call.assert_not_called()
