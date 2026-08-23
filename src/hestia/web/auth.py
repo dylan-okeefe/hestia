@@ -188,6 +188,22 @@ class AuthManager:
         retry = int((oldest + timedelta(minutes=5) - now).total_seconds())
         return max(0, retry)
 
+    def _is_authorized_recipient(self, platform: str, platform_user: str) -> bool:
+        """SEC-002: only allowlisted identities may receive login codes.
+
+        A client-supplied recipient used to be delivered to verbatim, letting
+        anyone point codes at arbitrary chat IDs.
+        """
+        if platform == "telegram":
+            users: list[str] = self.adapters[platform]._config.allowed_users  # type: ignore[attr-defined]
+        elif platform == "matrix":
+            users = self.adapters[platform]._config.allowed_rooms  # type: ignore[attr-defined]
+        else:
+            return False
+        normalized = {u.lstrip("@").lower() for u in users}
+        candidate = platform_user.lstrip("@").lower()
+        return candidate in normalized
+
     async def request_code(self, platform: str, platform_user: str | None = None) -> dict[str, Any]:
         """Generate and send a one-time code via the requested platform.
 
@@ -195,6 +211,10 @@ class AuthManager:
         """
         self._cleanup_stale_entries()
 
+        if platform_user is not None and not self._is_authorized_recipient(
+            platform, platform_user
+        ):
+            raise ValueError("Requested recipient is not an authorized user")
         if platform_user is None:
             platform_user = self._get_configured_user(platform)
         adapter = self.adapters[platform]

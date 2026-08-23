@@ -649,6 +649,16 @@ def _validate_web_security_posture(cfg: HestiaConfig) -> None:
     if not exposed or cfg.web.allow_insecure:
         return
 
+    # SEC-006: debug login mints sessions for arbitrary user ids; it must
+    # never be silently active on an exposed interface.
+    if getattr(cfg.web, "debug_login", False):
+        raise HestiaConfigError(
+            f"web.debug_login is enabled but web.host is set to the exposed "
+            f"interface {cfg.web.host!r}. Debug login allows arbitrary "
+            f"user_id sessions. Disable it or set allow_insecure=True to "
+            f"accept the risk."
+        )
+
     # C1: auth disabled on an exposed interface is not allowed.
     if not cfg.web.auth_enabled:
         raise HestiaConfigError(

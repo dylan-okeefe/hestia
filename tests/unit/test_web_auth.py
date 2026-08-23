@@ -571,7 +571,8 @@ class TestAuthRoutes:
     def test_request_code_missing_platform(self, client: TestClient) -> None:
         response = client.post("/api/auth/request-code", json={"platform": "unknown_platform"})
         assert response.status_code == 400
-        assert "not configured" in response.json()["detail"]
+        # SEC-023: details are logged, not disclosed to anonymous callers.
+        assert response.json()["detail"] == "Cannot deliver a code for this platform or user."
 
     def test_request_code_rate_limit(self, client: TestClient, auth_manager: AuthManager) -> None:
         for _ in range(3):
@@ -606,7 +607,26 @@ class TestAuthRoutes:
         assert "Hestia dashboard code" in call_args[0][1]
 
     def test_request_code_with_platform_user(self, client: TestClient, auth_manager: AuthManager) -> None:
-        """Explicit platform_user overrides the configured default."""
+        """SEC-002: explicit platform_user is honored only when allowlisted."""
+        from unittest.mock import AsyncMock
+
+        telegram_adapter = AsyncMock()
+        telegram_adapter._config.allowed_users = ["default_user", "second_user"]  # type: ignore[attr-defined]
+        telegram_adapter.send_message = AsyncMock()
+        auth_manager.adapters["telegram"] = telegram_adapter
+
+        response = client.post(
+            "/api/auth/request-code",
+            json={"platform": "telegram", "platform_user": "second_user"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "sent"
+        call_args = telegram_adapter.send_message.call_args
+        assert call_args[0][0] == "second_user"
+
+    def test_request_code_rejects_unauthorized_recipient(self, client: TestClient, auth_manager: AuthManager) -> None:
+        """SEC-002: codes cannot be delivered to non-allowlisted chat IDs."""
         from unittest.mock import AsyncMock
 
         telegram_adapter = AsyncMock()
@@ -616,21 +636,10 @@ class TestAuthRoutes:
 
         response = client.post(
             "/api/auth/request-code",
-            json={"platform": "telegram", "platform_user": "specific_user"},
+            json={"platform": "telegram", "platform_user": "attacker_chat_id"},
         )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["status"] == "sent"
-
-        telegram_adapter.send_message.assert_called_once()
-        call_args = telegram_adapter.send_message.call_args
-        assert call_args[0][0] == "specific_user"
-        assert "Hestia dashboard code" in call_args[0][1]
-
-        # Verify the pending code was stored for the specific user
-        assert len(auth_manager._pending_codes) == 1
-        code = list(auth_manager._pending_codes.keys())[0]
-        assert auth_manager._pending_codes[code].platform_user == "specific_user"
+        assert response.status_code == 400
+        telegram_adapter.send_message.assert_not_called()
 
     def test_verify_code(self, client: TestClient, auth_manager: AuthManager) -> None:
         import asyncio

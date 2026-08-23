@@ -52,10 +52,19 @@ def make_read_file_tool(config: StorageConfig) -> Any:
             return f"File not found: {path}"
         if not await asyncio.to_thread(p.is_file):
             return f"Not a file: {path}"
-        data = (await asyncio.to_thread(p.read_bytes))[:max_bytes]
+        # PERF-011: read at most max_bytes from disk. Loading the whole file
+        # first made a multi-GB file an OOM vector.
+        def _read_bounded() -> bytes:
+            with p.open("rb") as fh:
+                return fh.read(max_bytes)
+
+        data = await asyncio.to_thread(_read_bounded)
+        truncated_note = (
+            f"\n[truncated at {max_bytes} bytes]" if len(data) >= max_bytes else ""
+        )
         try:
-            return data.decode("utf-8")
+            return data.decode("utf-8") + truncated_note
         except UnicodeDecodeError:
-            return f"Binary file ({len(data)} bytes). Not decoded."
+            return f"Binary file ({len(data)} bytes). Not decoded.{truncated_note}"
 
     return read_file

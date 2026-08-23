@@ -71,7 +71,16 @@ def make_edit_file_tool(config: StorageConfig) -> Any:
         if not await asyncio.to_thread(target.is_file):
             return f"Not a file: {path}"
 
-        content = await asyncio.to_thread(target.read_text, encoding="utf-8")
+        # PERF-011: bound the read; edit targets are source files, not dumps.
+        edit_max_bytes = 4 * 1024 * 1024
+
+        def _read_bounded() -> str:
+            with target.open("r", encoding="utf-8") as fh:
+                return fh.read(edit_max_bytes + 1)
+
+        content = await asyncio.to_thread(_read_bounded)
+        if len(content.encode("utf-8")) > edit_max_bytes:
+            return "[CATEGORY: transient_other] File too large to edit (limit 4 MB)."
         count = content.count(old_string)
         if count == 0:
             return (

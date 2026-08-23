@@ -141,7 +141,12 @@ async def update_task(
         raise HTTPException(status_code=404, detail="Task not found")
 
     caller_platform_user = get_current_platform_user(request)
-    if caller_platform_user is not None and task.session_id != caller_platform_user:
+    caller_is_admin = getattr(request.state, "role", None) == "admin"
+    if (
+        caller_platform_user is not None
+        and not caller_is_admin
+        and task.session_id != caller_platform_user
+    ):
         raise HTTPException(status_code=403, detail="Access denied")
 
     update_kwargs: dict[str, Any] = {
@@ -180,7 +185,12 @@ async def delete_task(
         raise HTTPException(status_code=404, detail="Task not found")
 
     caller_platform_user = get_current_platform_user(request)
-    if caller_platform_user is not None and task.session_id != caller_platform_user:
+    caller_is_admin = getattr(request.state, "role", None) == "admin"
+    if (
+        caller_platform_user is not None
+        and not caller_is_admin
+        and task.session_id != caller_platform_user
+    ):
         raise HTTPException(status_code=403, detail="Access denied")
 
     deleted = await ctx.scheduler_store.delete_task(task_id)
@@ -201,7 +211,12 @@ async def run_task(
         raise HTTPException(status_code=404, detail="Task not found")
 
     caller_platform_user = get_current_platform_user(request)
-    if caller_platform_user is not None and task.session_id != caller_platform_user:
+    caller_is_admin = getattr(request.state, "role", None) == "admin"
+    if (
+        caller_platform_user is not None
+        and not caller_is_admin
+        and task.session_id != caller_platform_user
+    ):
         raise HTTPException(status_code=403, detail="Access denied")
 
     await ctx.scheduler_store.run_now(task_id)

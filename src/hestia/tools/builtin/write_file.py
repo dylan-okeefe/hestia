@@ -69,7 +69,29 @@ def make_write_file_tool(
             )
 
         await asyncio.to_thread(target.parent.mkdir, parents=True, exist_ok=True)
-        await asyncio.to_thread(target.write_text, content, encoding="utf-8")
+
+        # Atomic write: crash mid-write previously left a truncated file —
+        # ironic given ADR-046's purpose. Temp file + os.replace is atomic on
+        # POSIX and Windows.
+        import os as _os
+        import tempfile as _tempfile
+
+        def _atomic_write() -> None:
+            fd, tmp_name = _tempfile.mkstemp(
+                dir=target.parent, prefix=".write_", suffix=".tmp"
+            )
+            try:
+                with _os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    fh.write(content)
+                _os.replace(tmp_name, target)
+            except BaseException:
+                try:
+                    _os.unlink(tmp_name)
+                except OSError:
+                    pass
+                raise
+
+        await asyncio.to_thread(_atomic_write)
         bytes_written = len(content.encode("utf-8"))
         return f"Wrote {bytes_written} bytes to {path}"
 

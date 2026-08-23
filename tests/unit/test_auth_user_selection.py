@@ -65,7 +65,7 @@ def mock_app() -> MagicMock:
 def telegram_adapter() -> MagicMock:
     """Provide a mocked Telegram adapter."""
     adapter = MagicMock()
-    adapter._config = MagicMock(allowed_users=["12345"])
+    adapter._config = MagicMock(allowed_users=["12345", "67890"])
     adapter.send_message = AsyncMock(return_value="msg_1")
     return adapter
 
@@ -127,18 +127,17 @@ class TestAvailableUsers:
     def test_available_users_returns_users(
         self, client: TestClient, user_store: MagicMock
     ) -> None:
-        """GET /api/auth/available-users returns users with platforms."""
+        """SEC-004: the unauthenticated picker endpoint returns only ids and
+        display names — no roles, platforms, or identity bindings."""
         user_store.list_users = AsyncMock(
             return_value=[
-                MagicMock(id="u1", display_name="Alice"),
-                MagicMock(id="u2", display_name="Bob"),
+                MagicMock(id="u1", display_name="Alice", role="admin"),
+                MagicMock(id="u2", display_name="Bob", role="user"),
             ]
         )
         user_store.get_identities = AsyncMock(
             side_effect=[
-                [
-                    MagicMock(platform="telegram", platform_user="12345"),
-                ],
+                [MagicMock(platform="telegram", platform_user="12345")],
                 [
                     MagicMock(platform="matrix", platform_user="!room:example.com"),
                     MagicMock(platform="telegram", platform_user="67890"),
@@ -150,10 +149,14 @@ class TestAvailableUsers:
         assert response.status_code == 200
         data = response.json()
         assert len(data["users"]) == 2
-        assert data["users"][0]["user_id"] == "u1"
-        assert data["users"][0]["display_name"] == "Alice"
-        assert data["users"][0]["platforms"] == ["telegram"]
-        assert set(data["users"][1]["platforms"]) == {"matrix", "telegram"}
+        assert data["users"][0] == {"user_id": "u1", "display_name": "Alice"}
+        assert data["users"][1] == {"user_id": "u2", "display_name": "Bob"}
+        assert "role" not in data["users"][0]
+        assert "identities" not in data["users"][0]
+        assert "platforms" not in data["users"][0]
+
+        # Identity lookups are no longer needed for this endpoint.
+        user_store.get_identities.assert_not_called()
 
     def test_available_users_empty_when_no_store(
         self, client: TestClient, user_store: MagicMock
@@ -177,7 +180,7 @@ class TestRequestCodeWithPlatformUser:
     def test_request_code_with_platform_user(
         self, client: TestClient, telegram_adapter: MagicMock
     ) -> None:
-        """POST /api/auth/request-code uses explicit platform_user."""
+        """SEC-002: explicit platform_user is honored when allowlisted."""
         response = client.post(
             "/api/auth/request-code",
             json={"platform": "telegram", "platform_user": "67890"},
