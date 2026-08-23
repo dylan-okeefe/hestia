@@ -24,14 +24,6 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
     await app.bootstrap_db()
     await app.start_trigger_registry()
     tasks: list[asyncio.Task[Any]] = []
-    original_close = app.inference.close
-
-    async def _noop_close() -> None:
-        pass
-
-    # Prevent individual platform runners from closing inference;
-    # we will close it centrally after everything stops.
-    app.inference.close = _noop_close  # type: ignore[method-assign]
 
     adapters: dict[str, Any] = {}
 
@@ -65,7 +57,11 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
             tasks.append(
                 asyncio.create_task(
                     run_telegram(
-                        app, config, adapter=telegram_adapter, start_scheduler=False
+                        app,
+                        config,
+                        adapter=telegram_adapter,
+                        start_scheduler=False,
+                        close_inference=False,
                     )
                 )
             )
@@ -79,7 +75,11 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
             tasks.append(
                 asyncio.create_task(
                     run_matrix(
-                        app, config, adapter=matrix_adapter, start_scheduler=False
+                        app,
+                        config,
+                        adapter=matrix_adapter,
+                        start_scheduler=False,
+                        close_inference=False,
                     )
                 )
             )
@@ -166,5 +166,4 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
             await asyncio.gather(*tasks, return_exceptions=True)
         if scheduler is not None:
             await scheduler.stop()
-        app.inference.close = original_close  # type: ignore[method-assign]
         await app.inference.close()

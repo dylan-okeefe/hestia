@@ -11,6 +11,7 @@ import re
 import tempfile
 import time
 from collections.abc import Awaitable, Callable
+from contextvars import ContextVar
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -36,6 +37,7 @@ from hestia.platforms.allowlist import (
 )
 from hestia.platforms.base import IncomingMessageCallback, Platform
 from hestia.platforms.confirmation import ConfirmationStore, render_args_for_human_review
+from hestia.policy.channel import Channel
 from hestia.voice.pipeline import get_voice_pipeline
 
 if TYPE_CHECKING:
@@ -173,6 +175,11 @@ class TelegramAdapter(Platform):
         self._last_edit_max_age = 3600.0  # 1 hour TTL
         self._confirmation_store = ConfirmationStore()
         self._confirmation_timeout_seconds = 60.0
+        # Identity ContextVars wired by the runner (set_confirmation_context)
+        # so paths that bypass PlatformRunner — voice turns — can still bind
+        # requester identity for confirmations and channel attribution.
+        self._user_context_var: ContextVar[str] | None = None
+        self._requester_context_var: ContextVar[str | None] | None = None
         self._stream_states: dict[str, dict[str, Any]] = {}
 
         # Background tasks that keep the typing indicator alive (refreshed every 4s).
@@ -585,6 +592,15 @@ class TelegramAdapter(Platform):
 
         return callback
 
+    def set_confirmation_context(
+        self,
+        user_var: ContextVar[str],
+        requester_var: ContextVar[str | None],
+    ) -> None:
+        """Bind the runner's identity ContextVars (voice-turn support)."""
+        self._user_context_var = user_var
+        self._requester_context_var = requester_var
+
     async def request_confirmation(
         self,
         user: str,
@@ -624,12 +640,32 @@ class TelegramAdapter(Platform):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        await self._app.bot.send_message(
-            chat_id=chat_id,
-            text=text,
-            parse_mode="Markdown",
-            reply_markup=reply_markup,
-        )
+        try:
+            await self._app.bot.send_message(
+                chat_id=chat_id,
+                text=text,
+                parse_mode="Markdown",
+                reply_markup=reply_markup,
+            )
+        except TelegramError as e:
+            # BUG-015: raw tool arguments routinely contain markdown
+            # metacharacters; unbalanced entities make Telegram reject the
+            # message with "can't parse entities", which used to fail the
+            # gated tool outright. Fall back to plain text — the JSON block
+            # is still perfectly readable.
+            logger.warning(
+                "Markdown confirmation prompt rejected (%s); retrying as plain text",
+                e,
+            )
+            await self._app.bot.send_message(
+                chat_id=chat_id,
+                text=(
+                    f"🔒 Tool {tool_name} wants to run:\n"
+                    f"{prompt}\n"
+                    f"Approve within {int(self._confirmation_timeout_seconds)}s?"
+                ),
+                reply_markup=reply_markup,
+            )
 
         assert req.future is not None
         try:
@@ -651,11 +687,18 @@ class TelegramAdapter(Platform):
         if not allowed:
             return False
 
-        return (
-            match_allowlist(allowed, str(user_id), case_sensitive=True)
-            or (username is not None
-                and match_allowlist(allowed, username, case_sensitive=False))
-        )
+        if username is not None:
+            # BUG-064: validation strips '@' from configured usernames, so an
+            # operator's '@alice' entry can never match PTB usernames (which
+            # never contain '@'). Compare against the bare form defensively.
+            bare_username = username.lstrip("@")
+            normalized_patterns = [entry.lstrip("@") for entry in allowed]
+            id_match = match_allowlist(allowed, str(user_id), case_sensitive=True)
+            name_match = match_allowlist(
+                normalized_patterns, bare_username, case_sensitive=False
+            )
+            return id_match or name_match
+        return match_allowlist(allowed, str(user_id), case_sensitive=True)
 
     async def _handle_start(self, update: Update, context: Any) -> None:
         """Handle /start command."""
@@ -952,11 +995,14 @@ class TelegramAdapter(Platform):
             return
 
         assert message.voice is not None
-        _user_key = str(user_id)
+        # BUG-063: in groups the session lives on the chat id; typing must
+        # target the chat the user spoke in, not their private DM.
+        _user_key = str(chat.id if (in_group and chat is not None) else user_id)
         await self.set_typing(_user_key, True)
 
         try:
             # 1. Download the .ogg file
+            ogg_path: str | None = None
             try:
                 voice_file = await message.voice.get_file(read_timeout=60.0)
                 with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as ogg:
@@ -966,6 +1012,9 @@ class TelegramAdapter(Platform):
                     ogg_path = ogg.name
             except Exception as e:  # noqa: BLE001 — voice download boundary
                 logger.warning("Failed to download voice message: %s", e)
+                if ogg_path is not None:
+                    with contextlib.suppress(OSError):
+                        os.unlink(ogg_path)
                 await message.reply_text("Sorry, I couldn't download that voice message.")
                 return
 
@@ -1058,6 +1107,19 @@ class TelegramAdapter(Platform):
                 else:
                     await message.reply_voice(voice=io.BytesIO(full_audio_ogg))
 
+            # BUG-014: bind the runner's identity ContextVars so gated tools
+            # can confirm against a real requester (previously every
+            # confirmation auto-denied), and attribute the turn to Telegram.
+            user_token = (
+                self._user_context_var.set(platform_user)
+                if self._user_context_var is not None
+                else None
+            )
+            requester_token = (
+                self._requester_context_var.set(_sender_platform_user or platform_user)
+                if self._requester_context_var is not None
+                else None
+            )
             try:
                 await self._orchestrator.process_turn(
                     session=session,
@@ -1067,10 +1129,16 @@ class TelegramAdapter(Platform):
                     platform=self,
                     platform_user=platform_user,
                     voice_reply=True,
+                    channel=Channel.TELEGRAM,
                 )
             except Exception as e:  # noqa: BLE001 — turn boundary
                 logger.exception("Turn failed for voice message from %s", user_id)
                 await message.reply_text(sanitize_user_error(e))
+            finally:
+                if requester_token is not None and self._requester_context_var is not None:
+                    self._requester_context_var.reset(requester_token)
+                if user_token is not None and self._user_context_var is not None:
+                    self._user_context_var.reset(user_token)
         finally:
             await self.set_typing(_user_key, False)
 

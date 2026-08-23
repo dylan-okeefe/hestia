@@ -355,8 +355,15 @@ async def run_platform(
         Callable[[ScheduledTask, str], Coroutine[Any, Any, None]] | None
     ) = None,
     user_context_var: ContextVar[str] | None = None,
+    close_inference: bool = True,
 ) -> None:
-    """Shared platform polling loop. Used by run_telegram and run_matrix."""
+    """Shared platform polling loop. Used by run_telegram and run_matrix.
+
+    Args:
+        close_inference: Close the shared InferenceClient on shutdown. Set to
+            False when ``hestia serve`` owns the client lifecycle centrally
+            (replaces the old ``close = noop`` monkey-patch).
+    """
 
 
     # Ensure database is ready
@@ -435,7 +442,8 @@ async def run_platform(
         if scheduler is not None:
             await scheduler.stop()
         await adapter.stop()
-        await app.inference.close()
+        if close_inference:
+            await app.inference.close()
 
 
 async def run_telegram(
@@ -443,6 +451,7 @@ async def run_telegram(
     config: HestiaConfig,
     adapter: TelegramAdapter | None = None,
     start_scheduler: bool = True,
+    close_inference: bool = True,
 ) -> None:
     """Run Hestia as a Telegram bot (blocks until Ctrl-C)."""
     if not config.inference.model_name:
@@ -460,6 +469,9 @@ async def run_telegram(
         adapter = TelegramAdapter(config.telegram)
     current_telegram_user: ContextVar[str] = ContextVar("current_telegram_user", default="")
     confirm_callback = make_telegram_confirm_callback(adapter, current_telegram_user)
+    # BUG-014: let the adapter bind these vars itself for voice turns, which
+    # bypass PlatformRunner.on_message.
+    adapter.set_confirmation_context(current_telegram_user, current_requester)
     scheduler_response_callback: (
         Callable[[ScheduledTask, str], Coroutine[Any, Any, None]] | None
     ) = None
@@ -475,6 +487,7 @@ async def run_telegram(
         user_label="user",
         scheduler_response_callback=scheduler_response_callback,
         user_context_var=current_telegram_user,
+        close_inference=close_inference,
     )
 
 
@@ -483,6 +496,7 @@ async def run_matrix(
     config: HestiaConfig,
     adapter: MatrixAdapter | None = None,
     start_scheduler: bool = True,
+    close_inference: bool = True,
 ) -> None:
     """Run Hestia as a Matrix bot (blocks until Ctrl-C)."""
     if not config.inference.model_name:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from typing import Any
 
@@ -53,6 +54,11 @@ async def run_email_poller(
         interval: Seconds between polls (default 30).
     """
     logger.info("Email poller starting (interval=%ss)", interval)
+    # BUG-017: a poison message used to be retried every poll forever,
+    # re-firing its workflow trigger every 30 seconds. Track per-UID failures
+    # and park persistent offenders instead.
+    failure_counts: dict[str, int] = {}
+    max_failures = 5
     try:
         while True:
             try:
@@ -64,12 +70,24 @@ async def run_email_poller(
                 if messages:
                     logger.info("Email poller: %d unread message(s)", len(messages))
                 for msg in messages:
+                    uid = str(msg["message_id"])
+                    if failure_counts.get(uid, 0) >= max_failures:
+                        logger.error(
+                            "Parking poison email uid=%s after %d failed attempts; "
+                            "marking read to stop redelivery",
+                            uid,
+                            max_failures,
+                        )
+                        with contextlib.suppress(Exception):
+                            await adapter.flag_message(uid, "read")
+                        failure_counts.pop(uid, None)
+                        continue
                     try:
                         full = await adapter.read_message(msg["message_id"])
                         headers = full["headers"]
                         logger.info(
                             "Processing email uid=%s from=%s subject=%s",
-                            msg["message_id"],
+                            uid,
                             headers.get("from", ""),
                             headers.get("subject", ""),
                         )
@@ -80,13 +98,18 @@ async def run_email_poller(
                             body=full.get("body", ""),
                         )
                         await adapter.flag_message(msg["message_id"], "read")
-                        logger.info("Marked email uid=%s as read", msg["message_id"])
+                        logger.info("Marked email uid=%s as read", uid)
+                        failure_counts.pop(uid, None)
                         # Brief pause between emails to avoid overwhelming
                         # downstream LLM inference with a burst of requests.
                         await asyncio.sleep(2)
                     except Exception:
+                        failure_counts[uid] = failure_counts.get(uid, 0) + 1
                         logger.exception(
-                            "Failed to process email uid=%s", msg["message_id"]
+                            "Failed to process email uid=%s (attempt %d/%d)",
+                            uid,
+                            failure_counts[uid],
+                            max_failures,
                         )
             except Exception:
                 logger.exception("Email poll failed")

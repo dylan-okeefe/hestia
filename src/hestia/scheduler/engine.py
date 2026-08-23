@@ -27,6 +27,8 @@ from hestia.platforms.notifier import PlatformNotifier
 from hestia.policy.channel import Channel
 from hestia.runtime_context import scheduler_tick_active
 
+_STALE_TURN_SWEEP_INTERVAL_S = 900
+
 logger = logging.getLogger(__name__)
 
 # Callback the scheduler invokes to deliver a task's response.
@@ -63,6 +65,7 @@ class Scheduler:
         self._memory_maintenance = memory_maintenance
         self._memory_maintenance_digest = memory_maintenance_digest
         self._tick_lock = asyncio.Lock()
+        self._last_stale_sweep: datetime | None = None
         self._stop_event = asyncio.Event()
         self._loop_task: asyncio.Task[Any] | None = None
 
@@ -127,6 +130,10 @@ class Scheduler:
         return self._backoff_next_run(now)
 
     async def _tick(self, now: datetime) -> None:
+        # BUG-035: sweep stale turns periodically. Recovery used to run only
+        # at startup, so a hung turn stayed non-terminal until restart.
+        await self._maybe_recover_stale_turns(now)
+
         # Serialize ticks so a second rapid _tick cannot interleave between
         # listing due tasks and marking them in-flight.
         async with self._tick_lock:
@@ -149,6 +156,24 @@ class Scheduler:
                 in_flight_next_run = self._in_flight_next_run(task, now)
                 await self._scheduler_store.set_next_run_at(task.id, in_flight_next_run)
                 await self._fire_task(task, now)
+
+    async def _maybe_recover_stale_turns(self, now: datetime) -> None:
+        """Run recover_stale_turns at most once per interval (BUG-035)."""
+        if (
+            self._last_stale_sweep is not None
+            and (now - self._last_stale_sweep).total_seconds()
+            < _STALE_TURN_SWEEP_INTERVAL_S
+        ):
+            return
+        self._last_stale_sweep = now
+        try:
+            recovered = await self._orchestrator.recover_stale_turns()
+            if recovered:
+                logger.warning(
+                    "Recovered %d stale turn(s) during runtime sweep", recovered
+                )
+        except Exception:
+            logger.exception("Stale-turn sweep failed")
 
     async def run_now(self, task_id: str) -> None:
         """Manually trigger a task immediately. Useful for testing and CLI."""
