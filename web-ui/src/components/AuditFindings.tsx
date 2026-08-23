@@ -27,6 +27,9 @@ export default function AuditFindings({ findings, onRefresh }: AuditFindingsProp
       const data = await runAudit();
       onRefresh(data.findings || []);
       if (data.cached_at) setCachedAt(data.cached_at);
+    } catch (err) {
+      // BUG-054: run failures were previously unhandled rejections.
+      console.error('[audit] run failed', err);
     } finally {
       setLoading(false);
     }

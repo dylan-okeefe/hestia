@@ -364,7 +364,7 @@ export default function NodePropertiesPanel({
                     type="number"
                     min={1}
                     value={(selectedNode.data.timeout_seconds as number) ?? 300}
-                    onChange={(e) => onUpdateNodeData('timeout_seconds', Number(e.target.value))}
+                    onChange={(e) => { const n = Number(e.target.value); onUpdateNodeData('timeout_seconds', e.target.value === '' || !Number.isFinite(n) || n < 1 ? undefined : n); }}
                     className="node-properties__input node-properties__input--narrow"
                   />
                 </div>

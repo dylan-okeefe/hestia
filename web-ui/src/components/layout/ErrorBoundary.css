@@ -1,0 +1,32 @@
+.error-boundary {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  text-align: center;
+}
+
+.error-boundary h1 {
+  font-size: var(--font-size-xl);
+}
+
+.error-boundary__detail {
+  max-width: 640px;
+  max-height: 200px;
+  overflow: auto;
+  padding: var(--space-3);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-alt, rgba(128, 128, 128, 0.08));
+  font-size: var(--font-size-sm);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.error-boundary__actions {
+  display: flex;
+  gap: var(--space-2);
+}

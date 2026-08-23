@@ -124,7 +124,10 @@ export default function BrowserStream() {
           if (canvas) {
             const ctx = canvas.getContext('2d');
             if (ctx) {
-              ctx.drawImage(img, 0, 0, canvasSize.width, canvasSize.height);
+              // BUG-085: draw against the live element size, not the size
+              // captured when the WebSocket memoized closure was created.
+              const rect = canvas.getBoundingClientRect();
+              ctx.drawImage(img, 0, 0, rect.width || canvas.width, rect.height || canvas.height);
             }
           }
           URL.revokeObjectURL(blobUrl);
