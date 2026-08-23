@@ -283,3 +283,61 @@ class TestCapabilityGate:
         approved = await gate.check(normal_request)
         assert approved.allowed is True
         assert approved.auto_approved is True
+
+
+class TestAllowSideAuditing:
+    """L245 item: unattended-channel decisions are audited on ALLOW as well
+    as DENY. Under allowlist-only authorization, 'the allowlist let this
+    through' is the event worth recording - and today it is silent."""
+
+    async def test_allow_listed_unattended_is_audited(
+        self, db: Database, registry: ToolRegistry
+    ) -> None:
+        cfg = HestiaConfig.default()
+        gate = make_gate(cfg, db, registry)
+        request = CapabilityRequest(
+            actor=Identity(platform="workflow", platform_user="wf-owner"),
+            channel=Channel.WORKFLOW,
+            tool_name="terminal",
+            inputs={"command": "ls"},
+            source_workflow_id="wf-1",
+        )
+        await gate.check(request, allow_list={"terminal"})
+        events = await CapabilityEventStore(db).list_recent()
+        assert len(events) == 1
+        assert events[0].decision == "allowed"
+        assert events[0].reason == "allow_listed"
+
+    async def test_non_destructive_approved_on_unattended_is_audited(
+        self, db: Database, registry: ToolRegistry
+    ) -> None:
+        cfg = HestiaConfig.default()
+        gate = make_gate(cfg, db, registry)
+        request = CapabilityRequest(
+            actor=Identity(platform="workflow", platform_user="wf-owner"),
+            channel=Channel.SCHEDULER,
+            tool_name="read_file",
+            inputs={"path": "notes.txt"},
+        )
+        result = await gate.check(request)
+        assert result.allowed is True
+        events = await CapabilityEventStore(db).list_recent()
+        assert len(events) == 1
+        assert events[0].decision == "allowed"
+
+    async def test_trusted_channel_approval_not_audited(
+        self, db: Database, registry: ToolRegistry
+    ) -> None:
+        """Bound audit noise to unattended surfaces; chat approvals stay silent."""
+        cfg = HestiaConfig.default()
+        gate = make_gate(cfg, db, registry)
+        user = await make_user(db, "Chat", "telegram", "chat-user")
+        request = CapabilityRequest(
+            actor=user,
+            channel=Channel.TELEGRAM,
+            tool_name="read_file",
+            inputs={"path": "notes.txt"},
+        )
+        await gate.check(request)
+        events = await CapabilityEventStore(db).list_recent()
+        assert len(events) == 0
