@@ -585,13 +585,47 @@ class TurnExecution:
             if history_includes_current
             else list(ctx.running_history) + [assistant_msg]
         )
+        # L245 (bypass (iv)): recovery writes used to invoke the raw handler,
+        # skipping the gate/killswitch/confirmation/audit entirely. The
+        # wrappers below route through the gated registry with an enforce
+        # context; a denial (including unattended-channel rules and the
+        # killswitch) aborts recovery instead of writing.
+        def _gated_recovery_caller(tool_name: str) -> Any:
+            async def _call(**kwargs: Any) -> Any:
+                from hestia.tools.context import ToolCallContext
+                from hestia.tools.registry import ToolBlockedError
+
+                if self._capability_gate is None:
+                    raise ToolBlockedError(
+                        "[CATEGORY: BLOCKED] no capability gate configured"
+                    )
+                channel = (
+                    ctx.channel if ctx is not None and ctx.channel is not None else Channel.CLI
+                )
+                platform_user = (
+                    ctx.platform_user
+                    if ctx is not None and ctx.platform_user is not None
+                    else ctx.session.platform_user
+                )
+                context = ToolCallContext(
+                    channel=channel,
+                    actor_platform=ctx.session.platform if ctx is not None else "system",
+                    actor_platform_user=platform_user,
+                    session_id=ctx.session.id if ctx is not None else None,
+                    injection_flagged=True,  # recovery only runs on flagged/suspect turns
+                )
+                result = await self._tools.call(tool_name, kwargs, context=context)
+                return result.content
+
+            return _call
+
         write_file_handler: Any | None = None
         append_to_file_handler: Any | None = None
         try:
-            write_file_meta = self._tools.describe("write_file")
-            write_file_handler = write_file_meta.handler
-            append_to_file_meta = self._tools.describe("append_to_file")
-            append_to_file_handler = append_to_file_meta.handler
+            self._tools.describe("write_file")
+            write_file_handler = _gated_recovery_caller("write_file")
+            self._tools.describe("append_to_file")
+            append_to_file_handler = _gated_recovery_caller("append_to_file")
         except Exception:  # noqa: BLE001
             pass
 
