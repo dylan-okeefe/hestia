@@ -6,6 +6,7 @@ import pytest
 import sqlalchemy as sa
 
 from hestia.memory.store import MemoryStore
+from hestia.memory.topics import TopicStore
 from hestia.persistence.db import Database
 from hestia.runtime_context import current_platform, current_platform_user
 from hestia.tools.builtin.memory_tools import (
@@ -189,18 +190,20 @@ class TestMemoryToolsUserScope:
         store = MemoryStore(db)
         await store.create_table()
 
+        topic_store = TopicStore(db)
+
         search_tool = make_search_memory_tool(store)
-        save_tool = make_save_memory_tool(store)
+        save_tool = make_save_memory_tool(store, topic_store)
         list_tool = make_list_memories_tool(store)
         delete_tool = make_delete_memory_tool(store)
 
-        yield store, search_tool, save_tool, list_tool, delete_tool
+        yield store, topic_store, search_tool, save_tool, list_tool, delete_tool
         await db.close()
 
     @pytest.mark.asyncio
     async def test_save_memory_tool_uses_contextvar_identity(self, tools):
         """save_memory records platform/platform_user from runtime ContextVars."""
-        store, _, save_tool, _, _ = tools
+        store, _, _, save_tool, _, _ = tools
 
         token_p = current_platform.set("cli")
         token_u = current_platform_user.set("dylan")
@@ -219,7 +222,7 @@ class TestMemoryToolsUserScope:
     @pytest.mark.asyncio
     async def test_search_memory_tool_uses_contextvar_identity(self, tools):
         """search_memory only finds memories for the current ContextVar user."""
-        store, search_tool, save_tool, _, _ = tools
+        store, _, search_tool, save_tool, _, _ = tools
 
         # Save as Alice
         token_p = current_platform.set("matrix")
@@ -253,7 +256,7 @@ class TestMemoryToolsUserScope:
     @pytest.mark.asyncio
     async def test_list_memories_tool_uses_contextvar_identity(self, tools):
         """list_memories only returns memories for the current ContextVar user."""
-        store, _, save_tool, list_tool, _ = tools
+        store, _, _, save_tool, list_tool, _ = tools
 
         token_p = current_platform.set("cli")
         token_u = current_platform_user.set("user1")

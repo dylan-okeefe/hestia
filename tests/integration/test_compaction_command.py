@@ -93,6 +93,17 @@ async def test_compact_e2e_via_app_context(app, session_store, message_store):
             pass
 
     app.__dict__["inference"] = _FakeInference()
+    # Re-create the summarizer so it holds the fake inference reference; the
+    # compactor cached property has not been accessed yet in this test.
+    from hestia.memory.compaction_summarizer import SessionCompactionSummarizer
+
+    app.__dict__["compaction_summarizer"] = SessionCompactionSummarizer(
+        inference=app.inference,
+        memory_store=app.memory_store,
+        topic_store=app.topic_store,
+        max_chars=app.config.compaction.summary_max_chars,
+        min_messages=app.config.compaction.min_messages,
+    )
 
     outcome = await app.compactor.compact(session.id)
 

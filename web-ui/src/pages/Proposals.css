@@ -118,3 +118,9 @@
   color: #991b1b;
   border-color: #fecaca;
 }
+
+.proposals-defer-btn {
+  border: var(--border-width) solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-secondary, var(--color-text));
+}

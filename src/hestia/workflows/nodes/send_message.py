@@ -36,11 +36,15 @@ class SendMessageNode:
             ValueError: If ``platform``, ``target_user``/``user``,
             or ``message``/``text`` is missing.
         """
-        platform = _resolve("platform", node, inputs)
-        conversation = _resolve(
+        # SEC-022: destinations explicitly pinned in node config take
+        # precedence over interpolated trigger payloads — an attacker-controlled
+        # webhook/chat payload must not choose where workflow-authored content
+        # is delivered. Inputs only fill gaps the author left open.
+        platform = _config_first("platform", node, inputs)
+        conversation = _config_first(
             "target_conversation", node, inputs, fallback_key="conversation"
         )
-        user = _resolve("target_user", node, inputs, fallback_key="user")
+        user = _config_first("target_user", node, inputs, fallback_key="user")
         text = _resolve("message", node, inputs, fallback_key="text")
 
         if text and isinstance(text, str):
@@ -131,6 +135,25 @@ class SendMessageNode:
                 "response": None,
                 "timed_out": True,
             }
+
+
+def _config_first(
+    key: str, node: WorkflowNode, inputs: dict[str, Any], fallback_key: str | None = None
+) -> Any:
+    """Resolve a value preferring ``node.config`` over ``inputs`` (SEC-022)."""
+    value = node.config.get(key)
+    if value is not None:
+        return value
+    if fallback_key is not None:
+        value = node.config.get(fallback_key)
+        if value is not None:
+            return value
+    value = inputs.get(key)
+    if value is not None:
+        return value
+    if fallback_key is not None:
+        return inputs.get(fallback_key)
+    return None
 
 
 def _resolve(

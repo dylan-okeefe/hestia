@@ -7,7 +7,7 @@ import json
 import logging
 import re
 import secrets
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, Callable
 from typing import Any
 
 import httpx
@@ -23,6 +23,17 @@ from hestia.errors import (
 
 logger = logging.getLogger(__name__)
 
+
+
+def _reasoning_tokens_from_usage(usage: dict[str, Any]) -> int:
+    """Extract reasoning tokens from a usage payload when the server reports
+    them (OpenAI-style completion_tokens_details). Returns 0 otherwise."""
+    details = usage.get("completion_tokens_details")
+    if isinstance(details, dict):
+        value = details.get("reasoning_tokens")
+        if isinstance(value, int) and value > 0:
+            return value
+    return 0
 
 def _strip_historical_reasoning(messages: list[Message]) -> list[Message]:
     """Strip reasoning_content from all messages before sending to API.
@@ -593,6 +604,7 @@ class InferenceClient:
             prompt_tokens=usage.get("prompt_tokens", 0),
             completion_tokens=usage.get("completion_tokens", 0),
             total_tokens=usage.get("total_tokens", 0),
+            reasoning_tokens=_reasoning_tokens_from_usage(usage),
         )
 
     async def chat_stream(
@@ -603,7 +615,7 @@ class InferenceClient:
         reasoning_budget: int = 2048,
         max_tokens: int = 1024,
         temperature: float = 0.7,
-    ) -> AsyncIterator[StreamDelta]:
+    ) -> AsyncGenerator[StreamDelta, None]:
         """POST /v1/chat/completions with streaming. Yields StreamDelta chunks.
 
         Args:
@@ -624,6 +636,10 @@ class InferenceClient:
             "temperature": temperature,
             "reasoning_budget": reasoning_budget,
         }
+        # OpenAI-compatible servers (incl. llama.cpp) return a final usage
+        # chunk when this is set, making streaming token accounting truthful
+        # (PERF-004). Servers that don't support it ignore the field.
+        request_body["stream_options"] = {"include_usage": True}
 
         if tools:
             request_body["tools"] = [t.model_dump() for t in tools]
@@ -659,6 +675,21 @@ class InferenceClient:
                         continue
                     choices = chunk.get("choices", [])
                     if not choices:
+                        # Server-side rejections arrive as {"error": {...}}
+                        # payloads with no choices. Fail fast instead of
+                        # silently dropping them and stalling until the
+                        # caller's inactivity timeout masquerades as a
+                        # truncated response (BUG-022).
+                        error = chunk.get("error")
+                        if error:
+                            detail = (
+                                error.get("message", str(error))
+                                if isinstance(error, dict)
+                                else str(error)
+                            )
+                            raise InferenceServerError(
+                                f"Streaming inference rejected by server: {detail}"
+                            )
                         # Some servers emit usage in a final chunk with empty choices
                         usage = chunk.get("usage", {})
                         if usage:
@@ -670,6 +701,7 @@ class InferenceClient:
                                 prompt_tokens=usage.get("prompt_tokens", 0),
                                 completion_tokens=usage.get("completion_tokens", 0),
                                 total_tokens=usage.get("total_tokens", 0),
+                                reasoning_tokens=_reasoning_tokens_from_usage(usage),
                             )
                         continue
                     delta = choices[0].get("delta", {})
@@ -684,6 +716,7 @@ class InferenceClient:
                         prompt_tokens=usage.get("prompt_tokens", 0),
                         completion_tokens=usage.get("completion_tokens", 0),
                         total_tokens=usage.get("total_tokens", 0),
+                        reasoning_tokens=_reasoning_tokens_from_usage(usage),
                     )
         except httpx.TimeoutException as e:
             raise InferenceTimeoutError(

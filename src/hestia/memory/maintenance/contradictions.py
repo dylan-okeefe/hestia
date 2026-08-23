@@ -33,6 +33,8 @@ class SupersessionResult:
 
     superseded_count: int
     examined_count: int
+    failed_judgements: int = 0
+    skipped_sanitized: int = 0
 
 
 class ContradictionResolver:
@@ -140,6 +142,8 @@ class ContradictionResolver:
 
         superseded_count = 0
         examined_count = 0
+        failed_judgements = 0
+        skipped_sanitized = 0
         processed_ids: set[str] = set()
 
         for memory_a, memory_b in pairs:
@@ -150,9 +154,20 @@ class ContradictionResolver:
                 continue
 
             examined_count += 1
-            contradiction, confidence, attribute, reasoning = await self._judge_pair(
-                memory_a, memory_b
-            )
+            # BUG-026: contain per-pair inference failures so one transient
+            # timeout doesn't abort the entire pass.
+            try:
+                contradiction, confidence, attribute, reasoning = await self._judge_pair(
+                    memory_a, memory_b
+                )
+            except Exception:  # noqa: BLE001 — per-pair containment is the point
+                logger.exception(
+                    "Contradiction judge failed for pair (%s, %s); skipping",
+                    memory_a.id,
+                    memory_b.id,
+                )
+                failed_judgements += 1
+                continue
 
             if not contradiction or confidence < self._confidence_threshold:
                 continue
@@ -165,12 +180,20 @@ class ContradictionResolver:
                 f" on attribute '{attribute or 'unknown'}': "
                 f"{reasoning or 'no reasoning provided'}]"
             )
-            await self._store.update(
+            # BUG-010: only soft-delete when the annotation actually landed.
+            update_ok = await self._store.update(
                 loser.id,
                 content=loser.content + note,
                 platform=platform,
                 platform_user=platform_user,
             )
+            if not update_ok:
+                logger.warning(
+                    "Skipping supersede of %s: annotation rejected by sanitizer",
+                    loser.id,
+                )
+                skipped_sanitized += 1
+                continue
             await self._store.soft_delete(
                 loser.id,
                 platform=platform,
@@ -196,6 +219,8 @@ class ContradictionResolver:
         return SupersessionResult(
             superseded_count=superseded_count,
             examined_count=examined_count,
+            failed_judgements=failed_judgements,
+            skipped_sanitized=skipped_sanitized,
         )
 
     async def _generate_candidate_pairs(

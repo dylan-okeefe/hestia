@@ -88,8 +88,11 @@ def _step_chat_and_session() -> str:
 def _step_memory() -> str:
     return (
         "Hestia can remember facts across sessions. When a session ends, key "
-        "details are summarized into long-term memory. Use /refresh to rebuild "
-        "the memory epoch for the current session from those stored memories."
+        "details are summarized into long-term memory. Use /remember-global to "
+        "save something that should always be loaded, /add-topic and /remove-topic "
+        "to manage conversation-scoped topics, and /topic to see the current topic "
+        "subscriptions. Use /refresh to rebuild the memory epoch for the current "
+        "session from those stored memories."
     )
 
 
@@ -147,7 +150,7 @@ TOUR_STEPS: list[TourStep] = [
 ]
 
 
-_COMMAND_PATTERN = re.compile(r"/[a-z][a-z0-9_]*")
+_COMMAND_PATTERN = re.compile(r"/[a-z][a-z0-9_-]*")
 
 
 def tour_command_coverage() -> set[str]:

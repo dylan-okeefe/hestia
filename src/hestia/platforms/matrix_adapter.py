@@ -32,6 +32,7 @@ from hestia.platforms.allowlist import (
 )
 from hestia.platforms.base import IncomingMessageCallback, Platform
 from hestia.platforms.confirmation import ConfirmationStore, render_args_for_human_review
+from hestia.platforms.telegram_adapter import _split_long_text
 
 if TYPE_CHECKING:
     from hestia.orchestrator.compaction import SessionCompactor
@@ -39,6 +40,9 @@ if TYPE_CHECKING:
     from hestia.persistence.session_store import SessionStore
 
 logger = logging.getLogger(__name__)
+
+
+_EDIT_TIMES_MAX_ENTRIES = 512
 
 
 class MatrixAdapter(Platform):
@@ -156,23 +160,41 @@ class MatrixAdapter(Platform):
             raise RuntimeError("Matrix adapter not started")
 
         room_id = user  # platform_user is the room ID
-        content = {
-            "msgtype": "m.text",
-            "body": text,
-        }
 
-        response = await self._client.room_send(
-            room_id=room_id,
-            message_type="m.room.message",
-            content=content,
-        )
+        # BUG-065: homeservers reject oversized events (M_TOO_LARGE), so very
+        # long responses used to fail outright. Chunk like Telegram does.
+        chunks = _split_long_text(text)
 
-        if isinstance(response, RoomSendResponse):
-            logger.debug("Sent message to %s, event_id=%s", room_id, response.event_id)
-            return str(response.event_id)
-        else:
-            logger.error("Failed to send message to %s: %s", room_id, response)
-            raise PlatformError(f"Failed to send message: {response}")
+        first_event_id: str | None = None
+        for index, chunk in enumerate(chunks):
+            content = {
+                "msgtype": "m.text",
+                "body": chunk,
+            }
+
+            response = await self._client.room_send(
+                room_id=room_id,
+                message_type="m.room.message",
+                content=content,
+            )
+
+            if isinstance(response, RoomSendResponse):
+                if index == 0:
+                    first_event_id = str(response.event_id)
+                logger.debug(
+                    "Sent chunk %d/%d to %s, event_id=%s",
+                    index + 1,
+                    len(chunks),
+                    room_id,
+                    response.event_id,
+                )
+            else:
+                logger.error(
+                    "Failed to send message chunk to %s: %s", room_id, response
+                )
+                raise PlatformError(f"Failed to send message: {response}")
+
+        return first_event_id or ""
 
     async def edit_message(
         self, user: str, msg_id: str, text: str, **kwargs: Any
@@ -181,8 +203,14 @@ class MatrixAdapter(Platform):
         if self._client is None:
             raise RuntimeError("Matrix adapter not started")
 
-        # Rate limiting
+        # Rate limiting. Prune stale entries periodically so long-lived
+        # rooms don't grow the map without bound (BUG-066).
         now = time.monotonic()
+        if len(self._last_edit_times) > _EDIT_TIMES_MAX_ENTRIES:
+            cutoff = now - self._config.rate_limit_edits_seconds * 10
+            self._last_edit_times = {
+                k: v for k, v in self._last_edit_times.items() if v >= cutoff
+            }
         last_edit = self._last_edit_times.get(msg_id, 0.0)
         elapsed = now - last_edit
         if elapsed < self._config.rate_limit_edits_seconds:
@@ -337,25 +365,27 @@ class MatrixAdapter(Platform):
 
         stripped_body = body.strip()
 
-        # Handle local slash commands before routing to the orchestrator
-        lower_body = stripped_body.lower()
-        if lower_body.startswith("/reset"):
-            await self._handle_reset(room, event)
-            return
-        if lower_body.startswith("/compact"):
-            await self._handle_compact(room, event)
-            return
-        if lower_body.startswith("/commands") or lower_body.startswith("/help"):
-            await self._handle_commands(room, event)
-            return
-        if lower_body.startswith("/tour"):
-            await self._handle_tour(room, event)
-            return
-        if lower_body.startswith("/continue"):
-            await self._handle_continue(room, event)
-            return
-        if lower_body.startswith("/endtour"):
-            await self._handle_endtour(room, event)
+        # Handle local slash commands before routing to the orchestrator.
+        # BUG-032: prefix matching made '/resetnow' trigger a destructive
+        # reset; commands must match the exact first token, mirroring
+        # Telegram's CommandHandler semantics.
+        first_token, _, _rest = stripped_body.partition(" ")
+        command = first_token.lower().lstrip("@")
+        command_handlers: dict[str, Callable[[Any, Any], Awaitable[None]]] = {
+            "/reset": self._handle_reset,
+            "/compact": self._handle_compact,
+            "/commands": self._handle_commands,
+            "/help": self._handle_commands,
+            "/tour": self._handle_tour,
+            "/continue": self._handle_continue,
+            "/endtour": self._handle_endtour,
+        }
+        handler = command_handlers.get(command)
+        if handler is not None:
+            # Trailing arguments are allowed (PTB CommandHandler parity);
+            # only an exact first-token match dispatches, so '/resetnow'
+            # is no longer mistaken for '/reset'.
+            await handler(room, event)
             return
 
         # Check if this is a reply to a pending confirmation (internal adapter concern)

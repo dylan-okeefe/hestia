@@ -1238,6 +1238,11 @@ async def test_reasoning_guardrail_nudge(make_chat_response):
         session_store=store,
         max_iterations=3,
     )
+    # Real numeric values so the thinking-budget check (now also enforced on
+    # the non-streaming path) passes and the legacy guardrail is exercised.
+    execution._policy.filter_tools.return_value = []
+    execution._policy.reasoning_budget.return_value = 2048
+    execution._policy.turn_token_budget.return_value = 40000
 
     execution._inference.chat = AsyncMock(
         return_value=make_chat_response(
@@ -1485,8 +1490,11 @@ async def test_max_tokens_passed_to_chat_stream(make_chat_response):
 
 
 @pytest.mark.asyncio
-async def test_streaming_inactivity_timeout_returns_partial_content():
-    """If the stream stalls, _run_inference_streaming returns accumulated content."""
+async def test_streaming_inactivity_timeout_fails_turn():
+    """BUG-003: a stalled stream fails the turn instead of returning a
+    truncated answer disguised as a successful stop."""
+    from hestia.errors import InferenceTimeoutError
+
     execution = TurnExecution(
         tool_registry=MagicMock(),
         inference_client=MagicMock(),
@@ -1496,13 +1504,34 @@ async def test_streaming_inactivity_timeout_returns_partial_content():
         stream=True,
     )
 
-    async def _stalled_stream(*args, **kwargs):
-        yield StreamDelta(content="partial ")
-        yield StreamDelta(content="content")
-        # Never yield another item; the wait_for should time out.
-        await asyncio.Event().wait()
+    closed = asyncio.Event()
 
-    execution._inference.chat_stream = _stalled_stream
+    class _ClosableStream:
+        """Delegating wrapper exposing aclose(), like chat_stream's return."""
+
+        def __init__(self, gen):
+            self._gen = gen
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            return await self._gen.__anext__()
+
+        async def aclose(self):
+            closed.set()
+            await self._gen.aclose()
+
+    def _make_stream(*args, **kwargs):
+        async def _g():
+            yield StreamDelta(content="partial ")
+            yield StreamDelta(content="content")
+            # Never yield another item; wait_for should time out.
+            await asyncio.Event().wait()
+
+        return _ClosableStream(_g())
+
+    execution._inference.chat_stream = _make_stream
 
     stream_callback = AsyncMock()
     ctx = TurnContext(
@@ -1515,19 +1544,22 @@ async def test_streaming_inactivity_timeout_returns_partial_content():
         stream_callback=stream_callback,
     )
 
-    with patch(
-        "hestia.orchestrator.execution._STREAM_INACTIVITY_TIMEOUT", 0.05
+    with (
+        patch("hestia.orchestrator.execution._STREAM_INACTIVITY_TIMEOUT", 0.05),
+        pytest.raises(InferenceTimeoutError),
     ):
-        result = await execution._run_inference_streaming(ctx, ctx.turn)
+        await execution._run_inference_streaming(ctx, ctx.turn)
 
-    assert result.content == "partial content"
-    assert result.finish_reason == "stop"
-    assert stream_callback.await_count == 2
+    assert stream_callback.await_count == 2  # partial text was still streamed out
+    assert closed.is_set()  # BUG-046: generator closed on early exit
 
 
 @pytest.mark.asyncio
-async def test_streaming_first_chunk_timeout_returns_empty():
-    """If the stream never yields any chunk, the first-chunk timeout fires."""
+async def test_streaming_first_chunk_timeout_raises():
+    """If the stream never yields any chunk, the first-chunk timeout fires
+    and the turn fails instead of returning an empty success."""
+    from hestia.errors import InferenceTimeoutError
+
     execution = TurnExecution(
         tool_registry=MagicMock(),
         inference_client=MagicMock(),
@@ -1554,13 +1586,12 @@ async def test_streaming_first_chunk_timeout_returns_empty():
         stream_callback=stream_callback,
     )
 
-    with patch(
-        "hestia.orchestrator.execution._STREAM_FIRST_CHUNK_TIMEOUT", 0.05
+    with (
+        patch("hestia.orchestrator.execution._STREAM_FIRST_CHUNK_TIMEOUT", 0.05),
+        pytest.raises(InferenceTimeoutError),
     ):
-        result = await execution._run_inference_streaming(ctx, ctx.turn)
+        await execution._run_inference_streaming(ctx, ctx.turn)
 
-    assert result.content == ""
-    assert result.finish_reason == "stop"
     stream_callback.assert_not_awaited()
 
 
@@ -2189,3 +2220,129 @@ def test_format_tool_status_shows_actual_tool_names() -> None:
     assert "write_file" in status
     assert "read_clipboard" in status
     assert "📋" in status
+
+
+@pytest.mark.asyncio
+async def test_transient_inference_error_retried_non_streaming():
+    """BUG-021: transient server errors consult policy.retry_after_error and
+    retry with backoff instead of failing the turn immediately."""
+    from hestia.errors import InferenceServerError
+    from hestia.policy.engine import RetryAction, RetryDecision
+
+    store = MagicMock()
+    store.append_message = AsyncMock()
+    builder = MagicMock()
+    builder.build = AsyncMock(return_value=MagicMock(messages=[]))
+
+    execution = TurnExecution(
+        tool_registry=MagicMock(),
+        inference_client=MagicMock(),
+        policy=MagicMock(),
+        context_builder=builder,
+        session_store=store,
+        max_iterations=3,
+    )
+    execution._policy.filter_tools.return_value = []
+    execution._policy.reasoning_budget.return_value = 2048
+    execution._policy.turn_token_budget.return_value = 40000
+    execution._policy.retry_after_error.return_value = RetryDecision(
+        action=RetryAction.RETRY_WITH_BACKOFF, backoff_seconds=0.0
+    )
+
+    ok = MagicMock()
+    ok.content = "recovered"
+    ok.tool_calls = []
+    ok.reasoning_content = None
+    ok.finish_reason = "stop"
+    ok.prompt_tokens = 1
+    ok.completion_tokens = 1
+    ok.total_tokens = 2
+
+    calls = {"n": 0}
+
+    async def _flaky_chat(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise InferenceServerError("503 bad gateway")
+        return ok
+
+    execution._inference.chat = _flaky_chat
+
+    ctx = TurnContext(
+        turn=_make_turn(),
+        user_message=Message(role="user", content="hello"),
+        system_prompt="",
+        respond_callback=AsyncMock(),
+        session=_make_session(),
+        build_result=MagicMock(messages=[]),
+    )
+
+    transition = AsyncMock()
+    state = await execution.run(ctx, transition, AsyncMock())
+    assert calls["n"] == 2  # first attempt failed, second succeeded
+    assert state == "recovered"
+    # The turn passed through RETRYING between the two attempts.
+    assert any(
+        len(c.args) >= 2 and c.args[1] is TurnState.RETRYING
+        for c in transition.await_args_list
+    )
+
+
+@pytest.mark.asyncio
+async def test_thinking_budget_enforced_non_streaming():
+    """BUG-020: runaway reasoning on the non-streaming path triggers the
+    abort+nudge machinery (previously dead code with stream=False)."""
+    store = MagicMock()
+    store.append_message = AsyncMock()
+    builder = MagicMock()
+    builder.build = AsyncMock(return_value=MagicMock(messages=[]))
+
+    execution = TurnExecution(
+        tool_registry=MagicMock(),
+        inference_client=MagicMock(),
+        policy=MagicMock(),
+        context_builder=builder,
+        session_store=store,
+        max_iterations=3,
+    )
+    execution._policy.filter_tools.return_value = []
+    # Tiny budget so the oversized reasoning trips the guard.
+    execution._policy.reasoning_budget.return_value = 100
+    execution._policy.turn_token_budget.return_value = 40000
+
+    runaway = MagicMock()
+    runaway.content = ""
+    runaway.tool_calls = []
+    runaway.reasoning_content = "x" * 5000
+    runaway.finish_reason = "stop"
+
+    recovered = MagicMock()
+    recovered.content = "done"
+    recovered.tool_calls = []
+    recovered.reasoning_content = None
+    recovered.finish_reason = "stop"
+    recovered.prompt_tokens = 1
+    recovered.completion_tokens = 1
+    recovered.total_tokens = 2
+
+    responses = [runaway, recovered]
+
+    async def _chat(*args, **kwargs):
+        return responses.pop(0)
+
+    execution._inference.chat = _chat
+
+    ctx = TurnContext(
+        turn=_make_turn(),
+        user_message=Message(role="user", content="hello"),
+        system_prompt="",
+        respond_callback=AsyncMock(),
+        session=_make_session(),
+        build_result=MagicMock(messages=[]),
+    )
+
+    await execution.run(ctx, AsyncMock(), AsyncMock())
+
+    # First call tripped the budget; second call ran with thinking_aborted.
+    assert ctx.turn.thinking_aborted is True
+    assert len(responses) == 0

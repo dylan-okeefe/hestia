@@ -84,11 +84,22 @@ export default function CronBuilder({ value, onChange }: CronBuilderProps) {
   }, []);
 
   useEffect(() => {
+    // BUG-057: switching to Custom used to emit an empty expression,
+    // silently wiping the schedule (and empty validated clean, so nothing
+    // warned). Seed Custom from the current cron instead of clearing it.
+    if (frequency === 'custom' && !custom.trim()) {
+      if (value.trim()) {
+        setCustom(value);
+        validate(value);
+      }
+      return;
+    }
     const cron = buildCron(frequency, dailyHour, dailyMinute, selectedDays, custom);
     if (cron !== value) {
       onChange(cron);
     }
     validate(cron);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [frequency, dailyHour, dailyMinute, selectedDays, custom]);
 
   const validate = (v: string) => {

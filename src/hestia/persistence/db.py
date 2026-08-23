@@ -44,6 +44,22 @@ class Database:
             echo=False,
             future=True,
         )
+        # BUG-008: SQLite ships with journal_mode=delete and no busy_timeout,
+        # so readers block writers and simultaneous writes raise
+        # "database is locked" unhandled. WAL mode is persistent once set;
+        # busy_timeout must be applied to *every* pooled connection via the
+        # sync-engine connect event.
+        if self._url.startswith("sqlite"):
+            from sqlalchemy import event
+
+            @event.listens_for(self._engine.sync_engine, "connect")
+            def _set_sqlite_pragmas(dbapi_conn: Any, _record: Any) -> None:
+                cursor = dbapi_conn.cursor()
+                # WAL is persistent but idempotent; cheap to re-issue.
+                cursor.execute("PRAGMA journal_mode=WAL")
+                cursor.execute("PRAGMA busy_timeout=5000")
+                cursor.close()
+
         # Verify connection
         async with self._engine.connect() as conn:
             await conn.execute(sa.text("SELECT 1"))

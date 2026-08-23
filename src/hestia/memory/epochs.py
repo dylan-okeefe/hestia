@@ -96,6 +96,8 @@ class MemoryEpochCompiler:
 
         # 1. Global memories first, up to the soft cap.
         for mem in global_memories:
+            if mem.id in seen_ids:
+                continue
             mem_tokens = self._estimate_memory_tokens(mem)
             if used_tokens + mem_tokens > global_cap_tokens:
                 break

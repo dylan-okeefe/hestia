@@ -14,6 +14,8 @@ from hestia.core.types import ChatResponse, Message, Session, ToolCall
 from hestia.diagnostics import regression_collector
 from hestia.errors import (
     EmptyResponseError,
+    InferenceServerError,
+    InferenceTimeoutError,
     MaxIterationsError,
     PolicyFailureError,
     ThinkingBudgetExceededError,
@@ -50,6 +52,7 @@ TypingCallback = Callable[[bool], Awaitable[None]]
 # arrives for this long we assume the stream is dead and finish.  Tool-call
 # argument JSON can be large, and local models can stall between tokens, so
 # this needs to be generous enough for the server to finish emitting a chunk.
+_INFERENCE_RETRY_MAX_BACKOFF_S = 5.0
 _STREAM_INACTIVITY_TIMEOUT = 120.0
 
 # First-chunk timeout: prompt processing for long contexts can take tens of
@@ -327,45 +330,96 @@ class TurnExecution:
             if turn.thinking_aborted:
                 turn.reasoning_budget = 0
 
-            try:
-                if ctx.stream_callback is not None and self._stream:
-                    chat_response = await self._run_inference_streaming(ctx, turn)
-                else:
-                    chat_response = await self._inference.chat(
-                        messages=ctx.build_result.messages,
-                        tools=ctx.tools,
-                        slot_id=ctx.slot_id,
-                        reasoning_budget=turn.reasoning_budget,
-                        max_tokens=self._max_tokens,
+            inference_attempt = 0
+            while True:
+                try:
+                    if ctx.stream_callback is not None and self._stream:
+                        chat_response = await self._run_inference_streaming(ctx, turn)
+                    else:
+                        chat_response = await self._inference.chat(
+                            messages=ctx.build_result.messages,
+                            tools=ctx.tools,
+                            slot_id=ctx.slot_id,
+                            reasoning_budget=turn.reasoning_budget,
+                            max_tokens=self._max_tokens,
+                        )
+                        # BUG-020: enforce the thinking budget on the
+                        # non-streaming path too. The check used to exist only
+                        # in the streaming loop, so runaway <think> output
+                        # burned up to max_tokens unchecked and the abort +
+                        # nudge machinery below was dead code with stream=False.
+                        reasoning = chat_response.reasoning_content
+                        if reasoning and not turn.thinking_aborted:
+                            thinking_chars = len(reasoning)
+                            if thinking_chars > turn.reasoning_budget * 4:
+                                logger.warning(
+                                    "Thinking budget exceeded (%d chars ≈ %d tokens > %d budget)",
+                                    thinking_chars,
+                                    thinking_chars // 4,
+                                    turn.reasoning_budget,
+                                )
+                                raise ThinkingBudgetExceededError(
+                                    f"Thinking budget exceeded ({thinking_chars // 4} tokens > "
+                                    f"{turn.reasoning_budget})"
+                                )
+                    break
+                except ThinkingBudgetExceededError:
+                    await transition(turn, TurnState.RETRYING, "")
+                    turn.thinking_aborted = True
+                    nudge = Message(
+                        role="system",
+                        content=(
+                            "You have been thinking for a long time. "
+                            "Stop deliberating and use your tools to complete the task."
+                        ),
+                        created_at=utcnow(),
                     )
-            except ThinkingBudgetExceededError:
-                await transition(turn, TurnState.RETRYING, "")
-                turn.thinking_aborted = True
-                nudge = Message(
-                    role="system",
-                    content=(
-                        "You have been thinking for a long time. "
-                        "Stop deliberating and use your tools to complete the task."
-                    ),
-                    created_at=utcnow(),
-                )
-                await self._message_store.append_message(
-                    session.id, message_domain_to_dto(nudge, session.id, idx=0)
-                )
-                ctx.running_history.append(nudge)
-                self._builder.set_style_prefix(ctx.style_prefix)
-                ctx.build_result = await self._builder.build(
-                    session=ctx.session,
-                    history=ctx.running_history,
-                    system_prompt=ctx.system_prompt,
-                    tools=ctx.tools,
-                    new_user_message=None,
-                )
-                turn.iterations += 1
-                continue
+                    await self._message_store.append_message(
+                        session.id, message_domain_to_dto(nudge, session.id, idx=0)
+                    )
+                    ctx.running_history.append(nudge)
+                    self._builder.set_style_prefix(ctx.style_prefix)
+                    ctx.build_result = await self._builder.build(
+                        session=ctx.session,
+                        history=ctx.running_history,
+                        system_prompt=ctx.system_prompt,
+                        tools=ctx.tools,
+                        new_user_message=None,
+                    )
+                    turn.iterations += 1
+                    # The abort must stick across attempts: force the zeroed
+                    # budget here because this inner retry loop does not
+                    # recompute it from the policy.
+                    turn.reasoning_budget = 0
+                    continue
+                except (InferenceServerError, InferenceTimeoutError) as exc:
+                    # BUG-021: the policy's transient-error retry decision was
+                    # never consulted (only ThinkingBudgetExceededError was
+                    # caught here), so one server blip failed the whole turn.
+                    if ctx.stream_callback is not None and self._stream:
+                        # Streaming turns fail fast: partial text has already
+                        # been delivered to the user, and re-running would
+                        # duplicate it in the accumulated stream state.
+                        raise
+                    decision = self._policy.retry_after_error(exc, inference_attempt)
+                    if decision.action is not RetryAction.RETRY_WITH_BACKOFF:
+                        raise
+                    inference_attempt += 1
+                    delay = min(decision.backoff_seconds, _INFERENCE_RETRY_MAX_BACKOFF_S)
+                    logger.warning(
+                        "Transient inference error (%s); retry %d in %.1fs",
+                        exc,
+                        inference_attempt,
+                        delay,
+                    )
+                    await transition(turn, TurnState.RETRYING, "")
+                    await asyncio.sleep(delay)
 
             ctx.total_prompt_tokens += getattr(chat_response, "prompt_tokens", 0) or 0
             ctx.total_completion_tokens += getattr(chat_response, "completion_tokens", 0) or 0
+            # BUG-079: accumulate server-reported reasoning tokens so trace
+            # records stop being permanently None on thinking-heavy turns.
+            ctx.total_reasoning_tokens += getattr(chat_response, "reasoning_tokens", 0) or 0
 
             assistant_msg = Message(
                 role="assistant",
@@ -771,6 +825,7 @@ class TurnExecution:
         prompt_tokens = 0
         completion_tokens = 0
         total_tokens = 0
+        reasoning_tokens_acc = 0
 
         assert ctx.build_result is not None
         assert ctx.stream_callback is not None
@@ -783,154 +838,194 @@ class TurnExecution:
             max_tokens=self._max_tokens,
         )
 
-        any_chunk_received = False
-        while True:
-            # Use a longer timeout for the very first chunk because the model
-            # server may still be processing a long prompt without emitting
-            # tokens.  After tokens start flowing, switch to the tight timeout.
-            timeout = (
-                _STREAM_INACTIVITY_TIMEOUT
-                if any_chunk_received
-                else _STREAM_FIRST_CHUNK_TIMEOUT
-            )
-            try:
-                delta = await asyncio.wait_for(stream.__anext__(), timeout=timeout)
-            except StopAsyncIteration:
-                break
-            except TimeoutError:
-                if any_chunk_received:
-                    logger.warning(
-                        "Streaming inference inactive for %.1fs; finishing with %d content "
-                        "chars and %d tool-call buffers accumulated so far",
-                        _STREAM_INACTIVITY_TIMEOUT,
-                        sum(len(p) for p in content_parts),
-                        len(tool_call_buffers),
-                    )
-                else:
-                    logger.warning(
-                        "Streaming inference produced no chunks within %.1fs "
-                        "(likely long prompt processing); finishing empty",
-                        _STREAM_FIRST_CHUNK_TIMEOUT,
-                    )
-                if finish_reason == "unknown":
-                    finish_reason = "stop"
-                break
-
-            any_chunk_received = True
-
-            if delta.reasoning_content and not turn.thinking_aborted:
-                thinking_chars = sum(len(p) for p in reasoning_parts) + len(delta.reasoning_content)
-                # Rough token estimate: 4 characters per token
-                if thinking_chars > turn.reasoning_budget * 4:
-                    logger.warning(
-                        "Thinking budget exceeded (%d chars ≈ %d tokens > %d budget)",
-                        thinking_chars,
-                        thinking_chars // 4,
-                        turn.reasoning_budget,
-                    )
-                    raise ThinkingBudgetExceededError(
-                        f"Thinking budget exceeded ({thinking_chars // 4} tokens > "
-                        f"{turn.reasoning_budget})"
-                    )
-
-            if delta.content:
-                content_parts.append(delta.content)
-                await ctx.stream_callback(delta.content)
-
-            if delta.reasoning_content:
-                reasoning_parts.append(delta.reasoning_content)
-
-            if delta.tool_call_chunks:
-                for tc in delta.tool_call_chunks:
-                    idx = tc.get("index", 0)
-                    if idx not in tool_call_buffers:
-                        tool_call_buffers[idx] = {"id": "", "name": "", "arguments": ""}
-                    if tc.get("id"):
-                        tool_call_buffers[idx]["id"] = tc["id"]
-                    fn = tc.get("function", {}) or {}
-                    if fn.get("name"):
-                        tool_call_buffers[idx]["name"] = fn["name"]
-                    if fn.get("arguments"):
-                        tool_call_buffers[idx]["arguments"] += fn["arguments"]
-
-            if delta.finish_reason is not None:
-                finish_reason = delta.finish_reason
-
-            if delta.prompt_tokens or delta.completion_tokens or delta.total_tokens:
-                prompt_tokens = delta.prompt_tokens
-                completion_tokens = delta.completion_tokens
-                total_tokens = delta.total_tokens
-
-        content = "".join(content_parts)
-        reasoning_content = "".join(reasoning_parts) if reasoning_parts else None
-
-        tool_calls: list[ToolCall] = []
-        for idx in sorted(tool_call_buffers.keys()):
-            buf = tool_call_buffers[idx]
-            if not buf["name"]:
-                continue
-            try:
-                arguments = json.loads(buf["arguments"]) if buf["arguments"] else {}
-            except json.JSONDecodeError as exc:
-                repaired = repair_json(buf["arguments"]) if buf["arguments"] else None
-                if repaired is not None:
-                    logger.info(
-                        "Repaired malformed tool_call arguments for %r in streaming path",
-                        buf["name"],
-                    )
-                    arguments = json.loads(repaired)
-                else:
-                    logger.warning(
-                        "tool_call arguments for %r are malformed JSON (%s); treating as empty",
-                        buf["name"],
-                        exc,
-                    )
-                    arguments = {}
-            if not isinstance(arguments, dict):
-                logger.warning(
-                    "tool_call arguments for %r are not a dict: %s",
-                    buf["name"],
-                    type(arguments).__name__,
+        try:
+            # BUG-046: guarantee the suspended SSE generator is closed when we
+            # exit early (timeout, thinking-budget abort, cancellation) so the
+            # HTTP connection releases now instead of at GC time.
+            any_chunk_received = False
+            while True:
+                # Use a longer timeout for the very first chunk because the model
+                # server may still be processing a long prompt without emitting
+                # tokens.  After tokens start flowing, switch to the tight timeout.
+                timeout = (
+                    _STREAM_INACTIVITY_TIMEOUT
+                    if any_chunk_received
+                    else _STREAM_FIRST_CHUNK_TIMEOUT
                 )
-                continue
-            tool_calls.append(
-                ToolCall(
-                    id=buf["id"] or f"call_{idx}",
-                    name=buf["name"],
-                    arguments=arguments,
-                )
-            )
+                try:
+                    delta = await asyncio.wait_for(stream.__anext__(), timeout=timeout)
+                except StopAsyncIteration:
+                    break
+                except TimeoutError:
+                    # BUG-003: a stalled stream used to be converted into a fake
+                    # successful stop, delivering a truncated answer as if
+                    # complete. The non-streaming path raises InferenceTimeoutError
+                    # and fails the turn; streaming now behaves identically.
+                    if any_chunk_received:
+                        logger.warning(
+                            "Streaming inference inactive for %.1fs after %d content "
+                            "chars and %d tool-call buffers; failing the turn",
+                            _STREAM_INACTIVITY_TIMEOUT,
+                            sum(len(p) for p in content_parts),
+                            len(tool_call_buffers),
+                        )
+                    else:
+                        logger.warning(
+                            "Streaming inference produced no chunks within %.1fs "
+                            "(likely long prompt processing)",
+                            _STREAM_FIRST_CHUNK_TIMEOUT,
+                        )
+                    # Review item: persist the partial answer so history
+                    # matches what the user already saw on screen. Without
+                    # this, the next turn's context contains a user message
+                    # with no assistant reply and the model does not know
+                    # what it just said.
+                    partial = "".join(content_parts)
+                    if partial.strip():
+                        interrupted = Message(
+                            role="assistant",
+                            content=(
+                                f"{partial}\n\n"
+                                "[response interrupted — the model stopped "
+                                "mid-answer; this text is incomplete]"
+                            ),
+                        )
+                        try:
+                            await self._message_store.append_message(
+                                ctx.session.id,
+                                message_domain_to_dto(interrupted, ctx.session.id, idx=0),
+                            )
+                            ctx.running_history.append(interrupted)
+                        except Exception:  # noqa: BLE001 — best-effort persistence
+                            logger.warning(
+                                "Failed to persist partial streamed answer for %s",
+                                ctx.session.id,
+                            )
+                    raise InferenceTimeoutError(
+                        "Streaming inference stalled — no tokens received in time"
+                    ) from None
 
-        # Fallback: Qwen3.5 in reasoning mode sometimes emits tool calls inside
-        # <think> blocks (which land in reasoning_content) but omits the structured
-        # tool_call_chunks. Parse XML-style <tool_call> tags as a safety net.
-        if not tool_calls:
-            combined = ""
-            if reasoning_content:
-                combined += reasoning_content + "\n"
-            if content:
-                combined += content + "\n"
-            if combined:
-                fallback = _extract_tool_calls_from_text(combined)
-                if fallback:
-                    tool_calls = fallback
-                    logger.info(
-                        "Recovered %d tool call(s) from reasoning/content XML fallback",
-                        len(tool_calls),
+                any_chunk_received = True
+
+                if delta.reasoning_content and not turn.thinking_aborted:
+                    thinking_chars = sum(len(p) for p in reasoning_parts) + len(delta.reasoning_content)
+                    # Rough token estimate: 4 characters per token
+                    if thinking_chars > turn.reasoning_budget * 4:
+                        logger.warning(
+                            "Thinking budget exceeded (%d chars ≈ %d tokens > %d budget)",
+                            thinking_chars,
+                            thinking_chars // 4,
+                            turn.reasoning_budget,
+                        )
+                        raise ThinkingBudgetExceededError(
+                            f"Thinking budget exceeded ({thinking_chars // 4} tokens > "
+                            f"{turn.reasoning_budget})"
+                        )
+
+                if delta.content:
+                    content_parts.append(delta.content)
+                    await ctx.stream_callback(delta.content)
+
+                if delta.reasoning_content:
+                    reasoning_parts.append(delta.reasoning_content)
+
+                if delta.tool_call_chunks:
+                    for tc in delta.tool_call_chunks:
+                        idx = tc.get("index", 0)
+                        if idx not in tool_call_buffers:
+                            tool_call_buffers[idx] = {"id": "", "name": "", "arguments": ""}
+                        if tc.get("id"):
+                            tool_call_buffers[idx]["id"] = tc["id"]
+                        fn = tc.get("function", {}) or {}
+                        if fn.get("name"):
+                            tool_call_buffers[idx]["name"] = fn["name"]
+                        if fn.get("arguments"):
+                            tool_call_buffers[idx]["arguments"] += fn["arguments"]
+
+                if delta.finish_reason is not None:
+                    finish_reason = delta.finish_reason
+
+                if delta.prompt_tokens or delta.completion_tokens or delta.total_tokens:
+                    prompt_tokens = delta.prompt_tokens
+                    completion_tokens = delta.completion_tokens
+                    total_tokens = delta.total_tokens
+                if delta.reasoning_tokens:
+                    reasoning_tokens_acc = delta.reasoning_tokens
+
+            content = "".join(content_parts)
+            reasoning_content = "".join(reasoning_parts) if reasoning_parts else None
+
+            tool_calls: list[ToolCall] = []
+            for idx in sorted(tool_call_buffers.keys()):
+                buf = tool_call_buffers[idx]
+                if not buf["name"]:
+                    continue
+                try:
+                    arguments = json.loads(buf["arguments"]) if buf["arguments"] else {}
+                except json.JSONDecodeError as exc:
+                    repaired = repair_json(buf["arguments"]) if buf["arguments"] else None
+                    if repaired is not None:
+                        logger.info(
+                            "Repaired malformed tool_call arguments for %r in streaming path",
+                            buf["name"],
+                        )
+                        arguments = json.loads(repaired)
+                    else:
+                        logger.warning(
+                            "tool_call arguments for %r are malformed JSON (%s); treating as empty",
+                            buf["name"],
+                            exc,
+                        )
+                        arguments = {}
+                if not isinstance(arguments, dict):
+                    logger.warning(
+                        "tool_call arguments for %r are not a dict: %s",
+                        buf["name"],
+                        type(arguments).__name__,
                     )
+                    continue
+                tool_calls.append(
+                    ToolCall(
+                        id=buf["id"] or f"call_{idx}",
+                        name=buf["name"],
+                        arguments=arguments,
+                    )
+                )
 
-        if finish_reason == "unknown" and tool_calls:
-            finish_reason = "tool_calls"
+            # Fallback: Qwen3.5 in reasoning mode sometimes emits tool calls inside
+            # <think> blocks (which land in reasoning_content) but omits the structured
+            # tool_call_chunks. Parse XML-style <tool_call> tags as a safety net.
+            if not tool_calls:
+                combined = ""
+                if reasoning_content:
+                    combined += reasoning_content + "\n"
+                if content:
+                    combined += content + "\n"
+                if combined:
+                    fallback = _extract_tool_calls_from_text(combined)
+                    if fallback:
+                        tool_calls = fallback
+                        logger.info(
+                            "Recovered %d tool call(s) from reasoning/content XML fallback",
+                            len(tool_calls),
+                        )
 
-        return ChatResponse(
-            content=content,
-            reasoning_content=reasoning_content,
-            tool_calls=tool_calls,
-            finish_reason=finish_reason,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            total_tokens=total_tokens,
-        )
+            if finish_reason == "unknown" and tool_calls:
+                finish_reason = "tool_calls"
+
+            return ChatResponse(
+                content=content,
+                reasoning_content=reasoning_content,
+                tool_calls=tool_calls,
+                finish_reason=finish_reason,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                reasoning_tokens=reasoning_tokens_acc,
+            )
+        finally:
+            with contextlib.suppress(Exception):
+                await stream.aclose()
 
     async def _execute_tool_calls(
         self,

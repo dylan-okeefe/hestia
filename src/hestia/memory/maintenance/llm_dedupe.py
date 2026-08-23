@@ -39,6 +39,8 @@ class LLMDedupeResult:
 
     merged_count: int
     examined_count: int
+    failed_judgements: int = 0
+    skipped_sanitized: int = 0
 
 
 class LLMDeduper:
@@ -139,6 +141,8 @@ class LLMDeduper:
 
         merged_count = 0
         examined_count = 0
+        failed_judgements = 0
+        skipped_sanitized = 0
         processed_ids: set[str] = set()
 
         for memory_a, memory_b in pairs:
@@ -149,9 +153,20 @@ class LLMDeduper:
                 continue
 
             examined_count += 1
-            duplicate, confidence, merged_content = await self._judge_pair(
-                memory_a, memory_b
-            )
+            # BUG-026: one transient inference failure used to abort the whole
+            # weekly pass; judge each pair independently and keep going.
+            try:
+                duplicate, confidence, merged_content = await self._judge_pair(
+                    memory_a, memory_b
+                )
+            except Exception:  # noqa: BLE001 — per-pair containment is the point
+                logger.exception(
+                    "LLM dedupe judge failed for pair (%s, %s); skipping",
+                    memory_a.id,
+                    memory_b.id,
+                )
+                failed_judgements += 1
+                continue
 
             if not duplicate or confidence < self._confidence_threshold:
                 continue
@@ -167,13 +182,24 @@ class LLMDeduper:
             final_tags = _merge_tags(winner, loser)
             scope_str = format_scope_key(_scope_key(winner))
 
-            await self._store.update(
+            # BUG-010: don't soft-delete the loser if the sanitizer rejected
+            # the merged content — that would record a successful merge while
+            # actually losing information.
+            update_ok = await self._store.update(
                 winner.id,
                 content=final_content,
                 tags=final_tags,
                 platform=platform,
                 platform_user=platform_user,
             )
+            if not update_ok:
+                logger.warning(
+                    "Skipping LLM dedupe merge for winner %s: "
+                    "merged content rejected by sanitizer",
+                    winner.id,
+                )
+                skipped_sanitized += 1
+                continue
             await self._store.soft_delete(
                 loser.id,
                 platform=platform,
@@ -198,6 +224,8 @@ class LLMDeduper:
         return LLMDedupeResult(
             merged_count=merged_count,
             examined_count=examined_count,
+            failed_judgements=failed_judgements,
+            skipped_sanitized=skipped_sanitized,
         )
 
     async def _generate_candidate_pairs(

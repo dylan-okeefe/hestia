@@ -172,10 +172,16 @@ class TriggerRegistry:
         return matched
 
     def _command_matches(self, workflow: Workflow, payload: Any) -> bool:
-        """Check if a chat_command payload matches the workflow trigger config."""
+        """Check if a chat_command payload matches the workflow trigger config.
+
+        SEC-021: match-all was removed. A command-less chat_command trigger
+        used to fire on every slash-command from every user, feeding raw
+        user text into prompts (a prompt-injection surface). Require the
+        command at activation time via validate_workflow_graph.
+        """
         command = workflow.trigger_config.get("command")
-        if command is None:
-            return True
+        if not command:
+            return False
         if not isinstance(payload, dict):
             return False
         payload_command = payload.get("command")
@@ -192,10 +198,14 @@ class TriggerRegistry:
         return bool(payload_endpoint == endpoint)
 
     def _schedule_matches(self, workflow: Workflow, payload: Any) -> bool:
-        """Check if a schedule payload matches the workflow trigger config."""
+        """Check if a schedule payload matches the workflow trigger config.
+
+        BUG-005: a cron-less schedule workflow used to match *every*
+        system-wide schedule_fired event; require a real cron expression.
+        """
         cron = workflow.trigger_config.get("cron")
-        if cron is None:
-            return True
+        if not cron:
+            return False
         if not isinstance(payload, dict):
             return False
         from datetime import datetime
@@ -262,7 +272,15 @@ class TriggerRegistry:
         return bool(payload_tool_name == tool_name)
 
     def _workflow_completed_matches(self, workflow: Workflow, payload: Any) -> bool:
-        """Check if a workflow_completed payload matches the workflow trigger config."""
+        """Check if a workflow_completed payload matches the trigger config.
+
+        BUG-004: a workflow can never be triggered by its own completion
+        event. With match-all semantics the old behavior re-executed the
+        originating workflow unboundedly, consuming tokens and inserting
+        execution rows in an infinite loop.
+        """
+        if isinstance(payload, dict) and payload.get("source_workflow_id") == workflow.id:
+            return False
         source_workflow_id = workflow.trigger_config.get("source_workflow_id")
         if source_workflow_id is None:
             return True

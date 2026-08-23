@@ -89,6 +89,43 @@ class TestChatStream:
         assert call_kwargs["json"]["stream"] is True
 
     @pytest.mark.asyncio
+    async def test_server_error_chunk_fails_fast(
+        self, client: InferenceClient, mock_stream_response: Any
+    ) -> None:
+        """BUG-022: a server {"error": ...} SSE payload raises immediately
+        instead of being silently dropped (which stalled until the caller's
+        inactivity timeout masqueraded as truncation)."""
+        from hestia.errors import InferenceServerError
+
+        mock_stream_response(
+            client,
+            [
+                'data: {"error":{"message":"model failed to load"}}',
+                "data: [DONE]",
+                "",
+            ],
+        )
+
+        messages = [Message(role="user", content="hi")]
+        with pytest.raises(InferenceServerError, match="model failed to load"):
+            async for _delta in client.chat_stream(messages):
+                pass
+
+    @pytest.mark.asyncio
+    async def test_stream_requests_usage_options(
+        self, client: InferenceClient, mock_stream_response: Any
+    ) -> None:
+        """PERF-004: streaming requests include_usage so token accounting works."""
+        mock_stream_response(client, ["data: [DONE]", ""])
+
+        messages = [Message(role="user", content="hi")]
+        async for _delta in client.chat_stream(messages):
+            pass
+
+        call_kwargs = client._client.stream.call_args.kwargs  # type: ignore[attr-defined]
+        assert call_kwargs["json"]["stream_options"] == {"include_usage": True}
+
+    @pytest.mark.asyncio
     async def test_finish_reason_passed_through(
         self, client: InferenceClient, mock_stream_response: Any
     ) -> None:

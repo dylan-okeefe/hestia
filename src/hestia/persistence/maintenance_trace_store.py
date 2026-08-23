@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 import sqlalchemy as sa
 
+from hestia.core.clock import utcnow
 from hestia.memory.maintenance.trace import MaintenanceAction
 from hestia.persistence.db import Database
 
@@ -131,6 +132,19 @@ class MaintenanceTraceStore:
             if row is None:
                 return None
             return self._row_to_action(row)
+
+    async def clear_old(self, days: int) -> int:
+        """Delete maintenance traces older than *days*.
+
+        The undo window (undoable_until, default 7 days) is the only consumer
+        of old traces; beyond it the rows — which embed full merged-content
+        blobs — grow without bound (BUG-075). Returns the number deleted.
+        """
+        cutoff = (utcnow() - timedelta(days=days)).isoformat()
+        sql = sa.text("DELETE FROM maintenance_trace WHERE created_at < :cutoff")
+        async with self._db.engine.begin() as conn:
+            result = await conn.execute(sql, {"cutoff": cutoff})
+            return result.rowcount or 0
 
     def _row_to_action(self, row: Any) -> MaintenanceAction:
         """Convert a database row to a MaintenanceAction."""

@@ -15,7 +15,6 @@ from typing import Any
 
 from hestia.diagnostics.scrub import scrub_text
 
-
 _ENV_VAR = "HESTIA_REGRESSION_FIXTURES_DIR"
 _AUTO_SCRUB_ENV_VAR = "HESTIA_REGRESSION_AUTO_SCRUB"
 

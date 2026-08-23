@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from hestia.context.history_window_selector import HistoryWindowSelector
-from hestia.core.types import Message
+from hestia.core.types import Message, ToolCall
 
 
 class MockTokenizer:
@@ -229,3 +229,77 @@ class TestToolPairs:
         )
         assert len(included) == 0
         assert len(dropped) == 3
+
+
+@pytest.mark.asyncio
+async def test_multi_tool_turn_keeps_all_siblings(selector, mock_tokenizer):
+    """BUG-027: a turn with two tool calls must include both tool results and
+    the shared assistant exactly once. The old index arithmetic skipped the
+    sibling result entirely and double-counted the assistant."""
+    assistant = Message(
+        role="assistant",
+        content="",
+        tool_calls=[
+            ToolCall(id="t1", name="search", arguments={}),
+            ToolCall(id="t2", name="read", arguments={}),
+        ],
+    )
+    tool1 = Message(role="tool", content="r1", tool_call_id="t1")
+    tool2 = Message(role="tool", content="r2", tool_call_id="t2")
+
+    # Chronological: [A, t1, t2]; reversed candidates: [t2, t1, A]
+    included, dropped, truncated = await selector.select(
+        [assistant, tool1, tool2],
+        budget=10000,
+        token_counter=mock_tokenizer.count,
+    )
+
+    # Included is returned in chronological order.
+    ids = [(m.role, getattr(m, "tool_call_id", None)) for m in included]
+    assert ids == [("assistant", None), ("tool", "t1"), ("tool", "t2")]
+    assert dropped == []
+    assert truncated == 0
+
+
+@pytest.mark.asyncio
+async def test_multi_tool_group_dropped_together_when_over_budget(selector, mock_tokenizer):
+    """When the group does not fit, all siblings and the assistant drop as one."""
+    assistant = Message(
+        role="assistant",
+        content="",
+        tool_calls=[ToolCall(id="t1", name="a", arguments={}), ToolCall(id="t2", name="b", arguments={})],
+    )
+    tool1 = Message(role="tool", content="r1", tool_call_id="t1")
+    tool2 = Message(role="tool", content="r2", tool_call_id="t2")
+
+    included, dropped, truncated = await selector.select(
+        [assistant, tool1, tool2],
+        budget=1,
+        token_counter=mock_tokenizer.count,
+    )
+
+    assert included == []
+    assert len(dropped) == 3
+    assert truncated == 3
+
+
+@pytest.mark.asyncio
+async def test_skip_message_not_counted_as_dropped(selector, mock_tokenizer):
+    """BUG-072: when budget runs out mid-slice, the protected first user
+    message (skip_message) must not be reported in dropped/truncated."""
+    first_user = Message(role="user", content="first")
+    big = Message(role="assistant", content="big")
+    filler = Message(role="user", content="filler")
+
+    async def counting(_msg):
+        return 50
+
+    included, dropped, truncated = await selector.select(
+        [first_user, big, filler],
+        budget=60,
+        token_counter=counting,
+        skip_message=first_user,
+    )
+
+    assert all(m is not first_user for m in dropped)
+    assert truncated == sum(1 for _ in dropped)

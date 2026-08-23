@@ -26,7 +26,8 @@ class TestSequenceValidator:
         assert "Dropping adjacent assistant message" in caplog.text
 
     def test_orphan_tool_messages_are_dropped(self, caplog):
-        """Tool results without a matching preceding assistant call are dropped."""
+        """Tool results without a matching preceding assistant call are dropped,
+        and the assistant's own unanswered call gets a synthetic result (BUG-019)."""
         messages = [
             Message(role="user", content="run tool"),
             Message(
@@ -41,8 +42,35 @@ class TestSequenceValidator:
         with caplog.at_level(logging.WARNING, logger="hestia.context.sequence_validator"):
             result = validate_chat_template_sequence(messages)
 
-        assert [m.role for m in result] == ["user", "assistant"]
+        assert [(m.role, m.tool_call_id) for m in result] == [
+            ("user", None),
+            ("assistant", None),
+            ("tool", "tc-1"),  # synthesized filler for the unanswered call
+        ]
+        assert result[2].content.startswith("[turn interrupted")
         assert caplog.text.count("Dropping orphan tool result") == 2
+
+    def test_dangling_assistant_gets_synthetic_tool_result(self, caplog):
+        """BUG-019: a crash between persisting assistant(tool_calls=...) and its
+        tool results must not brick strict-template sessions; a filler result
+        is synthesized so the sequence stays valid."""
+        messages = [
+            Message(role="user", content="go"),
+            Message(
+                role="assistant",
+                content="calling",
+                tool_calls=[
+                    ToolCall(id="tc-a", name="t", arguments={}),
+                    ToolCall(id="tc-b", name="t", arguments={}),
+                ],
+            ),
+        ]
+
+        result = validate_chat_template_sequence(messages)
+
+        assert [m.role for m in result] == ["user", "assistant", "tool", "tool"]
+        assert {m.tool_call_id for m in result[2:]} == {"tc-a", "tc-b"}
+        assert all(m.content.startswith("[turn interrupted") for m in result[2:])
 
     def test_tool_at_start_is_dropped(self, caplog):
         """A tool result appearing before any assistant is an orphan."""
@@ -94,8 +122,11 @@ class TestSequenceValidator:
         with caplog.at_level(logging.WARNING, logger="hestia.context.sequence_validator"):
             result = validate_chat_template_sequence(messages)
 
-        assert [m.role for m in result] == ["user", "assistant"]
+        assert [m.role for m in result] == ["user", "assistant", "tool"]
         assert result[1].content == "first"
+        # The dropped second assistant never answered tc-1 on "first"; the
+        # filler keeps the sequence template-valid (BUG-019).
+        assert result[2].tool_call_id == "tc-1"
         assert "Dropping adjacent assistant message" in caplog.text
         assert "Dropping orphan tool result" in caplog.text
 

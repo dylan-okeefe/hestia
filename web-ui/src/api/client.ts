@@ -52,8 +52,14 @@ async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
       headers: getHeaders((init?.headers as Record<string, string>) || {}),
     });
     if (res.status === 401) {
-      clearAuthToken();
-      window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+      // BUG-055: 401 on an auth-status probe may be a transient gateway
+      // response; only a confirmed 401 from a data endpoint logs the user
+      // out. fetchAuthStatus handles its own failure path with retries.
+      const isAuthProbe = input.includes('/auth/status');
+      if (!isAuthProbe) {
+        clearAuthToken();
+        window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+      }
     }
     return res;
   } finally {
@@ -62,22 +68,37 @@ async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
 }
 
 export async function fetchAuthStatus() {
-  const res = await apiFetch(`${API_BASE}/auth/status`);
-  if (!res.ok) throw new Error('Failed to fetch auth status');
-  return res.json() as Promise<{ auth_enabled: boolean; authenticated: boolean; debug_login?: boolean; platform?: string; platform_user?: string; user_id?: string; available_platforms?: string[] }>;
+  // BUG-055: retry transient status-check failures so a network blip does
+  // not kick an authenticated user back to Login.
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await apiFetch(`${API_BASE}/auth/status`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json() as Promise<{ auth_enabled: boolean; authenticated: boolean; debug_login?: boolean; platform?: string; platform_user?: string; user_id?: string; available_platforms?: string[] }>;
+    } catch (err) {
+      lastError = err;
+      await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('Failed to fetch auth status');
 }
 
 export async function fetchAvailableUsers() {
   const res = await apiFetch(`${API_BASE}/auth/available-users`);
   if (!res.ok) throw new Error('Failed to fetch available users');
-  return res.json() as Promise<{ users: Array<{ user_id: string; display_name: string; role: string; platforms: string[]; identities: Array<{ platform: string; platform_user: string }> }> }>;
+  return res.json() as Promise<{ users: Array<{ user_id: string; display_name: string; platforms: string[] }> }>;
 }
 
-export async function requestCode(platform: string, platformUser?: string) {
+export async function requestCode(platform: string, userId?: string) {
+  // SEC-002: the picker sends user_id; the server resolves the recipient
+  // from that user's registered identity (raw chat ids are never sent).
+  const body: Record<string, string> = { platform };
+  if (userId) body.user_id = userId;
   const res = await apiFetch(`${API_BASE}/auth/request-code`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ platform, platform_user: platformUser }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error('Failed to request code');
   return res.json();
@@ -314,6 +335,14 @@ export async function deleteWorkflow(id: string) {
   });
   if (!res.ok) throw new Error('Failed to delete workflow');
   return res.json() as Promise<{ deleted: boolean }>;
+}
+
+export async function rotateWebhookSecret(id: string) {
+  const res = await apiFetch(`${API_BASE}/workflows/${id}/rotate-secret`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error('Failed to rotate webhook secret');
+  return res.json() as Promise<{ workflow: Workflow; secret: string }>;
 }
 
 export async function fetchWorkflowVersions(id: string) {

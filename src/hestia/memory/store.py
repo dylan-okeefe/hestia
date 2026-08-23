@@ -30,20 +30,53 @@ def _sanitize_fts5_query(query: str) -> str:
     users expect for simple keyword/tag searches.
 
     If the query already contains explicit FTS5 operators (AND, OR, NOT)
-    or is already quoted, it is returned unchanged so advanced syntax
-    continues to work.
+    or is already quoted, operator syntax is preserved but the individual
+    terms are still quoted so punctuation cannot produce syntax errors
+    (BUG-011: leading/trailing forms like "NOT foo" previously fell
+    through unquoted and crashed MATCH).
     """
     stripped = query.strip()
     if stripped.startswith('"') and stripped.endswith('"'):
         return query
-    if any(op in stripped.upper() for op in (" AND ", " OR ", " NOT ")):
-        return query
-    # Any non-word, non-whitespace character can trigger an FTS5 syntax error
-    # (e.g., "fts5: syntax error near '.'"). Quote the whole phrase so these
-    # characters are treated literally.
-    if re.search(r"[^\w\s]", stripped):
+
+    # Word-boundary operator detection: space-padded substring checks miss
+    # leading/trailing forms like "NOT foo" / "foo AND" (BUG-011).
+    has_operators = bool(re.search(r"\b(?:AND|OR|NOT)\b", stripped.upper()))
+    if not has_operators and re.search(r"[^\w\s]", stripped):
+        # Any non-word, non-whitespace character can trigger an FTS5 syntax
+        # error (e.g., "fts5: syntax error near '.'"). Quote the whole phrase
+        # so these characters are treated literally.
         escaped = stripped.replace('"', '""')
         return f'"{escaped}"'
+
+    if has_operators:
+        # Preserve operator syntax but quote each term. Splitting on the
+        # (space-delimited) operators keeps phrases like 'error AND "status
+        # failed"' working while making bare punctuation safe.
+        parts = re.split(r"(\bAND\b|\bOR\b|\bNOT\b)", stripped, flags=re.IGNORECASE)
+        rebuilt: list[str] = []
+        for part in parts:
+            token = part.strip()
+            if not token:
+                continue
+            if re.fullmatch(r"AND|OR|NOT", token, flags=re.IGNORECASE):
+                rebuilt.append(token.upper())
+            elif token.startswith('"') and token.endswith('"') and len(token) >= 2:
+                rebuilt.append(token)
+            else:
+                escaped = token.replace('"', '""')
+                rebuilt.append(f'"{escaped}"' if re.search(r'[^\w"]', escaped) else escaped)
+        # Dangling operators ("NOT foo", "foo AND") are syntax errors: strip
+        # them; if that leaves nothing, treat the whole input literally.
+        while rebuilt and rebuilt[0] in ("AND", "OR", "NOT"):
+            rebuilt.pop(0)
+        while rebuilt and rebuilt[-1] in ("AND", "OR", "NOT"):
+            rebuilt.pop()
+        if not rebuilt:
+            escaped = stripped.replace('"', '""')
+            return f'"{escaped}"'
+        return " ".join(rebuilt)
+
     return query
 
 
@@ -580,6 +613,10 @@ class MemoryStore:
             "global_user": global_user,
             "room_user": platform_user,
             "is_active": 0 if include_inactive else 1,
+            # The compiler selects a few hundred tokens from these buckets;
+            # fetching the entire table first made cost grow linearly with
+            # lifetime memories (BUG-031).
+            "epoch_bucket_limit": 200,
         }
 
         global_sql = sa.text(
@@ -590,7 +627,7 @@ class MemoryStore:
             "WHERE platform = :platform AND platform_user = :global_user "
             "AND is_global = 1 "
             f"{active_clause} "
-            "ORDER BY created_at DESC"
+            "ORDER BY created_at DESC LIMIT :epoch_bucket_limit"
         )
 
         topic_memories: list[Memory] = []
@@ -609,7 +646,7 @@ class MemoryStore:
                 f"AND mt.topic_id IN ({placeholders}) "
                 "AND m.is_global = 0 "
                 f"{active_clause} "
-                "ORDER BY m.created_at DESC"
+                "ORDER BY m.created_at DESC LIMIT :epoch_bucket_limit"
             )
             async with self._db.engine.connect() as conn:
                 result = await conn.execute(topic_sql, params)
@@ -661,18 +698,24 @@ class MemoryStore:
                 "is_user_authored, last_recalled_at, is_global "
                 f"FROM memory WHERE memory MATCH :query {active_clause} "
                 "AND platform = :platform AND platform_user = :platform_user "
-                "ORDER BY rank LIMIT :limit"
+                # bm25() column weights: content (first column) dominates tags
+                "ORDER BY bm25(memory, 10.0, 1.0) LIMIT :limit"
             )
             params["platform"] = platform
             params["platform_user"] = platform_user
         else:
-            # LIKE fallback for SQLite builds without FTS5
-            params["query"] = f"%{query}%"
+            # LIKE fallback for SQLite builds without FTS5. Escape the
+            # wildcard metacharacters so a query like "100%" matches
+            # literally (BUG-073).
+            escaped_like = (
+                query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            )
+            params["query"] = f"%{escaped_like}%"
             sql = sa.text(
                 "SELECT id, content, tags, session_id, created_at, platform, platform_user, "
                 "is_active, deleted_at, deleted_reason, superseded_by, is_pinned, "
                 "is_user_authored, last_recalled_at, is_global "
-                f"FROM memory WHERE content LIKE :query {active_clause} "
+                f"FROM memory WHERE content LIKE :query ESCAPE '\\' {active_clause} "
                 "AND platform = :platform AND platform_user = :platform_user "
                 "ORDER BY created_at DESC LIMIT :limit"
             )
@@ -680,8 +723,22 @@ class MemoryStore:
             params["platform_user"] = platform_user
 
         async with self._db.engine.connect() as conn:
-            result = await conn.execute(sql, params)
-            rows = result.fetchall()
+            try:
+                result = await conn.execute(sql, params)
+                rows = result.fetchall()
+            except Exception as exc:
+                # BUG-011: malformed FTS5 expressions (user-authored queries,
+                # or memory-content excerpts fed in by maintenance passes)
+                # used to raise OperationalError out of search(), killing
+                # nightly passes. A bad query matches nothing; return empty.
+                if "fts5" in str(exc).lower() or "syntax error" in str(exc).lower():
+                    logger.warning(
+                        "FTS5 query %r failed and was treated as no-match: %s",
+                        query,
+                        exc,
+                    )
+                    return []
+                raise
             return [self._row_to_memory(row) for row in rows]
 
     async def list_memories(
@@ -719,7 +776,7 @@ class MemoryStore:
 
         if tag:
             if self._fts5_available:
-                quoted_tag = f'"{tag}"'
+                quoted_tag = _sanitize_fts5_query(tag)
                 where_clauses.append("tags MATCH :tag")
                 params["tag"] = quoted_tag
             else:
@@ -1058,7 +1115,7 @@ class MemoryStore:
 
         if tag:
             if self._fts5_available:
-                quoted_tag = f'"{tag}"'
+                quoted_tag = _sanitize_fts5_query(tag)
                 where_clauses.append("tags MATCH :tag")
                 params["tag"] = quoted_tag
             else:

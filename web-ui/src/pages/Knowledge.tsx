@@ -89,7 +89,7 @@ export default function Knowledge() {
         const [sessionsData, styleData, memoriesData, handoffsData, topicsData] = await Promise.all([
           fetchUserSessions(identity.platform, identity.platform_user, 10),
           fetchStyleProfile(identity.platform, identity.platform_user),
-          fetchMemoriesForUser(identity.platform, identity.platform_user, 100, true).catch(() => ({ memories: [] })),
+          fetchMemoriesForUser(identity.platform, identity.platform_user, 100, showTrash).catch(() => ({ memories: [] })),
           fetchHandoffs(user.id).catch(() => ({ handoffs: [] })),
           fetchTopics(identity.platform, identity.platform_user).catch(() => ({ topics: [] })),
         ]);
@@ -107,13 +107,13 @@ export default function Knowledge() {
     };
 
     load();
-  }, [user, userLoading, identity]);
+  }, [user, userLoading, identity, showTrash]);
 
   const refreshMemoriesAndTopics = async () => {
     if (!identity) return;
     try {
       const [memoriesData, topicsData] = await Promise.all([
-        fetchMemoriesForUser(identity.platform, identity.platform_user, 100, showTrash || true),
+        fetchMemoriesForUser(identity.platform, identity.platform_user, 100, showTrash),
         fetchTopics(identity.platform, identity.platform_user),
       ]);
       setMemories(memoriesData.memories || []);

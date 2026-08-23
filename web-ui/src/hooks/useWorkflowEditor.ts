@@ -7,6 +7,7 @@ import {
   activateWorkflowVersion,
   testRunWorkflow,
   updateWorkflow,
+  rotateWebhookSecret,
   fetchExecutions,
   fetchTools,
   fetchAuthStatus,
@@ -45,6 +46,7 @@ export function useWorkflowEditor(workflowId: string | undefined) {
   const [triggerSaving, setTriggerSaving] = useState(false);
   const [webhookUrl, setWebhookUrl] = useState('');
   const [webhookSecret, setWebhookSecret] = useState('');
+  const [hasWebhookSecret, setHasWebhookSecret] = useState(false);
   const [toolSchemas, setToolSchemas] = useState<ToolSchema[]>([]);
   const [tools, setTools] = useState<string[]>([]);
   const [platforms, setPlatforms] = useState<string[]>([]);
@@ -126,24 +128,30 @@ export function useWorkflowEditor(workflowId: string | undefined) {
     }
   }, [redo]);
 
+  const executionsRequestIdRef = useRef(0);
   const loadExecutions = useCallback(async () => {
     if (!workflowId) return;
+    // BUG-053: guard against setState-after-unmount with a request token.
+    const requestId = ++executionsRequestIdRef.current;
     setHistoryLoading(true);
     setHistoryError(null);
     try {
       const data = await fetchExecutions(workflowId);
+      if (requestId !== executionsRequestIdRef.current) return;
       setExecutions(data.executions);
     } catch (err) {
+      if (requestId !== executionsRequestIdRef.current) return;
       setHistoryError(err instanceof Error ? err.message : 'Failed to load history');
     } finally {
-      setHistoryLoading(false);
+      if (requestId === executionsRequestIdRef.current) {
+        setHistoryLoading(false);
+      }
     }
   }, [workflowId]);
 
   useEffect(() => {
     if (!workflowId) return;
 
-    const abortController = new AbortController();
     let stale = false;
 
     Promise.all([
@@ -157,7 +165,9 @@ export function useWorkflowEditor(workflowId: string | undefined) {
         setTriggerConfig((wf.trigger_config || {}) as Record<string, string>);
         if (wf.trigger_type === 'webhook') {
           setWebhookUrl(wf.webhook_url || '');
-          setWebhookSecret(wf.secret || '');
+          // Secrets are reveal-once on the backend; only a rotation returns
+          // the value. Track whether one exists so the panel can offer it.
+          setHasWebhookSecret(Boolean((wf.trigger_config as Record<string, unknown>)?.has_secret));
         }
         setVersions(vs.versions);
         const active = vs.versions.find((v: WorkflowVersion) => v.activated_at !== null);
@@ -203,7 +213,6 @@ export function useWorkflowEditor(workflowId: string | undefined) {
 
     return () => {
       stale = true;
-      abortController.abort();
     };
   }, [workflowId, loadExecutions]);
 
@@ -326,7 +335,14 @@ export function useWorkflowEditor(workflowId: string | undefined) {
       setIsDirty(false);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Save failed');
+      // BUG-056: activation failure must not blank the canvas — a full-page
+      // error state here destroyed unsaved graphs. Surface a toast and keep
+      // the editor mounted; the save itself already succeeded.
+      addToast({
+        message: `Saved, but activation failed: ${err instanceof Error ? err.message : 'unknown error'}`,
+        type: 'error',
+        duration: 8000,
+      });
     } finally {
       setSaving(false);
     }
@@ -395,6 +411,20 @@ export function useWorkflowEditor(workflowId: string | undefined) {
 
   const updateTriggerConfig = (key: string, value: string) => {
     setTriggerConfig((prev) => ({ ...prev, [key]: value }));
+  };
+
+  // The backend reveals webhook secrets exactly once (on create or rotate).
+  // Rotation is the only way to obtain a fresh value after the initial reveal.
+  const handleRotateSecret = async () => {
+    if (!workflowId) return;
+    try {
+      const { secret } = await rotateWebhookSecret(workflowId);
+      setWebhookSecret(secret);
+      setHasWebhookSecret(true);
+      addToast({ message: 'New webhook secret generated — copy it now; it will not be shown again.', type: 'success', duration: 8000 });
+    } catch (err) {
+      addToast({ message: err instanceof Error ? err.message : 'Failed to rotate secret', type: 'error', duration: 5000 });
+    }
   };
 
   const updateSelectedNodeData = (key: string, value: unknown) => {
@@ -490,6 +520,8 @@ export function useWorkflowEditor(workflowId: string | undefined) {
     triggerSaving,
     webhookUrl,
     webhookSecret,
+    hasWebhookSecret,
+    handleRotateSecret,
     toolSchemas,
     tools,
     platforms,

@@ -315,21 +315,17 @@ class EmailAdapter:
                 # was relying on that, which silently broke on servers that return them in
                 # another order (e.g. after expunges). Fix: fetch INTERNALDATE for every
                 # matched UID, sort newest-first on the client, then take ``limit``.
-                sortable: list[tuple[datetime, str]] = []
+                sortable: list[tuple[datetime | None, str]] = []
                 for uid in uids:
                     uid_str = uid.decode() if isinstance(uid, bytes) else str(uid)
                     ok2, idate_data = conn.uid(
                         "FETCH", uid_str, "(INTERNALDATE)"
                     )
                     if ok2 != "OK" or not idate_data:
-                        # Fall back to sorting by UID (numeric) so at least
-                        # arrival-on-this-server is approximated when
-                        # INTERNALDATE isn't available.
-                        try:
-                            fallback_dt = datetime.fromtimestamp(int(uid_str), tz=UTC)
-                        except (TypeError, ValueError):
-                            fallback_dt = datetime.min.replace(tzinfo=UTC)
-                        sortable.append((fallback_dt, uid_str))
+                        # BUG-018: this used to treat the UID as a Unix epoch,
+                        # mapping every fallback entry to 1970. Instead record
+                        # it undated and order those by UID below.
+                        sortable.append((None, uid_str))
                         continue
                     idate_raw = idate_data[0]
                     if isinstance(idate_raw, tuple):
@@ -340,16 +336,26 @@ class EmailAdapter:
                         idate_raw.encode() if isinstance(idate_raw, str) else idate_raw
                     )
                     if parsed_dt is None:
-                        sortable.append(
-                            (datetime.min.replace(tzinfo=UTC), uid_str)
-                        )
+                        sortable.append((None, uid_str))
                     else:
                         sortable.append(
                             (datetime(*parsed_dt[:6], tzinfo=UTC), uid_str)
                         )
 
-                sortable.sort(key=lambda t: t[0], reverse=True)
-                top_uids = [uid for _, uid in sortable[:limit]]
+                # Newest first; undated entries sink below all dated ones and
+                # order among themselves by numeric UID (descending).
+                dated = sorted(
+                    ((dt, uid) for dt, uid in sortable if dt is not None),
+                    key=lambda t: t[0],
+                    reverse=True,
+                )
+                undated = sorted(
+                    ((uid,) for dt, uid in sortable if dt is None),
+                    key=lambda t: int(t[0]),
+                    reverse=True,
+                )
+                ordered = [uid for _, uid in dated] + [u for (u,) in undated]
+                top_uids = ordered[:limit]
 
                 results: list[dict[str, Any]] = []
                 for uid_str in top_uids:
@@ -534,9 +540,20 @@ class EmailAdapter:
                 with self._smtp_session() as smtp:
                     smtp.send_message(msg)
 
-                # 3. Copy to Sent, mark draft deleted
+                # 3. Copy to Sent, mark draft deleted.
+                # BUG-033: verify the COPY succeeded before deleting the draft;
+                # an unchecked COPY used to destroy the draft without any Sent
+                # copy when the server rejected it.
                 imap.select(drafts)
-                imap.uid("COPY", draft_id, sent)
+                copy_status, _copy_data = imap.uid("COPY", draft_id, sent)
+                if copy_status != "OK":
+                    logger.error(
+                        "COPY of draft %s to %s failed (%s); draft preserved",
+                        draft_id,
+                        sent,
+                        _copy_data,
+                    )
+                    return f"COPY to '{sent}' failed — draft {draft_id} preserved"
                 imap.uid("STORE", draft_id, "+FLAGS", "(\\Deleted)")
                 imap.expunge()
 

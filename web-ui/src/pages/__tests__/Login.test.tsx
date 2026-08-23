@@ -73,7 +73,7 @@ describe('Login', () => {
     expect(screen.queryByText('!room-id')).not.toBeInTheDocument();
   });
 
-  it('passes correct platform_user when selecting second identity', async () => {
+  it('sends the selected user_id (SEC-002: raw chat ids never reach the API)', async () => {
     render(<Login />);
 
     await waitFor(() => expect(screen.getByText('Bob')).toBeInTheDocument());
@@ -87,7 +87,7 @@ describe('Login', () => {
     fireEvent.click(screen.getByText(TEXT.login.sendCodeVia('telegram')));
 
     await waitFor(() => {
-      expect(client.requestCode).toHaveBeenCalledWith('telegram', '@bob:telegram');
+      expect(client.requestCode).toHaveBeenCalledWith('telegram', 'user-2');
     });
   });
 

@@ -691,8 +691,10 @@ class TestBranchingExecution:
         result = await executor.execute("wf_1", {"value": 15})
 
         assert result.status == "ok"
-        executed_ids = {nr.node_id for nr in result.node_results}
-        assert executed_ids == {"cond", "a"}
+        ok_ids = {nr.node_id for nr in result.node_results if nr.status == "ok"}
+        skipped_ids = {nr.node_id for nr in result.node_results if nr.status == "skipped"}
+        assert ok_ids == {"cond", "a"}
+        assert skipped_ids == {"b"}
         assert "b" not in result.outputs
         assert result.outputs["cond"] is True
         assert result.outputs["a"] == "done"
@@ -739,8 +741,10 @@ class TestBranchingExecution:
         result = await executor.execute("wf_1", {"value": 5})
 
         assert result.status == "ok"
-        executed_ids = {nr.node_id for nr in result.node_results}
-        assert executed_ids == {"cond", "b"}
+        ok_ids = {nr.node_id for nr in result.node_results if nr.status == "ok"}
+        skipped_ids = {nr.node_id for nr in result.node_results if nr.status == "skipped"}
+        assert ok_ids == {"cond", "b"}
+        assert skipped_ids == {"a"}
         assert "a" not in result.outputs
         assert result.outputs["cond"] is False
         assert result.outputs["b"] == "done"
@@ -800,8 +804,10 @@ class TestBranchingExecution:
         result = await executor.execute("wf_1", {})
 
         assert result.status == "ok"
-        executed_ids = {nr.node_id for nr in result.node_results}
-        assert executed_ids == {"dec", "alpha_node"}
+        ok_ids = {nr.node_id for nr in result.node_results if nr.status == "ok"}
+        skipped_ids = {nr.node_id for nr in result.node_results if nr.status == "skipped"}
+        assert ok_ids == {"dec", "alpha_node"}
+        assert skipped_ids == {"beta_node"}
         assert "beta_node" not in result.outputs
         assert result.outputs["dec"] == "alpha"
         assert result.outputs["alpha_node"] == "done"
@@ -843,8 +849,10 @@ class TestBranchingExecution:
         result = await executor.execute("wf_1", {})
 
         assert result.status == "ok"
-        executed_ids = {nr.node_id for nr in result.node_results}
-        assert executed_ids == {"outer", "inner", "b"}
+        ok_ids = {nr.node_id for nr in result.node_results if nr.status == "ok"}
+        skipped_ids = {nr.node_id for nr in result.node_results if nr.status == "skipped"}
+        assert ok_ids == {"outer", "inner", "b"}
+        assert skipped_ids == {"a", "c"}
         assert "a" not in result.outputs
         assert "c" not in result.outputs
 
@@ -884,8 +892,10 @@ class TestBranchingExecution:
         result = await executor.execute("wf_1", {})
 
         assert result.status == "ok"
-        executed_ids = {nr.node_id for nr in result.node_results}
-        assert executed_ids == {"cond", "a", "merge"}
+        ok_ids = {nr.node_id for nr in result.node_results if nr.status == "ok"}
+        assert ok_ids == {"cond", "a", "merge"}
+        skipped_ids = {nr.node_id for nr in result.node_results if nr.status == "skipped"}
+        assert skipped_ids == {"b"}
         assert "b" not in result.outputs
 
     @pytest.mark.asyncio
@@ -923,8 +933,10 @@ class TestBranchingExecution:
         result = await executor.execute("wf_1", {})
 
         assert result.status == "ok"
-        executed_ids = {nr.node_id for nr in result.node_results}
-        assert executed_ids == {"cond"}
+        ok_ids = {nr.node_id for nr in result.node_results if nr.status == "ok"}
+        assert ok_ids == {"cond"}
+        skipped_ids = {nr.node_id for nr in result.node_results if nr.status == "skipped"}
+        assert skipped_ids == {"a", "b", "c"}
         assert "a" not in result.outputs
         assert "b" not in result.outputs
         assert "c" not in result.outputs
@@ -936,7 +948,11 @@ class TestBranchingExecution:
         executor: WorkflowExecutor,
         app: AppContext,
     ) -> None:
-        """LLM returns unknown branch name — no downstream nodes execute gracefully."""
+        """BUG-038: an unrecognized LLM branch fails the node loudly.
+
+        It used to return the off-list value, match no edge, skip every
+        downstream node invisibly and report status='ok'.
+        """
         wf = Workflow(id="wf_1", name="Unknown", trust_level="developer")
         await workflow_store.save_workflow(wf)
 
@@ -969,11 +985,10 @@ class TestBranchingExecution:
 
         result = await executor.execute("wf_1", {})
 
-        assert result.status == "ok"
-        executed_ids = {nr.node_id for nr in result.node_results}
-        assert executed_ids == {"dec"}
-        assert "a" not in result.outputs
-        assert "b" not in result.outputs
+        assert result.status == "failed"
+        failed_results = [nr for nr in result.node_results if nr.status == "failed"]
+        assert len(failed_results) == 1
+        assert "unrecognized" in (failed_results[0].error or "")
 
     @pytest.mark.asyncio
     async def test_multiple_roots(
@@ -1008,8 +1023,10 @@ class TestBranchingExecution:
         result = await executor.execute("wf_1", {})
 
         assert result.status == "ok"
-        executed_ids = {nr.node_id for nr in result.node_results}
-        assert executed_ids == {"r1", "r2", "cond"}
+        ok_ids = {nr.node_id for nr in result.node_results if nr.status == "ok"}
+        assert ok_ids == {"cond", "r1", "r2"}
+        skipped_ids = {nr.node_id for nr in result.node_results if nr.status == "skipped"}
+        assert skipped_ids == {"a"}
         assert "a" not in result.outputs
 
 

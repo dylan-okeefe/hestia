@@ -87,11 +87,13 @@ class LLMDecisionNode:
                         branch = b
                         break
             if branch not in branches:
-                logger.warning(
-                    "LLM returned unrecognized branch %r for node %s; allowed: %s",
-                    branch,
-                    node.id,
-                    branches,
+                # BUG-038: the off-list value used to be returned anyway; no
+                # edge matched, downstream subtrees were skipped with zero
+                # NodeResults, and the execution reported status='ok'. Fail
+                # the node loudly instead.
+                raise ValueError(
+                    f"LLM decision node {node.id} returned unrecognized "
+                    f"branch {branch!r}; expected one of: {', '.join(branches)}"
                 )
 
         return ChatResponse(

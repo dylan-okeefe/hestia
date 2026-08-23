@@ -7,8 +7,7 @@ remains for conversation history at different context sizes.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
 
 import click
 
@@ -93,8 +92,8 @@ async def _build_report(
         id="preview-session",
         platform=effective_platform,
         platform_user=effective_platform_user,
-        started_at=datetime.now(timezone.utc),
-        last_active_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
+        last_active_at=datetime.now(UTC),
         slot_id=None,
         slot_saved_path=None,
         state=SessionState.ACTIVE,

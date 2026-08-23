@@ -97,13 +97,24 @@ def _eval_node(node: ast.AST, variables: dict[str, Any]) -> Any:
             return variables[node.id]
         raise NameError(f"Variable not found: {node.id}")
     if isinstance(node, ast.BoolOp):
-        values = [_eval_node(v, variables) for v in node.values]
-        op = _BOOL_OPS.get(type(node.op))
-        if op is None:
-            raise ValueError(
-                f"Unsupported boolean operator: {type(node.op).__name__}"
-            )
-        return op(values)
+        # BUG-070: evaluate lazily with real short-circuit semantics, matching
+        # Python. The old code computed every operand up-front, so
+        # 'data.ok and data.ratio > 0' raised NameError when ok was falsy.
+        if isinstance(node.op, ast.And):
+            result: Any = True
+            for v in node.values:
+                result = _eval_node(v, variables)
+                if not result:
+                    return result
+            return result
+        if isinstance(node.op, ast.Or):
+            result = False
+            for v in node.values:
+                result = _eval_node(v, variables)
+                if result:
+                    return result
+            return result
+        raise ValueError(f"Unsupported boolean operator: {type(node.op).__name__}")
     if isinstance(node, ast.Compare):
         left = _eval_node(node.left, variables)
         result = True

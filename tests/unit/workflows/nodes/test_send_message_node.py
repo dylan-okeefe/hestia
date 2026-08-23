@@ -78,12 +78,15 @@ async def test_sends_message_with_new_fields(app: AppContext) -> None:
 
 
 @pytest.mark.asyncio
-async def test_uses_inputs_over_config(app: AppContext) -> None:
+async def test_config_wins_over_inputs(app: AppContext) -> None:
+    """SEC-022: destinations pinned in node config take precedence over
+    trigger-supplied inputs, so attacker-controlled payloads cannot choose
+    the recipient."""
     node = WorkflowNode(
         id="n1",
         type="send_message",
         label="Notify",
-        config={"platform": "telegram", "target_user": "123", "message": "Config"},
+        config={"platform": "telegram", "target_user": "123"},
     )
 
     with patch(
@@ -92,16 +95,17 @@ async def test_uses_inputs_over_config(app: AppContext) -> None:
     ) as mock_send:
         executor = SendMessageNode()
         result = await executor.execute(
-            app, node, {"message": "Override", "target_user": "456"}
+            app, node, {"message": "Payload text", "target_user": "456"}
         )
 
-    assert result["text"] == "Override"
-    assert result["user"] == "456"
-    mock_send.assert_awaited_once_with("telegram", "456", "Override")
+    assert result["text"] == "Payload text"  # content may come from inputs
+    assert result["user"] == "123"  # destination may not
+    mock_send.assert_awaited_once_with("telegram", "123", "Payload text")
 
 
 @pytest.mark.asyncio
-async def test_uses_legacy_inputs_over_config(app: AppContext) -> None:
+async def test_config_wins_over_legacy_inputs(app: AppContext) -> None:
+    """SEC-022: same precedence rule for the legacy field names."""
     node = WorkflowNode(
         id="n1",
         type="send_message",
@@ -118,9 +122,9 @@ async def test_uses_legacy_inputs_over_config(app: AppContext) -> None:
             app, node, {"text": "Override", "user": "456"}
         )
 
-    assert result["text"] == "Override"
-    assert result["user"] == "456"
-    mock_send.assert_awaited_once_with("telegram", "456", "Override")
+    assert result["text"] == "Override"  # text still resolves inputs-first
+    assert result["user"] == "123"  # destination pinned in config wins
+    mock_send.assert_awaited_once_with("telegram", "123", "Override")
 
 
 @pytest.mark.asyncio

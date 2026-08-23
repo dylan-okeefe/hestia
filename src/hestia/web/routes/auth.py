@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from typing import Any
 
@@ -26,6 +27,8 @@ def _get_auth_manager(ctx: WebContext = _CTX_DEP) -> AuthManager:
 
 _AUTH_DEP = Depends(_get_auth_manager)
 
+
+logger = logging.getLogger(__name__)
 
 @router.post("/request-code")
 async def request_code(
@@ -58,11 +61,18 @@ async def request_code(
     auth_manager._code_request_limits[client_ip].append(datetime.now(UTC))
 
     try:
-        result = await auth_manager.request_code(platform, platform_user)
+        result = await auth_manager.request_code(
+            platform,
+            platform_user,
+            user_id=body.get("user_id") if isinstance(body.get("user_id"), str) else None,
+        )
     except ValueError as exc:
+        # SEC-023: don't disclose which platforms/users are configured to
+        # anonymous callers; log the specific reason instead.
+        logger.warning("Login code request rejected (%s)", exc)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
+            detail="Cannot deliver a code for this platform or user.",
         ) from exc
 
     return result
@@ -164,22 +174,23 @@ async def logout(
 async def available_users(
     auth_manager: AuthManager = _AUTH_DEP,
 ) -> dict[str, Any]:
-    """List users with at least one identity on a running platform."""
+    """List users with at least one identity on a running platform.
+
+    SEC-004: this endpoint is unauthenticated (the login page needs it to
+    render the user picker), so it returns only what the picker requires:
+    user_id, display_name, and platform *names* for the send-code buttons.
+    Roles and raw platform_user chat IDs were an unauthenticated
+    reconnaissance feed.
+    """
     users = []
     if auth_manager._user_store is not None:
         all_users = await auth_manager._user_store.list_users()
         for user in all_users:
             identities = await auth_manager._user_store.get_identities(user.id)
-            platforms = list({i.platform for i in identities})
             users.append({
                 "user_id": user.id,
                 "display_name": user.display_name,
-                "role": user.role,
-                "platforms": platforms,
-                "identities": [
-                    {"platform": i.platform, "platform_user": i.platform_user}
-                    for i in identities
-                ],
+                "platforms": sorted({i.platform for i in identities}),
             })
     return {"users": users}
 

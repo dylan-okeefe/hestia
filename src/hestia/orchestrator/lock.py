@@ -9,23 +9,39 @@ from typing import Any
 class SessionLockManager:
     """Factory for per-session_id asyncio locks.
 
-    Holds a non-reentrant lock per session for the lifetime of the
-    process. Locks are created lazily and can be pruned for sessions
-    that are archived or reset.
+    Holds a non-reentrant lock per session for the lifetime of the process.
+    Locks are created lazily. Callers that obtain a lock via :meth:`acquire`
+    hold an *interest reference* until they call :meth:`unref`; pruning via
+    :meth:`release_unused` is suppressed while any reference or waiter exists,
+    so a pending contender can never be stranded on an orphaned lock object.
     """
 
     def __init__(self) -> None:
         self._locks: dict[str, asyncio.Lock] = {}
+        self._refs: dict[str, int] = {}
         self._global_lock = asyncio.Lock()
 
     async def acquire(self, session_id: str) -> asyncio.Lock:
-        """Return (and create if needed) the lock for *session_id*."""
+        """Return (and create if needed) the lock for *session_id*.
+
+        Registers one interest reference; pair with :meth:`unref` when the
+        critical section ends.
+        """
         async with self._global_lock:
             lock = self._locks.get(session_id)
             if lock is None:
                 lock = asyncio.Lock()
                 self._locks[session_id] = lock
+            self._refs[session_id] = self._refs.get(session_id, 0) + 1
         return lock
+
+    def unref(self, session_id: str) -> None:
+        """Drop one interest reference previously registered by acquire()."""
+        count = self._refs.get(session_id, 0)
+        if count <= 1:
+            self._refs.pop(session_id, None)
+        else:
+            self._refs[session_id] = count - 1
 
     def is_locked(self, session_id: str) -> bool:
         """Return True if a lock exists for *session_id* and is currently held.
@@ -38,17 +54,29 @@ class SessionLockManager:
         return lock.locked() if lock is not None else False
 
     def release_unused(self, session_id: str) -> None:
-        """Prune the lock for *session_id* if it exists and is not held.
+        """Prune the lock for *session_id* when it is truly idle.
 
-        This is best-effort: if a turn is still holding the lock, the
-        entry is left in place so the lock object remains valid until it
-        is naturally released.
+        Best-effort on three conditions:
+
+        1. no outstanding interest references from :meth:`acquire`,
+        2. the lock is not currently held,
+        3. no waiters are parked on the object.
+
+        Condition 3 matters because ``asyncio.Lock`` reports *unlocked*
+        between ``release()`` and the moment a waiter's coroutine resumes;
+        pruning in that window would strand the waiter on an orphaned object
+        while later arrivals received a fresh lock — silently breaking
+        per-session mutual exclusion (audit finding BUG-001).
         """
-        lock = self._locks.get(session_id)
-        if lock is None:
+        if self._refs.get(session_id):
             return
-        if not lock.locked():
-            self._locks.pop(session_id, None)
+        lock = self._locks.get(session_id)
+        if lock is None or lock.locked():
+            return
+        waiters = getattr(lock, "_waiters", None)
+        if waiters:
+            return
+        self._locks.pop(session_id, None)
 
     def __getstate__(self) -> dict[str, Any]:
         """Prevent accidental pickling of asyncio locks."""

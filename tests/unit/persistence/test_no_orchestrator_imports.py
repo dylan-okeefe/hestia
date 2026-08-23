@@ -1,8 +1,8 @@
 """Lint: persistence modules must not import from hestia.orchestrator."""
 
 import ast
+import contextlib
 import importlib
-import sys
 from pathlib import Path
 from types import ModuleType
 
@@ -19,14 +19,14 @@ def _walk_imports(source: str) -> list[tuple[str, int]]:
     type_checking_lines: set[int] = set()
 
     for node in ast.walk(tree):
-        if isinstance(node, ast.If):
-            if (
-                isinstance(node.test, ast.Name)
-                and node.test.id == "TYPE_CHECKING"
-            ):
-                type_checking_lines.update(
-                    range(node.lineno, getattr(node, "end_lineno", node.lineno) + 1)
-                )
+        if (
+            isinstance(node, ast.If)
+            and isinstance(node.test, ast.Name)
+            and node.test.id == "TYPE_CHECKING"
+        ):
+            type_checking_lines.update(
+                range(node.lineno, getattr(node, "end_lineno", node.lineno) + 1)
+            )
 
     imports: list[tuple[str, int]] = []
     for node in ast.walk(tree):
@@ -52,11 +52,9 @@ def _discover_persistence_modules() -> list[ModuleType]:
             continue
         relative = path.relative_to(package_path.parent)
         module_name = str(relative.with_suffix("")).replace("/", ".").replace("\\", ".")
-        try:
-            modules.append(importlib.import_module(module_name))
-        except Exception:
+        with contextlib.suppress(Exception):
             # Unimportable submodules are not the concern of this lint.
-            pass
+            modules.append(importlib.import_module(module_name))
 
     return modules
 

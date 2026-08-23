@@ -211,6 +211,7 @@ class AppContext:
         self.verbose = config.verbose
         self.confirm_callback: ConfirmCallback | None = None
         self._bootstrapped = False
+        self._bootstrap_lock = asyncio.Lock()
 
         # Eager core subsystems
         self.db = Database(config.storage.database_url)
@@ -281,11 +282,14 @@ class AppContext:
         """Lazy inference client — created on first access."""
         model_name = self.config.inference.model_name.strip()
         if not model_name:
-            raise ValueError(
-                "inference.model_name is required — set it to your llama.cpp model "
-                "filename (e.g. 'my-model-Q4_K_M.gguf'), or for tests only set "
-                "HESTIA_ALLOW_DUMMY_MODEL=1 and use model_name='dummy'."
-            )
+            if os.environ.get("HESTIA_ALLOW_DUMMY_MODEL") == "1":
+                model_name = "dummy"
+            else:
+                raise ValueError(
+                    "inference.model_name is required — set it to your llama.cpp model "
+                    "filename (e.g. 'my-model-Q4_K_M.gguf'), or for tests only set "
+                    "HESTIA_ALLOW_DUMMY_MODEL=1 and use model_name='dummy'."
+                )
         return InferenceClient(
             self.config.inference.base_url,
             model_name,
@@ -405,19 +409,24 @@ class AppContext:
 
     async def bootstrap_db(self) -> None:
         """Connect to database and create tables. Idempotent."""
+        # BUG-068: the flag check-then-await window let two concurrent
+        # callers both run create_all + migrations. Serialize with a lock.
         if self._bootstrapped:
             return
-        await self.db.connect()
-        await self.db.create_tables()
-        await self.memory_store.create_table()
-        await self.failure_store.create_table()
-        await self.trace_store.create_table()
-        await self.maintenance_trace_store.create_table()
-        await self.proposal_store.create_table()
-        await self.style_store.create_table()
-        await self.workflow_store.create_tables()
-        await self.execution_store.create_tables()
-        self._bootstrapped = True
+        async with self._bootstrap_lock:
+            if self._bootstrapped:
+                return
+            await self.db.connect()
+            await self.db.create_tables()
+            await self.memory_store.create_table()
+            await self.failure_store.create_table()
+            await self.trace_store.create_table()
+            await self.maintenance_trace_store.create_table()
+            await self.proposal_store.create_table()
+            await self.style_store.create_table()
+            await self.workflow_store.create_tables()
+            await self.execution_store.create_tables()
+            self._bootstrapped = True
 
     async def ensure_memory_maintenance_tasks(
         self,
@@ -639,6 +648,16 @@ def _validate_web_security_posture(cfg: HestiaConfig) -> None:
     exposed = not is_loopback_host(cfg.web.host)
     if not exposed or cfg.web.allow_insecure:
         return
+
+    # SEC-006: debug login mints sessions for arbitrary user ids; it must
+    # never be silently active on an exposed interface.
+    if getattr(cfg.web, "debug_login", False):
+        raise HestiaConfigError(
+            f"web.debug_login is enabled but web.host is set to the exposed "
+            f"interface {cfg.web.host!r}. Debug login allows arbitrary "
+            f"user_id sessions. Disable it or set allow_insecure=True to "
+            f"accept the risk."
+        )
 
     # C1: auth disabled on an exposed interface is not allowed.
     if not cfg.web.auth_enabled:

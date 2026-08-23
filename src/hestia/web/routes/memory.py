@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from hestia.memory.store import Memory
+from hestia.memory.topics import Topic
 from hestia.web.context import WebContext, get_web_context
 from hestia.web.dependencies import RequireOwner, get_current_platform_user
 
@@ -41,6 +42,28 @@ def _topic_to_dict(topic: Any) -> dict[str, Any]:
         "name": topic.name,
         "created_at": topic.created_at.isoformat() if topic.created_at else None,
     }
+
+
+async def _require_topic_access(
+    request: Request, ctx: WebContext, topic_id: str
+) -> Topic:
+    """Fetch a topic and enforce ownership (SEC-007).
+
+    Admins may access any topic; non-admins may only touch their own. An
+    unauthenticated caller is rejected outright.
+    """
+    store = ctx.topic_store
+    if store is None:
+        raise HTTPException(status_code=503, detail="Topic store not available")
+    topic = await store.get_topic_by_id(topic_id)
+    if topic is None:
+        raise HTTPException(status_code=404, detail="Topic not found")
+
+    caller_platform_user = get_current_platform_user(request)
+    if caller_platform_user is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    await RequireOwner(topic.platform_user)(request, ctx)
+    return topic
 
 
 async def _require_memory_owner(request: Request, ctx: WebContext, memory_id: str) -> Memory:
@@ -268,15 +291,17 @@ async def create_topic(
 async def rename_topic(
     topic_id: str,
     payload: dict[str, Any],
+    request: Request,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
-    """Rename a topic."""
+    """Rename a topic (SEC-007: owner or admin only)."""
     name = payload.get("name", "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="Topic name is required")
     if name.startswith("room:"):
         raise HTTPException(status_code=400, detail="Reserved topic prefix")
 
+    await _require_topic_access(request, ctx, topic_id)
     store = ctx.topic_store
     if store is None:
         raise HTTPException(status_code=503, detail="Topic store not available")
@@ -290,9 +315,11 @@ async def rename_topic(
 @router.delete("/topics/{topic_id}")
 async def delete_topic(
     topic_id: str,
+    request: Request,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
-    """Delete a topic."""
+    """Delete a topic (SEC-007: owner or admin only)."""
+    await _require_topic_access(request, ctx, topic_id)
     store = ctx.topic_store
     if store is None:
         raise HTTPException(status_code=503, detail="Topic store not available")
@@ -306,9 +333,11 @@ async def delete_topic(
 @router.get("/topics/{topic_id}/conversations")
 async def list_topic_conversations(
     topic_id: str,
+    request: Request,
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
-    """List conversations subscribed to a topic."""
+    """List conversations subscribed to a topic (SEC-007: owner/admin)."""
+    await _require_topic_access(request, ctx, topic_id)
     store = ctx.topic_store
     if store is None:
         raise HTTPException(status_code=503, detail="Topic store not available")

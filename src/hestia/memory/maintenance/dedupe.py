@@ -27,6 +27,7 @@ class DedupeResult:
 
     merged_count: int
     skipped_protected_count: int
+    skipped_sanitized_count: int = 0
 
 
 def _normalize_content(text: str) -> str:
@@ -194,6 +195,7 @@ class DeterministicDeduper:
                 unprotected.append(memory)
 
         merged_count = 0
+        skipped_count = 0
         processed_ids: set[str] = set()
 
         # Phase 1: exact duplicates by normalized content hash within each scope.
@@ -210,13 +212,24 @@ class DeterministicDeduper:
             merged_content = _merge_contents([m.content for m in group])
             merged_tags = _merge_tags(*group)
             scope_str = format_scope_key(_scope_key(winner))
-            await self._store.update(
+            # BUG-010: if the sanitizer rejects the merged content, update()
+            # returns False. Soft-deleting the losers anyway would silently
+            # destroy information while recording a successful merge.
+            update_ok = await self._store.update(
                 winner.id,
                 content=merged_content,
                 tags=merged_tags,
                 platform=platform,
                 platform_user=platform_user,
             )
+            if not update_ok:
+                logger.warning(
+                    "Skipping dedupe merge for group with winner %s: "
+                    "merged content rejected by sanitizer",
+                    winner.id,
+                )
+                skipped_count += 1
+                continue
             for memory in group:
                 if memory.id == winner.id:
                     continue
@@ -315,4 +328,5 @@ class DeterministicDeduper:
         return DedupeResult(
             merged_count=merged_count,
             skipped_protected_count=len(protected),
+            skipped_sanitized_count=skipped_count,
         )

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from hestia.app import AppContext
 from hestia.workflows.interpolation import interpolate
 from hestia.workflows.models import WorkflowNode
+from hestia.workflows.tool_selection import resolve_invoked_tools
 
 
 class ToolCallNode:
@@ -31,9 +33,9 @@ class ToolCallNode:
         Raises:
             ValueError: If ``tool_name`` is not specified.
         """
-        tool_name = node.config.get("tool_name")
-        if not tool_name:
-            raise ValueError("ToolCallNode requires 'tool_name' in config")
+        # Shared resolver keeps the gate and the node in agreement (SEC-001).
+        resolved_names = resolve_invoked_tools("tool_call", node, inputs)
+        tool_name = resolved_names[0]
 
         # Interpolate {{...}} templates in string inputs so that config
         # values like "{{data.from_address}}" resolve to actual values.
@@ -53,6 +55,9 @@ class ToolCallNode:
 
         result = await app.tool_registry.call(tool_name, tool_inputs)
         if result.artifact_handle:
-            full_bytes = app.artifact_store.fetch_content(result.artifact_handle)
+            # PERF-017: keep blocking disk I/O off the event loop.
+            full_bytes = await asyncio.to_thread(
+                app.artifact_store.fetch_content, result.artifact_handle
+            )
             return full_bytes.decode("utf-8", errors="replace")
         return result.content

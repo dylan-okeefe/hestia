@@ -13,7 +13,7 @@ import re
 import struct
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from hestia.errors import MissingExtraError
 
@@ -86,7 +86,7 @@ class VoicePipeline:
         import numpy as np
 
         def _run() -> list[bytes]:
-            pipeline = self._tts_voice  # type: ignore[attr-defined]
+            pipeline: Any = self._tts_voice
             generator = pipeline(
                 text,
                 voice=self.config.tts_voice,

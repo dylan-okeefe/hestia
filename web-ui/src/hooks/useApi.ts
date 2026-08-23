@@ -33,9 +33,13 @@ export function useApiQuery<T>(
     };
   }, []);
 
-  const execute = useCallback(async (): Promise<T> => {
+  const execute = useCallback(async (opts?: { background?: boolean }): Promise<T> => {
     const requestId = ++requestIdRef.current;
-    setIsLoading(true);
+    // BUG-051: background polls keep the previous data on screen instead of
+    // flashing the skeleton every interval tick.
+    if (!opts?.background) {
+      setIsLoading(true);
+    }
     setIsError(false);
     setError(null);
     try {
@@ -67,8 +71,10 @@ export function useApiQuery<T>(
     if (!options.refetchInterval) {
       return;
     }
+    // BUG-050: poll failures are logged and surfaced via isError instead of
+    // escaping as unhandled promise rejections.
     const id = setInterval(() => {
-      execute();
+      execute({ background: true }).catch(() => {});
     }, options.refetchInterval);
     return () => clearInterval(id);
   }, [execute, options.refetchInterval]);

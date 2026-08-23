@@ -4,10 +4,9 @@ from datetime import datetime
 
 import pytest
 
-from hestia.core.types import SessionState
+from hestia.core.types import Message, SessionState
 from hestia.orchestrator.handoff_service import HandoffService
 from hestia.orchestrator.mappers import turn_domain_to_dto
-from hestia.core.types import Message
 from hestia.orchestrator.types import Turn, TurnState, TurnTransition
 from hestia.persistence.db import Database
 from hestia.persistence.message_store import MessageStore

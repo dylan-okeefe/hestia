@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import time
@@ -16,11 +17,18 @@ from hestia.policy.gate import CapabilityRequest
 from hestia.policy.identity import Identity
 from hestia.workflows.models import ExecutionResult, NodeResult, Workflow, WorkflowEdge, WorkflowNode
 from hestia.workflows.store import WorkflowStore
+from hestia.workflows.tool_selection import resolve_invoked_tools
 
 if TYPE_CHECKING:
     from hestia.workflows.execution_store import ExecutionStore
 
 logger = logging.getLogger(__name__)
+
+# SEC-001: node types that invoke tools by name must pass the CapabilityGate
+# before dispatch. The old NODE_TYPES-dispatch-then-return flow skipped the
+# gate block entirely, letting any activated workflow run arbitrary tools
+# (including 'terminal') unattended.
+_GATED_NODE_TYPES = {"tool_call", "investigate"}
 
 
 def _clean_reasoning_fallback(text: str) -> str:
@@ -118,10 +126,13 @@ class WorkflowExecutor:
         app: AppContext,
         workflow_store: WorkflowStore | None = None,
         execution_store: ExecutionStore | None = None,
+        *,
+        is_test: bool = False,
     ) -> None:
         self._app = app
         self._workflow_store = workflow_store
         self._execution_store = execution_store
+        self._is_test = is_test
 
     async def execute(
         self,
@@ -227,6 +238,20 @@ class WorkflowExecutor:
                     )
                 return result
 
+        # BUG-036: persist a RUNNING row upfront so a crash mid-run leaves an
+        # observable trace instead of silently vanishing.
+        running_execution_id: str | None = None
+        if self._execution_store is not None:
+            try:
+                running_execution_id = await self._execution_store.start_execution(
+                    workflow_id,
+                    version.version,
+                    trigger_payload,
+                    is_test=self._is_test,
+                )
+            except Exception:
+                logger.exception("Failed to record RUNNING execution row")
+
         node_results: list[NodeResult] = []
         outputs: dict[str, Any] = {"trigger": trigger_payload}
         total_prompt_tokens = 0
@@ -257,6 +282,9 @@ class WorkflowExecutor:
         for node in order:
             incoming = [e for e in version.edges if e.target_node_id == node.id]
             if incoming and not any(e.id in active_edges for e in incoming):
+                # BUG-039: record skipped nodes so the UI can distinguish
+                # 'branch not taken' from 'node does not exist'.
+                node_results.append(NodeResult(node_id=node.id, status="skipped"))
                 continue
 
             inputs = _resolve_inputs(node, version.edges, outputs)
@@ -290,7 +318,12 @@ class WorkflowExecutor:
                 )
                 if self._execution_store is not None:
                     await self._execution_store.save_execution(
-                        result, workflow_id, version.version, trigger_payload
+                        result,
+                        workflow_id,
+                        version.version,
+                        trigger_payload,
+                        execution_id=running_execution_id,
+                        is_test=self._is_test,
                     )
                 return result
 
@@ -333,7 +366,12 @@ class WorkflowExecutor:
         )
         if self._execution_store is not None:
             await self._execution_store.save_execution(
-                result, workflow_id, version.version, trigger_payload
+                result,
+                workflow_id,
+                version.version,
+                trigger_payload,
+                execution_id=running_execution_id,
+                is_test=self._is_test,
             )
         if self._app.event_bus is not None:
             await self._app.event_bus.publish(
@@ -346,6 +384,51 @@ class WorkflowExecutor:
                 },
             )
         return result
+
+    async def _gate_node_tools(
+        self,
+        node: WorkflowNode,
+        inputs: dict[str, Any],
+        workflow: Workflow,
+    ) -> None:
+        """Run every tool a tool_call/investigate node will invoke past the
+        CapabilityGate (SEC-001). Mirrors the fallback-path denial format so
+        blocked executions read consistently."""
+        gate = self._app.capability_gate
+        if gate is None:
+            return
+
+        # Review defect 1: resolution lives in ONE place shared with the node
+        # executors, and fails closed on unrecognized shapes. The previous
+        # duplicate handled only str/list, so a dict-shaped tools value from
+        # interpolated inputs gated nothing while executing its keys.
+        try:
+            names = resolve_invoked_tools(node.type, node, inputs)
+        except ValueError as exc:
+            raise ValueError(
+                f"[CATEGORY: BLOCKED] Invalid tool selection in workflow "
+                f"{workflow.id} node {node.id}: {exc}"
+            ) from None
+
+        actor = Identity(
+            platform="workflow",
+            platform_user=workflow.owner_id or workflow.id,
+        )
+        allow_list = set(workflow.allow_listed_tools or [])
+        for tool_name in names:
+            request = CapabilityRequest(
+                actor=actor,
+                channel=Channel.WORKFLOW,
+                tool_name=tool_name,
+                inputs=dict(inputs),
+                source_workflow_id=workflow.id,
+            )
+            result = await gate.check(request, allow_list=allow_list)
+            if not result.allowed:
+                raise ValueError(
+                    f"[CATEGORY: BLOCKED] Capability gate denied '{tool_name}' "
+                    f"in workflow {workflow.id}: {result.reason}"
+                )
 
     async def _run_node(
         self, node: WorkflowNode, inputs: dict[str, Any], workflow: Workflow
@@ -364,6 +447,11 @@ class WorkflowExecutor:
             ValueError: If the node type is not supported.
         """
         from hestia.workflows.nodes import NODE_TYPES
+
+
+
+        if node.type in _GATED_NODE_TYPES:
+            await self._gate_node_tools(node, inputs, workflow)
 
         executor_cls = NODE_TYPES.get(node.type)
         if executor_cls is not None:
@@ -434,7 +522,11 @@ class WorkflowExecutor:
         result = await self._app.tool_registry.call(node.type, inputs)
         value = result.content
         if result.artifact_handle:
-            # Load full artifact content so downstream nodes get the complete data
-            full_bytes = self._app.artifact_store.fetch_content(result.artifact_handle)
+            # Load full artifact content so downstream nodes get the complete
+            # data. Off-loop: large reads previously stalled the whole event
+            # loop (PERF-017).
+            full_bytes = await asyncio.to_thread(
+                self._app.artifact_store.fetch_content, result.artifact_handle
+            )
             value = full_bytes.decode("utf-8", errors="replace")
         return _NodeOutput(value=value)

@@ -154,11 +154,10 @@ class TestBrowserStreamWSAuth:
         client, _ctx = ws_ctx
         token = _make_token(auth_manager, user_id=None)
 
-        with pytest.raises(WebSocketDisconnect) as exc_info:
-            with client.websocket_connect(
-                f"/api/browser-session/stream/test-session?token={token}"
-            ):
-                pass  # pragma: no cover
+        with pytest.raises(WebSocketDisconnect) as exc_info, client.websocket_connect(
+            f"/api/browser-session/stream/test-session?token={token}"
+        ):
+            pass  # pragma: no cover
 
         assert exc_info.value.code == 1008
 
@@ -172,11 +171,10 @@ class TestBrowserStreamWSAuth:
         ctx.user_store.get_user = AsyncMock(return_value=_make_user("u1", "user"))
         token = _make_token(auth_manager, user_id="u1")
 
-        with pytest.raises(WebSocketDisconnect) as exc_info:
-            with client.websocket_connect(
-                f"/api/browser-session/stream/test-session?token={token}"
-            ):
-                pass  # pragma: no cover
+        with pytest.raises(WebSocketDisconnect) as exc_info, client.websocket_connect(
+            f"/api/browser-session/stream/test-session?token={token}"
+        ):
+            pass  # pragma: no cover
 
         assert exc_info.value.code == 1008
         ctx.user_store.get_user.assert_awaited_once_with("u1")

@@ -309,7 +309,13 @@ class ToolRegistry:
 
     async def meta_call_tool(self, name: str, arguments: dict[str, Any]) -> ToolCallResult:
         """Handler for the call_tool meta-tool."""
-        return await self.call(name, arguments)
+        try:
+            return await self.call(name, arguments)
+        except ToolNotFoundError:
+            return ToolCallResult.error(
+                content=f"Tool not found: {name}. Use list_tools to see available tools.",
+                error_type="ToolNotFoundError",
+            )
 
 
 # Re-export for convenience

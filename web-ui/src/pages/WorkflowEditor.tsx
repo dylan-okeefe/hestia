@@ -256,6 +256,8 @@ export default function WorkflowEditor() {
         workflowId={id}
         webhookUrl={editor.webhookUrl}
         webhookSecret={editor.webhookSecret}
+        hasWebhookSecret={editor.hasWebhookSecret}
+        onRotateSecret={editor.handleRotateSecret}
       />
       <div className="workflow-editor__main">
         {editor.showVersions && (

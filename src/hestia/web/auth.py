@@ -188,16 +188,57 @@ class AuthManager:
         retry = int((oldest + timedelta(minutes=5) - now).total_seconds())
         return max(0, retry)
 
-    async def request_code(self, platform: str, platform_user: str | None = None) -> dict[str, Any]:
+    def _is_authorized_recipient(self, platform: str, platform_user: str) -> bool:
+        """SEC-002: only allowlisted identities may receive login codes.
+
+        A client-supplied recipient used to be delivered to verbatim, letting
+        anyone point codes at arbitrary chat IDs.
+        """
+        if platform == "telegram":
+            users: list[str] = self.adapters[platform]._config.allowed_users  # type: ignore[attr-defined]
+        elif platform == "matrix":
+            users = self.adapters[platform]._config.allowed_rooms  # type: ignore[attr-defined]
+        else:
+            return False
+        normalized = {u.lstrip("@").lower() for u in users}
+        candidate = platform_user.lstrip("@").lower()
+        return candidate in normalized
+
+    async def request_code(
+        self,
+        platform: str,
+        platform_user: str | None = None,
+        *,
+        user_id: str | None = None,
+    ) -> dict[str, Any]:
         """Generate and send a one-time code via the requested platform.
 
-        Returns a dict with status information.
+        SEC-002: when *user_id* is supplied (dashboard login picker), the
+        recipient resolves server-side from that user's registered identity
+        and must be allowlisted. A client-supplied raw *platform_user* is
+        only honored when it matches an allowlisted identity.
         """
         self._cleanup_stale_entries()
 
-        if platform_user is None:
+        adapter = self.adapters.get(platform)
+        if adapter is None:
+            raise ValueError(f"Platform {platform!r} is not configured or running")
+
+        if user_id is not None and self._user_store is not None:
+            identities = await self._user_store.get_identities(user_id)
+            match = next((i for i in identities if i.platform == platform), None)
+            if match is None:
+                raise ValueError(
+                    f"User has no {platform!r} identity to receive a code"
+                )
+            if not self._is_authorized_recipient(platform, match.platform_user):
+                raise ValueError("Requested recipient is not an authorized user")
+            platform_user = match.platform_user
+        elif platform_user is not None:
+            if not self._is_authorized_recipient(platform, platform_user):
+                raise ValueError("Requested recipient is not an authorized user")
+        else:
             platform_user = self._get_configured_user(platform)
-        adapter = self.adapters[platform]
 
         code = self.generate_code()
         now = datetime.now(UTC)

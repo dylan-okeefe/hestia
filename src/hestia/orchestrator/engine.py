@@ -1,5 +1,6 @@
 """Orchestrator engine for managing turn execution."""
 
+import contextlib
 import logging
 import uuid
 from pathlib import Path
@@ -14,6 +15,7 @@ from hestia.errors import (
     ContextTooLargeError,
     IllegalTransitionError,
     PlatformError,
+    RateLimitError,
 )
 from hestia.inference.slot_manager import SlotManager
 from hestia.orchestrator.assembly import TurnAssembly
@@ -223,7 +225,7 @@ class Orchestrator:
             await respond_callback(
                 "Rate limit exceeded. Please wait a moment before sending another message."
             )
-            raise PlatformError("Rate limit exceeded for session")  # noqa: TRY003
+            raise RateLimitError("Rate limit exceeded for session")  # noqa: TRY003
 
         if current_session_id.get() == session.id:
             raise RuntimeError(
@@ -285,10 +287,12 @@ class Orchestrator:
                     await self._set_typing(platform, platform_user, False)
                     logger.error("Illegal transition: %s", exc)
                     if turn.state not in (TurnState.DONE, TurnState.FAILED):
-                        turn.state = TurnState.FAILED
-                        turn.error = str(exc)
-                        if self._turn_store is not None:
-                            await self._turn_store.update_turn(turn_domain_to_dto(turn))
+                        # BUG-080: route the failure through the transition
+                        # journal instead of mutating state directly, so the
+                        # journaled history agrees with the persisted state.
+                        with contextlib.suppress(IllegalTransitionError):
+                            await self._transition(turn, TurnState.FAILED, str(exc))
+                            turn.error = str(exc)
                     try:
                         await ctx.respond_callback(
                             "An internal error occurred and the turn could not complete. "
@@ -316,7 +320,14 @@ class Orchestrator:
                 if trace_token is not None:
                     current_trace_store.reset(trace_token)
                 current_turn_id.reset(turn_token)
+                # Review defect 2: pair acquire/unref inside the finally so a
+                # cancelled turn (CancelledError is a BaseException and skips
+                # except-Exception handlers) cannot leak an interest ref and
+                # pin this session's lock for the process lifetime.
+                self._lock_manager.unref(session.id)
 
+        # Opportunistic prune; waiter-aware (BUG-001) so it never strands a
+        # contender parked on or about to resume holding the lock object.
         self._lock_manager.release_unused(session.id)
         return turn
 

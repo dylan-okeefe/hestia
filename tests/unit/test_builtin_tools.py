@@ -92,7 +92,10 @@ class TestReadFile:
         test_file.write_text("x" * 10000)
 
         result = await read_file(str(test_file), max_bytes=100)
-        assert len(result) == 100
+        # Content is capped at exactly max_bytes; an explicit truncation
+        # marker follows so the model knows the read was cut short.
+        assert result.startswith("x" * 100)
+        assert "[truncated at 100 bytes]" in result
 
     @pytest.mark.asyncio
     async def test_binary_file_message(self, tmp_path):

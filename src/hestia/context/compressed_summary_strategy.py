@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 
 from hestia.context.compressor import HistoryCompressor
+from hestia.context.sequence_validator import validate_chat_template_sequence
 from hestia.core.types import Message
 
 
@@ -58,24 +59,43 @@ class CompressedSummaryStrategy:
             content=f"{original_system.content}\n\n[PRIOR CONTEXT SUMMARY]\n{summary}",
         )
 
-        # Try inserting right after the system message (index 0)
-        messages = [augmented_system]
-        messages.extend(protected_top[1:])
-        messages.extend(included_history)
-        messages.extend(protected_bottom)
+        # Try inserting right after the system message (index 0).
+        # Re-validate after splicing (BUG-028): compression must never emit a
+        # sequence strict chat templates would reject.
+        messages = validate_chat_template_sequence(
+            [
+                augmented_system,
+                *protected_top[1:],
+                *included_history,
+                *protected_bottom,
+            ]
+        )
 
         count = await count_messages(messages)
         if count <= budget:
             return messages, included_history, 0
 
-        # Retry once: drop the oldest included message
+        # Retry once: drop the oldest included message (pair-aware — an
+        # assistant owning tool results takes them with it).
         if included_history:
             retry_included = list(included_history)
-            retry_included.pop(0)
-            messages = [augmented_system]
-            messages.extend(protected_top[1:])
-            messages.extend(retry_included)
-            messages.extend(protected_bottom)
+            removed = retry_included.pop(0)
+            if removed.role == "assistant" and removed.tool_calls:
+                owned = {tc.id for tc in removed.tool_calls if tc.id}
+                while (
+                    retry_included
+                    and retry_included[0].role == "tool"
+                    and retry_included[0].tool_call_id in owned
+                ):
+                    retry_included.pop(0)
+            messages = validate_chat_template_sequence(
+                [
+                    augmented_system,
+                    *protected_top[1:],
+                    *retry_included,
+                    *protected_bottom,
+                ]
+            )
 
             count = await count_messages(messages)
             if count <= budget:
