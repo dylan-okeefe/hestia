@@ -15,7 +15,7 @@ High-impact defects, data-loss/security exposures, and cheap unblockers:
 | I-2 | **Registry-level gate enforcement** (route workflow tool_call/investigate nodes through CapabilityGate; make ungated paths structurally impossible; regression test: paranoid workflow × terminal denied) | Critical security hole contradicting ADR-042; webhook/chat-command reachable | SEC-001/003/004, ARCH-001 |
 | I-3 | **Session-lock lifecycle fix** (waiter-aware prune/refcount) + interleaving test-first | Silent violation of per-session serialization invariant everything else relies on | BUG-001 |
 | I-4 | **Memory fail-closed family** (list/delete/update/pin scoped-or-raise; retire legacy epoch builder path) | Cross-user read/delete family | SEC-010 |
-| I-5 | **Login-surface bundle** (server-derived code recipients; auth-gate roster endpoint; debug_login posture guard; generic auth errors) | Anonymous-reachable primitives; trivial diffs | SEC-002/004/006/023 |
+| I-5 | **Login-surface bundle** (server-derived code recipients; auth-gate roster endpoint; debug_login posture guard; generic auth errors) | Anonymous-reachable primitives; trivial diffs | SEC-002/026/006/023 |
 | I-6 | **Slot-eviction locking** (hold pool lock across save/erase or ownership tokens) | KV cross-contamination risk; real-world slot-op crashes documented | BUG-002 |
 | I-7 | **Streaming honesty** (typed error for mid-stream stall; detect SSE error chunks; aclosing generator) | Silent truncation presented as success today | BUG-003/022/046 |
 | I-8 | **Persistence quick fixes** (expanding bindparams in trace/failure stores; dialect-guard m006; parameterized timestamps) | User-facing 500s on filtered queries; PG path broken | BUG-007/009, BUG-088 cleanup |

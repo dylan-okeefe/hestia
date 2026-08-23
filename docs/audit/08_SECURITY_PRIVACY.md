@@ -48,7 +48,12 @@ Truncated-write recovery executes `write_file` handlers directly from model-emit
 `routes/auth.py:44-45` accepts `platform_user` in the unauthenticated request body; `auth.py:198-199` only falls back to the configured user when the param is absent — so no allowlist check applies — and `:213` delivers the code to that recipient. Any anonymous caller who can reach the API can (a) harass arbitrary Telegram chat IDs with login codes, (b) if combined with any code-leak vector, attempt takeover; practically it's primarily a spam/enumeration primitive today because codes stay on Dylan's devices.
 **Fix:** ignore client-supplied recipients entirely; resolve target from server-side user records. Scope S.
 
-### SEC-004 (Medium · Confirmed) — Unauthenticated identity roster
+### SEC-026 (Medium · Confirmed) — Unauthenticated identity roster
+> ID note: originally mis-numbered as a second SEC-004 (colliding with
+> truncated-write recovery above). Renumbered 2026-08-23; card #44's
+> adjudication caught the resulting citation ambiguity. Cite audit IDs as
+> file-qualified when multiple finding schemes exist in-repo
+> (docs/reviews uses C/H/M, docs/audit uses SEC/BUG/...).
 `GET /api/auth/available-users` (middleware-exempt `/api/auth/*`) returns user_ids, display names, roles, platforms, and every platform_user binding; `/api/auth/status` adds available_platforms + debug_login flag. Precise targeting data synergistic with SEC-002 and household contact enumeration.
 **Fix:** require authentication or return minimal booleans. Scope XS–S.
 
@@ -145,7 +150,7 @@ The strongest structural defense is requester-bound confirmations plus channel g
 
 1. SEC-001 (+structural registry chokepoint) — Critical.
 2. SEC-010 memory fail-open family — High, small diff.
-3. SEC-002/004 login surface — High/Medium, small diffs.
+3. SEC-002/026 login surface — High/Medium, small diffs.
 4. SEC-005 browser SSRF completion — High.
 5. SEC-003/004 remaining bypasses — ride along with #1's chokepoint work.
 6. SEC-006 debug_login guard; SEC-013 secret display; SEC-015 env scrubbing; multi-user gap batch (§4).

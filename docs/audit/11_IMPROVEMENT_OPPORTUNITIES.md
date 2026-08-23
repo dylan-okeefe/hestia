@@ -18,7 +18,7 @@ Prioritized ordering lives in `12_PRIORITY_ROADMAP.md`; speculative/future ideas
 - **Benefit:** closes cross-user read/delete family. **Effort:** S–M. **Risk:** low — internal unscoped callers are few (maintenance uses explicit scopes already). **Systems:** memory/store, context/memory_epoch, web/routes/memory.
 
 ### A3. Login surface hardening bundle
-- SEC-002 server-derived recipients; SEC-004 auth-gate roster endpoint; SEC-006 debug_login in posture guard; SEC-023 generic auth errors. **Effort:** S total. **Risk:** low. **Systems:** web/routes/auth, web/auth, app.py guards.
+- SEC-002 server-derived recipients; SEC-026 auth-gate roster endpoint; SEC-006 debug_login in posture guard; SEC-023 generic auth errors. **Effort:** S total. **Risk:** low. **Systems:** web/routes/auth, web/auth, app.py guards.
 
 ### A4. Browser SSRF completion
 - **Problem/Evidence:** SEC-005 (two tools unchecked; redirects/subresources unvalidated), SEC-020 headed-login.
