@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from hestia.core.types import Session
 
 if TYPE_CHECKING:
+    from hestia.policy.channel import Channel
     from hestia.tools.registry import ToolRegistry
 
 
@@ -90,7 +91,20 @@ class PolicyEngine(ABC):
 
         Returns the subset of tool_names allowed for this session.
         """
-        ...
+        raise NotImplementedError
+
+    def unattended_allow_list(
+        self,
+        channel: "Channel",
+        tool_names: list[str],
+        registry: "ToolRegistry",
+    ) -> set[str]:
+        """Derive the explicit allow-list for an unattended channel.
+
+        Base implementation pre-allows nothing; engines map their trust
+        flags to concrete tool names (see DefaultPolicyEngine).
+        """
+        return set()
 
     @abstractmethod
     def auto_approve(

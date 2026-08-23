@@ -331,7 +331,10 @@ async def test_run_capability_gate_flags_injection_from_history() -> None:
     gate = MagicMock(spec=CapabilityGate)
 
     async def _capture(
-        request: CapabilityRequest, *, injection_flagged: bool = False
+        request: CapabilityRequest,
+        *,
+        injection_flagged: bool = False,
+        allow_list: set[str] | None = None,
     ) -> CapabilityResult:
         nonlocal captured
         captured = request
@@ -368,3 +371,5 @@ async def test_run_capability_gate_flags_injection_from_history() -> None:
 
     assert captured is not None
     assert gate.check.await_args.kwargs.get("injection_flagged") is True
+    # Attended channels derive no allow-list (L245 maps only SCHEDULER).
+    assert gate.check.await_args.kwargs.get("allow_list") is None

@@ -1724,6 +1724,21 @@ class TurnExecution:
                 for m in ctx.running_history
             )
 
+        # L245: unattended channels get an explicit allow-list derived from
+        # the policy engine (scheduler TrustConfig flags are now real
+        # controls). Workflow contexts pass their own allow-list and never
+        # reach this path.
+        allow_list: set[str] | None = None
+        if channel in (Channel.SCHEDULER, Channel.EMAIL, Channel.WEBHOOK):
+            try:
+                meta = self._tools.describe(tool_name)
+                allow_list = self._policy.unattended_allow_list(
+                    channel, [tool_name], self._tools
+                )
+                _ = meta
+            except Exception:
+                allow_list = set()
+
         request = CapabilityRequest(
             actor=actor,
             channel=channel,
@@ -1732,7 +1747,7 @@ class TurnExecution:
             session_id=session.id,
         )
         result = await self._capability_gate.check(
-            request, injection_flagged=injection_flagged
+            request, injection_flagged=injection_flagged, allow_list=allow_list
         )
 
         if not result.allowed:
