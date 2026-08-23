@@ -20,7 +20,7 @@
   - External `SHELL_EXEC` tool is filtered out for subagent sessions (no trust bypass).
   - Empty `extra_tool_modules` leaves built-in registration unchanged.
   - Config field loads from `HESTIA_EXTRA_TOOL_MODULES` env var.
-- Added `docs/adr/ADR-051-external-tool-modules.md` documenting the opt-in, explicit-register, no-autoload, full-trust-boundary decisions.
+- Added `docs/adr/ADR-053-external-tool-modules.md` documenting the opt-in, explicit-register, no-autoload, full-trust-boundary decisions.
 - Added "External tool modules" section to `docs/guides/custom-tools.md` with setup steps and a trust warning.
 
 ## Commits
