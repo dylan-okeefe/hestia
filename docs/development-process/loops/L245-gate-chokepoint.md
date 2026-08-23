@@ -16,7 +16,7 @@ the source of truth for resume-after-interrupt.
 - [x] G. Scheduler allow-list derived from TrustConfig flags via policy engine (flags become real controls).
 - [x] H. derive_allowed_set(nodes) incl. node-effect markers; save returns derived set; activate requires confirmation of changes (409 + diff); m011 backfill migration against an existing-db shaped fixture; _is_url_safe private-import cleanup in http_request.py.
 - [x] I. Frontend: diff-on-activate dialog wired to 409 flow.
-- [ ] J. CHANGELOG breaking-change entry; REMEDIATION_SUMMARY/architecture notes; metrics refresh; card #44 → In Review.
+- [x] J. CHANGELOG breaking-change entry; REMEDIATION_SUMMARY/architecture notes; metrics refresh; card #44 → In Review.
 
 ## Rules
 Tests-first per chunk; full gates green per commit; no push/merge without Dylan.
@@ -38,7 +38,11 @@ Tests-first per chunk; full gates green per commit; no push/merge without Dylan.
   error) in api client; AllowListDiffDialog (+css+tests); hook parks
   changed activations in pendingActivation across all three activation
   paths (save-and-activate, toolbar activate, version panel).
-- NEXT on resume: J — derive_allowed_set(nodes) incl. node-effect
+- 2026-08-23: J landed — ADR-052, CHANGELOG breaking/added/changed
+  entries, REMEDIATION_SUMMARY follow-through section with fresh gate
+  numbers. Card #44 moved to In Review.
+- STATUS: chunks A0-J complete. Branch feature/l245-gate-chokepoint
+  awaiting Dylan review; not pushed without his okay. — derive_allowed_set(nodes) incl. node-effect
   markers ("node:http_request" etc.), save returns derived set, activate
   requires confirmation of diff (409 flow), m011 backfill migration with
   an existing-db-shaped fixture test, _is_url_safe private-import

@@ -44,3 +44,21 @@ Commits, oldest first:
 ## Board note
 
 TaskView cards could not be created from this environment (no board API access here). This summary + commit list maps 1:1 to cards if you want them mirrored; recommend moving straight to In Review.
+
+## Follow-through: L245 allowlist-only authorization (card #44)
+
+The F5 finding (allow-lists advisory; four ungated paths) was remediated
+in a dedicated loop on `feature/l245-gate-chokepoint`, tracked in
+`docs/development-process/loops/L245-gate-chokepoint.md` and recorded in
+`docs/adr/ADR-052-allowlist-only-tool-authorization-for-unattended-channels.md`:
+
+- Registry-level chokepoint with required `ToolCallContext` (strict mode);
+  the four bypass paths route through gated dispatch.
+- Workflow grants are graph-derived (`derive_allowed_set`), confirmed via
+  an activation diff (409 + confirm flag), and enforced for node effects;
+  migration m011 backfills existing rows.
+- Scheduler TrustConfig flags now gate SCHEDULER-channel turns for real.
+
+Verification at final L245 commit: ruff clean · mypy clean · pytest
+2,312 passed / 6 skipped · vitest 135/135 · `npm run build` green ·
+inline-style count 11 (< 20 budget).
