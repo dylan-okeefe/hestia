@@ -337,6 +337,7 @@ MIGRATIONS: list[Migration] = [
     m007_scheduled_task_type,
     m008_compaction_archive,
     m009_hot_path_indexes,
+    m010_execution_is_test,
 ]
 
 
