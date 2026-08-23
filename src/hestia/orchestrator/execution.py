@@ -14,6 +14,7 @@ from hestia.core.types import ChatResponse, Message, Session, ToolCall
 from hestia.diagnostics import regression_collector
 from hestia.errors import (
     EmptyResponseError,
+    InferenceServerError,
     InferenceTimeoutError,
     MaxIterationsError,
     PolicyFailureError,
@@ -51,6 +52,7 @@ TypingCallback = Callable[[bool], Awaitable[None]]
 # arrives for this long we assume the stream is dead and finish.  Tool-call
 # argument JSON can be large, and local models can stall between tokens, so
 # this needs to be generous enough for the server to finish emitting a chunk.
+_INFERENCE_RETRY_MAX_BACKOFF_S = 5.0
 _STREAM_INACTIVITY_TIMEOUT = 120.0
 
 # First-chunk timeout: prompt processing for long contexts can take tens of
@@ -328,42 +330,85 @@ class TurnExecution:
             if turn.thinking_aborted:
                 turn.reasoning_budget = 0
 
-            try:
-                if ctx.stream_callback is not None and self._stream:
-                    chat_response = await self._run_inference_streaming(ctx, turn)
-                else:
-                    chat_response = await self._inference.chat(
-                        messages=ctx.build_result.messages,
-                        tools=ctx.tools,
-                        slot_id=ctx.slot_id,
-                        reasoning_budget=turn.reasoning_budget,
-                        max_tokens=self._max_tokens,
+            inference_attempt = 0
+            while True:
+                try:
+                    if ctx.stream_callback is not None and self._stream:
+                        chat_response = await self._run_inference_streaming(ctx, turn)
+                    else:
+                        chat_response = await self._inference.chat(
+                            messages=ctx.build_result.messages,
+                            tools=ctx.tools,
+                            slot_id=ctx.slot_id,
+                            reasoning_budget=turn.reasoning_budget,
+                            max_tokens=self._max_tokens,
+                        )
+                        # BUG-020: enforce the thinking budget on the
+                        # non-streaming path too. The check used to exist only
+                        # in the streaming loop, so runaway <think> output
+                        # burned up to max_tokens unchecked and the abort +
+                        # nudge machinery below was dead code with stream=False.
+                        reasoning = chat_response.reasoning_content
+                        if reasoning and not turn.thinking_aborted:
+                            thinking_chars = len(reasoning)
+                            if thinking_chars > turn.reasoning_budget * 4:
+                                logger.warning(
+                                    "Thinking budget exceeded (%d chars ≈ %d tokens > %d budget)",
+                                    thinking_chars,
+                                    thinking_chars // 4,
+                                    turn.reasoning_budget,
+                                )
+                                raise ThinkingBudgetExceededError(
+                                    f"Thinking budget exceeded ({thinking_chars // 4} tokens > "
+                                    f"{turn.reasoning_budget})"
+                                )
+                    break
+                except ThinkingBudgetExceededError:
+                    await transition(turn, TurnState.RETRYING, "")
+                    turn.thinking_aborted = True
+                    nudge = Message(
+                        role="system",
+                        content=(
+                            "You have been thinking for a long time. "
+                            "Stop deliberating and use your tools to complete the task."
+                        ),
+                        created_at=utcnow(),
                     )
-            except ThinkingBudgetExceededError:
-                await transition(turn, TurnState.RETRYING, "")
-                turn.thinking_aborted = True
-                nudge = Message(
-                    role="system",
-                    content=(
-                        "You have been thinking for a long time. "
-                        "Stop deliberating and use your tools to complete the task."
-                    ),
-                    created_at=utcnow(),
-                )
-                await self._message_store.append_message(
-                    session.id, message_domain_to_dto(nudge, session.id, idx=0)
-                )
-                ctx.running_history.append(nudge)
-                self._builder.set_style_prefix(ctx.style_prefix)
-                ctx.build_result = await self._builder.build(
-                    session=ctx.session,
-                    history=ctx.running_history,
-                    system_prompt=ctx.system_prompt,
-                    tools=ctx.tools,
-                    new_user_message=None,
-                )
-                turn.iterations += 1
-                continue
+                    await self._message_store.append_message(
+                        session.id, message_domain_to_dto(nudge, session.id, idx=0)
+                    )
+                    ctx.running_history.append(nudge)
+                    self._builder.set_style_prefix(ctx.style_prefix)
+                    ctx.build_result = await self._builder.build(
+                        session=ctx.session,
+                        history=ctx.running_history,
+                        system_prompt=ctx.system_prompt,
+                        tools=ctx.tools,
+                        new_user_message=None,
+                    )
+                    turn.iterations += 1
+                    continue
+                except (InferenceServerError, InferenceTimeoutError) as exc:
+                    # BUG-021: the policy's transient-error retry decision was
+                    # never consulted (only ThinkingBudgetExceededError was
+                    # caught here), so one server blip failed the whole turn.
+                    if ctx.stream_callback is not None and self._stream:
+                        # Streaming turns fail fast: partial text has already
+                        # been delivered to the user, and re-running would
+                        # duplicate it in the accumulated stream state.
+                        raise
+                    decision = self._policy.retry_after_error(exc, inference_attempt)
+                    if decision.action is not RetryAction.RETRY_WITH_BACKOFF:
+                        raise
+                    inference_attempt += 1
+                    delay = min(decision.backoff_seconds, _INFERENCE_RETRY_MAX_BACKOFF_S)
+                    logger.warning(
+                        "Transient inference error (%s); retry %d in %.1fs",
+                        exc,
+                        inference_attempt,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
 
             ctx.total_prompt_tokens += getattr(chat_response, "prompt_tokens", 0) or 0
             ctx.total_completion_tokens += getattr(chat_response, "completion_tokens", 0) or 0
