@@ -124,7 +124,7 @@ class ToolRegistry:
         name: str,
         arguments: dict[str, Any],
         *,
-        context: Any = None,
+        context: Any,
     ) -> ToolCallResult:
         """Dispatch a tool call.
 
@@ -133,11 +133,11 @@ class ToolRegistry:
         Args:
             name: Tool name
             arguments: Tool arguments
-            context: :class:`~hestia.tools.context.ToolCallContext` describing
-                the caller. While the L245 migration is in flight this is
-                optional; when a gate is bound and no context is supplied the
-                call proceeds ungated with a loud deprecation warning. The
-                fallback disappears in chunk F (strict mode).
+            context: REQUIRED :class:`~hestia.tools.context.ToolCallContext`
+                describing the caller (L245 strict mode). With a gate bound
+                and ``mode="enforce"`` the registry evaluates the gate here;
+                ``pre_gated`` carries an orchestrator-made decision;
+                ``internal`` writes an audit row.
 
         Returns:
             ToolCallResult with status, content, and optional artifact handle
@@ -145,19 +145,21 @@ class ToolRegistry:
         Raises:
             ToolBlockedError: Gate denied the invocation.
             ToolConfirmationRequiredError: Gate escalated to confirmation.
+            TypeError: Context missing or wrong type.
         """
         meta = self.describe(name)
         if meta.handler is None:
             raise ToolError(f"Tool {name!r} has no handler")
 
+        from hestia.tools.context import ToolCallContext  # local: avoids gate<->registry cycle
+
+        if not isinstance(context, ToolCallContext):
+            raise TypeError(
+                f"ToolRegistry.call requires a ToolCallContext (got {type(context).__name__})"
+            )
+
         if self._gate is not None:
-            if context is None:
-                logger.warning(
-                    "UNGATED tool invocation of %r — pass a ToolCallContext "
-                    "(L245 migration in progress)",
-                    name,
-                )
-            elif context.mode == "enforce":
+            if context.mode == "enforce":
                 from hestia.policy.gate import CapabilityRequest
                 from hestia.policy.identity import Identity
 
@@ -405,7 +407,7 @@ class ToolRegistry:
         name: str,
         arguments: dict[str, Any],
         *,
-        context: Any = None,
+        context: Any,
     ) -> ToolCallResult:
         """Handler for the call_tool meta-tool."""
         try:

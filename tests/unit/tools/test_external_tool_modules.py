@@ -17,6 +17,16 @@ from hestia.core.types import Session, SessionState, SessionTemperature
 from hestia.policy.constants import PLATFORM_SUBAGENT
 from hestia.policy.default import DefaultPolicyEngine
 
+
+def _ext_ctx():
+    from hestia.policy.channel import Channel
+    from hestia.tools.context import ToolCallContext
+
+    return ToolCallContext(
+        channel=Channel.API, mode="internal", internal_reason="unit-test"
+    )
+
+
 # Make tests/fixtures/external_tool_module importable as a top-level package.
 _FIXTURES_ROOT = Path(__file__).parents[2] / "fixtures"
 if str(_FIXTURES_ROOT) not in sys.path:
@@ -44,7 +54,7 @@ async def test_external_tool_loads_and_calls(tmp_path: Path) -> None:
     app.register_tools()
 
     assert "external_echo" in app.tool_registry.list_names()
-    result = await app.tool_registry.call("external_echo", {"message": "hello"})
+    result = await app.tool_registry.call("external_echo", {"message": "hello"}, context=_ext_ctx())
     assert result.content == "hello"
 
 

@@ -1589,18 +1589,12 @@ class TurnExecution:
         platform_user = (
             ctx.platform_user if ctx is not None and ctx.platform_user is not None else session.platform_user
         )
-        # No gate configured -> legacy ungated call (removed in chunk F).
-        tool_context = (
-            ToolCallContext(
-                channel=channel,
-                actor_platform=session.platform,
-                actor_platform_user=platform_user,
-                session_id=session.id,
-                mode="pre_gated",
-                pre_gated_result=cap_result,
-            )
-            if cap_result is not None
-            else None
+        tool_context = ToolCallContext(
+            channel=channel,
+            actor_platform=session.platform,
+            actor_platform_user=platform_user,
+            session_id=session.id,
+            mode="enforce",
         )
 
         result = await self._tools.call(
@@ -1840,19 +1834,26 @@ class TurnExecution:
         # L245: thread the pre_gated decision into the meta-tool passthrough.
         from hestia.tools.context import ToolCallContext
 
-        tool_context = None
-        if cap_result is not None and ctx is not None:
+        channel = ctx.channel if ctx is not None and ctx.channel is not None else Channel.CLI
+        platform_user = (
+            ctx.platform_user if ctx is not None and ctx.platform_user is not None else session.platform_user
+        )
+        if cap_result is not None:
             tool_context = ToolCallContext(
-                channel=ctx.channel if ctx.channel is not None else Channel.CLI,
+                channel=channel,
                 actor_platform=session.platform,
-                actor_platform_user=(
-                    ctx.platform_user
-                    if ctx.platform_user is not None
-                    else session.platform_user
-                ),
+                actor_platform_user=platform_user,
                 session_id=session.id,
                 mode="pre_gated",
                 pre_gated_result=cap_result,
+            )
+        else:
+            tool_context = ToolCallContext(
+                channel=channel,
+                actor_platform=session.platform,
+                actor_platform_user=platform_user,
+                session_id=session.id,
+                mode="enforce",
             )
         return await self._tools.meta_call_tool(name, arguments, context=tool_context)
 
@@ -1908,21 +1909,31 @@ class TurnExecution:
         # and future enforcement; the registry does not re-evaluate.
         from hestia.tools.context import ToolCallContext
 
-        if cap_result is not None and ctx is not None:
+        channel = ctx.channel if ctx is not None and ctx.channel is not None else Channel.CLI
+        platform_user = (
+            ctx.platform_user
+            if ctx is not None and ctx.platform_user is not None
+            else session.platform_user
+        )
+        if cap_result is not None:
             tool_context = ToolCallContext(
-                channel=ctx.channel if ctx.channel is not None else Channel.CLI,
+                channel=channel,
                 actor_platform=session.platform,
-                actor_platform_user=(
-                    ctx.platform_user
-                    if ctx.platform_user is not None
-                    else session.platform_user
-                ),
+                actor_platform_user=platform_user,
                 session_id=session.id,
                 mode="pre_gated",
                 pre_gated_result=cap_result,
             )
         else:
-            tool_context = None  # legacy path: no gate configured
+            # No gate configured (bare-test wiring): still carry caller identity;
+            # an unbound registry treats enforce as passthrough.
+            tool_context = ToolCallContext(
+                channel=channel,
+                actor_platform=session.platform,
+                actor_platform_user=platform_user,
+                session_id=session.id,
+                mode="enforce",
+            )
 
         result = await self._tools.call(tc.name, tc.arguments or {}, context=tool_context)
         return result

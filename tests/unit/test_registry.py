@@ -132,6 +132,19 @@ class TestListAndDescribe:
             registry.describe("nonexistent")
 
 
+
+def _ctx():
+    """Internal-mode context: unbound-gate registries pass it straight through."""
+    from hestia.tools.context import ToolCallContext
+
+    return ToolCallContext(
+        channel=__import__("hestia.policy.channel", fromlist=["Channel"]).Channel.API,
+        actor_platform="test",
+        internal_reason="unit-test",
+        mode="internal",
+    )
+
+
 class TestCalling:
     """Tests for tool dispatch."""
 
@@ -140,7 +153,7 @@ class TestCalling:
         """call dispatches to handler and returns result."""
         registry.register(greet)
 
-        result = await registry.call("greet", {"name": "Alice"})
+        result = await registry.call("greet", {"name": "Alice"}, context=_ctx())
         assert result.status == "ok"
         assert result.content == "Hello, Alice!"
         assert result.artifact_handle is None
@@ -151,7 +164,7 @@ class TestCalling:
         """call works with numeric arguments."""
         registry.register(add)
 
-        result = await registry.call("add", {"a": 1.5, "b": 2.5})
+        result = await registry.call("add", {"a": 1.5, "b": 2.5}, context=_ctx())
         assert result.status == "ok"
         assert result.content == "4.0"
 
@@ -160,7 +173,7 @@ class TestCalling:
         """call returns error status on exception."""
         registry.register(failing_tool)
 
-        result = await registry.call("failing_tool", {})
+        result = await registry.call("failing_tool", {}, context=_ctx())
         assert result.status == "error"
         assert "Intentional failure" in result.content
 
@@ -168,7 +181,7 @@ class TestCalling:
     async def test_call_missing_tool_raises(self, registry):
         """call raises ToolNotFoundError for missing tool."""
         with pytest.raises(ToolNotFoundError):
-            await registry.call("nonexistent", {})
+            await registry.call("nonexistent", {}, context=_ctx())
 
 
 class TestAutoArtifact:
@@ -179,7 +192,7 @@ class TestAutoArtifact:
         """Small results are returned inline."""
         registry.register(greet)
 
-        result = await registry.call("greet", {"name": "Short"})
+        result = await registry.call("greet", {"name": "Short"}, context=_ctx())
         assert result.artifact_handle is None
         assert "stored as artifact" not in result.content
 
@@ -199,7 +212,7 @@ class TestAutoArtifact:
 
         registry.register(large_output)
 
-        result = await registry.call("large_output", {})
+        result = await registry.call("large_output", {}, context=_ctx())
         assert result.artifact_handle is not None
         assert result.artifact_handle.startswith("art_")
         assert "stored as artifact" in result.content
@@ -275,6 +288,6 @@ class TestMetaTools:
         """meta_call_tool dispatches correctly."""
         registry.register(greet)
 
-        result = await registry.meta_call_tool("greet", {"name": "Bob"})
+        result = await registry.meta_call_tool("greet", {"name": "Bob"}, context=_ctx())
         assert result.status == "ok"
         assert "Bob" in result.content
