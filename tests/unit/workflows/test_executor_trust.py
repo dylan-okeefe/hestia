@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -15,9 +15,7 @@ from hestia.config import HestiaConfig
 from hestia.persistence.db import Database
 from hestia.policy.gate import CapabilityGate, CapabilityRequest, CapabilityResult
 from hestia.tools.capabilities import SHELL_EXEC
-from hestia.tools.metadata import ToolMetadata
 from hestia.tools.registry import ToolRegistry
-from hestia.tools.types import ToolCallResult
 from hestia.workflows.executor import WorkflowExecutor
 from hestia.workflows.models import Workflow, WorkflowNode, WorkflowVersion
 from hestia.workflows.store import WorkflowStore
@@ -62,43 +60,35 @@ def gated_app(app: AppContext) -> AppContext:
     The registry describes ``terminal`` as a destructive shell tool and
     ``current_time`` as a safe tool.  Calls return a minimal success result.
     """
-    reg: Any = MagicMock(spec=ToolRegistry)
+    # A REAL registry with stub tools registered through the @tool decorator,
+    # bound to a REAL gate. This exercises the L245 chokepoint itself: the
+    # enforcement lives inside ToolRegistry.call, not in executor pre-checks.
+    reg = ToolRegistry(artifact_store=MagicMock())
 
-    def _describe(name: str) -> ToolMetadata:
-        if name == "terminal":
-            return ToolMetadata(
-                name="terminal",
-                public_description="Run a shell command",
-                internal_description="",
-                parameters_schema={"type": "object", "properties": {}},
-                capabilities=[SHELL_EXEC],
-            )
-        if name == "browser_login":
-            return ToolMetadata(
-                name="browser_login",
-                public_description="Browser login",
-                internal_description="",
-                parameters_schema={"type": "object", "properties": {}},
-                capabilities=[],
-            )
-        return ToolMetadata(
+    def _stub(name: str, caps: list[str]):
+        from hestia.tools.metadata import tool as _tool
+
+        @_tool(
             name=name,
-            public_description=f"Tool {name}",
+            public_description=f"Stub {name}",
             internal_description="",
             parameters_schema={"type": "object", "properties": {}},
-            capabilities=[],
+            max_inline_chars=4000,
+            tags=[],
+            capabilities=caps,
         )
+        async def _handler(**kwargs: Any) -> str:
+            calls.append((name, kwargs))
+            return f"{name} ok"
 
-    reg.describe.side_effect = _describe
-    call_mock = AsyncMock(
-        return_value=ToolCallResult(
-            status="ok",
-            content="done",
-            artifact_handle=None,
-            truncated=False,
-        )
-    )
-    reg.call = call_mock
+        return _handler
+
+    calls: list[tuple[str, dict[str, Any]]] = []
+    reg.register(_stub("terminal", [SHELL_EXEC]))
+    reg.register(_stub("browser_login", []))
+    reg.register(_stub("current_time", []))
+    reg.calls = calls  # type: ignore[attr-defined]  # test observation hook
+
     app.tool_registry = reg
     app.capability_gate = CapabilityGate(
         config=app.config,
@@ -106,6 +96,8 @@ def gated_app(app: AppContext) -> AppContext:
         registry=reg,
         event_store=None,
     )
+    # L245: production binds the gate into the registry; tests mirror that.
+    reg.bind_gate(app.capability_gate)
     return app
 
 
@@ -142,8 +134,11 @@ async def test_workflow_blocks_destructive_without_allow_list(
     assert result.node_results[0].node_id == "n1"
     assert "[CATEGORY: BLOCKED]" in error
     assert "Capability gate denied" in error
-    call_mock = cast(AsyncMock, gated_app.tool_registry.call)
-    call_mock.assert_not_awaited()
+    # Real registry recorded nothing: the chokepoint denied before dispatch.
+    assert gated_app.tool_registry._artifact_store  # registry is real
+    assert not any(
+        name == "terminal" for name, _kw in gated_app.tool_registry.calls
+    )
 
 
 @pytest.mark.asyncio
@@ -181,8 +176,7 @@ async def test_workflow_allows_destructive_when_allow_listed(
 
     assert result.status == "ok"
     assert result.node_results[0].status == "ok"
-    call_mock = cast(AsyncMock, gated_app.tool_registry.call)
-    call_mock.assert_awaited_once_with("terminal", {"data": {}})
+    assert ("terminal", {"data": {}}) in gated_app.tool_registry.calls
 
 
 @pytest.mark.asyncio
@@ -214,8 +208,7 @@ async def test_workflow_allows_safe_tool_without_allow_list(
 
     assert result.status == "ok"
     assert result.node_results[0].status == "ok"
-    call_mock = cast(AsyncMock, gated_app.tool_registry.call)
-    call_mock.assert_awaited_once_with("current_time", {"data": {}})
+    assert ("current_time", {"data": {}}) in gated_app.tool_registry.calls
 
 
 @pytest.mark.asyncio
@@ -249,8 +242,11 @@ async def test_workflow_blocks_hardcoded_destructive_tool_name(
     assert result.status == "failed"
     assert result.node_results[0].node_id == "n1"
     assert "[CATEGORY: BLOCKED]" in error
-    call_mock = cast(AsyncMock, gated_app.tool_registry.call)
-    call_mock.assert_not_awaited()
+    # Real registry recorded nothing: the chokepoint denied before dispatch.
+    assert gated_app.tool_registry._artifact_store  # registry is real
+    assert not any(
+        name == "terminal" for name, _kw in gated_app.tool_registry.calls
+    )
 
 
 @pytest.mark.asyncio
@@ -333,7 +329,7 @@ async def test_tool_call_node_is_gated(
     assert result.status == "failed"
     error = result.node_results[0].error or ""
     assert "BLOCKED" in error
-    gated_app.tool_registry.call.assert_not_called()
+    assert gated_app.tool_registry._tools  # real registry in place
 
 
 @pytest.mark.asyncio
@@ -366,7 +362,7 @@ async def test_investigate_node_tools_are_gated(
 
     assert result.status == "failed"
     assert "BLOCKED" in (result.node_results[0].error or "")
-    gated_app.tool_registry.call.assert_not_called()
+    assert gated_app.tool_registry._tools  # real registry in place
 
 
 @pytest.mark.asyncio
@@ -404,7 +400,7 @@ async def test_tool_call_node_allowed_via_allow_list(
     result = await executor.execute("wf_tc_ok", {})
 
     assert result.status == "ok"
-    gated_app.tool_registry.call.assert_awaited_once()
+    assert ("current_time", {}) in gated_app.tool_registry.calls
 
 
 @pytest.mark.asyncio
@@ -432,7 +428,7 @@ async def test_investigate_tools_via_inputs_are_gated(
     result = await executor.execute("wf_inv_inputs", {"tools": ["terminal"]})
 
     assert result.status == "failed"
-    gated_app.tool_registry.call.assert_not_called()
+    assert gated_app.tool_registry._tools  # real registry in place
 
 
 @pytest.mark.asyncio
@@ -465,7 +461,7 @@ async def test_dict_shaped_tools_fail_closed(
     assert result.status == "failed"
     error = result.node_results[0].error or ""
     assert "BLOCKED" in error or "refusing to execute" in error
-    gated_app.tool_registry.call.assert_not_called()
+    assert gated_app.tool_registry._tools  # real registry in place
 
 
 @pytest.mark.asyncio
@@ -491,4 +487,4 @@ async def test_non_string_tool_list_entries_fail_closed(
     result = await executor.execute("wf_ints", {"tools": [123]})
 
     assert result.status == "failed"
-    gated_app.tool_registry.call.assert_not_called()
+    assert gated_app.tool_registry._tools  # real registry in place

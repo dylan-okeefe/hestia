@@ -19,6 +19,7 @@ class HttpRequestNode:
         app: AppContext,
         node: WorkflowNode,
         inputs: dict[str, Any],
+        tool_context: Any = None,
     ) -> Any:
         """Make an HTTP request.
 

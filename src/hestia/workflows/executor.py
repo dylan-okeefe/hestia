@@ -13,22 +13,15 @@ from typing import TYPE_CHECKING, Any
 from hestia.app import AppContext
 from hestia.core.types import ChatResponse, Message
 from hestia.policy.channel import Channel
-from hestia.policy.gate import CapabilityRequest
-from hestia.policy.identity import Identity
+from hestia.tools.context import ToolCallContext
+from hestia.tools.registry import ToolBlockedError
 from hestia.workflows.models import ExecutionResult, NodeResult, Workflow, WorkflowEdge, WorkflowNode
 from hestia.workflows.store import WorkflowStore
-from hestia.workflows.tool_selection import resolve_invoked_tools
 
 if TYPE_CHECKING:
     from hestia.workflows.execution_store import ExecutionStore
 
 logger = logging.getLogger(__name__)
-
-# SEC-001: node types that invoke tools by name must pass the CapabilityGate
-# before dispatch. The old NODE_TYPES-dispatch-then-return flow skipped the
-# gate block entirely, letting any activated workflow run arbitrary tools
-# (including 'terminal') unattended.
-_GATED_NODE_TYPES = {"tool_call", "investigate"}
 
 
 def _clean_reasoning_fallback(text: str) -> str:
@@ -252,6 +245,23 @@ class WorkflowExecutor:
             except Exception:
                 logger.exception("Failed to record RUNNING execution row")
 
+        # L245 chokepoint: one enforce context for the whole execution. Every
+        # registry call made on behalf of this workflow carries it, and the
+        # registry itself evaluates the gate - an ungated invocation from a
+        # node is not expressible.
+        if self._app.capability_gate is None:
+            raise ValueError(
+                "WorkflowExecutor requires a configured capability gate "
+                "(fail-closed; L245)"
+            )
+        tool_context = ToolCallContext(
+            channel=Channel.WORKFLOW,
+            actor_platform="workflow",
+            actor_platform_user=workflow.owner_id or workflow.id,
+            allow_list=frozenset(workflow.allow_listed_tools or set()),
+            source_workflow_id=workflow.id,
+        )
+
         node_results: list[NodeResult] = []
         outputs: dict[str, Any] = {"trigger": trigger_payload}
         total_prompt_tokens = 0
@@ -299,7 +309,25 @@ class WorkflowExecutor:
 
             node_start = time.perf_counter()
             try:
-                node_output = await self._run_node(node, inputs, workflow)
+                node_output = await self._run_node(node, inputs, workflow, tool_context)
+            except ToolBlockedError as exc:
+                elapsed_ms = int((time.perf_counter() - node_start) * 1000)
+                nr = NodeResult(
+                    node_id=node.id, status="failed", error=str(exc), elapsed_ms=elapsed_ms
+                )
+                node_results.append(nr)
+                result = ExecutionResult(
+                    workflow_id=workflow_id,
+                    status="failed",
+                    node_results=node_results,
+                    outputs=outputs,
+                )
+                if self._execution_store is not None:
+                    await self._execution_store.save_execution(
+                        result, workflow_id, version.version, trigger_payload,
+                        execution_id=running_execution_id, is_test=self._is_test,
+                    )
+                return result
             except Exception as exc:
                 logger.exception("Node %s failed in workflow %s", node.id, workflow_id)
                 elapsed_ms = int((time.perf_counter() - node_start) * 1000)
@@ -385,53 +413,12 @@ class WorkflowExecutor:
             )
         return result
 
-    async def _gate_node_tools(
+    async def _run_node(
         self,
         node: WorkflowNode,
         inputs: dict[str, Any],
         workflow: Workflow,
-    ) -> None:
-        """Run every tool a tool_call/investigate node will invoke past the
-        CapabilityGate (SEC-001). Mirrors the fallback-path denial format so
-        blocked executions read consistently."""
-        gate = self._app.capability_gate
-        if gate is None:
-            return
-
-        # Review defect 1: resolution lives in ONE place shared with the node
-        # executors, and fails closed on unrecognized shapes. The previous
-        # duplicate handled only str/list, so a dict-shaped tools value from
-        # interpolated inputs gated nothing while executing its keys.
-        try:
-            names = resolve_invoked_tools(node.type, node, inputs)
-        except ValueError as exc:
-            raise ValueError(
-                f"[CATEGORY: BLOCKED] Invalid tool selection in workflow "
-                f"{workflow.id} node {node.id}: {exc}"
-            ) from None
-
-        actor = Identity(
-            platform="workflow",
-            platform_user=workflow.owner_id or workflow.id,
-        )
-        allow_list = set(workflow.allow_listed_tools or [])
-        for tool_name in names:
-            request = CapabilityRequest(
-                actor=actor,
-                channel=Channel.WORKFLOW,
-                tool_name=tool_name,
-                inputs=dict(inputs),
-                source_workflow_id=workflow.id,
-            )
-            result = await gate.check(request, allow_list=allow_list)
-            if not result.allowed:
-                raise ValueError(
-                    f"[CATEGORY: BLOCKED] Capability gate denied '{tool_name}' "
-                    f"in workflow {workflow.id}: {result.reason}"
-                )
-
-    async def _run_node(
-        self, node: WorkflowNode, inputs: dict[str, Any], workflow: Workflow
+        tool_context: Any,
     ) -> _NodeOutput:
         """Execute a single node by delegating to the app context.
 
@@ -448,15 +435,10 @@ class WorkflowExecutor:
         """
         from hestia.workflows.nodes import NODE_TYPES
 
-
-
-        if node.type in _GATED_NODE_TYPES:
-            await self._gate_node_tools(node, inputs, workflow)
-
         executor_cls = NODE_TYPES.get(node.type)
         if executor_cls is not None:
             executor = executor_cls()
-            raw = await executor.execute(self._app, node, inputs)
+            raw = await executor.execute(self._app, node, inputs, tool_context)
             if isinstance(raw, ChatResponse):
                 return _NodeOutput(
                     value=raw.content,
@@ -497,29 +479,11 @@ class WorkflowExecutor:
                 completion_tokens=response.completion_tokens,
             )
 
-        # Treat node type as a tool name by default
-        if self._app.capability_gate is not None:
-            actor = Identity(
-                platform="workflow",
-                platform_user=workflow.owner_id or workflow.id,
-            )
-            request = CapabilityRequest(
-                actor=actor,
-                channel=Channel.WORKFLOW,
-                tool_name=node.type,
-                inputs=inputs,
-                session_id=None,
-            )
-            gate_result = await self._app.capability_gate.check(
-                request, allow_list=workflow.allow_listed_tools
-            )
-            if not gate_result.allowed:
-                raise ValueError(
-                    f"[CATEGORY: BLOCKED] Capability gate denied '{node.type}' "
-                    f"in workflow {workflow.id}: {gate_result.reason}"
-                )
-
-        result = await self._app.tool_registry.call(node.type, inputs)
+        # Treat node type as a tool name by default. The registry enforces
+        # the gate itself via the tool_context (L245 chokepoint).
+        result = await self._app.tool_registry.call(
+            node.type, inputs, context=tool_context
+        )
         value = result.content
         if result.artifact_handle:
             # Load full artifact content so downstream nodes get the complete

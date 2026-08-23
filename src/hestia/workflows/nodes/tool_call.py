@@ -19,6 +19,7 @@ class ToolCallNode:
         app: AppContext,
         node: WorkflowNode,
         inputs: dict[str, Any],
+        tool_context: Any = None,
     ) -> Any:
         """Call the tool specified in ``node.config['tool_name']``.
 
@@ -53,7 +54,7 @@ class ToolCallNode:
             # If describe fails or schema is unavailable, strip known meta keys
             tool_inputs = {k: v for k, v in resolved.items() if k != "tool_name"}
 
-        result = await app.tool_registry.call(tool_name, tool_inputs)
+        result = await app.tool_registry.call(tool_name, tool_inputs, context=tool_context)
         if result.artifact_handle:
             # PERF-017: keep blocking disk I/O off the event loop.
             full_bytes = await asyncio.to_thread(

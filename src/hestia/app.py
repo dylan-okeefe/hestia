@@ -257,6 +257,9 @@ class AppContext:
             registry=self.tool_registry,
             event_store=self.capability_event_store,
         )
+        # L245 chokepoint: the registry enforces the gate itself, so an
+        # ungated tool call is not expressible from any surface.
+        self.tool_registry.bind_gate(self.capability_gate)
 
         # Eager feature subsystems (lightweight; always available for status queries)
         self.proposal_store = ProposalStore(self.db)

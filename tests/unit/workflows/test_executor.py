@@ -14,7 +14,7 @@ from hestia.core.types import ChatResponse, Message
 from hestia.persistence.db import Database
 from hestia.policy.gate import CapabilityResult
 from hestia.tools.capabilities import SHELL_EXEC, WRITE_LOCAL
-from hestia.tools.registry import ToolRegistry
+from hestia.tools.registry import ToolBlockedError, ToolRegistry
 from hestia.tools.types import ToolCallResult
 from hestia.workflows.execution_store import ExecutionStore
 from hestia.workflows.executor import ExecutionResult, WorkflowExecutor
@@ -132,7 +132,7 @@ class TestExecuteHappyPath:
         )
         await workflow_store.save_version(version)
 
-        async def tool_call(name: str, args: dict[str, Any]) -> ToolCallResult:
+        async def tool_call(name: str, args: dict[str, Any], *, context: Any = None) -> ToolCallResult:
             if name == "upper":
                 return ToolCallResult(
                     status="ok",
@@ -233,8 +233,9 @@ class TestTrustEnforcement:
         )
         await workflow_store.save_version(version)
 
-        # Simulate the capability gate denying the destructive tool on the
-        # unattended WORKFLOW channel.
+        # Simulate the chokepoint contract: the gate denies, and the registry
+        # (mocked here) surfaces that denial as ToolBlockedError when handed
+        # an enforce context.
         app.capability_gate.check = AsyncMock(  # type: ignore[method-assign]
             return_value=CapabilityResult(
                 allowed=False,
@@ -243,6 +244,20 @@ class TestTrustEnforcement:
                 reason="not_allow_listed",
             )
         )
+
+        async def gated_call(name: str, args: dict[str, Any], *, context: Any = None) -> ToolCallResult:
+            # Simulate the real chokepoint: enforce contexts consult the gate
+            # decision and surface denials as ToolBlockedError.
+            assert context is not None and context.mode == "enforce"
+            decision = app.capability_gate.check.return_value
+            if not decision.allowed:
+                raise ToolBlockedError(
+                    f"[CATEGORY: BLOCKED] Capability gate denied '{name}': "
+                    f"{decision.reason}"
+                )
+            return ToolCallResult(status="ok", content="ok", artifact_handle=None, truncated=False)
+
+        app.tool_registry.call = AsyncMock(side_effect=gated_call)
 
         result = await executor.execute("wf_1", {})
 
@@ -631,7 +646,7 @@ class TestEdgeCases:
 
         call_order: list[str] = []
 
-        async def track_call(name: str, _args: dict[str, Any]) -> ToolCallResult:
+        async def track_call(name: str, _args: dict[str, Any], *, context: Any = None) -> ToolCallResult:
             call_order.append(name)
             return ToolCallResult(status="ok", content="ok", artifact_handle=None, truncated=False)
 

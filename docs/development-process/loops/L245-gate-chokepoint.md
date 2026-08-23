@@ -5,6 +5,7 @@ the source of truth for resume-after-interrupt.
 
 ## Chunks
 
+- [x] A. ToolCallContext + registry chokepoint + workflow migration + real-registry trust fixture + fail-closed + dedup constant removed.
 - [x] A0. Allow-side auditing in gate.check for unattended channels (commit on feature/l245-gate-chokepoint).
 - [ ] A. ToolCallContext + registry.bind_gate + call(..., context) enforcement (deny→ToolBlockedError; confirm→ToolConfirmationRequiredError; pre_gated passthrough) + AppContext binds gate + workflow executor/nodes migrated to contexts + fail-closed when gate missing + drop duplicate _GATED_NODE_TYPES + trust-fixture converted to a real gated registry + direct-call enforcement test.
 - [ ] B. investigate tools: config-only selection (resolver drops inputs precedence); flip inputs-path tests to expect denial-by-absence (no tools resolved from inputs).

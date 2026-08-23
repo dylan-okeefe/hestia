@@ -150,6 +150,33 @@ class CapabilityGate:
         except Exception as exc:  # noqa: BLE001 — audit must never block execution
             logger.warning("Capability audit failed: %s", exc)
 
+    async def audit_internal(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        reason: str | None,
+    ) -> None:
+        """Record an explicitly-internal tool invocation (L245 chokepoint).
+
+        The internal mode is an audited escape hatch, not a silent one: every
+        use writes a capability_events row with reason="internal:<reason>".
+        """
+        from hestia.policy.identity import Identity
+
+        request = CapabilityRequest(
+            actor=Identity(platform="internal", platform_user="system"),
+            channel=Channel.API,
+            tool_name=tool_name,
+            inputs=dict(arguments),
+        )
+        result = CapabilityResult(
+            allowed=True,
+            auto_approved=True,
+            requires_confirmation=False,
+            reason=f"internal:{reason or 'unspecified'}",
+        )
+        await self._audit(request, result, injection_flagged=False)
+
     async def check(
         self,
         request: CapabilityRequest,

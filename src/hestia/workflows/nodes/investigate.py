@@ -8,6 +8,7 @@ from typing import Any
 
 from hestia.app import AppContext
 from hestia.core.types import Message
+from hestia.tools.registry import ToolBlockedError
 from hestia.workflows.models import WorkflowNode
 from hestia.workflows.tool_selection import resolve_invoked_tools
 
@@ -24,6 +25,7 @@ class InvestigateNode:
         app: AppContext,
         node: WorkflowNode,
         inputs: dict[str, Any],
+        tool_context: Any = None,
     ) -> Any:
         """Investigate the configured topic.
 
@@ -69,7 +71,9 @@ class InvestigateNode:
         tool_results: list[dict[str, Any]] = []
         for tool_name in tools:
             try:
-                result = await app.tool_registry.call(tool_name, scoped_inputs)
+                result = await app.tool_registry.call(
+                    tool_name, scoped_inputs, context=tool_context
+                )
                 tool_results.append(
                     {
                         "tool": tool_name,
@@ -77,6 +81,10 @@ class InvestigateNode:
                         "content": result.content,
                     }
                 )
+            except ToolBlockedError:
+                # Policy denials are not investigation data: let the node fail
+                # so the BLOCKED category surfaces in the execution record.
+                raise
             except Exception as exc:
                 logger.warning("Tool %s failed for investigate node: %s", tool_name, exc)
                 tool_results.append(

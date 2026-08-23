@@ -148,7 +148,7 @@ async def test_with_specified_tools_calls_those_tools(app: AppContext) -> None:
 
     assert result["topic"] == "weather today"
     assert "It is sunny today" in result["findings"]
-    app.tool_registry.call.assert_awaited_once_with("weather_lookup", {})
+    app.tool_registry.call.assert_awaited_once_with("weather_lookup", {}, context=None)
 
 
 @pytest.mark.asyncio
@@ -218,7 +218,7 @@ async def test_tool_failure_gracefully_handled(app: AppContext) -> None:
     result = await executor.execute(app, node, {})
 
     assert result["findings"] == ["Tool failed"]
-    app.tool_registry.call.assert_awaited_once_with("stock_api", {})
+    app.tool_registry.call.assert_awaited_once_with("stock_api", {}, context=None)
 
 
 @pytest.mark.asyncio
@@ -255,7 +255,7 @@ async def test_input_keys_scopes_tool_inputs(app: AppContext) -> None:
     result = await executor.execute(app, node, inputs)
 
     assert result["findings"] == ["Sunny"]
-    app.tool_registry.call.assert_awaited_once_with("weather_lookup", {"location": "NYC"})
+    app.tool_registry.call.assert_awaited_once_with("weather_lookup", {"location": "NYC"}, context=None)
 
 
 @pytest.mark.asyncio
@@ -291,7 +291,7 @@ async def test_empty_input_keys_passes_first_predecessor(app: AppContext) -> Non
     inputs = {"first": "data", "second": "more"}
     await executor.execute(app, node, inputs)
 
-    app.tool_registry.call.assert_awaited_once_with("summarizer", {"first": "data"})
+    app.tool_registry.call.assert_awaited_once_with("summarizer", {"first": "data"}, context=None)
 
 
 @pytest.mark.asyncio
