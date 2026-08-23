@@ -317,6 +317,10 @@ class Orchestrator:
                     current_trace_store.reset(trace_token)
                 current_turn_id.reset(turn_token)
 
+        # Drop this turn's interest reference, then opportunistically prune.
+        # release_unused is waiter-aware (BUG-001): it never prunes while a
+        # contender is parked on or about to resume holding the lock object.
+        self._lock_manager.unref(session.id)
         self._lock_manager.release_unused(session.id)
         return turn
 

@@ -156,8 +156,68 @@ async def test_lock_manager_release_unused() -> None:
     lock = await manager.acquire("sess-prune")
     async with lock:
         pass
+    manager.unref("sess-prune")
     manager.release_unused("sess-prune")
     assert "sess-prune" not in manager._locks
+
+
+@pytest.mark.asyncio
+async def test_release_unused_does_not_orphan_pending_waiter() -> None:
+    """BUG-001: pruning during the release→waiter-resume window is forbidden.
+
+    asyncio.Lock reports *unlocked* between release() and the waiter's
+    resumption. Pruning in that window used to strand the waiter on an
+    orphaned object while later arrivals got a fresh lock — two concurrent
+    turns on one session. The manager must keep the entry (and hand later
+    arrivals the same object) until the waiter has finished.
+    """
+    manager = SessionLockManager()
+    first = await manager.acquire("sess-race")
+    await first.acquire()  # the holder's critical section begins
+
+    contender_running = asyncio.Event()
+    contender_done = asyncio.Event()
+
+    async def contender() -> None:
+        second = await manager.acquire("sess-race")  # parks immediately
+        # The contender must have received the SAME object, not a fresh one.
+        assert second is first
+        async with second:
+            contender_running.set()
+            await asyncio.sleep(0)
+        contender_done.set()
+        manager.unref("sess-race")
+
+    task = asyncio.create_task(contender())
+    await asyncio.sleep(0)  # let the contender park on the lock
+
+    # Holder releases; manager then attempts to prune synchronously —
+    # exactly the interleaving that used to orphan the waiter.
+    first.release()
+    manager.unref("sess-race")
+    manager.release_unused("sess-race")
+
+    assert "sess-race" in manager._locks, "lock entry was pruned with a waiter pending"
+    assert not contender_done.is_set()
+
+    await task
+    assert contender_done.is_set()
+
+    # Now genuinely idle: pruning succeeds.
+    manager.release_unused("sess-race")
+    assert "sess-race" not in manager._locks
+
+
+@pytest.mark.asyncio
+async def test_release_unused_respects_outstanding_refs() -> None:
+    """A session with an outstanding acquire() reference is never pruned."""
+    manager = SessionLockManager()
+    _lock_a = await manager.acquire("sess-refs")  # turn A interest ref
+    _lock_b = await manager.acquire("sess-refs")  # queued turn B interest ref
+    manager.unref("sess-refs")  # A finished its critical section
+    manager.release_unused("sess-refs")
+    # B still holds a reference even though the lock is momentarily unlocked.
+    assert "sess-refs" in manager._locks
 
 
 @pytest.mark.asyncio

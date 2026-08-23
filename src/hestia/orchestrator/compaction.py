@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 
 from hestia.config import CompactionConfig
 from hestia.core.clock import utcnow
-from hestia.core.types import Message
+from hestia.core.types import Message, Session
 from hestia.inference.slot_manager import SlotManager
 from hestia.memory.compaction_summarizer import (
     CompactionSummary,
@@ -86,6 +87,18 @@ class SessionCompactor:
             )
 
         lock = await self._lock_manager.acquire(session_id)
+        try:
+            return await self._compact_locked(session_id, session, lock, instruction)
+        finally:
+            self._lock_manager.unref(session_id)
+
+    async def _compact_locked(
+        self,
+        session_id: str,
+        session: Session,
+        lock: asyncio.Lock,
+        instruction: str | None,
+    ) -> CompactionOutcome:
         async with lock:
             original_dtos = await self._message_store.get_messages(session_id)
             if len(original_dtos) < self._config.min_messages:
