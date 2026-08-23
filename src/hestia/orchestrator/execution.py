@@ -14,6 +14,7 @@ from hestia.core.types import ChatResponse, Message, Session, ToolCall
 from hestia.diagnostics import regression_collector
 from hestia.errors import (
     EmptyResponseError,
+    InferenceTimeoutError,
     MaxIterationsError,
     PolicyFailureError,
     ThinkingBudgetExceededError,
@@ -783,154 +784,165 @@ class TurnExecution:
             max_tokens=self._max_tokens,
         )
 
-        any_chunk_received = False
-        while True:
-            # Use a longer timeout for the very first chunk because the model
-            # server may still be processing a long prompt without emitting
-            # tokens.  After tokens start flowing, switch to the tight timeout.
-            timeout = (
-                _STREAM_INACTIVITY_TIMEOUT
-                if any_chunk_received
-                else _STREAM_FIRST_CHUNK_TIMEOUT
-            )
-            try:
-                delta = await asyncio.wait_for(stream.__anext__(), timeout=timeout)
-            except StopAsyncIteration:
-                break
-            except TimeoutError:
-                if any_chunk_received:
-                    logger.warning(
-                        "Streaming inference inactive for %.1fs; finishing with %d content "
-                        "chars and %d tool-call buffers accumulated so far",
-                        _STREAM_INACTIVITY_TIMEOUT,
-                        sum(len(p) for p in content_parts),
-                        len(tool_call_buffers),
-                    )
-                else:
-                    logger.warning(
-                        "Streaming inference produced no chunks within %.1fs "
-                        "(likely long prompt processing); finishing empty",
-                        _STREAM_FIRST_CHUNK_TIMEOUT,
-                    )
-                if finish_reason == "unknown":
-                    finish_reason = "stop"
-                break
-
-            any_chunk_received = True
-
-            if delta.reasoning_content and not turn.thinking_aborted:
-                thinking_chars = sum(len(p) for p in reasoning_parts) + len(delta.reasoning_content)
-                # Rough token estimate: 4 characters per token
-                if thinking_chars > turn.reasoning_budget * 4:
-                    logger.warning(
-                        "Thinking budget exceeded (%d chars ≈ %d tokens > %d budget)",
-                        thinking_chars,
-                        thinking_chars // 4,
-                        turn.reasoning_budget,
-                    )
-                    raise ThinkingBudgetExceededError(
-                        f"Thinking budget exceeded ({thinking_chars // 4} tokens > "
-                        f"{turn.reasoning_budget})"
-                    )
-
-            if delta.content:
-                content_parts.append(delta.content)
-                await ctx.stream_callback(delta.content)
-
-            if delta.reasoning_content:
-                reasoning_parts.append(delta.reasoning_content)
-
-            if delta.tool_call_chunks:
-                for tc in delta.tool_call_chunks:
-                    idx = tc.get("index", 0)
-                    if idx not in tool_call_buffers:
-                        tool_call_buffers[idx] = {"id": "", "name": "", "arguments": ""}
-                    if tc.get("id"):
-                        tool_call_buffers[idx]["id"] = tc["id"]
-                    fn = tc.get("function", {}) or {}
-                    if fn.get("name"):
-                        tool_call_buffers[idx]["name"] = fn["name"]
-                    if fn.get("arguments"):
-                        tool_call_buffers[idx]["arguments"] += fn["arguments"]
-
-            if delta.finish_reason is not None:
-                finish_reason = delta.finish_reason
-
-            if delta.prompt_tokens or delta.completion_tokens or delta.total_tokens:
-                prompt_tokens = delta.prompt_tokens
-                completion_tokens = delta.completion_tokens
-                total_tokens = delta.total_tokens
-
-        content = "".join(content_parts)
-        reasoning_content = "".join(reasoning_parts) if reasoning_parts else None
-
-        tool_calls: list[ToolCall] = []
-        for idx in sorted(tool_call_buffers.keys()):
-            buf = tool_call_buffers[idx]
-            if not buf["name"]:
-                continue
-            try:
-                arguments = json.loads(buf["arguments"]) if buf["arguments"] else {}
-            except json.JSONDecodeError as exc:
-                repaired = repair_json(buf["arguments"]) if buf["arguments"] else None
-                if repaired is not None:
-                    logger.info(
-                        "Repaired malformed tool_call arguments for %r in streaming path",
-                        buf["name"],
-                    )
-                    arguments = json.loads(repaired)
-                else:
-                    logger.warning(
-                        "tool_call arguments for %r are malformed JSON (%s); treating as empty",
-                        buf["name"],
-                        exc,
-                    )
-                    arguments = {}
-            if not isinstance(arguments, dict):
-                logger.warning(
-                    "tool_call arguments for %r are not a dict: %s",
-                    buf["name"],
-                    type(arguments).__name__,
+        try:
+            # BUG-046: guarantee the suspended SSE generator is closed when we
+            # exit early (timeout, thinking-budget abort, cancellation) so the
+            # HTTP connection releases now instead of at GC time.
+            any_chunk_received = False
+            while True:
+                # Use a longer timeout for the very first chunk because the model
+                # server may still be processing a long prompt without emitting
+                # tokens.  After tokens start flowing, switch to the tight timeout.
+                timeout = (
+                    _STREAM_INACTIVITY_TIMEOUT
+                    if any_chunk_received
+                    else _STREAM_FIRST_CHUNK_TIMEOUT
                 )
-                continue
-            tool_calls.append(
-                ToolCall(
-                    id=buf["id"] or f"call_{idx}",
-                    name=buf["name"],
-                    arguments=arguments,
-                )
-            )
+                try:
+                    delta = await asyncio.wait_for(stream.__anext__(), timeout=timeout)
+                except StopAsyncIteration:
+                    break
+                except TimeoutError:
+                    # BUG-003: a stalled stream used to be converted into a fake
+                    # successful stop, delivering a truncated answer as if
+                    # complete. The non-streaming path raises InferenceTimeoutError
+                    # and fails the turn; streaming now behaves identically.
+                    if any_chunk_received:
+                        logger.warning(
+                            "Streaming inference inactive for %.1fs after %d content "
+                            "chars and %d tool-call buffers; failing the turn",
+                            _STREAM_INACTIVITY_TIMEOUT,
+                            sum(len(p) for p in content_parts),
+                            len(tool_call_buffers),
+                        )
+                    else:
+                        logger.warning(
+                            "Streaming inference produced no chunks within %.1fs "
+                            "(likely long prompt processing)",
+                            _STREAM_FIRST_CHUNK_TIMEOUT,
+                        )
+                    raise InferenceTimeoutError(
+                        "Streaming inference stalled — no tokens received in time"
+                    ) from None
 
-        # Fallback: Qwen3.5 in reasoning mode sometimes emits tool calls inside
-        # <think> blocks (which land in reasoning_content) but omits the structured
-        # tool_call_chunks. Parse XML-style <tool_call> tags as a safety net.
-        if not tool_calls:
-            combined = ""
-            if reasoning_content:
-                combined += reasoning_content + "\n"
-            if content:
-                combined += content + "\n"
-            if combined:
-                fallback = _extract_tool_calls_from_text(combined)
-                if fallback:
-                    tool_calls = fallback
-                    logger.info(
-                        "Recovered %d tool call(s) from reasoning/content XML fallback",
-                        len(tool_calls),
+                any_chunk_received = True
+
+                if delta.reasoning_content and not turn.thinking_aborted:
+                    thinking_chars = sum(len(p) for p in reasoning_parts) + len(delta.reasoning_content)
+                    # Rough token estimate: 4 characters per token
+                    if thinking_chars > turn.reasoning_budget * 4:
+                        logger.warning(
+                            "Thinking budget exceeded (%d chars ≈ %d tokens > %d budget)",
+                            thinking_chars,
+                            thinking_chars // 4,
+                            turn.reasoning_budget,
+                        )
+                        raise ThinkingBudgetExceededError(
+                            f"Thinking budget exceeded ({thinking_chars // 4} tokens > "
+                            f"{turn.reasoning_budget})"
+                        )
+
+                if delta.content:
+                    content_parts.append(delta.content)
+                    await ctx.stream_callback(delta.content)
+
+                if delta.reasoning_content:
+                    reasoning_parts.append(delta.reasoning_content)
+
+                if delta.tool_call_chunks:
+                    for tc in delta.tool_call_chunks:
+                        idx = tc.get("index", 0)
+                        if idx not in tool_call_buffers:
+                            tool_call_buffers[idx] = {"id": "", "name": "", "arguments": ""}
+                        if tc.get("id"):
+                            tool_call_buffers[idx]["id"] = tc["id"]
+                        fn = tc.get("function", {}) or {}
+                        if fn.get("name"):
+                            tool_call_buffers[idx]["name"] = fn["name"]
+                        if fn.get("arguments"):
+                            tool_call_buffers[idx]["arguments"] += fn["arguments"]
+
+                if delta.finish_reason is not None:
+                    finish_reason = delta.finish_reason
+
+                if delta.prompt_tokens or delta.completion_tokens or delta.total_tokens:
+                    prompt_tokens = delta.prompt_tokens
+                    completion_tokens = delta.completion_tokens
+                    total_tokens = delta.total_tokens
+
+            content = "".join(content_parts)
+            reasoning_content = "".join(reasoning_parts) if reasoning_parts else None
+
+            tool_calls: list[ToolCall] = []
+            for idx in sorted(tool_call_buffers.keys()):
+                buf = tool_call_buffers[idx]
+                if not buf["name"]:
+                    continue
+                try:
+                    arguments = json.loads(buf["arguments"]) if buf["arguments"] else {}
+                except json.JSONDecodeError as exc:
+                    repaired = repair_json(buf["arguments"]) if buf["arguments"] else None
+                    if repaired is not None:
+                        logger.info(
+                            "Repaired malformed tool_call arguments for %r in streaming path",
+                            buf["name"],
+                        )
+                        arguments = json.loads(repaired)
+                    else:
+                        logger.warning(
+                            "tool_call arguments for %r are malformed JSON (%s); treating as empty",
+                            buf["name"],
+                            exc,
+                        )
+                        arguments = {}
+                if not isinstance(arguments, dict):
+                    logger.warning(
+                        "tool_call arguments for %r are not a dict: %s",
+                        buf["name"],
+                        type(arguments).__name__,
                     )
+                    continue
+                tool_calls.append(
+                    ToolCall(
+                        id=buf["id"] or f"call_{idx}",
+                        name=buf["name"],
+                        arguments=arguments,
+                    )
+                )
 
-        if finish_reason == "unknown" and tool_calls:
-            finish_reason = "tool_calls"
+            # Fallback: Qwen3.5 in reasoning mode sometimes emits tool calls inside
+            # <think> blocks (which land in reasoning_content) but omits the structured
+            # tool_call_chunks. Parse XML-style <tool_call> tags as a safety net.
+            if not tool_calls:
+                combined = ""
+                if reasoning_content:
+                    combined += reasoning_content + "\n"
+                if content:
+                    combined += content + "\n"
+                if combined:
+                    fallback = _extract_tool_calls_from_text(combined)
+                    if fallback:
+                        tool_calls = fallback
+                        logger.info(
+                            "Recovered %d tool call(s) from reasoning/content XML fallback",
+                            len(tool_calls),
+                        )
 
-        return ChatResponse(
-            content=content,
-            reasoning_content=reasoning_content,
-            tool_calls=tool_calls,
-            finish_reason=finish_reason,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            total_tokens=total_tokens,
-        )
+            if finish_reason == "unknown" and tool_calls:
+                finish_reason = "tool_calls"
+
+            return ChatResponse(
+                content=content,
+                reasoning_content=reasoning_content,
+                tool_calls=tool_calls,
+                finish_reason=finish_reason,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+            )
+        finally:
+            with contextlib.suppress(Exception):
+                await stream.aclose()
 
     async def _execute_tool_calls(
         self,

@@ -7,7 +7,7 @@ import json
 import logging
 import re
 import secrets
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, Callable
 from typing import Any
 
 import httpx
@@ -603,7 +603,7 @@ class InferenceClient:
         reasoning_budget: int = 2048,
         max_tokens: int = 1024,
         temperature: float = 0.7,
-    ) -> AsyncIterator[StreamDelta]:
+    ) -> AsyncGenerator[StreamDelta, None]:
         """POST /v1/chat/completions with streaming. Yields StreamDelta chunks.
 
         Args:
@@ -624,6 +624,10 @@ class InferenceClient:
             "temperature": temperature,
             "reasoning_budget": reasoning_budget,
         }
+        # OpenAI-compatible servers (incl. llama.cpp) return a final usage
+        # chunk when this is set, making streaming token accounting truthful
+        # (PERF-004). Servers that don't support it ignore the field.
+        request_body["stream_options"] = {"include_usage": True}
 
         if tools:
             request_body["tools"] = [t.model_dump() for t in tools]
@@ -659,6 +663,21 @@ class InferenceClient:
                         continue
                     choices = chunk.get("choices", [])
                     if not choices:
+                        # Server-side rejections arrive as {"error": {...}}
+                        # payloads with no choices. Fail fast instead of
+                        # silently dropping them and stalling until the
+                        # caller's inactivity timeout masquerades as a
+                        # truncated response (BUG-022).
+                        error = chunk.get("error")
+                        if error:
+                            detail = (
+                                error.get("message", str(error))
+                                if isinstance(error, dict)
+                                else str(error)
+                            )
+                            raise InferenceServerError(
+                                f"Streaming inference rejected by server: {detail}"
+                            )
                         # Some servers emit usage in a final chunk with empty choices
                         usage = chunk.get("usage", {})
                         if usage:

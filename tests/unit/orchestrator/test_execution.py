@@ -1485,8 +1485,11 @@ async def test_max_tokens_passed_to_chat_stream(make_chat_response):
 
 
 @pytest.mark.asyncio
-async def test_streaming_inactivity_timeout_returns_partial_content():
-    """If the stream stalls, _run_inference_streaming returns accumulated content."""
+async def test_streaming_inactivity_timeout_fails_turn():
+    """BUG-003: a stalled stream fails the turn instead of returning a
+    truncated answer disguised as a successful stop."""
+    from hestia.errors import InferenceTimeoutError
+
     execution = TurnExecution(
         tool_registry=MagicMock(),
         inference_client=MagicMock(),
@@ -1496,13 +1499,34 @@ async def test_streaming_inactivity_timeout_returns_partial_content():
         stream=True,
     )
 
-    async def _stalled_stream(*args, **kwargs):
-        yield StreamDelta(content="partial ")
-        yield StreamDelta(content="content")
-        # Never yield another item; the wait_for should time out.
-        await asyncio.Event().wait()
+    closed = asyncio.Event()
 
-    execution._inference.chat_stream = _stalled_stream
+    class _ClosableStream:
+        """Delegating wrapper exposing aclose(), like chat_stream's return."""
+
+        def __init__(self, gen):
+            self._gen = gen
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            return await self._gen.__anext__()
+
+        async def aclose(self):
+            closed.set()
+            await self._gen.aclose()
+
+    def _make_stream(*args, **kwargs):
+        async def _g():
+            yield StreamDelta(content="partial ")
+            yield StreamDelta(content="content")
+            # Never yield another item; wait_for should time out.
+            await asyncio.Event().wait()
+
+        return _ClosableStream(_g())
+
+    execution._inference.chat_stream = _make_stream
 
     stream_callback = AsyncMock()
     ctx = TurnContext(
@@ -1515,19 +1539,22 @@ async def test_streaming_inactivity_timeout_returns_partial_content():
         stream_callback=stream_callback,
     )
 
-    with patch(
-        "hestia.orchestrator.execution._STREAM_INACTIVITY_TIMEOUT", 0.05
+    with (
+        patch("hestia.orchestrator.execution._STREAM_INACTIVITY_TIMEOUT", 0.05),
+        pytest.raises(InferenceTimeoutError),
     ):
-        result = await execution._run_inference_streaming(ctx, ctx.turn)
+        await execution._run_inference_streaming(ctx, ctx.turn)
 
-    assert result.content == "partial content"
-    assert result.finish_reason == "stop"
-    assert stream_callback.await_count == 2
+    assert stream_callback.await_count == 2  # partial text was still streamed out
+    assert closed.is_set()  # BUG-046: generator closed on early exit
 
 
 @pytest.mark.asyncio
-async def test_streaming_first_chunk_timeout_returns_empty():
-    """If the stream never yields any chunk, the first-chunk timeout fires."""
+async def test_streaming_first_chunk_timeout_raises():
+    """If the stream never yields any chunk, the first-chunk timeout fires
+    and the turn fails instead of returning an empty success."""
+    from hestia.errors import InferenceTimeoutError
+
     execution = TurnExecution(
         tool_registry=MagicMock(),
         inference_client=MagicMock(),
@@ -1554,13 +1581,12 @@ async def test_streaming_first_chunk_timeout_returns_empty():
         stream_callback=stream_callback,
     )
 
-    with patch(
-        "hestia.orchestrator.execution._STREAM_FIRST_CHUNK_TIMEOUT", 0.05
+    with (
+        patch("hestia.orchestrator.execution._STREAM_FIRST_CHUNK_TIMEOUT", 0.05),
+        pytest.raises(InferenceTimeoutError),
     ):
-        result = await execution._run_inference_streaming(ctx, ctx.turn)
+        await execution._run_inference_streaming(ctx, ctx.turn)
 
-    assert result.content == ""
-    assert result.finish_reason == "stop"
     stream_callback.assert_not_awaited()
 
 
