@@ -52,42 +52,50 @@ class HistoryWindowSelector:
                 continue
 
             if msg.role == "tool":
-                pair_msgs = [msg]
-                found_pair = False
+                # Find the assistant message owning this tool call. In
+                # reversed order every sibling tool result of the same
+                # assistant sits between this result and that assistant, so
+                # the atomic group is candidates[i .. pair_end] (BUG-027:
+                # advancing by pair length used to skip siblings entirely
+                # and double-count the shared assistant).
+                pair_end: int | None = None
                 for j in range(i + 1, len(history_candidates)):
                     candidate = history_candidates[j]
-                    if candidate.role == "assistant" and candidate.tool_calls:
-                        for tc in candidate.tool_calls:
-                            if tc.id == msg.tool_call_id:
-                                pair_msgs.append(candidate)
-                                found_pair = True
-                                break
-                    if found_pair:
+                    if (
+                        candidate.role == "assistant"
+                        and candidate.tool_calls
+                        and any(tc.id == msg.tool_call_id for tc in candidate.tool_calls)
+                    ):
+                        pair_end = j
                         break
 
-                if found_pair:
-                    pair_token_counts = await asyncio.gather(
-                        *(token_counter(m) for m in pair_msgs)
+                if pair_end is not None:
+                    group = history_candidates[i : pair_end + 1]
+                    group_counts = await asyncio.gather(
+                        *(token_counter(m) for m in group)
                     )
-                    pair_window_body = sum(pair_token_counts)
-                    if window_body + pair_window_body <= budget:
-                        included_history.extend(pair_msgs)
-                        window_body += pair_window_body
-                        i += len(pair_msgs)
-                        continue
+                    group_total = sum(group_counts)
+                    if window_body + group_total <= budget:
+                        included_history.extend(group)
+                        window_body += group_total
                     else:
-                        i += len(pair_msgs)
-                        truncated_count += len(pair_msgs)
-                        dropped_history.extend(pair_msgs)
-                        continue
+                        truncated_count += len(group)
+                        dropped_history.extend(group)
+                    i = pair_end + 1
+                    continue
 
             msg_window_body = await token_counter(msg)
             if window_body + msg_window_body <= budget:
                 included_history.append(msg)
                 window_body += msg_window_body
             else:
-                truncated_count += len(history_candidates) - i
-                dropped_history.extend(history_candidates[i:])
+                # BUG-072: the protected first user message may sit later in
+                # the candidate slice; it must not be reported as dropped.
+                remaining = [
+                    m for m in history_candidates[i:] if m is not skip_message
+                ]
+                truncated_count += len(remaining)
+                dropped_history.extend(remaining)
                 break
 
             i += 1

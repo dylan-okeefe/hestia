@@ -66,7 +66,53 @@ def validate_chat_template_sequence(messages: list[Message]) -> list[Message]:
             # system, user, and any other role pass through untouched.
             repaired.append(msg)
 
-    return repaired
+    return _synthesize_missing_tool_results(repaired)
+
+
+def _synthesize_missing_tool_results(messages: list[Message]) -> list[Message]:
+    """Insert filler tool results for assistants whose tool calls were never
+    answered (BUG-019).
+
+    A crash between persisting the assistant message and its tool results
+    leaves ``assistant(tool_calls=...)`` with nothing after it. Strict chat
+    templates (Qwen-style) reject that sequence with a 400 on every
+    subsequent request for the session. Instead of dropping history we
+    synthesize an explicit ``[turn interrupted]`` result per unanswered call,
+    which is honest about what happened and keeps the session usable.
+    """
+    out: list[Message] = []
+    pending: list[str] = []
+
+    def _flush() -> None:
+        for tool_call_id in pending:
+            logger.warning(
+                "Synthesizing interrupted-tool result for unanswered tool_call_id=%r",
+                tool_call_id,
+            )
+            out.append(
+                Message(
+                    role="tool",
+                    content="[turn interrupted — result was never produced]",
+                    tool_call_id=tool_call_id,
+                )
+            )
+        pending.clear()
+
+    for msg in messages:
+        if msg.role == "assistant":
+            pending.extend(tc.id for tc in (msg.tool_calls or []) if tc.id)
+            out.append(msg)
+        elif msg.role == "tool":
+            if msg.tool_call_id in pending:
+                pending.remove(msg.tool_call_id)
+            out.append(msg)
+        else:
+            # A user/system message arrived with tool results still outstanding.
+            _flush()
+            out.append(msg)
+
+    _flush()
+    return out
 
 
 def _snippet(text: str | None, max_len: int = 80) -> str:
