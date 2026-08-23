@@ -89,6 +89,20 @@ def gated_app(app: AppContext) -> AppContext:
     reg.register(_stub("current_time", []))
     reg.calls = calls  # type: ignore[attr-defined]  # test observation hook
 
+    from hestia.core.types import ChatResponse
+
+    app.inference.chat = AsyncMock(
+        return_value=ChatResponse(
+            content='{"findings": [], "recommendations": [], "sources": []}',
+            reasoning_content=None,
+            tool_calls=[],
+            finish_reason="stop",
+            prompt_tokens=1,
+            completion_tokens=1,
+            total_tokens=2,
+        )
+    )
+
     app.tool_registry = reg
     app.capability_gate = CapabilityGate(
         config=app.config,
@@ -404,12 +418,13 @@ async def test_tool_call_node_allowed_via_allow_list(
 
 
 @pytest.mark.asyncio
-async def test_investigate_tools_via_inputs_are_gated(
+async def test_investigate_ignores_input_supplied_tools(
     workflow_store: WorkflowStore,
     gated_app: AppContext,
 ) -> None:
-    """Review defect 1: 'tools' arriving through interpolated inputs (not
-    config) must still pass the gate."""
+    """L245: tools come from node.config only. A trigger payload supplying
+    'tools' cannot cause any tool execution - the names simply never
+    resolve, whatever shape they arrive in."""
     wf = Workflow(id="wf_inv_inputs", name="Inv Inputs", trust_level="paranoid")
     await workflow_store.save_workflow(wf)
 
@@ -427,25 +442,25 @@ async def test_investigate_tools_via_inputs_are_gated(
     executor = WorkflowExecutor(gated_app)
     result = await executor.execute("wf_inv_inputs", {"tools": ["terminal"]})
 
-    assert result.status == "failed"
-    assert gated_app.tool_registry._tools  # real registry in place
+    # No tools resolved from inputs, so nothing was invoked and the run
+    # completes (the investigation just has no tool data).
+    assert result.status == "ok"
+    assert all(
+        name != "terminal" for name, _kw in gated_app.tool_registry.calls
+    )
 
 
 @pytest.mark.asyncio
-async def test_dict_shaped_tools_fail_closed(
+async def test_investigate_ignores_dict_shaped_input_tools(
     workflow_store: WorkflowStore,
     gated_app: AppContext,
 ) -> None:
-    """Review defect 1: a dict-shaped tools value must be denied outright.
-
-    The previous gate duplicate handled only str/list, so
-    {'terminal': True} gated nothing and then executed its keys.
-    """
-    wf = Workflow(id="wf_dict", name="Dict Tools", trust_level="household")
+    """L245: even a hostile dict-shape in inputs executes nothing."""
+    wf = Workflow(id="wf_inv_dict_in", name="Inv Dict Inputs", trust_level="paranoid")
     await workflow_store.save_workflow(wf)
 
     version = WorkflowVersion(
-        workflow_id="wf_dict",
+        workflow_id="wf_inv_dict_in",
         version=1,
         nodes=[
             WorkflowNode(id="n1", type="investigate", label="Investigate", config={"topic": "x"})
@@ -456,7 +471,46 @@ async def test_dict_shaped_tools_fail_closed(
     await workflow_store.save_version(version)
 
     executor = WorkflowExecutor(gated_app)
-    result = await executor.execute("wf_dict", {"tools": {"terminal": True}})
+    result = await executor.execute("wf_inv_dict_in", {"tools": {"terminal": True}})
+
+    assert result.status == "ok"
+    assert all(
+        name != "terminal" for name, _kw in gated_app.tool_registry.calls
+    )
+
+
+async def test_dict_shaped_tools_fail_closed(
+    workflow_store: WorkflowStore,
+    gated_app: AppContext,
+) -> None:
+    """L245: a dict-shaped tools value in node config is denied outright.
+
+    The previous gate duplicate handled only str/list, so
+    {'terminal': True} gated nothing and then executed its keys. Config-only
+    selection plus the shape check closes that; dicts arriving via INPUTS
+    are ignored entirely (see test_investigate_ignores_input_supplied_tools).
+    """
+    wf = Workflow(id="wf_dict", name="Dict Tools", trust_level="household")
+    await workflow_store.save_workflow(wf)
+
+    version = WorkflowVersion(
+        workflow_id="wf_dict",
+        version=1,
+        nodes=[
+            WorkflowNode(
+                id="n1",
+                type="investigate",
+                label="Investigate",
+                config={"topic": "x", "tools": {"terminal": True}},
+            )
+        ],
+        edges=[],
+        is_active=True,
+    )
+    await workflow_store.save_version(version)
+
+    executor = WorkflowExecutor(gated_app)
+    result = await executor.execute("wf_dict", {})
 
     assert result.status == "failed"
     error = result.node_results[0].error or ""
@@ -476,7 +530,12 @@ async def test_non_string_tool_list_entries_fail_closed(
         workflow_id="wf_ints",
         version=1,
         nodes=[
-            WorkflowNode(id="n1", type="investigate", label="Investigate", config={"topic": "x"})
+            WorkflowNode(
+                id="n1",
+                type="investigate",
+                label="Investigate",
+                config={"topic": "x", "tools": [123]},
+            )
         ],
         edges=[],
         is_active=True,
@@ -484,7 +543,8 @@ async def test_non_string_tool_list_entries_fail_closed(
     await workflow_store.save_version(version)
 
     executor = WorkflowExecutor(gated_app)
-    result = await executor.execute("wf_ints", {"tools": [123]})
+    result = await executor.execute("wf_ints", {})
 
     assert result.status == "failed"
+    assert "must all be strings" in (result.node_results[0].error or "")
     assert gated_app.tool_registry._tools  # real registry in place

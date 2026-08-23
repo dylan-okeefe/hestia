@@ -35,9 +35,10 @@ def resolve_invoked_tools(node_type: str, node: WorkflowNode, inputs: dict[str, 
         return [name]
 
     if node_type == "investigate":
-        # Inputs take precedence over config, mirroring InvestigateNode's
-        # historical _resolve precedence.
-        raw = inputs.get("tools", node.config.get("tools"))
+        # L245: tools come from node.config ONLY. Trigger payloads must never
+        # choose which tools an investigation runs - inputs are exactly the
+        # attacker-influenceable channel that produced the round-1 bypass.
+        raw = node.config.get("tools")
         if raw is None:
             return []
         if isinstance(raw, str):
