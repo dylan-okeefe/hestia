@@ -14,6 +14,8 @@ from hestia.core.types import ChatResponse, Message, Session, ToolCall
 from hestia.diagnostics import regression_collector
 from hestia.errors import (
     EmptyResponseError,
+    InferenceServerError,
+    InferenceTimeoutError,
     MaxIterationsError,
     PolicyFailureError,
     ThinkingBudgetExceededError,
@@ -48,14 +50,15 @@ TypingCallback = Callable[[bool], Awaitable[None]]
 
 # Inter-chunk timeout: once the model has started emitting tokens, if no chunk
 # arrives for this long we assume the stream is dead and finish.  Tool-call
-# argument JSON can be large, so this needs to be generous enough for the
-# server to finish emitting a complete chunk.
-_STREAM_INACTIVITY_TIMEOUT = 60.0
+# argument JSON can be large, and local models can stall between tokens, so
+# this needs to be generous enough for the server to finish emitting a chunk.
+_INFERENCE_RETRY_MAX_BACKOFF_S = 5.0
+_STREAM_INACTIVITY_TIMEOUT = 120.0
 
 # First-chunk timeout: prompt processing for long contexts can take tens of
-# seconds without emitting any tokens.  We allow up to two minutes for the
+# seconds without emitting any tokens.  We allow up to three minutes for the
 # first chunk before giving up, while keeping the inter-chunk timeout tight.
-_STREAM_FIRST_CHUNK_TIMEOUT = 120.0
+_STREAM_FIRST_CHUNK_TIMEOUT = 180.0
 
 # Timeout escalation schedule for repeated TIMEOUT retries (seconds).
 _TIMEOUT_ESCALATION_SCHEDULE = (15.0, 30.0, 60.0)
@@ -66,6 +69,10 @@ _DEFAULT_URL_TIME_BUDGET = 120.0
 # A degenerate turn is when the model returns finish_reason="tool_calls"
 # but the structured tool-call batch is empty (e.g. all calls failed JSON validation).
 _MAX_DEGENERATE_TOOL_CALL_RETRIES = 3
+
+# Tool-chain names that are meta-tools.  ``describe_tool:foo`` entries are
+# expanded by _handle_tool_calls so the circuit breaker can count them.
+_META_TOOL_CHAIN_NAMES = {"list_tools", "describe_tool", "call_tool"}
 
 
 _ToolCallKey = tuple[str, tuple[tuple[str, Any], ...]]
@@ -87,6 +94,54 @@ def _tool_call_key(tc: ToolCall) -> _ToolCallKey:
 
     args = tuple(sorted((k, _freeze(v)) for k, v in (tc.arguments or {}).items()))
     return (tc.name, args)
+
+
+def _effective_meta_name(tc: ToolCall) -> str | None:
+    """If ``tc`` is ``call_tool(name=...)``, return the cleaned inner name.
+
+    Small models sometimes emit the inner name with a stray ``>`` or a nested
+    XML fragment (e.g. ``"glob>\n<parameter=arguments>..."``).  We clean it
+    the same way ``_meta_call_tool`` does so that status messages and circuit
+    breakers see the intended target.
+    """
+    if tc.name == "call_tool" and tc.arguments:
+        name = tc.arguments.get("name")
+        if isinstance(name, str):
+            return name.split("\n")[0].strip().rstrip(">")
+    return None
+
+
+def _is_list_tools_call(tc: ToolCall) -> bool:
+    """True for direct ``list_tools`` or ``call_tool(name="list_tools")``."""
+    if tc.name == "list_tools":
+        return True
+    return _effective_meta_name(tc) == "list_tools"
+
+
+def _is_describe_tool_call(tc: ToolCall) -> bool:
+    """True for direct ``describe_tool`` or ``call_tool(name="describe_tool")``."""
+    if tc.name == "describe_tool":
+        return True
+    return _effective_meta_name(tc) == "describe_tool"
+
+
+def _describe_tool_names(tc: ToolCall) -> set[str]:
+    """Return the names described by a ``describe_tool`` call (direct or wrapped)."""
+    if not _is_describe_tool_call(tc):
+        return set()
+    # For a wrapped describe_tool the arguments are nested under the call_tool
+    # payload: {"name": "describe_tool", "arguments": {"names": [...]}}.
+    # For a direct describe_tool the names are at the top level.
+    if tc.name == "call_tool" and tc.arguments:
+        inner = tc.arguments.get("arguments") or {}
+        raw_names = inner.get("names") if isinstance(inner, dict) else []
+    else:
+        raw_names = tc.arguments.get("names") if tc.arguments else []
+    if isinstance(raw_names, str):
+        return {raw_names}
+    if isinstance(raw_names, list):
+        return set(raw_names)
+    return set()
 
 
 def _extract_url_from_tool_call(tc: ToolCall) -> str | None:
@@ -275,45 +330,96 @@ class TurnExecution:
             if turn.thinking_aborted:
                 turn.reasoning_budget = 0
 
-            try:
-                if ctx.stream_callback is not None and self._stream:
-                    chat_response = await self._run_inference_streaming(ctx, turn)
-                else:
-                    chat_response = await self._inference.chat(
-                        messages=ctx.build_result.messages,
-                        tools=ctx.tools,
-                        slot_id=ctx.slot_id,
-                        reasoning_budget=turn.reasoning_budget,
-                        max_tokens=self._max_tokens,
+            inference_attempt = 0
+            while True:
+                try:
+                    if ctx.stream_callback is not None and self._stream:
+                        chat_response = await self._run_inference_streaming(ctx, turn)
+                    else:
+                        chat_response = await self._inference.chat(
+                            messages=ctx.build_result.messages,
+                            tools=ctx.tools,
+                            slot_id=ctx.slot_id,
+                            reasoning_budget=turn.reasoning_budget,
+                            max_tokens=self._max_tokens,
+                        )
+                        # BUG-020: enforce the thinking budget on the
+                        # non-streaming path too. The check used to exist only
+                        # in the streaming loop, so runaway <think> output
+                        # burned up to max_tokens unchecked and the abort +
+                        # nudge machinery below was dead code with stream=False.
+                        reasoning = chat_response.reasoning_content
+                        if reasoning and not turn.thinking_aborted:
+                            thinking_chars = len(reasoning)
+                            if thinking_chars > turn.reasoning_budget * 4:
+                                logger.warning(
+                                    "Thinking budget exceeded (%d chars ≈ %d tokens > %d budget)",
+                                    thinking_chars,
+                                    thinking_chars // 4,
+                                    turn.reasoning_budget,
+                                )
+                                raise ThinkingBudgetExceededError(
+                                    f"Thinking budget exceeded ({thinking_chars // 4} tokens > "
+                                    f"{turn.reasoning_budget})"
+                                )
+                    break
+                except ThinkingBudgetExceededError:
+                    await transition(turn, TurnState.RETRYING, "")
+                    turn.thinking_aborted = True
+                    nudge = Message(
+                        role="system",
+                        content=(
+                            "You have been thinking for a long time. "
+                            "Stop deliberating and use your tools to complete the task."
+                        ),
+                        created_at=utcnow(),
                     )
-            except ThinkingBudgetExceededError:
-                await transition(turn, TurnState.RETRYING, "")
-                turn.thinking_aborted = True
-                nudge = Message(
-                    role="system",
-                    content=(
-                        "You have been thinking for a long time. "
-                        "Stop deliberating and use your tools to complete the task."
-                    ),
-                    created_at=utcnow(),
-                )
-                await self._message_store.append_message(
-                    session.id, message_domain_to_dto(nudge, session.id, idx=0)
-                )
-                ctx.running_history.append(nudge)
-                self._builder.set_style_prefix(ctx.style_prefix)
-                ctx.build_result = await self._builder.build(
-                    session=ctx.session,
-                    history=ctx.running_history,
-                    system_prompt=ctx.system_prompt,
-                    tools=ctx.tools,
-                    new_user_message=None,
-                )
-                turn.iterations += 1
-                continue
+                    await self._message_store.append_message(
+                        session.id, message_domain_to_dto(nudge, session.id, idx=0)
+                    )
+                    ctx.running_history.append(nudge)
+                    self._builder.set_style_prefix(ctx.style_prefix)
+                    ctx.build_result = await self._builder.build(
+                        session=ctx.session,
+                        history=ctx.running_history,
+                        system_prompt=ctx.system_prompt,
+                        tools=ctx.tools,
+                        new_user_message=None,
+                    )
+                    turn.iterations += 1
+                    # The abort must stick across attempts: force the zeroed
+                    # budget here because this inner retry loop does not
+                    # recompute it from the policy.
+                    turn.reasoning_budget = 0
+                    continue
+                except (InferenceServerError, InferenceTimeoutError) as exc:
+                    # BUG-021: the policy's transient-error retry decision was
+                    # never consulted (only ThinkingBudgetExceededError was
+                    # caught here), so one server blip failed the whole turn.
+                    if ctx.stream_callback is not None and self._stream:
+                        # Streaming turns fail fast: partial text has already
+                        # been delivered to the user, and re-running would
+                        # duplicate it in the accumulated stream state.
+                        raise
+                    decision = self._policy.retry_after_error(exc, inference_attempt)
+                    if decision.action is not RetryAction.RETRY_WITH_BACKOFF:
+                        raise
+                    inference_attempt += 1
+                    delay = min(decision.backoff_seconds, _INFERENCE_RETRY_MAX_BACKOFF_S)
+                    logger.warning(
+                        "Transient inference error (%s); retry %d in %.1fs",
+                        exc,
+                        inference_attempt,
+                        delay,
+                    )
+                    await transition(turn, TurnState.RETRYING, "")
+                    await asyncio.sleep(delay)
 
             ctx.total_prompt_tokens += getattr(chat_response, "prompt_tokens", 0) or 0
             ctx.total_completion_tokens += getattr(chat_response, "completion_tokens", 0) or 0
+            # BUG-079: accumulate server-reported reasoning tokens so trace
+            # records stop being permanently None on thinking-heavy turns.
+            ctx.total_reasoning_tokens += getattr(chat_response, "reasoning_tokens", 0) or 0
 
             assistant_msg = Message(
                 role="assistant",
@@ -479,13 +585,47 @@ class TurnExecution:
             if history_includes_current
             else list(ctx.running_history) + [assistant_msg]
         )
+        # L245 (bypass (iv)): recovery writes used to invoke the raw handler,
+        # skipping the gate/killswitch/confirmation/audit entirely. The
+        # wrappers below route through the gated registry with an enforce
+        # context; a denial (including unattended-channel rules and the
+        # killswitch) aborts recovery instead of writing.
+        def _gated_recovery_caller(tool_name: str) -> Any:
+            async def _call(**kwargs: Any) -> Any:
+                from hestia.tools.context import ToolCallContext
+                from hestia.tools.registry import ToolBlockedError
+
+                if self._capability_gate is None:
+                    raise ToolBlockedError(
+                        "[CATEGORY: BLOCKED] no capability gate configured"
+                    )
+                channel = (
+                    ctx.channel if ctx is not None and ctx.channel is not None else Channel.CLI
+                )
+                platform_user = (
+                    ctx.platform_user
+                    if ctx is not None and ctx.platform_user is not None
+                    else ctx.session.platform_user
+                )
+                context = ToolCallContext(
+                    channel=channel,
+                    actor_platform=ctx.session.platform if ctx is not None else "system",
+                    actor_platform_user=platform_user,
+                    session_id=ctx.session.id if ctx is not None else None,
+                    injection_flagged=True,  # recovery only runs on flagged/suspect turns
+                )
+                result = await self._tools.call(tool_name, kwargs, context=context)
+                return result.content
+
+            return _call
+
         write_file_handler: Any | None = None
         append_to_file_handler: Any | None = None
         try:
-            write_file_meta = self._tools.describe("write_file")
-            write_file_handler = write_file_meta.handler
-            append_to_file_meta = self._tools.describe("append_to_file")
-            append_to_file_handler = append_to_file_meta.handler
+            self._tools.describe("write_file")
+            write_file_handler = _gated_recovery_caller("write_file")
+            self._tools.describe("append_to_file")
+            append_to_file_handler = _gated_recovery_caller("append_to_file")
         except Exception:  # noqa: BLE001
             pass
 
@@ -522,14 +662,30 @@ class TurnExecution:
             corrected_tools.update(repeated_tools)
             ctx._repeated_tools_corrected = corrected_tools
 
+        if correction.pattern == DegeneratePattern.EMPTY_RESPONSE:
+            empty_count = getattr(ctx, "_empty_correction_count", 0) + 1
+            ctx._empty_correction_count = empty_count
+            if empty_count >= 2:
+                # The model has gone blank twice in this turn. Stop looping and
+                # tell the user what happened so they can recover.
+                raise PolicyFailureError(
+                    "I got stuck: the model returned an empty response repeatedly. "
+                    "This usually happens when the conversation context is very large "
+                    "or a tool result was too big to process. Try /compact to summarize "
+                    "the session, /reset to start fresh, or rephrase your request."
+                )
+
         if ctx.correction_count < 3:
             await self._inject_correction(ctx, turn, correction)
             ctx.correction_count += 1
             return True
         if correction.pattern == DegeneratePattern.EMPTY_RESPONSE:
-            # Empty responses are transient; let the policy engine decide whether
-            # to retry or fail rather than forcing an immediate hard failure.
-            return False
+            # Defensive: if the empty-response counter somehow didn't trip above,
+            # stop the loop with an actionable message instead of a generic failure.
+            raise PolicyFailureError(
+                "I got stuck: the model returned an empty response repeatedly. "
+                "Try /compact, /reset, or rephrase your request."
+            )
         raise PolicyFailureError(
             f"Degenerate pattern persisted after {ctx.correction_count} corrections: "
             f"{correction.pattern.value}. {correction.message}"
@@ -585,23 +741,20 @@ class TurnExecution:
 
         tool_names: list[str] = []
         for tc in chat_response.tool_calls:
-            if tc.name == "describe_tool":
-                raw_names = tc.arguments.get("names") if tc.arguments else []
-                if isinstance(raw_names, str):
-                    tool_names.append(f"describe_tool:{raw_names}")
-                elif isinstance(raw_names, list):
+            effective = _effective_meta_name(tc)
+            if _is_describe_tool_call(tc):
+                # Direct describe_tool: names live in tc.arguments. Wrapped
+                # describe_tool: names live in tc.arguments["arguments"].
+                raw_names = _describe_tool_names(tc)
+                if raw_names:
                     for n in raw_names:
                         tool_names.append(f"describe_tool:{n}")
                 else:
                     tool_names.append("describe_tool")
-            elif tc.name == "call_tool" and tc.arguments and tc.arguments.get("name"):
+            elif effective is not None:
                 # Unwrap the meta-tool wrapper so users see "read_file" instead
                 # of the generic "call_tool" name in status messages.
-                nested_name = tc.arguments["name"]
-                if isinstance(nested_name, str):
-                    tool_names.append(nested_name)
-                else:
-                    tool_names.append("call_tool")
+                tool_names.append(effective)
             else:
                 tool_names.append(tc.name)
         ctx.tool_chain.extend(tool_names)
@@ -640,7 +793,7 @@ class TurnExecution:
         if use_policy_delegation:
             await transition(turn, TurnState.AWAITING_SUBAGENT, "")
             tool_results, handles = await self._execute_policy_delegation(
-                ctx.user_message, chat_response.tool_calls
+                ctx.user_message, chat_response.tool_calls, session=ctx.session, ctx=ctx
             )
             ctx.artifact_handles.extend(handles)
             await transition(turn, TurnState.EXECUTING_TOOLS, "")
@@ -706,6 +859,7 @@ class TurnExecution:
         prompt_tokens = 0
         completion_tokens = 0
         total_tokens = 0
+        reasoning_tokens_acc = 0
 
         assert ctx.build_result is not None
         assert ctx.stream_callback is not None
@@ -718,154 +872,194 @@ class TurnExecution:
             max_tokens=self._max_tokens,
         )
 
-        any_chunk_received = False
-        while True:
-            # Use a longer timeout for the very first chunk because the model
-            # server may still be processing a long prompt without emitting
-            # tokens.  After tokens start flowing, switch to the tight timeout.
-            timeout = (
-                _STREAM_INACTIVITY_TIMEOUT
-                if any_chunk_received
-                else _STREAM_FIRST_CHUNK_TIMEOUT
-            )
-            try:
-                delta = await asyncio.wait_for(stream.__anext__(), timeout=timeout)
-            except StopAsyncIteration:
-                break
-            except TimeoutError:
-                if any_chunk_received:
-                    logger.warning(
-                        "Streaming inference inactive for %.1fs; finishing with %d content "
-                        "chars and %d tool-call buffers accumulated so far",
-                        _STREAM_INACTIVITY_TIMEOUT,
-                        sum(len(p) for p in content_parts),
-                        len(tool_call_buffers),
-                    )
-                else:
-                    logger.warning(
-                        "Streaming inference produced no chunks within %.1fs "
-                        "(likely long prompt processing); finishing empty",
-                        _STREAM_FIRST_CHUNK_TIMEOUT,
-                    )
-                if finish_reason == "unknown":
-                    finish_reason = "stop"
-                break
-
-            any_chunk_received = True
-
-            if delta.reasoning_content and not turn.thinking_aborted:
-                thinking_chars = sum(len(p) for p in reasoning_parts) + len(delta.reasoning_content)
-                # Rough token estimate: 4 characters per token
-                if thinking_chars > turn.reasoning_budget * 4:
-                    logger.warning(
-                        "Thinking budget exceeded (%d chars ≈ %d tokens > %d budget)",
-                        thinking_chars,
-                        thinking_chars // 4,
-                        turn.reasoning_budget,
-                    )
-                    raise ThinkingBudgetExceededError(
-                        f"Thinking budget exceeded ({thinking_chars // 4} tokens > "
-                        f"{turn.reasoning_budget})"
-                    )
-
-            if delta.content:
-                content_parts.append(delta.content)
-                await ctx.stream_callback(delta.content)
-
-            if delta.reasoning_content:
-                reasoning_parts.append(delta.reasoning_content)
-
-            if delta.tool_call_chunks:
-                for tc in delta.tool_call_chunks:
-                    idx = tc.get("index", 0)
-                    if idx not in tool_call_buffers:
-                        tool_call_buffers[idx] = {"id": "", "name": "", "arguments": ""}
-                    if tc.get("id"):
-                        tool_call_buffers[idx]["id"] = tc["id"]
-                    fn = tc.get("function", {}) or {}
-                    if fn.get("name"):
-                        tool_call_buffers[idx]["name"] = fn["name"]
-                    if fn.get("arguments"):
-                        tool_call_buffers[idx]["arguments"] += fn["arguments"]
-
-            if delta.finish_reason is not None:
-                finish_reason = delta.finish_reason
-
-            if delta.prompt_tokens or delta.completion_tokens or delta.total_tokens:
-                prompt_tokens = delta.prompt_tokens
-                completion_tokens = delta.completion_tokens
-                total_tokens = delta.total_tokens
-
-        content = "".join(content_parts)
-        reasoning_content = "".join(reasoning_parts) if reasoning_parts else None
-
-        tool_calls: list[ToolCall] = []
-        for idx in sorted(tool_call_buffers.keys()):
-            buf = tool_call_buffers[idx]
-            if not buf["name"]:
-                continue
-            try:
-                arguments = json.loads(buf["arguments"]) if buf["arguments"] else {}
-            except json.JSONDecodeError as exc:
-                repaired = repair_json(buf["arguments"]) if buf["arguments"] else None
-                if repaired is not None:
-                    logger.info(
-                        "Repaired malformed tool_call arguments for %r in streaming path",
-                        buf["name"],
-                    )
-                    arguments = json.loads(repaired)
-                else:
-                    logger.warning(
-                        "tool_call arguments for %r are malformed JSON (%s); treating as empty",
-                        buf["name"],
-                        exc,
-                    )
-                    arguments = {}
-            if not isinstance(arguments, dict):
-                logger.warning(
-                    "tool_call arguments for %r are not a dict: %s",
-                    buf["name"],
-                    type(arguments).__name__,
+        try:
+            # BUG-046: guarantee the suspended SSE generator is closed when we
+            # exit early (timeout, thinking-budget abort, cancellation) so the
+            # HTTP connection releases now instead of at GC time.
+            any_chunk_received = False
+            while True:
+                # Use a longer timeout for the very first chunk because the model
+                # server may still be processing a long prompt without emitting
+                # tokens.  After tokens start flowing, switch to the tight timeout.
+                timeout = (
+                    _STREAM_INACTIVITY_TIMEOUT
+                    if any_chunk_received
+                    else _STREAM_FIRST_CHUNK_TIMEOUT
                 )
-                continue
-            tool_calls.append(
-                ToolCall(
-                    id=buf["id"] or f"call_{idx}",
-                    name=buf["name"],
-                    arguments=arguments,
-                )
-            )
+                try:
+                    delta = await asyncio.wait_for(stream.__anext__(), timeout=timeout)
+                except StopAsyncIteration:
+                    break
+                except TimeoutError:
+                    # BUG-003: a stalled stream used to be converted into a fake
+                    # successful stop, delivering a truncated answer as if
+                    # complete. The non-streaming path raises InferenceTimeoutError
+                    # and fails the turn; streaming now behaves identically.
+                    if any_chunk_received:
+                        logger.warning(
+                            "Streaming inference inactive for %.1fs after %d content "
+                            "chars and %d tool-call buffers; failing the turn",
+                            _STREAM_INACTIVITY_TIMEOUT,
+                            sum(len(p) for p in content_parts),
+                            len(tool_call_buffers),
+                        )
+                    else:
+                        logger.warning(
+                            "Streaming inference produced no chunks within %.1fs "
+                            "(likely long prompt processing)",
+                            _STREAM_FIRST_CHUNK_TIMEOUT,
+                        )
+                    # Review item: persist the partial answer so history
+                    # matches what the user already saw on screen. Without
+                    # this, the next turn's context contains a user message
+                    # with no assistant reply and the model does not know
+                    # what it just said.
+                    partial = "".join(content_parts)
+                    if partial.strip():
+                        interrupted = Message(
+                            role="assistant",
+                            content=(
+                                f"{partial}\n\n"
+                                "[response interrupted — the model stopped "
+                                "mid-answer; this text is incomplete]"
+                            ),
+                        )
+                        try:
+                            await self._message_store.append_message(
+                                ctx.session.id,
+                                message_domain_to_dto(interrupted, ctx.session.id, idx=0),
+                            )
+                            ctx.running_history.append(interrupted)
+                        except Exception:  # noqa: BLE001 — best-effort persistence
+                            logger.warning(
+                                "Failed to persist partial streamed answer for %s",
+                                ctx.session.id,
+                            )
+                    raise InferenceTimeoutError(
+                        "Streaming inference stalled — no tokens received in time"
+                    ) from None
 
-        # Fallback: Qwen3.5 in reasoning mode sometimes emits tool calls inside
-        # <think> blocks (which land in reasoning_content) but omits the structured
-        # tool_call_chunks. Parse XML-style <tool_call> tags as a safety net.
-        if not tool_calls:
-            combined = ""
-            if reasoning_content:
-                combined += reasoning_content + "\n"
-            if content:
-                combined += content + "\n"
-            if combined:
-                fallback = _extract_tool_calls_from_text(combined)
-                if fallback:
-                    tool_calls = fallback
-                    logger.info(
-                        "Recovered %d tool call(s) from reasoning/content XML fallback",
-                        len(tool_calls),
+                any_chunk_received = True
+
+                if delta.reasoning_content and not turn.thinking_aborted:
+                    thinking_chars = sum(len(p) for p in reasoning_parts) + len(delta.reasoning_content)
+                    # Rough token estimate: 4 characters per token
+                    if thinking_chars > turn.reasoning_budget * 4:
+                        logger.warning(
+                            "Thinking budget exceeded (%d chars ≈ %d tokens > %d budget)",
+                            thinking_chars,
+                            thinking_chars // 4,
+                            turn.reasoning_budget,
+                        )
+                        raise ThinkingBudgetExceededError(
+                            f"Thinking budget exceeded ({thinking_chars // 4} tokens > "
+                            f"{turn.reasoning_budget})"
+                        )
+
+                if delta.content:
+                    content_parts.append(delta.content)
+                    await ctx.stream_callback(delta.content)
+
+                if delta.reasoning_content:
+                    reasoning_parts.append(delta.reasoning_content)
+
+                if delta.tool_call_chunks:
+                    for tc in delta.tool_call_chunks:
+                        idx = tc.get("index", 0)
+                        if idx not in tool_call_buffers:
+                            tool_call_buffers[idx] = {"id": "", "name": "", "arguments": ""}
+                        if tc.get("id"):
+                            tool_call_buffers[idx]["id"] = tc["id"]
+                        fn = tc.get("function", {}) or {}
+                        if fn.get("name"):
+                            tool_call_buffers[idx]["name"] = fn["name"]
+                        if fn.get("arguments"):
+                            tool_call_buffers[idx]["arguments"] += fn["arguments"]
+
+                if delta.finish_reason is not None:
+                    finish_reason = delta.finish_reason
+
+                if delta.prompt_tokens or delta.completion_tokens or delta.total_tokens:
+                    prompt_tokens = delta.prompt_tokens
+                    completion_tokens = delta.completion_tokens
+                    total_tokens = delta.total_tokens
+                if delta.reasoning_tokens:
+                    reasoning_tokens_acc = delta.reasoning_tokens
+
+            content = "".join(content_parts)
+            reasoning_content = "".join(reasoning_parts) if reasoning_parts else None
+
+            tool_calls: list[ToolCall] = []
+            for idx in sorted(tool_call_buffers.keys()):
+                buf = tool_call_buffers[idx]
+                if not buf["name"]:
+                    continue
+                try:
+                    arguments = json.loads(buf["arguments"]) if buf["arguments"] else {}
+                except json.JSONDecodeError as exc:
+                    repaired = repair_json(buf["arguments"]) if buf["arguments"] else None
+                    if repaired is not None:
+                        logger.info(
+                            "Repaired malformed tool_call arguments for %r in streaming path",
+                            buf["name"],
+                        )
+                        arguments = json.loads(repaired)
+                    else:
+                        logger.warning(
+                            "tool_call arguments for %r are malformed JSON (%s); treating as empty",
+                            buf["name"],
+                            exc,
+                        )
+                        arguments = {}
+                if not isinstance(arguments, dict):
+                    logger.warning(
+                        "tool_call arguments for %r are not a dict: %s",
+                        buf["name"],
+                        type(arguments).__name__,
                     )
+                    continue
+                tool_calls.append(
+                    ToolCall(
+                        id=buf["id"] or f"call_{idx}",
+                        name=buf["name"],
+                        arguments=arguments,
+                    )
+                )
 
-        if finish_reason == "unknown" and tool_calls:
-            finish_reason = "tool_calls"
+            # Fallback: Qwen3.5 in reasoning mode sometimes emits tool calls inside
+            # <think> blocks (which land in reasoning_content) but omits the structured
+            # tool_call_chunks. Parse XML-style <tool_call> tags as a safety net.
+            if not tool_calls:
+                combined = ""
+                if reasoning_content:
+                    combined += reasoning_content + "\n"
+                if content:
+                    combined += content + "\n"
+                if combined:
+                    fallback = _extract_tool_calls_from_text(combined)
+                    if fallback:
+                        tool_calls = fallback
+                        logger.info(
+                            "Recovered %d tool call(s) from reasoning/content XML fallback",
+                            len(tool_calls),
+                        )
 
-        return ChatResponse(
-            content=content,
-            reasoning_content=reasoning_content,
-            tool_calls=tool_calls,
-            finish_reason=finish_reason,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            total_tokens=total_tokens,
-        )
+            if finish_reason == "unknown" and tool_calls:
+                finish_reason = "tool_calls"
+
+            return ChatResponse(
+                content=content,
+                reasoning_content=reasoning_content,
+                tool_calls=tool_calls,
+                finish_reason=finish_reason,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                reasoning_tokens=reasoning_tokens_acc,
+            )
+        finally:
+            with contextlib.suppress(Exception):
+                await stream.aclose()
 
     async def _execute_tool_calls(
         self,
@@ -907,6 +1101,12 @@ class TurnExecution:
         # one real execution so the model sees the tool list, but every repeat
         # is replaced with a synthetic result that includes the complete list
         # and a forceful instruction to stop.
+        #
+        # Models also bypass a removed ``list_tools`` schema by calling
+        # ``call_tool(name="list_tools")``; we treat those as list_tools for
+        # this guard.  Finally, once a non-meta tool has already produced a
+        # result in this turn, there is no reason to inspect the tool list
+        # again, so we hard-block list_tools in that case too.
         # Note: ctx.tool_chain has already been extended with the current batch
         # by _handle_tool_calls, so we look at the slice before this batch.
         current_batch_size = len(original_tool_calls)
@@ -917,27 +1117,41 @@ class TurnExecution:
         )
         prior_list_tools_count = prior_tool_chain.count("list_tools")
         seen_list_tools = prior_list_tools_count > 0
+        non_meta_tool_already_used = any(
+            name not in _META_TOOL_CHAIN_NAMES
+            and not name.startswith("describe_tool:")
+            for name in prior_tool_chain
+        )
         list_tools_block_results: dict[str, Message] = {}
         blocked_any_list_tools = False
-        if seen_list_tools or any(tc.name == "list_tools" for tc in original_tool_calls):
+        if (
+            seen_list_tools
+            or non_meta_tool_already_used
+            or any(_is_list_tools_call(tc) for tc in original_tool_calls)
+        ):
             list_tools_deduped: list[ToolCall] = []
             for tc in original_tool_calls:
-                if tc.name == "list_tools":
-                    if seen_list_tools:
+                if _is_list_tools_call(tc):
+                    if seen_list_tools or non_meta_tool_already_used:
                         # Any list_tools after the first one in the session is a
                         # degenerate loop. Hard-block it and mark that we need to
                         # drop the list_tools schema from the next prompt.
                         blocked_any_list_tools = True
+                        reason = (
+                            "a non-meta tool already produced a result this turn"
+                            if non_meta_tool_already_used
+                            else "you have already called list_tools"
+                        )
                         list_tools_block_results[tc.id] = Message(
                             role="tool",
                             content=(
-                                "🛑 STOP. You have already called list_tools. "
-                                "The complete tool list is in the system prompt "
-                                "and in the previous list_tools result. "
-                                "list_tools is now DISABLED for the rest of this "
-                                "turn. Do not call it again. Choose a "
-                                "specific tool from the list and call it, or reply "
-                                "directly to the user."
+                                f"🛑 STOP. {reason}. The complete tool list is in "
+                                "the system prompt and in the previous list_tools "
+                                "result. list_tools is now DISABLED for the rest of "
+                                "this turn. Do not call it again (including via "
+                                "call_tool(name='list_tools')). Choose a specific "
+                                "tool from the list and call it, or reply directly "
+                                "to the user."
                             ),
                             tool_call_id=tc.id,
                             created_at=utcnow(),
@@ -957,6 +1171,11 @@ class TurnExecution:
         # keep executing it but mark that the describe_tool schema should be
         # dropped from the next prompt so the model cannot binge on it.
         #
+        # Models may also wrap describe_tool inside call_tool(name="describe_tool");
+        # we treat those as describe_tool for this guard.  Like list_tools,
+        # describe_tool is pointless once a non-meta tool has already produced a
+        # result in this turn, so we hard-block it then too.
+        #
         # Build the set of already-described names from previous assistant
         # messages. We cannot slice ctx.tool_chain because describe_tool entries
         # are expanded to one entry per name, so the batch size in tool_chain
@@ -966,40 +1185,41 @@ class TurnExecution:
             for msg in ctx.running_history:
                 if msg.role == "assistant" and msg.tool_calls:
                     for prev_tc in msg.tool_calls:
-                        if prev_tc.name != "describe_tool":
+                        if not _is_describe_tool_call(prev_tc):
                             continue
-                        raw = prev_tc.arguments.get("names") if prev_tc.arguments else []
-                        if isinstance(raw, str):
-                            prior_describe_tool_names.add(raw)
-                        elif isinstance(raw, list):
-                            prior_describe_tool_names.update(raw)
+                        prior_describe_tool_names.update(_describe_tool_names(prev_tc))
         describe_tool_block_results: dict[str, Message] = {}
         blocked_describe_tool_binge = False
-        if any(tc.name == "describe_tool" for tc in original_tool_calls):
+        if any(_is_describe_tool_call(tc) for tc in original_tool_calls):
             describe_tool_deduped: list[ToolCall] = []
             for tc in original_tool_calls:
-                if tc.name == "describe_tool":
-                    raw_names = tc.arguments.get("names") if tc.arguments else []
-                    if isinstance(raw_names, str):
-                        names = {raw_names}
-                    elif isinstance(raw_names, list):
-                        names = set(raw_names)
-                    else:
-                        names = set()
+                if _is_describe_tool_call(tc):
+                    names = _describe_tool_names(tc)
                     # Block if we've already described 3+ unique tools in this
-                    # session, or if this call repeats any name we've seen
-                    # (including within the current batch).
+                    # session, if this call repeats any name we've seen
+                    # (including within the current batch), or if a non-meta
+                    # tool has already produced a result this turn.
                     already_seen = bool(names & prior_describe_tool_names)
-                    if len(prior_describe_tool_names) >= 3 or already_seen:
+                    if (
+                        non_meta_tool_already_used
+                        or len(prior_describe_tool_names) >= 3
+                        or already_seen
+                    ):
                         blocked_describe_tool_binge = True
+                        reason = (
+                            "a non-meta tool already produced a result this turn"
+                            if non_meta_tool_already_used
+                            else "you have already called describe_tool enough"
+                        )
                         describe_tool_block_results[tc.id] = Message(
                             role="tool",
                             content=(
-                                "🛑 STOP. You have already called describe_tool enough. "
-                                "The tool schemas are in the previous describe_tool results. "
-                                "describe_tool is now DISABLED for the rest of this "
-                                "turn. Stop inspecting tools and call one, or "
-                                "reply directly to the user."
+                                f"🛑 STOP. {reason}. The tool schemas are in the "
+                                "previous describe_tool results. describe_tool is "
+                                "now DISABLED for the rest of this turn (including "
+                                "via call_tool(name='describe_tool')). Stop "
+                                "inspecting tools and call one, or reply directly "
+                                "to the user."
                             ),
                             tool_call_id=tc.id,
                             created_at=utcnow(),
@@ -1026,7 +1246,18 @@ class TurnExecution:
             previous_keys: set[_ToolCallKey] = set()
             result_categories = _latest_tool_result_categories(ctx.running_history)
             previous_key_categories: dict[_ToolCallKey, ToolResultCategory] = {}
-            for msg in ctx.running_history:
+
+            # Only block repeats that occurred within the current turn (after the
+            # original user message). This lets a user explicitly ask for a retry
+            # while still preventing the assistant from looping on its own.
+            history_window = ctx.running_history
+            if ctx.user_message is not None:
+                for i, msg in enumerate(ctx.running_history):
+                    if msg == ctx.user_message:
+                        history_window = ctx.running_history[i:]
+                        break
+
+            for msg in history_window:
                 if msg.role == "assistant" and msg.tool_calls:
                     for tc in msg.tool_calls:
                         key = _tool_call_key(tc)
@@ -1299,15 +1530,77 @@ class TurnExecution:
         self,
         user_message: Message,
         tool_calls: list[ToolCall],
+        *,
+        session: Session,
+        ctx: "TurnContext | None" = None,
     ) -> tuple[list[Message], list[str]]:
-        """Run delegate_task once; map output to one message per model tool_call_id."""
+        """Run delegate_task once; map output to one message per model tool_call_id.
+
+        L245: delegation is a destructive-classified invocation (delegate_task
+        is in _DESTRUCTIVE_TOOL_NAMES) and previously bypassed the gate
+        entirely. It now flows through the same confirmation/gating path as
+        any other tool call.
+        """
         task = (user_message.content or "").strip() or "(no user text)"
         lines = [f"{tc.name} {json.dumps(tc.arguments or {})}" for tc in tool_calls]
         context = "\n".join(lines)
 
+        delegate_args = {"task": task, "context": context}
+
+        try:
+            meta = self._tools.describe("delegate_task")
+        except Exception:
+            meta = None
+        if meta is None:
+            messages = [
+                Message(
+                    role="tool",
+                    content="[delegation denied] delegate_task is not registered.",
+                    tool_call_id=tc.id,
+                    created_at=utcnow(),
+                )
+                for tc in tool_calls
+            ]
+            return messages, []
+
+        confirm_result, cap_result = await self._check_confirmation(
+            tool=meta,
+            tool_name="delegate_task",
+            arguments=delegate_args,
+            session=session,
+            ctx=ctx,
+        )
+        if confirm_result is not None:
+            denial = f"[delegation denied] {confirm_result.content}"
+            messages = [
+                Message(
+                    role="tool",
+                    content=denial if i == 0 else f"(Same denial as tool_call_id={tool_calls[0].id}.)\n{denial}",
+                    tool_call_id=tc.id,
+                    created_at=utcnow(),
+                )
+                for i, tc in enumerate(tool_calls)
+            ]
+            return messages, []
+
+        from hestia.tools.context import ToolCallContext
+
+        channel = ctx.channel if ctx is not None and ctx.channel is not None else Channel.CLI
+        platform_user = (
+            ctx.platform_user if ctx is not None and ctx.platform_user is not None else session.platform_user
+        )
+        tool_context = ToolCallContext(
+            channel=channel,
+            actor_platform=session.platform,
+            actor_platform_user=platform_user,
+            session_id=session.id,
+            mode="enforce",
+        )
+
         result = await self._tools.call(
             "delegate_task",
-            {"task": task, "context": context},
+            delegate_args,
+            context=tool_context,
         )
         result = self._scan_tool_result(result)
         body = result.content
@@ -1324,14 +1617,14 @@ class TurnExecution:
         if result.artifact_handle:
             artifact_handles.append(result.artifact_handle)
 
-        messages: list[Message] = []
+        reply_messages: list[Message] = []
         for i, tc in enumerate(tool_calls):
             content = (
                 body
                 if i == 0
                 else f"(Same policy delegation as tool_call_id={tool_calls[0].id}.)\n{body}"
             )
-            messages.append(
+            reply_messages.append(
                 Message(
                     role="tool",
                     content=content,
@@ -1339,7 +1632,7 @@ class TurnExecution:
                     created_at=utcnow(),
                 )
             )
-        return messages, artifact_handles
+        return reply_messages, artifact_handles
 
     async def _check_confirmation(
         self,
@@ -1349,45 +1642,50 @@ class TurnExecution:
         arguments: dict[str, Any],
         session: Session,
         ctx: "TurnContext | None" = None,
-    ) -> ToolCallResult | None:
-        """Return None if approved (or if the tool does not require confirmation),
-        or a ToolCallResult(error=...) if denied / unable to confirm."""
+    ) -> tuple[ToolCallResult | None, Any]:
+        """Return ``(None, cap_result)`` when approved, or
+        ``(ToolCallResult(error=...), cap_result)`` when denied / unable to
+        confirm. ``cap_result`` feeds the pre_gated chokepoint context."""
         # L222: unified capability gate runs first.
-        gate_result = await self._run_capability_gate(
+        gate_result, cap_result = await self._run_capability_gate(
             tool_name=tool_name,
             arguments=arguments,
             session=session,
             ctx=ctx,
         )
         if gate_result is not None:
-            return gate_result
+            return gate_result, cap_result
 
         if not tool.requires_confirmation:
-            return None
+            return None, cap_result
 
         if self._policy.auto_approve(tool_name, session, self._tools):
             # Trust profile auto-approves this tool for this session context.
-            return None
+            return None, cap_result
 
         if self._confirm_callback is None:
-            return ToolCallResult.error(
-                (
-                    f"Tool '{tool_name}' requires user confirmation but no "
-                    "confirm_callback is configured and the trust profile does "
-                    "not auto-approve it. Add the tool to "
-                    "TrustConfig.auto_approve_tools, or run via a platform that "
-                    "supports confirmation (CLI)."
+            return (
+                ToolCallResult.error(
+                    (
+                        f"Tool '{tool_name}' requires user confirmation but no "
+                        "confirm_callback is configured and the trust profile does "
+                        "not auto-approve it. Add the tool to "
+                        "TrustConfig.auto_approve_tools, or run via a platform that "
+                        "supports confirmation (CLI)."
+                    ),
                 ),
+                cap_result,
             )
 
         request_token = ctx.request_token if ctx is not None else None
         confirmed = await self._confirm_callback(tool_name, arguments, request_token)
         if not confirmed:
-            return ToolCallResult.error(
-                "Tool execution was cancelled by user.",
+            return (
+                ToolCallResult.error("Tool execution was cancelled by user."),
+                cap_result,
             )
 
-        return None
+        return None, cap_result
 
     async def _run_capability_gate(
         self,
@@ -1396,16 +1694,16 @@ class TurnExecution:
         arguments: dict[str, Any],
         session: Session,
         ctx: "TurnContext | None",
-    ) -> ToolCallResult | None:
-        """Check CapabilityGate and return a ToolCallResult if blocked.
+    ) -> tuple[ToolCallResult | None, Any]:
+        """Check CapabilityGate.
 
-        Returns None when the gate allows the call (including when no gate is
-        configured). When the gate requires confirmation but the call is
-        otherwise allowed, this method returns None so the normal confirmation
-        path (with the gate's request_token) can take over.
+        Returns ``(blocked_result_or_None, capability_result)``. The second
+        element feeds the caller's pre_gated ToolCallContext so the registry
+        chokepoint does not re-evaluate (L245 single-evaluation criterion).
+        ``capability_result`` is None only when no gate is configured.
         """
         if self._capability_gate is None:
-            return None
+            return None, None
 
         channel = ctx.channel if ctx is not None and ctx.channel is not None else Channel.CLI
         platform_user = (
@@ -1426,6 +1724,21 @@ class TurnExecution:
                 for m in ctx.running_history
             )
 
+        # L245: unattended channels get an explicit allow-list derived from
+        # the policy engine (scheduler TrustConfig flags are now real
+        # controls). Workflow contexts pass their own allow-list and never
+        # reach this path.
+        allow_list: set[str] | None = None
+        if channel in (Channel.SCHEDULER, Channel.EMAIL, Channel.WEBHOOK):
+            try:
+                meta = self._tools.describe(tool_name)
+                allow_list = self._policy.unattended_allow_list(
+                    channel, [tool_name], self._tools
+                )
+                _ = meta
+            except Exception:
+                allow_list = set()
+
         request = CapabilityRequest(
             actor=actor,
             channel=channel,
@@ -1434,13 +1747,13 @@ class TurnExecution:
             session_id=session.id,
         )
         result = await self._capability_gate.check(
-            request, injection_flagged=injection_flagged
+            request, injection_flagged=injection_flagged, allow_list=allow_list
         )
 
         if not result.allowed:
             return ToolCallResult.error(
                 f"[CATEGORY: BLOCKED] Capability gate denied '{tool_name}': {result.reason}"
-            )
+            ), result
 
         # Gate has approved. If it requires confirmation, fall through to the
         # normal confirmation flow; the callback will receive the request_token.
@@ -1448,9 +1761,9 @@ class TurnExecution:
             # Store token on the context for the confirmation callback to use.
             if ctx is not None:
                 ctx.request_token = result.request_token
-            return None
+            return None, result
 
-        return None
+        return None, result
 
     async def _meta_list_tools(
         self,
@@ -1503,6 +1816,12 @@ class TurnExecution:
                 "Missing 'name' argument for call_tool",
             )
 
+        # Models sometimes emit the inner name with a stray '>' or a nested
+        # XML fragment (e.g. "glob>\n<parameter=arguments>..."). Clean it up
+        # before lookup/dispatch.
+        if isinstance(name, str):
+            name = name.split("\n")[0].strip().rstrip(">")
+
         # Check if inner tool is allowed
         if allowed_tools is not None and name not in allowed_tools:
             return ToolCallResult.error(
@@ -1517,7 +1836,7 @@ class TurnExecution:
                 f"Tool not found: {name}",
             )
 
-        confirm_result = await self._check_confirmation(
+        confirm_result, cap_result = await self._check_confirmation(
             tool=inner_meta,
             tool_name=name,
             arguments=arguments,
@@ -1527,7 +1846,32 @@ class TurnExecution:
         if confirm_result is not None:
             return confirm_result
 
-        return await self._tools.meta_call_tool(name, arguments)
+        # L245: thread the pre_gated decision into the meta-tool passthrough.
+        from hestia.tools.context import ToolCallContext
+
+        channel = ctx.channel if ctx is not None and ctx.channel is not None else Channel.CLI
+        platform_user = (
+            ctx.platform_user if ctx is not None and ctx.platform_user is not None else session.platform_user
+        )
+        if cap_result is not None:
+            tool_context = ToolCallContext(
+                channel=channel,
+                actor_platform=session.platform,
+                actor_platform_user=platform_user,
+                session_id=session.id,
+                mode="pre_gated",
+                pre_gated_result=cap_result,
+                pre_gated_tool=name,
+            )
+        else:
+            tool_context = ToolCallContext(
+                channel=channel,
+                actor_platform=session.platform,
+                actor_platform_user=platform_user,
+                session_id=session.id,
+                mode="enforce",
+            )
+        return await self._tools.meta_call_tool(name, arguments, context=tool_context)
 
     async def _dispatch_tool_call(
         self,
@@ -1566,7 +1910,7 @@ class TurnExecution:
                 f"Unknown tool: {tc.name}",
             )
 
-        confirm_result = await self._check_confirmation(
+        confirm_result, cap_result = await self._check_confirmation(
             tool=meta,
             tool_name=tc.name,
             arguments=tc.arguments or {},
@@ -1576,7 +1920,40 @@ class TurnExecution:
         if confirm_result is not None:
             return confirm_result
 
-        result = await self._tools.call(tc.name, tc.arguments or {})
+        # L245 chokepoint: hand the registry the decision the gate already
+        # made (single evaluation). The context carries who/where for audit
+        # and future enforcement; the registry does not re-evaluate.
+        from hestia.tools.context import ToolCallContext
+
+        channel = ctx.channel if ctx is not None and ctx.channel is not None else Channel.CLI
+        platform_user = (
+            ctx.platform_user
+            if ctx is not None and ctx.platform_user is not None
+            else session.platform_user
+        )
+        if cap_result is not None:
+            tool_context = ToolCallContext(
+                channel=channel,
+                actor_platform=session.platform,
+                actor_platform_user=platform_user,
+                session_id=session.id,
+                mode="pre_gated",
+                pre_gated_result=cap_result,
+                pre_gated_tool=tc.name,
+            )
+        else:
+            # No gate decision (e.g. non-destructive tool on a trusted
+            # channel): enforce at the registry. An unbound registry refuses
+            # enforce calls outright (L245 review finding 1).
+            tool_context = ToolCallContext(
+                channel=channel,
+                actor_platform=session.platform,
+                actor_platform_user=platform_user,
+                session_id=session.id,
+                mode="enforce",
+            )
+
+        result = await self._tools.call(tc.name, tc.arguments or {}, context=tool_context)
         return result
 
     def _format_tool_status(self, tool_names: list[str]) -> str | None:

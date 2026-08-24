@@ -75,7 +75,7 @@ async def test_run_capability_gate_no_gate_returns_none() -> None:
         capability_gate=None,
     )
 
-    result = await execution._run_capability_gate(
+    result, cap_result = await execution._run_capability_gate(
         tool_name="write_file",
         arguments={},
         session=_make_session(),
@@ -106,7 +106,7 @@ async def test_run_capability_gate_denied_returns_blocked_result() -> None:
         capability_gate=gate,
     )
 
-    result = await execution._run_capability_gate(
+    result, cap_result = await execution._run_capability_gate(
         tool_name="write_file",
         arguments={"path": "/tmp/x"},
         session=_make_session(),
@@ -144,7 +144,7 @@ async def test_run_capability_gate_escalation_stores_token() -> None:
     )
 
     ctx = _make_ctx()
-    result = await execution._run_capability_gate(
+    result, cap_result = await execution._run_capability_gate(
         tool_name="write_file",
         arguments={},
         session=_make_session(),
@@ -183,7 +183,7 @@ async def test_check_confirmation_uses_token_from_context() -> None:
     )
 
     ctx = _make_ctx()
-    result = await execution._check_confirmation(
+    result, cap_result = await execution._check_confirmation(
         tool=_make_tool_metadata(requires_confirmation=True),
         tool_name="write_file",
         arguments={"path": "/tmp/x"},
@@ -219,7 +219,7 @@ async def test_check_confirmation_denied_does_not_call_callback() -> None:
         confirm_callback=callback,
     )
 
-    result = await execution._check_confirmation(
+    result, cap_result = await execution._check_confirmation(
         tool=_make_tool_metadata(requires_confirmation=True),
         tool_name="terminal",
         arguments={"command": "ls"},
@@ -331,7 +331,10 @@ async def test_run_capability_gate_flags_injection_from_history() -> None:
     gate = MagicMock(spec=CapabilityGate)
 
     async def _capture(
-        request: CapabilityRequest, *, injection_flagged: bool = False
+        request: CapabilityRequest,
+        *,
+        injection_flagged: bool = False,
+        allow_list: set[str] | None = None,
     ) -> CapabilityResult:
         nonlocal captured
         captured = request
@@ -368,3 +371,5 @@ async def test_run_capability_gate_flags_injection_from_history() -> None:
 
     assert captured is not None
     assert gate.check.await_args.kwargs.get("injection_flagged") is True
+    # Attended channels derive no allow-list (L245 maps only SCHEDULER).
+    assert gate.check.await_args.kwargs.get("allow_list") is None

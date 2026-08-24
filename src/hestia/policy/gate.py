@@ -199,12 +199,17 @@ class CapabilityGate:
         unattended = request.channel in _UNATTENDED_CHANNELS
         if user is None and unattended and destructive:
             if request.tool_name in allow_list and not injection_flagged:
-                return CapabilityResult(
+                result = CapabilityResult(
                     allowed=True,
                     auto_approved=True,
                     requires_confirmation=False,
                     reason="allow_listed",
                 )
+                # L245: allow decisions on unattended channels are audited —
+                # under allowlist-only authorization "the allowlist let this
+                # through" is exactly the event worth recording.
+                await self._audit(request, result, injection_flagged)
+                return result
             result = CapabilityResult(
                 allowed=False,
                 auto_approved=False,
@@ -237,12 +242,14 @@ class CapabilityGate:
 
         if destructive and unattended:
             if request.tool_name in allow_list:
-                return CapabilityResult(
+                result = CapabilityResult(
                     allowed=True,
                     auto_approved=True,
                     requires_confirmation=False,
                     reason="allow_listed",
                 )
+                await self._audit(request, result, injection_flagged)
+                return result
             result = CapabilityResult(
                 allowed=False,
                 auto_approved=False,
@@ -254,9 +261,16 @@ class CapabilityGate:
 
         trust = self._resolve_trust(user, request.actor)
         auto_approved = self._is_auto_approved(request.tool_name, trust)
-        return CapabilityResult(
+        result = CapabilityResult(
             allowed=True,
             auto_approved=auto_approved,
             requires_confirmation=False,
             reason="approved",
         )
+        # L245: non-destructive approvals on unattended channels are audited
+        # as well — these are the calls allowlist-only authorization exists
+        # to account for. Trusted (attended) channels stay silent: a human
+        # is present and the volume would be noise.
+        if unattended:
+            await self._audit(request, result, injection_flagged)
+        return result

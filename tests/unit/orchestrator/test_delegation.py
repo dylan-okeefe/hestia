@@ -43,7 +43,12 @@ async def test_execute_policy_delegation_passes_task_and_context(
         )
     )
 
-    await execution._execute_policy_delegation(user_message, tool_calls)
+    await execution._execute_policy_delegation(
+        user_message,
+        tool_calls,
+        session=MagicMock(platform="test", platform_user="user", id="sess-1"),
+        ctx=None,
+    )
 
     call_args = execution._tools.call.await_args
     assert call_args is not None

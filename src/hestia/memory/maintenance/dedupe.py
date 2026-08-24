@@ -11,6 +11,7 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from hestia.core.clock import utcnow
+from hestia.memory.maintenance.scopes import format_scope_key, memory_scope_key
 from hestia.memory.maintenance.trace import MaintenanceAction
 from hestia.memory.store import Memory, MemoryStore
 
@@ -26,6 +27,7 @@ class DedupeResult:
 
     merged_count: int
     skipped_protected_count: int
+    skipped_sanitized_count: int = 0
 
 
 def _normalize_content(text: str) -> str:
@@ -175,6 +177,15 @@ class DeterministicDeduper:
             limit=10_000,
         )
 
+        topic_ids_map = await self._store.get_topic_ids_for_memories(
+            [memory.id for memory in active]
+        )
+
+        def _scope_key(memory: Memory) -> tuple[str, ...]:
+            return memory_scope_key(
+                memory, topic_ids_map.get(memory.id, [])
+            )
+
         protected: list[Memory] = []
         unprotected: list[Memory] = []
         for memory in active:
@@ -184,12 +195,15 @@ class DeterministicDeduper:
                 unprotected.append(memory)
 
         merged_count = 0
+        skipped_count = 0
         processed_ids: set[str] = set()
 
-        # Phase 1: exact duplicates by normalized content hash.
-        groups: dict[str, list[Memory]] = defaultdict(list)
+        # Phase 1: exact duplicates by normalized content hash within each scope.
+        groups: dict[tuple[tuple[str, ...], str], list[Memory]] = defaultdict(list)
         for memory in unprotected:
-            groups[_normalize_content(memory.content)].append(memory)
+            groups[(_scope_key(memory), _normalize_content(memory.content))].append(
+                memory
+            )
 
         for group in groups.values():
             if len(group) <= 1:
@@ -197,13 +211,25 @@ class DeterministicDeduper:
             winner = _pick_winner(*group)
             merged_content = _merge_contents([m.content for m in group])
             merged_tags = _merge_tags(*group)
-            await self._store.update(
+            scope_str = format_scope_key(_scope_key(winner))
+            # BUG-010: if the sanitizer rejects the merged content, update()
+            # returns False. Soft-deleting the losers anyway would silently
+            # destroy information while recording a successful merge.
+            update_ok = await self._store.update(
                 winner.id,
                 content=merged_content,
                 tags=merged_tags,
                 platform=platform,
                 platform_user=platform_user,
             )
+            if not update_ok:
+                logger.warning(
+                    "Skipping dedupe merge for group with winner %s: "
+                    "merged content rejected by sanitizer",
+                    winner.id,
+                )
+                skipped_count += 1
+                continue
             for memory in group:
                 if memory.id == winner.id:
                     continue
@@ -220,7 +246,11 @@ class DeterministicDeduper:
                     winner,
                     memory,
                     "deduplicated",
-                    details={"phase": "exact", "merged_content": merged_content},
+                    details={
+                        "phase": "exact",
+                        "merged_content": merged_content,
+                        "scope": scope_str,
+                    },
                 )
                 processed_ids.add(memory.id)
                 merged_count += 1
@@ -254,6 +284,8 @@ class DeterministicDeduper:
                     continue
                 if self._store.is_protected(candidate):
                     continue
+                if _scope_key(candidate) != _scope_key(memory):
+                    continue
 
                 if _jaccard(memory.content, candidate.content) <= 0.8:
                     continue
@@ -283,7 +315,11 @@ class DeterministicDeduper:
                     winner,
                     loser,
                     "deduplicated",
-                    details={"phase": "fts_overlap", "merged_content": merged_content},
+                    details={
+                        "phase": "fts_overlap",
+                        "merged_content": merged_content,
+                        "scope": format_scope_key(_scope_key(memory)),
+                    },
                 )
                 processed_ids.add(loser.id)
                 merged_count += 1
@@ -292,4 +328,5 @@ class DeterministicDeduper:
         return DedupeResult(
             merged_count=merged_count,
             skipped_protected_count=len(protected),
+            skipped_sanitized_count=skipped_count,
         )

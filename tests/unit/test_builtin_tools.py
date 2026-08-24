@@ -11,7 +11,7 @@ from hestia.tools.builtin.current_time import current_time
 from hestia.tools.builtin.edit_file import make_edit_file_tool
 from hestia.tools.builtin.glob import make_glob_tool
 from hestia.tools.builtin.grep import make_grep_tool
-from hestia.tools.builtin.http_get import SSRFSafeTransport, _is_url_safe, http_get
+from hestia.tools.builtin.http_get import SSRFSafeTransport, http_get, is_url_safe
 from hestia.tools.builtin.list_dir import make_list_dir_tool
 from hestia.tools.builtin.read_artifact import make_read_artifact_tool
 from hestia.tools.builtin.read_file import make_read_file_tool
@@ -92,7 +92,10 @@ class TestReadFile:
         test_file.write_text("x" * 10000)
 
         result = await read_file(str(test_file), max_bytes=100)
-        assert len(result) == 100
+        # Content is capped at exactly max_bytes; an explicit truncation
+        # marker follows so the model knows the read was cut short.
+        assert result.startswith("x" * 100)
+        assert "[truncated at 100 bytes]" in result
 
     @pytest.mark.asyncio
     async def test_binary_file_message(self, tmp_path):
@@ -467,6 +470,30 @@ class TestGrep:
         result = await grep("[invalid", str(tmp_path))
         assert "Invalid regex" in result
 
+    @pytest.mark.asyncio
+    async def test_grep_accepts_file_path(self, tmp_path):
+        """grep can search a single file, not just a directory."""
+        grep = make_grep_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
+        target = tmp_path / "a.py"
+        target.write_text("def foo():\n    pass\n")
+
+        result = await grep(r"^def ", str(target))
+
+        assert "a.py:1:def foo():" in result
+
+    @pytest.mark.asyncio
+    async def test_grep_truncates_long_lines(self, tmp_path):
+        """grep truncates very long matching lines to avoid huge output."""
+        grep = make_grep_tool(StorageConfig(allowed_roots=[str(tmp_path)]))
+        target = tmp_path / "long.txt"
+        target.write_text("prefix " + "x" * 5000 + " suffix\n")
+
+        result = await grep("prefix", str(target))
+
+        assert "prefix" in result
+        assert "(5014 chars total)" in result
+        assert "x" * 5000 not in result
+
 
 class TestHttpGet:
     """Tests for http_get tool."""
@@ -508,16 +535,16 @@ class TestHttpGet:
 
     def test_preflight_blocks_invalid_schemes(self):
         """Pre-flight check blocks invalid schemes and missing hostnames."""
-        assert _is_url_safe("file:///etc/passwd") is not None
-        assert _is_url_safe("ftp://example.com/file") is not None
-        assert _is_url_safe("example.com/path") is not None
-        assert _is_url_safe("http:///path") is not None
+        assert is_url_safe("file:///etc/passwd") is not None
+        assert is_url_safe("ftp://example.com/file") is not None
+        assert is_url_safe("example.com/path") is not None
+        assert is_url_safe("http:///path") is not None
 
     def test_preflight_allows_public_and_private_hostnames(self):
         """Pre-flight allows all valid HTTP(S) URLs; transport blocks private IPs."""
-        assert _is_url_safe("http://1.1.1.1/") is None
-        assert _is_url_safe("https://93.184.216.34/") is None
-        assert _is_url_safe("http://127.0.0.1/secret") is None
+        assert is_url_safe("http://1.1.1.1/") is None
+        assert is_url_safe("https://93.184.216.34/") is None
+        assert is_url_safe("http://127.0.0.1/secret") is None
 
     @pytest.mark.asyncio
     async def test_transport_uses_asyncio_to_thread_for_assert_ip_allowed(self):
@@ -527,13 +554,14 @@ class TestHttpGet:
         transport = SSRFSafeTransport()
         request = httpx.Request("GET", "http://example.com/")
 
-        with patch("asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
-            # We need the inner transport to not actually make a request
-            with patch.object(
+        with (
+            patch("asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread,
+            patch.object(
                 transport._inner, "handle_async_request", new_callable=AsyncMock
-            ) as mock_inner:
-                mock_inner.return_value = httpx.Response(200, text="ok")
-                await transport.handle_async_request(request)
+            ) as mock_inner,
+        ):
+            mock_inner.return_value = httpx.Response(200, text="ok")
+            await transport.handle_async_request(request)
 
         mock_to_thread.assert_awaited_once()
         assert mock_to_thread.call_args[0][0] == _assert_ip_allowed

@@ -6,6 +6,203 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-07-03 — L244: Migrate `job_alert` Subsystem to Private Repo
+
+**Outcome:** Moved the job-alert queue (`JobAlertStore` + `save_job_alert`, `list_pending_alerts`, `mark_alerts_sent`) out of the publishable Hestia core and into the private `hestia-tools` package. The migration uses the L241 `setup(context)` / `register(registry)` seam; the table is created lazily on the first tool call.
+
+**Branch:** `feature/l244-migrate-job-alert-handoff`
+**Private repo:** `git@github.com-personal:dylan-okeefe/hestia-tools.git`
+
+**Changes:**
+- Public Hestia core:
+  - Removed `src/hestia/persistence/job_alert_store.py`.
+  - Removed `src/hestia/tools/builtin/job_alert_tools.py`.
+  - Removed the `job_alerts` table from `src/hestia/persistence/schema.py`.
+  - Removed all `JobAlertStore` and job-alert tool references from `src/hestia/app.py` and `src/hestia/tools/builtin/__init__.py`.
+  - Regenerated `metrics.json`.
+- Private `hestia-tools` repo:
+  - Added `hestia_tools/job_alert_store.py` with the migrated `JobAlertStore` and a local `job_alerts` table definition.
+  - Added `hestia_tools/job_alert_tools.py` with the three migrated tools.
+  - Added `setup(context)` to `hestia_tools/__init__.py` to bind the store to Hestia's DB.
+  - Registered the three tools in `register(registry)`.
+  - Added `tests/test_job_alert_tools.py` with registration and round-trip tests.
+  - Updated `README.md`.
+- Docs:
+  - Created `docs/handoffs/L244-migrate-job-alert-handoff.md`.
+  - Updated `docs/development-process/prompts/KIMI_CURRENT.md`.
+
+**Quality gates:**
+- Hestia `mypy` / `ruff` on changed files: clean (2 pre-existing `voice/pipeline.py` mypy errors remain).
+- Hestia `tests/unit/tools/test_external_tool_modules.py` + `test_external_tool_setup.py`: 11 passed.
+- Hestia `tests/unit/tools/`: 110 passed, 15 warnings.
+- Private repo tests (inside Hestia venv): 13 passed.
+
+**Next:** Dylan/Cursor review and merge to `develop`. Ensure the runtime Hestia config lists `hestia_tools` in `extra_tool_modules`.
+
+## 2026-07-03 — L243: Pull Job-URL Extraction into Private Tool
+
+**Outcome:** Moved the job-board URL extraction logic out of the publishable workflow executor and into a private `extract_job_url` tool in `hestia-tools`. The executor is now domain-agnostic; the generic `_extract_url_from_text` LLM-output cleanup remains.
+
+**Branch:** `feature/l243-extract-job-url-private-tool`
+**Private repo:** `git@github.com-personal:dylan-okeefe/hestia-tools.git`
+
+**Changes:**
+- Public Hestia core:
+  - Removed `_JOB_URL_PATTERNS`, `_IGNORE_URL_PATTERNS`, `_extract_best_job_url`, and the `extract_url` inference-node special case from `src/hestia/workflows/executor.py`.
+  - Kept `_extract_url_from_text` for generic URL cleanup.
+  - Verified no remaining references to the removed symbols.
+  - Regenerated `metrics.json`.
+- Private `hestia-tools` repo:
+  - Added `hestia_tools/job_url_extraction.py` with the `extract_job_url` `@tool`.
+  - Registered it in `hestia_tools/__init__.py`.
+  - Added `tests/test_job_url_extraction.py` with 8 cases covering scoring, fallback, and hint handling.
+  - Updated `README.md`.
+- Docs:
+  - Created `docs/handoffs/L243-extract-job-url-private-tool-handoff.md`.
+  - Updated `docs/development-process/prompts/KIMI_CURRENT.md`.
+
+**Quality gates:**
+- Hestia `mypy` / `ruff` on `src/hestia/workflows/executor.py`: clean.
+- Hestia `tests/unit/tools/`: 110 passed, 15 warnings.
+- Hestia `tests/unit/workflows/`: blocked by pre-existing `AppContext` fixture config issue (`inference.model_name` empty).
+- Private repo tests (inside Hestia venv): 8 passed.
+
+**Next:** Dylan/Cursor review and merge to `develop`. Update the stored job-search workflow to use the new `extract_job_url` tool node; until then, the `extract_url` inference node loses its body-scan fallback.
+
+## 2026-07-03 — L241: External Tool Module Persistence Seam
+
+**Outcome:** Extended the L240 external-tool-modules seam with an optional `setup(context)` hook so external packages can own their own persistence (stores, tables). The context exposes only `db` and `config`; the full `AppContext` is intentionally not passed. The public-core `job_alert` subsystem was not migrated yet; this loop builds the seam required for that migration.
+
+**Branch:** `feature/l241-external-tool-module-setup`
+
+**Changes:**
+- Added `src/hestia/tools/external_context.py` with `ExternalToolModuleContext`.
+- Updated `src/hestia/app.py` `_register_external_tool_modules()` to call `setup(context)` before `register(registry)`, with warning-and-skip on any setup exception.
+- Added fixture modules `setup_tools.py` and `setup_fails.py`.
+- Added `tests/unit/tools/test_external_tool_setup.py` covering setup-before-register, setup failure, missing setup, context fields, and capability gating.
+- Updated `docs/adr/ADR-053-external-tool-modules.md` (then ADR-051) and `docs/guides/custom-tools.md` with the setup hook and database-handle trust warning.
+- Created handoff: `docs/handoffs/L241-external-tool-module-setup-handoff.md`.
+
+**Quality gates:**
+- External-tool tests: 11 passed.
+- `mypy` and `ruff` clean on changed files.
+- Full-repo gates show only pre-existing issues.
+
+**Merged:** Merged to `develop` and pushed (commit `1097fce9`).
+
+## 2026-07-03 — L242: Migrate `indeed_search_jobs` to Private Repo
+
+**Outcome:** Moved `indeed_search_jobs` out of the publishable Hestia core into the private `hestia-tools` package. Made `http_get_impl` public so external modules can reuse Hestia's SSRF-guarded HTTP fetch path. Personal taxonomy ("A-IN-1") was scrubbed from the tool description.
+
+**Branch:** `feature/l242-private-tool-migration`
+**Private repo:** `git@github.com-personal:dylan-okeefe/hestia-tools.git`
+
+**Changes:**
+- Public Hestia core:
+  - Made `http_get_impl` public in `src/hestia/tools/builtin/http_get.py` (with backward-compatible `_http_get_impl` alias).
+  - Removed `src/hestia/tools/builtin/indeed_search.py`.
+  - Removed `indeed_search_jobs` from `src/hestia/tools/builtin/__init__.py` and `src/hestia/app.py` registration.
+  - Regenerated `metrics.json`.
+- Private `hestia-tools` repo:
+  - Added `hestia_tools/indeed_search.py` with scrubbed descriptions.
+  - Added `register(registry)` in `hestia_tools/__init__.py`.
+  - Added `tests/test_indeed_search.py`.
+  - Documented test instructions for running inside Hestia's venv.
+- Created handoff: `docs/handoffs/L242-migrate-indeed-search-handoff.md`.
+
+**Quality gates:**
+- Hestia external-tool tests: 11 passed.
+- Hestia unit/tools: 110 passed, 15 warnings.
+- `mypy` / `ruff` clean on changed Hestia files.
+- Private repo test (inside Hestia venv): 1 passed.
+
+**Next:** Dylan/Cursor review and merge to `develop`. The remaining four branch job-search tools and the `job_alert` subsystem can be migrated in follow-up loops.
+
+## 2026-07-03 — L241: External Tool Module Persistence Seam
+
+## 2026-07-03 — L240: External Tool Modules
+
+**Outcome:** Added an opt-in extension point so external Python packages can contribute `@tool` callables without forking Hestia. External tools register through the same `ToolRegistry` and are subject to the same `CapabilityGate` and `DefaultPolicyEngine` filtering as built-ins.
+
+**Branch:** `feature/l240-external-tool-modules`
+
+**Changes:**
+- Added `extra_tool_modules: list[str]` to `HestiaConfig` (`src/hestia/config.py`), loadable from `HESTIA_EXTRA_TOOL_MODULES`.
+- Wired `_register_external_tool_modules()` in `AppContext.register_tools()` (`src/hestia/app.py`) with warning-and-skip handling for import errors, missing `register`, and registration `ValueError`.
+- Added fixture package `tests/fixtures/external_tool_module/` and `tests/unit/tools/test_external_tool_modules.py` covering load, error handling, capability gating, empty config, and env loading.
+- Added `docs/adr/ADR-053-external-tool-modules.md` (then ADR-051) and updated `docs/guides/custom-tools.md` with setup steps and trust warning.
+- Created handoff: `docs/handoffs/L240-external-tool-modules-handoff.md`.
+
+**Quality gates:**
+- New tests: 6 passed.
+- Targeted tests (tools, policy, config): 179 passed.
+- `mypy` and `ruff` clean on changed files.
+- Full-repo `mypy` and `ruff` show only pre-existing issues; no new issues introduced.
+
+**Merged:** Merged to `develop` and pushed (commit `403f2aa2`). This unblocks migrating the job-search scrapers to a private repo loaded via `extra_tool_modules`.
+
+## 2026-06-29 — L238: Scope-Aware Memory Maintenance
+
+**Outcome:** Extended the ADR-049 maintenance subsystem to respect Loop A's two-tier global/topic memory scope. Dedupe, LLM dedupe, and contradiction supersession now operate within scope; protected-set isolation is enforced by scope-key grouping; undo restores only the losers of the scoped action. The scope-promotion pass is explicitly deferred.
+
+**Branch:** `feature/l238-scope-aware-memory-maintenance`
+
+**Changes:**
+- Added `src/hestia/memory/maintenance/scopes.py` with scope-key helpers.
+- Added `MemoryStore.get_topic_ids_for_memories()` batch lookup in `src/hestia/memory/store.py`.
+- Updated `DeterministicDeduper` and `LLMDeduper` to group/judge duplicates within a scope key and record scope in trace details.
+- Updated `ContradictionResolver` to generate and judge candidate pairs only within the same scope.
+- Updated `MaintenanceUndo` to propagate the original scope into undo trace details.
+- Added a TODO in `src/hestia/memory/maintenance/service.py` for the deferred topic → global promotion pass.
+- Added `tests/unit/memory/maintenance/test_scope_aware_maintenance.py` covering cross-scope preservation, within-scope merges, supersession boundaries, protected-set isolation, and scoped undo.
+- Created handoff: `docs/handoffs/L238-scope-aware-memory-maintenance-handoff.md`.
+
+**Quality gates:** targeted tests 68 passed; `ruff` and `mypy` clean on changed files.
+
+**Next:** Cursor/Dylan review and merge to `develop` when approved. Scope-promotion pass remains a future Proposals-gated loop.
+
+## 2026-06-29 — L237 Fix: Wire Topic-Scoped Memory Capture Paths
+
+**Outcome:** Fixed a blocking regression in the Loop A topic-scoped memory backend before merge. All new capture paths now resolve topics through a shared resolver, and legacy non-FTS5 databases correctly mark existing memories as global.
+
+**Branch:** `feature/l237-thread-scoped-memory-backend`
+
+**Changes:**
+- Added `TopicStore.resolve_capture_topic_ids()` in `src/hestia/memory/topics.py` so every non-global capture path scopes consistently.
+- Changed non-FTS5 `ALTER TABLE ... ADD COLUMN is_global` default to `1` in `src/hestia/memory/store.py`, ensuring existing rows become global.
+- Wired `save_memory` tool with a `scope` parameter (`global`/`topic`) and topic resolution in `src/hestia/tools/builtin/memory_tools.py`; updated `src/hestia/app.py` to inject `topic_store`.
+- Wired `SessionCompactionSummarizer` and `SessionHandoffSummarizer` to resolve capture topics before saving.
+- Changed `hestia memory add` to save globally (operator-asserted durable fact).
+- Added system prompt rule #6 in `src/hestia/config.py`: identity/durable preferences → `scope=global`, everything else → topic-scoped.
+- Added regression/integration tests: topic-scoped tool save appears in epoch, two-topic subscription, global scope always loaded, cross-conversation isolation, compaction summarizer wiring, and non-FTS5 migration.
+- Created handoff: `docs/handoffs/L237-thread-scoped-memory-backend-handoff.md`.
+
+**Quality gates:** targeted tests 138 passed; `ruff` and `mypy` clean on changed files.
+
+**Next:** Cursor/Dylan review and merge to `develop` when approved. Do not start Loop B until L237 lands.
+
+## 2026-06-27 — L234–L236 Complete (Tour Commands Arc: Registry, /commands, /tour)
+
+**Outcome:** Implemented a runtime-introspectable command registry and built `/commands`, `/help`, and `/tour` on top of it across CLI, Telegram, and Matrix.
+
+**Branches:**
+- `feature/l234-tour-commands-registry` — registry + migrated meta-commands
+- `feature/l235-tour-commands-reference` — `/commands` reference and `/help` alias
+- `feature/l236-tour-walkthrough` — `/tour`, `/continue`, `/endtour` narrated walkthrough
+
+**Changes:**
+- Added `src/hestia/commands/registry.py` with `Command`, `CommandContext`, `CommandRegistry`, `command_from_handler()`, and `validate_registry()`.
+- Migrated all meta-commands onto the registry in `src/hestia/commands/meta.py`.
+- Added `render_commands_reference()` and registered `/commands`; aliased `/help` to it.
+- Added `src/hestia/commands/tour.py` with 9 narrated steps and drift guards covering every registry command and major capability.
+- Routed `/commands`, `/help`, `/tour`, `/continue`, `/endtour` in Telegram and Matrix adapters.
+- Added ADR-050: runtime-introspectable command registry.
+- Added/updated tests in `tests/unit/commands/test_registry.py`, `test_commands_reference.py`, `test_tour.py`, plus adapter tests.
+
+**Quality gates:** Targeted command/adapter tests 122 passed; `ruff` and `mypy` clean on changed files. Full repo gates not run due to 300s tool timeout on the large suite.
+
+**Next:** Cursor review and merge to develop when Dylan approves.
+
 ## 2026-06-22 — L231 Complete (Memory Maintenance: Trace, Digest, and Scheduler Wiring)
 
 **Outcome:** Wired the L226–L230 maintenance passes into a unified trace/digest/scheduler surface so every destructive action is auditable and operators receive a periodic summary.
@@ -3126,6 +3323,17 @@ Goal: clean up before public release (r/LocalLLM, r/LocalLLama post).
 - Execution output expand/collapse/raw/copy
 - History table filtering by status, date, node name
 - Branch: `feature/l217-workflow-ux-polish`
+
+### L239 — Memory UI Redesign (Loop C)
+- Redesigned Knowledge page as scope/topic curation tool
+- Grouped memories by Global + per-topic sections
+- Per-memory edit, pin/unpin, soft-delete/restore
+- Topic management panel: create/rename/delete
+- Distinct rendering for descriptive tags vs topic badges
+- Backend REST endpoints for memory/topic curation
+- Backend tests for MemoryStore scope/topic updates and TopicStore CRUD
+- UI tests for scope grouping, tag/topic distinction, delete/restore, scope edit
+- Branch: `feature/l239-memory-ui-redesign`
 
 ### Test count
 1709 passed, 6 skipped, 1 pre-existing flaky failure (test_doctor_check)

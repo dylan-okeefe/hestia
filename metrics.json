@@ -1,0 +1,11 @@
+{
+  "python_loc": 41502,
+  "test_loc": 48656,
+  "total_loc": 90158,
+  "tests": 2303,
+  "test_files": 243,
+  "adrs": 52,
+  "loops": 231,
+  "loop_spec_files": 178,
+  "updated": "2026-08-23"
+}

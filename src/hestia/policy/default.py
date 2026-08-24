@@ -19,6 +19,7 @@ from hestia.policy.engine import (
 from hestia.runtime_context import scheduler_tick_active
 
 if TYPE_CHECKING:
+    from hestia.policy.channel import Channel
     from hestia.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
@@ -246,6 +247,49 @@ class DefaultPolicyEngine(PolicyEngine):
             return True
         return tool_name in approved
 
+    def unattended_allow_list(
+        self,
+        channel: "Channel",
+        tool_names: list[str],
+        registry: "ToolRegistry",
+    ) -> set[str]:
+        """L245: map TrustConfig flags to an explicit allow-list for a channel.
+
+        Scheduler tick sessions historically had capability *blocks* applied
+        at advertisement time only; the gate itself never received an
+        allow-list, so ``TrustConfig.scheduler_*`` flags were silently dead
+        at enforcement. This derives the allow-list from those flags so the
+        gate can enforce them for real.
+        """
+        from hestia.policy.channel import Channel
+        from hestia.tools.capabilities import (
+            EMAIL_SEND,
+            READ_CLIPBOARD,
+            SHELL_EXEC,
+            WRITE_LOCAL,
+        )
+
+        if channel is not Channel.SCHEDULER:
+            return set()
+
+        trust = self._trust
+        flag_for_cap = {
+            SHELL_EXEC: trust.scheduler_shell_exec,
+            WRITE_LOCAL: trust.scheduler_write_local,
+            EMAIL_SEND: trust.scheduler_email_send,
+            READ_CLIPBOARD: trust.scheduler_read_clipboard,
+        }
+        allowed: set[str] = set()
+        for name in tool_names:
+            try:
+                meta = registry.describe(name)
+            except Exception:
+                continue
+            caps = set(meta.capabilities)
+            if all(flag_for_cap.get(cap, True) for cap in caps):
+                allowed.add(name)
+        return allowed
+
     def filter_tools(
         self,
         session: Session,
@@ -273,6 +317,7 @@ class DefaultPolicyEngine(PolicyEngine):
         from hestia.tools.capabilities import (
             EDIT_FILE,
             EMAIL_SEND,
+            READ_CLIPBOARD,
             SELF_MANAGEMENT,
             SHELL_EXEC,
             WRITE_LOCAL,
@@ -300,6 +345,11 @@ class DefaultPolicyEngine(PolicyEngine):
                 blocked.add(WRITE_LOCAL)
             if not trust.scheduler_email_send:
                 blocked.add(EMAIL_SEND)
+            if not trust.scheduler_read_clipboard:
+                blocked.add(READ_CLIPBOARD)
+
+        if session.platform == PLATFORM_SUBAGENT and not trust.subagent_read_clipboard:
+            blocked.add(READ_CLIPBOARD)
 
         if not blocked:
             return tool_names

@@ -25,10 +25,36 @@ class PlatformError(HestiaError):
     pass
 
 
+class RateLimitError(PlatformError):
+    """Raised when a session exceeds its message rate limit.
+
+    The engine has already notified the user via the response callback, so
+    platform runners must not send a second (generic) error message.
+    """
+
+    already_notified = True
+
+
 class InferenceServerError(HestiaError):
     """llama-server returned a non-200 response."""
 
     pass
+
+
+class InferenceConnectionError(InferenceServerError):
+    """Transport-level failure talking to llama-server.
+
+    Raised when the connection is refused, dropped, or cut mid-stream
+    (e.g. llama-server crashed mid-response). Carries the low-level
+    ``detail`` so operator-facing surfaces can show the real cause.
+    Subclasses InferenceServerError so existing handlers and failure
+    classification (INFERENCE_ERROR) apply unchanged.
+    """
+
+    def __init__(self, operation: str, detail: str) -> None:
+        self.operation = operation
+        self.detail = detail
+        super().__init__(f"{operation}: connection to inference server failed ({detail})")
 
 
 class InferenceTimeoutError(HestiaError):

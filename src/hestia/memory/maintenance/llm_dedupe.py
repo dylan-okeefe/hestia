@@ -22,6 +22,7 @@ from hestia.memory.maintenance.prompts import (
     build_llm_dedupe_prompt,
     parse_llm_dedupe_response,
 )
+from hestia.memory.maintenance.scopes import format_scope_key, memory_scope_key
 from hestia.memory.maintenance.trace import MaintenanceAction
 from hestia.memory.store import Memory, MemoryStore
 
@@ -38,6 +39,8 @@ class LLMDedupeResult:
 
     merged_count: int
     examined_count: int
+    failed_judgements: int = 0
+    skipped_sanitized: int = 0
 
 
 class LLMDeduper:
@@ -70,6 +73,7 @@ class LLMDeduper:
         loser: Memory,
         confidence: float,
         merged_content: str | None,
+        scope: str = "global",
     ) -> None:
         """Record an LLM merge action in the trace store, if configured."""
         if self._trace_store is None:
@@ -94,6 +98,7 @@ class LLMDeduper:
             details={
                 "confidence": confidence,
                 "merged_content": merged_content,
+                "scope": scope,
             },
         )
         try:
@@ -117,26 +122,51 @@ class LLMDeduper:
             limit=self._chunk_size,
         )
 
+        topic_ids_map = await self._store.get_topic_ids_for_memories(
+            [memory.id for memory in active]
+        )
+
         unprotected = [
             memory for memory in active if not self._store.is_protected(memory)
         ]
 
         pairs = await self._generate_candidate_pairs(
-            unprotected, platform, platform_user
+            unprotected, platform, platform_user, topic_ids_map
         )
+
+        def _scope_key(memory: Memory) -> tuple[str, ...]:
+            return memory_scope_key(
+                memory, topic_ids_map.get(memory.id, [])
+            )
 
         merged_count = 0
         examined_count = 0
+        failed_judgements = 0
+        skipped_sanitized = 0
         processed_ids: set[str] = set()
 
         for memory_a, memory_b in pairs:
             if memory_a.id in processed_ids or memory_b.id in processed_ids:
                 continue
 
+            if _scope_key(memory_a) != _scope_key(memory_b):
+                continue
+
             examined_count += 1
-            duplicate, confidence, merged_content = await self._judge_pair(
-                memory_a, memory_b
-            )
+            # BUG-026: one transient inference failure used to abort the whole
+            # weekly pass; judge each pair independently and keep going.
+            try:
+                duplicate, confidence, merged_content = await self._judge_pair(
+                    memory_a, memory_b
+                )
+            except Exception:  # noqa: BLE001 — per-pair containment is the point
+                logger.exception(
+                    "LLM dedupe judge failed for pair (%s, %s); skipping",
+                    memory_a.id,
+                    memory_b.id,
+                )
+                failed_judgements += 1
+                continue
 
             if not duplicate or confidence < self._confidence_threshold:
                 continue
@@ -150,14 +180,26 @@ class LLMDeduper:
                 else _merge_contents([winner.content, loser.content])
             )
             final_tags = _merge_tags(winner, loser)
+            scope_str = format_scope_key(_scope_key(winner))
 
-            await self._store.update(
+            # BUG-010: don't soft-delete the loser if the sanitizer rejected
+            # the merged content — that would record a successful merge while
+            # actually losing information.
+            update_ok = await self._store.update(
                 winner.id,
                 content=final_content,
                 tags=final_tags,
                 platform=platform,
                 platform_user=platform_user,
             )
+            if not update_ok:
+                logger.warning(
+                    "Skipping LLM dedupe merge for winner %s: "
+                    "merged content rejected by sanitizer",
+                    winner.id,
+                )
+                skipped_sanitized += 1
+                continue
             await self._store.soft_delete(
                 loser.id,
                 platform=platform,
@@ -172,6 +214,7 @@ class LLMDeduper:
                 loser,
                 confidence,
                 final_content,
+                scope=scope_str,
             )
 
             processed_ids.add(winner.id)
@@ -181,6 +224,8 @@ class LLMDeduper:
         return LLMDedupeResult(
             merged_count=merged_count,
             examined_count=examined_count,
+            failed_judgements=failed_judgements,
+            skipped_sanitized=skipped_sanitized,
         )
 
     async def _generate_candidate_pairs(
@@ -188,10 +233,16 @@ class LLMDeduper:
         memories: list[Memory],
         platform: str,
         platform_user: str,
+        topic_ids_map: dict[str, list[str]],
     ) -> list[tuple[Memory, Memory]]:
         """Build candidate pairs from FTS near-misses with Jaccard 0.5–0.8."""
         pairs: list[tuple[Memory, Memory]] = []
         seen_pair_ids: set[frozenset[str]] = set()
+
+        def _scope_key(memory: Memory) -> tuple[str, ...]:
+            return memory_scope_key(
+                memory, topic_ids_map.get(memory.id, [])
+            )
 
         for memory in memories:
             if len(pairs) >= self._max_pairs_per_run:
@@ -214,6 +265,8 @@ class LLMDeduper:
                 if candidate.id == memory.id:
                     continue
                 if self._store.is_protected(candidate):
+                    continue
+                if _scope_key(candidate) != _scope_key(memory):
                     continue
 
                 pair_key = frozenset({memory.id, candidate.id})

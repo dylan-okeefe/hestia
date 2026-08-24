@@ -1,6 +1,6 @@
 # Decisions — L221 Session Concurrency
 
-**Status:** Resolved 2026-06-15. These are the answers to the "Decisions needed before implementation" section in `docs/development-process/L221-session-concurrency.md`. Implement against these.
+**Status:** Resolved 2026-06-15. These are the answers to the "Decisions needed before implementation" section in `docs/development-process/loops/L221-session-concurrency.md`. Implement against these.
 
 1. **Lock re-entrancy invariant.** Keep `asyncio.Lock` non-reentrant. Add an explicit guard that asserts a subagent's `session_id` differs from any session whose lock is currently held, and confirm (with a test) that no other path calls `process_turn` re-entrantly on the same session. Do not make the lock re-entrant.
 

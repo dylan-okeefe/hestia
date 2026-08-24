@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import sqlalchemy as sa
@@ -13,7 +13,7 @@ from hestia.core.clock import utcnow
 from hestia.errors import PersistenceError
 from hestia.persistence.db import Database
 from hestia.persistence.dto import TurnDTO, TurnTransitionDTO
-from hestia.persistence.schema import sessions, turn_transitions, turns
+from hestia.persistence.schema import turn_transitions, turns
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +92,9 @@ class TurnStore:
         self, stale_after_minutes: int = 30
     ) -> list[TurnDTO]:
         """Return turns that look stuck in a non-terminal state."""
-        cutoff = datetime.utcnow() - timedelta(minutes=stale_after_minutes)
+        # BUG-081: use a tz-aware cutoff matching the aware timestamps written
+        # by clock.utcnow(); naive cutoffs degrade to string comparisons.
+        cutoff = datetime.now(UTC) - timedelta(minutes=stale_after_minutes)
         terminal_states = {"done", "failed"}
         query = (
             select(turns)
@@ -143,7 +145,7 @@ class TurnStore:
         async with self._db.engine.connect() as conn:
             result = await conn.execute(query)
             rows = result.fetchall()
-            counts = {sid: 0 for sid in session_ids}
+            counts = dict.fromkeys(session_ids, 0)
             counts.update({row.session_id: int(row[1]) for row in rows})
             return counts
 
@@ -209,24 +211,6 @@ class TurnStore:
         async with self._db.engine.connect() as conn:
             await conn.execute(update)
             await conn.commit()
-
-    async def get_turn_messages(self, turn_id: str) -> dict[str, str] | None:
-        """Return the latest assistant/user messages for a turn."""
-        from hestia.persistence.schema import messages
-
-        query = (
-            select(messages.c.role, messages.c.content)
-            .join(turns, messages.c.session_id == turns.c.session_id)
-            .where(turns.c.id == turn_id)
-            .order_by(messages.c.idx.desc())
-            .limit(20)
-        )
-        async with self._db.engine.connect() as conn:
-            result = await conn.execute(query)
-            rows = result.fetchall()
-            if not rows:
-                return None
-            return {row.role: row.content for row in rows}
 
     def _row_to_turn(self, row: Any) -> TurnDTO:
         return TurnDTO(

@@ -32,18 +32,6 @@ except ImportError:
     _CURL_CFFI_AVAILABLE = False
 
 # IP ranges that must never be fetched
-_BLOCKED_RANGES = [
-    ipaddress.ip_network("0.0.0.0/8"),  # current network
-    ipaddress.ip_network("10.0.0.0/8"),  # private class A
-    ipaddress.ip_network("100.64.0.0/10"),  # CGNAT
-    ipaddress.ip_network("127.0.0.0/8"),  # loopback
-    ipaddress.ip_network("169.254.0.0/16"),  # link-local / cloud metadata
-    ipaddress.ip_network("172.16.0.0/12"),  # private class B
-    ipaddress.ip_network("192.168.0.0/16"),  # private class C
-    ipaddress.ip_network("::1/128"),  # IPv6 loopback
-    ipaddress.ip_network("fc00::/7"),  # IPv6 unique local
-    ipaddress.ip_network("fe80::/10"),  # IPv6 link-local
-]
 
 
 class SSRFSafeTransport(httpx.AsyncBaseTransport):
@@ -84,7 +72,7 @@ def _assert_ip_allowed(hostname: str) -> None:
             ) from exc
 
 
-def _is_url_safe(url: str) -> str | None:
+def is_url_safe(url: str) -> str | None:
     """Check if a URL is safe to fetch.
 
     Returns an error message if blocked, None if safe.
@@ -136,7 +124,7 @@ async def _fetch_with_curl_cffi(
     """Fetch using curl_cffi with browser TLS/HTTP fingerprint impersonation.
 
     curl_cffi does not support custom transports, so SSRF protection here is
-    limited to the pre-flight ``_is_url_safe`` check and manual redirect
+    limited to the pre-flight ``is_url_safe`` check and manual redirect
     validation. This is a best-effort fallback for sites that block based on
     fingerprints rather than IP-based access control.
     """
@@ -183,7 +171,7 @@ async def _fetch_with_curl_cffi(
     raise RuntimeError(f"Too many redirects (>{max_redirects})")
 
 
-async def _http_get_impl(
+async def http_get_impl(
     url: str,
     timeout_seconds: int,
     use_curl_cffi: bool,
@@ -271,7 +259,7 @@ async def http_get(url: str, timeout_seconds: int = 30, use_curl_cffi: bool = Fa
     real Chrome TLS/HTTP fingerprint. This is useful for bypassing bot-detection
     that flags standard HTTP clients.
     """
-    return await _http_get_impl(url, timeout_seconds, use_curl_cffi=use_curl_cffi)
+    return await http_get_impl(url, timeout_seconds, use_curl_cffi=use_curl_cffi)
 
 
 def make_http_get_tool(
@@ -288,12 +276,21 @@ def make_http_get_tool(
             "DuckDuckGo (html.duckduckgo.com/html/?q=...). DOES NOT work on "
             "JavaScript-heavy sites like Google Search, Google Maps, or Yelp. "
             "For general web searches, use the search_web tool instead. "
-            "Params: url (str), timeout_seconds (int, default 30)."
+            "Params: url (str), use_curl_cffi (bool, default false) — impersonate a "
+            "real Chrome TLS/HTTP fingerprint to bypass Cloudflare-style bot blocks, "
+            "timeout_seconds (int, default 30)."
         ),
         parameters_schema={
             "type": "object",
             "properties": {
                 "url": {"type": "string", "description": "Full URL to fetch (e.g. https://example.com)."},
+                "use_curl_cffi": {
+                    "type": "boolean",
+                    "description": (
+                        "Impersonate a real Chrome TLS/HTTP fingerprint via curl_cffi. "
+                        "Useful for sites that block based on fingerprints (e.g. Cloudflare)."
+                    ),
+                },
                 "timeout_seconds": {
                     "type": "integer",
                     "description": "Request timeout in seconds (default 30).",
@@ -305,12 +302,14 @@ def make_http_get_tool(
         tags=["network", "builtin"],
         capabilities=[NETWORK_EGRESS],
     )
-    async def http_get(url: str, timeout_seconds: int = 30) -> str:
+    async def http_get(
+        url: str, timeout_seconds: int = 30, use_curl_cffi: bool = False
+    ) -> str:
         """Fetch a URL and return its text content."""
-        return await _http_get_impl(
+        return await http_get_impl(
             url,
             timeout_seconds,
-            use_curl_cffi=False,
+            use_curl_cffi=use_curl_cffi,
             egress_audit_enabled=egress_audit_enabled,
             curl_cffi_fallback=use_curl_cffi_fallback,
         )
@@ -344,3 +343,7 @@ async def _record_egress(url: str, status: int, size: int, enabled: bool = True)
         except Exception:  # noqa: BLE001
             # Egress audit is best-effort; never fail the tool call because of it.
             logger.warning("Failed to record egress event", exc_info=True)
+
+
+# Backward-compatible alias (deprecated; remove once all internal callers migrate)
+_http_get_impl = http_get_impl

@@ -302,3 +302,31 @@ class TestMemoryStoreHyphenSearch:
             platform_user="123",
         )
         assert len(results) == 1
+
+
+class TestFts5SanitizerHardening:
+    """BUG-011/073/074: the FTS5 path must never emit malformed MATCH expressions."""
+
+    def test_leading_operator_is_escaped(self):
+        from hestia.memory.store import _sanitize_fts5_query
+
+        out = _sanitize_fts5_query("NOT foo")
+        # The old sanitizer returned this unchanged, producing an fts5
+        # syntax error at MATCH time. A dangling operator is stripped.
+        assert out == "foo"
+        assert _sanitize_fts5_query("foo AND") == "foo"
+
+    def test_operator_query_with_punctuation_is_term_quoted(self):
+        from hestia.memory.store import _sanitize_fts5_query
+
+        out = _sanitize_fts5_query('error AND status="failed"')
+        assert " AND " in out
+        assert '"' in out
+        # Balanced quotes only.
+        assert out.count('"') % 2 == 0
+
+    def test_plain_punctuation_still_phrase_quoted(self):
+        from hestia.memory.store import _sanitize_fts5_query
+
+        out = _sanitize_fts5_query("c++ tips")
+        assert out == '"c++ tips"'

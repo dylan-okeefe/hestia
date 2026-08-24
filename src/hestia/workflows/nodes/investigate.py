@@ -8,7 +8,9 @@ from typing import Any
 
 from hestia.app import AppContext
 from hestia.core.types import Message
+from hestia.tools.registry import ToolBlockedError
 from hestia.workflows.models import WorkflowNode
+from hestia.workflows.tool_selection import resolve_invoked_tools
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +25,7 @@ class InvestigateNode:
         app: AppContext,
         node: WorkflowNode,
         inputs: dict[str, Any],
+        tool_context: Any = None,
     ) -> Any:
         """Investigate the configured topic.
 
@@ -39,13 +42,14 @@ class InvestigateNode:
         """
         topic = _resolve("topic", node, inputs)
         depth = _resolve("depth", node, inputs) or "shallow"
-        tools = _resolve("tools", node, inputs) or []
 
         if not topic:
             raise ValueError("InvestigateNode requires 'topic' in config or inputs")
 
-        if isinstance(tools, str):
-            tools = [t.strip() for t in tools.split(",") if t.strip()]
+        # Review defect 1: resolve through the shared helper so this node can
+        # never execute a tool set that the capability gate did not evaluate.
+        # Unrecognized shapes raise instead of iterating.
+        tools = resolve_invoked_tools("investigate", node, inputs)
 
         input_keys = node.config.get("input_keys", [])
         if input_keys:
@@ -67,7 +71,9 @@ class InvestigateNode:
         tool_results: list[dict[str, Any]] = []
         for tool_name in tools:
             try:
-                result = await app.tool_registry.call(tool_name, scoped_inputs)
+                result = await app.tool_registry.call(
+                    tool_name, scoped_inputs, context=tool_context
+                )
                 tool_results.append(
                     {
                         "tool": tool_name,
@@ -75,6 +81,10 @@ class InvestigateNode:
                         "content": result.content,
                     }
                 )
+            except ToolBlockedError:
+                # Policy denials are not investigation data: let the node fail
+                # so the BLOCKED category surfaces in the execution record.
+                raise
             except Exception as exc:
                 logger.warning("Tool %s failed for investigate node: %s", tool_name, exc)
                 tool_results.append(

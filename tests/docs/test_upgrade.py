@@ -66,10 +66,7 @@ def test_upgrade_mentions_only_known_cli_commands() -> None:
     for match in HESTIA_COMMAND_RE.finditer(text):
         first = match.group(1)
         second = match.group(2)
-        if second:
-            command = f"{first} {second}"
-        else:
-            command = first
+        command = f"{first} {second}" if second else first
         if command not in known:
             unknown.add(command)
 

@@ -67,3 +67,36 @@ def test_grep_direct_call_with_arguments_parameter():
     assert args["path"] == "/home/<user>/.hestia/artifacts/art_6c65504923"
     assert "builtinboston" in args["pattern"]
     assert "jobs" in args["pattern"]
+
+
+def test_call_tool_wrapper_with_stray_gt_in_name():
+    """Qwen sometimes emits the inner tool name with a stray '>' and nested XML."""
+    text = """<tool_call>
+<function=call_tool>
+<parameter=name>
+browser_interact>
+<parameter=arguments>
+{"action": "type", "selector": "input[name='search']", "value": "agentic"}
+</parameter>
+</tool_call>"""
+    calls = _extract_tool_calls_from_text(text)
+    assert len(calls) == 1
+    assert calls[0].name == "browser_interact"
+    assert calls[0].arguments == {
+        "action": "type",
+        "selector": "input[name='search']",
+        "value": "agentic",
+    }
+
+
+def test_call_tool_wrapper_with_name_line_and_arguments():
+    """Model emits the name on its own line, then embeds a second parameter tag."""
+    text = """<tool_call>
+<function=call_tool>
+<parameter=name>glob>
+<parameter=arguments>{"path": "/tmp", "pattern": "*.md"}</parameter>
+</tool_call>"""
+    calls = _extract_tool_calls_from_text(text)
+    assert len(calls) == 1
+    assert calls[0].name == "glob"
+    assert calls[0].arguments == {"path": "/tmp", "pattern": "*.md"}

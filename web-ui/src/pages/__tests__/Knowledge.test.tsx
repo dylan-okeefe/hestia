@@ -1,8 +1,19 @@
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import Knowledge from '../Knowledge';
 import * as client from '../../api/client';
 import { TEXT } from '../../lib/text';
+
+const mockTopics = [
+  { id: 'topic-1', platform: 'telegram', platform_user: '12345', name: 'food', created_at: '2026-05-01T12:00:00Z' },
+  { id: 'topic-2', platform: 'telegram', platform_user: '12345', name: 'music', created_at: '2026-05-02T12:00:00Z' },
+];
+
+const mockMemories = [
+  { id: 'mem-1', content: 'Alice likes pizza', tags: ['preference'], created_at: '2026-05-10T14:00:00Z', session_id: 'sess-1', platform: 'telegram', platform_user: '12345', is_global: false, is_pinned: false, is_active: true, deleted_at: null, deleted_reason: null, last_recalled_at: null, topic_ids: ['topic-1'] },
+  { id: 'mem-2', content: 'Bob plays guitar', tags: ['hobby'], created_at: '2026-05-11T14:00:00Z', session_id: 'sess-2', platform: 'telegram', platform_user: '12345', is_global: false, is_pinned: false, is_active: true, deleted_at: null, deleted_reason: null, last_recalled_at: null, topic_ids: ['topic-2'] },
+  { id: 'mem-3', content: 'Alice lives in Seattle', tags: ['identity'], created_at: '2026-05-09T14:00:00Z', session_id: 'sess-3', platform: 'telegram', platform_user: '12345', is_global: true, is_pinned: true, is_active: true, deleted_at: null, deleted_reason: null, last_recalled_at: null, topic_ids: [] },
+];
 
 vi.mock('../../api/client', async () => {
   const actual = await vi.importActual<typeof import('../../api/client')>('../../api/client');
@@ -21,12 +32,8 @@ vi.mock('../../api/client', async () => {
     ),
     fetchUserSessions: vi.fn(() => Promise.resolve({ sessions: [] })),
     fetchStyleProfile: vi.fn(() => Promise.resolve({ profile: {} })),
-    fetchMemoriesForUser: vi.fn(() => Promise.resolve({
-      memories: [
-        { id: 'mem-1', content: 'Alice likes pizza', tags: ['food'], created_at: '2026-05-10T14:00:00Z' },
-        { id: 'mem-2', content: 'Bob plays guitar', tags: ['music'], created_at: '2026-05-11T14:00:00Z' },
-      ],
-    })),
+    fetchMemoriesForUser: vi.fn(() => Promise.resolve({ memories: mockMemories })),
+    fetchTopics: vi.fn(() => Promise.resolve({ topics: mockTopics })),
     fetchHandoffs: vi.fn(() =>
       Promise.resolve({
         handoffs: [
@@ -44,6 +51,14 @@ vi.mock('../../api/client', async () => {
       })
     ),
     deleteMemory: vi.fn(() => Promise.resolve({ deleted: true })),
+    updateMemory: vi.fn((id, updates) => Promise.resolve({ memory: { ...mockMemories.find((m) => m.id === id), ...updates } })),
+    pinMemory: vi.fn(() => Promise.resolve({ pinned: true })),
+    unpinMemory: vi.fn(() => Promise.resolve({ pinned: false })),
+    softDeleteMemory: vi.fn(() => Promise.resolve({ deleted: true })),
+    restoreMemory: vi.fn(() => Promise.resolve({ restored: true })),
+    createTopic: vi.fn(() => Promise.resolve({ topic: { id: 'topic-3', platform: 'telegram', platform_user: '12345', name: 'travel', created_at: '2026-05-12T12:00:00Z' } })),
+    renameTopic: vi.fn((id, name) => Promise.resolve({ topic: { ...mockTopics.find((t) => t.id === id), name } })),
+    deleteTopic: vi.fn(() => Promise.resolve({ deleted: true })),
     updateUser: vi.fn(() => Promise.resolve({})),
   };
 });
@@ -93,7 +108,60 @@ describe('Knowledge', () => {
     );
   });
 
-  it('renders memories and allows deletion', async () => {
+  it('renders memories grouped by scope', async () => {
+    render(<Knowledge />);
+
+    await waitFor(() =>
+      expect(screen.getByText('Alice likes pizza')).toBeInTheDocument()
+    );
+    expect(screen.getByText('Bob plays guitar')).toBeInTheDocument();
+    expect(screen.getByText('Alice lives in Seattle')).toBeInTheDocument();
+
+    // Section titles identify scope groupings.
+    expect(screen.getByRole('heading', { name: TEXT.knowledge.memoriesSectionGlobal })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: TEXT.knowledge.memoriesSectionTopic('food') })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: TEXT.knowledge.memoriesSectionTopic('music') })).toBeInTheDocument();
+  });
+
+  it('shows descriptive tags separately from topic badges', async () => {
+    render(<Knowledge />);
+
+    await waitFor(() =>
+      expect(screen.getByText('Alice likes pizza')).toBeInTheDocument()
+    );
+
+    const pizzaCard = screen.getByText('Alice likes pizza').closest('.knowledge-memory-card');
+    expect(pizzaCard).not.toBeNull();
+    const pizzaScope = within(pizzaCard as HTMLElement);
+
+    // Topic badge appears on the topic-scoped memory.
+    expect(pizzaScope.getByText('food')).toBeInTheDocument();
+    // Descriptive tag renders distinctly from topics.
+    expect(pizzaScope.getByText('preference')).toBeInTheDocument();
+
+    const globalCard = screen.getByText('Alice lives in Seattle').closest('.knowledge-memory-card');
+    expect(globalCard).not.toBeNull();
+    const globalScope = within(globalCard as HTMLElement);
+    expect(globalScope.getByText(TEXT.knowledge.memoriesScopeGlobal)).toBeInTheDocument();
+    expect(globalScope.getByText('identity')).toBeInTheDocument();
+  });
+
+  it('pins and unpins a memory', async () => {
+    render(<Knowledge />);
+
+    await waitFor(() =>
+      expect(screen.getByText('Alice likes pizza')).toBeInTheDocument()
+    );
+
+    const pinButtons = screen.getAllByText(TEXT.knowledge.memoriesPin);
+    fireEvent.click(pinButtons[0]);
+
+    await waitFor(() =>
+      expect(client.pinMemory).toHaveBeenCalledWith('mem-1')
+    );
+  });
+
+  it('soft-deletes and restores a memory', async () => {
     render(<Knowledge />);
 
     await waitFor(() =>
@@ -101,11 +169,52 @@ describe('Knowledge', () => {
     );
 
     window.confirm = vi.fn(() => true);
-    const deleteButtons = screen.getAllByText(TEXT.common.delete);
-    fireEvent.click(deleteButtons[0]);
+    const pizzaCard = screen.getByText('Alice likes pizza').closest('.knowledge-memory-card') as HTMLElement;
+    const deleteButton = within(pizzaCard).getByText(TEXT.knowledge.memoriesDelete);
+    fireEvent.click(deleteButton);
 
     await waitFor(() =>
-      expect(client.deleteMemory).toHaveBeenCalledWith('mem-1')
+      expect(client.softDeleteMemory).toHaveBeenCalledWith('mem-1')
+    );
+  });
+
+  it('opens memory edit modal and saves scope change', async () => {
+    render(<Knowledge />);
+
+    await waitFor(() =>
+      expect(screen.getByText('Alice likes pizza')).toBeInTheDocument()
+    );
+
+    const pizzaCard = screen.getByText('Alice likes pizza').closest('.knowledge-memory-card') as HTMLElement;
+    const editButton = within(pizzaCard).getByText(TEXT.common.edit);
+    fireEvent.click(editButton);
+
+    const modal = await screen.findByRole('dialog');
+    expect(within(modal).getByText(TEXT.knowledge.memoriesEditTitle)).toBeInTheDocument();
+
+    const globalButton = within(modal).getByText(TEXT.knowledge.memoriesScopeGlobal);
+    fireEvent.click(globalButton);
+
+    fireEvent.click(within(modal).getByText(TEXT.common.save));
+
+    await waitFor(() =>
+      expect(client.updateMemory).toHaveBeenCalledWith('mem-1', expect.objectContaining({ is_global: true }))
+    );
+  });
+
+  it('creates a topic from the topic panel', async () => {
+    render(<Knowledge />);
+
+    await waitFor(() =>
+      expect(screen.getByText(TEXT.knowledge.memoriesTopicManageTitle)).toBeInTheDocument()
+    );
+
+    const input = screen.getByPlaceholderText(TEXT.knowledge.memoriesCreateTopicPlaceholder);
+    fireEvent.change(input, { target: { value: 'travel' } });
+    fireEvent.click(screen.getByText(TEXT.knowledge.memoriesCreateTopicButton));
+
+    await waitFor(() =>
+      expect(client.createTopic).toHaveBeenCalledWith('telegram', '12345', 'travel')
     );
   });
 
@@ -123,30 +232,6 @@ describe('Knowledge', () => {
 
     await waitFor(() =>
       expect(screen.getByText(TEXT.knowledge.styleEmptyTitle)).toBeInTheDocument()
-    );
-  });
-
-  it('filters memories by tag clicks', async () => {
-    render(<Knowledge />);
-
-    await waitFor(() =>
-      expect(screen.getByText('Alice likes pizza')).toBeInTheDocument()
-    );
-    expect(screen.getByText('Bob plays guitar')).toBeInTheDocument();
-
-    const foodButton = screen.getAllByText('food').find((el) => el.tagName === 'BUTTON');
-    expect(foodButton).toBeDefined();
-    fireEvent.click(foodButton!);
-
-    await waitFor(() =>
-      expect(screen.queryByText('Bob plays guitar')).not.toBeInTheDocument()
-    );
-    expect(screen.getByText('Alice likes pizza')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByText(TEXT.knowledge.tagFilterClear));
-
-    await waitFor(() =>
-      expect(screen.getByText('Bob plays guitar')).toBeInTheDocument()
     );
   });
 

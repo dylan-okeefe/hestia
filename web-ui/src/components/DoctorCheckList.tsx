@@ -47,6 +47,9 @@ export default function DoctorCheckList({ checks, onRefresh }: DoctorCheckListPr
       if (data.cached_at) setCachedAt(data.cached_at);
       setFlash(true);
       setTimeout(() => setFlash(false), 800);
+    } catch (err) {
+      // BUG-054: rerun failures were previously unhandled rejections.
+      console.error('[doctor] rerun failed', err);
     } finally {
       setLoading(false);
     }

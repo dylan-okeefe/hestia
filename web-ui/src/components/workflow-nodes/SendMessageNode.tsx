@@ -5,7 +5,7 @@ import './workflow-nodes.css';
 export default function SendMessageNode({ data, selected }: NodeProps) {
   const label = (data.label as string) || 'Send Message';
   const platform = (data.platform as string) || '—';
-  const target = (data.target_user as string) || '';
+  const target = (data.target_conversation as string) || (data.target_user as string) || '';
 
   return (
     <div

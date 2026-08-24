@@ -1,13 +1,23 @@
 [project]
 name = "hestia"
-version = "0.15.1"
+version = "0.16.0"
 description = "Local-first personal assistant framework for consumer GPU LLMs"
 readme = "README.md"
 authors = [
-    { name = "Dylan O'Keefe", email = "user@example.com" }
+    { name = "Dylan O'Keefe", email = "dylanokeefedev@gmail.com" }
 ]
 license = "Apache-2.0"
 requires-python = ">=3.11"
+keywords = ["llm", "personal-assistant", "local-first", "llama-cpp", "agents"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Communications :: Chat",
+]
 dependencies = [
     "aiosqlite>=0.22.1",
     "alembic>=1.18.4",
@@ -22,11 +32,19 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.49",
 ]
 
+[project.urls]
+Repository = "https://github.com/dylan-okeefe/hestia"
+Issues = "https://github.com/dylan-okeefe/hestia/issues"
+Changelog = "https://github.com/dylan-okeefe/hestia/blob/develop/CHANGELOG.md"
+Documentation = "https://github.com/dylan-okeefe/hestia/tree/develop/docs"
+
 [project.optional-dependencies]
 postgres = ["asyncpg>=0.31.0"]
 voice = [
     "faster-whisper>=1.0.0",
     "piper-tts>=1.2.0",
+    "kokoro>=0.9.0",
+    "soundfile>=0.12.0",
 ]
 browser = [
     "curl-cffi>=0.15.0",
@@ -38,6 +56,7 @@ web = [
     "uvicorn>=0.34.0",
     "websockets>=14.0",
 ]
+
 
 [project.scripts]
 hestia = "hestia.cli:main"
@@ -91,12 +110,23 @@ module = [
     "nio",
     "asyncpg",
     "faster_whisper",
-    "piper",
     "curl_cffi",
     "playwright",
     "playwright.async_api",
 ]
 ignore_missing_imports = true
+
+# Typed-but-stubless optional dependencies: skip entirely so the gated
+# ``X = None`` import fallbacks type-check identically whether or not the
+# extra is installed.
+[[tool.mypy.overrides]]
+module = [
+    "piper",
+    "kokoro",
+    "playwright_stealth",
+]
+ignore_missing_imports = true
+follow_imports = "skip"
 
 
 
@@ -109,4 +139,5 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 markers = [
     "matrix_e2e: Real Matrix homeserver end-to-end tests (requires env vars)",
+    "live: requires a live llama.cpp server on localhost:8001; excluded from CI",
 ]

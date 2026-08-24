@@ -103,3 +103,93 @@ class TestCheckpointManager:
 
         expected = hashlib.sha256(data.encode()).hexdigest()
         assert cp.file_hashes[str(file_z.resolve())] == expected
+
+    def test_git_checkpoint_does_not_stash_unrelated_files(self, manager, tmp_path):
+        """Scoped git stashing leaves unrelated repo files untouched."""
+        import subprocess
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@example.com"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+        )
+
+        scoped = repo / "scoped.txt"
+        unrelated = repo / "unrelated.txt"
+        scoped.write_text("scoped-original")
+        unrelated.write_text("unrelated-original")
+
+        subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "init"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+        )
+
+        scoped.write_text("scoped-modified")
+        unrelated.write_text("unrelated-modified")
+
+        cp = manager.create("turn-scoped", [str(scoped)])
+
+        assert cp.git_root == repo.resolve()
+        # The scoped change is stashed, so the file reverts on disk.
+        assert scoped.read_text() == "scoped-original"
+        # The unrelated change must survive create+discard.
+        assert unrelated.read_text() == "unrelated-modified"
+
+        manager.discard("turn-scoped")
+        assert scoped.read_text() == "scoped-original"
+        assert unrelated.read_text() == "unrelated-modified"
+
+    def test_git_checkpoint_restore_scoped_only(self, manager, tmp_path):
+        """Restore re-applies the scoped stash without touching other files."""
+        import subprocess
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@example.com"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+        )
+
+        scoped = repo / "scoped.txt"
+        unrelated = repo / "unrelated.txt"
+        scoped.write_text("scoped-original")
+        unrelated.write_text("unrelated-original")
+
+        subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "init"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+        )
+
+        scoped.write_text("scoped-modified")
+        unrelated.write_text("unrelated-modified")
+
+        manager.create("turn-restore", [str(scoped)])
+        manager.restore("turn-restore")
+
+        assert scoped.read_text() == "scoped-modified"
+        assert unrelated.read_text() == "unrelated-modified"

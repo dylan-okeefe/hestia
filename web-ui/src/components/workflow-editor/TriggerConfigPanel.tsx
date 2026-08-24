@@ -42,6 +42,8 @@ interface TriggerConfigPanelProps {
   workflowId: string | undefined;
   webhookUrl: string;
   webhookSecret: string;
+  hasWebhookSecret?: boolean;
+  onRotateSecret?: () => Promise<void>;
 }
 
 function AvailableVariables({ triggerType }: { triggerType: string }) {
@@ -95,8 +97,11 @@ export default function TriggerConfigPanel({
   workflowId,
   webhookUrl,
   webhookSecret,
+  hasWebhookSecret = false,
+  onRotateSecret,
 }: TriggerConfigPanelProps) {
   const [showHelp, setShowHelp] = useState(false);
+  const [secretRevealed, setSecretRevealed] = useState(false);
 
   return (
     <div className="trigger-config-panel">
@@ -191,15 +196,37 @@ export default function TriggerConfigPanel({
                   </button>
                 </div>
                 <div className="trigger-config-panel__webhook-row">
-                  <span>Secret: {webhookSecret}</span>
+                  {/* Secrets are reveal-once on the backend: a fresh value only
+                      exists right after creation or rotation, so mask by default. */}
+                  <span>
+                    Secret:{' '}
+                    {webhookSecret
+                      ? secretRevealed
+                        ? webhookSecret
+                        : '••••••••••••••••'
+                      : hasWebhookSecret
+                        ? '(hidden — rotate to generate a new one)'
+                        : '(not generated yet)'}
+                  </span>
+                  {webhookSecret && (
+                    <button onClick={() => setSecretRevealed((r) => !r)} className="trigger-config-panel__copy-btn">
+                      {secretRevealed ? 'Hide' : 'Reveal'}
+                    </button>
+                  )}
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText(webhookSecret);
+                      navigator.clipboard.writeText(webhookSecret).catch(() => {});
                     }}
+                    disabled={!webhookSecret}
                     className="trigger-config-panel__copy-btn"
                   >
                     Copy Secret
                   </button>
+                  {onRotateSecret && (
+                    <button onClick={() => void onRotateSecret()} className="trigger-config-panel__copy-btn">
+                      Rotate…
+                    </button>
+                  )}
                 </div>
                 <span className="trigger-config-panel__webhook-hint">
                   Include the header <code>X-Webhook-Signature: {'<hex_hmac_sha256>'}</code> with every request

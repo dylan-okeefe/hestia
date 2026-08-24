@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -15,9 +15,7 @@ from hestia.config import HestiaConfig
 from hestia.persistence.db import Database
 from hestia.policy.gate import CapabilityGate, CapabilityRequest, CapabilityResult
 from hestia.tools.capabilities import SHELL_EXEC
-from hestia.tools.metadata import ToolMetadata
 from hestia.tools.registry import ToolRegistry
-from hestia.tools.types import ToolCallResult
 from hestia.workflows.executor import WorkflowExecutor
 from hestia.workflows.models import Workflow, WorkflowNode, WorkflowVersion
 from hestia.workflows.store import WorkflowStore
@@ -45,6 +43,7 @@ async def workflow_store(db: Database) -> WorkflowStore:
 def app(tmp_path: Path, db: Database) -> AppContext:
     """Create a minimal AppContext with mocked inference and tool registry."""
     cfg = HestiaConfig.default()
+    cfg.inference.model_name = "dummy"
     cfg.storage.database_url = "sqlite+aiosqlite:///:memory:"
     cfg.storage.artifacts_dir = tmp_path / "artifacts"
     app = AppContext(cfg)
@@ -61,43 +60,49 @@ def gated_app(app: AppContext) -> AppContext:
     The registry describes ``terminal`` as a destructive shell tool and
     ``current_time`` as a safe tool.  Calls return a minimal success result.
     """
-    reg: Any = MagicMock(spec=ToolRegistry)
+    # A REAL registry with stub tools registered through the @tool decorator,
+    # bound to a REAL gate. This exercises the L245 chokepoint itself: the
+    # enforcement lives inside ToolRegistry.call, not in executor pre-checks.
+    reg = ToolRegistry(artifact_store=MagicMock())
 
-    def _describe(name: str) -> ToolMetadata:
-        if name == "terminal":
-            return ToolMetadata(
-                name="terminal",
-                public_description="Run a shell command",
-                internal_description="",
-                parameters_schema={"type": "object", "properties": {}},
-                capabilities=[SHELL_EXEC],
-            )
-        if name == "browser_login":
-            return ToolMetadata(
-                name="browser_login",
-                public_description="Browser login",
-                internal_description="",
-                parameters_schema={"type": "object", "properties": {}},
-                capabilities=[],
-            )
-        return ToolMetadata(
+    def _stub(name: str, caps: list[str]):
+        from hestia.tools.metadata import tool as _tool
+
+        @_tool(
             name=name,
-            public_description=f"Tool {name}",
+            public_description=f"Stub {name}",
             internal_description="",
             parameters_schema={"type": "object", "properties": {}},
-            capabilities=[],
+            max_inline_chars=4000,
+            tags=[],
+            capabilities=caps,
         )
+        async def _handler(**kwargs: Any) -> str:
+            calls.append((name, kwargs))
+            return f"{name} ok"
 
-    reg.describe.side_effect = _describe
-    call_mock = AsyncMock(
-        return_value=ToolCallResult(
-            status="ok",
-            content="done",
-            artifact_handle=None,
-            truncated=False,
+        return _handler
+
+    calls: list[tuple[str, dict[str, Any]]] = []
+    reg.register(_stub("terminal", [SHELL_EXEC]))
+    reg.register(_stub("browser_login", []))
+    reg.register(_stub("current_time", []))
+    reg.calls = calls  # type: ignore[attr-defined]  # test observation hook
+
+    from hestia.core.types import ChatResponse
+
+    app.inference.chat = AsyncMock(
+        return_value=ChatResponse(
+            content='{"findings": [], "recommendations": [], "sources": []}',
+            reasoning_content=None,
+            tool_calls=[],
+            finish_reason="stop",
+            prompt_tokens=1,
+            completion_tokens=1,
+            total_tokens=2,
         )
     )
-    reg.call = call_mock
+
     app.tool_registry = reg
     app.capability_gate = CapabilityGate(
         config=app.config,
@@ -105,6 +110,8 @@ def gated_app(app: AppContext) -> AppContext:
         registry=reg,
         event_store=None,
     )
+    # L245: production binds the gate into the registry; tests mirror that.
+    reg.bind_gate(app.capability_gate)
     return app
 
 
@@ -141,8 +148,11 @@ async def test_workflow_blocks_destructive_without_allow_list(
     assert result.node_results[0].node_id == "n1"
     assert "[CATEGORY: BLOCKED]" in error
     assert "Capability gate denied" in error
-    call_mock = cast(AsyncMock, gated_app.tool_registry.call)
-    call_mock.assert_not_awaited()
+    # Real registry recorded nothing: the chokepoint denied before dispatch.
+    assert gated_app.tool_registry._artifact_store  # registry is real
+    assert not any(
+        name == "terminal" for name, _kw in gated_app.tool_registry.calls
+    )
 
 
 @pytest.mark.asyncio
@@ -180,8 +190,7 @@ async def test_workflow_allows_destructive_when_allow_listed(
 
     assert result.status == "ok"
     assert result.node_results[0].status == "ok"
-    call_mock = cast(AsyncMock, gated_app.tool_registry.call)
-    call_mock.assert_awaited_once_with("terminal", {"data": {}})
+    assert ("terminal", {"data": {}}) in gated_app.tool_registry.calls
 
 
 @pytest.mark.asyncio
@@ -213,8 +222,7 @@ async def test_workflow_allows_safe_tool_without_allow_list(
 
     assert result.status == "ok"
     assert result.node_results[0].status == "ok"
-    call_mock = cast(AsyncMock, gated_app.tool_registry.call)
-    call_mock.assert_awaited_once_with("current_time", {"data": {}})
+    assert ("current_time", {"data": {}}) in gated_app.tool_registry.calls
 
 
 @pytest.mark.asyncio
@@ -248,8 +256,11 @@ async def test_workflow_blocks_hardcoded_destructive_tool_name(
     assert result.status == "failed"
     assert result.node_results[0].node_id == "n1"
     assert "[CATEGORY: BLOCKED]" in error
-    call_mock = cast(AsyncMock, gated_app.tool_registry.call)
-    call_mock.assert_not_awaited()
+    # Real registry recorded nothing: the chokepoint denied before dispatch.
+    assert gated_app.tool_registry._artifact_store  # registry is real
+    assert not any(
+        name == "terminal" for name, _kw in gated_app.tool_registry.calls
+    )
 
 
 @pytest.mark.asyncio
@@ -288,11 +299,360 @@ async def test_workflow_allow_list_passed_to_gate(
         return await original_check(request, **kwargs)
 
     executor = WorkflowExecutor(gated_app)
-    with patch.object(
-        gated_app.capability_gate, "check", AsyncMock(side_effect=_checked)
-    ) as check_mock:
+    with patch.object(gated_app.capability_gate, "check", AsyncMock(side_effect=_checked)) as check_mock:
         await executor.execute("wf_audit", {})
 
     call_args = check_mock.call_args
     assert call_args is not None
     assert call_args.kwargs.get("allow_list") == {"terminal"}
+
+
+@pytest.mark.asyncio
+async def test_tool_call_node_is_gated(
+    workflow_store: WorkflowStore,
+    gated_app: AppContext,
+) -> None:
+    """SEC-001: a tool_call node invoking a destructive tool must be denied.
+
+    The old NODE_TYPES dispatch returned before reaching the gate block, so
+    {'type': 'tool_call', 'config': {'tool_name': 'terminal'}} executed shell
+    commands unattended.
+    """
+    wf = Workflow(id="wf_tc_gate", name="TC Gate", trust_level="paranoid")
+    await workflow_store.save_workflow(wf)
+
+    version = WorkflowVersion(
+        workflow_id="wf_tc_gate",
+        version=1,
+        nodes=[
+            WorkflowNode(
+                id="n1",
+                type="tool_call",
+                label="Run Shell",
+                config={"tool_name": "terminal", "command": "echo hi"},
+            )
+        ],
+        edges=[],
+        is_active=True,
+    )
+    await workflow_store.save_version(version)
+
+    executor = WorkflowExecutor(gated_app)
+    result = await executor.execute("wf_tc_gate", {})
+
+    assert result.status == "failed"
+    error = result.node_results[0].error or ""
+    assert "BLOCKED" in error
+    assert gated_app.tool_registry._tools  # real registry in place
+
+
+@pytest.mark.asyncio
+async def test_investigate_node_tools_are_gated(
+    workflow_store: WorkflowStore,
+    gated_app: AppContext,
+) -> None:
+    """SEC-001: investigate nodes gate every configured tool."""
+    wf = Workflow(id="wf_inv_gate", name="Inv Gate", trust_level="paranoid")
+    await workflow_store.save_workflow(wf)
+
+    version = WorkflowVersion(
+        workflow_id="wf_inv_gate",
+        version=1,
+        nodes=[
+            WorkflowNode(
+                id="n1",
+                type="investigate",
+                label="Investigate",
+                config={"topic": "x", "tools": ["terminal"]},
+            )
+        ],
+        edges=[],
+        is_active=True,
+    )
+    await workflow_store.save_version(version)
+
+    executor = WorkflowExecutor(gated_app)
+    result = await executor.execute("wf_inv_gate", {})
+
+    assert result.status == "failed"
+    assert "BLOCKED" in (result.node_results[0].error or "")
+    assert gated_app.tool_registry._tools  # real registry in place
+
+
+@pytest.mark.asyncio
+async def test_tool_call_node_allowed_via_allow_list(
+    workflow_store: WorkflowStore,
+    gated_app: AppContext,
+) -> None:
+    """A workflow's allow_listed_tools permits explicitly listed tools through
+    the tool_call node path."""
+    wf = Workflow(
+        id="wf_tc_ok",
+        name="TC Allowed",
+        trust_level="household",
+        allow_listed_tools={"current_time"},
+    )
+    await workflow_store.save_workflow(wf)
+
+    version = WorkflowVersion(
+        workflow_id="wf_tc_ok",
+        version=1,
+        nodes=[
+            WorkflowNode(
+                id="n1",
+                type="tool_call",
+                label="Time",
+                config={"tool_name": "current_time"},
+            )
+        ],
+        edges=[],
+        is_active=True,
+    )
+    await workflow_store.save_version(version)
+
+    executor = WorkflowExecutor(gated_app)
+    result = await executor.execute("wf_tc_ok", {})
+
+    assert result.status == "ok"
+    assert ("current_time", {}) in gated_app.tool_registry.calls
+
+
+@pytest.mark.asyncio
+async def test_investigate_ignores_input_supplied_tools(
+    workflow_store: WorkflowStore,
+    gated_app: AppContext,
+) -> None:
+    """L245: tools come from node.config only. A trigger payload supplying
+    'tools' cannot cause any tool execution - the names simply never
+    resolve, whatever shape they arrive in."""
+    wf = Workflow(id="wf_inv_inputs", name="Inv Inputs", trust_level="paranoid")
+    await workflow_store.save_workflow(wf)
+
+    version = WorkflowVersion(
+        workflow_id="wf_inv_inputs",
+        version=1,
+        nodes=[
+            WorkflowNode(id="n1", type="investigate", label="Investigate", config={"topic": "x"})
+        ],
+        edges=[],
+        is_active=True,
+    )
+    await workflow_store.save_version(version)
+
+    executor = WorkflowExecutor(gated_app)
+    result = await executor.execute("wf_inv_inputs", {"tools": ["terminal"]})
+
+    # No tools resolved from inputs, so nothing was invoked and the run
+    # completes (the investigation just has no tool data).
+    assert result.status == "ok"
+    assert all(
+        name != "terminal" for name, _kw in gated_app.tool_registry.calls
+    )
+
+
+@pytest.mark.asyncio
+async def test_investigate_ignores_dict_shaped_input_tools(
+    workflow_store: WorkflowStore,
+    gated_app: AppContext,
+) -> None:
+    """L245: even a hostile dict-shape in inputs executes nothing."""
+    wf = Workflow(id="wf_inv_dict_in", name="Inv Dict Inputs", trust_level="paranoid")
+    await workflow_store.save_workflow(wf)
+
+    version = WorkflowVersion(
+        workflow_id="wf_inv_dict_in",
+        version=1,
+        nodes=[
+            WorkflowNode(id="n1", type="investigate", label="Investigate", config={"topic": "x"})
+        ],
+        edges=[],
+        is_active=True,
+    )
+    await workflow_store.save_version(version)
+
+    executor = WorkflowExecutor(gated_app)
+    result = await executor.execute("wf_inv_dict_in", {"tools": {"terminal": True}})
+
+    assert result.status == "ok"
+    assert all(
+        name != "terminal" for name, _kw in gated_app.tool_registry.calls
+    )
+
+
+async def test_dict_shaped_tools_fail_closed(
+    workflow_store: WorkflowStore,
+    gated_app: AppContext,
+) -> None:
+    """L245: a dict-shaped tools value in node config is denied outright.
+
+    The previous gate duplicate handled only str/list, so
+    {'terminal': True} gated nothing and then executed its keys. Config-only
+    selection plus the shape check closes that; dicts arriving via INPUTS
+    are ignored entirely (see test_investigate_ignores_input_supplied_tools).
+    """
+    wf = Workflow(id="wf_dict", name="Dict Tools", trust_level="household")
+    await workflow_store.save_workflow(wf)
+
+    version = WorkflowVersion(
+        workflow_id="wf_dict",
+        version=1,
+        nodes=[
+            WorkflowNode(
+                id="n1",
+                type="investigate",
+                label="Investigate",
+                config={"topic": "x", "tools": {"terminal": True}},
+            )
+        ],
+        edges=[],
+        is_active=True,
+    )
+    await workflow_store.save_version(version)
+
+    executor = WorkflowExecutor(gated_app)
+    result = await executor.execute("wf_dict", {})
+
+    assert result.status == "failed"
+    error = result.node_results[0].error or ""
+    assert "BLOCKED" in error or "refusing to execute" in error
+    assert gated_app.tool_registry._tools  # real registry in place
+
+
+@pytest.mark.asyncio
+async def test_non_string_tool_list_entries_fail_closed(
+    workflow_store: WorkflowStore,
+    gated_app: AppContext,
+) -> None:
+    wf = Workflow(id="wf_ints", name="Int Tools", trust_level="household")
+    await workflow_store.save_workflow(wf)
+
+    version = WorkflowVersion(
+        workflow_id="wf_ints",
+        version=1,
+        nodes=[
+            WorkflowNode(
+                id="n1",
+                type="investigate",
+                label="Investigate",
+                config={"topic": "x", "tools": [123]},
+            )
+        ],
+        edges=[],
+        is_active=True,
+    )
+    await workflow_store.save_version(version)
+
+    executor = WorkflowExecutor(gated_app)
+    result = await executor.execute("wf_ints", {})
+
+    assert result.status == "failed"
+    assert "must all be strings" in (result.node_results[0].error or "")
+    assert gated_app.tool_registry._tools  # real registry in place
+
+
+class TestNodeEffectAuthorization:
+    """L245: effect nodes (http_request / send_message) are authorized by
+    activation - the executor refuses to run them unless the stored
+    (derived) allow-list carries their marker."""
+
+    def _effect_ctx(self, markers: set[str]) -> Any:
+        from hestia.policy.channel import Channel
+        from hestia.tools.context import ToolCallContext
+
+        return ToolCallContext(
+            channel=Channel.WORKFLOW,
+            actor_platform="workflow",
+            actor_platform_user="user-1",
+            allow_list=frozenset(markers),
+            source_workflow_id="wf_eff",
+        )
+
+    @pytest.mark.asyncio
+    async def test_http_request_denied_without_marker(
+        self, gated_app: AppContext
+    ) -> None:
+        executor = WorkflowExecutor(gated_app)
+        wf = Workflow(id="wf_eff", name="Eff")
+        node = WorkflowNode(
+            id="n1",
+            type="http_request",
+            label="",
+            config={"url": "https://example.com"},
+        )
+        with pytest.raises(PermissionError, match="re-activate"):
+            await executor._run_node(node, {}, wf, self._effect_ctx({"terminal"}))
+
+    @pytest.mark.asyncio
+    async def test_send_message_denied_without_marker(
+        self, gated_app: AppContext
+    ) -> None:
+        executor = WorkflowExecutor(gated_app)
+        wf = Workflow(id="wf_eff2", name="Eff2")
+        node = WorkflowNode(id="n1", type="send_message", label="", config={})
+        with pytest.raises(PermissionError, match="re-activate"):
+            await executor._run_node(node, {}, wf, self._effect_ctx(set()))
+
+    @pytest.mark.asyncio
+    async def test_http_request_allowed_with_marker(
+        self, gated_app: AppContext
+    ) -> None:
+        """With the marker present the node proceeds past authorization
+        (it then fails on missing URL config - a normal node error)."""
+        executor = WorkflowExecutor(gated_app)
+        wf = Workflow(id="wf_eff3", name="Eff3")
+        node = WorkflowNode(id="n1", type="http_request", label="", config={})
+        with pytest.raises(ValueError, match="requires 'url'"):
+            await executor._run_node(
+                node, {}, wf, self._effect_ctx({"node:http_request"})
+            )
+
+    @pytest.mark.asyncio
+    async def test_missing_context_fails_closed(
+        self, gated_app: AppContext
+    ) -> None:
+        executor = WorkflowExecutor(gated_app)
+        wf = Workflow(id="wf_eff4", name="Eff4")
+        node = WorkflowNode(id="n1", type="send_message", label="", config={})
+        with pytest.raises(PermissionError):
+            await executor._run_node(node, {}, wf, None)
+
+
+class TestPreGatedDenialSurfacing:
+    """L245 round-2 P3 acceptance: a denied pre_gated decision raises
+    ToolBlockedError (not ValueError), and that type survives the handlers
+    that catch it specifically."""
+
+    @pytest.mark.asyncio
+    async def test_investigate_node_propagates_pre_gated_denial(
+        self, gated_app: AppContext
+    ) -> None:
+        """investigate.py:84 re-raises policy denials so the BLOCKED category
+        reaches the execution record instead of becoming per-tool noise."""
+        from hestia.policy.channel import Channel
+        from hestia.policy.gate import CapabilityResult
+        from hestia.tools.context import ToolCallContext
+        from hestia.tools.registry import ToolBlockedError
+        from hestia.workflows.models import WorkflowNode
+        from hestia.workflows.nodes.investigate import InvestigateNode
+
+        node = WorkflowNode(
+            id="n1",
+            type="investigate",
+            label="",
+            config={"topic": "t", "tools": ["current_time"]},
+        )
+        denied = ToolCallContext(
+            channel=Channel.WORKFLOW,
+            actor_platform="workflow",
+            actor_platform_user="u",
+            mode="pre_gated",
+            pre_gated_result=CapabilityResult(
+                allowed=False,
+                auto_approved=False,
+                requires_confirmation=False,
+                reason="allow_listed_denied",
+            ),
+            pre_gated_tool="current_time",
+        )
+        with pytest.raises(ToolBlockedError, match="denied"):
+            await InvestigateNode().execute(gated_app, node, {}, denied)

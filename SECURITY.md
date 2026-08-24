@@ -2,23 +2,24 @@
 
 ## Supported versions
 
-| Version  | Supported          |
-|----------|--------------------|
-| 0.14.0   | :white_check_mark: |
-| 0.13.x   | :white_check_mark: |
-| 0.12.x   | :white_check_mark: |
-| < 0.12.0 | :x:                |
+Hestia is a solo-maintained, local-first project. Security fixes land on
+the current development branch (`develop`) and are released with the
+current stable minor series (`0.16.x` at the time of writing). Older
+versions do not receive backports; if you are running one, upgrade.
 
 ## Reporting a vulnerability
 
-Please report security issues privately to the maintainers at
-[security@example.com](mailto:security@example.com). Include a clear
-description of the issue, steps to reproduce, affected versions, and any
-suggested fixes or mitigations.
+Please report security issues privately through
+[GitHub private vulnerability reporting](https://github.com/dylan-okeefe/hestia/security/advisories/new):
+open the repository's **Security** tab and use **Report a vulnerability**.
+Do not open a public issue for anything you believe is exploitable.
+
+Include a clear description of the issue, steps to reproduce, affected
+versions, and any suggested fixes or mitigations.
 
 We aim to acknowledge reports within 72 hours and will release patches for
-supported versions as quickly as possible. Please do not disclose public
-vulnerabilities until a fix is available.
+supported versions as quickly as possible. Please do not disclose publicly
+until a fix is available.
 
 ## Config files execute Python
 

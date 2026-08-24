@@ -204,7 +204,9 @@ async def test_auto_approves_without_callback():
 
     assert turn.state == TurnState.DONE
     # The tool should have been called via the registry
-    mock_tool_registry.call.assert_awaited_once_with("terminal", {"command": "echo hi"})
+    assert mock_tool_registry.call.await_args.kwargs.get("context") is not None
+    assert mock_tool_registry.call.await_args.kwargs.get("context").mode == "enforce"
+    mock_tool_registry.call.assert_awaited_once()
 
 
 @pytest.mark.asyncio

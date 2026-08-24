@@ -117,3 +117,8 @@ class MemoryMaintenance:
             platform, platform_user
         )
         return dedupe_result, supersession_result
+
+    # TODO: scope-promotion pass (topic -> global) is deferred to a future loop.
+    # It must be review-gated through the Proposals system, with optional
+    # ultra-high-confidence identity facts auto-promoting with a digest entry
+    # and undo. Do not implement it here; see decisions #9 and spec Loop B.

@@ -78,7 +78,7 @@ async def test_append_message_uses_write_time_not_message_time(
 async def test_get_messages_ordered_by_idx(message_store, session_store):
     """Messages are returned in insertion order."""
     session = await session_store.create_session("test", "user2")
-    for i, content in enumerate(["first", "second", "third"]):
+    for _i, content in enumerate(["first", "second", "third"]):
         await message_store.append_message(
             session.id,
             message_domain_to_dto(

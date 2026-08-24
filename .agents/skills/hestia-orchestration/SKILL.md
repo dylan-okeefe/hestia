@@ -49,6 +49,29 @@ For multi-commit or multi-theme work.
    g. Write/update the handoff file
 4. After the arc completes, update `docs/development-process/kimi-loop-log.md` with a summary entry at the top.
 
+## TaskView board lifecycle
+
+The board is Kimi's queue and Dylan's view into progress. Keep it honest.
+
+**Columns (statusId values):**
+
+| Column    | statusId | Meaning |
+|-----------|----------|---------|
+| Backlog   | `null`   | Parked ideas, not yet specced or queued. |
+| Spec'd    | 6        | Has a spec/loop doc, but Dylan has not queued it. |
+| Ready     | 10       | **Kimi's work queue.** Dylan moves cards here when he wants work to start. |
+| In Progress | 7      | Kimi is actively working the card. |
+| In Review | 8        | Branch is ready, quality gates are green, waiting for Dylan. |
+| Done      | 9        | Dylan-approved and merged to `main`. |
+
+**Rules:**
+
+1. **Only Ready means "go."** Kimi does not pull work from Backlog or Spec'd on its own. When Dylan puts a card in Ready, move it to In Progress and start it.
+2. **Move cards through columns as the work progresses.** Do not flip the `complete` flag while leaving a card in an old column.
+3. **Stop at In Review.** When the branch is ready and gates pass, move the card to In Review. Do not mark it complete/Done. Dylan moves it to Done after review and merge to `main`. Practically, a completed card locks in the TaskView API and cannot be edited programmatically.
+4. **Record repo links.** When moving to In Review, add the branch name and commit SHA(s) to the card's note or `sourceUrl`, plus any spec/handoff path.
+5. **Card every chunk of work.** Even drive-by doc/test fixes get a card (or a subtask) so the board reflects what landed.
+
 ## Quality gates (run after every logical chunk)
 
 ```bash
@@ -58,6 +81,24 @@ uv run ruff check src/ tests/
 ```
 
 All three must pass before advancing. If ruff has pre-existing baseline issues, note the count and ensure no new issues were introduced. The project line-length is **120** (`tool.ruff.line-length` in `pyproject.toml`); do not reformat to 100.
+
+## Metrics refresh (run before pushing)
+
+Before pushing a feature branch or `develop`, update the repo's `metrics.json` so the resume generator on dylanokeefe.dev stays current:
+
+```bash
+uv run hestia_metrics.py
+```
+
+Then commit the resulting `metrics.json` alongside the related changes. The `--check` flag prints the counts without writing the file:
+
+```bash
+uv run hestia_metrics.py --check
+```
+
+### Loop-spec location
+
+Loop specs must live in `docs/development-process/loops/` and be named `L<NNN>-<slug>.md`. Do not leave new loop specs in `docs/development-process/` root or in `docs/development-process/prompts/`. If `hestia_metrics.py --check` warns about loop files outside the canonical directory, move them into `docs/development-process/loops/` before pushing.
 
 ## Self-review checklist
 

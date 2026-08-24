@@ -120,6 +120,8 @@ class ChatResponse:
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
+    reasoning_tokens: int = 0
+    '''Reasoning tokens reported by the server, when available (BUG-079).'''
 
 
 @dataclass
@@ -133,6 +135,7 @@ class StreamDelta:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
+    reasoning_tokens: int = 0
 
 
 class FunctionSchema(BaseModel):

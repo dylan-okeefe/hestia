@@ -11,6 +11,7 @@ import re
 import tempfile
 import time
 from collections.abc import Awaitable, Callable
+from contextvars import ContextVar
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -18,6 +19,13 @@ from telegram import Chat, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import RetryAfter, TelegramError
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
+from hestia.commands.meta import get_default_registry, render_commands_reference
+from hestia.commands.tour import (
+    get_tour_store,
+    render_tour_continue,
+    render_tour_end,
+    render_tour_start,
+)
 from hestia.config import TelegramConfig
 from hestia.core.types import Message as HestiaMessage
 from hestia.orchestrator.finalization import sanitize_user_error
@@ -29,6 +37,7 @@ from hestia.platforms.allowlist import (
 )
 from hestia.platforms.base import IncomingMessageCallback, Platform
 from hestia.platforms.confirmation import ConfirmationStore, render_args_for_human_review
+from hestia.policy.channel import Channel
 from hestia.voice.pipeline import get_voice_pipeline
 
 if TYPE_CHECKING:
@@ -141,8 +150,9 @@ def _md_to_tg_html(text: str) -> str:
 
 logger = logging.getLogger(__name__)
 
-# Piper outputs PCM16 mono at 22050 Hz for the default en_US-amy-medium voice.
-_TTS_SAMPLE_RATE = 22050
+# Default TTS PCM16 mono sample rate. The active voice config may override this
+# (e.g. Kokoro outputs 24000 Hz).
+_DEFAULT_TTS_SAMPLE_RATE = 22050
 
 
 class TelegramAdapter(Platform):
@@ -165,6 +175,11 @@ class TelegramAdapter(Platform):
         self._last_edit_max_age = 3600.0  # 1 hour TTL
         self._confirmation_store = ConfirmationStore()
         self._confirmation_timeout_seconds = 60.0
+        # Identity ContextVars wired by the runner (set_confirmation_context)
+        # so paths that bypass PlatformRunner — voice turns — can still bind
+        # requester identity for confirmations and channel attribution.
+        self._user_context_var: ContextVar[str] | None = None
+        self._requester_context_var: ContextVar[str | None] | None = None
         self._stream_states: dict[str, dict[str, Any]] = {}
 
         # Background tasks that keep the typing indicator alive (refreshed every 4s).
@@ -214,6 +229,12 @@ class TelegramAdapter(Platform):
         self._system_prompt = system_prompt
         self._voice_config = voice_config
 
+    def _tts_sample_rate(self) -> int:
+        """Return the TTS output sample rate from the voice config."""
+        if self._voice_config is not None:
+            return self._voice_config.tts_sample_rate
+        return _DEFAULT_TTS_SAMPLE_RATE
+
     def register_reset_callback(
         self, callback: Callable[[str], Awaitable[None]]
     ) -> None:
@@ -238,6 +259,11 @@ class TelegramAdapter(Platform):
         self._app.add_handler(CommandHandler("start", self._handle_start))
         self._app.add_handler(CommandHandler("reset", self._handle_reset))
         self._app.add_handler(CommandHandler("compact", self._handle_compact))
+        self._app.add_handler(CommandHandler("commands", self._handle_commands))
+        self._app.add_handler(CommandHandler("help", self._handle_help))
+        self._app.add_handler(CommandHandler("tour", self._handle_tour))
+        self._app.add_handler(CommandHandler("continue", self._handle_continue))
+        self._app.add_handler(CommandHandler("endtour", self._handle_endtour))
         self._app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message))
         if self._config.voice_messages:
             self._app.add_handler(MessageHandler(filters.VOICE, self._handle_voice_message))
@@ -566,6 +592,15 @@ class TelegramAdapter(Platform):
 
         return callback
 
+    def set_confirmation_context(
+        self,
+        user_var: ContextVar[str],
+        requester_var: ContextVar[str | None],
+    ) -> None:
+        """Bind the runner's identity ContextVars (voice-turn support)."""
+        self._user_context_var = user_var
+        self._requester_context_var = requester_var
+
     async def request_confirmation(
         self,
         user: str,
@@ -605,12 +640,32 @@ class TelegramAdapter(Platform):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        await self._app.bot.send_message(
-            chat_id=chat_id,
-            text=text,
-            parse_mode="Markdown",
-            reply_markup=reply_markup,
-        )
+        try:
+            await self._app.bot.send_message(
+                chat_id=chat_id,
+                text=text,
+                parse_mode="Markdown",
+                reply_markup=reply_markup,
+            )
+        except TelegramError as e:
+            # BUG-015: raw tool arguments routinely contain markdown
+            # metacharacters; unbalanced entities make Telegram reject the
+            # message with "can't parse entities", which used to fail the
+            # gated tool outright. Fall back to plain text — the JSON block
+            # is still perfectly readable.
+            logger.warning(
+                "Markdown confirmation prompt rejected (%s); retrying as plain text",
+                e,
+            )
+            await self._app.bot.send_message(
+                chat_id=chat_id,
+                text=(
+                    f"🔒 Tool {tool_name} wants to run:\n"
+                    f"{prompt}\n"
+                    f"Approve within {int(self._confirmation_timeout_seconds)}s?"
+                ),
+                reply_markup=reply_markup,
+            )
 
         assert req.future is not None
         try:
@@ -632,11 +687,18 @@ class TelegramAdapter(Platform):
         if not allowed:
             return False
 
-        return (
-            match_allowlist(allowed, str(user_id), case_sensitive=True)
-            or (username is not None
-                and match_allowlist(allowed, username, case_sensitive=False))
-        )
+        if username is not None:
+            # BUG-064: validation strips '@' from configured usernames, so an
+            # operator's '@alice' entry can never match PTB usernames (which
+            # never contain '@'). Compare against the bare form defensively.
+            bare_username = username.lstrip("@")
+            normalized_patterns = [entry.lstrip("@") for entry in allowed]
+            id_match = match_allowlist(allowed, str(user_id), case_sensitive=True)
+            name_match = match_allowlist(
+                normalized_patterns, bare_username, case_sensitive=False
+            )
+            return id_match or name_match
+        return match_allowlist(allowed, str(user_id), case_sensitive=True)
 
     async def _handle_start(self, update: Update, context: Any) -> None:
         """Handle /start command."""
@@ -744,6 +806,108 @@ class TelegramAdapter(Platform):
         except TelegramError:
             await update.effective_message.reply_text(outcome.message)
 
+    async def _handle_commands(self, update: Update, context: Any) -> None:
+        """Handle /commands: render the registry catalog."""
+        if update.effective_user is None or update.effective_message is None:
+            return
+
+        user_id = update.effective_user.id
+        username = update.effective_user.username or str(user_id)
+        chat = update.effective_chat
+        in_group = chat is not None and chat.type in (Chat.GROUP, Chat.SUPERGROUP)
+
+        if not self._is_allowed(user_id, username):
+            if in_group:
+                return
+            await update.effective_message.reply_text("Not authorized.")
+            return
+
+        # Render the catalog from the registry so /help and /commands share one source.
+        text = render_commands_reference(get_default_registry())
+        await update.effective_message.reply_text(text)
+
+    async def _handle_help(self, update: Update, context: Any) -> None:
+        """Handle /help: alias for /commands."""
+        await self._handle_commands(update, context)
+
+    async def _handle_tour(self, update: Update, context: Any) -> None:
+        """Handle /tour: start the narrated tour, but not in group chats."""
+        if update.effective_user is None or update.effective_message is None:
+            return
+
+        user_id = update.effective_user.id
+        username = update.effective_user.username or str(user_id)
+        chat = update.effective_chat
+        in_group = chat is not None and chat.type in (Chat.GROUP, Chat.SUPERGROUP)
+
+        if not self._is_allowed(user_id, username):
+            if in_group:
+                return
+            await update.effective_message.reply_text("Not authorized.")
+            return
+
+        if in_group:
+            assert chat is not None
+            platform_user = str(chat.id)
+        else:
+            platform_user = str(user_id)
+        text = render_tour_start(
+            get_tour_store(), "telegram", platform_user, group_room=in_group
+        )
+        await update.effective_message.reply_text(text)
+
+    async def _handle_continue(self, update: Update, context: Any) -> None:
+        """Handle /continue: advance the narrated tour by one step."""
+        if update.effective_user is None or update.effective_message is None:
+            return
+
+        user_id = update.effective_user.id
+        username = update.effective_user.username or str(user_id)
+        chat = update.effective_chat
+        in_group = chat is not None and chat.type in (Chat.GROUP, Chat.SUPERGROUP)
+
+        if not self._is_allowed(user_id, username):
+            if in_group:
+                return
+            await update.effective_message.reply_text("Not authorized.")
+            return
+
+        if in_group:
+            assert chat is not None
+            platform_user = str(chat.id)
+        else:
+            platform_user = str(user_id)
+        text = render_tour_continue(
+            get_tour_store(), "telegram", platform_user, group_room=in_group
+        )
+        await update.effective_message.reply_text(text)
+
+    async def _handle_endtour(self, update: Update, context: Any) -> None:
+        """Handle /endtour: clear the active tour cursor."""
+        if update.effective_user is None or update.effective_message is None:
+            return
+
+        user_id = update.effective_user.id
+        username = update.effective_user.username or str(user_id)
+        chat = update.effective_chat
+        in_group = chat is not None and chat.type in (Chat.GROUP, Chat.SUPERGROUP)
+
+        if not self._is_allowed(user_id, username):
+            if in_group:
+                return
+            await update.effective_message.reply_text("Not authorized.")
+            return
+
+        if in_group:
+            assert chat is not None
+            platform_user = str(chat.id)
+        else:
+            platform_user = str(user_id)
+        text = render_tour_end(
+            get_tour_store(), "telegram", platform_user, group_room=in_group
+        )
+        await update.effective_message.reply_text(text)
+
     async def _handle_message(self, update: Update, context: Any) -> None:
         """Handle incoming text messages."""
         if update.effective_user is None or update.effective_message is None:
@@ -831,18 +995,26 @@ class TelegramAdapter(Platform):
             return
 
         assert message.voice is not None
-        _user_key = str(user_id)
+        # BUG-063: in groups the session lives on the chat id; typing must
+        # target the chat the user spoke in, not their private DM.
+        _user_key = str(chat.id if (in_group and chat is not None) else user_id)
         await self.set_typing(_user_key, True)
 
         try:
             # 1. Download the .ogg file
+            ogg_path: str | None = None
             try:
-                voice_file = await message.voice.get_file()
+                voice_file = await message.voice.get_file(read_timeout=60.0)
                 with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as ogg:
-                    await voice_file.download_to_drive(ogg.name)
+                    await voice_file.download_to_drive(
+                        ogg.name, read_timeout=60.0, write_timeout=60.0
+                    )
                     ogg_path = ogg.name
             except Exception as e:  # noqa: BLE001 — voice download boundary
                 logger.warning("Failed to download voice message: %s", e)
+                if ogg_path is not None:
+                    with contextlib.suppress(OSError):
+                        os.unlink(ogg_path)
                 await message.reply_text("Sorry, I couldn't download that voice message.")
                 return
 
@@ -918,7 +1090,7 @@ class TelegramAdapter(Platform):
                 # 6. Telegram voice note limit handling (1 MB)
                 if len(full_audio_ogg) > 1_000_000:
                     total_pcm = b"".join(audio_chunks)
-                    duration_seconds = len(total_pcm) / (_TTS_SAMPLE_RATE * 2)
+                    duration_seconds = len(total_pcm) / (self._tts_sample_rate() * 2)
                     try:
                         truncated_ogg = await self._truncate_ogg_to_size(
                             full_audio_ogg, 1_000_000, duration_seconds
@@ -935,6 +1107,19 @@ class TelegramAdapter(Platform):
                 else:
                     await message.reply_voice(voice=io.BytesIO(full_audio_ogg))
 
+            # BUG-014: bind the runner's identity ContextVars so gated tools
+            # can confirm against a real requester (previously every
+            # confirmation auto-denied), and attribute the turn to Telegram.
+            user_token = (
+                self._user_context_var.set(platform_user)
+                if self._user_context_var is not None
+                else None
+            )
+            requester_token = (
+                self._requester_context_var.set(_sender_platform_user or platform_user)
+                if self._requester_context_var is not None
+                else None
+            )
             try:
                 await self._orchestrator.process_turn(
                     session=session,
@@ -944,10 +1129,16 @@ class TelegramAdapter(Platform):
                     platform=self,
                     platform_user=platform_user,
                     voice_reply=True,
+                    channel=Channel.TELEGRAM,
                 )
             except Exception as e:  # noqa: BLE001 — turn boundary
                 logger.exception("Turn failed for voice message from %s", user_id)
                 await message.reply_text(sanitize_user_error(e))
+            finally:
+                if requester_token is not None and self._requester_context_var is not None:
+                    self._requester_context_var.reset(requester_token)
+                if user_token is not None and self._user_context_var is not None:
+                    self._user_context_var.reset(user_token)
         finally:
             await self.set_typing(_user_key, False)
 
@@ -1062,7 +1253,7 @@ class TelegramAdapter(Platform):
             "-f",
             "s16le",
             "-ar",
-            str(_TTS_SAMPLE_RATE),
+            str(self._tts_sample_rate()),
             "-ac",
             "1",
             "-i",

@@ -14,7 +14,7 @@ from hestia.persistence.db import Database
 from hestia.persistence.users import UserStore
 from hestia.policy import CapabilityGate, CapabilityRequest, Channel, Identity
 from hestia.tools.capabilities import EMAIL_SEND, READ_LOCAL, SHELL_EXEC, WRITE_LOCAL
-from hestia.tools.metadata import tool
+from hestia.tools.metadata import ToolMetadata, tool
 from hestia.tools.registry import ToolRegistry
 
 
@@ -283,3 +283,117 @@ class TestCapabilityGate:
         approved = await gate.check(normal_request)
         assert approved.allowed is True
         assert approved.auto_approved is True
+
+
+class TestAllowSideAuditing:
+    """L245 item: unattended-channel decisions are audited on ALLOW as well
+    as DENY. Under allowlist-only authorization, 'the allowlist let this
+    through' is the event worth recording - and today it is silent."""
+
+    async def test_allow_listed_unattended_is_audited(
+        self, db: Database, registry: ToolRegistry
+    ) -> None:
+        cfg = HestiaConfig.default()
+        gate = make_gate(cfg, db, registry)
+        request = CapabilityRequest(
+            actor=Identity(platform="workflow", platform_user="wf-owner"),
+            channel=Channel.WORKFLOW,
+            tool_name="terminal",
+            inputs={"command": "ls"},
+            source_workflow_id="wf-1",
+        )
+        await gate.check(request, allow_list={"terminal"})
+        events = await CapabilityEventStore(db).list_recent()
+        assert len(events) == 1
+        assert events[0].decision == "allowed"
+        assert events[0].reason == "allow_listed"
+
+    async def test_non_destructive_approved_on_unattended_is_audited(
+        self, db: Database, registry: ToolRegistry
+    ) -> None:
+        cfg = HestiaConfig.default()
+        gate = make_gate(cfg, db, registry)
+        request = CapabilityRequest(
+            actor=Identity(platform="workflow", platform_user="wf-owner"),
+            channel=Channel.SCHEDULER,
+            tool_name="read_file",
+            inputs={"path": "notes.txt"},
+        )
+        result = await gate.check(request)
+        assert result.allowed is True
+        events = await CapabilityEventStore(db).list_recent()
+        assert len(events) == 1
+        assert events[0].decision == "allowed"
+
+    async def test_trusted_channel_approval_not_audited(
+        self, db: Database, registry: ToolRegistry
+    ) -> None:
+        """Bound audit noise to unattended surfaces; chat approvals stay silent."""
+        cfg = HestiaConfig.default()
+        gate = make_gate(cfg, db, registry)
+        user = await make_user(db, "Chat", "telegram", "chat-user")
+        request = CapabilityRequest(
+            actor=user,
+            channel=Channel.TELEGRAM,
+            tool_name="read_file",
+            inputs={"path": "notes.txt"},
+        )
+        await gate.check(request)
+        events = await CapabilityEventStore(db).list_recent()
+        assert len(events) == 0
+
+
+class TestSchedulerAllowMap:
+    """L245: TrustConfig.scheduler_* flags become real gate controls."""
+
+    def test_flags_map_to_allow_list(self, db: Database, registry: ToolRegistry) -> None:
+        from hestia.policy.default import DefaultPolicyEngine
+
+        cfg = HestiaConfig.default()
+        cfg.trust = TrustConfig.developer()
+        cfg.trust.scheduler_shell_exec = True
+        cfg.trust.scheduler_write_local = False  # explicitly off
+        engine = DefaultPolicyEngine(trust=cfg.trust)
+
+        metas = []
+        for name, caps in [
+            ("terminal", [SHELL_EXEC]),
+            ("write_file", [WRITE_LOCAL]),
+            ("read_file", []),
+        ]:
+            metas.append(
+                ToolMetadata(
+                    name=name,
+                    public_description=name,
+                    internal_description="",
+                    parameters_schema={"type": "object", "properties": {}},
+                    capabilities=caps,
+                )
+            )
+
+        allowed = engine.unattended_allow_list(Channel.SCHEDULER, [m.name for m in metas], registry)
+        assert "terminal" in allowed
+        assert "write_file" not in allowed
+        assert "read_file" in allowed
+
+        # Non-scheduler channels derive nothing.
+        assert engine.unattended_allow_list(Channel.TELEGRAM, [m.name for m in metas], registry) == set()
+
+    async def test_scheduler_terminal_allowed_when_flag_on(
+        self, db: Database, registry: ToolRegistry
+    ) -> None:
+        cfg = HestiaConfig.default()
+        cfg.trust = TrustConfig.developer()
+        cfg.trust.scheduler_shell_exec = True
+        gate = make_gate(cfg, db, registry)
+        request = CapabilityRequest(
+            actor=Identity(platform="scheduler", platform_user="ticks"),
+            channel=Channel.SCHEDULER,
+            tool_name="terminal",
+            inputs={"command": "ls"},
+            session_id="sess-1",
+        )
+        result = await gate.check(request, allow_list={"terminal"})
+        assert result.allowed is True
+        events = await CapabilityEventStore(db).list_recent()
+        assert events[0].decision == "allowed"

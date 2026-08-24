@@ -56,19 +56,19 @@ class TestDirectToolSchemas:
         registry.register(greet)
         schemas = {s.function.name: s for s in registry.meta_tool_schemas()}
         desc = schemas["call_tool"].function.description
-        assert "2000 characters" in desc
+        assert "50000 characters" in desc
         assert "write_file" in desc
         assert "append_to_file" in desc
 
     def test_write_file_schema_teaches_chunked_writes(self):
-        """The write_file tool description teaches the 2000-character limit."""
+        """The write_file tool description teaches the raised character limit."""
         from hestia.config import StorageConfig
         from hestia.tools.builtin.write_file import make_write_file_tool
 
         tool = make_write_file_tool(StorageConfig(allowed_roots=[]))
         meta = tool.__hestia_tool__
-        assert "2000 characters" in meta.public_description
-        assert "append_to_file" in meta.public_description
+        assert "several thousand characters" in meta.public_description
+        assert "append_to_file" in meta.parameters_schema["properties"]["content"]["description"]
 
     def test_append_to_file_schema_teaches_chunked_writes(self):
         """The append_to_file tool description teaches the 2000-character limit."""

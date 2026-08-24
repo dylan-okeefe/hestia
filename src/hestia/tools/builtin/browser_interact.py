@@ -17,6 +17,23 @@ from hestia.tools.metadata import tool
 
 logger = logging.getLogger(__name__)
 
+_VALID_ACTION_TYPES = {"fill", "click", "select", "wait", "wait_for_navigation", "wait_seconds", "scroll"}
+
+
+def _validate_actions(actions: list[dict[str, Any]]) -> None:
+    """Validate action dicts before launching a browser."""
+    if not actions:
+        return
+    for idx, action in enumerate(actions):
+        action_type = action.get("type", "").lower()
+        if not action_type:
+            raise ValueError(f"Action {idx}: missing 'type'")
+        if action_type not in _VALID_ACTION_TYPES:
+            raise ValueError(
+                f"Action {idx}: unknown action type {action_type!r}. "
+                f"Valid types: {', '.join(sorted(_VALID_ACTION_TYPES))}"
+            )
+
 
 def _format_actions(actions: list[dict[str, Any]]) -> str:
     """Return a concise string representation of actions for error messages."""
@@ -107,6 +124,19 @@ async def _run_interaction(
                 seconds = float(value) if value else action.get("seconds", wait_seconds)
                 await page.wait_for_timeout(int(seconds * 1000))
 
+            elif action_type == "scroll":
+                if not selector:
+                    raise ValueError(f"Action {idx}: 'scroll' requires a selector")
+                direction = str(action.get("direction", "down")).lower()
+                amount = float(action.get("amount", 500))
+                scroll_by = -amount if direction == "up" else amount
+                await page.locator(selector).evaluate(
+                    f"(el) => {{ el.scrollBy(0, {scroll_by}); }}"
+                )
+                pause_ms = int(float(action.get("wait_ms", 1000)))
+                if pause_ms > 0:
+                    await page.wait_for_timeout(pause_ms)
+
             else:
                 raise ValueError(f"Action {idx}: unknown action type {action_type!r}")
 
@@ -150,9 +180,10 @@ async def _run_interaction(
     name="browser_interact",
     public_description=(
         "Open a web page in a real browser and interact with it (fill forms, "
-        "click buttons, select options, wait for elements). Use this for "
-        "JavaScript-heavy sites where the data only appears after user interaction, "
-        "such as search forms that don't work via URL parameters. "
+        "click buttons, select options, scroll containers, wait for elements). "
+        "Use this for JavaScript-heavy sites where the data only appears after "
+        "user interaction, such as search forms that don't work via URL parameters "
+        "or infinite-scroll result lists. "
         "Params: url (str), actions (list of dicts), headless (bool, default false), "
         "wait_seconds (int, default 3), timeout_seconds (int, default 30), "
         "return_html (bool, default false)."
@@ -165,20 +196,36 @@ async def _run_interaction(
                 "type": "array",
                 "description": (
                     "List of interaction steps. Each step is a dict with 'type' "
-                    "(fill, click, select, wait, wait_for_navigation, wait_seconds), "
+                    "(fill, click, select, scroll, wait, wait_for_navigation, wait_seconds), "
                     "'selector' (CSS selector), and 'value' (string). For 'fill', "
-                    "set 'press_enter': true to submit after typing."
+                    "set 'press_enter': true to submit after typing. For 'scroll', "
+                    "use 'direction' ('up' or 'down'), 'amount' (pixels), and "
+                    "'wait_ms' (pause after scrolling)."
                 ),
                 "items": {
                     "type": "object",
                     "properties": {
-                        "type": {"type": "string"},
+                        "type": {
+                            "type": "string",
+                            "enum": [
+                                "fill",
+                                "click",
+                                "select",
+                                "scroll",
+                                "wait",
+                                "wait_for_navigation",
+                                "wait_seconds",
+                            ],
+                        },
                         "selector": {"type": "string"},
                         "value": {"type": "string"},
                         "press_enter": {"type": "boolean"},
                         "press_tab": {"type": "boolean"},
                         "seconds": {"type": "number"},
                         "timeout": {"type": "integer"},
+                        "direction": {"type": "string"},
+                        "amount": {"type": "number"},
+                        "wait_ms": {"type": "number"},
                     },
                 },
             },
@@ -220,6 +267,12 @@ async def browser_interact(
 
     if not actions:
         return "No actions provided. Use browser_get for simple page fetches."
+
+    try:
+        _validate_actions(actions)
+    except ValueError as exc:
+        logger.warning("browser_interact rejected invalid actions for %s: %s", url, exc)
+        return f"Invalid actions: {exc}"
 
     domain = normalize_domain(parsed.hostname)
 

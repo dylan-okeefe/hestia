@@ -5,11 +5,14 @@ import {
   fetchWorkflowVersions,
   saveWorkflowVersion,
   activateWorkflowVersion,
+  ActivationConfirmationRequired,
   testRunWorkflow,
   updateWorkflow,
+  rotateWebhookSecret,
   fetchExecutions,
   fetchTools,
   fetchAuthStatus,
+  type AllowListDiff,
   type WorkflowVersion,
   type WorkflowNode,
   type WorkflowEdge,
@@ -45,10 +48,19 @@ export function useWorkflowEditor(workflowId: string | undefined) {
   const [triggerSaving, setTriggerSaving] = useState(false);
   const [webhookUrl, setWebhookUrl] = useState('');
   const [webhookSecret, setWebhookSecret] = useState('');
+  const [hasWebhookSecret, setHasWebhookSecret] = useState(false);
   const [toolSchemas, setToolSchemas] = useState<ToolSchema[]>([]);
   const [tools, setTools] = useState<string[]>([]);
   const [platforms, setPlatforms] = useState<string[]>([]);
   const [isDirty, setIsDirty] = useState(false);
+  // L245: activation that changes the authorization set is parked here
+  // until the user reviews the diff in AllowListDiffDialog.
+  const [pendingActivation, setPendingActivation] = useState<{
+    versionId: string;
+    diff: AllowListDiff;
+    postActivate?: () => void;
+  } | null>(null);
+  const [activating, setActivating] = useState(false);
 
   const { addToast } = useToast();
 
@@ -126,24 +138,30 @@ export function useWorkflowEditor(workflowId: string | undefined) {
     }
   }, [redo]);
 
+  const executionsRequestIdRef = useRef(0);
   const loadExecutions = useCallback(async () => {
     if (!workflowId) return;
+    // BUG-053: guard against setState-after-unmount with a request token.
+    const requestId = ++executionsRequestIdRef.current;
     setHistoryLoading(true);
     setHistoryError(null);
     try {
       const data = await fetchExecutions(workflowId);
+      if (requestId !== executionsRequestIdRef.current) return;
       setExecutions(data.executions);
     } catch (err) {
+      if (requestId !== executionsRequestIdRef.current) return;
       setHistoryError(err instanceof Error ? err.message : 'Failed to load history');
     } finally {
-      setHistoryLoading(false);
+      if (requestId === executionsRequestIdRef.current) {
+        setHistoryLoading(false);
+      }
     }
   }, [workflowId]);
 
   useEffect(() => {
     if (!workflowId) return;
 
-    const abortController = new AbortController();
     let stale = false;
 
     Promise.all([
@@ -157,7 +175,9 @@ export function useWorkflowEditor(workflowId: string | undefined) {
         setTriggerConfig((wf.trigger_config || {}) as Record<string, string>);
         if (wf.trigger_type === 'webhook') {
           setWebhookUrl(wf.webhook_url || '');
-          setWebhookSecret(wf.secret || '');
+          // Secrets are reveal-once on the backend; only a rotation returns
+          // the value. Track whether one exists so the panel can offer it.
+          setHasWebhookSecret(Boolean((wf.trigger_config as Record<string, unknown>)?.has_secret));
         }
         setVersions(vs.versions);
         const active = vs.versions.find((v: WorkflowVersion) => v.activated_at !== null);
@@ -203,7 +223,6 @@ export function useWorkflowEditor(workflowId: string | undefined) {
 
     return () => {
       stale = true;
-      abortController.abort();
     };
   }, [workflowId, loadExecutions]);
 
@@ -296,6 +315,67 @@ export function useWorkflowEditor(workflowId: string | undefined) {
     return () => document.removeEventListener('keydown', handler);
   }, [handleUndo, handleRedo, pushCurrent]);
 
+  const applyActivationSuccess = (versionId: string) => {
+    setActiveVersionId(versionId);
+    setVersions((vs) =>
+      vs.map((v) =>
+        v.id === versionId ? { ...v, activated_at: new Date().toISOString() } : { ...v, activated_at: null }
+      )
+    );
+  };
+
+  // L245: shared activation path. A 409 (authorization set changed) parks
+  // the request in pendingActivation for diff review instead of failing.
+  const requestActivation = async (
+    versionId: string,
+    postActivate?: () => void
+  ): Promise<boolean> => {
+    if (!workflowId) return false;
+    try {
+      await activateWorkflowVersion(workflowId, versionId);
+      applyActivationSuccess(versionId);
+      return true;
+    } catch (err) {
+      if (err instanceof ActivationConfirmationRequired) {
+        setPendingActivation({ versionId, diff: err.diff, postActivate });
+        return false;
+      }
+      throw err;
+    }
+  };
+
+  const confirmPendingActivation = async () => {
+    if (!pendingActivation || !workflowId) return;
+    setActivating(true);
+    try {
+      await activateWorkflowVersion(workflowId, pendingActivation.versionId, {
+        confirmAllowListChange: true,
+      });
+      applyActivationSuccess(pendingActivation.versionId);
+      const { postActivate } = pendingActivation;
+      setPendingActivation(null);
+      addToast({ message: 'New authorization is live.', type: 'success', duration: 4000 });
+      postActivate?.();
+    } catch (err) {
+      addToast({
+        message: err instanceof Error ? err.message : 'Activation failed',
+        type: 'error',
+        duration: 5000,
+      });
+    } finally {
+      setActivating(false);
+    }
+  };
+
+  const cancelPendingActivation = () => {
+    setPendingActivation(null);
+    addToast({
+      message: 'Activation cancelled - the workflow keeps its previous authorization.',
+      type: 'info',
+      duration: 5000,
+    });
+  };
+
   const handleSaveAndActivate = async () => {
     if (!workflowId) return;
     setSaving(true);
@@ -316,17 +396,19 @@ export function useWorkflowEditor(workflowId: string | undefined) {
       }));
       const version = await saveWorkflowVersion(workflowId, serialNodes, serialEdges);
       setVersions((vs) => [...vs, version]);
-      await activateWorkflowVersion(workflowId, version.id);
-      setActiveVersionId(version.id);
-      setVersions((vs) =>
-        vs.map((v) =>
-          v.id === version.id ? { ...v, activated_at: new Date().toISOString() } : { ...v, activated_at: null }
-        )
-      );
+      // L245: may park in pendingActivation (409 diff) instead of activating.
+      await requestActivation(version.id);
       setIsDirty(false);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Save failed');
+      // BUG-056: activation failure must not blank the canvas — a full-page
+      // error state here destroyed unsaved graphs. Surface a toast and keep
+      // the editor mounted; the save itself already succeeded.
+      addToast({
+        message: `Saved, but activation failed: ${err instanceof Error ? err.message : 'unknown error'}`,
+        type: 'error',
+        duration: 8000,
+      });
     } finally {
       setSaving(false);
     }
@@ -338,12 +420,7 @@ export function useWorkflowEditor(workflowId: string | undefined) {
       return;
     }
     try {
-      await activateWorkflowVersion(workflowId, activeVersionId);
-      setVersions((vs) =>
-        vs.map((v) =>
-          v.id === activeVersionId ? { ...v, activated_at: new Date().toISOString() } : { ...v, activated_at: null }
-        )
-      );
+      await requestActivation(activeVersionId);
     } catch (err) {
       addToast({ message: err instanceof Error ? err.message : 'Activation failed', type: 'error', duration: 5000 });
     }
@@ -381,7 +458,11 @@ export function useWorkflowEditor(workflowId: string | undefined) {
     if (!workflowId) return;
     setTriggerSaving(true);
     try {
-      await updateWorkflow(workflowId, { trigger_type: triggerType, trigger_config: triggerConfig });
+      const cleanTriggerConfig = { ...triggerConfig };
+      if (cleanTriggerConfig.secret === '__redacted__') {
+        delete cleanTriggerConfig.secret;
+      }
+      await updateWorkflow(workflowId, { trigger_type: triggerType, trigger_config: cleanTriggerConfig });
     } catch (err) {
       addToast({ message: err instanceof Error ? err.message : 'Failed to save trigger', type: 'error', duration: 5000 });
     } finally {
@@ -391,6 +472,20 @@ export function useWorkflowEditor(workflowId: string | undefined) {
 
   const updateTriggerConfig = (key: string, value: string) => {
     setTriggerConfig((prev) => ({ ...prev, [key]: value }));
+  };
+
+  // The backend reveals webhook secrets exactly once (on create or rotate).
+  // Rotation is the only way to obtain a fresh value after the initial reveal.
+  const handleRotateSecret = async () => {
+    if (!workflowId) return;
+    try {
+      const { secret } = await rotateWebhookSecret(workflowId);
+      setWebhookSecret(secret);
+      setHasWebhookSecret(true);
+      addToast({ message: 'New webhook secret generated — copy it now; it will not be shown again.', type: 'success', duration: 8000 });
+    } catch (err) {
+      addToast({ message: err instanceof Error ? err.message : 'Failed to rotate secret', type: 'error', duration: 5000 });
+    }
   };
 
   const updateSelectedNodeData = (key: string, value: unknown) => {
@@ -430,13 +525,7 @@ export function useWorkflowEditor(workflowId: string | undefined) {
       return;
     }
     try {
-      await activateWorkflowVersion(workflowId, versionId);
-      setActiveVersionId(versionId);
-      setVersions((vs) =>
-        vs.map((v) =>
-          v.id === versionId ? { ...v, activated_at: new Date().toISOString() } : { ...v, activated_at: null }
-        )
-      );
+      await requestActivation(versionId);
     } catch (err) {
       addToast({ message: err instanceof Error ? err.message : 'Activation failed', type: 'error', duration: 5000 });
     }
@@ -486,6 +575,8 @@ export function useWorkflowEditor(workflowId: string | undefined) {
     triggerSaving,
     webhookUrl,
     webhookSecret,
+    hasWebhookSecret,
+    handleRotateSecret,
     toolSchemas,
     tools,
     platforms,
@@ -508,5 +599,9 @@ export function useWorkflowEditor(workflowId: string | undefined) {
     handleViewVersion,
     handleActivateVersion,
     handleNameBlur,
+    pendingActivation,
+    activating,
+    confirmPendingActivation,
+    cancelPendingActivation,
   };
 }

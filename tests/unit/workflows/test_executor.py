@@ -14,7 +14,7 @@ from hestia.core.types import ChatResponse, Message
 from hestia.persistence.db import Database
 from hestia.policy.gate import CapabilityResult
 from hestia.tools.capabilities import SHELL_EXEC, WRITE_LOCAL
-from hestia.tools.registry import ToolRegistry
+from hestia.tools.registry import ToolBlockedError, ToolRegistry
 from hestia.tools.types import ToolCallResult
 from hestia.workflows.execution_store import ExecutionStore
 from hestia.workflows.executor import ExecutionResult, WorkflowExecutor
@@ -44,6 +44,7 @@ async def workflow_store(db: Database) -> WorkflowStore:
 def app(tmp_path, db: Database) -> AppContext:
     """Create a minimal AppContext with mocked inference and tool registry."""
     cfg = HestiaConfig.default()
+    cfg.inference.model_name = "dummy"
     cfg.storage.database_url = "sqlite+aiosqlite:///:memory:"
     cfg.storage.artifacts_dir = tmp_path / "artifacts"
     app = AppContext(cfg)
@@ -131,7 +132,7 @@ class TestExecuteHappyPath:
         )
         await workflow_store.save_version(version)
 
-        async def tool_call(name: str, args: dict[str, Any]) -> ToolCallResult:
+        async def tool_call(name: str, args: dict[str, Any], *, context: Any = None) -> ToolCallResult:
             if name == "upper":
                 return ToolCallResult(
                     status="ok",
@@ -232,8 +233,9 @@ class TestTrustEnforcement:
         )
         await workflow_store.save_version(version)
 
-        # Simulate the capability gate denying the destructive tool on the
-        # unattended WORKFLOW channel.
+        # Simulate the chokepoint contract: the gate denies, and the registry
+        # (mocked here) surfaces that denial as ToolBlockedError when handed
+        # an enforce context.
         app.capability_gate.check = AsyncMock(  # type: ignore[method-assign]
             return_value=CapabilityResult(
                 allowed=False,
@@ -242,6 +244,20 @@ class TestTrustEnforcement:
                 reason="not_allow_listed",
             )
         )
+
+        async def gated_call(name: str, args: dict[str, Any], *, context: Any = None) -> ToolCallResult:
+            # Simulate the real chokepoint: enforce contexts consult the gate
+            # decision and surface denials as ToolBlockedError.
+            assert context is not None and context.mode == "enforce"
+            decision = app.capability_gate.check.return_value
+            if not decision.allowed:
+                raise ToolBlockedError(
+                    f"[CATEGORY: BLOCKED] Capability gate denied '{name}': "
+                    f"{decision.reason}"
+                )
+            return ToolCallResult(status="ok", content="ok", artifact_handle=None, truncated=False)
+
+        app.tool_registry.call = AsyncMock(side_effect=gated_call)
 
         result = await executor.execute("wf_1", {})
 
@@ -630,7 +646,7 @@ class TestEdgeCases:
 
         call_order: list[str] = []
 
-        async def track_call(name: str, _args: dict[str, Any]) -> ToolCallResult:
+        async def track_call(name: str, _args: dict[str, Any], *, context: Any = None) -> ToolCallResult:
             call_order.append(name)
             return ToolCallResult(status="ok", content="ok", artifact_handle=None, truncated=False)
 
@@ -667,12 +683,8 @@ class TestBranchingExecution:
         )
         node_a = WorkflowNode(id="a", type="echo", label="A")
         node_b = WorkflowNode(id="b", type="echo", label="B")
-        edge_true = WorkflowEdge(
-            id="e_true", source_node_id="cond", target_node_id="a", source_handle="true"
-        )
-        edge_false = WorkflowEdge(
-            id="e_false", source_node_id="cond", target_node_id="b", source_handle="false"
-        )
+        edge_true = WorkflowEdge(id="e_true", source_node_id="cond", target_node_id="a", source_handle="true")
+        edge_false = WorkflowEdge(id="e_false", source_node_id="cond", target_node_id="b", source_handle="false")
         version = WorkflowVersion(
             workflow_id="wf_1",
             version=1,
@@ -694,8 +706,10 @@ class TestBranchingExecution:
         result = await executor.execute("wf_1", {"value": 15})
 
         assert result.status == "ok"
-        executed_ids = {nr.node_id for nr in result.node_results}
-        assert executed_ids == {"cond", "a"}
+        ok_ids = {nr.node_id for nr in result.node_results if nr.status == "ok"}
+        skipped_ids = {nr.node_id for nr in result.node_results if nr.status == "skipped"}
+        assert ok_ids == {"cond", "a"}
+        assert skipped_ids == {"b"}
         assert "b" not in result.outputs
         assert result.outputs["cond"] is True
         assert result.outputs["a"] == "done"
@@ -719,12 +733,8 @@ class TestBranchingExecution:
         )
         node_a = WorkflowNode(id="a", type="echo", label="A")
         node_b = WorkflowNode(id="b", type="echo", label="B")
-        edge_true = WorkflowEdge(
-            id="e_true", source_node_id="cond", target_node_id="a", source_handle="true"
-        )
-        edge_false = WorkflowEdge(
-            id="e_false", source_node_id="cond", target_node_id="b", source_handle="false"
-        )
+        edge_true = WorkflowEdge(id="e_true", source_node_id="cond", target_node_id="a", source_handle="true")
+        edge_false = WorkflowEdge(id="e_false", source_node_id="cond", target_node_id="b", source_handle="false")
         version = WorkflowVersion(
             workflow_id="wf_1",
             version=1,
@@ -746,8 +756,10 @@ class TestBranchingExecution:
         result = await executor.execute("wf_1", {"value": 5})
 
         assert result.status == "ok"
-        executed_ids = {nr.node_id for nr in result.node_results}
-        assert executed_ids == {"cond", "b"}
+        ok_ids = {nr.node_id for nr in result.node_results if nr.status == "ok"}
+        skipped_ids = {nr.node_id for nr in result.node_results if nr.status == "skipped"}
+        assert ok_ids == {"cond", "b"}
+        assert skipped_ids == {"a"}
         assert "a" not in result.outputs
         assert result.outputs["cond"] is False
         assert result.outputs["b"] == "done"
@@ -774,9 +786,7 @@ class TestBranchingExecution:
         edge_alpha = WorkflowEdge(
             id="e_alpha", source_node_id="dec", target_node_id="alpha_node", source_handle="alpha"
         )
-        edge_beta = WorkflowEdge(
-            id="e_beta", source_node_id="dec", target_node_id="beta_node", source_handle="beta"
-        )
+        edge_beta = WorkflowEdge(id="e_beta", source_node_id="dec", target_node_id="beta_node", source_handle="beta")
         version = WorkflowVersion(
             workflow_id="wf_1",
             version=1,
@@ -809,8 +819,10 @@ class TestBranchingExecution:
         result = await executor.execute("wf_1", {})
 
         assert result.status == "ok"
-        executed_ids = {nr.node_id for nr in result.node_results}
-        assert executed_ids == {"dec", "alpha_node"}
+        ok_ids = {nr.node_id for nr in result.node_results if nr.status == "ok"}
+        skipped_ids = {nr.node_id for nr in result.node_results if nr.status == "skipped"}
+        assert ok_ids == {"dec", "alpha_node"}
+        assert skipped_ids == {"beta_node"}
         assert "beta_node" not in result.outputs
         assert result.outputs["dec"] == "alpha"
         assert result.outputs["alpha_node"] == "done"
@@ -826,26 +838,16 @@ class TestBranchingExecution:
         wf = Workflow(id="wf_1", name="Nested", trust_level="developer")
         await workflow_store.save_workflow(wf)
 
-        outer = WorkflowNode(
-            id="outer", type="condition", label="Outer", config={"expression": "True"}
-        )
-        inner = WorkflowNode(
-            id="inner", type="condition", label="Inner", config={"expression": "False"}
-        )
+        outer = WorkflowNode(id="outer", type="condition", label="Outer", config={"expression": "True"})
+        inner = WorkflowNode(id="inner", type="condition", label="Inner", config={"expression": "False"})
         node_a = WorkflowNode(id="a", type="echo", label="A")
         node_b = WorkflowNode(id="b", type="echo", label="B")
         node_c = WorkflowNode(id="c", type="echo", label="C")
         edges = [
-            WorkflowEdge(
-                id="e1", source_node_id="outer", target_node_id="inner", source_handle="true"
-            ),
-            WorkflowEdge(
-                id="e2", source_node_id="outer", target_node_id="c", source_handle="false"
-            ),
+            WorkflowEdge(id="e1", source_node_id="outer", target_node_id="inner", source_handle="true"),
+            WorkflowEdge(id="e2", source_node_id="outer", target_node_id="c", source_handle="false"),
             WorkflowEdge(id="e3", source_node_id="inner", target_node_id="a", source_handle="true"),
-            WorkflowEdge(
-                id="e4", source_node_id="inner", target_node_id="b", source_handle="false"
-            ),
+            WorkflowEdge(id="e4", source_node_id="inner", target_node_id="b", source_handle="false"),
         ]
         version = WorkflowVersion(
             workflow_id="wf_1",
@@ -856,16 +858,16 @@ class TestBranchingExecution:
         )
         await workflow_store.save_version(version)
         app.tool_registry.call = AsyncMock(
-            return_value=ToolCallResult(
-                status="ok", content="done", artifact_handle=None, truncated=False
-            )
+            return_value=ToolCallResult(status="ok", content="done", artifact_handle=None, truncated=False)
         )
 
         result = await executor.execute("wf_1", {})
 
         assert result.status == "ok"
-        executed_ids = {nr.node_id for nr in result.node_results}
-        assert executed_ids == {"outer", "inner", "b"}
+        ok_ids = {nr.node_id for nr in result.node_results if nr.status == "ok"}
+        skipped_ids = {nr.node_id for nr in result.node_results if nr.status == "skipped"}
+        assert ok_ids == {"outer", "inner", "b"}
+        assert skipped_ids == {"a", "c"}
         assert "a" not in result.outputs
         assert "c" not in result.outputs
 
@@ -880,9 +882,7 @@ class TestBranchingExecution:
         wf = Workflow(id="wf_1", name="Converge", trust_level="developer")
         await workflow_store.save_workflow(wf)
 
-        cond = WorkflowNode(
-            id="cond", type="condition", label="Cond", config={"expression": "True"}
-        )
+        cond = WorkflowNode(id="cond", type="condition", label="Cond", config={"expression": "True"})
         node_a = WorkflowNode(id="a", type="echo", label="A")
         node_b = WorkflowNode(id="b", type="echo", label="B")
         merge = WorkflowNode(id="merge", type="echo", label="Merge")
@@ -901,16 +901,16 @@ class TestBranchingExecution:
         )
         await workflow_store.save_version(version)
         app.tool_registry.call = AsyncMock(
-            return_value=ToolCallResult(
-                status="ok", content="done", artifact_handle=None, truncated=False
-            )
+            return_value=ToolCallResult(status="ok", content="done", artifact_handle=None, truncated=False)
         )
 
         result = await executor.execute("wf_1", {})
 
         assert result.status == "ok"
-        executed_ids = {nr.node_id for nr in result.node_results}
-        assert executed_ids == {"cond", "a", "merge"}
+        ok_ids = {nr.node_id for nr in result.node_results if nr.status == "ok"}
+        assert ok_ids == {"cond", "a", "merge"}
+        skipped_ids = {nr.node_id for nr in result.node_results if nr.status == "skipped"}
+        assert skipped_ids == {"b"}
         assert "b" not in result.outputs
 
     @pytest.mark.asyncio
@@ -924,9 +924,7 @@ class TestBranchingExecution:
         wf = Workflow(id="wf_1", name="Dead", trust_level="developer")
         await workflow_store.save_workflow(wf)
 
-        cond = WorkflowNode(
-            id="cond", type="condition", label="Cond", config={"expression": "False"}
-        )
+        cond = WorkflowNode(id="cond", type="condition", label="Cond", config={"expression": "False"})
         node_a = WorkflowNode(id="a", type="echo", label="A")
         node_b = WorkflowNode(id="b", type="echo", label="B")
         node_c = WorkflowNode(id="c", type="echo", label="C")
@@ -944,16 +942,16 @@ class TestBranchingExecution:
         )
         await workflow_store.save_version(version)
         app.tool_registry.call = AsyncMock(
-            return_value=ToolCallResult(
-                status="ok", content="done", artifact_handle=None, truncated=False
-            )
+            return_value=ToolCallResult(status="ok", content="done", artifact_handle=None, truncated=False)
         )
 
         result = await executor.execute("wf_1", {})
 
         assert result.status == "ok"
-        executed_ids = {nr.node_id for nr in result.node_results}
-        assert executed_ids == {"cond"}
+        ok_ids = {nr.node_id for nr in result.node_results if nr.status == "ok"}
+        assert ok_ids == {"cond"}
+        skipped_ids = {nr.node_id for nr in result.node_results if nr.status == "skipped"}
+        assert skipped_ids == {"a", "b", "c"}
         assert "a" not in result.outputs
         assert "b" not in result.outputs
         assert "c" not in result.outputs
@@ -965,13 +963,15 @@ class TestBranchingExecution:
         executor: WorkflowExecutor,
         app: AppContext,
     ) -> None:
-        """LLM returns unknown branch name — no downstream nodes execute gracefully."""
+        """BUG-038: an unrecognized LLM branch fails the node loudly.
+
+        It used to return the off-list value, match no edge, skip every
+        downstream node invisibly and report status='ok'.
+        """
         wf = Workflow(id="wf_1", name="Unknown", trust_level="developer")
         await workflow_store.save_workflow(wf)
 
-        decision = WorkflowNode(
-            id="dec", type="llm_decision", label="Decide", config={"branches": ["a", "b"]}
-        )
+        decision = WorkflowNode(id="dec", type="llm_decision", label="Decide", config={"branches": ["a", "b"]})
         node_a = WorkflowNode(id="a", type="echo", label="A")
         node_b = WorkflowNode(id="b", type="echo", label="B")
         edges = [
@@ -1000,11 +1000,10 @@ class TestBranchingExecution:
 
         result = await executor.execute("wf_1", {})
 
-        assert result.status == "ok"
-        executed_ids = {nr.node_id for nr in result.node_results}
-        assert executed_ids == {"dec"}
-        assert "a" not in result.outputs
-        assert "b" not in result.outputs
+        assert result.status == "failed"
+        failed_results = [nr for nr in result.node_results if nr.status == "failed"]
+        assert len(failed_results) == 1
+        assert "unrecognized" in (failed_results[0].error or "")
 
     @pytest.mark.asyncio
     async def test_multiple_roots(
@@ -1019,9 +1018,7 @@ class TestBranchingExecution:
 
         root1 = WorkflowNode(id="r1", type="echo", label="R1")
         root2 = WorkflowNode(id="r2", type="echo", label="R2")
-        cond = WorkflowNode(
-            id="cond", type="condition", label="Cond", config={"expression": "False"}
-        )
+        cond = WorkflowNode(id="cond", type="condition", label="Cond", config={"expression": "False"})
         node_a = WorkflowNode(id="a", type="echo", label="A")
         edges = [
             WorkflowEdge(id="e1", source_node_id="cond", target_node_id="a", source_handle="true"),
@@ -1035,16 +1032,16 @@ class TestBranchingExecution:
         )
         await workflow_store.save_version(version)
         app.tool_registry.call = AsyncMock(
-            return_value=ToolCallResult(
-                status="ok", content="done", artifact_handle=None, truncated=False
-            )
+            return_value=ToolCallResult(status="ok", content="done", artifact_handle=None, truncated=False)
         )
 
         result = await executor.execute("wf_1", {})
 
         assert result.status == "ok"
-        executed_ids = {nr.node_id for nr in result.node_results}
-        assert executed_ids == {"r1", "r2", "cond"}
+        ok_ids = {nr.node_id for nr in result.node_results if nr.status == "ok"}
+        assert ok_ids == {"cond", "r1", "r2"}
+        skipped_ids = {nr.node_id for nr in result.node_results if nr.status == "skipped"}
+        assert skipped_ids == {"a"}
         assert "a" not in result.outputs
 
 

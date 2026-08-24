@@ -11,9 +11,31 @@ from hestia.tools.registry import ToolNotFoundError, ToolRegistry
 
 @pytest.fixture
 def registry(tmp_path):
-    """Create a ToolRegistry with temp artifact store."""
+    """Create a ToolRegistry with temp artifact store.
+
+    Binds an explicit PERMISSIVE fake gate: these tests exercise dispatch,
+    truncation, and artifacts - not authorization. Binding a visible fake
+    (instead of relying on the old unbound passthrough) makes the policy
+    stance of each test explicit and keeps enforce-mode honest.
+    """
     store = ArtifactStore(root=tmp_path)
-    return ToolRegistry(store)
+    registry = ToolRegistry(store)
+    registry.bind_gate(_PermissiveGate())
+    return registry
+
+
+class _PermissiveGate:
+    """Test fake: allows everything, evaluates nothing."""
+
+    async def check(self, request, *, injection_flagged=False, allow_list=None):
+        from hestia.policy.gate import CapabilityResult
+
+        return CapabilityResult(
+            allowed=True,
+            auto_approved=True,
+            requires_confirmation=False,
+            reason="permissive-test-fake",
+        )
 
 
 # --- Test fixtures: decorated tools ---
@@ -132,6 +154,111 @@ class TestListAndDescribe:
             registry.describe("nonexistent")
 
 
+
+def _ctx():
+    """Enforce-mode context; the fixture's permissive fake gate allows it."""
+    from hestia.tools.context import ToolCallContext
+
+    return ToolCallContext(
+        channel=__import__("hestia.policy.channel", fromlist=["Channel"]).Channel.API,
+        actor_platform="test",
+        mode="enforce",
+    )
+
+
+class TestGateChokepoint:
+    """L245 review findings: the chokepoint must not depend on wiring."""
+
+    @pytest.mark.asyncio
+    async def test_enforce_without_bound_gate_raises(self, tmp_path):
+        """An unbound registry must REFUSE enforce calls, not pass them
+        through - a chokepoint that depends on remembering bind_gate is
+        not a chokepoint."""
+        store = ArtifactStore(root=tmp_path)
+        bare = ToolRegistry(store)  # no bind_gate
+        bare.register(greet)
+        with pytest.raises(RuntimeError, match="capability gate"):
+            await bare.call("greet", {"name": "Alice"}, context=_ctx())
+
+    @pytest.mark.asyncio
+    async def test_pre_gated_decision_must_match_tool(self, registry):
+        """A pre_gated context authorizes exactly the tool that was gated;
+        reusing it for another tool is a programming error and fails loud."""
+        from hestia.policy.gate import CapabilityResult
+        from hestia.tools.context import ToolCallContext
+
+        registry.register(greet)
+        registry.register(add)
+        decision = CapabilityResult(
+            allowed=True,
+            auto_approved=True,
+            requires_confirmation=False,
+            reason="approved",
+        )
+        bound = ToolCallContext(
+            channel=__import__("hestia.policy.channel", fromlist=["Channel"]).Channel.API,
+            actor_platform="test",
+            mode="pre_gated",
+            pre_gated_result=decision,
+            pre_gated_tool="greet",
+        )
+        result = await registry.call("greet", {"name": "Bob"}, context=bound)
+        assert result.status == "ok"
+
+        with pytest.raises(ValueError, match="pre_gated decision was for 'greet'"):
+            await registry.call("add", {"a": 1, "b": 2}, context=bound)
+
+    @pytest.mark.asyncio
+    async def test_pre_gated_denial_is_tool_blocked_error(self, registry):
+        """A denied pre_gated decision is a POLICY DENIAL, not a programming
+        error: it must raise ToolBlockedError so handlers that catch it
+        (investigate.py, executor.py) recognize it (round-2 P3)."""
+        from hestia.policy.gate import CapabilityResult
+        from hestia.tools.context import ToolCallContext
+        from hestia.tools.registry import ToolBlockedError
+
+        registry.register(greet)
+        denied = ToolCallContext(
+            channel=__import__("hestia.policy.channel", fromlist=["Channel"]).Channel.API,
+            actor_platform="test",
+            mode="pre_gated",
+            pre_gated_result=CapabilityResult(
+                allowed=False,
+                auto_approved=False,
+                requires_confirmation=False,
+                reason="allow_listed_denied",
+            ),
+            pre_gated_tool="greet",
+        )
+        with pytest.raises(ToolBlockedError, match="denied"):
+            await registry.call("greet", {"name": "Bob"}, context=denied)
+
+    @pytest.mark.asyncio
+    async def test_unbound_registry_refuses_pre_gated(self, tmp_path):
+        """Round-2 P4(b): a pre_gated decision could only have come from a
+        gate, so an unbound registry refuses pre_gated calls too."""
+        from hestia.policy.gate import CapabilityResult
+        from hestia.tools.context import ToolCallContext
+
+        store = ArtifactStore(root=tmp_path)
+        bare = ToolRegistry(store)  # no bind_gate
+        bare.register(greet)
+        ctx = ToolCallContext(
+            channel=__import__("hestia.policy.channel", fromlist=["Channel"]).Channel.API,
+            actor_platform="test",
+            mode="pre_gated",
+            pre_gated_result=CapabilityResult(
+                allowed=True,
+                auto_approved=True,
+                requires_confirmation=False,
+                reason="approved",
+            ),
+            pre_gated_tool="greet",
+        )
+        with pytest.raises(RuntimeError, match="capability gate"):
+            await bare.call("greet", {"name": "Alice"}, context=ctx)
+
+
 class TestCalling:
     """Tests for tool dispatch."""
 
@@ -140,7 +267,7 @@ class TestCalling:
         """call dispatches to handler and returns result."""
         registry.register(greet)
 
-        result = await registry.call("greet", {"name": "Alice"})
+        result = await registry.call("greet", {"name": "Alice"}, context=_ctx())
         assert result.status == "ok"
         assert result.content == "Hello, Alice!"
         assert result.artifact_handle is None
@@ -151,7 +278,7 @@ class TestCalling:
         """call works with numeric arguments."""
         registry.register(add)
 
-        result = await registry.call("add", {"a": 1.5, "b": 2.5})
+        result = await registry.call("add", {"a": 1.5, "b": 2.5}, context=_ctx())
         assert result.status == "ok"
         assert result.content == "4.0"
 
@@ -160,7 +287,7 @@ class TestCalling:
         """call returns error status on exception."""
         registry.register(failing_tool)
 
-        result = await registry.call("failing_tool", {})
+        result = await registry.call("failing_tool", {}, context=_ctx())
         assert result.status == "error"
         assert "Intentional failure" in result.content
 
@@ -168,7 +295,7 @@ class TestCalling:
     async def test_call_missing_tool_raises(self, registry):
         """call raises ToolNotFoundError for missing tool."""
         with pytest.raises(ToolNotFoundError):
-            await registry.call("nonexistent", {})
+            await registry.call("nonexistent", {}, context=_ctx())
 
 
 class TestAutoArtifact:
@@ -179,7 +306,7 @@ class TestAutoArtifact:
         """Small results are returned inline."""
         registry.register(greet)
 
-        result = await registry.call("greet", {"name": "Short"})
+        result = await registry.call("greet", {"name": "Short"}, context=_ctx())
         assert result.artifact_handle is None
         assert "stored as artifact" not in result.content
 
@@ -199,7 +326,7 @@ class TestAutoArtifact:
 
         registry.register(large_output)
 
-        result = await registry.call("large_output", {})
+        result = await registry.call("large_output", {}, context=_ctx())
         assert result.artifact_handle is not None
         assert result.artifact_handle.startswith("art_")
         assert "stored as artifact" in result.content
@@ -275,6 +402,6 @@ class TestMetaTools:
         """meta_call_tool dispatches correctly."""
         registry.register(greet)
 
-        result = await registry.meta_call_tool("greet", {"name": "Bob"})
+        result = await registry.meta_call_tool("greet", {"name": "Bob"}, context=_ctx())
         assert result.status == "ok"
         assert "Bob" in result.content

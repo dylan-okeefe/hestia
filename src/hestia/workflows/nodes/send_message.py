@@ -20,6 +20,7 @@ class SendMessageNode:
         app: AppContext,
         node: WorkflowNode,
         inputs: dict[str, Any],
+        tool_context: Any = None,
     ) -> Any:
         """Send a message to the configured platform and user.
 
@@ -36,20 +37,33 @@ class SendMessageNode:
             ValueError: If ``platform``, ``target_user``/``user``,
             or ``message``/``text`` is missing.
         """
-        platform = _resolve("platform", node, inputs)
-        user = _resolve("target_user", node, inputs, fallback_key="user")
+        # SEC-022: destinations explicitly pinned in node config take
+        # precedence over interpolated trigger payloads — an attacker-controlled
+        # webhook/chat payload must not choose where workflow-authored content
+        # is delivered. Inputs only fill gaps the author left open.
+        platform = _config_first("platform", node, inputs)
+        conversation = _config_first(
+            "target_conversation", node, inputs, fallback_key="conversation"
+        )
+        user = _config_first("target_user", node, inputs, fallback_key="user")
         text = _resolve("message", node, inputs, fallback_key="text")
 
         if text and isinstance(text, str):
             text = interpolate(text, inputs)
 
+        # A specific conversation (session) takes precedence over the generic
+        # target_user. For Telegram this is the chat ID; for Matrix it is the
+        # room ID.
+        destination = conversation or user
+
         if not platform:
             raise ValueError(
                 "SendMessageNode requires 'platform' in config or inputs"
             )
-        if not user:
+        if not destination:
             raise ValueError(
-                "SendMessageNode requires 'target_user' (or 'user') in config or inputs"
+                "SendMessageNode requires 'target_conversation' or 'target_user' "
+                "(or 'conversation'/'user') in config or inputs"
             )
         if not text:
             raise ValueError(
@@ -59,11 +73,11 @@ class SendMessageNode:
         requires_response = node.config.get("requires_response", False)
         if not requires_response:
             notifier = PlatformNotifier(app.config)
-            success = await notifier.send(platform, user, text)
+            success = await notifier.send(platform, destination, text)
             return {
                 "sent": success,
                 "platform": platform,
-                "user": user,
+                "user": destination,
                 "text": text,
             }
 
@@ -76,27 +90,27 @@ class SendMessageNode:
 
         if platform == "telegram":
             try:
-                int(user)
+                int(destination)
             except ValueError as exc:
-                raise ValueError(f"Invalid Telegram chat ID: {user}") from exc
+                raise ValueError(f"Invalid Telegram chat ID: {destination}") from exc
 
         store = DEFAULT_RESPONSE_STORE
-        request_id, future = store.create(platform, user)
+        request_id, future = store.create(platform, destination)
 
         notifier = PlatformNotifier(app.config)
         if response_type == "buttons":
             success = await notifier.send_interactive(
-                platform, user, text, buttons, request_id
+                platform, destination, text, buttons, request_id
             )
         else:
-            success = await notifier.send(platform, user, text)
+            success = await notifier.send(platform, destination, text)
 
         if not success:
             store.cancel(request_id)
             return {
                 "sent": False,
                 "platform": platform,
-                "user": user,
+                "user": destination,
                 "text": text,
                 "response": None,
                 "timed_out": False,
@@ -107,7 +121,7 @@ class SendMessageNode:
             return {
                 "sent": True,
                 "platform": platform,
-                "user": user,
+                "user": destination,
                 "text": text,
                 "response": response,
                 "timed_out": False,
@@ -117,11 +131,30 @@ class SendMessageNode:
             return {
                 "sent": True,
                 "platform": platform,
-                "user": user,
+                "user": destination,
                 "text": text,
                 "response": None,
                 "timed_out": True,
             }
+
+
+def _config_first(
+    key: str, node: WorkflowNode, inputs: dict[str, Any], fallback_key: str | None = None
+) -> Any:
+    """Resolve a value preferring ``node.config`` over ``inputs`` (SEC-022)."""
+    value = node.config.get(key)
+    if value is not None:
+        return value
+    if fallback_key is not None:
+        value = node.config.get(fallback_key)
+        if value is not None:
+            return value
+    value = inputs.get(key)
+    if value is not None:
+        return value
+    if fallback_key is not None:
+        return inputs.get(fallback_key)
+    return None
 
 
 def _resolve(

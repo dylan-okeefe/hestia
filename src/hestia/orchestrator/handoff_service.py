@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 _ARTIFACT_HANDLE_RE = re.compile(r"art_[a-f0-9]{10}")
 _HANDOFF_MAX_HISTORY = 8
+_RESET_HANDOFF_MARKER = "[RESET]"
 
 
 class HandoffService:
@@ -63,14 +64,25 @@ class HandoffService:
         return "\n".join(parts)
 
     def _build_handoff_message(
-        self, session: Session, messages: list[Message], summary: str | None = None
+        self,
+        session: Session,
+        messages: list[Message],
+        summary: str | None = None,
+        key_messages_override: list[Message] | None = None,
     ) -> Message:
         """Construct a handoff message for ``session``."""
-        key_messages = [
-            {"role": m.role, "content": m.content}
-            for m in messages
-            if m.role in ("user", "assistant")
-        ][-_HANDOFF_MAX_HISTORY:]
+        if key_messages_override is not None:
+            key_messages = [
+                {"role": m.role, "content": m.content}
+                for m in key_messages_override
+                if m.role in ("user", "assistant")
+            ][-_HANDOFF_MAX_HISTORY:]
+        else:
+            key_messages = [
+                {"role": m.role, "content": m.content}
+                for m in messages
+                if m.role in ("user", "assistant")
+            ][-_HANDOFF_MAX_HISTORY:]
         artifacts = self._extract_artifact_handles(messages)
 
         handoff = SessionHandoff(
@@ -89,7 +101,10 @@ class HandoffService:
         )
 
     async def generate_handoff_summary(
-        self, session_id: str, summary: str | None = None
+        self,
+        session_id: str,
+        summary: str | None = None,
+        key_messages_override: list[Message] | None = None,
     ) -> None:
         """Archive a session and persist its handoff as a message.
 
@@ -97,6 +112,9 @@ class HandoffService:
         archive-time summarizer owned by the session store produces one,
         saves structured facts to long-term memory, and returns the summary
         text for reuse in the handoff message.
+
+        ``key_messages_override`` lets callers (e.g. /reset) replace the
+        archived conversation history with a custom, minimal set of messages.
         """
         session = await self._session_store.get_session(session_id)
         if session is None:
@@ -111,7 +129,10 @@ class HandoffService:
         ]
 
         handoff_message = self._build_handoff_message(
-            session, messages, summary or generated_summary
+            session,
+            messages,
+            summary or generated_summary,
+            key_messages_override=key_messages_override,
         )
         await self._message_store.append_message(
             session_id,
@@ -189,13 +210,21 @@ class HandoffService:
             )
             if handoffs:
                 handoff = handoffs[0]
-                synthetic = Message(
-                    role="user",
-                    content=handoff["summary"],
-                    is_handoff=True,
-                )
-                await self._message_store.append_message(
-                    session.id,
-                    message_domain_to_dto(synthetic, session.id, idx=0),
-                )
+                if _RESET_HANDOFF_MARKER in handoff["summary"]:
+                    logger.info(
+                        "Skipping handoff injection for %s/%s because the most recent "
+                        "handoff is a reset marker.",
+                        platform,
+                        platform_user,
+                    )
+                else:
+                    synthetic = Message(
+                        role="user",
+                        content=handoff["summary"],
+                        is_handoff=True,
+                    )
+                    await self._message_store.append_message(
+                        session.id,
+                        message_domain_to_dto(synthetic, session.id, idx=0),
+                    )
         return session

@@ -20,8 +20,7 @@ def make_write_file_tool(
         name="write_file",
         public_description=(
             "Write content to a file. Params: path (str), content (str). "
-            "If content is longer than 2000 characters, write a short header first "
-            "and append the rest with append_to_file."
+            "Can write documents up to several thousand characters in one call."
         ),
         parameters_schema={
             "type": "object",
@@ -32,9 +31,9 @@ def make_write_file_tool(
                 },
                 "content": {
                     "type": "string",
-                    "description": "Text content to write. MUST be 2000 characters or fewer. "
-                    "For longer documents, write a header and use append_to_file.",
-                    "maxLength": 2000,
+                    "description": "Text content to write. For very large documents, "
+                    "you may still split across multiple write_file or append_to_file calls.",
+                    "maxLength": 50000,
                 },
             },
             "required": ["path", "content"],
@@ -70,7 +69,28 @@ def make_write_file_tool(
             )
 
         await asyncio.to_thread(target.parent.mkdir, parents=True, exist_ok=True)
-        await asyncio.to_thread(target.write_text, content, encoding="utf-8")
+
+        # Atomic write: crash mid-write previously left a truncated file —
+        # ironic given ADR-046's purpose. Temp file + os.replace is atomic on
+        # POSIX and Windows.
+        import contextlib as _contextlib
+        import os as _os
+        import tempfile as _tempfile
+
+        def _atomic_write() -> None:
+            fd, tmp_name = _tempfile.mkstemp(
+                dir=target.parent, prefix=".write_", suffix=".tmp"
+            )
+            try:
+                with _os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    fh.write(content)
+                _os.replace(tmp_name, target)
+            except BaseException:
+                with _contextlib.suppress(OSError):
+                    _os.unlink(tmp_name)
+                raise
+
+        await asyncio.to_thread(_atomic_write)
         bytes_written = len(content.encode("utf-8"))
         return f"Wrote {bytes_written} bytes to {path}"
 

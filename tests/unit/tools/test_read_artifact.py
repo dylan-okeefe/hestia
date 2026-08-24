@@ -83,3 +83,28 @@ class TestReadArtifactChunks:
         raw = await tool(handle=handle, start_at=4000, length=4000)
         assert len(raw) <= 8000
         assert "bytes 4000-8000 of 20000" in raw
+
+    @pytest.mark.anyio
+    async def test_artifact_alias(self, read_artifact, artifact_store):
+        """The artifact parameter is an alias for handle."""
+        content = "alias content"
+        handle = artifact_store.store(content)
+
+        result = await read_artifact(artifact=handle)
+        assert "alias content" in result
+
+    @pytest.mark.anyio
+    async def test_full_path_normalized(self, read_artifact, artifact_store):
+        """A full filesystem path to the .bin file is normalized to the handle."""
+        content = "path normalized"
+        handle = artifact_store.store(content)
+        full_path = f"/some/where/{handle}.bin"
+
+        result = await read_artifact(artifact=full_path)
+        assert "path normalized" in result
+
+    @pytest.mark.anyio
+    async def test_missing_handle_and_artifact(self, read_artifact):
+        """Calling without handle or artifact returns a clear error."""
+        result = await read_artifact()
+        assert "requires either handle or artifact" in result

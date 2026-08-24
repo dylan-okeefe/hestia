@@ -52,8 +52,14 @@ async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
       headers: getHeaders((init?.headers as Record<string, string>) || {}),
     });
     if (res.status === 401) {
-      clearAuthToken();
-      window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+      // BUG-055: 401 on an auth-status probe may be a transient gateway
+      // response; only a confirmed 401 from a data endpoint logs the user
+      // out. fetchAuthStatus handles its own failure path with retries.
+      const isAuthProbe = input.includes('/auth/status');
+      if (!isAuthProbe) {
+        clearAuthToken();
+        window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+      }
     }
     return res;
   } finally {
@@ -62,22 +68,37 @@ async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
 }
 
 export async function fetchAuthStatus() {
-  const res = await apiFetch(`${API_BASE}/auth/status`);
-  if (!res.ok) throw new Error('Failed to fetch auth status');
-  return res.json() as Promise<{ auth_enabled: boolean; authenticated: boolean; debug_login?: boolean; platform?: string; platform_user?: string; user_id?: string; available_platforms?: string[] }>;
+  // BUG-055: retry transient status-check failures so a network blip does
+  // not kick an authenticated user back to Login.
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await apiFetch(`${API_BASE}/auth/status`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json() as Promise<{ auth_enabled: boolean; authenticated: boolean; debug_login?: boolean; platform?: string; platform_user?: string; user_id?: string; available_platforms?: string[] }>;
+    } catch (err) {
+      lastError = err;
+      await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('Failed to fetch auth status');
 }
 
 export async function fetchAvailableUsers() {
   const res = await apiFetch(`${API_BASE}/auth/available-users`);
   if (!res.ok) throw new Error('Failed to fetch available users');
-  return res.json() as Promise<{ users: Array<{ user_id: string; display_name: string; role: string; platforms: string[]; identities: Array<{ platform: string; platform_user: string }> }> }>;
+  return res.json() as Promise<{ users: Array<{ user_id: string; display_name: string; platforms: string[] }> }>;
 }
 
-export async function requestCode(platform: string, platformUser?: string) {
+export async function requestCode(platform: string, userId?: string) {
+  // SEC-002: the picker sends user_id; the server resolves the recipient
+  // from that user's registered identity (raw chat ids are never sent).
+  const body: Record<string, string> = { platform };
+  if (userId) body.user_id = userId;
   const res = await apiFetch(`${API_BASE}/auth/request-code`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ platform, platform_user: platformUser }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error('Failed to request code');
   return res.json();
@@ -245,7 +266,7 @@ export interface Workflow {
   last_edited_at: string;
   active_version_id: string | null;
   webhook_url?: string;
-  secret?: string;
+  has_secret?: boolean;
   last_execution_status?: string;
   last_execution_at?: string;
 }
@@ -316,6 +337,14 @@ export async function deleteWorkflow(id: string) {
   return res.json() as Promise<{ deleted: boolean }>;
 }
 
+export async function rotateWebhookSecret(id: string) {
+  const res = await apiFetch(`${API_BASE}/workflows/${id}/rotate-secret`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error('Failed to rotate webhook secret');
+  return res.json() as Promise<{ workflow: Workflow; secret: string }>;
+}
+
 export async function fetchWorkflowVersions(id: string) {
   const res = await apiFetch(`${API_BASE}/workflows/${id}/versions`);
   if (!res.ok) throw new Error('Failed to fetch workflow versions');
@@ -332,10 +361,44 @@ export async function saveWorkflowVersion(id: string, nodes: WorkflowNode[], edg
   return res.json() as Promise<WorkflowVersion>;
 }
 
-export async function activateWorkflowVersion(workflowId: string, versionId: string) {
-  const res = await apiFetch(`${API_BASE}/workflows/${workflowId}/versions/${versionId}/activate`, {
-    method: 'POST',
-  });
+export interface AllowListDiff {
+  added: string[];
+  removed: string[];
+}
+
+/** L245: the server refuses activation when the authorization set changes
+ * and carries the diff in a 409. The caller must surface it for review
+ * and retry with confirmAllowListChange. */
+export class ActivationConfirmationRequired extends Error {
+  diff: AllowListDiff;
+
+  constructor(diff: AllowListDiff) {
+    super('allow_list_changed');
+    this.name = 'ActivationConfirmationRequired';
+    this.diff = diff;
+  }
+}
+
+export async function activateWorkflowVersion(
+  workflowId: string,
+  versionId: string,
+  opts?: { confirmAllowListChange?: boolean }
+) {
+  const qs = opts?.confirmAllowListChange ? '?confirm_allow_list_change=true' : '';
+  const res = await apiFetch(
+    `${API_BASE}/workflows/${workflowId}/versions/${versionId}/activate${qs}`,
+    {
+      method: 'POST',
+    }
+  );
+  if (res.status === 409) {
+    const body = await res.json().catch(() => null);
+    const diff = body?.detail?.allow_list_diff;
+    throw new ActivationConfirmationRequired({
+      added: Array.isArray(diff?.added) ? diff.added : [],
+      removed: Array.isArray(diff?.removed) ? diff.removed : [],
+    });
+  }
   if (!res.ok) throw new Error('Failed to activate workflow version');
   return res.json() as Promise<{ activated: boolean }>;
 }
@@ -439,6 +502,25 @@ export async function fetchUsers() {
   return res.json() as Promise<{ users: User[] }>;
 }
 
+export interface Conversation {
+  id: string;
+  platform: string;
+  platform_user: string;
+  title: string | null;
+  started_at: string | null;
+  last_active_at: string | null;
+  state: string | null;
+  message_count: number;
+}
+
+export async function fetchConversations(platform: string, limit = 100) {
+  const res = await apiFetch(
+    `${API_BASE}/sessions?platform=${encodeURIComponent(platform)}&limit=${limit}`
+  );
+  if (!res.ok) throw new Error('Failed to fetch conversations');
+  return res.json() as Promise<{ sessions: Conversation[] }>;
+}
+
 export async function fetchUser(userId: string) {
   const res = await apiFetch(`${API_BASE}/users/${userId}`);
   if (!res.ok) throw new Error('Failed to fetch user');
@@ -497,15 +579,74 @@ export async function fetchRooms() {
 }
 
 // Memories
-export async function fetchMemories(limit = 20) {
-  const res = await apiFetch(`${API_BASE}/memory?limit=${limit}`);
+export interface Memory {
+  id: string;
+  content: string;
+  tags: string[];
+  created_at: string | null;
+  session_id: string | null;
+  platform: string | null;
+  platform_user: string | null;
+  is_global: boolean;
+  is_pinned: boolean;
+  is_active: boolean;
+  deleted_at: string | null;
+  deleted_reason: string | null;
+  last_recalled_at: string | null;
+  topic_ids: string[];
+}
+
+export async function fetchMemories(limit = 100, includeInactive = false) {
+  const qs = new URLSearchParams();
+  qs.set('limit', String(limit));
+  if (includeInactive) qs.set('include_inactive', 'true');
+  const res = await apiFetch(`${API_BASE}/memory?${qs}`);
   if (!res.ok) throw new Error('Failed to fetch memories');
+  return res.json() as Promise<{ memories: Memory[] }>;
+}
+
+export async function fetchMemoriesForUser(platform: string, platformUser: string, limit = 100, includeInactive = false) {
+  const qs = new URLSearchParams();
+  qs.set('platform', platform);
+  qs.set('platform_user', platformUser);
+  qs.set('limit', String(limit));
+  if (includeInactive) qs.set('include_inactive', 'true');
+  const res = await apiFetch(`${API_BASE}/memory?${qs}`);
+  if (!res.ok) throw new Error('Failed to fetch memories');
+  return res.json() as Promise<{ memories: Memory[] }>;
+}
+
+export async function updateMemory(memoryId: string, updates: Partial<Pick<Memory, 'content' | 'tags' | 'is_global' | 'topic_ids'>>) {
+  const res = await apiFetch(`${API_BASE}/memory/${encodeURIComponent(memoryId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) throw new Error('Failed to update memory');
+  return res.json() as Promise<{ memory: Memory }>;
+}
+
+export async function pinMemory(memoryId: string) {
+  const res = await apiFetch(`${API_BASE}/memory/${encodeURIComponent(memoryId)}/pin`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to pin memory');
   return res.json();
 }
 
-export async function fetchMemoriesForUser(platform: string, platformUser: string, limit = 20) {
-  const res = await apiFetch(`${API_BASE}/memory?platform=${encodeURIComponent(platform)}&platform_user=${encodeURIComponent(platformUser)}&limit=${limit}`);
-  if (!res.ok) throw new Error('Failed to fetch memories');
+export async function unpinMemory(memoryId: string) {
+  const res = await apiFetch(`${API_BASE}/memory/${encodeURIComponent(memoryId)}/unpin`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to unpin memory');
+  return res.json();
+}
+
+export async function softDeleteMemory(memoryId: string) {
+  const res = await apiFetch(`${API_BASE}/memory/${encodeURIComponent(memoryId)}/soft-delete`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to soft-delete memory');
+  return res.json();
+}
+
+export async function restoreMemory(memoryId: string) {
+  const res = await apiFetch(`${API_BASE}/memory/${encodeURIComponent(memoryId)}/restore`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to restore memory');
   return res.json();
 }
 
@@ -515,6 +656,53 @@ export async function deleteMemory(memoryId: string) {
   });
   if (!res.ok) throw new Error('Failed to delete memory');
   return res.json();
+}
+
+// Topics
+export interface Topic {
+  id: string;
+  platform: string;
+  platform_user: string;
+  name: string;
+  created_at: string | null;
+}
+
+export async function fetchTopics(platform: string, platformUser: string) {
+  const res = await apiFetch(`${API_BASE}/topics?platform=${encodeURIComponent(platform)}&platform_user=${encodeURIComponent(platformUser)}`);
+  if (!res.ok) throw new Error('Failed to fetch topics');
+  return res.json() as Promise<{ topics: Topic[] }>;
+}
+
+export async function createTopic(platform: string, platformUser: string, name: string) {
+  const res = await apiFetch(`${API_BASE}/topics`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ platform, platform_user: platformUser, name }),
+  });
+  if (!res.ok) throw new Error('Failed to create topic');
+  return res.json() as Promise<{ topic: Topic }>;
+}
+
+export async function renameTopic(topicId: string, name: string) {
+  const res = await apiFetch(`${API_BASE}/topics/${encodeURIComponent(topicId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) throw new Error('Failed to rename topic');
+  return res.json() as Promise<{ topic: Topic }>;
+}
+
+export async function deleteTopic(topicId: string) {
+  const res = await apiFetch(`${API_BASE}/topics/${encodeURIComponent(topicId)}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete topic');
+  return res.json();
+}
+
+export async function fetchTopicConversations(topicId: string) {
+  const res = await apiFetch(`${API_BASE}/topics/${encodeURIComponent(topicId)}/conversations`);
+  if (!res.ok) throw new Error('Failed to fetch topic conversations');
+  return res.json() as Promise<{ conversations: Array<{ conversation_id: string; created_at: string }> }>;
 }
 
 // Sessions

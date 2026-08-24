@@ -7,7 +7,7 @@ import json
 import logging
 import re
 import secrets
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, Callable
 from typing import Any
 
 import httpx
@@ -15,10 +15,25 @@ import httpx
 from hestia.core.json_repair import repair_json
 from hestia.core.serialization import message_to_dict
 from hestia.core.types import ChatResponse, Message, StreamDelta, ToolCall, ToolSchema
-from hestia.errors import InferenceServerError, InferenceTimeoutError
+from hestia.errors import (
+    InferenceConnectionError,
+    InferenceServerError,
+    InferenceTimeoutError,
+)
 
 logger = logging.getLogger(__name__)
 
+
+
+def _reasoning_tokens_from_usage(usage: dict[str, Any]) -> int:
+    """Extract reasoning tokens from a usage payload when the server reports
+    them (OpenAI-style completion_tokens_details). Returns 0 otherwise."""
+    details = usage.get("completion_tokens_details")
+    if isinstance(details, dict):
+        value = details.get("reasoning_tokens")
+        if isinstance(value, int) and value > 0:
+            return value
+    return 0
 
 def _strip_historical_reasoning(messages: list[Message]) -> list[Message]:
     """Strip reasoning_content from all messages before sending to API.
@@ -119,13 +134,18 @@ def _parse_adhoc_xml_tool_calls(text: str) -> list[ToolCall]:
         # --- NSC-ACE-SABER wrapper unwrap ---
         # Some agentic-tuned models emit <function=call_tool> with inner
         # <parameter=name>TOOL_NAME</parameter> and <parameter=arguments>{...}</parameter>.
-        # Unwrap to the real tool name and arguments.
+        # Unwrap to the real tool name and arguments, stripping stray '>' or
+        # nested XML fragments the model sometimes appends to the name value.
         if name == "call_tool" and "name" in adhoc_args and "arguments" in adhoc_args:
             inner_name = adhoc_args["name"]
             inner_args = adhoc_args["arguments"]
-            if isinstance(inner_name, str) and isinstance(inner_args, dict):
-                name = inner_name
-                adhoc_args = inner_args
+            if isinstance(inner_name, str):
+                # The model may emit "browser_interact>" or
+                # "glob>\n<parameter=arguments>{...}". Clean it up.
+                inner_name = inner_name.split("\n")[0].strip().rstrip(">")
+                if isinstance(inner_args, dict):
+                    name = inner_name
+                    adhoc_args = inner_args
         # Also handle the case where the model puts a single JSON object
         # inside <parameter=arguments> that contains both name and arguments.
         elif name == "call_tool" and "arguments" in adhoc_args:
@@ -133,9 +153,11 @@ def _parse_adhoc_xml_tool_calls(text: str) -> list[ToolCall]:
             if isinstance(inner, dict) and "name" in inner and "arguments" in inner:
                 inner_name = inner["name"]
                 inner_args = inner["arguments"]
-                if isinstance(inner_name, str) and isinstance(inner_args, dict):
-                    name = inner_name
-                    adhoc_args = inner_args
+                if isinstance(inner_name, str):
+                    inner_name = inner_name.split("\n")[0].strip().rstrip(">")
+                    if isinstance(inner_args, dict):
+                        name = inner_name
+                        adhoc_args = inner_args
 
         # Some models emit a direct tool call like <function=grep>
         # <parameter=arguments>{"path": "...", "pattern": "..."}</parameter>.
@@ -323,6 +345,13 @@ class InferenceClient:
         except httpx.HTTPStatusError as e:
             raise InferenceServerError(
                 f"{method} {path} returned {e.response.status_code}: {e.response.text}"
+            ) from e
+        except httpx.TransportError as e:
+            # Connection refused / dropped / cut mid-body (e.g. llama-server
+            # crashed). Note: httpx.TimeoutException is a TransportError
+            # subclass, so this clause must come after the timeout one.
+            raise InferenceConnectionError(
+                f"{method} {path}", f"{type(e).__name__}: {e}"
             ) from e
 
     async def health(self) -> dict[str, Any]:
@@ -575,6 +604,7 @@ class InferenceClient:
             prompt_tokens=usage.get("prompt_tokens", 0),
             completion_tokens=usage.get("completion_tokens", 0),
             total_tokens=usage.get("total_tokens", 0),
+            reasoning_tokens=_reasoning_tokens_from_usage(usage),
         )
 
     async def chat_stream(
@@ -585,7 +615,7 @@ class InferenceClient:
         reasoning_budget: int = 2048,
         max_tokens: int = 1024,
         temperature: float = 0.7,
-    ) -> AsyncIterator[StreamDelta]:
+    ) -> AsyncGenerator[StreamDelta, None]:
         """POST /v1/chat/completions with streaming. Yields StreamDelta chunks.
 
         Args:
@@ -606,6 +636,10 @@ class InferenceClient:
             "temperature": temperature,
             "reasoning_budget": reasoning_budget,
         }
+        # OpenAI-compatible servers (incl. llama.cpp) return a final usage
+        # chunk when this is set, making streaming token accounting truthful
+        # (PERF-004). Servers that don't support it ignore the field.
+        request_body["stream_options"] = {"include_usage": True}
 
         if tools:
             request_body["tools"] = [t.model_dump() for t in tools]
@@ -641,6 +675,21 @@ class InferenceClient:
                         continue
                     choices = chunk.get("choices", [])
                     if not choices:
+                        # Server-side rejections arrive as {"error": {...}}
+                        # payloads with no choices. Fail fast instead of
+                        # silently dropping them and stalling until the
+                        # caller's inactivity timeout masquerades as a
+                        # truncated response (BUG-022).
+                        error = chunk.get("error")
+                        if error:
+                            detail = (
+                                error.get("message", str(error))
+                                if isinstance(error, dict)
+                                else str(error)
+                            )
+                            raise InferenceServerError(
+                                f"Streaming inference rejected by server: {detail}"
+                            )
                         # Some servers emit usage in a final chunk with empty choices
                         usage = chunk.get("usage", {})
                         if usage:
@@ -652,6 +701,7 @@ class InferenceClient:
                                 prompt_tokens=usage.get("prompt_tokens", 0),
                                 completion_tokens=usage.get("completion_tokens", 0),
                                 total_tokens=usage.get("total_tokens", 0),
+                                reasoning_tokens=_reasoning_tokens_from_usage(usage),
                             )
                         continue
                     delta = choices[0].get("delta", {})
@@ -666,10 +716,18 @@ class InferenceClient:
                         prompt_tokens=usage.get("prompt_tokens", 0),
                         completion_tokens=usage.get("completion_tokens", 0),
                         total_tokens=usage.get("total_tokens", 0),
+                        reasoning_tokens=_reasoning_tokens_from_usage(usage),
                     )
         except httpx.TimeoutException as e:
             raise InferenceTimeoutError(
                 "POST /v1/chat/completions timed out"
+            ) from e
+        except httpx.TransportError as e:
+            # Connection dropped mid-stream (e.g. llama-server crashed
+            # mid-response). TimeoutException is a TransportError subclass,
+            # so this clause must come after the timeout one.
+            raise InferenceConnectionError(
+                "POST /v1/chat/completions", f"{type(e).__name__}: {e}"
             ) from e
 
     async def slot_save(self, slot_id: int, filename: str) -> None:
@@ -695,5 +753,5 @@ class InferenceClient:
         await self._request(
             "POST",
             f"/slots/{slot_id}?action=erase",
-            timeout=10.0,
+            timeout=60.0,
         )

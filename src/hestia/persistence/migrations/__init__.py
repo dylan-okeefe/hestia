@@ -191,10 +191,26 @@ async def m005_capability_events(conn: AsyncConnection) -> None:
 
 async def m006_workflow_allow_list(conn: AsyncConnection) -> None:
     """Add allow_listed_tools column to workflows table."""
-    result = await conn.execute(
-        sa.text("SELECT name FROM pragma_table_info('workflows') WHERE name = 'allow_listed_tools'")
-    )
-    if result.fetchone() is None:
+    dialect = conn.dialect.name
+    if dialect == "sqlite":
+        result = await conn.execute(
+            sa.text(
+                "SELECT name FROM pragma_table_info('workflows') WHERE name = 'allow_listed_tools'"
+            )
+        )
+        has_column = result.fetchone() is not None
+    else:
+        # BUG-009: pragma_table_info is SQLite-only; PostgreSQL startup used
+        # to crash here. Mirror m007's information_schema fallback.
+        result = await conn.execute(
+            sa.text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = 'workflows' AND column_name = 'allow_listed_tools'"
+            )
+        )
+        has_column = result.scalar() is not None
+
+    if not has_column:
         await conn.execute(
             sa.text(
                 "ALTER TABLE workflows ADD COLUMN allow_listed_tools TEXT NOT NULL DEFAULT '[]'"
@@ -261,6 +277,104 @@ async def m008_compaction_archive(conn: AsyncConnection) -> None:
     )
 
 
+async def m009_hot_path_indexes(conn: AsyncConnection) -> None:
+    """PERF-005: indexes for the hottest query patterns.
+
+    Every context build runs ``SELECT ... WHERE session_id = ? ORDER BY idx``
+    against messages and every append computes ``max(idx)``; without an
+    index each is a full scan of the largest table. Sessions are ordered by
+    last_active_at for staleness/LLU queries.
+    """
+    await conn.execute(
+        sa.text(
+            "CREATE INDEX IF NOT EXISTS idx_messages_session_idx "
+            "ON messages (session_id, idx)"
+        )
+    )
+    await conn.execute(
+        sa.text(
+            "CREATE INDEX IF NOT EXISTS idx_sessions_last_active "
+            "ON sessions (last_active_at)"
+        )
+    )
+
+
+async def m010_execution_is_test(conn: AsyncConnection) -> None:
+    """BUG-041: flag test-run executions so aggregates exclude them."""
+    dialect = conn.dialect.name
+    if dialect == "sqlite":
+        result = await conn.execute(
+            sa.text(
+                "SELECT name FROM pragma_table_info('workflow_executions') WHERE name = 'is_test'"
+            )
+        )
+        has_column = result.fetchone() is not None
+    else:
+        result = await conn.execute(
+            sa.text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = 'workflow_executions' AND column_name = 'is_test'"
+            )
+        )
+        has_column = result.scalar() is not None
+    if not has_column:
+        default = "0" if dialect == "sqlite" else "FALSE"
+        await conn.execute(
+            sa.text(
+                "ALTER TABLE workflow_executions "
+                f"ADD COLUMN is_test BOOLEAN NOT NULL DEFAULT {default}"
+            )
+        )
+
+
+async def m011_workflow_allow_backfill(conn: AsyncConnection) -> None:
+    """L245: backfill ``workflows.allow_listed_tools`` from active versions.
+
+    Under allowlist-only authorization the stored set is the workflow's
+    grant, but rows saved before L245 carry ``'[]'`` while their ACTIVE
+    version already contains tool_call / effect nodes. Without this
+    backfill those workflows would silently lose their tools on the first
+    re-activation diff (everything would look "added") and, worse, run
+    under an empty grant.
+
+    Rules:
+    - Only rows whose stored set is exactly ``'[]'`` are touched; a custom
+      set is never clobbered.
+    - Derivation reuses :func:`hestia.workflows.tool_selection.derive_allowed_set_from_json`
+      so backfilled values match what save/activate compute.
+    - Malformed node JSON derives to an empty set -> row untouched.
+    - Idempotent by construction.
+    """
+    from hestia.workflows.tool_selection import derive_allowed_set_from_json
+
+    result = await conn.execute(sa.text("SELECT id, allow_listed_tools FROM workflows"))
+    rows = result.fetchall()
+    for wf_id, raw_allow in rows:
+        if raw_allow is not None and raw_allow.strip() != "[]":
+            continue
+        vres = await conn.execute(
+            sa.text(
+                "SELECT nodes FROM workflow_versions "
+                "WHERE workflow_id = :wid AND is_active LIMIT 1"
+            ),
+            {"wid": wf_id},
+        )
+        vrow = vres.fetchone()
+        if vrow is None:
+            continue
+        derived = derive_allowed_set_from_json(vrow[0])
+        if not derived:
+            continue
+        import json as _json
+
+        await conn.execute(
+            sa.text(
+                "UPDATE workflows SET allow_listed_tools = :allow WHERE id = :wid"
+            ),
+            {"wid": wf_id, "allow": _json.dumps(sorted(derived))},
+        )
+
+
 MIGRATIONS: list[Migration] = [
     m001_sessions_active_unique,
     m002_session_handoffs,
@@ -270,6 +384,9 @@ MIGRATIONS: list[Migration] = [
     m006_workflow_allow_list,
     m007_scheduled_task_type,
     m008_compaction_archive,
+    m009_hot_path_indexes,
+    m010_execution_is_test,
+    m011_workflow_allow_backfill,
 ]
 
 

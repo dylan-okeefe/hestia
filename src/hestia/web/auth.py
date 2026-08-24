@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import secrets
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -14,6 +15,49 @@ from starlette.responses import JSONResponse, Response
 from hestia.config import WebConfig
 from hestia.persistence.users import UserStore
 from hestia.platforms.base import Platform
+
+
+def is_loopback_host(host: str) -> bool:
+    """Return True if *host* resolves to the loopback interface only.
+
+    Accepts ``localhost``, IPv4 in 127.0.0.0/8 (with optional port), and the
+    literal IPv6 ``::1`` address. LAN IPs, IPv4-mapped addresses, empty
+    strings, and wildcard binds like ``0.0.0.0`` are treated as exposed
+    (return False).
+    """
+    normalized = host.strip().lower()
+    if normalized == "localhost":
+        return True
+    if not normalized:
+        return False
+
+    # Handle [ipv6]:port form.
+    if normalized.startswith("["):
+        bracket_end = normalized.rfind("]:")
+        if bracket_end != -1:
+            normalized = normalized[1:bracket_end]
+        elif normalized.endswith("]"):
+            normalized = normalized[1:-1]
+    elif ":" in normalized:
+        # Could be IPv6, IPv4:port, or hostname:port. Try parsing as-is first.
+        try:
+            addr = ipaddress.ip_address(normalized)
+        except ValueError:
+            # Not a bare address; strip a trailing :port and retry.
+            head, _, tail = normalized.rpartition(":")
+            if tail.isdigit():
+                normalized = head
+
+    try:
+        addr = ipaddress.ip_address(normalized)
+    except ValueError:
+        return False
+
+    # Only the literal ::1 IPv6 address counts as loopback; IPv4-mapped
+    # loopback addresses (e.g. ::ffff:127.0.0.1) are treated as exposed.
+    if isinstance(addr, ipaddress.IPv6Address):
+        return addr.is_loopback and not addr.ipv4_mapped
+    return addr.is_loopback
 
 
 @dataclass
@@ -77,9 +121,7 @@ class AuthManager:
 
     def generate_code(self) -> str:
         """Generate a cryptographically random numeric code."""
-        return str(secrets.randbelow(10**self.config.code_length)).zfill(
-            self.config.code_length
-        )
+        return str(secrets.randbelow(10**self.config.code_length)).zfill(self.config.code_length)
 
     def _get_configured_user(self, platform: str) -> str:
         """Return the single configured user for a platform.
@@ -99,9 +141,7 @@ class AuthManager:
             raise ValueError(f"Unsupported platform {platform!r}")
 
         if len(users) == 0:
-            raise ValueError(
-                f"Platform {platform!r} has no configured users"
-            )
+            raise ValueError(f"Platform {platform!r} has no configured users")
 
         user: str = users[0]
         return user
@@ -116,9 +156,7 @@ class AuthManager:
                 del self._rate_limits[ip]
         # Clean up code request limits (5-minute window)
         for ip, timestamps in list(self._code_request_limits.items()):
-            self._code_request_limits[ip] = [
-                t for t in timestamps if now - t < timedelta(minutes=5)
-            ]
+            self._code_request_limits[ip] = [t for t in timestamps if now - t < timedelta(minutes=5)]
             if not self._code_request_limits[ip]:
                 del self._code_request_limits[ip]
         # Clean up expired pending codes
@@ -150,16 +188,57 @@ class AuthManager:
         retry = int((oldest + timedelta(minutes=5) - now).total_seconds())
         return max(0, retry)
 
-    async def request_code(self, platform: str, platform_user: str | None = None) -> dict[str, Any]:
+    def _is_authorized_recipient(self, platform: str, platform_user: str) -> bool:
+        """SEC-002: only allowlisted identities may receive login codes.
+
+        A client-supplied recipient used to be delivered to verbatim, letting
+        anyone point codes at arbitrary chat IDs.
+        """
+        if platform == "telegram":
+            users: list[str] = self.adapters[platform]._config.allowed_users  # type: ignore[attr-defined]
+        elif platform == "matrix":
+            users = self.adapters[platform]._config.allowed_rooms  # type: ignore[attr-defined]
+        else:
+            return False
+        normalized = {u.lstrip("@").lower() for u in users}
+        candidate = platform_user.lstrip("@").lower()
+        return candidate in normalized
+
+    async def request_code(
+        self,
+        platform: str,
+        platform_user: str | None = None,
+        *,
+        user_id: str | None = None,
+    ) -> dict[str, Any]:
         """Generate and send a one-time code via the requested platform.
 
-        Returns a dict with status information.
+        SEC-002: when *user_id* is supplied (dashboard login picker), the
+        recipient resolves server-side from that user's registered identity
+        and must be allowlisted. A client-supplied raw *platform_user* is
+        only honored when it matches an allowlisted identity.
         """
         self._cleanup_stale_entries()
 
-        if platform_user is None:
+        adapter = self.adapters.get(platform)
+        if adapter is None:
+            raise ValueError(f"Platform {platform!r} is not configured or running")
+
+        if user_id is not None and self._user_store is not None:
+            identities = await self._user_store.get_identities(user_id)
+            match = next((i for i in identities if i.platform == platform), None)
+            if match is None:
+                raise ValueError(
+                    f"User has no {platform!r} identity to receive a code"
+                )
+            if not self._is_authorized_recipient(platform, match.platform_user):
+                raise ValueError("Requested recipient is not an authorized user")
+            platform_user = match.platform_user
+        elif platform_user is not None:
+            if not self._is_authorized_recipient(platform, platform_user):
+                raise ValueError("Requested recipient is not an authorized user")
+        else:
             platform_user = self._get_configured_user(platform)
-        adapter = self.adapters[platform]
 
         code = self.generate_code()
         now = datetime.now(UTC)
@@ -172,9 +251,7 @@ class AuthManager:
             expires_at=expires_at,
         )
 
-        await adapter.send_message(
-            platform_user, f"Your Hestia dashboard code is: {code}"
-        )
+        await adapter.send_message(platform_user, f"Your Hestia dashboard code is: {code}")
 
         return {
             "status": "sent",
@@ -258,9 +335,7 @@ class AuthManager:
 
         user_id = None
         if self._user_store is not None:
-            user = await self._user_store.get_user_by_identity(
-                pending.platform, pending.platform_user
-            )
+            user = await self._user_store.get_user_by_identity(pending.platform, pending.platform_user)
             if user is not None:
                 user_id = user.id
 
@@ -306,16 +381,12 @@ class AuthManager:
 class AuthMiddleware(BaseHTTPMiddleware):
     """FastAPI middleware that enforces Bearer token auth on API routes."""
 
-    def __init__(
-        self, app: Any, auth_manager: AuthManager, web_config: WebConfig
-    ) -> None:
+    def __init__(self, app: Any, auth_manager: AuthManager, web_config: WebConfig) -> None:
         super().__init__(app)
         self.auth_manager = auth_manager
         self.web_config = web_config
 
-    async def dispatch(
-        self, request: Request, call_next: RequestResponseEndpoint
-    ) -> Response:
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         path = request.url.path
 
         # Skip non-API routes, auth routes, and public health checks
@@ -333,17 +404,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         auth_header = request.headers.get("Authorization", "")
         if not auth_header.startswith("Bearer "):
-            return JSONResponse(
-                {"detail": "Authentication required"}, status_code=401
-            )
+            return JSONResponse({"detail": "Authentication required"}, status_code=401)
 
         token = auth_header[7:]
         status, session = self.auth_manager.validate_token(token)
 
         if status == "missing":
-            return JSONResponse(
-                {"detail": "Authentication required"}, status_code=401
-            )
+            return JSONResponse({"detail": "Authentication required"}, status_code=401)
         if status == "expired":
             return JSONResponse({"detail": "Session expired"}, status_code=401)
 
@@ -354,8 +421,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-def add_auth_middleware(
-    app: Any, auth_manager: AuthManager, web_config: WebConfig
-) -> None:
+def add_auth_middleware(app: Any, auth_manager: AuthManager, web_config: WebConfig) -> None:
     """Register the auth middleware on a FastAPI application."""
     app.add_middleware(AuthMiddleware, auth_manager=auth_manager, web_config=web_config)

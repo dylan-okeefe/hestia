@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode , useRef } from 'react';
 import { fetchAuthStatus, setAuthToken, clearAuthToken, logout as clientLogout } from '../api/client';
 
 interface AuthState {
@@ -78,15 +78,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         availablePlatforms: data.available_platforms || [],
       });
     } catch {
-      setAuth({
-        authenticated: false,
-        authEnabled: true,
-        debugLogin: false,
-        platform: null,
-        platformUser: null,
-        userId: null,
-        availablePlatforms: [],
-      });
+      // BUG-055: a failed status check after retries must not log the user
+      // out. Preserve current state; the token remains valid or the next
+      // real API call will surface a definitive 401.
     }
   }, []);
 
@@ -99,19 +93,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     refresh();
   }, [refresh]);
 
+  const authRef = useRef(auth);
+  useEffect(() => {
+    authRef.current = auth;
+  }, [auth]);
+
   const logout = useCallback(() => {
     clientLogout().catch(() => {});
     clearAuthToken();
+    // BUG-086: read through a ref so this callback never sees stale state.
     setAuth({
       authenticated: false,
       authEnabled: true,
-      debugLogin: auth.debugLogin,
+      debugLogin: authRef.current.debugLogin,
       platform: null,
       platformUser: null,
       userId: null,
-      availablePlatforms: auth.availablePlatforms,
+      availablePlatforms: authRef.current.availablePlatforms,
     });
-  }, [auth.availablePlatforms]);
+  }, []);
 
   useEffect(() => {
     const handler = () => logout();

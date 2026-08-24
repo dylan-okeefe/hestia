@@ -1,6 +1,7 @@
 """Terminal/shell command tool."""
 
 import asyncio
+import contextlib
 import logging
 import os
 import re
@@ -24,6 +25,17 @@ _DEFAULT_BLOCKED_PATTERNS = [
     r"rm\s+-[rf].*/\*?\s*(;|$|\|)",  # rm -rf / or rm -rf /*
     r"mkfs\.[a-z0-9]+\s+/dev/[sh]d",  # filesystem creation on raw disk
 ]
+
+
+_TERMINAL_MAX_TIMEOUT_S = 600.0
+_TERMINAL_MAX_OUTPUT_BYTES = 1_000_000
+
+# Environment allowlist for child processes (SEC-015): the model could
+# previously run `printenv` and pull every host secret into context.
+_TERMINAL_ENV_ALLOWLIST = (
+    "PATH", "HOME", "USER", "LOGNAME", "SHELL", "TERM", "TMPDIR",
+    "LANG", "LANGUAGE",
+)
 
 
 def make_terminal_tool(blocked_patterns: list[str] | None = None) -> Any:
@@ -64,6 +76,13 @@ def make_terminal_tool(blocked_patterns: list[str] | None = None) -> Any:
     )
     async def terminal(command: str, timeout: float = 30.0, description: str = "") -> str:
         """Run a shell command and return the result."""
+        # Clamp model-controlled timeouts; 'timeout=100000' used to hang turns.
+        effective_timeout = min(float(timeout), _TERMINAL_MAX_TIMEOUT_S)
+
+        env = {
+            k: v for k, v in os.environ.items() if k in _TERMINAL_ENV_ALLOWLIST
+        }
+
         for pat in patterns:
             if pat.search(command):
                 logger.warning("Blocked terminal command matching pattern %r: %s", pat.pattern, command)
@@ -74,22 +93,32 @@ def make_terminal_tool(blocked_patterns: list[str] | None = None) -> Any:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             start_new_session=True,
+            env=env,
         )
         try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=effective_timeout)
         except TimeoutError:
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
             except (PermissionError, ProcessLookupError, OSError):
-                try:
+                with contextlib.suppress(ProcessLookupError):
                     proc.kill()
-                except ProcessLookupError:
-                    pass
             await proc.wait()
-            return f"TIMEOUT after {timeout}s"
+            return f"TIMEOUT after {effective_timeout}s"
 
-        stdout_str = stdout.decode("utf-8", errors="replace")
-        stderr_str = stderr.decode("utf-8", errors="replace")
+        # Cap captured output so `cat /dev/urandom | base64` cannot buffer
+        # gigabytes in RAM before truncation happens downstream.
+        def _bounded(raw: bytes) -> tuple[str, bool]:
+            data = raw[:_TERMINAL_MAX_OUTPUT_BYTES]
+            truncated = len(raw) > _TERMINAL_MAX_OUTPUT_BYTES
+            return data.decode("utf-8", errors="replace"), truncated
+
+        stdout_str, stdout_trunc = _bounded(stdout)
+        stderr_str, stderr_trunc = _bounded(stderr)
+        if stdout_trunc:
+            stdout_str += "\n[output truncated]"
+        if stderr_trunc:
+            stderr_str += "\n[stderr truncated]"
 
         return (
             f"exit_code: {proc.returncode}\n--- stdout ---\n{stdout_str}\n--- stderr ---\n{stderr_str}"

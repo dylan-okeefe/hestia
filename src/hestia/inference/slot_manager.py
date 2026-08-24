@@ -174,18 +174,30 @@ class SlotManager:
         if session.slot_id is None:
             logger.warning("save() called on session %s with no slot_id", session.id)
             return
-        saved_path = self._slot_path_for(session.id)
-        try:
-            async with self._lock:
+        async with self._lock:
+            # Ownership re-check (BUG-002): the slot may have been reassigned
+            # to another session between the turn ending and this save.
+            # Saving anyway would snapshot another session's KV cache into
+            # this session's filename.
+            if self._assignments.get(session.slot_id) != session.id:
+                logger.warning(
+                    "Skipping slot_save for session %s: slot %d is owned by %r",
+                    session.id,
+                    session.slot_id,
+                    self._assignments.get(session.slot_id),
+                )
+                return
+            saved_path = self._slot_path_for(session.id)
+            try:
                 await self._inference.slot_save(session.slot_id, saved_path.name)
-        except InferenceServerError as e:
-            logger.error(
-                "slot_save failed for session %s slot %d: %s",
-                session.id,
-                session.slot_id,
-                e,
-            )
-            raise
+            except InferenceServerError as e:
+                logger.error(
+                    "slot_save failed for session %s slot %d: %s",
+                    session.id,
+                    session.slot_id,
+                    e,
+                )
+                raise
         # Note: we do NOT demote temperature here. Slot is still HOT; this is
         # just a checkpoint. slot_saved_path is updated so eviction knows where to find it.
         await self._store.update_saved_path(session.id, saved_path.name)
@@ -202,16 +214,27 @@ class SlotManager:
             return
 
         async with self._lock:
-            self._assignments.pop(session.slot_id, None)
-            try:
-                await self._inference.slot_erase(session.slot_id)
-            except (OSError, InferenceServerError, httpx.HTTPError) as exc:
+            # Ownership re-check (BUG-002): if the slot was reassigned after
+            # our turn ended, erasing it would wipe another session's live
+            # KV cache. Just release our DB record instead.
+            if self._assignments.get(session.slot_id) != session.id:
                 logger.warning(
-                    "slot_erase failed for session %s slot %d: %s",
+                    "Skipping slot_erase for session %s: slot %d is owned by %r",
                     session.id,
                     session.slot_id,
-                    exc,
+                    self._assignments.get(session.slot_id),
                 )
+            else:
+                self._assignments.pop(session.slot_id, None)
+                try:
+                    await self._inference.slot_erase(session.slot_id)
+                except (OSError, InferenceServerError, httpx.HTTPError) as exc:
+                    logger.warning(
+                        "slot_erase failed for session %s slot %d: %s",
+                        session.id,
+                        session.slot_id,
+                        exc,
+                    )
 
         await self._store.release_slot(
             session.id,
@@ -252,22 +275,53 @@ class SlotManager:
         Caller must hold self._lock.
         """
         session = await self._store.get_session(session_id)
+
+        # Find the slot_id we currently think this session owns in memory.
+        # If the DB disagrees, our assignment map is stale (e.g. a previous
+        # crash left the in-memory state out of sync with the persisted state).
+        assigned_slot_id: int | None = None
+        for sid, sid_session_id in self._assignments.items():
+            if sid_session_id == session_id:
+                assigned_slot_id = sid
+                break
+
         if session is None or session.slot_id is None:
-            raise RuntimeError(f"Cannot evict session {session_id}: not assigned to a slot")
+            # DB has no slot for this session — clear stale in-memory assignment.
+            logger.warning(
+                "Session %s has no slot_id in DB; clearing stale assignment for slot %s",
+                session_id,
+                assigned_slot_id,
+            )
+            if assigned_slot_id is None:
+                raise RuntimeError(f"Cannot evict session {session_id}: not assigned to a slot")
+            del self._assignments[assigned_slot_id]
+            return assigned_slot_id
 
         slot_id = session.slot_id
+
+        # Reconcile an in-memory assignment that disagrees with the DB.
+        if assigned_slot_id is not None and assigned_slot_id != slot_id:
+            logger.warning(
+                "Session %s slot mismatch: DB says %d, assignment map says %d; using DB",
+                session_id,
+                slot_id,
+                assigned_slot_id,
+            )
+            del self._assignments[assigned_slot_id]
+
         saved_path = self._slot_path_for(session_id)
 
-        # Remove from assignments BEFORE releasing lock so no other coroutine
-        # can pick this same victim while we perform slow I/O.
+        # Remove from assignments BEFORE performing slow I/O so no other
+        # coroutine can pick this same victim mid-eviction.
         del self._assignments[slot_id]
 
-        released = False
         try:
-            # Release the lock before slow HTTP I/O so other acquire() calls
-            # are not stalled.
-            self._lock.release()
-            released = True
+            # BUG-002 fix: hold the pool lock across the save/erase HTTP I/O.
+            # Releasing it here let a concurrent acquire() claim the freed
+            # slot and restore into it while the victim's snapshot was still
+            # being written/erased — cross-contaminating KV state. Evictions
+            # are rare (pool full + LRU), so holding the lock briefly is the
+            # correct trade.
             await self._inference.slot_save(slot_id, saved_path.name)
             await self._inference.slot_erase(slot_id)
         except Exception as exc:
@@ -279,11 +333,6 @@ class SlotManager:
                 slot_id,
                 exc,
             )
-        finally:
-            # Re-acquire the lock if we released it.  We must always hold the
-            # lock on exit so callers can safely update _assignments.
-            if released:
-                await self._lock.acquire()
 
         # Lock is held again — update state.
         await self._store.release_slot(

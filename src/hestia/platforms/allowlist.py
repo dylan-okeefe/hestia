@@ -84,13 +84,4 @@ def validate_matrix_room_id(room_id: str) -> bool:
     return room_id.startswith(("!", "#"))
 
 
-def validate_matrix_room_alias(alias: str) -> bool:
-    """Validate a Matrix room alias.
 
-    Aliases start with ``#`` and contain a server part after ``:``.
-    """
-    if not alias:
-        return False
-    if ":" not in alias:
-        return False
-    return alias.startswith("#")

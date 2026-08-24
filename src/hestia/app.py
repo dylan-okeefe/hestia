@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import importlib
 import logging
 import os
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -42,7 +44,6 @@ from hestia.persistence.capability_events import CapabilityEventStore
 from hestia.persistence.db import Database
 from hestia.persistence.error_resolution_store import ErrorResolutionStore
 from hestia.persistence.failure_store import FailureStore
-from hestia.persistence.job_alert_store import JobAlertStore
 from hestia.persistence.maintenance_trace_store import MaintenanceTraceStore
 from hestia.persistence.message_store import MessageStore
 from hestia.persistence.scheduler import SchedulerStore
@@ -84,17 +85,14 @@ from hestia.tools.builtin import (
     make_http_get_tool,
     make_list_dir_tool,
     make_list_memories_tool,
-    make_list_pending_alerts_tool,
     make_list_proposals_tool,
     make_list_scheduled_tasks_tool,
-    make_mark_alerts_sent_tool,
     make_read_artifact_tool,
     make_read_file_tool,
     make_reject_proposal_tool,
     make_reset_style_metric_tool,
     make_reset_style_profile_tool,
     make_rollback_turn_tool,
-    make_save_job_alert_tool,
     make_save_memory_tool,
     make_search_memory_tool,
     make_show_proposal_tool,
@@ -105,6 +103,7 @@ from hestia.tools.builtin import (
     read_clipboard,
 )
 from hestia.tools.checkpoint import CheckpointManager
+from hestia.tools.external_context import ExternalToolModuleContext
 from hestia.tools.registry import ToolRegistry
 from hestia.workflows.execution_store import ExecutionStore
 from hestia.workflows.store import WorkflowStore
@@ -146,10 +145,7 @@ def _build_capabilities_prefix(cfg: HestiaConfig, registry: ToolRegistry) -> str
 
     lines = ["Deployment context:"]
     lines.append(f"- Model: {cfg.inference.model_name}")
-    lines.append(
-        f"- Context window: {cfg.inference.context_length} tokens per slot; "
-        f"{cfg.slots.pool_size} slots"
-    )
+    lines.append(f"- Context window: {cfg.inference.context_length} tokens per slot; {cfg.slots.pool_size} slots")
     lines.append(f"- Inference endpoint: {cfg.inference.base_url}")
 
     surfaces = ["CLI"]
@@ -195,9 +191,7 @@ class CliResponseHandler:
 class CliConfirmHandler:
     """Handles tool confirmation in CLI mode."""
 
-    async def __call__(
-        self, tool_name: str, arguments: dict[str, Any], request_token: str | None = None
-    ) -> bool:
+    async def __call__(self, tool_name: str, arguments: dict[str, Any], request_token: str | None = None) -> bool:
         """Prompt user for confirmation."""
         click.echo(f"\nTool call requested: {tool_name}")
         click.echo(f"Arguments: {arguments}")
@@ -218,6 +212,7 @@ class AppContext:
         self.verbose = config.verbose
         self.confirm_callback: ConfirmCallback | None = None
         self._bootstrapped = False
+        self._bootstrap_lock = asyncio.Lock()
 
         # Eager core subsystems
         self.db = Database(config.storage.database_url)
@@ -229,13 +224,15 @@ class AppContext:
         self.user_store = UserStore(self.db)
         self.policy = _make_policy(config)
         self.memory_store = MemoryStore(self.db)
+        from hestia.memory.topics import TopicStore
+
+        self.topic_store = TopicStore(self.db)
         self.failure_store = FailureStore(self.db)
         self.trace_store = TraceStore(self.db)
         self.scheduler_store = SchedulerStore(self.db)
         self.workflow_store = WorkflowStore(self.db)
         self.execution_store = ExecutionStore(self.db)
         self.error_resolution_store = ErrorResolutionStore(self.db)
-        self.job_alert_store = JobAlertStore(self.db)
         self.capability_event_store = CapabilityEventStore(self.db)
         self.maintenance_trace_store = MaintenanceTraceStore(self.db)
         self.session_store = SessionStore(
@@ -243,19 +240,16 @@ class AppContext:
             event_bus=self.event_bus,
             message_store=self.message_store,
             memory_store=self.memory_store,
+            archive_summarizer=self.compaction_summarizer,
             inference_factory=lambda: self.inference,
         )
-        self.handoff_service = HandoffService(
-            self.session_store, self.message_store
-        )
+        self.handoff_service = HandoffService(self.session_store, self.message_store)
         self.blocked_actions_digest = BlockedActionsDigest(
             self.capability_event_store,
             self.session_store,
         )
         self.trigger_registry: Any = None
-        self.epoch_compiler = MemoryEpochCompiler(
-            self.memory_store, max_tokens=self.config.memory.epoch_max_tokens
-        )
+        self.epoch_compiler = MemoryEpochCompiler(self.memory_store, max_tokens=self.config.memory.epoch_max_tokens)
         self.tool_registry = ToolRegistry(self.artifact_store)
         self.checkpoint_manager = CheckpointManager()
         self.capability_gate = CapabilityGate(
@@ -264,6 +258,9 @@ class AppContext:
             registry=self.tool_registry,
             event_store=self.capability_event_store,
         )
+        # L245 chokepoint: the registry enforces the gate itself, so an
+        # ungated tool call is not expressible from any surface.
+        self.tool_registry.bind_gate(self.capability_gate)
 
         # Eager feature subsystems (lightweight; always available for status queries)
         self.proposal_store = ProposalStore(self.db)
@@ -289,12 +286,19 @@ class AppContext:
         """Lazy inference client — created on first access."""
         model_name = self.config.inference.model_name.strip()
         if not model_name:
-            raise ValueError(
-                "inference.model_name is required — set it to your llama.cpp model "
-                "filename (e.g. 'my-model-Q4_K_M.gguf'), or for tests only set "
-                "HESTIA_ALLOW_DUMMY_MODEL=1 and use model_name='dummy'."
-            )
-        return InferenceClient(self.config.inference.base_url, model_name)
+            if os.environ.get("HESTIA_ALLOW_DUMMY_MODEL") == "1":
+                model_name = "dummy"
+            else:
+                raise ValueError(
+                    "inference.model_name is required — set it to your llama.cpp model "
+                    "filename (e.g. 'my-model-Q4_K_M.gguf'), or for tests only set "
+                    "HESTIA_ALLOW_DUMMY_MODEL=1 and use model_name='dummy'."
+                )
+        return InferenceClient(
+            self.config.inference.base_url,
+            model_name,
+            timeout=self.config.inference.request_timeout,
+        )
 
     @functools.cached_property
     def context_builder(self) -> ContextBuilder:
@@ -304,14 +308,10 @@ class AppContext:
         if self._compiled_identity:
             cb.set_identity_prefix(self._compiled_identity)
         if self.config.identity.capabilities_prefix_enabled:
-            cb.set_capabilities_prefix(
-                _build_capabilities_prefix(self.config, self.tool_registry)
-            )
+            cb.set_capabilities_prefix(_build_capabilities_prefix(self.config, self.tool_registry))
         if self.config.compression.enabled:
             cb.enable_compression(
-                InferenceHistoryCompressor(
-                    self.inference, max_chars=self.config.compression.max_chars
-                )
+                InferenceHistoryCompressor(self.inference, max_chars=self.config.compression.max_chars)
             )
         return cb
 
@@ -331,6 +331,7 @@ class AppContext:
         return SessionCompactionSummarizer(
             inference=self.inference,
             memory_store=self.memory_store,
+            topic_store=self.topic_store,
             max_chars=self.config.compaction.summary_max_chars,
             min_messages=self.config.compaction.min_messages,
         )
@@ -412,20 +413,24 @@ class AppContext:
 
     async def bootstrap_db(self) -> None:
         """Connect to database and create tables. Idempotent."""
+        # BUG-068: the flag check-then-await window let two concurrent
+        # callers both run create_all + migrations. Serialize with a lock.
         if self._bootstrapped:
             return
-        await self.db.connect()
-        await self.db.create_tables()
-        await self.memory_store.create_table()
-        await self.failure_store.create_table()
-        await self.trace_store.create_table()
-        await self.maintenance_trace_store.create_table()
-        await self.proposal_store.create_table()
-        await self.style_store.create_table()
-        await self.workflow_store.create_tables()
-        await self.execution_store.create_tables()
-        await self.job_alert_store.create_table()
-        self._bootstrapped = True
+        async with self._bootstrap_lock:
+            if self._bootstrapped:
+                return
+            await self.db.connect()
+            await self.db.create_tables()
+            await self.memory_store.create_table()
+            await self.failure_store.create_table()
+            await self.trace_store.create_table()
+            await self.maintenance_trace_store.create_table()
+            await self.proposal_store.create_table()
+            await self.style_store.create_table()
+            await self.workflow_store.create_tables()
+            await self.execution_store.create_tables()
+            self._bootstrapped = True
 
     async def ensure_memory_maintenance_tasks(
         self,
@@ -466,7 +471,7 @@ class AppContext:
 
     async def close(self) -> None:
         """Close lazily-created resources."""
-        if 'inference' in self.__dict__:
+        if "inference" in self.__dict__:
             await self.inference.close()
         if self.email_adapter is not None:
             self.email_adapter.close()
@@ -515,6 +520,37 @@ class AppContext:
             auto_rollback_on_failure=self.config.trust.auto_rollback_on_failure,
         )
 
+    def _register_external_tool_modules(self) -> None:
+        """Import and register tools from configured external packages."""
+        cfg = self.config
+        reg = self.tool_registry
+        for dotted_path in cfg.extra_tool_modules:
+            try:
+                module = importlib.import_module(dotted_path)
+            except ImportError as exc:
+                logger.warning("Failed to import external tool module %r: %s", dotted_path, exc)
+                continue
+            setup = getattr(module, "setup", None)
+            if callable(setup):
+                try:
+                    context = ExternalToolModuleContext(db=self.db, config=cfg)
+                    setup(context)
+                except Exception as exc:  # noqa: BLE001 — external hook failure must not crash startup
+                    logger.warning("External tool module %r setup failed: %s", dotted_path, exc)
+                    continue
+            register = getattr(module, "register", None)
+            if register is None or not callable(register):
+                logger.warning(
+                    "External tool module %r has no callable register() function; skipping",
+                    dotted_path,
+                )
+                continue
+            try:
+                register(reg)
+            except ValueError as exc:
+                logger.warning("External tool module %r registration failed: %s", dotted_path, exc)
+                continue
+
     def register_tools(self) -> None:
         """Register built-in and conditional tools."""
         cfg = self.config
@@ -522,11 +558,7 @@ class AppContext:
 
         reg.register(current_time)
         reg.register(read_clipboard)
-        reg.register(
-            make_http_get_tool(
-                cfg.use_curl_cffi_fallback, cfg.security.egress_audit_enabled
-            )
-        )
+        reg.register(make_http_get_tool(cfg.use_curl_cffi_fallback, cfg.security.egress_audit_enabled))
         reg.register(make_list_dir_tool(cfg.storage))
         reg.register(make_terminal_tool(cfg.trust.blocked_shell_patterns or None))
         reg.register(make_read_file_tool(cfg.storage))
@@ -538,12 +570,9 @@ class AppContext:
         reg.register(make_rollback_turn_tool(self.checkpoint_manager))
         reg.register(make_blocked_actions_summary_tool(self.blocked_actions_digest))
         reg.register(make_search_memory_tool(self.memory_store))
-        reg.register(make_save_memory_tool(self.memory_store))
+        reg.register(make_save_memory_tool(self.memory_store, self.topic_store))
         reg.register(make_list_memories_tool(self.memory_store))
         reg.register(make_delete_memory_tool(self.memory_store))
-        reg.register(make_save_job_alert_tool(self.job_alert_store))
-        reg.register(make_list_pending_alerts_tool(self.job_alert_store))
-        reg.register(make_mark_alerts_sent_tool(self.job_alert_store))
         reg.register(make_read_artifact_tool(self.artifact_store))
 
         # Proposal tools (bound to proposal store)
@@ -558,19 +587,14 @@ class AppContext:
         reg.register(make_reset_style_metric_tool(self.style_store))
         reg.register(make_reset_style_profile_tool(self.style_store))
 
-        web_search_tool = make_web_search_tool(
-            cfg.web_search, cfg.security.egress_audit_enabled
-        )
+        web_search_tool = make_web_search_tool(cfg.web_search, cfg.security.egress_audit_enabled)
         if web_search_tool is not None:
             reg.register(web_search_tool)
 
         for email_tool in make_email_tools(cfg.email, adapter=self.email_adapter):
             reg.register(email_tool)
 
-        email_search_and_read = (
-            make_email_search_and_read_tool(self.email_adapter)
-            if self.email_adapter else None
-        )
+        email_search_and_read = make_email_search_and_read_tool(self.email_adapter) if self.email_adapter else None
         if email_search_and_read is not None:
             reg.register(email_search_and_read)
 
@@ -583,9 +607,7 @@ class AppContext:
                 ),
                 err=True,
             )
-            logger.warning(
-                "email.password is set in plaintext. Consider using email.password_env."
-            )
+            logger.warning("email.password is set in plaintext. Consider using email.password_env.")
 
         # Scheduler tools (bound to scheduler and session stores)
         if self.scheduler_store is not None:
@@ -606,11 +628,77 @@ class AppContext:
             reg.register(browser_get_links)
             reg.register(browser_interact)
 
+        self._register_external_tool_modules()
+
 
 # Backward-compatible aliases (deprecated, will be removed in a future release)
 CoreAppContext = AppContext
 FeatureAppContext = AppContext
 CliAppContext = AppContext
+
+
+def _validate_web_security_posture(cfg: HestiaConfig) -> None:
+    """Enforce C1/C3 security guards for the web dashboard.
+
+    Raises HestiaConfigError for hard-fail combinations. Logs a warning for
+    the auth-on + exposed + wildcard case so Dylan's runtime keeps booting.
+    """
+    from hestia.errors import HestiaConfigError
+    from hestia.web.auth import is_loopback_host
+
+    if not cfg.web.enabled:
+        return
+
+    exposed = not is_loopback_host(cfg.web.host)
+    if not exposed or cfg.web.allow_insecure:
+        return
+
+    # SEC-006: debug login mints sessions for arbitrary user ids; it must
+    # never be silently active on an exposed interface.
+    if getattr(cfg.web, "debug_login", False):
+        raise HestiaConfigError(
+            f"web.debug_login is enabled but web.host is set to the exposed "
+            f"interface {cfg.web.host!r}. Debug login allows arbitrary "
+            f"user_id sessions. Disable it or set allow_insecure=True to "
+            f"accept the risk."
+        )
+
+    # C1: auth disabled on an exposed interface is not allowed.
+    if not cfg.web.auth_enabled:
+        raise HestiaConfigError(
+            f"web.auth_enabled is False but web.host is set to the exposed "
+            f"interface {cfg.web.host!r}. Either bind to a loopback address "
+            f"(e.g. 127.0.0.1), enable web.auth_enabled, or explicitly accept "
+            f"the risk by setting web.allow_insecure=True (or "
+            f"HESTIA_WEB_ALLOW_INSECURE=1)."
+        )
+
+    # C3: wildcard or destructive auto-approval on an exposed interface.
+    auto_approve = cfg.trust.auto_approve_tools
+    destructive = {"terminal", "write_file", "email_send"}
+    flagged = [tool for tool in auto_approve if tool == "*" or tool in destructive]
+    if flagged:
+        flagged_str = ", ".join(sorted(set(flagged)))
+        if cfg.web.auth_enabled:
+            logger.warning(
+                "web.host=%s is exposed and trust.auto_approve_tools includes "
+                "%s. Anyone who can reach the dashboard can invoke destructive "
+                "tools without confirmation. Bind to a loopback address or "
+                "remove the wildcard/destructive tools from auto_approve_tools. "
+                "Set web.allow_insecure=True only if you understand the risk.",
+                cfg.web.host,
+                flagged_str,
+            )
+        else:
+            # auth_enabled is False here only if allow_insecure is True, which
+            # we already checked above, so this branch is defensive.
+            raise HestiaConfigError(
+                f"web.host={cfg.web.host!r} is exposed and "
+                f"trust.auto_approve_tools includes {flagged_str!r}, but "
+                f"web.auth_enabled is False. Either enable auth, bind to a "
+                f"loopback address, or set web.allow_insecure=True to accept "
+                f"the risk."
+            )
 
 
 def _validate_config_at_startup(cfg: HestiaConfig) -> None:
@@ -629,17 +717,17 @@ def _validate_config_at_startup(cfg: HestiaConfig) -> None:
             "Set telegram.bot_token to your Telegram bot token."
         )
 
+    _validate_web_security_posture(cfg)
+
     # Email: if any host is configured, both should be present
     if cfg.email.imap_host or cfg.email.smtp_host:
         if not cfg.email.imap_host:
             raise HestiaConfigError(
-                "email.smtp_host is set but email.imap_host is empty. "
-                "Set email.imap_host to your IMAP server hostname."
+                "email.smtp_host is set but email.imap_host is empty. Set email.imap_host to your IMAP server hostname."
             )
         if not cfg.email.smtp_host:
             raise HestiaConfigError(
-                "email.imap_host is set but email.smtp_host is empty. "
-                "Set email.smtp_host to your SMTP server hostname."
+                "email.imap_host is set but email.smtp_host is empty. Set email.smtp_host to your SMTP server hostname."
             )
 
     # Database URL: if it's a file path, ensure parent directory exists
@@ -651,22 +739,16 @@ def _validate_config_at_startup(cfg: HestiaConfig) -> None:
             db_path = Path(path_part)
             if db_path.parent != Path(".") and not db_path.parent.exists():
                 raise HestiaConfigError(
-                    f"Database directory does not exist: {db_path.parent}. "
-                    f"Create it or update storage.database_url."
+                    f"Database directory does not exist: {db_path.parent}. Create it or update storage.database_url."
                 )
 
 
-def _load_and_validate_config(
-    cfg: HestiaConfig | None = None, config_path: Path | None = None
-) -> HestiaConfig:
+def _load_and_validate_config(cfg: HestiaConfig | None = None, config_path: Path | None = None) -> HestiaConfig:
     """Load config from file or default locations, apply env overrides, and validate."""
     if cfg is None:
         cfg = HestiaConfig.from_file(config_path) if config_path else HestiaConfig.default()
 
-    if (
-        not cfg.inference.model_name.strip()
-        and os.environ.get("HESTIA_ALLOW_DUMMY_MODEL") == "1"
-    ):
+    if not cfg.inference.model_name.strip() and os.environ.get("HESTIA_ALLOW_DUMMY_MODEL") == "1":
         cfg.inference.model_name = "dummy"
     validate_inference_model_name(cfg.inference.model_name)
     _validate_config_at_startup(cfg)
@@ -679,13 +761,100 @@ def _load_and_validate_config(
     return cfg
 
 
-def _warn_on_missing_files(cfg: HestiaConfig, calibration_path: Path) -> None:
-    """Emit warnings when expected personality or calibration files are missing."""
+@dataclass(frozen=True)
+class CredentialGap:
+    """One enabled-but-incomplete platform (L247 Phase 5B-1, review P7).
+
+    ``platform`` is the stable key callers branch on (``"telegram"``,
+    ``"matrix"``, ``"email"``); ``message`` is the human-readable line.
+    Control flow must key on the platform field, never on the message text.
+    """
+
+    platform: str
+    message: str
+
+
+def platform_credential_gaps(cfg: HestiaConfig) -> list[CredentialGap]:
+    """Return gaps for platforms enabled but not fully configured.
+
+    L247 Phase 5B-1: an enabled platform with a missing credential used to
+    boot degraded silently (or crash, for Matrix). Credentials are verified
+    per adapter's actual acquisition path — there is no shared convention:
+
+    - Telegram reads ``telegram.bot_token``; without ``allowed_users`` the
+      adapter runs but accepts no incoming user.
+    - Matrix needs ``access_token`` AND ``user_id`` (the adapter's
+      constructor raises otherwise).
+    - Email resolves its password via ``password`` or ``password_env``
+      (:meth:`EmailConfig.resolved_password`); missing hosts are the
+      existing validator's job, not a silent degradation.
+    """
+    gaps: list[CredentialGap] = []
+
+    if cfg.telegram.bot_token and not cfg.telegram.allowed_users:
+        gaps.append(
+            CredentialGap(
+                "telegram",
+                "Telegram is enabled but telegram.allowed_users is empty - "
+                "no incoming user will be accepted",
+            )
+        )
+
+    if cfg.matrix.access_token:
+        if not cfg.matrix.user_id:
+            gaps.append(
+                CredentialGap(
+                    "matrix",
+                    "Matrix is enabled but matrix.user_id is missing - "
+                    "the Matrix adapter will not start",
+                )
+            )
+        if not cfg.matrix.homeserver:
+            gaps.append(
+                CredentialGap(
+                    "matrix",
+                    "Matrix is enabled but matrix.homeserver is missing - "
+                    "the Matrix adapter will not start",
+                )
+            )
+
+    if cfg.email.imap_host:
+        try:
+            password = cfg.email.resolved_password  # property
+        except Exception as exc:  # noqa: BLE001 - report, never block startup
+            gaps.append(
+                CredentialGap(
+                    "email",
+                    f"Email is enabled but its password is unusable: {exc}",
+                )
+            )
+        else:
+            if not password:
+                gaps.append(
+                    CredentialGap(
+                        "email",
+                        "Email is enabled but no password is configured - set "
+                        "email.password or email.password_env",
+                    )
+                )
+    return gaps
+
+
+def _report_startup_status(cfg: HestiaConfig, calibration_path: Path) -> None:
+    """Say what startup could not find (L247 Phase 5B).
+
+    Formerly ``_warn_on_missing_files``; it now covers more than files.
+    Everything here warns and continues - none of these conditions block
+    startup, because each has a legitimate first-run or deliberate-partial
+    configuration.
+    """
     soul_path = cfg.identity.soul_path
     if soul_path is not None and not soul_path.exists():
         click.echo(
             click.style(
-                f"Warning: personality file not found at {soul_path}", fg="yellow"
+                f"Warning: personality file not found at {soul_path}; "
+                "copy SOUL.example.md to SOUL.md to get started",
+                fg="yellow",
             ),
             err=True,
         )
@@ -701,6 +870,28 @@ def _warn_on_missing_files(cfg: HestiaConfig, calibration_path: Path) -> None:
         )
         logger.warning("Calibration file not found at %s", calibration_path)
 
+    for gap in platform_credential_gaps(cfg):
+        click.echo(click.style(f"Warning: {gap.message}", fg="yellow"), err=True)
+        logger.warning("%s", gap.message)
+
+    # 5B-2: name the database path when creating one from scratch. Empty is
+    # correct on a genuine first install; the resolved path is what tells
+    # someone whose history is missing why it is missing.
+    # Review P6: never hand-parse SQLite URLs - slash count encodes
+    # relative vs absolute. make_url().database handles both forms and is
+    # None for in-memory.
+    from sqlalchemy.engine import make_url
+
+    parsed = make_url(cfg.storage.database_url)
+    if (
+        parsed.drivername.startswith("sqlite")
+        and parsed.database
+        and parsed.database != ":memory:"
+    ):
+        db_path = Path(parsed.database).resolve()
+        if not db_path.exists():
+            click.echo(f"No existing database at {db_path} — creating a new one.")
+            logger.info("No existing database at %s — creating a new one", db_path)
 
 
 def make_app(cfg: HestiaConfig | None = None, config_path: Path | None = None) -> AppContext:
@@ -717,7 +908,7 @@ def make_app(cfg: HestiaConfig | None = None, config_path: Path | None = None) -
     identity_compiler = IdentityCompiler(cfg.identity)
     app._compiled_identity = identity_compiler.get_compiled_text()
 
-    _warn_on_missing_files(cfg, calibration_path)
+    _report_startup_status(cfg, calibration_path)
     app.register_tools()
 
     return app
@@ -726,9 +917,7 @@ def make_app(cfg: HestiaConfig | None = None, config_path: Path | None = None) -
 def _require_scheduler_store(app: AppContext) -> SchedulerStore:
     """Return the scheduler store or raise a clear error."""
     if app.scheduler_store is None:
-        raise click.UsageError(
-            "Scheduler is not configured. Set `scheduler.enabled = True` in your config."
-        )
+        raise click.UsageError("Scheduler is not configured. Set `scheduler.enabled = True` in your config.")
     return app.scheduler_store
 
 
@@ -760,3 +949,4 @@ def async_command(coro: Callable[..., Awaitable[Any]]) -> Callable[..., Any]:
 
 # Backward-compatible re-export (tests import from app.py)
 from hestia.commands.meta import _handle_meta_command  # noqa: E402, F401
+from hestia.commands.registry import Command, CommandRegistry  # noqa: E402, F401

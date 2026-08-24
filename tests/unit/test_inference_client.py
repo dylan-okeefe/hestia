@@ -8,7 +8,11 @@ import pytest
 
 from hestia.core.inference import InferenceClient
 from hestia.core.types import FunctionSchema, Message, StreamDelta, ToolSchema
-from hestia.errors import InferenceServerError, InferenceTimeoutError
+from hestia.errors import (
+    InferenceConnectionError,
+    InferenceServerError,
+    InferenceTimeoutError,
+)
 
 
 class TestInferenceClient:
@@ -83,6 +87,43 @@ class TestChatStream:
         # Verify stream=True was sent
         call_kwargs = client._client.stream.call_args.kwargs  # type: ignore[attr-defined]
         assert call_kwargs["json"]["stream"] is True
+
+    @pytest.mark.asyncio
+    async def test_server_error_chunk_fails_fast(
+        self, client: InferenceClient, mock_stream_response: Any
+    ) -> None:
+        """BUG-022: a server {"error": ...} SSE payload raises immediately
+        instead of being silently dropped (which stalled until the caller's
+        inactivity timeout masqueraded as truncation)."""
+        from hestia.errors import InferenceServerError
+
+        mock_stream_response(
+            client,
+            [
+                'data: {"error":{"message":"model failed to load"}}',
+                "data: [DONE]",
+                "",
+            ],
+        )
+
+        messages = [Message(role="user", content="hi")]
+        with pytest.raises(InferenceServerError, match="model failed to load"):
+            async for _delta in client.chat_stream(messages):
+                pass
+
+    @pytest.mark.asyncio
+    async def test_stream_requests_usage_options(
+        self, client: InferenceClient, mock_stream_response: Any
+    ) -> None:
+        """PERF-004: streaming requests include_usage so token accounting works."""
+        mock_stream_response(client, ["data: [DONE]", ""])
+
+        messages = [Message(role="user", content="hi")]
+        async for _delta in client.chat_stream(messages):
+            pass
+
+        call_kwargs = client._client.stream.call_args.kwargs  # type: ignore[attr-defined]
+        assert call_kwargs["json"]["stream_options"] == {"include_usage": True}
 
     @pytest.mark.asyncio
     async def test_finish_reason_passed_through(
@@ -197,6 +238,60 @@ class TestChatStream:
         with pytest.raises(InferenceTimeoutError, match="timed out"):
             async for _delta in client.chat_stream(messages):
                 pass  # pragma: no cover
+
+    @pytest.mark.asyncio
+    async def test_connect_error_translated(self, client: InferenceClient) -> None:
+        """Connection refused is translated to InferenceConnectionError."""
+        mock_stream = AsyncMock()
+        mock_stream.__aenter__ = AsyncMock(
+            side_effect=httpx.ConnectError("connection refused")
+        )
+        mock_stream.__aexit__ = AsyncMock(return_value=None)
+
+        client._client.stream = MagicMock(return_value=mock_stream)  # type: ignore[method-assign]
+
+        messages = [Message(role="user", content="Test")]
+        with pytest.raises(InferenceConnectionError, match="ConnectError"):
+            async for _delta in client.chat_stream(messages):
+                pass  # pragma: no cover
+
+    @pytest.mark.asyncio
+    async def test_mid_stream_disconnect_translated(self, client: InferenceClient) -> None:
+        """A dropped connection mid-stream surfaces as InferenceConnectionError
+        carrying the low-level detail (e.g. llama-server crash mid-response)."""
+
+        async def _aiter_lines() -> Any:
+            yield 'data: {"choices": [{"delta": {"content": "hel"}}]}'
+            raise httpx.RemoteProtocolError(
+                "peer closed connection without sending complete message body "
+                "(incomplete chunked read)"
+            )
+
+        mock_response = MagicMock()
+        mock_response.aiter_lines = _aiter_lines
+        mock_response.raise_for_status = MagicMock()
+
+        mock_stream = AsyncMock()
+        mock_stream.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_stream.__aexit__ = AsyncMock(return_value=None)
+
+        client._client.stream = MagicMock(return_value=mock_stream)  # type: ignore[method-assign]
+
+        messages = [Message(role="user", content="Test")]
+        with pytest.raises(InferenceConnectionError, match="RemoteProtocolError"):
+            async for _delta in client.chat_stream(messages):
+                pass
+
+    @pytest.mark.asyncio
+    async def test_request_transport_error_translated(
+        self, client: InferenceClient
+    ) -> None:
+        """Non-streaming requests translate transport failures too."""
+        client._client.request = AsyncMock(  # type: ignore[method-assign]
+            side_effect=httpx.ConnectError("connection refused")
+        )
+        with pytest.raises(InferenceConnectionError, match="ConnectError"):
+            await client.tokenize("hello")
 
     @pytest.mark.asyncio
     async def test_tools_and_slot_id_included(

@@ -13,6 +13,7 @@ from hestia.config import (
     ReflectionConfig,
     StyleConfig,
     TelegramConfig,
+    TrustConfig,
     validate_inference_model_name,
 )
 
@@ -29,6 +30,7 @@ class TestDefaultConfig:
         assert cfg.inference.model_name == ""
         assert cfg.inference.default_reasoning_budget == 2048
         assert cfg.inference.max_tokens == 1024
+        assert cfg.inference.request_timeout == 300.0
 
         # Slot defaults
         assert cfg.slots.slot_dir == Path("slots")
@@ -233,6 +235,10 @@ class TestConfigFromEnvMixin:
         with pytest.raises(ValueError, match="non-negative"):
             InferenceConfig(max_tokens=-1)
 
+    def test_negative_inference_request_timeout_rejected(self):
+        with pytest.raises(ValueError, match="non-negative"):
+            InferenceConfig(request_timeout=-1.0)
+
     def test_unparseable_style_cron_rejected(self):
         with pytest.raises(ValueError, match="cron"):
             StyleConfig(cron="not-a-cron")
@@ -286,3 +292,116 @@ class TestInferenceConfigDummyRejection:
         monkeypatch.delenv("HESTIA_ALLOW_DUMMY_MODEL", raising=False)
         cfg = InferenceConfig(model_name="qwen2.5-7b-instruct-q4_k_m.gguf")
         assert cfg.model_name == "qwen2.5-7b-instruct-q4_k_m.gguf"
+
+
+class TestWebSecurityGuards:
+    """C1/C3 startup security posture guards."""
+
+    @pytest.fixture
+    def cfg(self) -> HestiaConfig:
+        """Base config with web enabled and a model name set."""
+        config = HestiaConfig.default()
+        config.inference.model_name = "model.gguf"
+        config.web.enabled = True
+        return config
+
+    def test_c1_auth_disabled_non_loopback_aborts(self, cfg: HestiaConfig) -> None:
+        from hestia.app import _validate_config_at_startup
+        from hestia.errors import HestiaConfigError
+
+        cfg.web.auth_enabled = False
+        cfg.web.host = "0.0.0.0"
+
+        with pytest.raises(HestiaConfigError, match="web.auth_enabled is False"):
+            _validate_config_at_startup(cfg)
+
+    def test_c1_allow_insecure_permits_exposed_no_auth(self, cfg: HestiaConfig) -> None:
+        from hestia.app import _validate_config_at_startup
+
+        cfg.web.auth_enabled = False
+        cfg.web.host = "0.0.0.0"
+        cfg.web.allow_insecure = True
+
+        _validate_config_at_startup(cfg)
+
+    def test_c1_loopback_permits_no_auth(self, cfg: HestiaConfig) -> None:
+        from hestia.app import _validate_config_at_startup
+
+        cfg.web.auth_enabled = False
+        cfg.web.host = "127.0.0.1"
+
+        _validate_config_at_startup(cfg)
+
+    def test_c3_wildcard_auto_approve_exposed_no_auth_aborts(self, cfg: HestiaConfig) -> None:
+        from hestia.app import _validate_config_at_startup
+        from hestia.errors import HestiaConfigError
+
+        cfg.web.auth_enabled = False
+        cfg.web.host = "0.0.0.0"
+        cfg.trust = TrustConfig(auto_approve_tools=["*"])
+
+        with pytest.raises(HestiaConfigError, match="exposed"):
+            _validate_config_at_startup(cfg)
+
+    def test_c3_wildcard_auto_approve_exposed_with_auth_warns(
+        self, cfg: HestiaConfig, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        from hestia.app import _validate_config_at_startup
+
+        cfg.web.auth_enabled = True
+        cfg.web.host = "0.0.0.0"
+        cfg.trust = TrustConfig(auto_approve_tools=["*"])
+
+        with caplog.at_level("WARNING"):
+            _validate_config_at_startup(cfg)
+
+        assert "exposed" in caplog.text
+        assert "auto_approve_tools" in caplog.text
+
+    def test_c3_allow_insecure_permits_exposed_wildcard(self, cfg: HestiaConfig) -> None:
+        from hestia.app import _validate_config_at_startup
+
+        cfg.web.auth_enabled = False
+        cfg.web.host = "0.0.0.0"
+        cfg.web.allow_insecure = True
+        cfg.trust = TrustConfig(auto_approve_tools=["*"])
+
+        _validate_config_at_startup(cfg)
+
+    def test_c3_destructive_auto_approve_exposed_no_auth_aborts(self, cfg: HestiaConfig) -> None:
+        from hestia.app import _validate_config_at_startup
+        from hestia.errors import HestiaConfigError
+
+        cfg.web.auth_enabled = False
+        cfg.web.host = "0.0.0.0"
+        cfg.trust = TrustConfig(auto_approve_tools=["terminal"])
+
+        with pytest.raises(HestiaConfigError, match="exposed"):
+            _validate_config_at_startup(cfg)
+
+    def test_dylans_runtime_does_not_abort(self, cfg: HestiaConfig, caplog: pytest.LogCaptureFixture) -> None:
+        from hestia.app import _validate_config_at_startup
+
+        cfg.web.auth_enabled = True
+        cfg.web.host = "0.0.0.0"
+        cfg.trust = TrustConfig.developer()
+
+        with caplog.at_level("WARNING"):
+            _validate_config_at_startup(cfg)
+
+        assert "exposed" in caplog.text
+
+    def test_c1_aborts_at_make_app_startup(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The guard must run through the public startup path, not only when called directly."""
+        from hestia.app import make_app
+        from hestia.errors import HestiaConfigError
+
+        monkeypatch.setenv("HESTIA_ALLOW_DUMMY_MODEL", "1")
+        cfg = HestiaConfig.default()
+        cfg.inference.model_name = "dummy"
+        cfg.web.enabled = True
+        cfg.web.host = "0.0.0.0"
+        cfg.web.auth_enabled = False
+
+        with pytest.raises(HestiaConfigError, match="web.auth_enabled is False"):
+            make_app(cfg)

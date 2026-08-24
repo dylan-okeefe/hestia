@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from hestia.core.types import Message, Session, SessionState, SessionTemperature, ToolCall
-from hestia.errors import EmptyResponseError, MaxIterationsError, PolicyFailureError
+from hestia.errors import PolicyFailureError
 from hestia.orchestrator.quality import (
     DegeneratePattern,
     classify_turn,
@@ -455,15 +455,17 @@ async def test_correction_count_capped_at_three() -> None:
     set_typing = AsyncMock()
 
     with patch.object(execution, "_max_iterations", 10), pytest.raises(
-        (EmptyResponseError, MaxIterationsError, PolicyFailureError)
+        PolicyFailureError
     ):
         await execution.run(ctx, transition, set_typing)
 
-    # correction_count should have been capped at 3
-    assert ctx.correction_count == 3
+    # Empty responses should fail fast after two blank assistant messages rather
+    # than burning the full correction budget and looping.
+    assert ctx.correction_count == 1
+    assert ctx._empty_correction_count == 2
 
-    # After the first 3 corrections, retry_after_error should be called for empty responses
-    assert policy.retry_after_error.call_count > 0
+    # The policy retry path should not be used for empty-response loops.
+    assert policy.retry_after_error.call_count == 0
 
 
 @pytest.mark.asyncio

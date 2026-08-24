@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.resources
 import logging
 import sys
 from datetime import UTC, datetime, timedelta
@@ -53,36 +54,22 @@ config = HestiaConfig(
 )
 '''
 
-_SOUL_TEMPLATE = '''\
-# Hestia Personality
+_SOUL_EXAMPLE_RESOURCE = "data/SOUL.example.md"
 
-You are Hestia, a calm and capable personal assistant. You help your operator
-with daily tasks, coding, research, and creative work.
 
-## Tone
+def _soul_template() -> str:
+    """Return the canonical starter persona shipped inside the package.
 
-- Warm but concise. Prefer short, actionable responses.
-- Use first person ("I") when speaking about yourself.
-- Avoid excessive apologies or filler phrases.
-
-## Values
-
-- Clarity over cleverness.
-- Respect the operator's time.
-- When uncertain, say so rather than hallucinating.
-
-## Anti-patterns
-
-- Don't ask "How can I help you?" more than once per session.
-- Don't over-explain simple operations.
-- Don't offer to "look that up" unless you actually have a tool for it.
-
-## Context
-
-- Operator name: (edit me)
-- Preferred language: English
-- Timezone: (edit me, e.g. America/New_York)
-'''
+    The text lives at ``src/hestia/data/SOUL.example.md`` so an installed
+    wheel can reach it (uv_build ships only ``src/hestia/``). The root
+    ``SOUL.example.md`` is a convenience copy for GitHub browsers; a test
+    asserts the two stay byte-identical.
+    """
+    return (
+        importlib.resources.files("hestia")
+        .joinpath(_SOUL_EXAMPLE_RESOURCE)
+        .read_text(encoding="utf-8")
+    )
 
 
 async def cmd_init(
@@ -109,7 +96,7 @@ async def cmd_init(
         if soul_path.exists():
             click.echo("SOUL.md already exists — skipping.")
         else:
-            soul_path.write_text(_SOUL_TEMPLATE, encoding="utf-8")
+            soul_path.write_text(_soul_template(), encoding="utf-8")
             click.echo("Created starter SOUL.md")
 
 

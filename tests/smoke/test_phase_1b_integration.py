@@ -10,15 +10,18 @@ from datetime import datetime
 import pytest
 
 from hestia.artifacts.store import ArtifactStore
+from hestia.config import StorageConfig
 from hestia.context.builder import ContextBuilder
 from hestia.core.inference import InferenceClient
 from hestia.core.types import Message, Session, SessionState, SessionTemperature
+from hestia.policy.channel import Channel
 from hestia.policy.default import DefaultPolicyEngine
 from hestia.tools.builtin import current_time, make_terminal_tool
-from hestia.config import StorageConfig
 from hestia.tools.builtin.read_artifact import make_read_artifact_tool
 from hestia.tools.builtin.read_file import make_read_file_tool
+from hestia.tools.context import ToolCallContext
 from hestia.tools.registry import ToolRegistry
+from tests.gate_fakes import bind_permissive_gate
 
 terminal = make_terminal_tool()
 
@@ -34,6 +37,7 @@ Be concise."""
 
 
 @pytest.mark.asyncio
+@pytest.mark.live
 async def test_proto_orchestrator_uses_terminal_tool(tmp_path):
     """
     Ask the model: 'List the files in /tmp and tell me how many there are.'
@@ -53,6 +57,16 @@ async def test_proto_orchestrator_uses_terminal_tool(tmp_path):
     registry.register(make_read_file_tool(StorageConfig(allowed_roots=["/tmp"])))
     registry.register(terminal)
     registry.register(make_read_artifact_tool(store))
+
+    # L245: the registry refuses ungated calls. This smoke test drives
+    # model->tool plumbing, not authorization, so that stance is explicit.
+    bind_permissive_gate(registry)
+    tool_context = ToolCallContext(
+        channel=Channel.CLI,
+        actor_platform="test",
+        actor_platform_user="tester",
+        mode="enforce",
+    )
 
     # Load calibration and create context builder
     policy = DefaultPolicyEngine(ctx_window=8192)
@@ -124,7 +138,9 @@ async def test_proto_orchestrator_uses_terminal_tool(tmp_path):
                         )
                     )
                 elif tc.name == "call_tool":
-                    result = await registry.meta_call_tool(**tc.arguments)
+                    result = await registry.meta_call_tool(
+                        **tc.arguments, context=tool_context
+                    )
                     history.append(
                         Message(
                             role="tool",
@@ -135,6 +151,21 @@ async def test_proto_orchestrator_uses_terminal_tool(tmp_path):
 
                     # Track if terminal was called
                     if tc.arguments.get("name") == "terminal":
+                        terminal_was_called = True
+                elif tc.name in registry.list_names():
+                    # Some models emit a direct tool call instead of the
+                    # call_tool wrapper; dispatch it directly and continue.
+                    result = await registry.call(
+                        tc.name, tc.arguments, context=tool_context
+                    )
+                    history.append(
+                        Message(
+                            role="tool",
+                            content=result.content,
+                            tool_call_id=tc.id,
+                        )
+                    )
+                    if tc.name == "terminal":
                         terminal_was_called = True
                 else:
                     # Unknown meta-tool

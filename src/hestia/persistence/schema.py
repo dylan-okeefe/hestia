@@ -259,6 +259,9 @@ workflow_executions = sa.Table(
     sa.Column("total_elapsed_ms", sa.Integer, nullable=False, default=0),
     sa.Column("total_prompt_tokens", sa.Integer, nullable=False, default=0),
     sa.Column("total_completion_tokens", sa.Integer, nullable=False, default=0),
+    # BUG-041: test-run executions are flagged so production aggregates can
+    # exclude them.
+    sa.Column("is_test", sa.Boolean, nullable=False, default=False),
     sa.Column("created_at", sa.DateTime, nullable=False),
     sa.Index("idx_executions_workflow", "workflow_id", "created_at"),
 )
@@ -305,27 +308,6 @@ room_members = sa.Table(
     sa.Column("user_id", sa.String, sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
     sa.Column("joined_at", sa.DateTime, nullable=False),
     sa.PrimaryKeyConstraint("room_id", "user_id"),
-)
-
-job_alerts = sa.Table(
-    "job_alerts",
-    metadata,
-    sa.Column("id", sa.String, primary_key=True),
-    sa.Column("created_at", sa.DateTime, nullable=False),
-    sa.Column("source_email", sa.Text, nullable=False),
-    sa.Column("subject", sa.Text, nullable=False),
-    sa.Column("title", sa.Text, nullable=True),
-    sa.Column("company", sa.Text, nullable=True),
-    sa.Column("location", sa.Text, nullable=True),
-    sa.Column("remote", sa.Text, nullable=True),
-    sa.Column("match_score", sa.Integer, nullable=True),
-    sa.Column("salary", sa.Text, nullable=True),
-    sa.Column("tech_stack", sa.Text, nullable=True),
-    sa.Column("url", sa.Text, nullable=True),
-    sa.Column("summary", sa.Text, nullable=True),
-    sa.Column("digest_sent", sa.Boolean, nullable=False, default=False),
-    sa.Index("idx_job_alerts_pending", "digest_sent", "created_at"),
-    sa.Index("idx_job_alerts_created", "created_at"),
 )
 
 error_resolutions = sa.Table(
@@ -381,4 +363,39 @@ maintenance_trace = sa.Table(
         "created_at",
     ),
     sa.Index("idx_maintenance_trace_created", "created_at"),
+)
+
+# Topic-scoped memory tables (Loop A: thread/topic-scoped memory).
+# Memories themselves live in the FTS5 ``memory`` table managed by MemoryStore.
+topics = sa.Table(
+    "topics",
+    metadata,
+    sa.Column("id", sa.String, primary_key=True),
+    sa.Column("platform", sa.String, nullable=False),
+    sa.Column("platform_user", sa.String, nullable=False),
+    sa.Column("name", sa.String, nullable=False),
+    sa.Column("created_at", sa.DateTime, nullable=False),
+    sa.UniqueConstraint("platform", "platform_user", "name"),
+    sa.Index("idx_topics_user_name", "platform", "platform_user", "name"),
+)
+
+conversation_topics = sa.Table(
+    "conversation_topics",
+    metadata,
+    sa.Column("conversation_id", sa.String, nullable=False),
+    sa.Column("topic_id", sa.String, sa.ForeignKey("topics.id", ondelete="CASCADE"), nullable=False),
+    sa.Column("created_at", sa.DateTime, nullable=False),
+    sa.PrimaryKeyConstraint("conversation_id", "topic_id"),
+    sa.Index("idx_conversation_topics_topic", "topic_id"),
+)
+
+memory_topics = sa.Table(
+    "memory_topics",
+    metadata,
+    sa.Column("memory_id", sa.String, nullable=False),
+    sa.Column("topic_id", sa.String, sa.ForeignKey("topics.id", ondelete="CASCADE"), nullable=False),
+    sa.Column("created_at", sa.DateTime, nullable=False),
+    sa.PrimaryKeyConstraint("memory_id", "topic_id"),
+    sa.Index("idx_memory_topics_memory", "memory_id"),
+    sa.Index("idx_memory_topics_topic", "topic_id"),
 )

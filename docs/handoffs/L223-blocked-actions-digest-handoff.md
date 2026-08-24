@@ -7,7 +7,7 @@
 
 ## What changed
 
-Implemented the blocked-actions digest spec from `docs/development-process/L223-blocked-actions-digest.md`.
+Implemented the blocked-actions digest spec from `docs/development-process/loops/L223-blocked-actions-digest.md`.
 
 ### L222 gate fix (folded in)
 - Removed `Channel.SUBAGENT` from the injection-escalation trusted-channel branch in `src/hestia/policy/gate.py`.

@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from hestia.core.types import Message, Session, SessionState, SessionTemperature
-from hestia.orchestrator.assembly import TurnAssembly
+from hestia.orchestrator.assembly import TurnAssembly, _is_greeting_or_smalltalk
 from hestia.orchestrator.types import TurnContext
 from hestia.policy.default import DefaultPolicyEngine
 
@@ -88,3 +88,104 @@ async def test_prepare_builds_context_and_acquires_slot():
 
     mock_builder.build.assert_awaited_once()
     assert ctx.build_result is not None
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("hey", True),
+        ("Hey!", True),
+        ("hi there", False),  # not a pure greeting pattern
+        ("hello", True),
+        ("what's up?", True),
+        ("how are you", True),
+        ("run job search", False),
+        ("", False),
+        ("hello, please search indeed", False),
+    ],
+)
+def test_is_greeting_or_smalltalk(text: str, expected: bool) -> None:
+    assert _is_greeting_or_smalltalk(text) is expected
+
+
+@pytest.mark.asyncio
+async def test_prepare_strips_tools_for_first_turn_greeting():
+    """A first-turn greeting should not be offered tools."""
+    mock_builder = MagicMock()
+    mock_builder.build = AsyncMock(
+        return_value=MagicMock(
+            messages=[], tokens_used=0, tokens_budget=1000,
+            truncated_count=0, kept_first_user=False,
+        )
+    )
+
+    mock_tools = MagicMock()
+    mock_tools.list_names.return_value = []
+    mock_tools.meta_tool_schemas.return_value = ["schema"]
+
+    policy = DefaultPolicyEngine(ctx_window=4096)
+
+    mock_message_store = MagicMock()
+    mock_message_store.get_messages = AsyncMock(return_value=[])
+    mock_message_store.append_message = AsyncMock()
+
+    assembly = TurnAssembly(
+        context_builder=mock_builder,
+        tool_registry=mock_tools,
+        policy=policy,
+        session_store=MagicMock(),
+        message_store=mock_message_store,
+    )
+
+    session = _make_session()
+    ctx = _make_turn_context(session)
+    ctx.user_message = Message(role="user", content="hey")
+    ctx.turn.user_message = ctx.user_message
+
+    await assembly.prepare(session, ctx, AsyncMock())
+
+    assert ctx.tools == []
+    built_tools = mock_builder.build.await_args.kwargs["tools"]
+    assert built_tools == []
+
+
+@pytest.mark.asyncio
+async def test_prepare_keeps_tools_for_non_greeting_first_turn():
+    """A task-oriented first turn should still be offered tools."""
+    mock_builder = MagicMock()
+    mock_builder.build = AsyncMock(
+        return_value=MagicMock(
+            messages=[], tokens_used=0, tokens_budget=1000,
+            truncated_count=0, kept_first_user=False,
+        )
+    )
+
+    schemas = ["schema"]
+    mock_tools = MagicMock()
+    mock_tools.list_names.return_value = []
+    mock_tools.meta_tool_schemas.return_value = schemas
+
+    policy = DefaultPolicyEngine(ctx_window=4096)
+
+    mock_message_store = MagicMock()
+    mock_message_store.get_messages = AsyncMock(return_value=[])
+    mock_message_store.append_message = AsyncMock()
+
+    assembly = TurnAssembly(
+        context_builder=mock_builder,
+        tool_registry=mock_tools,
+        policy=policy,
+        session_store=MagicMock(),
+        message_store=mock_message_store,
+    )
+
+    session = _make_session()
+    ctx = _make_turn_context(session)
+    ctx.user_message = Message(role="user", content="search indeed for jobs")
+    ctx.turn.user_message = ctx.user_message
+
+    await assembly.prepare(session, ctx, AsyncMock())
+
+    assert ctx.tools == schemas
+    built_tools = mock_builder.build.await_args.kwargs["tools"]
+    assert built_tools == schemas

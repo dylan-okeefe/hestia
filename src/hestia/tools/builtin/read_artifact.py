@@ -29,6 +29,13 @@ def make_read_artifact_tool(store: ArtifactStore) -> Any:
                     "type": "string",
                     "description": "Artifact handle (art_xxxxxxxxxx)",
                 },
+                "artifact": {
+                    "type": "string",
+                    "description": (
+                        "Alias for handle. Accepts an artifact handle or a full "
+                        "path like .../art_xxxxxxxxxx.bin."
+                    ),
+                },
                 "start_at": {
                     "type": "integer",
                     "description": "Byte offset to start reading from (default 0)",
@@ -40,37 +47,53 @@ def make_read_artifact_tool(store: ArtifactStore) -> Any:
                     "default": 4000,
                 },
             },
-            "required": ["handle"],
+            "required": [],
         },
         max_inline_chars=8000,
         tags=["artifacts"],
         capabilities=[READ_LOCAL],
     )
-    async def read_artifact(handle: str, start_at: int = 0, length: int = 4000) -> str:
+    async def read_artifact(
+        handle: str | None = None,
+        artifact: str | None = None,
+        start_at: int = 0,
+        length: int = 4000,
+    ) -> str:
         """Read a chunk of an artifact by handle.
 
         ``ArtifactStore.fetch_content`` is synchronous and may touch the
         filesystem; we offload it via ``asyncio.to_thread`` so the event
         loop stays responsive for concurrent tool dispatch.
         """
+        raw_handle = handle or artifact
+        if not raw_handle:
+            return "Error: read_artifact requires either handle or artifact."
+
+        # Normalize full paths like .../art_xxxxxxxxxx.bin to the bare handle.
+        normalized = str(raw_handle)
+        if "/" in normalized or "\\" in normalized:
+            normalized = normalized.replace("\\", "/").split("/")[-1]
+        if normalized.endswith(".bin"):
+            normalized = normalized[:-4]
+
         try:
-            content = await asyncio.to_thread(store.fetch_content, handle)
+            content = await asyncio.to_thread(store.fetch_content, normalized)
             text = content.decode("utf-8", errors="replace")
         except ArtifactNotFoundError:
-            return f"Artifact not found: {handle}"
+            return f"Artifact not found: {normalized}"
         except ArtifactExpiredError:
-            return f"Artifact expired: {handle}"
+            return f"Artifact expired: {normalized}"
 
         total = len(text)
         if start_at < 0:
             start_at = 0
         if start_at >= total:
-            return f"[artifact {handle}: offset {start_at} is past end of {total} chars]"
+            return f"[artifact {normalized}: offset {start_at} is past end of {total} chars]"
 
         end = min(start_at + length, total)
         chunk = text[start_at:end]
         return (
-            f"[artifact {handle}: bytes {start_at}-{end} of {total}]\n\n{chunk}"
+            f"[artifact {normalized}: bytes {start_at}-{end} of {total}]\n\n{chunk}"
         )
 
     return read_artifact

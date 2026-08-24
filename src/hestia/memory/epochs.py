@@ -8,7 +8,7 @@ stability and predictable token budgets.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from hestia.core.clock import utcnow
 from hestia.core.types import Session
@@ -33,99 +33,117 @@ class MemoryEpochCompiler:
     explicit /refresh), not on every memory write.
     """
 
-    def __init__(self, memory_store: MemoryStore, max_tokens: int = 500):
+    def __init__(
+        self,
+        memory_store: MemoryStore,
+        max_tokens: int = 500,
+        global_cap_ratio: float = 0.3,
+    ):
         """Initialize with memory store and token budget.
 
         Args:
             memory_store: The store to fetch memories from
             max_tokens: Maximum tokens for the compiled epoch (rough approximation)
+            global_cap_ratio: Soft cap for global memories as a fraction of
+                ``max_tokens``. Default 0.3 (30%).
         """
         self.store = memory_store
         self.max_tokens = max_tokens
+        self.global_cap_ratio = global_cap_ratio
 
-    async def compile(self, session: Session) -> MemoryEpoch:
+    async def compile(
+        self,
+        session: Session,
+        topic_ids: list[str] | None = None,
+        active_sender_platform_user: str | None = None,
+    ) -> MemoryEpoch:
         """Compile a memory epoch for the given session.
 
         Strategy:
-        1. Fetch recent memories scoped to the session user (last 30 days)
-        2. Fetch tag-matched memories if session has tags
-        3. Deduplicate
-        4. Format as compact text block
-        5. Truncate to max_tokens
+        1. Fetch global memories first, up to the configured soft cap.
+        2. Fill the remainder with subscribed-topic memories, merged by recency.
+        3. Slack flows down: a small global pool leaves more room for topics.
+        4. Truncate to max_tokens.
 
         Args:
             session: The session to compile memories for
+            topic_ids: Subscribed topic IDs. None/empty means no topic memories.
+            active_sender_platform_user: For group chats, the active sender whose
+                global memories should be used. Defaults to ``session.platform_user``.
 
         Returns:
-            A MemoryEpoch with compiled memory context scoped to the user
+            A MemoryEpoch with compiled memory context scoped to the user/room.
         """
-        memories: list[Memory] = []
-        seen_ids: set[str] = set()
-
-        # 1. Fetch recent memories scoped to the session user (last 30 days)
-        cutoff = utcnow() - timedelta(days=30)
-        recent_memories = await self._fetch_recent_memories(
-            limit=50,
+        global_memories, topic_memories = await self.store.get_for_epoch(
             platform=session.platform,
             platform_user=session.platform_user,
+            topic_ids=topic_ids or [],
+            active_sender_platform_user=active_sender_platform_user,
         )
-        for mem in recent_memories:
-            if mem.created_at >= cutoff and mem.id not in seen_ids:
-                memories.append(mem)
-                seen_ids.add(mem.id)
 
-        # 2. Fetch tag-matched memories if session has tags (future enhancement)
-        # For now, session doesn't have tags, but we can search for common keywords
-        # or use the session context to find relevant memories
-        if len(memories) < 10:
-            # Supplement with more recent memories if we have few
-            more_memories = await self._fetch_recent_memories(
-                limit=100,
-                platform=session.platform,
-                platform_user=session.platform_user,
-            )
-            for mem in more_memories:
-                if mem.id not in seen_ids:
-                    memories.append(mem)
-                    seen_ids.add(mem.id)
+        # Sort key seam: recency now, importance later.
+        def _sort_key(mem: Memory) -> datetime:
+            return mem.created_at
 
-        # 3. Format as compact text block
-        formatted = self._format_memories(memories)
+        global_memories = sorted(global_memories, key=_sort_key, reverse=True)
+        topic_memories = sorted(topic_memories, key=_sort_key, reverse=True)
 
-        # 4. Truncate to max_tokens (rough approximation: 4 chars per token)
+        global_cap_tokens = int(self.max_tokens * self.global_cap_ratio)
+
+        selected: list[Memory] = []
+        seen_ids: set[str] = set()
+        used_tokens = 0
+
+        # 1. Global memories first, up to the soft cap.
+        for mem in global_memories:
+            if mem.id in seen_ids:
+                continue
+            mem_tokens = self._estimate_memory_tokens(mem)
+            if used_tokens + mem_tokens > global_cap_tokens:
+                break
+            selected.append(mem)
+            seen_ids.add(mem.id)
+            used_tokens += mem_tokens
+
+        # 2. Topic memories fill the remainder. Slack flows down automatically
+        # because the loop stops when the total budget is exhausted.
+        for mem in topic_memories:
+            if mem.id in seen_ids:
+                continue
+            mem_tokens = self._estimate_memory_tokens(mem)
+            if used_tokens + mem_tokens > self.max_tokens:
+                break
+            selected.append(mem)
+            seen_ids.add(mem.id)
+            used_tokens += mem_tokens
+
+        # 3. Format and truncate to budget.
+        formatted = self._format_memories(selected)
         max_chars = self.max_tokens * 4
         if len(formatted) > max_chars:
             formatted = formatted[:max_chars]
 
-        # Estimate token count
         token_estimate = len(formatted) // 4
 
         return MemoryEpoch(
             compiled_text=formatted,
             created_at=utcnow(),
-            memory_count=len(memories),
+            memory_count=len(selected),
             token_estimate=token_estimate,
         )
 
-    async def _fetch_recent_memories(
-        self,
-        limit: int,
-        platform: str | None = None,
-        platform_user: str | None = None,
-    ) -> list[Memory]:
-        """Fetch the most recent memories from the store.
+    def _estimate_memory_tokens(self, mem: Memory) -> int:
+        """Rough per-memory token estimate for budget accounting."""
+        line = self._format_memory(mem)
+        return max(1, len(line) // 4)
 
-        Args:
-            limit: Maximum number of memories to fetch
-            platform: Optional platform scope
-            platform_user: Optional user scope
-
-        Returns:
-            List of memories, newest first
-        """
-        return await self.store.list_memories(
-            tag=None, limit=limit, platform=platform, platform_user=platform_user
-        )
+    def _format_memory(self, mem: Memory) -> str:
+        """Format a single memory as a bullet line."""
+        content = mem.content.strip()
+        if mem.tags:
+            tags_str = ", ".join(mem.tags)
+            return f"- [{tags_str}] {content}"
+        return f"- {content}"
 
     def _format_memories(self, memories: list[Memory]) -> str:
         """Format memories as a compact text block.
@@ -139,17 +157,9 @@ class MemoryEpochCompiler:
         if not memories:
             return ""
 
-        lines: list[str] = []
-        lines.append("Relevant memories:")
-
+        lines: list[str] = ["Relevant memories:"]
         for mem in memories:
-            # Format: "- [tags] content" or "- content" if no tags
-            content = mem.content.strip()
-            if mem.tags:
-                tags_str = ", ".join(mem.tags)
-                lines.append(f"- [{tags_str}] {content}")
-            else:
-                lines.append(f"- {content}")
+            lines.append(self._format_memory(mem))
 
         return "\n".join(lines)
 

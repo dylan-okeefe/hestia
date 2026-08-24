@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import time
@@ -12,8 +13,8 @@ from typing import TYPE_CHECKING, Any
 from hestia.app import AppContext
 from hestia.core.types import ChatResponse, Message
 from hestia.policy.channel import Channel
-from hestia.policy.gate import CapabilityRequest
-from hestia.policy.identity import Identity
+from hestia.tools.context import ToolCallContext
+from hestia.tools.registry import ToolBlockedError
 from hestia.workflows.models import ExecutionResult, NodeResult, Workflow, WorkflowEdge, WorkflowNode
 from hestia.workflows.store import WorkflowStore
 
@@ -36,51 +37,6 @@ def _extract_url_from_text(text: str) -> str | None:
     """Extract the first URL found in text."""
     match = re.search(r"https?://[^\s<>\"\')\]]+", text)
     return match.group(0) if match else None
-
-
-# Patterns that indicate a URL is a job listing (not unsubscribe, home page, etc.)
-_JOB_URL_PATTERNS = [
-    re.compile(r"/jobs?/|/job/|jobListing|viewjob|job-detail|/km/|/ekm/|/clk\?", re.I),
-    re.compile(r"dice\.com/job-detail/", re.I),
-    re.compile(r"glassdoor\.com/partner/jobListing", re.I),
-    re.compile(r"indeed\.com/(?:viewjob|pagead/clk)", re.I),
-    re.compile(r"ziprecruiter\.com/(?:km/|ekm/)", re.I),
-    re.compile(r"linkedin\.com/(?:jobs/|comm/jobs/view)", re.I),
-    re.compile(r"builtin\.com/job/", re.I),
-]
-
-# Patterns that indicate a URL should be ignored
-_IGNORE_URL_PATTERNS = [
-    re.compile(
-        r"unsubscribe|preferences|alert|notification|privacy|terms|login|signin|account",
-        re.I,
-    ),
-    re.compile(r"linkedin\.com/comm/jobs/alerts", re.I),
-    re.compile(r"linkedin\.com/comm/feed/update", re.I),
-    re.compile(r"profile-views", re.I),
-]
-
-
-def _extract_best_job_url(body: str) -> str | None:
-    """Scan email body and return the best job-listing URL."""
-    all_urls: list[str] = re.findall(r"https?://[^\s<>\"\')\]]+", body)
-    candidates: list[tuple[int, str]] = []
-    for url in all_urls:
-        if any(p.search(url) for p in _IGNORE_URL_PATTERNS):
-            continue
-        # Also check URL-decoded version for embedded job paths
-        from urllib.parse import unquote
-        decoded = unquote(url)
-        score = 0
-        for pattern in _JOB_URL_PATTERNS:
-            if pattern.search(url) or pattern.search(decoded):
-                score += 1
-        if score > 0:
-            candidates.append((score, url))
-    if not candidates:
-        return None
-    candidates.sort(key=lambda x: x[0], reverse=True)
-    return candidates[0][1]
 
 
 def _topological_sort(
@@ -163,10 +119,13 @@ class WorkflowExecutor:
         app: AppContext,
         workflow_store: WorkflowStore | None = None,
         execution_store: ExecutionStore | None = None,
+        *,
+        is_test: bool = False,
     ) -> None:
         self._app = app
         self._workflow_store = workflow_store
         self._execution_store = execution_store
+        self._is_test = is_test
 
     async def execute(
         self,
@@ -272,6 +231,37 @@ class WorkflowExecutor:
                     )
                 return result
 
+        # BUG-036: persist a RUNNING row upfront so a crash mid-run leaves an
+        # observable trace instead of silently vanishing.
+        running_execution_id: str | None = None
+        if self._execution_store is not None:
+            try:
+                running_execution_id = await self._execution_store.start_execution(
+                    workflow_id,
+                    version.version,
+                    trigger_payload,
+                    is_test=self._is_test,
+                )
+            except Exception:
+                logger.exception("Failed to record RUNNING execution row")
+
+        # L245 chokepoint: one enforce context for the whole execution. Every
+        # registry call made on behalf of this workflow carries it, and the
+        # registry itself evaluates the gate - an ungated invocation from a
+        # node is not expressible.
+        if self._app.capability_gate is None:
+            raise ValueError(
+                "WorkflowExecutor requires a configured capability gate "
+                "(fail-closed; L245)"
+            )
+        tool_context = ToolCallContext(
+            channel=Channel.WORKFLOW,
+            actor_platform="workflow",
+            actor_platform_user=workflow.owner_id or workflow.id,
+            allow_list=frozenset(workflow.allow_listed_tools or set()),
+            source_workflow_id=workflow.id,
+        )
+
         node_results: list[NodeResult] = []
         outputs: dict[str, Any] = {"trigger": trigger_payload}
         total_prompt_tokens = 0
@@ -302,6 +292,9 @@ class WorkflowExecutor:
         for node in order:
             incoming = [e for e in version.edges if e.target_node_id == node.id]
             if incoming and not any(e.id in active_edges for e in incoming):
+                # BUG-039: record skipped nodes so the UI can distinguish
+                # 'branch not taken' from 'node does not exist'.
+                node_results.append(NodeResult(node_id=node.id, status="skipped"))
                 continue
 
             inputs = _resolve_inputs(node, version.edges, outputs)
@@ -316,7 +309,25 @@ class WorkflowExecutor:
 
             node_start = time.perf_counter()
             try:
-                node_output = await self._run_node(node, inputs, workflow)
+                node_output = await self._run_node(node, inputs, workflow, tool_context)
+            except ToolBlockedError as exc:
+                elapsed_ms = int((time.perf_counter() - node_start) * 1000)
+                nr = NodeResult(
+                    node_id=node.id, status="failed", error=str(exc), elapsed_ms=elapsed_ms
+                )
+                node_results.append(nr)
+                result = ExecutionResult(
+                    workflow_id=workflow_id,
+                    status="failed",
+                    node_results=node_results,
+                    outputs=outputs,
+                )
+                if self._execution_store is not None:
+                    await self._execution_store.save_execution(
+                        result, workflow_id, version.version, trigger_payload,
+                        execution_id=running_execution_id, is_test=self._is_test,
+                    )
+                return result
             except Exception as exc:
                 logger.exception("Node %s failed in workflow %s", node.id, workflow_id)
                 elapsed_ms = int((time.perf_counter() - node_start) * 1000)
@@ -335,7 +346,12 @@ class WorkflowExecutor:
                 )
                 if self._execution_store is not None:
                     await self._execution_store.save_execution(
-                        result, workflow_id, version.version, trigger_payload
+                        result,
+                        workflow_id,
+                        version.version,
+                        trigger_payload,
+                        execution_id=running_execution_id,
+                        is_test=self._is_test,
                     )
                 return result
 
@@ -378,7 +394,12 @@ class WorkflowExecutor:
         )
         if self._execution_store is not None:
             await self._execution_store.save_execution(
-                result, workflow_id, version.version, trigger_payload
+                result,
+                workflow_id,
+                version.version,
+                trigger_payload,
+                execution_id=running_execution_id,
+                is_test=self._is_test,
             )
         if self._app.event_bus is not None:
             await self._app.event_bus.publish(
@@ -393,7 +414,11 @@ class WorkflowExecutor:
         return result
 
     async def _run_node(
-        self, node: WorkflowNode, inputs: dict[str, Any], workflow: Workflow
+        self,
+        node: WorkflowNode,
+        inputs: dict[str, Any],
+        workflow: Workflow,
+        tool_context: Any,
     ) -> _NodeOutput:
         """Execute a single node by delegating to the app context.
 
@@ -409,11 +434,27 @@ class WorkflowExecutor:
             ValueError: If the node type is not supported.
         """
         from hestia.workflows.nodes import NODE_TYPES
+        from hestia.workflows.tool_selection import NODE_EFFECT_MARKERS
+
+        # L245: effect nodes are not registry tools, so activation is their
+        # authorization. The stored (derived) allow-list must carry the
+        # marker or the node is refused - a draft/edited graph cannot sneak
+        # a new effect past an old grant.
+        if node.type in NODE_EFFECT_MARKERS:
+            allow = (
+                getattr(tool_context, "allow_list", None) or frozenset()
+            )
+            if NODE_EFFECT_MARKERS[node.type] not in allow:
+                raise PermissionError(
+                    f"Node effect '{node.type}' is not authorized for this "
+                    "workflow's active version - re-activate the version to "
+                    "grant it (L245)"
+                )
 
         executor_cls = NODE_TYPES.get(node.type)
         if executor_cls is not None:
             executor = executor_cls()
-            raw = await executor.execute(self._app, node, inputs)
+            raw = await executor.execute(self._app, node, inputs, tool_context)
             if isinstance(raw, ChatResponse):
                 return _NodeOutput(
                     value=raw.content,
@@ -448,64 +489,24 @@ class WorkflowExecutor:
                     if url:
                         content = url
 
-            # For extract_url node: if LLM didn't return a clean URL,
-            # scan the email body directly for job-related URLs.
-            if node.id == "extract_url":
-                url = _extract_url_from_text(content)
-                # If LLM rambled (long response), returned NONE, or gave a
-                # broken/partial URL, fall back to scanning the body.
-                use_fallback = not url or url == "NONE" or len(content) > 200
-                if use_fallback:
-                    data = inputs.get("data", {})
-                    body = data.get("body", "") if isinstance(data, dict) else ""
-                    if body:
-                        fallback = _extract_best_job_url(body)
-                        if fallback:
-                            content = fallback
-                        elif url and url != "NONE":
-                            content = url
-                        else:
-                            content = "NONE"
-                    elif url and url != "NONE":
-                        content = url
-                    else:
-                        content = "NONE"
-                else:
-                    assert url is not None
-                    content = url
-
             return _NodeOutput(
                 value=content,
                 prompt_tokens=response.prompt_tokens,
                 completion_tokens=response.completion_tokens,
             )
 
-        # Treat node type as a tool name by default
-        if self._app.capability_gate is not None:
-            actor = Identity(
-                platform="workflow",
-                platform_user=workflow.owner_id or workflow.id,
-            )
-            request = CapabilityRequest(
-                actor=actor,
-                channel=Channel.WORKFLOW,
-                tool_name=node.type,
-                inputs=inputs,
-                session_id=None,
-            )
-            gate_result = await self._app.capability_gate.check(
-                request, allow_list=workflow.allow_listed_tools
-            )
-            if not gate_result.allowed:
-                raise ValueError(
-                    f"[CATEGORY: BLOCKED] Capability gate denied '{node.type}' "
-                    f"in workflow {workflow.id}: {gate_result.reason}"
-                )
-
-        result = await self._app.tool_registry.call(node.type, inputs)
+        # Treat node type as a tool name by default. The registry enforces
+        # the gate itself via the tool_context (L245 chokepoint).
+        result = await self._app.tool_registry.call(
+            node.type, inputs, context=tool_context
+        )
         value = result.content
         if result.artifact_handle:
-            # Load full artifact content so downstream nodes get the complete data
-            full_bytes = self._app.artifact_store.fetch_content(result.artifact_handle)
+            # Load full artifact content so downstream nodes get the complete
+            # data. Off-loop: large reads previously stalled the whole event
+            # loop (PERF-017).
+            full_bytes = await asyncio.to_thread(
+                self._app.artifact_store.fetch_content, result.artifact_handle
+            )
             value = full_bytes.decode("utf-8", errors="replace")
         return _NodeOutput(value=value)

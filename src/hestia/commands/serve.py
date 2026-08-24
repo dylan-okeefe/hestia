@@ -14,7 +14,7 @@ from hestia.app import AppContext
 from hestia.config import HestiaConfig
 from hestia.persistence.scheduler import SchedulerStore
 from hestia.scheduler import Scheduler
-from hestia.scheduler.cleanup import run_error_resolution_cleanup
+from hestia.scheduler.cleanup import run_error_resolution_cleanup, run_maintenance_trace_cleanup
 
 logger = logging.getLogger(__name__)
 
@@ -22,16 +22,13 @@ logger = logging.getLogger(__name__)
 async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
     """Run Hestia with all configured platform adapters and the web dashboard."""
     await app.bootstrap_db()
+    # BUG-036: executions stuck RUNNING from a previous crash become failed
+    # rows so the dashboard reflects reality.
+    swept = await app.execution_store.fail_stale_running()
+    if swept:
+        click.echo(f"Marked {swept} interrupted workflow execution(s) as failed.")
     await app.start_trigger_registry()
     tasks: list[asyncio.Task[Any]] = []
-    original_close = app.inference.close
-
-    async def _noop_close() -> None:
-        pass
-
-    # Prevent individual platform runners from closing inference;
-    # we will close it centrally after everything stops.
-    app.inference.close = _noop_close  # type: ignore[method-assign]
 
     adapters: dict[str, Any] = {}
 
@@ -65,24 +62,43 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
             tasks.append(
                 asyncio.create_task(
                     run_telegram(
-                        app, config, adapter=telegram_adapter, start_scheduler=False
+                        app,
+                        config,
+                        adapter=telegram_adapter,
+                        start_scheduler=False,
+                        close_inference=False,
                     )
                 )
             )
 
         if config.matrix.access_token:
+            # L247 5B-1 + review P7/P8: decide on the structured platform
+            # key, never the message text. Gaps are already printed once by
+            # make_app's startup report; this branch only needs the decision.
+            from hestia.app import platform_credential_gaps
             from hestia.platforms.matrix_adapter import MatrixAdapter
             from hestia.platforms.runners import run_matrix
 
-            matrix_adapter = MatrixAdapter(config.matrix)
-            adapters["matrix"] = matrix_adapter
-            tasks.append(
-                asyncio.create_task(
-                    run_matrix(
-                        app, config, adapter=matrix_adapter, start_scheduler=False
+            matrix_broken = any(
+                gap.platform == "matrix"
+                for gap in platform_credential_gaps(config)
+            )
+            matrix_adapter = (
+                None if matrix_broken else MatrixAdapter(config.matrix)
+            )
+            if matrix_adapter is not None:
+                adapters["matrix"] = matrix_adapter
+                tasks.append(
+                    asyncio.create_task(
+                        run_matrix(
+                            app,
+                            config,
+                            adapter=matrix_adapter,
+                            start_scheduler=False,
+                            close_inference=False,
+                        )
                     )
                 )
-            )
 
         if config.email.imap_host:
             from hestia.email.adapter import EmailAdapter
@@ -126,6 +142,7 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
                     browser_session_store=browser_session_store,
                     stream_manager=SessionStreamManager(browser_session_store),
                     scheduler=scheduler,
+                    topic_store=app.topic_store,
                 )
             )
             add_auth_middleware(web_app, auth_manager, config.web)
@@ -145,6 +162,11 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
                     run_error_resolution_cleanup(app.error_resolution_store)
                 )
             )
+            tasks.append(
+                asyncio.create_task(
+                    run_maintenance_trace_cleanup(app.maintenance_trace_store)
+                )
+            )
 
         if not tasks:
             click.echo("No platforms or web server configured. Exiting.")
@@ -160,5 +182,4 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
             await asyncio.gather(*tasks, return_exceptions=True)
         if scheduler is not None:
             await scheduler.stop()
-        app.inference.close = original_close  # type: ignore[method-assign]
         await app.inference.close()

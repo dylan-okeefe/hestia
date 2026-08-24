@@ -33,7 +33,7 @@ def make_grep_tool(config: StorageConfig) -> Any:
                 "path": {
                     "type": "string",
                     "description": (
-                        "Directory to search in. Must be within allowed roots."
+                        "File or directory to search in. Must be within allowed roots."
                     ),
                 },
                 "include": {
@@ -68,8 +68,6 @@ def make_grep_tool(config: StorageConfig) -> Any:
         target = Path(path)
         if not await asyncio.to_thread(target.exists):
             return f"Path not found: {path}"
-        if not await asyncio.to_thread(target.is_dir):
-            return f"Not a directory: {path}"
 
         try:
             regex = re.compile(pattern)
@@ -80,22 +78,34 @@ def make_grep_tool(config: StorageConfig) -> Any:
             include = [include]
 
         matches: list[str] = []
+        max_line_len = 1000
+
+        def _grep_file(file_path: Path) -> None:
+            if include is not None and file_path.suffix not in include:
+                return
+            try:
+                text = file_path.read_text(encoding="utf-8")
+            except (UnicodeDecodeError, OSError):
+                return
+            for i, line in enumerate(text.splitlines(), 1):
+                if regex.search(line):
+                    line = line.rstrip()
+                    if len(line) > max_line_len:
+                        line = f"{line[:max_line_len]}... ({len(line)} chars total)"
+                    matches.append(f"{file_path}:{i}:{line}")
+                    if len(matches) >= _MAX_RESULTS:
+                        return
 
         def _walk() -> None:
-            for file_path in target.rglob("*"):
-                if not file_path.is_file():
-                    continue
-                if include is not None and file_path.suffix not in include:
-                    continue
-                try:
-                    text = file_path.read_text(encoding="utf-8")
-                except (UnicodeDecodeError, OSError):
-                    continue
-                for i, line in enumerate(text.splitlines(), 1):
-                    if regex.search(line):
-                        matches.append(f"{file_path}:{i}:{line.rstrip()}")
-                        if len(matches) >= _MAX_RESULTS:
-                            return
+            if target.is_file():
+                _grep_file(target)
+            else:
+                for file_path in target.rglob("*"):
+                    if not file_path.is_file():
+                        continue
+                    _grep_file(file_path)
+                    if len(matches) >= _MAX_RESULTS:
+                        return
 
         await asyncio.to_thread(_walk)
 

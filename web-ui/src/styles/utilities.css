@@ -76,7 +76,7 @@
 .text-muted { color: var(--color-text-muted); }
 .text-success { color: var(--color-success); }
 .text-danger { color: var(--color-danger); }
-.text-warning { color: var(--color-warning); }
+.text-warning { color: var(--color-warning-text); }
 .text-small { font-size: var(--font-size-sm); }
 .text-xs { font-size: var(--font-size-xs); }
 .text-lg { font-size: var(--font-size-lg); }

@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from hestia.config import WebConfig
 from hestia.web.api import create_web_app
-from hestia.web.auth import AuthManager, AuthMiddleware, PendingCode, RateLimitWindow, WebSession
+from hestia.web.auth import AuthManager, AuthMiddleware, PendingCode, RateLimitWindow, WebSession, is_loopback_host
 from hestia.web.context import WebContext, set_web_context
 
 
@@ -28,12 +28,8 @@ def mock_app() -> MagicMock:
     mock = MagicMock()
     mock.config = MagicMock()
     mock.config.telegram = MagicMock(bot_token="", allowed_users=[])
-    mock.config.matrix = MagicMock(
-        homeserver="", user_id="", access_token="", allowed_rooms=[]
-    )
-    mock.config.email = MagicMock(
-        imap_host="", username="", password="", password_env=""
-    )
+    mock.config.matrix = MagicMock(homeserver="", user_id="", access_token="", allowed_rooms=[])
+    mock.config.email = MagicMock(imap_host="", username="", password="", password_env="")
     mock.config.storage = MagicMock(allowed_roots=["."])
     mock.config.inference = MagicMock(base_url="")
     mock.config.security = MagicMock(injection_scanner_enabled=False)
@@ -91,9 +87,7 @@ def matrix_adapter() -> MagicMock:
 
 
 @pytest.fixture
-def auth_manager(
-    telegram_adapter: MagicMock, matrix_adapter: MagicMock, web_config: WebConfig
-) -> AuthManager:
+def auth_manager(telegram_adapter: MagicMock, matrix_adapter: MagicMock, web_config: WebConfig) -> AuthManager:
     adapters = {
         "telegram": telegram_adapter,
         "matrix": matrix_adapter,
@@ -113,9 +107,7 @@ class TestAuthManager:
         codes = {auth_manager.generate_code() for _ in range(100)}
         assert len(codes) > 1
 
-    def test_request_code_telegram(
-        self, auth_manager: AuthManager, telegram_adapter: MagicMock
-    ) -> None:
+    def test_request_code_telegram(self, auth_manager: AuthManager, telegram_adapter: MagicMock) -> None:
         import asyncio
 
         result = asyncio.run(auth_manager.request_code("telegram"))
@@ -371,11 +363,13 @@ class TestAuthMiddleware:
         from starlette.responses import JSONResponse
 
         async def endpoint(request: Request) -> JSONResponse:
-            return JSONResponse({
-                "platform": getattr(request.state, "platform", None),
-                "user": getattr(request.state, "platform_user", None),
-                "user_id": getattr(request.state, "user_id", None),
-            })
+            return JSONResponse(
+                {
+                    "platform": getattr(request.state, "platform", None),
+                    "user": getattr(request.state, "platform_user", None),
+                    "user_id": getattr(request.state, "user_id", None),
+                }
+            )
 
         app = Starlette()
         app.add_route("/api/sessions", endpoint)
@@ -540,9 +534,7 @@ class TestAuthRoutes:
     """Tests for /api/auth/* endpoints."""
 
     @pytest.fixture
-    def client(
-        self, mock_app: MagicMock, auth_manager: AuthManager
-    ) -> TestClient:
+    def client(self, mock_app: MagicMock, auth_manager: AuthManager) -> TestClient:
         ctx = WebContext(
             session_store=AsyncMock(),
             proposal_store=AsyncMock(),
@@ -560,6 +552,7 @@ class TestAuthRoutes:
         set_web_context(ctx)
         app = create_web_app()
         from hestia.web.auth import AuthMiddleware
+
         app.add_middleware(
             AuthMiddleware,
             auth_manager=auth_manager,
@@ -578,10 +571,11 @@ class TestAuthRoutes:
     def test_request_code_missing_platform(self, client: TestClient) -> None:
         response = client.post("/api/auth/request-code", json={"platform": "unknown_platform"})
         assert response.status_code == 400
-        assert "not configured" in response.json()["detail"]
+        # SEC-023: details are logged, not disclosed to anonymous callers.
+        assert response.json()["detail"] == "Cannot deliver a code for this platform or user."
 
     def test_request_code_rate_limit(self, client: TestClient, auth_manager: AuthManager) -> None:
-        for i in range(3):
+        for _ in range(3):
             response = client.post("/api/auth/request-code", json={"platform": "telegram"})
             assert response.status_code == 200
 
@@ -594,6 +588,7 @@ class TestAuthRoutes:
     def test_request_code_matrix(self, client: TestClient, auth_manager: AuthManager) -> None:
         # Set up a Matrix adapter with one allowed room
         from unittest.mock import AsyncMock
+
         matrix_adapter = AsyncMock()
         matrix_adapter._config.allowed_rooms = ["!room:example.com"]  # type: ignore[attr-defined]
         matrix_adapter.send_message = AsyncMock()
@@ -611,10 +606,27 @@ class TestAuthRoutes:
         assert call_args[0][0] == "!room:example.com"
         assert "Hestia dashboard code" in call_args[0][1]
 
-    def test_request_code_with_platform_user(
-        self, client: TestClient, auth_manager: AuthManager
-    ) -> None:
-        """Explicit platform_user overrides the configured default."""
+    def test_request_code_with_platform_user(self, client: TestClient, auth_manager: AuthManager) -> None:
+        """SEC-002: explicit platform_user is honored only when allowlisted."""
+        from unittest.mock import AsyncMock
+
+        telegram_adapter = AsyncMock()
+        telegram_adapter._config.allowed_users = ["default_user", "second_user"]  # type: ignore[attr-defined]
+        telegram_adapter.send_message = AsyncMock()
+        auth_manager.adapters["telegram"] = telegram_adapter
+
+        response = client.post(
+            "/api/auth/request-code",
+            json={"platform": "telegram", "platform_user": "second_user"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "sent"
+        call_args = telegram_adapter.send_message.call_args
+        assert call_args[0][0] == "second_user"
+
+    def test_request_code_rejects_unauthorized_recipient(self, client: TestClient, auth_manager: AuthManager) -> None:
+        """SEC-002: codes cannot be delivered to non-allowlisted chat IDs."""
         from unittest.mock import AsyncMock
 
         telegram_adapter = AsyncMock()
@@ -624,21 +636,10 @@ class TestAuthRoutes:
 
         response = client.post(
             "/api/auth/request-code",
-            json={"platform": "telegram", "platform_user": "specific_user"},
+            json={"platform": "telegram", "platform_user": "attacker_chat_id"},
         )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["status"] == "sent"
-
-        telegram_adapter.send_message.assert_called_once()
-        call_args = telegram_adapter.send_message.call_args
-        assert call_args[0][0] == "specific_user"
-        assert "Hestia dashboard code" in call_args[0][1]
-
-        # Verify the pending code was stored for the specific user
-        assert len(auth_manager._pending_codes) == 1
-        code = list(auth_manager._pending_codes.keys())[0]
-        assert auth_manager._pending_codes[code].platform_user == "specific_user"
+        assert response.status_code == 400
+        telegram_adapter.send_message.assert_not_called()
 
     def test_verify_code(self, client: TestClient, auth_manager: AuthManager) -> None:
         import asyncio
@@ -720,9 +721,7 @@ class TestAuthRoutes:
         response = client.get("/api/sessions")
         assert response.status_code == 401
 
-    def test_protected_route_passes_with_auth(
-        self, client: TestClient, auth_manager: AuthManager
-    ) -> None:
+    def test_protected_route_passes_with_auth(self, client: TestClient, auth_manager: AuthManager) -> None:
         token = "test_token"
         auth_manager._sessions[token] = WebSession(
             platform="telegram",
@@ -734,3 +733,36 @@ class TestAuthRoutes:
 
         response = client.get("/api/sessions", headers={"Authorization": "Bearer test_token"})
         assert response.status_code == 200
+
+
+class TestIsLoopbackHost:
+    """Tests for the loopback host helper."""
+
+    @pytest.mark.parametrize(
+        "host",
+        [
+            "127.0.0.1",
+            "127.255.255.255",
+            "localhost",
+            "LOCALHOST",
+            "::1",
+            "127.0.0.1:8765",
+        ],
+    )
+    def test_loopback_hosts(self, host: str) -> None:
+        assert is_loopback_host(host) is True
+
+    @pytest.mark.parametrize(
+        "host",
+        [
+            "0.0.0.0",
+            "192.168.1.1",
+            "10.0.0.1",
+            "172.16.0.1",
+            "::ffff:127.0.0.1",
+            "",
+            "example.com",
+        ],
+    )
+    def test_exposed_hosts(self, host: str) -> None:
+        assert is_loopback_host(host) is False

@@ -1,6 +1,6 @@
 # Decisions — L222 Trust/Capability Boundary
 
-**Status:** Resolved 2026-06-15. These are the answers to the "Decisions needed before implementation" section in `docs/development-process/L222-trust-capability-boundary.md`, plus two additions agreed during the decision pass (#3 generalized injection escalation, #8 audit emit). Implement against these.
+**Status:** Resolved 2026-06-15. These are the answers to the "Decisions needed before implementation" section in `docs/development-process/loops/L222-trust-capability-boundary.md`, plus two additions agreed during the decision pass (#3 generalized injection escalation, #8 audit emit). Implement against these.
 
 1. **Unattended destructive tools (workflow / webhook / scheduler).** Hard-deny by default, with explicit per-workflow allow-listing as the only escape hatch. Do not attempt to deliver interactive confirmations to an unattended trigger.
 

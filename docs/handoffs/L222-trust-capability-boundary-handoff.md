@@ -6,7 +6,7 @@
 
 ## What changed
 
-Implemented the unified trust/capability boundary spec from `docs/development-process/L222-trust-capability-boundary.md` and `docs/reviews/decisions-trust-capability-boundary.md`.
+Implemented the unified trust/capability boundary spec from `docs/development-process/loops/L222-trust-capability-boundary.md` and `docs/reviews/decisions-trust-capability-boundary.md`.
 
 ### §1 — `CapabilityGate` core
 - Added `src/hestia/policy/gate.py`, `src/hestia/policy/channel.py`, and `src/hestia/policy/identity.py`.

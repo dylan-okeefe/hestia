@@ -7,7 +7,32 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from hestia.tools.builtin.http_get import http_get
+from hestia.tools.builtin.http_get import http_get, make_http_get_tool
+
+
+@pytest.mark.asyncio
+async def test_factory_http_get_accepts_use_curl_cffi() -> None:
+    """The app-registered http_get (created by the factory) must expose use_curl_cffi."""
+    tool_fn = make_http_get_tool(use_curl_cffi_fallback=False)
+    with (
+        patch(
+            "hestia.tools.builtin.http_get._fetch_with_curl_cffi",
+            new_callable=AsyncMock,
+        ) as mock_curl,
+        patch(
+            "hestia.tools.builtin.http_get._CURL_CFFI_AVAILABLE",
+            True,
+        ),
+    ):
+        mock_curl.return_value = "curl_cffi body"
+        result = await tool_fn(
+            "https://example.com", timeout_seconds=10, use_curl_cffi=True
+        )
+
+    assert result == "curl_cffi body"
+    mock_curl.assert_awaited_once_with(
+        "https://example.com", 10, egress_audit_enabled=True
+    )
 
 
 @pytest.mark.asyncio

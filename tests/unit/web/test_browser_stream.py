@@ -8,6 +8,7 @@ import contextlib
 import json
 import sys
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -695,3 +696,83 @@ class TestAutoTimeout:
 
         assert not manager.is_active()
         mock_cdp.send.assert_any_await("Page.stopScreencast")
+
+
+class TestIdleTimeout:
+    @pytest.mark.asyncio
+    async def test_idle_stop_keeps_session_alive_with_connected_client(
+        self, manager: SessionStreamManager, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A connected WS client on a static (no-frame) page must not be reaped."""
+        mock_cm, *_rest = _make_mock_playwright()
+        _inject_playwright_module(mock_cm)
+        session_id = await manager.start("https://example.com/login")
+
+        # Simulate a connected viewer with no frames arriving.
+        manager._session.ws_clients.add(AsyncMock())
+
+        # Cancel the background tasks created by start() so they do not race.
+        manager._timeout_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await manager._timeout_task
+        manager._idle_timeout_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await manager._idle_timeout_task
+
+        monkeypatch.setattr(
+            "hestia.web.browser_stream._IDLE_TIMEOUT_SECONDS", 0.01
+        )
+
+        original_sleep = asyncio.sleep
+
+        async def _immediate_sleep(_delay: float) -> None:
+            await original_sleep(0)
+
+        # Let the idle reaper run for a few loops; the session must stay alive.
+        idle_task: asyncio.Task[Any] | None = None
+        with patch("hestia.web.browser_stream.asyncio.sleep", _immediate_sleep):
+            idle_task = asyncio.create_task(manager._idle_stop(session_id))
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(idle_task, timeout=0.2)
+
+        if idle_task is not None and not idle_task.done():
+            idle_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await idle_task
+
+        assert manager.is_active()
+
+    @pytest.mark.asyncio
+    async def test_idle_stop_reaps_session_when_no_clients_connected(
+        self, manager: SessionStreamManager, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A session with zero connected clients is stopped after idle timeout."""
+        mock_cm, *_rest = _make_mock_playwright()
+        _inject_playwright_module(mock_cm)
+        session_id = await manager.start("https://example.com/login")
+
+        # Ensure no clients are connected.
+        manager._session.ws_clients.clear()
+
+        # Cancel the background tasks created by start() so they do not race.
+        manager._timeout_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await manager._timeout_task
+        manager._idle_timeout_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await manager._idle_timeout_task
+
+        monkeypatch.setattr(
+            "hestia.web.browser_stream._IDLE_TIMEOUT_SECONDS", 0.0
+        )
+
+        original_sleep = asyncio.sleep
+
+        async def _immediate_sleep(_delay: float) -> None:
+            await original_sleep(0)
+
+        with patch("hestia.web.browser_stream.asyncio.sleep", _immediate_sleep):
+            idle_task = asyncio.create_task(manager._idle_stop(session_id))
+            await idle_task
+
+        assert not manager.is_active()

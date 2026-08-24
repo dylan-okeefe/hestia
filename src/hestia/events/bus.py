@@ -54,6 +54,17 @@ class EventBus:
             self._tasks.add(task)
             task.add_done_callback(self._tasks.discard)
 
+    def publish_nowait(self, event_type: str, payload: Any) -> None:
+        """Synchronous variant for callers already inside an event loop.
+
+        BUG-029: the removed fallback ran ``asyncio.run`` outside a loop,
+        which tore down the loop with handler tasks still pending ("Task was
+        destroyed but it is pending") — events nondeterministically lost.
+        Callers without a running loop must use ``await publish()``.
+        """
+        loop = asyncio.get_running_loop()
+        loop.create_task(self.publish(event_type, payload))
+
     async def drain(self) -> None:
         """Await all pending publish tasks."""
         if self._tasks:

@@ -64,7 +64,7 @@ class NodeResult:
     """Result of executing a single workflow node."""
 
     node_id: str
-    status: str  # "ok" | "failed"
+    status: str  # "ok" | "failed" | "skipped"
     output: Any = None
     error: str | None = None
     elapsed_ms: int = 0
@@ -77,7 +77,7 @@ class ExecutionResult:
     """Result of executing a workflow."""
 
     workflow_id: str
-    status: str  # "ok" | "failed"
+    status: str  # "ok" | "failed" | "running"
     node_results: list[NodeResult] = field(default_factory=list)
     outputs: dict[str, Any] = field(default_factory=dict)
     total_elapsed_ms: int = 0

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from hestia.app import AppContext
+from hestia.memory.topics import TopicStore
 from hestia.orchestrator.handoff_service import HandoffService
 from hestia.persistence.error_resolution_store import ErrorResolutionStore
 from hestia.persistence.failure_store import FailureStore
@@ -48,6 +49,7 @@ class WebContext:
     browser_session_store: BrowserSessionStore | None = field(default=None)
     stream_manager: SessionStreamManager | None = field(default=None)
     scheduler: Scheduler | None = field(default=None)
+    topic_store: TopicStore | None = field(default=None)
 
     def __post_init__(self) -> None:
         """Derive split stores from the session store when not provided."""

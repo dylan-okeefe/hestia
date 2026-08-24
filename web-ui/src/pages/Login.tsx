@@ -3,33 +3,14 @@ import { fetchAvailableUsers, requestCode, verifyCode, debugLogin } from '../api
 import { useAuth } from '../context/AuthContext';
 import PageCard from '../components/layout/PageCard';
 import EmptyState from '../components/layout/EmptyState';
-import { label, ROLE_LABELS } from '../lib/labels';
 import { TEXT } from '../lib/text';
 import './Login.css';
-
-interface AvailableIdentity {
-  platform: string;
-  platform_user: string;
-}
 
 interface AvailableUser {
   user_id: string;
   display_name: string;
-  role: string;
   platforms: string[];
-  identities: AvailableIdentity[];
 }
-
-const roleBadgeColor = (role: string) => {
-  switch (role) {
-    case 'admin':
-      return '#2563eb';
-    case 'trusted':
-      return '#d97706';
-    default:
-      return '#6b7280';
-  }
-};
 
 const platformHelperText: Record<string, string> = {
   matrix: 'A verification code will be sent to your Matrix DM.',
@@ -112,12 +93,7 @@ export default function Login() {
     setError(null);
     setSending(true);
     try {
-      let platformUser: string | undefined;
-      if (selectedUser) {
-        const identity = selectedUser.identities.find((i) => i.platform === platform);
-        platformUser = identity?.platform_user;
-      }
-      const data = await requestCode(platform, platformUser);
+      const data = await requestCode(platform, selectedUser?.user_id);
       setSelectedPlatform(platform);
       setPhase('input');
       startTimer(data.expires_in || 300);
@@ -201,12 +177,6 @@ export default function Login() {
                   className="login-user-card"
                 >
                   <span className="font-bold">{user.display_name}</span>
-                  <span
-                    className="login-role-badge"
-                    style={{ background: roleBadgeColor(user.role) }}
-                  >
-                    {label(ROLE_LABELS, user.role)}
-                  </span>
                 </button>
               ))}
             </div>
@@ -263,6 +233,7 @@ export default function Login() {
             <input
               type="text"
               inputMode="numeric"
+              aria-label="Verification code"
               maxLength={6}
               value={code}
               onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}

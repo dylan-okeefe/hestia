@@ -11,6 +11,7 @@ from hestia.errors import (
     ContextTooLargeError,
     HestiaError,
     InferenceServerError,
+    InferenceTimeoutError,
     PersistenceError,
     classify_error,
 )
@@ -69,12 +70,22 @@ class TurnFinalization:
         """
         from hestia.errors import (
             ContextTooLargeError,
+            InferenceConnectionError,
             InferenceTimeoutError,
             MaxIterationsError,
             PolicyFailureError,
             ToolExecutionError,
         )
 
+        if isinstance(error, InferenceConnectionError):
+            # Surface the real cause — the operator needs to know the
+            # inference server dropped the connection (e.g. crashed), not
+            # a generic "something went wrong".
+            return (
+                "I lost the connection to the inference server mid-response "
+                f"({error.detail}). It may have crashed or be restarting — "
+                "try again in a few seconds."
+            )
         if isinstance(error, InferenceTimeoutError):
             return "The AI is taking longer than expected. Try again in a moment."
         if isinstance(error, ContextTooLargeError):
@@ -90,6 +101,10 @@ class TurnFinalization:
         if isinstance(error, MaxIterationsError):
             return "I'm having trouble responding right now. Please try again."
         if isinstance(error, PolicyFailureError):
+            # Policy failures can carry actionable context; surface it when present.
+            message = str(error)
+            if message:
+                return message
             return "I'm having trouble responding right now. Please try again."
         if isinstance(error, HestiaError):
             return str(error)
@@ -107,12 +122,12 @@ class TurnFinalization:
         if turn.state == TurnState.DONE and self._slot_manager is not None:
             try:
                 await self._slot_manager.save(session)
-            except (OSError, PersistenceError, InferenceServerError) as e:
+            except (OSError, PersistenceError, InferenceServerError, InferenceTimeoutError) as e:
                 logger.warning("Failed to save slot for session %s: %s", session.id, e)
         elif session.slot_id is not None and self._slot_manager is not None:
             try:
                 await self._slot_manager.erase(session)
-            except (OSError, PersistenceError, InferenceServerError) as e:
+            except (OSError, PersistenceError, InferenceServerError, InferenceTimeoutError) as e:
                 logger.warning("Failed to erase slot for session %s: %s", session.id, e)
 
         turn_end_time = utcnow()

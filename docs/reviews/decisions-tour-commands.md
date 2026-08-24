@@ -1,0 +1,41 @@
+# Decisions: tour commands, command registry, and `/commands`
+
+## Status
+
+Resolved 2026-06-27. These decisions apply to Loop A, Loop B, and Loop C of the tour/commands arc.
+
+## 1. Registry design
+
+- Commands are registered by **runtime introspection** of the handler function:
+  - `name` — canonical command name (e.g. `/compact`).
+  - `aliases` — list of alias strings (e.g. `["/c"]`).
+  - `summary` — one-line description, taken from the first line of `func.__doc__`.
+  - `long_help` — full docstring.
+- NO source-comment parsing, JSDoc-style annotations, or AST walks. The registry is plain Python dataclasses/classes populated by a decorator or explicit call.
+- The registry must be reachable from **all platform entry points** (CLI REPL, Telegram, Matrix), not only `src/hestia/commands/meta.py`.
+
+## 2. `/help` becomes an alias for `/commands`
+
+- The existing hardcoded `/help` list in `meta.py` is removed.
+- `/help` resolves through the registry and renders the same output as `/commands`.
+
+## 3. `/tour` design
+
+- Pure narration. Progression is **never gated on user action**.
+- Ephemeral cursor keyed to `(conversation_id, platform_user_id)`.
+- `/tour` starts from step 1; a second `/tour` resets to step 1.
+- `/continue` advances one step.
+- `/endtour` clears the cursor.
+- `/continue` and `/endtour` outside an active tour are no-ops with a friendly "no tour running" message.
+- Group rooms: `/tour` does not start; replies DM-only. `/continue` and `/endtour` in a group behave as outside a tour.
+- Reuse existing per-conversation state storage; no new persistence table.
+
+### Known limitation: Matrix
+
+The Matrix adapter currently treats every Matrix room as a group room (`group_room=True`) because Matrix rooms have no reliable way to distinguish a 1:1 DM from a multi-user room without inspecting member count. As a result, `/tour` is unavailable on Matrix in v1 and always replies with the DM-only message. This is an acceptable v1 reading of "DM-only," but it leaves open the question of whether 1:1 Matrix rooms should be treated as DMs in a future iteration (e.g., by checking `room.member_count == 2`).
+
+## 4. `/commands` output
+
+- Renders the registry catalog: name, aliases, summary.
+- Grouped readably (by category if categories are provided, otherwise alphabetically).
+- Works on CLI, Telegram, and Matrix.

@@ -3,7 +3,143 @@
 All notable changes to this project will be documented in this file.
 Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
+## [0.16.0] — 2026-08-24
+
+Two and a half months of work since v0.15.1: allowlist-only authorization
+for unattended workflows, topic-scoped memory, a command registry, external
+tool modules, and the remediation of an external security audit. Three
+breaking changes — read [`UPGRADE.md`](UPGRADE.md) before upgrading.
+
+### Breaking changes
+
+- **Allowlist-only tool authorization for workflows.** A workflow may now
+  invoke exactly the tools its activation grants and nothing else. Every
+  existing workflow must be re-activated once; activating a version whose
+  grant changed returns HTTP 409 with an `{added, removed}` diff until you
+  confirm. Migration m011 pre-populates each workflow's grant from its
+  active version at startup, so most users see no diff. Scheduler trust
+  flags (`scheduler_shell_exec`, `scheduler_write_local`,
+  `scheduler_email_send`, `scheduler_read_clipboard`) are now enforced at
+  the gate instead of only shaping tool advertisement. See
+  [ADR-052](docs/adr/ADR-052-allowlist-only-tool-authorization-for-unattended-channels.md).
+- **`ToolRegistry.call` requires a `ToolCallContext`.** Relevant only if you
+  wrote external tool modules or call the registry directly; without a
+  context the call raises `TypeError`, and a registry with no gate bound
+  refuses every call. Denials raise `ToolBlockedError`; confirmation
+  escalations raise `ToolConfirmationRequiredError`.
+- **Terminal commands run with a restricted environment.** Child processes
+  spawned by the `terminal` tool receive only `PATH`, `HOME`, `USER`,
+  `LOGNAME`, `SHELL`, `TERM`, `TMPDIR`, `LANG`, and `LANGUAGE`. Commands
+  that depended on other inherited variables (API keys in env, virtualenv
+  activations) will not see them.
+- **Streaming inference that stalls now fails the turn** instead of
+  delivering a truncated answer marked complete. The partial text is kept
+  in history with an explicit "[response interrupted]" marker so what was
+  shown matches what the model remembers.
+
+### Added
+
+- **Topic-scoped memory.** Long-term memories can be organized into
+  user-named topics; conversations subscribe to topics, and a conversation's
+  active topics are injected into context. A conversation with no explicit
+  topics gets an implicit per-room topic.
+- **Scope-aware memory maintenance.** The nightly dedupe/prune/supersede
+  passes respect topic scope and protected-set flags instead of operating
+  on one undifferentiated pool.
+- **Memory management UI redesign** in the web dashboard.
+- **External tool modules.** Register private tools via an
+  `extra_tool_modules` config list — each entry is a dotted import path
+  exposing `register(registry)` (and optionally `setup(context)`). Opt-in,
+  explicit, no autoloading. See ADR-053.
+- **Command registry with `/commands` and `/tour`.** Slash commands across
+  Telegram and Matrix are registered centrally, discoverable via
+  `/commands`, and `/tour` walks through them interactively.
+- **Manual `/compact` command** compacts the current session in place;
+  replaced history remains recoverable from a compaction archive.
+- **Chunked `read_artifact`** reads large artifacts in ranges instead of
+  loading whole files into context.
+- **Memory write sanitizer** screens content before it enters long-term
+  memory.
+- **Session-end fact extraction:** notable facts from a finished session
+  are proposed to long-term memory automatically.
+- **Blocked-actions digest:** capability-gate denials and escalations are
+  summarized for review instead of living only in an audit table.
+
+### Changed
+
+- Transient-error retries apply to non-streaming turns only; streaming
+  turns fail fast because partial text was already delivered.
+- Matrix slash commands require an exact token match (`/resetnow` is no
+  longer treated as `/reset`); trailing arguments still dispatch.
+- Cron-triggered workflows fire via a dedicated per-minute scheduler
+  heartbeat instead of piggybacking on unrelated task firings; triggers
+  without cron or command definitions no longer match everything.
+- Email messages that fail processing five times are parked (marked read,
+  logged as errors) instead of retrying forever.
+- Workflow test runs are flagged `is_test` and excluded from
+  last-execution aggregates while remaining visible in per-workflow
+  history.
+- The web login picker sends codes to a server-resolved, allowlisted
+  identity; a client-supplied recipient is honored only if it matches one.
+- A Matrix adapter whose config is incomplete (missing `user_id` or
+  `homeserver`) no longer crashes startup; the missing keys are reported
+  and the rest of the instance runs.
+- Orchestrator fails fast with an actionable message when the model
+  returns empty responses repeatedly, instead of looping.
+- Session/message/turn persistence moved to split stores
+  (`hestia.persistence.session_store` / `message_store` / `turn_store`);
+  the old `hestia.persistence.sessions` facade still works but warns and
+  will be removed in a future release.
+
+### Fixed
+
+- Per-session serialization race that could let two turns run concurrently
+  on one session.
+- Slot-eviction race that could cross-contaminate KV-cache state between
+  sessions.
+- SQLite applies WAL and busy_timeout per connection; hot-path indexes
+  added for message and session queries. Foreign-key enforcement remains
+  off pending cleanup of pre-existing violations.
+- Matrix: incoming greeting messages no longer produce generic
+  "call_tool" status text; room IDs are no longer echoed back to rooms.
+- Browser stream: input-mode race, mid-stream headed/unheaded switching,
+  URL save/restore, and auto-start behavior corrected; an active-session
+  banner shows who owns a live browser.
+- Browser fetch handles auth walls and rate limits more gracefully, and
+  honors a headed-mode hint from the model.
+- Default calibration path resolved correctly again for direct
+  `ContextBuilder.from_calibration_file()` use (was pointing at
+  `src/docs/`).
+
+### Removed
+
+- The `indeed_search` built-in tool; job-alert logic now lives in private
+  workflows instead of core.
+
+### Security
+
+This release includes the remediation of an independent security audit.
+Entries describe what changed in the software; full decisions are recorded
+in `docs/adr/`.
+
+- Workflow `tool_call` and `investigate` nodes pass through the capability
+  gate before dispatch; delegation and truncated-write recovery flow
+  through the same gated path. Unattended-channel ALLOW decisions are
+  audited as well as denials.
+- Investigate nodes take their tool selection from node config only;
+  trigger payloads can no longer choose which tools run.
+- Starting the web dashboard on an exposed interface now refuses insecure
+  combinations: auth disabled, debug login enabled, or wildcard/destructive
+  auto-approval. Loopback binds are unaffected.
+- Webhook secrets are scoped so they are never exposed outside the owning
+  workflow's API responses; secret-looking keys in node configs are masked
+  in versions and workflow responses.
+- `chat_command` triggers require an explicit command definition; the old
+  default matched every slash command from any user.
+- `send_message` destinations pinned in node config win over interpolated
+  inputs, so a payload cannot choose the recipient.
+- Terminal child processes inherit a minimal environment (see Breaking
+  changes), closing an environment-variable exfiltration path.
 
 ## [0.15.1] — 2026-06-25
 

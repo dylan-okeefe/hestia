@@ -27,9 +27,17 @@ def _make_session() -> Session:
     )
 
 
+def _bind_permissive(reg: ToolRegistry) -> ToolRegistry:
+    from tests.gate_fakes import bind_permissive_gate
+
+    bind_permissive_gate(reg)
+    return reg
+
+
 def _make_turn_execution(registry: ToolRegistry | None = None) -> TurnExecution:
     return TurnExecution(
-        tool_registry=registry or ToolRegistry(MagicMock()),
+        tool_registry=registry
+        or _bind_permissive(ToolRegistry(MagicMock())),
         inference_client=MagicMock(),
         policy=MagicMock(),
         context_builder=MagicMock(),

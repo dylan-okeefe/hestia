@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { fetchProposals, acceptProposal, rejectProposal } from '../api/client';
+import { fetchProposals, acceptProposal, rejectProposal, deferProposal } from '../api/client';
 import PageCard from '../components/layout/PageCard';
 import LoadingSkeleton from '../components/layout/LoadingSkeleton';
 import ErrorState from '../components/layout/ErrorState';
@@ -67,6 +67,20 @@ export default function Proposals() {
       setRefreshKey((k) => k + 1);
     } catch (err: any) {
       setError(err.message || TEXT.proposals.rejectError);
+    } finally {
+      setActingId(null);
+    }
+  };
+
+  // D6/UX-003: the backend has always supported deferring proposals; the
+  // button simply never existed.
+  const handleDefer = async (id: string) => {
+    setActingId(id);
+    try {
+      await deferProposal(id);
+      setRefreshKey((k) => k + 1);
+    } catch (err: any) {
+      setError(err.message || 'Failed to defer proposal');
     } finally {
       setActingId(null);
     }
@@ -159,6 +173,13 @@ export default function Proposals() {
                   className="proposals-reject-btn"
                 >
                   {TEXT.proposals.rejectButton}
+                </button>
+                <button
+                  onClick={() => handleDefer(p.id)}
+                  disabled={actingId === p.id}
+                  className="proposals-defer-btn"
+                >
+                  Defer
                 </button>
               </div>
             )}

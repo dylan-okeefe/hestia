@@ -26,9 +26,7 @@ class IdentityConfig(_ConfigFromEnv):
     _ENV_PREFIX = "IDENTITY"
 
     soul_path: Path | None = field(default_factory=lambda: DEFAULT_SOUL_MD_PATH)
-    compiled_cache_path: Path = field(
-        default_factory=lambda: Path(".hestia/compiled_identity.txt")
-    )
+    compiled_cache_path: Path = field(default_factory=lambda: Path(".hestia/compiled_identity.txt"))
     max_tokens: int = 300
     recompile_on_change: bool = True
     capabilities_prefix_enabled: bool = False
@@ -36,9 +34,7 @@ class IdentityConfig(_ConfigFromEnv):
 
     def __post_init__(self) -> None:
         if self.max_tokens < 0:
-            raise ValueError(
-                f"IdentityConfig.max_tokens must be non-negative, got {self.max_tokens}"
-            )
+            raise ValueError(f"IdentityConfig.max_tokens must be non-negative, got {self.max_tokens}")
 
 
 @dataclass
@@ -53,6 +49,8 @@ class InferenceConfig(_ConfigFromEnv):
     default_reasoning_budget: int = 2048
     max_tokens: int = 1024
     stream: bool = False
+    request_timeout: float = 300.0
+    """HTTP timeout (seconds) for chat completion requests to llama-server."""
 
     def __post_init__(self) -> None:
         # Reject literal "dummy" at config-load (see H-5).
@@ -67,6 +65,10 @@ class InferenceConfig(_ConfigFromEnv):
         if self.max_tokens < 0:
             raise ValueError(
                 f"InferenceConfig.max_tokens must be non-negative, got {self.max_tokens}"
+            )
+        if self.request_timeout < 0:
+            raise ValueError(
+                f"InferenceConfig.request_timeout must be non-negative, got {self.request_timeout}"
             )
 
 
@@ -230,6 +232,16 @@ class TrustConfig(_ConfigFromEnv):
     # Allow scheduler ticks to trigger email_send.
     scheduler_email_send: bool = False
 
+    # Allow scheduler ticks to read the system clipboard.
+    # Clipboard reads are interactive by nature, so headless scheduler ticks
+    # default to False.
+    scheduler_read_clipboard: bool = False
+
+    # Allow subagent sessions to read the system clipboard.
+    # Subagents legitimately read the clipboard for job-search flows (e.g. a
+    # copied job-post URL), so this defaults to True.
+    subagent_read_clipboard: bool = True
+
     # Allow self-management tools (proposal/style) for this trust profile.
     self_management: bool = False
 
@@ -268,6 +280,7 @@ class TrustConfig(_ConfigFromEnv):
             and not self.subagent_write_local
             and not self.subagent_email_send
             and not self.scheduler_email_send
+            and not self.scheduler_read_clipboard
             and not self.self_management
             and self.blocked_shell_patterns == []
         )
@@ -365,13 +378,9 @@ class CompactionConfig(_ConfigFromEnv):
 
     def __post_init__(self) -> None:
         if self.verbatim_turns < 0:
-            raise ValueError(
-                f"CompactionConfig.verbatim_turns must be non-negative, got {self.verbatim_turns}"
-            )
+            raise ValueError(f"CompactionConfig.verbatim_turns must be non-negative, got {self.verbatim_turns}")
         if self.summary_max_chars < 100:
-            raise ValueError(
-                f"CompactionConfig.summary_max_chars must be at least 100, got {self.summary_max_chars}"
-            )
+            raise ValueError(f"CompactionConfig.summary_max_chars must be at least 100, got {self.summary_max_chars}")
 
 
 @dataclass
@@ -403,8 +412,7 @@ class EmailConfig(_ConfigFromEnv):
             val = os.environ.get(self.password_env)
             if val is None:
                 raise EmailConfigError(
-                    f"Email password_env '{self.password_env}' is set "
-                    "but the environment variable is not defined"
+                    f"Email password_env '{self.password_env}' is set but the environment variable is not defined"
                 )
             return val
         return self.password
@@ -470,9 +478,7 @@ class StyleConfig(_ConfigFromEnv):
         try:
             croniter(self.cron)
         except ValueError as exc:
-            raise ValueError(
-                f"StyleConfig.cron is not a valid cron expression: {self.cron}"
-            ) from exc
+            raise ValueError(f"StyleConfig.cron is not a valid cron expression: {self.cron}") from exc
 
 
 @dataclass
@@ -495,9 +501,7 @@ class ReflectionConfig(_ConfigFromEnv):
         try:
             croniter(self.cron)
         except ValueError as exc:
-            raise ValueError(
-                f"ReflectionConfig.cron is not a valid cron expression: {self.cron}"
-            ) from exc
+            raise ValueError(f"ReflectionConfig.cron is not a valid cron expression: {self.cron}") from exc
 
 
 @dataclass
@@ -508,6 +512,7 @@ class VoiceConfig(_ConfigFromEnv):
 
     stt_model: str = "faster-whisper/large-v3-turbo"
     stt_device: str = "cuda"
+    stt_device_index: int = 0
     stt_compute_type: str = "int8"
     stt_language: str = "en"
     stt_beam_size: int = 5
@@ -515,9 +520,8 @@ class VoiceConfig(_ConfigFromEnv):
     tts_engine: str = "piper"
     tts_voice: str = "en_US-amy-medium"
     tts_speed: float = 1.0
-    model_cache_dir: Path = field(
-        default_factory=lambda: Path.home() / ".cache" / "hestia" / "voice"
-    )
+    tts_sample_rate: int = 22050
+    model_cache_dir: Path = field(default_factory=lambda: Path.home() / ".cache" / "hestia" / "voice")
 
 
 @dataclass
@@ -530,6 +534,10 @@ class WebConfig(_ConfigFromEnv):
     host: str = "127.0.0.1"
     port: int = 8765
     auth_enabled: bool = True
+    allow_insecure: bool = False
+    """Bypass the C1/C3 startup security guards. Set True only for isolated
+    development environments where you intentionally run without auth or with
+    wildcard auto-approval on an exposed interface."""
     debug_login: bool = False
     session_lifetime_hours: int = 72
     code_expiry_seconds: int = 300
@@ -543,9 +551,7 @@ class BrowserConfig(_ConfigFromEnv):
     _ENV_PREFIX = "BROWSER"
 
     enabled: bool = False
-    session_dir: Path = field(
-        default_factory=lambda: Path.home() / ".hestia" / "browser-sessions"
-    )
+    session_dir: Path = field(default_factory=lambda: Path.home() / ".hestia" / "browser-sessions")
     headless: bool = True
     default_timeout_seconds: int = 30
     min_fetch_delay_seconds: float = 3.0
@@ -635,6 +641,9 @@ class HestiaConfig(_ConfigFromEnv):
     """Top-level Hestia configuration."""
 
     _ENV_PREFIX = "HESTIA"
+    _ENV_KEY_OVERRIDES = {
+        "extra_tool_modules": "HESTIA_EXTRA_TOOL_MODULES",
+    }
 
     core: CoreConfig = field(default_factory=CoreConfig)
     platforms: PlatformConfig = field(default_factory=PlatformConfig)
@@ -652,18 +661,26 @@ class HestiaConfig(_ConfigFromEnv):
         "2. If a tool is unavailable, blocked, or returns an error, STOP and tell the user "
         "or choose a different action. Do not keep retrying the same call.\n"
         "3. When the user asks a conversational question, reply directly without calling tools.\n"
-        "4. FILE WRITING: If you need to write more than 2000 characters, create the file "
+        "4. For greetings, casual chat, or anything that does not require a tool, "
+        "reply directly. Do not call list_tools, describe_tool, or call_tool.\n"
+        "5. FILE WRITING: If you need to write more than 2000 characters, create the file "
         "with a short header using write_file, then add each remaining section with "
         "append_to_file. Do NOT try to fit an entire long document into one tool call.\n"
-        "5. USER CORRECTIONS & PREFERENCES: If the user corrects you, changes a "
+        "6. USER CORRECTIONS & PREFERENCES: If the user corrects you, changes a "
         "preference, or states a durable fact (e.g. location filters, scheduling rules, "
         "what to include/exclude), immediately use save_memory to persist it. These "
         "memories are loaded into future context, so corrections survive compaction and "
-        "new sessions."
+        "new sessions.\n"
+        "7. MEMORY SCOPE: When persisting identity or durable preferences with "
+        "save_memory, set scope='global'. For everything else (task facts, transient "
+        "context), use scope='topic' (the default). Global memories are always loaded; "
+        "topic memories are loaded only when the conversation is subscribed to that topic."
     )
     max_iterations: int = 10
     verbose: bool = False
     use_curl_cffi_fallback: bool = False
+    extra_tool_modules: list[str] = field(default_factory=list)
+    """Dotted Python import paths of external packages that contribute tools."""
 
     def __init__(
         self,
@@ -684,18 +701,25 @@ class HestiaConfig(_ConfigFromEnv):
             "2. If a tool is unavailable, blocked, or returns an error, STOP and tell the user "
             "or choose a different action. Do not keep retrying the same call.\n"
             "3. When the user asks a conversational question, reply directly without calling tools.\n"
-            "4. FILE WRITING: If you need to write more than 2000 characters, create the file "
+            "4. For greetings, casual chat, or anything that does not require a tool, "
+            "reply directly. Do not call list_tools, describe_tool, or call_tool.\n"
+            "5. FILE WRITING: If you need to write more than 2000 characters, create the file "
             "with a short header using write_file, then add each remaining section with "
             "append_to_file. Do NOT try to fit an entire long document into one tool call.\n"
-            "5. USER CORRECTIONS & PREFERENCES: If the user corrects you, changes a "
+            "6. USER CORRECTIONS & PREFERENCES: If the user corrects you, changes a "
             "preference, or states a durable fact (e.g. location filters, scheduling rules, "
             "what to include/exclude), immediately use save_memory to persist it. These "
             "memories are loaded into future context, so corrections survive compaction and "
-            "new sessions."
+            "new sessions.\n"
+            "7. MEMORY SCOPE: When persisting identity or durable preferences with "
+            "save_memory, set scope='global'. For everything else (task facts, transient "
+            "context), use scope='topic' (the default). Global memories are always loaded; "
+            "topic memories are loaded only when the conversation is subscribed to that topic."
         ),
         max_iterations: int = 10,
         verbose: bool = False,
         use_curl_cffi_fallback: bool = False,
+        extra_tool_modules: list[str] | None = None,
         # Deprecated flat fields (backward compat)
         inference: InferenceConfig | None = None,
         slots: SlotConfig | None = None,
@@ -759,6 +783,7 @@ class HestiaConfig(_ConfigFromEnv):
         self.max_iterations = max_iterations
         self.verbose = verbose
         self.use_curl_cffi_fallback = use_curl_cffi_fallback
+        self.extra_tool_modules = extra_tool_modules if extra_tool_modules is not None else []
 
     # -- Deprecated flat aliases (delegate to grouped versions) -----------------
 
@@ -967,8 +992,7 @@ class HestiaConfig(_ConfigFromEnv):
         config = getattr(module, "config", None)
         if not isinstance(config, HestiaConfig):
             raise TypeError(
-                f"Config file must define a `config` variable of type HestiaConfig, "
-                f"got {type(config).__name__}"
+                f"Config file must define a `config` variable of type HestiaConfig, got {type(config).__name__}"
             )
         validate_inference_model_name(config.inference.model_name)
         return config

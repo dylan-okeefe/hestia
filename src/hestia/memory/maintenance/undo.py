@@ -88,6 +88,14 @@ class MaintenanceUndo:
                     memory_id,
                 )
 
+        undo_details: dict[str, object] = {
+            "undone_action_id": action_id,
+            "restored_count": restored_count,
+        }
+        original_scope = action.details.get("scope")
+        if original_scope is not None:
+            undo_details["scope"] = original_scope
+
         undo_action = MaintenanceAction(
             id=f"maint_{uuid.uuid4().hex[:16]}",
             action="undo",
@@ -98,7 +106,7 @@ class MaintenanceUndo:
             reason=f"undo of {action_id}",
             created_at=now,
             undoable_until=now + timedelta(days=self._undo_retention_days),
-            details={"undone_action_id": action_id, "restored_count": restored_count},
+            details=undo_details,
         )
         await self._trace_store.record(undo_action)
 

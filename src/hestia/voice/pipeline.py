@@ -13,7 +13,7 @@ import re
 import struct
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from hestia.errors import MissingExtraError
 
@@ -30,6 +30,11 @@ try:
     from piper import PiperVoice
 except ImportError:  # pragma: no cover
     PiperVoice = None
+
+try:
+    from kokoro import KPipeline
+except ImportError:  # pragma: no cover
+    KPipeline = None
 
 
 @dataclass
@@ -60,6 +65,10 @@ class VoicePipeline:
     async def synthesize(self, text: str) -> AsyncIterator[bytes]:
         """Stream TTS audio chunks (sentence-level granularity)."""
         await self._ensure_tts_loaded()
+        if self.config.tts_engine == "kokoro":
+            async for chunk in self._synthesize_kokoro(text):
+                yield chunk
+            return
         sentences = _split_sentences(text)
         for sentence in sentences:
             audio = await asyncio.to_thread(self._synthesize_sentence, sentence)
@@ -72,6 +81,29 @@ class VoicePipeline:
             audio_bytes += chunk.audio_int16_bytes
         return audio_bytes
 
+    async def _synthesize_kokoro(self, text: str) -> AsyncIterator[bytes]:
+        """Stream Kokoro TTS audio as PCM16 bytes."""
+        import numpy as np
+
+        def _run() -> list[bytes]:
+            pipeline: Any = self._tts_voice
+            generator = pipeline(
+                text,
+                voice=self.config.tts_voice,
+                speed=self.config.tts_speed,
+                split_pattern=r"\n+",
+            )
+            chunks: list[bytes] = []
+            for _gs, _ps, audio in generator:
+                # Kokoro returns torch/numpy float32 [-1, 1]; convert to PCM16.
+                arr = np.asarray(audio)
+                pcm16 = (arr * 32767).astype(np.int16)
+                chunks.append(pcm16.tobytes())
+            return chunks
+
+        for chunk in await asyncio.to_thread(_run):
+            yield chunk
+
     async def _ensure_stt_loaded(self) -> None:
         async with self._stt_lock:
             if self._whisper_model is not None:
@@ -82,6 +114,7 @@ class VoicePipeline:
                 WhisperModel,
                 self.config.stt_model,
                 device=self.config.stt_device,
+                device_index=self.config.stt_device_index,
                 compute_type=self.config.stt_compute_type,
                 download_root=str(self.config.model_cache_dir),
             )
@@ -94,6 +127,14 @@ class VoicePipeline:
                 if PiperVoice is None:
                     raise MissingExtraError("Install hestia[voice] for TTS support")
                 self._tts_voice = await asyncio.to_thread(_load_piper_voice, self.config)
+            elif self.config.tts_engine == "kokoro":
+                if KPipeline is None:
+                    raise MissingExtraError("Install kokoro for Kokoro TTS support")
+                # Language code is the first letter of the voice id (e.g. am_puck -> a).
+                lang_code = self.config.tts_voice[0] if self.config.tts_voice else "a"
+                self._tts_voice = await asyncio.to_thread(
+                    KPipeline, lang_code=lang_code
+                )
             else:
                 raise MissingExtraError(
                     f"TTS engine '{self.config.tts_engine}' not supported"

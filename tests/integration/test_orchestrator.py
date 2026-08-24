@@ -16,6 +16,7 @@ from hestia.persistence.turn_store import TurnStore
 from hestia.tools.builtin.current_time import current_time
 from hestia.tools.builtin.terminal import make_terminal_tool
 from hestia.tools.registry import ToolRegistry
+from tests.gate_fakes import bind_permissive_gate
 
 terminal = make_terminal_tool()
 
@@ -155,6 +156,7 @@ def artifact_store(tmp_path):
 def tool_registry(artifact_store):
     """Tool registry with current_time tool."""
     registry = ToolRegistry(artifact_store)
+    bind_permissive_gate(registry)
     registry.register(current_time)
     registry.register(terminal)
     return registry
@@ -368,6 +370,7 @@ async def test_two_tool_chain_time_and_file_count(
 
     # Create tool registry with both tools
     registry = ToolRegistry(artifact_store)
+    bind_permissive_gate(registry)
     registry.register(current_time)
     registry.register(terminal)
 
@@ -520,6 +523,7 @@ async def test_turn_fetches_message_history_at_most_once(
     counting_store = _CountingMessageStore(message_store)
 
     registry = ToolRegistry(artifact_store)
+    bind_permissive_gate(registry)
     registry.register(current_time)
     registry.register(terminal)
 
