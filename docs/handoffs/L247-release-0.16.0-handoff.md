@@ -150,3 +150,4 @@ Gates (command reported): `uv run pytest -q` → 2,356 passed / 12 skipped /
 (1bdc1689..4bad5dd7), plus ccff098c recording the merge in this doc.
 Gates on the merge commit (command reported): `uv run pytest -q` ->
 2,356 passed / 12 skipped / 0 failed; `uv run ruff check src tests` clean.
+Tracker record: 84b26fd9.
