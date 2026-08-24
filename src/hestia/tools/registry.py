@@ -143,8 +143,13 @@ class ToolRegistry:
             ToolCallResult with status, content, and optional artifact handle
 
         Raises:
-            ToolBlockedError: Gate denied the invocation.
+            ToolBlockedError: Policy denial - gate denied an enforce call,
+                or the pre_gated decision itself is a denial.
             ToolConfirmationRequiredError: Gate escalated to confirmation.
+            ValueError: Programming error - a pre_gated decision replayed
+                for a tool it was not made for.
+            RuntimeError: No capability gate is bound (every mode requires
+                one; there is no passthrough).
             TypeError: Context missing or wrong type.
         """
         meta = self.describe(name)
@@ -158,62 +163,66 @@ class ToolRegistry:
                 f"ToolRegistry.call requires a ToolCallContext (got {type(context).__name__})"
             )
 
-        if self._gate is None and context.mode == "enforce":
-            # L245 review finding 1: fail closed. An unbound registry used
-            # to run enforce as passthrough - the relocated fail-open. A
-            # chokepoint that depends on remembering bind_gate is not a
-            # chokepoint; wiring that wants no policy must bind an explicit
-            # permissive fake so the choice is visible.
+        # L245 INVARIANT: every mode requires a bound gate. There is no
+        # passthrough configuration - a registry without a gate refuses all
+        # calls. Wiring that wants "no policy" must bind an explicit
+        # permissive fake so the choice is visible in the wiring itself.
+        if self._gate is None:
             raise RuntimeError(
-                f"ToolRegistry.call('{name}') in enforce mode but no "
+                f"ToolRegistry.call('{name}') in {context.mode} mode but no "
                 "capability gate is bound - call bind_gate() at wiring time"
             )
 
-        if self._gate is not None:
-            if context.mode == "enforce":
-                from hestia.policy.gate import CapabilityRequest
-                from hestia.policy.identity import Identity
+        if context.mode == "enforce":
+            from hestia.policy.gate import CapabilityRequest
+            from hestia.policy.identity import Identity
 
-                request = CapabilityRequest(
-                    actor=Identity(
-                        platform=context.actor_platform,
-                        platform_user=context.actor_platform_user,
-                    ),
-                    channel=context.channel,
-                    tool_name=name,
-                    inputs=dict(arguments),
-                    session_id=context.session_id,
-                    source_workflow_id=context.source_workflow_id,
+            request = CapabilityRequest(
+                actor=Identity(
+                    platform=context.actor_platform,
+                    platform_user=context.actor_platform_user,
+                ),
+                channel=context.channel,
+                tool_name=name,
+                inputs=dict(arguments),
+                session_id=context.session_id,
+                source_workflow_id=context.source_workflow_id,
+            )
+            result = await self._gate.check(
+                request,
+                injection_flagged=context.injection_flagged,
+                allow_list=set(context.allow_list),
+            )
+            if not result.allowed:
+                raise ToolBlockedError(
+                    f"[CATEGORY: BLOCKED] Capability gate denied '{name}': "
+                    f"{result.reason}"
                 )
-                result = await self._gate.check(
-                    request,
-                    injection_flagged=context.injection_flagged,
-                    allow_list=set(context.allow_list),
+            if result.requires_confirmation:
+                raise ToolConfirmationRequiredError(
+                    f"Tool '{name}' requires operator confirmation",
+                    result=result,
                 )
-                if not result.allowed:
-                    raise ToolBlockedError(
-                        f"[CATEGORY: BLOCKED] Capability gate denied '{name}': "
-                        f"{result.reason}"
-                    )
-                if result.requires_confirmation:
-                    raise ToolConfirmationRequiredError(
-                        f"Tool '{name}' requires operator confirmation",
-                        result=result,
-                    )
-            elif context.mode == "pre_gated":
-                # L245 review finding 2: a pre_gated decision is a bearer
-                # credential for exactly one tool. Assert the binding so a
-                # context built for tool X cannot authorize tool Y.
-                if (
-                    context.pre_gated_tool != name
-                    or context.pre_gated_result is None
-                    or not context.pre_gated_result.allowed
-                ):
-                    raise ValueError(
-                        f"pre_gated decision was for "
-                        f"'{context.pre_gated_tool}', not '{name}' - "
-                        "refusing to replay it for a different tool"
-                    )
+        elif context.mode == "pre_gated":
+            # Round-2 P3: two distinct failure shapes. A decision replayed
+            # for the wrong tool is a programming error (ValueError); a
+            # decision that says DENY is a policy denial (ToolBlockedError)
+            # so handlers catching that type keep recognizing it.
+            if context.pre_gated_result is None:  # defensive; post_init guards
+                raise ValueError(
+                    f"pre_gated context for '{name}' carries no decision"
+                )
+            if context.pre_gated_tool != name:
+                raise ValueError(
+                    f"pre_gated decision was for "
+                    f"'{context.pre_gated_tool}', not '{name}' - "
+                    "refusing to replay it for a different tool"
+                )
+            if not context.pre_gated_result.allowed:
+                raise ToolBlockedError(
+                    f"[CATEGORY: BLOCKED] pre_gated decision denied '{name}': "
+                    f"{context.pre_gated_result.reason}"
+                )
 
         # The prior handler catch was restricted to (TypeError, ValueError, OSError),
         # so RuntimeError, httpx.HTTPError, application-level exceptions from third-party

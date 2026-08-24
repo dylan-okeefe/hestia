@@ -17,14 +17,17 @@
   1. **Registry-level chokepoint.** Every tool invocation goes through
      `ToolRegistry.call`, which requires a `ToolCallContext` (`tools/context.py`)
      carrying channel, actor, mode, optional allow-list, source workflow,
-     and injection flag. Strict mode: no context means `TypeError` — an
-     ungated invocation is not expressible. Denials raise
+     and injection flag. Strict mode: no context means `TypeError`, and a
+     registry with no bound gate refuses every call (`RuntimeError`) in
+     both modes — there is no passthrough configuration. Denials raise
      `ToolBlockedError`; confirmation escalation raises
      `ToolConfirmationRequiredError`.
-  2. **Single evaluation.** Callers that already evaluated the gate pass
-     the resulting decision via a `pre_gated` context; internal calls use
-     an audited `internal` mode (`gate.audit_internal`). Double-gating is
-     prevented by construction.
+  2. **Single evaluation.** Exactly two modes exist. `enforce` evaluates
+     the gate at the registry. `pre_gated` trusts a decision the caller
+     already made for that invocation, bound to the tool name: a context
+     built for tool X raises rather than authorizing tool Y, and a denied
+     decision raises `ToolBlockedError`. Double-gating is prevented by
+     construction.
   3. **Graph-derived authorization for workflows.** A workflow's stored
      `allow_listed_tools` set is computed exclusively by
      `derive_allowed_set` from the version's node graph (tool_call /

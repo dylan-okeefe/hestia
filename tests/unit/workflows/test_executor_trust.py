@@ -615,3 +615,44 @@ class TestNodeEffectAuthorization:
         node = WorkflowNode(id="n1", type="send_message", label="", config={})
         with pytest.raises(PermissionError):
             await executor._run_node(node, {}, wf, None)
+
+
+class TestPreGatedDenialSurfacing:
+    """L245 round-2 P3 acceptance: a denied pre_gated decision raises
+    ToolBlockedError (not ValueError), and that type survives the handlers
+    that catch it specifically."""
+
+    @pytest.mark.asyncio
+    async def test_investigate_node_propagates_pre_gated_denial(
+        self, gated_app: AppContext
+    ) -> None:
+        """investigate.py:84 re-raises policy denials so the BLOCKED category
+        reaches the execution record instead of becoming per-tool noise."""
+        from hestia.policy.channel import Channel
+        from hestia.policy.gate import CapabilityResult
+        from hestia.tools.context import ToolCallContext
+        from hestia.tools.registry import ToolBlockedError
+        from hestia.workflows.models import WorkflowNode
+        from hestia.workflows.nodes.investigate import InvestigateNode
+
+        node = WorkflowNode(
+            id="n1",
+            type="investigate",
+            label="",
+            config={"topic": "t", "tools": ["current_time"]},
+        )
+        denied = ToolCallContext(
+            channel=Channel.WORKFLOW,
+            actor_platform="workflow",
+            actor_platform_user="u",
+            mode="pre_gated",
+            pre_gated_result=CapabilityResult(
+                allowed=False,
+                auto_approved=False,
+                requires_confirmation=False,
+                reason="allow_listed_denied",
+            ),
+            pre_gated_tool="current_time",
+        )
+        with pytest.raises(ToolBlockedError, match="denied"):
+            await InvestigateNode().execute(gated_app, node, {}, denied)

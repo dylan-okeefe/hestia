@@ -74,3 +74,38 @@ Gates at commit: ruff clean / mypy clean / pytest 2,315 passed + 6 skipped.
 Review-flagged NOT verified (for Dylan or a later loop): 409+confirm flow
 end-to-end in the UI beyond the dialog unit test; m011 against a copy of
 the production database.
+
+## Round 2 punchlist (2026-08-23, landed on this branch)
+
+Review round 2 pre-merge punchlist (card #44), Dylan-approved:
+
+- [x] P1: ADR-052 sections rewritten to the shipped two-mode design
+  (enforce / pre_gated bound to a tool name); all `internal` references gone.
+- [x] P2: CHANGELOG [Unreleased] bullet reworded to match.
+- [x] P3: pre_gated split - wrong-tool replay stays ValueError; a denied
+  decision raises ToolBlockedError with [CATEGORY: BLOCKED] so
+  investigate.py:84 / executor.py:313 keep recognizing denials.
+  Docstring Raises block updated. Acceptance tests: registry-level denial
+  type + investigate node propagates a denied pre_gated decision
+  (executor-path conversion already pinned by
+  test_workflow_blocks_destructive_without_allow_list asserting
+  [CATEGORY: BLOCKED] in the NodeResult error).
+- [x] P4: (a) pre_gated binding assertion hoisted out of the gate-bound
+  block; (b) unbound registry refuses BOTH modes (RuntimeError). Invariant
+  comment added at the top of registry.call ("every mode requires a bound
+  gate; no passthrough"). New mirror test for unbound pre_gated refusal;
+  no tests needed softening.
+
+Verification (V1-V3):
+
+- V1 gates green on final commit: ruff clean, mypy clean, pytest
+  2,321 passed / 6 skipped (+6 vs post-round-1).
+- V2: new integration suite tests/integration/test_workflow_activation_flow.py
+  drives save -> activate(409+diff) -> confirm -> persisted grant against
+  a REAL WorkflowStore, including widening, narrowing, and no-delta cases.
+- V3: m011 run against a sqlite backup-API snapshot of runtime-data/hestia.db
+  (live DB has WAL; raw copy would have missed it). Result PASS: both
+  workflows with active versions ('Job Test Workflow' active v14,
+  'Daily Job Digest') backfilled exactly matching derive_allowed_set_from_json
+  of their stored nodes incl. the node:send_message marker; both versionless
+  workflows untouched; second chain run changed nothing.

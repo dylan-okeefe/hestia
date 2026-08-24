@@ -208,6 +208,56 @@ class TestGateChokepoint:
         with pytest.raises(ValueError, match="pre_gated decision was for 'greet'"):
             await registry.call("add", {"a": 1, "b": 2}, context=bound)
 
+    @pytest.mark.asyncio
+    async def test_pre_gated_denial_is_tool_blocked_error(self, registry):
+        """A denied pre_gated decision is a POLICY DENIAL, not a programming
+        error: it must raise ToolBlockedError so handlers that catch it
+        (investigate.py, executor.py) recognize it (round-2 P3)."""
+        from hestia.policy.gate import CapabilityResult
+        from hestia.tools.context import ToolCallContext
+        from hestia.tools.registry import ToolBlockedError
+
+        registry.register(greet)
+        denied = ToolCallContext(
+            channel=__import__("hestia.policy.channel", fromlist=["Channel"]).Channel.API,
+            actor_platform="test",
+            mode="pre_gated",
+            pre_gated_result=CapabilityResult(
+                allowed=False,
+                auto_approved=False,
+                requires_confirmation=False,
+                reason="allow_listed_denied",
+            ),
+            pre_gated_tool="greet",
+        )
+        with pytest.raises(ToolBlockedError, match="denied"):
+            await registry.call("greet", {"name": "Bob"}, context=denied)
+
+    @pytest.mark.asyncio
+    async def test_unbound_registry_refuses_pre_gated(self, tmp_path):
+        """Round-2 P4(b): a pre_gated decision could only have come from a
+        gate, so an unbound registry refuses pre_gated calls too."""
+        from hestia.policy.gate import CapabilityResult
+        from hestia.tools.context import ToolCallContext
+
+        store = ArtifactStore(root=tmp_path)
+        bare = ToolRegistry(store)  # no bind_gate
+        bare.register(greet)
+        ctx = ToolCallContext(
+            channel=__import__("hestia.policy.channel", fromlist=["Channel"]).Channel.API,
+            actor_platform="test",
+            mode="pre_gated",
+            pre_gated_result=CapabilityResult(
+                allowed=True,
+                auto_approved=True,
+                requires_confirmation=False,
+                reason="approved",
+            ),
+            pre_gated_tool="greet",
+        )
+        with pytest.raises(RuntimeError, match="capability gate"):
+            await bare.call("greet", {"name": "Alice"}, context=ctx)
+
 
 class TestCalling:
     """Tests for tool dispatch."""
