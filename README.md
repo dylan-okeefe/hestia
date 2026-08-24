@@ -103,7 +103,7 @@ cp deploy/example_config.matrix.py config.py   # Matrix
 hestia init
 ```
 
-**CLI only** — `uv sync` is enough; run `hestia chat` for a local REPL.
+**CLI only** — add the `browser` extra (the built-in tool package imports it unconditionally): `uv sync --extra browser`, then `hestia chat` for a local REPL.
 
 **Chat platforms (Telegram / Matrix)** — add the platform tokens to
 `config.py` (Telegram bot token from @BotFather; Matrix access token) and
