@@ -82,3 +82,40 @@ says "copy SOUL.example.md to SOUL.md to get started".
 - **CI cannot be executed here**: the vitest/ruff/pytest changes are
   verified locally; first CI run on the PR is the real test of the matrix.
 - Nothing else was skipped; every spec checklist item is done or named here.
+
+## Phase 5 addendum (2026-08-24, post-review)
+
+**5A shape landed:** primary (packaged canonical). Verified `uv build`
+ships only `src/hestia/`; created `src/hestia/data/SOUL.example.md`
+(1607 B, Phase 4 text) which lands as `hestia/data/SOUL.example.md` in the
+wheel with no backend config needed. `_SOUL_TEMPLATE` replaced by
+`_soul_template()` reading that resource via importlib.resources; root
+copy kept for GitHub browsers and pinned byte-identical by
+`tests/unit/test_soul_example_sync.py` (the detector). Installed-wheel
+verification: fresh venv + wheel → packaged file readable and identical.
+`deploy/SOUL.md.example` deleted. README now notes `hestia init --with-soul`
+writes the same persona.
+
+**5B landed:** `_warn_on_missing_files` renamed to
+`_report_startup_status` (+ new pure helper `platform_credential_gaps`).
+Per-platform gaps verified against each adapter's real acquisition path:
+telegram token-without-allowed_users (accepts nobody); matrix user_id /
+homeserver missing — previously a ValueError CRASH at adapter construction,
+now serve.py skips the adapter and warns (run_matrix's standalone path
+already hard-exits with clear messages); email password via
+resolved_password property. NOT implemented as an `.env` check per A1-style
+reasoning in spec. 5B-2: sqlite databases absent at the resolved path get
+one unremarkable line naming the full resolved path; existing DBs get
+nothing (make_app does not create files itself — test simulates bootstrap).
+Tests drive make_app: `tests/unit/test_startup_status.py` (4 tests).
+
+**NEW FINDING (discovered by the ordered installed-wheel check), flagged
+not fixed:** bare `uv sync` cannot import the CLI at all —
+`hestia.tools.builtin.__init__` eagerly imports browser tools, which import
+playwright (not a core dependency). README's "CLI only — uv sync is enough"
+was therefore untrue; README now says `uv sync --extra browser`. The eager
+import belongs on the #45 register / a packaging loop: either lazy-import
+browser tool modules or promote playwright to core.
+
+**Gates (command reported):** `uv run pytest -q` → **2,354 passed /
+12 skipped / 0 failed** · `uv run ruff check src tests` clean · mypy clean.

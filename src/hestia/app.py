@@ -760,8 +760,63 @@ def _load_and_validate_config(cfg: HestiaConfig | None = None, config_path: Path
     return cfg
 
 
-def _warn_on_missing_files(cfg: HestiaConfig, calibration_path: Path) -> None:
-    """Emit warnings when expected personality or calibration files are missing."""
+def platform_credential_gaps(cfg: HestiaConfig) -> list[str]:
+    """Return human-readable gaps for platforms enabled but not fully configured.
+
+    L247 Phase 5B-1: an enabled platform with a missing credential used to
+    boot degraded silently (or crash, for Matrix). Credentials are verified
+    per adapter's actual acquisition path — there is no shared convention:
+
+    - Telegram reads ``telegram.bot_token``; without ``allowed_users`` the
+      adapter runs but accepts no incoming user.
+    - Matrix needs ``access_token`` AND ``user_id`` (the adapter's
+      constructor raises otherwise).
+    - Email resolves its password via ``password`` or ``password_env``
+      (:meth:`EmailConfig.resolved_password`); missing hosts are the
+      existing validator's job, not a silent degradation.
+    """
+    gaps: list[str] = []
+
+    if cfg.telegram.bot_token and not cfg.telegram.allowed_users:
+        gaps.append(
+            "Telegram is enabled but telegram.allowed_users is empty - "
+            "no incoming user will be accepted"
+        )
+
+    if cfg.matrix.access_token:
+        if not cfg.matrix.user_id:
+            gaps.append(
+                "Matrix is enabled but matrix.user_id is missing - "
+                "the Matrix adapter will not start"
+            )
+        if not cfg.matrix.homeserver:
+            gaps.append(
+                "Matrix is enabled but matrix.homeserver is missing - "
+                "the Matrix adapter will not start"
+            )
+
+    if cfg.email.imap_host:
+        try:
+            password = cfg.email.resolved_password  # property
+        except Exception as exc:  # noqa: BLE001 - report, never block startup
+            gaps.append(f"Email is enabled but its password is unusable: {exc}")
+        else:
+            if not password:
+                gaps.append(
+                    "Email is enabled but no password is configured - set "
+                    "email.password or email.password_env"
+                )
+    return gaps
+
+
+def _report_startup_status(cfg: HestiaConfig, calibration_path: Path) -> None:
+    """Say what startup could not find (L247 Phase 5B).
+
+    Formerly ``_warn_on_missing_files``; it now covers more than files.
+    Everything here warns and continues - none of these conditions block
+    startup, because each has a legitimate first-run or deliberate-partial
+    configuration.
+    """
     soul_path = cfg.identity.soul_path
     if soul_path is not None and not soul_path.exists():
         click.echo(
@@ -784,6 +839,20 @@ def _warn_on_missing_files(cfg: HestiaConfig, calibration_path: Path) -> None:
         )
         logger.warning("Calibration file not found at %s", calibration_path)
 
+    for gap in platform_credential_gaps(cfg):
+        click.echo(click.style(f"Warning: {gap}", fg="yellow"), err=True)
+        logger.warning("%s", gap)
+
+    # 5B-2: name the database path when creating one from scratch. Empty is
+    # correct on a genuine first install; the resolved path is what tells
+    # someone whose history is missing why it is missing.
+    url = cfg.storage.database_url
+    if url.startswith("sqlite") and "://" in url and ":memory:" not in url:
+        db_path = Path(url.split("://", 1)[1]).resolve()
+        if not db_path.exists():
+            click.echo(f"No existing database at {db_path} — creating a new one.")
+            logger.info("No existing database at %s — creating a new one", db_path)
+
 
 def make_app(cfg: HestiaConfig | None = None, config_path: Path | None = None) -> AppContext:
     """Build subsystems from config and return the application context."""
@@ -799,7 +868,7 @@ def make_app(cfg: HestiaConfig | None = None, config_path: Path | None = None) -
     identity_compiler = IdentityCompiler(cfg.identity)
     app._compiled_identity = identity_compiler.get_compiled_text()
 
-    _warn_on_missing_files(cfg, calibration_path)
+    _report_startup_status(cfg, calibration_path)
     app.register_tools()
 
     return app

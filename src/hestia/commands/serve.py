@@ -72,22 +72,37 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
             )
 
         if config.matrix.access_token:
+            # L247 5B-1: a partially configured Matrix used to crash here
+            # (the adapter's constructor raises on missing user_id or
+            # homeserver). Warn and continue without the adapter instead.
+            from hestia.app import platform_credential_gaps
             from hestia.platforms.matrix_adapter import MatrixAdapter
             from hestia.platforms.runners import run_matrix
 
-            matrix_adapter = MatrixAdapter(config.matrix)
-            adapters["matrix"] = matrix_adapter
-            tasks.append(
-                asyncio.create_task(
-                    run_matrix(
-                        app,
-                        config,
-                        adapter=matrix_adapter,
-                        start_scheduler=False,
-                        close_inference=False,
+            matrix_gaps = [
+                g
+                for g in platform_credential_gaps(config)
+                if g.startswith("Matrix")
+            ]
+            if matrix_gaps:
+                for gap in matrix_gaps:
+                    click.echo(click.style(f"Warning: {gap}", fg="yellow"), err=True)
+                matrix_adapter = None
+            else:
+                matrix_adapter = MatrixAdapter(config.matrix)
+            if matrix_adapter is not None:
+                adapters["matrix"] = matrix_adapter
+                tasks.append(
+                    asyncio.create_task(
+                        run_matrix(
+                            app,
+                            config,
+                            adapter=matrix_adapter,
+                            start_scheduler=False,
+                            close_inference=False,
+                        )
                     )
                 )
-            )
 
         if config.email.imap_host:
             from hestia.email.adapter import EmailAdapter
