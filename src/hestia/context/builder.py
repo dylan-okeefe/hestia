@@ -40,7 +40,12 @@ class BuildResult:
     memory_epoch_included: bool  # whether memory epoch was included
 
 
-_DEFAULT_CALIBRATION_PATH = Path(__file__).parent.parent.parent / "docs" / "calibration.json"
+# NOTE on depth: this file lives at src/hestia/context/, so FOUR parents
+# reach the repo root and docs/. app.py has the identical expression but
+# sits one level shallower (src/hestia/), where three parents are correct.
+# Do not deduplicate across the two files without solving the import cycle;
+# do not change the parent count here without re-checking both.
+_DEFAULT_CALIBRATION_PATH = Path(__file__).parent.parent.parent.parent / "docs" / "calibration.json"
 
 
 @lru_cache(maxsize=8)

@@ -59,15 +59,21 @@ def test_readme_tool_list_is_not_empty() -> None:
 
 
 def test_readme_quick_start_contains_required_steps() -> None:
-    """The Quick Start block contains the essential bootstrapping commands."""
-    text = README_PATH.read_text()
-    match = re.search(r"## Quick Start\n+```bash\n(?P<block>.*?)\n```", text, re.DOTALL)
-    if not match:
-        pytest.fail("Could not locate Quick Start bash block in README.md")
+    """The Quick Start section contains the essential bootstrapping commands.
 
-    block = match.group("block")
-    assert "uv sync" in block, "Quick Start must mention `uv sync`"
-    assert "hestia init" in block, "Quick Start must mention `hestia init`"
+    Quick Start is deliberately split into per-mode blocks (CLI / platforms /
+    web), so scan the whole section rather than only the first bash block."""
+    text = README_PATH.read_text()
+    match = re.search(r"## Quick Start\n(?P<section>.*?)\n## ", text, re.DOTALL)
+    if not match:
+        pytest.fail("Could not locate Quick Start section in README.md")
+
+    section = match.group("section")
+    assert "git clone https://github.com/" in section, (
+        "Quick Start must give the real clone URL"
+    )
+    assert "uv sync" in section, "Quick Start must mention `uv sync`"
+    assert "hestia init" in section, "Quick Start must mention `hestia init`"
     assert (
-        "hestia serve" in block or "hestia chat" in block
+        "hestia serve" in section or "hestia chat" in section
     ), "Quick Start must mention `hestia serve` or `hestia chat`"

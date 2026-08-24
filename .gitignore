@@ -76,3 +76,6 @@ config.runtime.py
 
 # Machine-local incremental build cache
 *.tsbuildinfo
+
+# Personal persona — copy from SOUL.example.md
+SOUL.md

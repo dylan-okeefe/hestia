@@ -15,6 +15,102 @@ but not implemented as of v0.10.0.
 
 ---
 
+## v0.16.0
+
+**Released:** 2026-08-24  
+**Full notes:** [`CHANGELOG.md`](CHANGELOG.md) and
+[`docs/releases/v0.16.0.md`](docs/releases/v0.16.0.md)
+
+A large release with **three breaking changes**: workflow authorization is
+now allowlist-only (every workflow must be re-activated once), terminal
+commands run with a restricted environment, and direct registry callers
+must pass a `ToolCallContext`. Back up before upgrading.
+
+### 1. Back up
+
+```bash
+cp -r ~/.hestia ~/.hestia-backup-$(date +%Y%m%d)
+```
+
+(Adjust the path to wherever your `storage.database_url` points.)
+
+### 2. Pull and sync
+
+```bash
+git fetch --tags
+git checkout v0.16.0
+uv sync --all-extras
+```
+
+### 3. Schema changes (applied automatically)
+
+Startup runs `create_tables()` plus idempotent runtime migrations. This
+release adds two:
+
+- **m010** adds an `is_test` flag to `workflow_executions` so test runs are
+  excluded from aggregates.
+- **m011** backfills `workflows.allow_listed_tools` from each workflow's
+  active version. It only touches workflows whose stored grant is still the
+  empty default; custom grants are never overwritten.
+
+No manual migration is needed; `hestia init` or a normal startup applies
+them.
+
+### 4. Re-activate every workflow once (breaking)
+
+Workflow tool access is now allowlist-only: a workflow may invoke exactly
+the tools its activated version grants (see
+[ADR-052](docs/adr/ADR-052-allowlist-only-tool-authorization-for-unattended-channels.md)).
+Migration m011 pre-populates each grant from the active version, so in most
+cases you only need to confirm:
+
+1. Open each workflow in the web dashboard (or activate via the API).
+2. Activate its current version.
+3. If an authorization diff appears, review the added/removed tools and
+   confirm.
+
+Workflows with no active version get no grant; activate a version and
+confirm its diff before they can run tools. Activating a version whose
+grant changed now returns HTTP 409 until you pass
+`?confirm_allow_list_change=true` (the web UI shows a dialog).
+
+### 5. Check terminal commands that relied on inherited env (breaking)
+
+`terminal` child processes now receive only `PATH`, `HOME`, `USER`,
+`LOGNAME`, `SHELL`, `TERM`, `TMPDIR`, `LANG`, and `LANGUAGE`. Commands
+that depended on other environment variables — API keys exported in your
+shell, virtualenv activation, tool-specific config vars — will no longer
+see them. Move anything a workflow needs into its node arguments or a
+credentials file the command reads explicitly.
+
+### 6. Update external tool modules for ToolCallContext (breaking)
+
+If you registered tools through `extra_tool_modules` or call
+`ToolRegistry.call()` directly: calls now require a `ToolCallContext`, and
+a registry without a bound capability gate refuses all calls. See
+[ADR-052](docs/adr/ADR-052-allowlist-only-tool-authorization-for-unattended-channels.md).
+Tools invoked through normal chat and workflow dispatch need no changes.
+
+### 7. Restart services
+
+```bash
+systemctl --user restart hestia-serve.service
+```
+
+### 8. Heads-up
+
+- Streaming turns now fail fast on inference stalls instead of delivering
+  truncated answers; retries apply to non-streaming turns only.
+- The web dashboard on an exposed interface now refuses insecure startup
+  combinations (auth disabled, debug login, wildcard auto-approval).
+- `SOUL.md` is no longer tracked in git; copy `SOUL.example.md` if you are
+  setting up fresh. Your existing file is untouched.
+- If you maintain out-of-tree imports of `hestia.persistence.sessions`,
+  migrate to the split stores (`session_store` / `message_store` /
+  `turn_store`); the deprecated facade will be removed in a future release.
+
+---
+
 ## v0.15.1
 
 **Released:** 2026-06-24  

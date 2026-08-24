@@ -8,6 +8,7 @@ import importlib
 import logging
 import os
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -760,12 +761,101 @@ def _load_and_validate_config(cfg: HestiaConfig | None = None, config_path: Path
     return cfg
 
 
-def _warn_on_missing_files(cfg: HestiaConfig, calibration_path: Path) -> None:
-    """Emit warnings when expected personality or calibration files are missing."""
+@dataclass(frozen=True)
+class CredentialGap:
+    """One enabled-but-incomplete platform (L247 Phase 5B-1, review P7).
+
+    ``platform`` is the stable key callers branch on (``"telegram"``,
+    ``"matrix"``, ``"email"``); ``message`` is the human-readable line.
+    Control flow must key on the platform field, never on the message text.
+    """
+
+    platform: str
+    message: str
+
+
+def platform_credential_gaps(cfg: HestiaConfig) -> list[CredentialGap]:
+    """Return gaps for platforms enabled but not fully configured.
+
+    L247 Phase 5B-1: an enabled platform with a missing credential used to
+    boot degraded silently (or crash, for Matrix). Credentials are verified
+    per adapter's actual acquisition path — there is no shared convention:
+
+    - Telegram reads ``telegram.bot_token``; without ``allowed_users`` the
+      adapter runs but accepts no incoming user.
+    - Matrix needs ``access_token`` AND ``user_id`` (the adapter's
+      constructor raises otherwise).
+    - Email resolves its password via ``password`` or ``password_env``
+      (:meth:`EmailConfig.resolved_password`); missing hosts are the
+      existing validator's job, not a silent degradation.
+    """
+    gaps: list[CredentialGap] = []
+
+    if cfg.telegram.bot_token and not cfg.telegram.allowed_users:
+        gaps.append(
+            CredentialGap(
+                "telegram",
+                "Telegram is enabled but telegram.allowed_users is empty - "
+                "no incoming user will be accepted",
+            )
+        )
+
+    if cfg.matrix.access_token:
+        if not cfg.matrix.user_id:
+            gaps.append(
+                CredentialGap(
+                    "matrix",
+                    "Matrix is enabled but matrix.user_id is missing - "
+                    "the Matrix adapter will not start",
+                )
+            )
+        if not cfg.matrix.homeserver:
+            gaps.append(
+                CredentialGap(
+                    "matrix",
+                    "Matrix is enabled but matrix.homeserver is missing - "
+                    "the Matrix adapter will not start",
+                )
+            )
+
+    if cfg.email.imap_host:
+        try:
+            password = cfg.email.resolved_password  # property
+        except Exception as exc:  # noqa: BLE001 - report, never block startup
+            gaps.append(
+                CredentialGap(
+                    "email",
+                    f"Email is enabled but its password is unusable: {exc}",
+                )
+            )
+        else:
+            if not password:
+                gaps.append(
+                    CredentialGap(
+                        "email",
+                        "Email is enabled but no password is configured - set "
+                        "email.password or email.password_env",
+                    )
+                )
+    return gaps
+
+
+def _report_startup_status(cfg: HestiaConfig, calibration_path: Path) -> None:
+    """Say what startup could not find (L247 Phase 5B).
+
+    Formerly ``_warn_on_missing_files``; it now covers more than files.
+    Everything here warns and continues - none of these conditions block
+    startup, because each has a legitimate first-run or deliberate-partial
+    configuration.
+    """
     soul_path = cfg.identity.soul_path
     if soul_path is not None and not soul_path.exists():
         click.echo(
-            click.style(f"Warning: personality file not found at {soul_path}", fg="yellow"),
+            click.style(
+                f"Warning: personality file not found at {soul_path}; "
+                "copy SOUL.example.md to SOUL.md to get started",
+                fg="yellow",
+            ),
             err=True,
         )
         logger.warning("SOUL.md not found at %s", soul_path)
@@ -779,6 +869,29 @@ def _warn_on_missing_files(cfg: HestiaConfig, calibration_path: Path) -> None:
             err=True,
         )
         logger.warning("Calibration file not found at %s", calibration_path)
+
+    for gap in platform_credential_gaps(cfg):
+        click.echo(click.style(f"Warning: {gap.message}", fg="yellow"), err=True)
+        logger.warning("%s", gap.message)
+
+    # 5B-2: name the database path when creating one from scratch. Empty is
+    # correct on a genuine first install; the resolved path is what tells
+    # someone whose history is missing why it is missing.
+    # Review P6: never hand-parse SQLite URLs - slash count encodes
+    # relative vs absolute. make_url().database handles both forms and is
+    # None for in-memory.
+    from sqlalchemy.engine import make_url
+
+    parsed = make_url(cfg.storage.database_url)
+    if (
+        parsed.drivername.startswith("sqlite")
+        and parsed.database
+        and parsed.database != ":memory:"
+    ):
+        db_path = Path(parsed.database).resolve()
+        if not db_path.exists():
+            click.echo(f"No existing database at {db_path} — creating a new one.")
+            logger.info("No existing database at %s — creating a new one", db_path)
 
 
 def make_app(cfg: HestiaConfig | None = None, config_path: Path | None = None) -> AppContext:
@@ -795,7 +908,7 @@ def make_app(cfg: HestiaConfig | None = None, config_path: Path | None = None) -
     identity_compiler = IdentityCompiler(cfg.identity)
     app._compiled_identity = identity_compiler.get_compiled_text()
 
-    _warn_on_missing_files(cfg, calibration_path)
+    _report_startup_status(cfg, calibration_path)
     app.register_tools()
 
     return app

@@ -11,6 +11,7 @@ from hestia.persistence.sessions import SessionStore
 
 
 @pytest.mark.asyncio
+@pytest.mark.live
 async def test_inference_health():
     """Verify llama-server is reachable."""
     client = InferenceClient("http://localhost:8001", "qwen-3.5-9b")
@@ -23,6 +24,7 @@ async def test_inference_health():
 
 
 @pytest.mark.asyncio
+@pytest.mark.live
 async def test_tokenize_accurate():
     """Tokenize endpoint returns accurate token counts."""
     client = InferenceClient("http://localhost:8001", "qwen-3.5-9b")
@@ -35,6 +37,7 @@ async def test_tokenize_accurate():
 
 
 @pytest.mark.asyncio
+@pytest.mark.live
 async def test_chat_simple():
     """Basic chat completion works.
 
@@ -59,6 +62,7 @@ async def test_chat_simple():
 
 
 @pytest.mark.asyncio
+@pytest.mark.live
 async def test_count_request_reasonable():
     """count_request returns a reasonable token estimate.
 
@@ -117,6 +121,7 @@ async def test_session_store_roundtrip(tmp_path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.live
 async def test_end_to_end_smoke(tmp_path):
     """Send a message through inference, store it, verify the round-trip."""
     db = Database(f"sqlite+aiosqlite:///{tmp_path}/smoke.db")

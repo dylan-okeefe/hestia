@@ -72,22 +72,33 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
             )
 
         if config.matrix.access_token:
+            # L247 5B-1 + review P7/P8: decide on the structured platform
+            # key, never the message text. Gaps are already printed once by
+            # make_app's startup report; this branch only needs the decision.
+            from hestia.app import platform_credential_gaps
             from hestia.platforms.matrix_adapter import MatrixAdapter
             from hestia.platforms.runners import run_matrix
 
-            matrix_adapter = MatrixAdapter(config.matrix)
-            adapters["matrix"] = matrix_adapter
-            tasks.append(
-                asyncio.create_task(
-                    run_matrix(
-                        app,
-                        config,
-                        adapter=matrix_adapter,
-                        start_scheduler=False,
-                        close_inference=False,
+            matrix_broken = any(
+                gap.platform == "matrix"
+                for gap in platform_credential_gaps(config)
+            )
+            matrix_adapter = (
+                None if matrix_broken else MatrixAdapter(config.matrix)
+            )
+            if matrix_adapter is not None:
+                adapters["matrix"] = matrix_adapter
+                tasks.append(
+                    asyncio.create_task(
+                        run_matrix(
+                            app,
+                            config,
+                            adapter=matrix_adapter,
+                            start_scheduler=False,
+                            close_inference=False,
+                        )
                     )
                 )
-            )
 
         if config.email.imap_host:
             from hestia.email.adapter import EmailAdapter

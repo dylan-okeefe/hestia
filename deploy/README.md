@@ -245,7 +245,7 @@ sudo systemctl restart hestia-agent@$USER
 # Restart hestia-llama only if the model or server config changed
 ```
 
-If schema changed between versions:
-```bash
-uv run alembic upgrade head
-```
+If schema changed between versions, just restart: Hestia bootstraps its
+database with `create_tables()` plus idempotent runtime migrations on every
+startup. The Alembic files under `migrations/` exist for reference and
+development convenience only — they are **not** the production upgrade path.

@@ -84,22 +84,48 @@ System: `current_time`, `read_artifact`, `rollback_turn`, `delegate_task`
 ## Quick Start
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/dylan-okeefe/hestia.git
 cd hestia
 uv sync
-# Choose an example config that matches the platforms you want:
-cp deploy/example_config.cli.py config.py      # local CLI only
-cp deploy/example_config.py config.py          # Telegram production
-cp deploy/example_config.matrix.py config.py   # Matrix
-# Edit config.py: set inference.model_name, allowed paths, platform tokens, etc.
-hestia init
-# Start the llama.cpp server (see deploy/hestia-llama.service or docs/guides/runtime-setup.md)
-hestia serve
 ```
 
-`hestia serve` runs all configured platform adapters and the web dashboard. Use
-`hestia chat` for a local REPL. Note that `web.enabled` defaults to `False`; set it
-to `True` in `config.py` to enable the dashboard.
+What you need beyond that depends on which surfaces you want to run. All
+modes require a running [llama.cpp](https://github.com/ggerganov/llama.cpp)
+server (see `deploy/hestia-llama.service` or
+[`docs/guides/runtime-setup.md`](docs/guides/runtime-setup.md)) and a config
+file — start from an example in `deploy/`:
+
+```bash
+cp deploy/example_config.cli.py config.py      # local CLI only
+cp deploy/example_config.py config.py          # Telegram
+cp deploy/example_config.matrix.py config.py   # Matrix
+# Edit config.py: inference.model_name, allowed paths, platform tokens, etc.
+hestia init
+```
+
+**CLI only** — add the `browser` extra (the built-in tool package imports it unconditionally): `uv sync --extra browser`, then `hestia chat` for a local REPL.
+
+**Chat platforms (Telegram / Matrix)** — add the platform tokens to
+`config.py` (Telegram bot token from @BotFather; Matrix access token) and
+run `hestia serve`, which starts all configured adapters plus the scheduler.
+
+**Web dashboard** — additionally needs the `web` extra and the SPA built:
+
+```bash
+uv sync --extra web
+cd web-ui && npm ci && npm run build && cd ..
+```
+
+Then set `web.enabled = True` in `config.py` and open the dashboard on
+`http://127.0.0.1:8080`. Authentication is platform-based 2FA; see
+[`docs/guides/web-dashboard.md`](docs/guides/web-dashboard.md).
+
+Other optional extras: `browser` (Playwright-based browser tools),
+`voice` (faster-whisper STT + Piper TTS), `postgres` (PostgreSQL storage).
+Plain `uv sync` installs none of them — install what your mode imports.
+
+Your assistant's personality lives in `SOUL.md` at the repo root. It is not
+tracked in git; copy `SOUL.example.md` to `SOUL.md` and edit it to taste.
 
 Hestia bootstraps its database with `create_tables()` plus idempotent runtime
 migrations on every startup. The Alembic files under `migrations/` exist for
@@ -110,7 +136,7 @@ upgrade path. Running `hestia init` is sufficient.
 
 - **[User Guides](docs/guides/)** — setup, platforms, security, voice, email, browser
   sessions, workflows, multi-user, custom tools
-- **[Architecture Decisions](docs/adr/)** — 51 ADRs covering design rationale
+- **[Architecture Decisions](docs/adr/)** — 53 ADRs covering design rationale
 - **[Changelog](CHANGELOG.md)** — version history
 - **[Release Notes](docs/releases/)** — human-facing release summaries
 - **[Security](SECURITY.md)** — threat model and responsible disclosure

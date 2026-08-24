@@ -212,6 +212,85 @@ Steps:
 
 If anything about the loader's behavior on a missing `SOUL.md` is ambiguous, describe what you found and stop rather than guessing. Breaking the persona load on a live assistant is a worse outcome than shipping the file for one more release.
 
+---
+
+# Phase 5: setup honesty (added 2026-08-24, post-Phase-4)
+
+Two unrelated problems, both of which make a fresh install lie to the person doing it. Grouped because they ship together and both are release-blocking for a release whose purpose is that a stranger can follow the docs successfully.
+
+- **5A** — three starter personas disagree
+- **5B** — the instance starts up without saying what it could not find
+
+## 5A: three starter personas disagree
+
+Phase 4 created `SOUL.example.md` without noticing two other starter personas already existed. There are now three, with different content:
+
+| Where | Size | Origin | Who gets it |
+|---|---|---|---|
+| `SOUL.example.md` (root) | 1607 B | new, Phase 4 | anyone following the README's copy instruction |
+| `deploy/SOUL.md.example` | 753 B | Apr 30, commit `dd74dd6` | nobody; unreferenced |
+| `_SOUL_TEMPLATE` in `src/hestia/commands/admin.py` | — | Apr 30, same commit | **anyone running the documented `hestia init --with-soul`** |
+
+So the two documented onboarding paths hand a new user two different personas, in the release whose stated purpose is that a stranger can follow the docs and get a working install. That is a first-five-minutes defect in exactly the area Phase 3 covers, which is why it is in this loop rather than a follow-up card.
+
+## The packaging constraint decides the design
+
+`pyproject.toml` uses the `uv_build` backend with no package-data configuration, so the wheel contains `src/hestia/` and nothing else. Root-level `SOUL.example.md` and `deploy/` are **not** in an installed package.
+
+That is why `_SOUL_TEMPLATE` is a Python string constant: it is the only copy an installed `hestia init --with-soul` can reach. **Do not "simplify" by having init read the root file.** That breaks every non-clone install, and the breakage is invisible from a source checkout, which is where you will be testing.
+
+**Verify this claim before relying on it.** Build a wheel (`uv build`) and list its contents. If root markdown files turn out to be included, say so and the design below can be simplified. If they are not, proceed as specified.
+
+## Required shape
+
+One canonical text, shipped inside the package, plus a detector on any convenience copy.
+
+1. Move the canonical starter persona to `src/hestia/data/SOUL.example.md` (or the nearest existing convention for package data; check whether one exists before inventing a directory). Content should be Phase 4's 1607-byte version, which is the sanitized one written for this release.
+2. `_SOUL_TEMPLATE` is replaced by a read of that packaged file. Confirm it still works from an installed wheel, not only from the source tree.
+3. Keep `SOUL.example.md` at the repo root. It is worth having for someone browsing the repository on GitHub, which is a real audience for this release. It is a convenience copy, not a second source.
+4. **Add a test asserting the root copy is byte-identical to the packaged canonical file.** This is the detector. Duplication that cannot be removed gets a test that fails when the copies drift, rather than a comment asking people to be careful.
+5. Delete `deploy/SOUL.md.example`. Stale, unreferenced, and contradicts both others.
+6. Make sure the README's instruction and `hestia init --with-soul` now produce the same persona, and say which one the README recommends.
+
+## If the design does not work out
+
+If packaged data turns out to be awkward with `uv_build`, the acceptable fallback is: `_SOUL_TEMPLATE` stays the canonical text, `SOUL.example.md` is asserted identical to it by a test, and `deploy/SOUL.md.example` is still deleted. That is two copies with a detector rather than one copy, which is worse but not much worse. **Do not** ship three, and do not ship two without the test.
+
+Report which shape you landed on and why.
+
+---
+
+## 5B: startup does not say what it could not find
+
+`_warn_on_missing_files` in `app.py` covers exactly two things: `SOUL.md` and `docs/calibration.json`. Everything else that is gitignored and required is silently absent. Two cases matter.
+
+### 5B-1: missing platform credentials
+
+`deploy/hestia-serve.service` sets `EnvironmentFile=%h/Hestia-runtime/.env`, and `.env` is gitignored. Without it the instance boots **degraded**: enabled platforms have no credentials, and Hestia itself says nothing.
+
+**Do not implement this as a check for `.env`.** That file is a systemd deployment detail, not Hestia's. Hestia never reads it; systemd reads it and hands Hestia environment variables. Someone running from the CLI, from a container, or with credentials exported another way has no `.env` and is perfectly fine, and warning them would be a false alarm that trains people to ignore the warnings.
+
+Check the actual precondition instead: **for each platform enabled in config, is the credential it needs actually present and non-empty?** Telegram enabled with no bot token is the real defect; the absence of a particular file is not.
+
+Behavior: warn per platform, name the platform and the missing variable, and continue. Do not fail startup. Someone may deliberately run with one adapter unconfigured.
+
+Verify how each adapter currently obtains its credentials before writing the check. Do not assume every platform reads an environment variable, or that they share a naming convention.
+
+### 5B-2: silently empty database
+
+`runtime-data/` is gitignored, so a fresh deploy comes up with an empty database and no comment. Empty is **correct** on a genuine first install, so this must not be an error and must not block startup. The problem is that nothing distinguishes "first install" from "deployed to the wrong path and my history is somewhere else."
+
+Behavior: when the database file does not exist at the resolved path, emit one line at startup naming the **full resolved path** it is creating. The path is the whole point; "creating a new database" without it tells a person nothing about why theirs is missing.
+
+Wording should read as unremarkable on a first install and informative to someone who expected data. Something in the shape of "No existing database at /full/path — creating a new one." Avoid alarm words; this is the normal first-run path.
+
+### Both
+
+- These are `app.py` changes. Gates apply, and the whole-tree command with its count goes in the handoff.
+- Add a test for each: a config with an enabled platform and no credential produces the warning; an absent database file produces the path line. Drive the real startup path, do not reimplement the check in the test.
+- If `_warn_on_missing_files` is now doing more than its name says, rename it. A function called `_warn_on_missing_files` that also validates credentials is the kind of small dishonesty that makes the next reader miss a case.
+- Keep it to these two. Do not audit the rest of `.gitignore` and add warnings for everything; `.matrix.secrets.py` is optional by design and needs nothing.
+
 ## Guardrails
 
 These are not optional and they exist because of specific, observed failure modes.
@@ -244,6 +323,10 @@ These are not optional and they exist because of specific, observed failure mode
 - [ ] CI runs vitest and lints `tests/`
 - [ ] `pyproject.toml` metadata added, author email set to dylanokeefedev@gmail.com
 - [ ] `SOUL.example.md` written, `SOUL.md` untracked and gitignored, loader handles a missing file, working-tree copy confirmed still present
+- [ ] 5A: wheel contents checked; one canonical starter persona shipped in the package; root copy pinned by a byte-identical test; `deploy/SOUL.md.example` deleted; README instruction and `hestia init --with-soul` agree
+- [ ] 5B-1: per-platform credential check (NOT a `.env` file check), warns and continues, one test
+- [ ] 5B-2: absent database emits one line naming the full resolved path, does not block startup, one test
+- [ ] `_warn_on_missing_files` renamed if it now does more than its name says
 - [ ] Gates green on the final commit, numbers recorded
 - [ ] Handoff written to `docs/handoffs/`, including everything skipped and every unresolved placeholder
 - [ ] Branch pushed, card #51 updated by appending, nothing merged
@@ -252,7 +335,8 @@ These are not optional and they exist because of specific, observed failure mode
 
 - Publishing to PyPI
 - Tagging the release or merging to `main` (Dylan does this)
-- Any code change beyond the CI workflow and `pyproject.toml`
+- Any code change beyond the CI workflow, `pyproject.toml`, the SOUL loader and packaging (5A), the startup checks named in 5B, and the sanctioned calibration-path fix
+- Auditing the rest of `.gitignore` for missing-file warnings. 5B covers exactly two cases and stops there.
 - Deciding the 1.0 question (0.16.0 is settled for this release; 1.0 is a separate deliberate call)
 - Enabling GitHub private vulnerability reporting in repository settings, which only Dylan can do
 - Card #45 (L246, test-blindness audit) and card #47 (small cleanups), which are separate loops
