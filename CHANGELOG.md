@@ -19,8 +19,8 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Added
 
 - `ToolCallContext` + registry-level gate chokepoint: denials raise `ToolBlockedError`,
-  confirmation escalation raises `ToolConfirmationRequiredError`, and `pre_gated` /
-  audited `internal` modes support single-evaluation and audited system calls.
+  confirmation escalation raises `ToolConfirmationRequiredError`, and `pre_gated`
+  contexts carry single-evaluation decisions bound to exactly the tool that was gated.
 - Graph-derived allow-lists (`derive_allowed_set`) covering `tool_call`/`investigate`
   tools plus node-effect markers (`node:http_request`, `node:send_message`); save
   responses expose `derived_allow_list`, and the executor refuses effect nodes whose
