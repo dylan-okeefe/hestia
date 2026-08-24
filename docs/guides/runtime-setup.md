@@ -127,6 +127,6 @@ If you see "This session has grown past my context budget", the protected block
 exceeds the per-slot budget. Options:
 
 1. Reduce `IdentityConfig.max_tokens`.
-2. Shorten `SOUL.md`.
+2. Shorten `SOUL.md` (copy `SOUL.example.md` as a starting point if you have not created one — it is not tracked in git).
 3. Increase `--ctx-size / --parallel` (requires more VRAM).
 4. Run `/reset` to archive the session and start fresh.
