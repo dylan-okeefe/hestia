@@ -109,3 +109,18 @@ Verification (V1-V3):
   'Daily Job Digest') backfilled exactly matching derive_allowed_set_from_json
   of their stored nodes incl. the node:send_message marker; both versionless
   workflows untouched; second chain run changed nothing.
+
+## Verification-scope correction (2026-08-23)
+
+Dylan ran `uv run pytest -q` from the repo root and hit one failure my
+gates missed: tests/smoke/ was never in the paths I passed to pytest, so
+"full gates" had silently excluded the smoke suite since chunk F. The
+smoke proto-orchestrator test still called registry.call without a
+context - exactly what strict mode is supposed to catch, and it did.
+
+Fix: smoke test binds tests.gate_fakes.PermissiveGate explicitly (smoke
+drives model->tool plumbing, not authorization) and passes a CLI-channel
+enforce context at both dispatch sites. Going forward the gate command is
+plain `uv run pytest -q` over the whole tree, not a hand-picked subset.
+
+Verified with Dylan's exact command: 2,347 passed / 12 skipped / 0 failed.
