@@ -142,3 +142,11 @@ P9 — CHANGELOG [0.16.0] Changed entry added for crash→warn-and-skip.
 
 Gates (command reported): `uv run pytest -q` → 2,356 passed / 12 skipped /
 0 failed · ruff clean · mypy clean (228 files).
+
+
+## Merged
+
+`docs/release-0.16.0` -> develop as merge commit 4bad5dd7, pushed
+(1bdc1689..4bad5dd7), plus ccff098c recording the merge in this doc.
+Gates on the merge commit (command reported): `uv run pytest -q` ->
+2,356 passed / 12 skipped / 0 failed; `uv run ruff check src tests` clean.
