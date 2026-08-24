@@ -81,6 +81,9 @@ breaking changes — read [`UPGRADE.md`](UPGRADE.md) before upgrading.
   history.
 - The web login picker sends codes to a server-resolved, allowlisted
   identity; a client-supplied recipient is honored only if it matches one.
+- A Matrix adapter whose config is incomplete (missing `user_id` or
+  `homeserver`) no longer crashes startup; the missing keys are reported
+  and the rest of the instance runs.
 - Orchestrator fails fast with an actionable message when the model
   returns empty responses repeatedly, instead of looping.
 - Session/message/turn persistence moved to split stores

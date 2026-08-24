@@ -119,3 +119,26 @@ browser tool modules or promote playwright to core.
 
 **Gates (command reported):** `uv run pytest -q` → **2,354 passed /
 12 skipped / 0 failed** · `uv run ruff check src tests` clean · mypy clean.
+
+## Phase 5 punchlist addendum (2026-08-24, review round 2)
+
+P6 (blocking) — fixed via `sqlalchemy.engine.make_url`. Verified the
+defect first against the DEFAULT config URL
+(`sqlite+aiosqlite:///hestia.db`, three slashes = relative): hand-parsing
+produced `/hestia.db`, a false "creating" line on every boot.
+make_url returns the correct relative database and None for bare sqlite://;
+an explicit `!= ":memory:"` guard covers the memory form (make_url returns
+the literal string there). Test gap closed: new relative-URL case uses
+monkeypatch.chdir + a three-slash URL, plus an in-memory no-notice case.
+
+P7 — platform_credential_gaps now returns frozen CredentialGap(platform,
+message) records; serve.py branches on gap.platform == "matrix". Message
+text is display-only.
+
+P8 — serve.py no longer prints gaps; make_app's startup report is the only
+printer.
+
+P9 — CHANGELOG [0.16.0] Changed entry added for crash→warn-and-skip.
+
+Gates (command reported): `uv run pytest -q` → 2,356 passed / 12 skipped /
+0 failed · ruff clean · mypy clean (228 files).

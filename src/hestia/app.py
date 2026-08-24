@@ -8,6 +8,7 @@ import importlib
 import logging
 import os
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -760,8 +761,21 @@ def _load_and_validate_config(cfg: HestiaConfig | None = None, config_path: Path
     return cfg
 
 
-def platform_credential_gaps(cfg: HestiaConfig) -> list[str]:
-    """Return human-readable gaps for platforms enabled but not fully configured.
+@dataclass(frozen=True)
+class CredentialGap:
+    """One enabled-but-incomplete platform (L247 Phase 5B-1, review P7).
+
+    ``platform`` is the stable key callers branch on (``"telegram"``,
+    ``"matrix"``, ``"email"``); ``message`` is the human-readable line.
+    Control flow must key on the platform field, never on the message text.
+    """
+
+    platform: str
+    message: str
+
+
+def platform_credential_gaps(cfg: HestiaConfig) -> list[CredentialGap]:
+    """Return gaps for platforms enabled but not fully configured.
 
     L247 Phase 5B-1: an enabled platform with a missing credential used to
     boot degraded silently (or crash, for Matrix). Credentials are verified
@@ -775,36 +789,53 @@ def platform_credential_gaps(cfg: HestiaConfig) -> list[str]:
       (:meth:`EmailConfig.resolved_password`); missing hosts are the
       existing validator's job, not a silent degradation.
     """
-    gaps: list[str] = []
+    gaps: list[CredentialGap] = []
 
     if cfg.telegram.bot_token and not cfg.telegram.allowed_users:
         gaps.append(
-            "Telegram is enabled but telegram.allowed_users is empty - "
-            "no incoming user will be accepted"
+            CredentialGap(
+                "telegram",
+                "Telegram is enabled but telegram.allowed_users is empty - "
+                "no incoming user will be accepted",
+            )
         )
 
     if cfg.matrix.access_token:
         if not cfg.matrix.user_id:
             gaps.append(
-                "Matrix is enabled but matrix.user_id is missing - "
-                "the Matrix adapter will not start"
+                CredentialGap(
+                    "matrix",
+                    "Matrix is enabled but matrix.user_id is missing - "
+                    "the Matrix adapter will not start",
+                )
             )
         if not cfg.matrix.homeserver:
             gaps.append(
-                "Matrix is enabled but matrix.homeserver is missing - "
-                "the Matrix adapter will not start"
+                CredentialGap(
+                    "matrix",
+                    "Matrix is enabled but matrix.homeserver is missing - "
+                    "the Matrix adapter will not start",
+                )
             )
 
     if cfg.email.imap_host:
         try:
             password = cfg.email.resolved_password  # property
         except Exception as exc:  # noqa: BLE001 - report, never block startup
-            gaps.append(f"Email is enabled but its password is unusable: {exc}")
+            gaps.append(
+                CredentialGap(
+                    "email",
+                    f"Email is enabled but its password is unusable: {exc}",
+                )
+            )
         else:
             if not password:
                 gaps.append(
-                    "Email is enabled but no password is configured - set "
-                    "email.password or email.password_env"
+                    CredentialGap(
+                        "email",
+                        "Email is enabled but no password is configured - set "
+                        "email.password or email.password_env",
+                    )
                 )
     return gaps
 
@@ -840,15 +871,24 @@ def _report_startup_status(cfg: HestiaConfig, calibration_path: Path) -> None:
         logger.warning("Calibration file not found at %s", calibration_path)
 
     for gap in platform_credential_gaps(cfg):
-        click.echo(click.style(f"Warning: {gap}", fg="yellow"), err=True)
-        logger.warning("%s", gap)
+        click.echo(click.style(f"Warning: {gap.message}", fg="yellow"), err=True)
+        logger.warning("%s", gap.message)
 
     # 5B-2: name the database path when creating one from scratch. Empty is
     # correct on a genuine first install; the resolved path is what tells
     # someone whose history is missing why it is missing.
-    url = cfg.storage.database_url
-    if url.startswith("sqlite") and "://" in url and ":memory:" not in url:
-        db_path = Path(url.split("://", 1)[1]).resolve()
+    # Review P6: never hand-parse SQLite URLs - slash count encodes
+    # relative vs absolute. make_url().database handles both forms and is
+    # None for in-memory.
+    from sqlalchemy.engine import make_url
+
+    parsed = make_url(cfg.storage.database_url)
+    if (
+        parsed.drivername.startswith("sqlite")
+        and parsed.database
+        and parsed.database != ":memory:"
+    ):
+        db_path = Path(parsed.database).resolve()
         if not db_path.exists():
             click.echo(f"No existing database at {db_path} — creating a new one.")
             logger.info("No existing database at %s — creating a new one", db_path)

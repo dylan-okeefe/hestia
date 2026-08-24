@@ -48,12 +48,38 @@ def test_enabled_platform_with_missing_credentials_warns_and_continues(
     assert app is not None
 
 
-def test_matrix_gap_helper_skips_incomplete_config(tmp_path) -> None:
-    """The gap list is what serve.py gates adapter construction on."""
+def test_matrix_gap_helper_is_structured_by_platform(tmp_path) -> None:
+    """Gaps carry a stable platform key - serve.py branches on it, never on
+    message text (review P7: rewording a message must not flip behavior)."""
     cfg = _runtime_config(tmp_path)
     cfg.matrix = MatrixConfig(access_token="tok", user_id="", homeserver="")
     gaps = platform_credential_gaps(cfg)
-    assert any("matrix.user_id" in g for g in gaps)
+    matrix_gaps = [g for g in gaps if g.platform == "matrix"]
+    assert matrix_gaps, "incomplete Matrix must produce a matrix-keyed gap"
+    assert all("matrix.user_id" in g.message or "matrix.homeserver" in g.message for g in matrix_gaps)
+
+
+def test_relative_sqlite_url_resolves_inside_cwd(tmp_path, monkeypatch, capsys) -> None:
+    """Review P6: three-slash SQLite URLs are RELATIVE. The default config
+    uses `sqlite+aiosqlite:///hestia.db`; hand-parsing resolved that to
+    /hestia.db and produced a false alarm on every boot. The notice must
+    name the path relative to the working directory."""
+    monkeypatch.chdir(tmp_path)
+    cfg = _runtime_config(tmp_path)
+    cfg.storage.database_url = "sqlite+aiosqlite:///hestia.db"
+    make_app(cfg)
+    out = capsys.readouterr().out + capsys.readouterr().err
+    expected = tmp_path / "hestia.db"
+    assert f"No existing database at {expected}" in out
+
+
+def test_in_memory_database_gets_no_notice(tmp_path, monkeypatch, capsys) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = HestiaConfig.default()
+    cfg.storage.database_url = "sqlite+aiosqlite:///:memory:"
+    make_app(cfg)
+    out = capsys.readouterr().out + capsys.readouterr().err
+    assert "No existing database at" not in out
 
 
 def test_absent_database_names_full_resolved_path(tmp_path, monkeypatch, capsys) -> None:
