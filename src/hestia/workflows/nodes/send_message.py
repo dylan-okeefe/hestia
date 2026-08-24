@@ -20,6 +20,7 @@ class SendMessageNode:
         app: AppContext,
         node: WorkflowNode,
         inputs: dict[str, Any],
+        tool_context: Any = None,
     ) -> Any:
         """Send a message to the configured platform and user.
 

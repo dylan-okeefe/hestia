@@ -1,0 +1,126 @@
+# L245 — Allowlist-only tool authorization + gate chokepoint (#44)
+
+Working state tracker. Checkboxes updated per landed commit; this file is
+the source of truth for resume-after-interrupt.
+
+## Chunks
+
+- [x] A.ToolCallContext + registry chokepoint + workflow migration + real-registry trust fixture + fail-closed + dedup constant removed.
+- [x] A0. Allow-side auditing in gate.check for unattended channels (commit on feature/l245-gate-chokepoint).
+- [x] A. ToolCallContext + registry.bind_gate + call(..., context) enforcement (deny→ToolBlockedError; confirm→ToolConfirmationRequiredError; pre_gated passthrough) + AppContext binds gate + workflow executor/nodes migrated to contexts + fail-closed when gate missing + drop duplicate _GATED_NODE_TYPES + trust-fixture converted to a real gated registry + direct-call enforcement test.
+- [x] B. investigate tools: config-only selection (resolver drops inputs precedence); flip inputs-path tests to expect denial-by-absence (no tools resolved from inputs).
+- [x] C. Orchestrator dispatch passes pre_gated context (single evaluation preserved); meta-tool path threaded through.
+- [x] D. Policy-delegation delegate_task rerouted through the same gated dispatch (bypass (i) closed).
+- [x] E. Truncated-write recovery rerouted through gated registry.call (bypass (iv) closed); no system-context exemption.
+- [x] F. Strict mode: registry.call requires a context (legacy None fallback removed); sweep tests.
+- [x] G. Scheduler allow-list derived from TrustConfig flags via policy engine (flags become real controls).
+- [x] H. derive_allowed_set(nodes) incl. node-effect markers; save returns derived set; activate requires confirmation of changes (409 + diff); m011 backfill migration against an existing-db shaped fixture; _is_url_safe private-import cleanup in http_request.py.
+- [x] I. Frontend: diff-on-activate dialog wired to 409 flow.
+- [x] J. CHANGELOG breaking-change entry; REMEDIATION_SUMMARY/architecture notes; metrics refresh; card #44 → In Review.
+
+## Rules
+Tests-first per chunk; full gates green per commit; no push/merge without Dylan.
+
+## Progress log
+
+- 2026-08-23: A0–A committed (chokepoint core + allow-side audit).
+- 2026-08-23: B (investigate config-only), C (orchestrator pre_gated),
+  D (delegation gated — bypass (i) closed), E (recovery gated — bypass
+  (iv) closed), F (strict context required), G (scheduler allow-map)
+  all landed green (2,294 passing).
+- 2026-08-23: H landed — derive_allowed_set + node-effect markers
+  (node:http_request / node:send_message), save returns
+  derived_allow_list, activate 409-diff + confirm_allow_list_change,
+  executor refuses effect nodes without their marker (fail-closed),
+  m011 backfill (empty sets only, idempotent, existing-db fixture),
+  is_url_safe made public.
+- 2026-08-23: I landed — ActivationConfirmationRequired (typed 409
+  error) in api client; AllowListDiffDialog (+css+tests); hook parks
+  changed activations in pendingActivation across all three activation
+  paths (save-and-activate, toolbar activate, version panel).
+- 2026-08-23: J landed — ADR-052, CHANGELOG breaking/added/changed
+  entries, REMEDIATION_SUMMARY follow-through section with fresh gate
+  numbers. Card #44 moved to In Review.
+- STATUS: chunks A0-J complete. Branch feature/l245-gate-chokepoint
+  awaiting Dylan review; not pushed without his okay. — derive_allowed_set(nodes) incl. node-effect
+  markers ("node:http_request" etc.), save returns derived set, activate
+  requires confirmation of diff (409 flow), m011 backfill migration with
+  an existing-db-shaped fixture test, _is_url_safe private-import
+  cleanup in http_request.py. Then I (frontend diff dialog) and
+  J (CHANGELOG breaking entry, docs notes, metrics refresh, card #44 →
+  In Review).
+
+## Review follow-up (2026-08-23, Claude review)
+
+Review: docs/development-process/reviews/l245-gate-chokepoint-2026-08-23.md
+Verdict: merge after finding 1; findings 2-3 + nit fold into same branch.
+All four items landed:
+
+- [x] Finding 1 (blocking): registry.call in enforce mode with no bound
+  gate now raises RuntimeError - the relocated fail-open is dead. Bare-test
+  wiring binds tests.gate_fakes.PermissiveGate explicitly (7 files).
+  New test asserts unbound refusal.
+- [x] Finding 2: ToolCallContext.pre_gated_tool required in pre_gated
+  mode; registry refuses replaying a decision for a different tool
+  (ValueError). Both dispatch sites bind the decision to its tool.
+- [x] Finding 3: classification detector test -
+  set(NODE_TYPES) == gated | effect-markers | hand-written inert set;
+  adding an unclassified node type fails the suite.
+- [x] Nit: mode="internal" and gate.audit_internal deleted (zero call
+  sites, soft audit dependency). Tests use explicit permissive fakes.
+
+Gates at commit: ruff clean / mypy clean / pytest 2,315 passed + 6 skipped.
+
+Review-flagged NOT verified (for Dylan or a later loop): 409+confirm flow
+end-to-end in the UI beyond the dialog unit test; m011 against a copy of
+the production database.
+
+## Round 2 punchlist (2026-08-23, landed on this branch)
+
+Review round 2 pre-merge punchlist (card #44), Dylan-approved:
+
+- [x] P1: ADR-052 sections rewritten to the shipped two-mode design
+  (enforce / pre_gated bound to a tool name); all `internal` references gone.
+- [x] P2: CHANGELOG [Unreleased] bullet reworded to match.
+- [x] P3: pre_gated split - wrong-tool replay stays ValueError; a denied
+  decision raises ToolBlockedError with [CATEGORY: BLOCKED] so
+  investigate.py:84 / executor.py:313 keep recognizing denials.
+  Docstring Raises block updated. Acceptance tests: registry-level denial
+  type + investigate node propagates a denied pre_gated decision
+  (executor-path conversion already pinned by
+  test_workflow_blocks_destructive_without_allow_list asserting
+  [CATEGORY: BLOCKED] in the NodeResult error).
+- [x] P4: (a) pre_gated binding assertion hoisted out of the gate-bound
+  block; (b) unbound registry refuses BOTH modes (RuntimeError). Invariant
+  comment added at the top of registry.call ("every mode requires a bound
+  gate; no passthrough"). New mirror test for unbound pre_gated refusal;
+  no tests needed softening.
+
+Verification (V1-V3):
+
+- V1 gates green on final commit: ruff clean, mypy clean, pytest
+  2,321 passed / 6 skipped (+6 vs post-round-1).
+- V2: new integration suite tests/integration/test_workflow_activation_flow.py
+  drives save -> activate(409+diff) -> confirm -> persisted grant against
+  a REAL WorkflowStore, including widening, narrowing, and no-delta cases.
+- V3: m011 run against a sqlite backup-API snapshot of runtime-data/hestia.db
+  (live DB has WAL; raw copy would have missed it). Result PASS: both
+  workflows with active versions ('Job Test Workflow' active v14,
+  'Daily Job Digest') backfilled exactly matching derive_allowed_set_from_json
+  of their stored nodes incl. the node:send_message marker; both versionless
+  workflows untouched; second chain run changed nothing.
+
+## Verification-scope correction (2026-08-23)
+
+Dylan ran `uv run pytest -q` from the repo root and hit one failure my
+gates missed: tests/smoke/ was never in the paths I passed to pytest, so
+"full gates" had silently excluded the smoke suite since chunk F. The
+smoke proto-orchestrator test still called registry.call without a
+context - exactly what strict mode is supposed to catch, and it did.
+
+Fix: smoke test binds tests.gate_fakes.PermissiveGate explicitly (smoke
+drives model->tool plumbing, not authorization) and passes a CLI-channel
+enforce context at both dispatch sites. Going forward the gate command is
+plain `uv run pytest -q` over the whole tree, not a hand-picked subset.
+
+Verified with Dylan's exact command: 2,347 passed / 12 skipped / 0 failed.

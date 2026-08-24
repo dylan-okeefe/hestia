@@ -5,6 +5,42 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Breaking changes
+
+- **Allowlist-only tool authorization (L245).** Tool invocations now require
+  a `ToolCallContext`; `ToolRegistry.call` without one raises `TypeError`.
+  A workflow's authorized tools are derived from its node graph and stored
+  on activation — activating a version whose authorization set changed now
+  returns **HTTP 409** with an `{added, removed}` diff until the client
+  confirms via `confirm_allow_list_change=true`. Existing workflows must be
+  re-activated once; migration m011 pre-populates grants from each
+  workflow's active version. See `docs/adr/ADR-052-allowlist-only-tool-authorization-for-unattended-channels.md`.
+
+### Added
+
+- `ToolCallContext` + registry-level gate chokepoint: denials raise `ToolBlockedError`,
+  confirmation escalation raises `ToolConfirmationRequiredError`, and `pre_gated`
+  contexts carry single-evaluation decisions bound to exactly the tool that was gated.
+- Graph-derived allow-lists (`derive_allowed_set`) covering `tool_call`/`investigate`
+  tools plus node-effect markers (`node:http_request`, `node:send_message`); save
+  responses expose `derived_allow_list`, and the executor refuses effect nodes whose
+  marker is not in the stored grant.
+- Activation-diff review in the web UI: a dialog shows added/removed authorizations
+  before activation proceeds.
+- Scheduler trust flags (`scheduler_shell_exec`, `scheduler_write_local`,
+  `scheduler_email_send`, `scheduler_read_clipboard`) are now enforced at the gate,
+  not just at tool advertisement.
+- ALLOW decisions on unattended channels are written to `capability_events`.
+- Runtime migration m011 backfills `workflows.allow_listed_tools` from active versions.
+
+### Changed
+
+- Policy-delegation (`delegate_task`) and truncated-write recovery now flow through the
+  same gated dispatch as normal tool calls — no more ungated system paths.
+- Investigate nodes take their tools from node config only; trigger payloads can no
+  longer select investigation tools.
+- `is_url_safe` is now public API (`_is_url_safe` removed).
+
 ## [0.15.1] — 2026-06-25
 
 ### Added

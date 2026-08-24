@@ -35,9 +35,10 @@ def resolve_invoked_tools(node_type: str, node: WorkflowNode, inputs: dict[str, 
         return [name]
 
     if node_type == "investigate":
-        # Inputs take precedence over config, mirroring InvestigateNode's
-        # historical _resolve precedence.
-        raw = inputs.get("tools", node.config.get("tools"))
+        # L245: tools come from node.config ONLY. Trigger payloads must never
+        # choose which tools an investigation runs - inputs are exactly the
+        # attacker-influenceable channel that produced the round-1 bypass.
+        raw = node.config.get("tools")
         if raw is None:
             return []
         if isinstance(raw, str):
@@ -58,3 +59,80 @@ def resolve_invoked_tools(node_type: str, node: WorkflowNode, inputs: dict[str, 
     raise ValueError(
         f"resolve_invoked_tools called for ungated node type {node_type!r}"
     )
+
+
+NODE_EFFECT_MARKERS: dict[str, str] = {
+    "http_request": "node:http_request",
+    "send_message": "node:send_message",
+}
+"""Markers representing node *effects* that are not registry tools.
+
+Activating a workflow containing these nodes authorizes the effect, so the
+derived allow-list records them explicitly. This makes the activation diff
+honest ("this version adds direct HTTP calls") and lets the executor verify
+the marker before running the node.
+"""
+
+
+def derive_allowed_set(nodes: list[WorkflowNode]) -> set[str]:
+    """L245: derive the authorization set from a workflow's node graph.
+
+    The result is exactly what activating this graph grants:
+    - ``tool_call`` nodes contribute their configured tool name.
+    - ``investigate`` nodes contribute their configured tools (malformed
+      config contributes nothing — it fails closed at execution).
+    - Effect nodes contribute their :data:`NODE_EFFECT_MARKERS` entry.
+
+    Client-supplied allow-lists are never merged in; this function is the
+    only source.
+    """
+    allowed: set[str] = set()
+    for node in nodes:
+        if node.type == "tool_call":
+            name = node.config.get("tool_name")
+            if isinstance(name, str) and name:
+                allowed.add(name)
+        elif node.type == "investigate":
+            try:
+                allowed.update(resolve_invoked_tools("investigate", node, {}))
+            except ValueError:
+                continue
+        elif node.type in NODE_EFFECT_MARKERS:
+            allowed.add(NODE_EFFECT_MARKERS[node.type])
+    return allowed
+
+
+def derive_allowed_set_from_json(nodes_json: str | None) -> set[str]:
+    """Derive the authorization set from stored version JSON (m011 backfill).
+
+    Accepts the exact shape ``WorkflowStore.save_version`` serializes. Any
+    malformed input yields an empty set — a corrupt row must never widen
+    an authorization.
+    """
+    import json
+
+    if not nodes_json:
+        return set()
+    try:
+        raw = json.loads(nodes_json)
+    except (TypeError, ValueError):
+        return set()
+    if not isinstance(raw, list):
+        return set()
+
+    from hestia.workflows.models import WorkflowNode
+
+    nodes: list[WorkflowNode] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        config = entry.get("config")
+        nodes.append(
+            WorkflowNode(
+                id=str(entry.get("id", "")),
+                type=str(entry.get("type", "")),
+                label="",
+                config=config if isinstance(config, dict) else {},
+            )
+        )
+    return derive_allowed_set(nodes)

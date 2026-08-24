@@ -80,7 +80,7 @@
 - Updated `src/hestia/app.py` `_register_external_tool_modules()` to call `setup(context)` before `register(registry)`, with warning-and-skip on any setup exception.
 - Added fixture modules `setup_tools.py` and `setup_fails.py`.
 - Added `tests/unit/tools/test_external_tool_setup.py` covering setup-before-register, setup failure, missing setup, context fields, and capability gating.
-- Updated `docs/adr/ADR-051-external-tool-modules.md` and `docs/guides/custom-tools.md` with the setup hook and database-handle trust warning.
+- Updated `docs/adr/ADR-053-external-tool-modules.md` (then ADR-051) and `docs/guides/custom-tools.md` with the setup hook and database-handle trust warning.
 - Created handoff: `docs/handoffs/L241-external-tool-module-setup-handoff.md`.
 
 **Quality gates:**
@@ -130,7 +130,7 @@
 - Added `extra_tool_modules: list[str]` to `HestiaConfig` (`src/hestia/config.py`), loadable from `HESTIA_EXTRA_TOOL_MODULES`.
 - Wired `_register_external_tool_modules()` in `AppContext.register_tools()` (`src/hestia/app.py`) with warning-and-skip handling for import errors, missing `register`, and registration `ValueError`.
 - Added fixture package `tests/fixtures/external_tool_module/` and `tests/unit/tools/test_external_tool_modules.py` covering load, error handling, capability gating, empty config, and env loading.
-- Added `docs/adr/ADR-051-external-tool-modules.md` and updated `docs/guides/custom-tools.md` with setup steps and trust warning.
+- Added `docs/adr/ADR-053-external-tool-modules.md` (then ADR-051) and updated `docs/guides/custom-tools.md` with setup steps and trust warning.
 - Created handoff: `docs/handoffs/L240-external-tool-modules-handoff.md`.
 
 **Quality gates:**

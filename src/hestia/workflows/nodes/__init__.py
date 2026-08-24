@@ -23,6 +23,7 @@ class NodeExecutor(Protocol):
         app: AppContext,
         node: WorkflowNode,
         inputs: dict[str, Any],
+        tool_context: Any = None,
     ) -> Any:
         """Execute the node.
 

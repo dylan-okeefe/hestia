@@ -19,6 +19,7 @@ class ConditionNode:
         app: AppContext,
         node: WorkflowNode,
         inputs: dict[str, Any],
+        tool_context: Any = None,
     ) -> Any:
         """Evaluate the configured expression.
 

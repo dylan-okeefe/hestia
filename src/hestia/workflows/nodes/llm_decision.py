@@ -23,6 +23,7 @@ class LLMDecisionNode:
         app: AppContext,
         node: WorkflowNode,
         inputs: dict[str, Any],
+        tool_context: Any = None,
     ) -> Any:
         """Ask the LLM to select a branch based on the provided context.
 

@@ -585,13 +585,47 @@ class TurnExecution:
             if history_includes_current
             else list(ctx.running_history) + [assistant_msg]
         )
+        # L245 (bypass (iv)): recovery writes used to invoke the raw handler,
+        # skipping the gate/killswitch/confirmation/audit entirely. The
+        # wrappers below route through the gated registry with an enforce
+        # context; a denial (including unattended-channel rules and the
+        # killswitch) aborts recovery instead of writing.
+        def _gated_recovery_caller(tool_name: str) -> Any:
+            async def _call(**kwargs: Any) -> Any:
+                from hestia.tools.context import ToolCallContext
+                from hestia.tools.registry import ToolBlockedError
+
+                if self._capability_gate is None:
+                    raise ToolBlockedError(
+                        "[CATEGORY: BLOCKED] no capability gate configured"
+                    )
+                channel = (
+                    ctx.channel if ctx is not None and ctx.channel is not None else Channel.CLI
+                )
+                platform_user = (
+                    ctx.platform_user
+                    if ctx is not None and ctx.platform_user is not None
+                    else ctx.session.platform_user
+                )
+                context = ToolCallContext(
+                    channel=channel,
+                    actor_platform=ctx.session.platform if ctx is not None else "system",
+                    actor_platform_user=platform_user,
+                    session_id=ctx.session.id if ctx is not None else None,
+                    injection_flagged=True,  # recovery only runs on flagged/suspect turns
+                )
+                result = await self._tools.call(tool_name, kwargs, context=context)
+                return result.content
+
+            return _call
+
         write_file_handler: Any | None = None
         append_to_file_handler: Any | None = None
         try:
-            write_file_meta = self._tools.describe("write_file")
-            write_file_handler = write_file_meta.handler
-            append_to_file_meta = self._tools.describe("append_to_file")
-            append_to_file_handler = append_to_file_meta.handler
+            self._tools.describe("write_file")
+            write_file_handler = _gated_recovery_caller("write_file")
+            self._tools.describe("append_to_file")
+            append_to_file_handler = _gated_recovery_caller("append_to_file")
         except Exception:  # noqa: BLE001
             pass
 
@@ -759,7 +793,7 @@ class TurnExecution:
         if use_policy_delegation:
             await transition(turn, TurnState.AWAITING_SUBAGENT, "")
             tool_results, handles = await self._execute_policy_delegation(
-                ctx.user_message, chat_response.tool_calls
+                ctx.user_message, chat_response.tool_calls, session=ctx.session, ctx=ctx
             )
             ctx.artifact_handles.extend(handles)
             await transition(turn, TurnState.EXECUTING_TOOLS, "")
@@ -1496,15 +1530,77 @@ class TurnExecution:
         self,
         user_message: Message,
         tool_calls: list[ToolCall],
+        *,
+        session: Session,
+        ctx: "TurnContext | None" = None,
     ) -> tuple[list[Message], list[str]]:
-        """Run delegate_task once; map output to one message per model tool_call_id."""
+        """Run delegate_task once; map output to one message per model tool_call_id.
+
+        L245: delegation is a destructive-classified invocation (delegate_task
+        is in _DESTRUCTIVE_TOOL_NAMES) and previously bypassed the gate
+        entirely. It now flows through the same confirmation/gating path as
+        any other tool call.
+        """
         task = (user_message.content or "").strip() or "(no user text)"
         lines = [f"{tc.name} {json.dumps(tc.arguments or {})}" for tc in tool_calls]
         context = "\n".join(lines)
 
+        delegate_args = {"task": task, "context": context}
+
+        try:
+            meta = self._tools.describe("delegate_task")
+        except Exception:
+            meta = None
+        if meta is None:
+            messages = [
+                Message(
+                    role="tool",
+                    content="[delegation denied] delegate_task is not registered.",
+                    tool_call_id=tc.id,
+                    created_at=utcnow(),
+                )
+                for tc in tool_calls
+            ]
+            return messages, []
+
+        confirm_result, cap_result = await self._check_confirmation(
+            tool=meta,
+            tool_name="delegate_task",
+            arguments=delegate_args,
+            session=session,
+            ctx=ctx,
+        )
+        if confirm_result is not None:
+            denial = f"[delegation denied] {confirm_result.content}"
+            messages = [
+                Message(
+                    role="tool",
+                    content=denial if i == 0 else f"(Same denial as tool_call_id={tool_calls[0].id}.)\n{denial}",
+                    tool_call_id=tc.id,
+                    created_at=utcnow(),
+                )
+                for i, tc in enumerate(tool_calls)
+            ]
+            return messages, []
+
+        from hestia.tools.context import ToolCallContext
+
+        channel = ctx.channel if ctx is not None and ctx.channel is not None else Channel.CLI
+        platform_user = (
+            ctx.platform_user if ctx is not None and ctx.platform_user is not None else session.platform_user
+        )
+        tool_context = ToolCallContext(
+            channel=channel,
+            actor_platform=session.platform,
+            actor_platform_user=platform_user,
+            session_id=session.id,
+            mode="enforce",
+        )
+
         result = await self._tools.call(
             "delegate_task",
-            {"task": task, "context": context},
+            delegate_args,
+            context=tool_context,
         )
         result = self._scan_tool_result(result)
         body = result.content
@@ -1521,14 +1617,14 @@ class TurnExecution:
         if result.artifact_handle:
             artifact_handles.append(result.artifact_handle)
 
-        messages: list[Message] = []
+        reply_messages: list[Message] = []
         for i, tc in enumerate(tool_calls):
             content = (
                 body
                 if i == 0
                 else f"(Same policy delegation as tool_call_id={tool_calls[0].id}.)\n{body}"
             )
-            messages.append(
+            reply_messages.append(
                 Message(
                     role="tool",
                     content=content,
@@ -1536,7 +1632,7 @@ class TurnExecution:
                     created_at=utcnow(),
                 )
             )
-        return messages, artifact_handles
+        return reply_messages, artifact_handles
 
     async def _check_confirmation(
         self,
@@ -1546,45 +1642,50 @@ class TurnExecution:
         arguments: dict[str, Any],
         session: Session,
         ctx: "TurnContext | None" = None,
-    ) -> ToolCallResult | None:
-        """Return None if approved (or if the tool does not require confirmation),
-        or a ToolCallResult(error=...) if denied / unable to confirm."""
+    ) -> tuple[ToolCallResult | None, Any]:
+        """Return ``(None, cap_result)`` when approved, or
+        ``(ToolCallResult(error=...), cap_result)`` when denied / unable to
+        confirm. ``cap_result`` feeds the pre_gated chokepoint context."""
         # L222: unified capability gate runs first.
-        gate_result = await self._run_capability_gate(
+        gate_result, cap_result = await self._run_capability_gate(
             tool_name=tool_name,
             arguments=arguments,
             session=session,
             ctx=ctx,
         )
         if gate_result is not None:
-            return gate_result
+            return gate_result, cap_result
 
         if not tool.requires_confirmation:
-            return None
+            return None, cap_result
 
         if self._policy.auto_approve(tool_name, session, self._tools):
             # Trust profile auto-approves this tool for this session context.
-            return None
+            return None, cap_result
 
         if self._confirm_callback is None:
-            return ToolCallResult.error(
-                (
-                    f"Tool '{tool_name}' requires user confirmation but no "
-                    "confirm_callback is configured and the trust profile does "
-                    "not auto-approve it. Add the tool to "
-                    "TrustConfig.auto_approve_tools, or run via a platform that "
-                    "supports confirmation (CLI)."
+            return (
+                ToolCallResult.error(
+                    (
+                        f"Tool '{tool_name}' requires user confirmation but no "
+                        "confirm_callback is configured and the trust profile does "
+                        "not auto-approve it. Add the tool to "
+                        "TrustConfig.auto_approve_tools, or run via a platform that "
+                        "supports confirmation (CLI)."
+                    ),
                 ),
+                cap_result,
             )
 
         request_token = ctx.request_token if ctx is not None else None
         confirmed = await self._confirm_callback(tool_name, arguments, request_token)
         if not confirmed:
-            return ToolCallResult.error(
-                "Tool execution was cancelled by user.",
+            return (
+                ToolCallResult.error("Tool execution was cancelled by user."),
+                cap_result,
             )
 
-        return None
+        return None, cap_result
 
     async def _run_capability_gate(
         self,
@@ -1593,16 +1694,16 @@ class TurnExecution:
         arguments: dict[str, Any],
         session: Session,
         ctx: "TurnContext | None",
-    ) -> ToolCallResult | None:
-        """Check CapabilityGate and return a ToolCallResult if blocked.
+    ) -> tuple[ToolCallResult | None, Any]:
+        """Check CapabilityGate.
 
-        Returns None when the gate allows the call (including when no gate is
-        configured). When the gate requires confirmation but the call is
-        otherwise allowed, this method returns None so the normal confirmation
-        path (with the gate's request_token) can take over.
+        Returns ``(blocked_result_or_None, capability_result)``. The second
+        element feeds the caller's pre_gated ToolCallContext so the registry
+        chokepoint does not re-evaluate (L245 single-evaluation criterion).
+        ``capability_result`` is None only when no gate is configured.
         """
         if self._capability_gate is None:
-            return None
+            return None, None
 
         channel = ctx.channel if ctx is not None and ctx.channel is not None else Channel.CLI
         platform_user = (
@@ -1623,6 +1724,21 @@ class TurnExecution:
                 for m in ctx.running_history
             )
 
+        # L245: unattended channels get an explicit allow-list derived from
+        # the policy engine (scheduler TrustConfig flags are now real
+        # controls). Workflow contexts pass their own allow-list and never
+        # reach this path.
+        allow_list: set[str] | None = None
+        if channel in (Channel.SCHEDULER, Channel.EMAIL, Channel.WEBHOOK):
+            try:
+                meta = self._tools.describe(tool_name)
+                allow_list = self._policy.unattended_allow_list(
+                    channel, [tool_name], self._tools
+                )
+                _ = meta
+            except Exception:
+                allow_list = set()
+
         request = CapabilityRequest(
             actor=actor,
             channel=channel,
@@ -1631,13 +1747,13 @@ class TurnExecution:
             session_id=session.id,
         )
         result = await self._capability_gate.check(
-            request, injection_flagged=injection_flagged
+            request, injection_flagged=injection_flagged, allow_list=allow_list
         )
 
         if not result.allowed:
             return ToolCallResult.error(
                 f"[CATEGORY: BLOCKED] Capability gate denied '{tool_name}': {result.reason}"
-            )
+            ), result
 
         # Gate has approved. If it requires confirmation, fall through to the
         # normal confirmation flow; the callback will receive the request_token.
@@ -1645,9 +1761,9 @@ class TurnExecution:
             # Store token on the context for the confirmation callback to use.
             if ctx is not None:
                 ctx.request_token = result.request_token
-            return None
+            return None, result
 
-        return None
+        return None, result
 
     async def _meta_list_tools(
         self,
@@ -1720,7 +1836,7 @@ class TurnExecution:
                 f"Tool not found: {name}",
             )
 
-        confirm_result = await self._check_confirmation(
+        confirm_result, cap_result = await self._check_confirmation(
             tool=inner_meta,
             tool_name=name,
             arguments=arguments,
@@ -1730,7 +1846,32 @@ class TurnExecution:
         if confirm_result is not None:
             return confirm_result
 
-        return await self._tools.meta_call_tool(name, arguments)
+        # L245: thread the pre_gated decision into the meta-tool passthrough.
+        from hestia.tools.context import ToolCallContext
+
+        channel = ctx.channel if ctx is not None and ctx.channel is not None else Channel.CLI
+        platform_user = (
+            ctx.platform_user if ctx is not None and ctx.platform_user is not None else session.platform_user
+        )
+        if cap_result is not None:
+            tool_context = ToolCallContext(
+                channel=channel,
+                actor_platform=session.platform,
+                actor_platform_user=platform_user,
+                session_id=session.id,
+                mode="pre_gated",
+                pre_gated_result=cap_result,
+                pre_gated_tool=name,
+            )
+        else:
+            tool_context = ToolCallContext(
+                channel=channel,
+                actor_platform=session.platform,
+                actor_platform_user=platform_user,
+                session_id=session.id,
+                mode="enforce",
+            )
+        return await self._tools.meta_call_tool(name, arguments, context=tool_context)
 
     async def _dispatch_tool_call(
         self,
@@ -1769,7 +1910,7 @@ class TurnExecution:
                 f"Unknown tool: {tc.name}",
             )
 
-        confirm_result = await self._check_confirmation(
+        confirm_result, cap_result = await self._check_confirmation(
             tool=meta,
             tool_name=tc.name,
             arguments=tc.arguments or {},
@@ -1779,7 +1920,40 @@ class TurnExecution:
         if confirm_result is not None:
             return confirm_result
 
-        result = await self._tools.call(tc.name, tc.arguments or {})
+        # L245 chokepoint: hand the registry the decision the gate already
+        # made (single evaluation). The context carries who/where for audit
+        # and future enforcement; the registry does not re-evaluate.
+        from hestia.tools.context import ToolCallContext
+
+        channel = ctx.channel if ctx is not None and ctx.channel is not None else Channel.CLI
+        platform_user = (
+            ctx.platform_user
+            if ctx is not None and ctx.platform_user is not None
+            else session.platform_user
+        )
+        if cap_result is not None:
+            tool_context = ToolCallContext(
+                channel=channel,
+                actor_platform=session.platform,
+                actor_platform_user=platform_user,
+                session_id=session.id,
+                mode="pre_gated",
+                pre_gated_result=cap_result,
+                pre_gated_tool=tc.name,
+            )
+        else:
+            # No gate decision (e.g. non-destructive tool on a trusted
+            # channel): enforce at the registry. An unbound registry refuses
+            # enforce calls outright (L245 review finding 1).
+            tool_context = ToolCallContext(
+                channel=channel,
+                actor_platform=session.platform,
+                actor_platform_user=platform_user,
+                session_id=session.id,
+                mode="enforce",
+            )
+
+        result = await self._tools.call(tc.name, tc.arguments or {}, context=tool_context)
         return result
 
     def _format_tool_status(self, tool_names: list[str]) -> str | None:

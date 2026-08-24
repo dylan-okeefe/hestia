@@ -45,7 +45,7 @@ async def test_calls_tool_by_name(app: AppContext) -> None:
     result = await executor.execute(app, node, {"text": "hi"})
 
     assert result == "hello"
-    app.tool_registry.call.assert_awaited_once_with("echo", {"text": "hi"})
+    app.tool_registry.call.assert_awaited_once_with("echo", {"text": "hi"}, context=None)
 
 
 @pytest.mark.asyncio

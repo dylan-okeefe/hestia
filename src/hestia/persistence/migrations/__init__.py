@@ -327,6 +327,54 @@ async def m010_execution_is_test(conn: AsyncConnection) -> None:
         )
 
 
+async def m011_workflow_allow_backfill(conn: AsyncConnection) -> None:
+    """L245: backfill ``workflows.allow_listed_tools`` from active versions.
+
+    Under allowlist-only authorization the stored set is the workflow's
+    grant, but rows saved before L245 carry ``'[]'`` while their ACTIVE
+    version already contains tool_call / effect nodes. Without this
+    backfill those workflows would silently lose their tools on the first
+    re-activation diff (everything would look "added") and, worse, run
+    under an empty grant.
+
+    Rules:
+    - Only rows whose stored set is exactly ``'[]'`` are touched; a custom
+      set is never clobbered.
+    - Derivation reuses :func:`hestia.workflows.tool_selection.derive_allowed_set_from_json`
+      so backfilled values match what save/activate compute.
+    - Malformed node JSON derives to an empty set -> row untouched.
+    - Idempotent by construction.
+    """
+    from hestia.workflows.tool_selection import derive_allowed_set_from_json
+
+    result = await conn.execute(sa.text("SELECT id, allow_listed_tools FROM workflows"))
+    rows = result.fetchall()
+    for wf_id, raw_allow in rows:
+        if raw_allow is not None and raw_allow.strip() != "[]":
+            continue
+        vres = await conn.execute(
+            sa.text(
+                "SELECT nodes FROM workflow_versions "
+                "WHERE workflow_id = :wid AND is_active LIMIT 1"
+            ),
+            {"wid": wf_id},
+        )
+        vrow = vres.fetchone()
+        if vrow is None:
+            continue
+        derived = derive_allowed_set_from_json(vrow[0])
+        if not derived:
+            continue
+        import json as _json
+
+        await conn.execute(
+            sa.text(
+                "UPDATE workflows SET allow_listed_tools = :allow WHERE id = :wid"
+            ),
+            {"wid": wf_id, "allow": _json.dumps(sorted(derived))},
+        )
+
+
 MIGRATIONS: list[Migration] = [
     m001_sessions_active_unique,
     m002_session_handoffs,
@@ -338,6 +386,7 @@ MIGRATIONS: list[Migration] = [
     m008_compaction_archive,
     m009_hot_path_indexes,
     m010_execution_is_test,
+    m011_workflow_allow_backfill,
 ]
 
 

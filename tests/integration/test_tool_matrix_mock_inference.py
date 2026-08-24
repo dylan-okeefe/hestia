@@ -24,6 +24,7 @@ from hestia.core.types import (
 )
 from hestia.orchestrator import Orchestrator, TurnState
 from hestia.tools.builtin.delegate_task import make_delegate_task_tool
+from tests.gate_fakes import bind_permissive_gate
 
 
 def _make_session(session_id: str = "test_session") -> Session:
@@ -498,6 +499,7 @@ async def test_delegate_task_minimal(
 
     # Subagent registry: simple tools only (no delegation to avoid recursion)
     sub_registry = ToolRegistry(artifact_store)
+    bind_permissive_gate(sub_registry)
     sub_registry.register(current_time)
 
     # Subagent inference: just return a stop response
@@ -532,6 +534,7 @@ async def test_delegate_task_minimal(
     from hestia.tools.builtin.read_file import make_read_file_tool
 
     parent_registry = ToolRegistry(artifact_store)
+    bind_permissive_gate(parent_registry)
     parent_registry.register(current_time)
     parent_registry.register(http_get)
     parent_registry.register(terminal)

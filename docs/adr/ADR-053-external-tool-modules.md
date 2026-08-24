@@ -1,6 +1,8 @@
-# ADR-051: External tool modules
+# ADR-053: External tool modules
 
 - **Status:** Accepted
+- **Note:** Originally filed as ADR-051; renumbered to ADR-053 on 2026-08-23
+  to resolve a duplicate number (two-tier topic-scoped memory keeps ADR-051).
 - **Date:** 2026-07-03
 - **Context:** Hestia ships with a fixed set of built-in tools. Operators repeatedly asked for a way to add private or domain-specific tools without forking the repository or patching `src/hestia/app.py`.
 - **Decision:** Add an opt-in `extra_tool_modules` config field. Each entry is a dotted Python import path. After built-in tools are registered, Hestia imports each configured module and, if it exposes a callable named `register`, calls `register(registry)` with the `ToolRegistry`. Modules may also expose an optional `setup(context)` hook that runs before `register`; the context exposes `db` and `config` so external modules can create their own persistence layers.

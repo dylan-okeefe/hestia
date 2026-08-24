@@ -24,7 +24,7 @@
   - Missing `setup` still allows `register` (backward compat).
   - Context exposes `db` and `config`.
   - Tools registered after setup are still capability-filtered for subagent sessions.
-- Updated `docs/adr/ADR-051-external-tool-modules.md` to document the optional `setup(context)` hook and the database-handle trust warning.
+- Updated `docs/adr/ADR-053-external-tool-modules.md` to document the optional `setup(context)` hook and the database-handle trust warning.
 - Updated `docs/guides/custom-tools.md` with a `setup(context)` example and a trust warning about `context.db`.
 
 ## What did NOT change

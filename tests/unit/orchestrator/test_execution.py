@@ -25,6 +25,7 @@ from hestia.tools.metadata import ToolMetadata
 from hestia.tools.registry import ToolRegistry
 from hestia.tools.result_classifier import ToolResultCategory
 from hestia.tools.types import ToolCallResult
+from tests.gate_fakes import bind_permissive_gate
 
 
 def _make_session() -> Session:
@@ -55,6 +56,7 @@ def _make_turn() -> Turn:
 async def test_direct_write_file_dispatch():
     """A direct write_file tool call is dispatched correctly."""
     registry = ToolRegistry(MagicMock())
+    bind_permissive_gate(registry)
     async def _write_file(**kwargs: object) -> str:
         return "Wrote file"
 

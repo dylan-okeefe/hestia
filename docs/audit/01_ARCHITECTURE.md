@@ -108,7 +108,7 @@ request-code (code delivered over Telegram/Matrix to a **client-supplied recipie
 1. **ADR-042 / gate docstring** ("every execution path") vs. reality (four bypasses) — the most consequential discrepancy found anywhere in the repo.
 2. **README architecture section** lists `core/`, `orchestrator/`, etc. accurately, but does not mention `commands/` (~3k LOC, the actual home of CLI commands post-ADR-020 decomposition), `identity/`, `diagnostics/`, or `blocked_actions/`.
 3. **schema.py comment** claims `get_or_create_session` uses INSERT..ON CONFLICT upsert; implementation is SELECT-then-INSERT with IntegrityError retry (`session_store.py:93-128`). Functionally safe; comment wrong.
-4. **Two files claim ADR-051.** `docs/adr/ADR-051-external-tool-modules.md` and `ADR-051-two-tier-topic-scoped-memory.md`.
+4. **Two files claim ADR-051.** `docs/adr/ADR-051-external-tool-modules.md` and `ADR-051-two-tier-topic-scoped-memory.md`. (Resolved 2026-08-23: external-tool-modules renumbered to ADR-053; two-tier topic-scoped memory keeps ADR-051 per the DECISIONS.md index.)
 5. **`trace_store.record_egress` docstring** says "never raises"; only the URL parsing is guarded.
 6. **UPGRADE.md / README** say Alembic is "reference only" — accurate — but nothing records which tables were never covered by any revision (most of them; see `02_BACKEND.md` §Migrations).
 

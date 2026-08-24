@@ -72,7 +72,7 @@ def _assert_ip_allowed(hostname: str) -> None:
             ) from exc
 
 
-def _is_url_safe(url: str) -> str | None:
+def is_url_safe(url: str) -> str | None:
     """Check if a URL is safe to fetch.
 
     Returns an error message if blocked, None if safe.
@@ -124,7 +124,7 @@ async def _fetch_with_curl_cffi(
     """Fetch using curl_cffi with browser TLS/HTTP fingerprint impersonation.
 
     curl_cffi does not support custom transports, so SSRF protection here is
-    limited to the pre-flight ``_is_url_safe`` check and manual redirect
+    limited to the pre-flight ``is_url_safe`` check and manual redirect
     validation. This is a best-effort fallback for sites that block based on
     fingerprints rather than IP-based access control.
     """

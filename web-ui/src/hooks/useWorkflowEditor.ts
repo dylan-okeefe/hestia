@@ -5,12 +5,14 @@ import {
   fetchWorkflowVersions,
   saveWorkflowVersion,
   activateWorkflowVersion,
+  ActivationConfirmationRequired,
   testRunWorkflow,
   updateWorkflow,
   rotateWebhookSecret,
   fetchExecutions,
   fetchTools,
   fetchAuthStatus,
+  type AllowListDiff,
   type WorkflowVersion,
   type WorkflowNode,
   type WorkflowEdge,
@@ -51,6 +53,14 @@ export function useWorkflowEditor(workflowId: string | undefined) {
   const [tools, setTools] = useState<string[]>([]);
   const [platforms, setPlatforms] = useState<string[]>([]);
   const [isDirty, setIsDirty] = useState(false);
+  // L245: activation that changes the authorization set is parked here
+  // until the user reviews the diff in AllowListDiffDialog.
+  const [pendingActivation, setPendingActivation] = useState<{
+    versionId: string;
+    diff: AllowListDiff;
+    postActivate?: () => void;
+  } | null>(null);
+  const [activating, setActivating] = useState(false);
 
   const { addToast } = useToast();
 
@@ -305,6 +315,67 @@ export function useWorkflowEditor(workflowId: string | undefined) {
     return () => document.removeEventListener('keydown', handler);
   }, [handleUndo, handleRedo, pushCurrent]);
 
+  const applyActivationSuccess = (versionId: string) => {
+    setActiveVersionId(versionId);
+    setVersions((vs) =>
+      vs.map((v) =>
+        v.id === versionId ? { ...v, activated_at: new Date().toISOString() } : { ...v, activated_at: null }
+      )
+    );
+  };
+
+  // L245: shared activation path. A 409 (authorization set changed) parks
+  // the request in pendingActivation for diff review instead of failing.
+  const requestActivation = async (
+    versionId: string,
+    postActivate?: () => void
+  ): Promise<boolean> => {
+    if (!workflowId) return false;
+    try {
+      await activateWorkflowVersion(workflowId, versionId);
+      applyActivationSuccess(versionId);
+      return true;
+    } catch (err) {
+      if (err instanceof ActivationConfirmationRequired) {
+        setPendingActivation({ versionId, diff: err.diff, postActivate });
+        return false;
+      }
+      throw err;
+    }
+  };
+
+  const confirmPendingActivation = async () => {
+    if (!pendingActivation || !workflowId) return;
+    setActivating(true);
+    try {
+      await activateWorkflowVersion(workflowId, pendingActivation.versionId, {
+        confirmAllowListChange: true,
+      });
+      applyActivationSuccess(pendingActivation.versionId);
+      const { postActivate } = pendingActivation;
+      setPendingActivation(null);
+      addToast({ message: 'New authorization is live.', type: 'success', duration: 4000 });
+      postActivate?.();
+    } catch (err) {
+      addToast({
+        message: err instanceof Error ? err.message : 'Activation failed',
+        type: 'error',
+        duration: 5000,
+      });
+    } finally {
+      setActivating(false);
+    }
+  };
+
+  const cancelPendingActivation = () => {
+    setPendingActivation(null);
+    addToast({
+      message: 'Activation cancelled - the workflow keeps its previous authorization.',
+      type: 'info',
+      duration: 5000,
+    });
+  };
+
   const handleSaveAndActivate = async () => {
     if (!workflowId) return;
     setSaving(true);
@@ -325,13 +396,8 @@ export function useWorkflowEditor(workflowId: string | undefined) {
       }));
       const version = await saveWorkflowVersion(workflowId, serialNodes, serialEdges);
       setVersions((vs) => [...vs, version]);
-      await activateWorkflowVersion(workflowId, version.id);
-      setActiveVersionId(version.id);
-      setVersions((vs) =>
-        vs.map((v) =>
-          v.id === version.id ? { ...v, activated_at: new Date().toISOString() } : { ...v, activated_at: null }
-        )
-      );
+      // L245: may park in pendingActivation (409 diff) instead of activating.
+      await requestActivation(version.id);
       setIsDirty(false);
       setError(null);
     } catch (err) {
@@ -354,12 +420,7 @@ export function useWorkflowEditor(workflowId: string | undefined) {
       return;
     }
     try {
-      await activateWorkflowVersion(workflowId, activeVersionId);
-      setVersions((vs) =>
-        vs.map((v) =>
-          v.id === activeVersionId ? { ...v, activated_at: new Date().toISOString() } : { ...v, activated_at: null }
-        )
-      );
+      await requestActivation(activeVersionId);
     } catch (err) {
       addToast({ message: err instanceof Error ? err.message : 'Activation failed', type: 'error', duration: 5000 });
     }
@@ -464,13 +525,7 @@ export function useWorkflowEditor(workflowId: string | undefined) {
       return;
     }
     try {
-      await activateWorkflowVersion(workflowId, versionId);
-      setActiveVersionId(versionId);
-      setVersions((vs) =>
-        vs.map((v) =>
-          v.id === versionId ? { ...v, activated_at: new Date().toISOString() } : { ...v, activated_at: null }
-        )
-      );
+      await requestActivation(versionId);
     } catch (err) {
       addToast({ message: err instanceof Error ? err.message : 'Activation failed', type: 'error', duration: 5000 });
     }
@@ -544,5 +599,9 @@ export function useWorkflowEditor(workflowId: string | undefined) {
     handleViewVersion,
     handleActivateVersion,
     handleNameBlur,
+    pendingActivation,
+    activating,
+    confirmPendingActivation,
+    cancelPendingActivation,
   };
 }

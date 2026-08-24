@@ -18,6 +18,14 @@ from hestia.policy.constants import PLATFORM_SUBAGENT
 from hestia.policy.default import DefaultPolicyEngine
 from hestia.tools.external_context import ExternalToolModuleContext
 
+
+def _ext_ctx():
+    from hestia.policy.channel import Channel
+    from hestia.tools.context import ToolCallContext
+
+    return ToolCallContext(channel=Channel.API, mode="enforce")
+
+
 # Make tests/fixtures/external_tool_module importable as a top-level package.
 _FIXTURES_ROOT = Path(__file__).parents[2] / "fixtures"
 if str(_FIXTURES_ROOT) not in sys.path:
@@ -45,7 +53,7 @@ async def test_setup_runs_before_register(tmp_path: Path) -> None:
     app.register_tools()
 
     assert "external_store_read" in app.tool_registry.list_names()
-    result = await app.tool_registry.call("external_store_read", {"key": "greeting"})
+    result = await app.tool_registry.call("external_store_read", {"key": "greeting"}, context=_ext_ctx())
     assert result.content == "hello from setup"
 
 

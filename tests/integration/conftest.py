@@ -14,6 +14,7 @@ from hestia.persistence.message_store import MessageStore
 from hestia.persistence.session_store import SessionStore
 from hestia.persistence.turn_store import TurnStore
 from hestia.tools.registry import ToolRegistry
+from tests.gate_fakes import bind_permissive_gate
 
 
 @pytest.fixture
@@ -111,6 +112,9 @@ def respond_callback(responses):
 def tool_registry(artifact_store, memory_store, topic_store, file_sandbox):
     """Tool registry with all built-in tools except delegate_task."""
     registry = ToolRegistry(artifact_store)
+    # These tests exercise dispatch mechanics; authorization stance is
+    # explicit (L245 finding 1: no silent unbound passthrough).
+    bind_permissive_gate(registry)
 
     from hestia.tools.builtin import current_time, http_get, make_terminal_tool
     terminal = make_terminal_tool()

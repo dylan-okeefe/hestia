@@ -35,7 +35,7 @@ async def test_no_confirmation_required():
         requires_confirmation=False,
     )
 
-    result = await turn_execution._check_confirmation(
+    result, _cap = await turn_execution._check_confirmation(
         tool=tool, tool_name="safe_tool", arguments={}, session=MagicMock()
     )
     assert result is None
@@ -54,7 +54,7 @@ async def test_confirmed_returns_none():
         requires_confirmation=True,
     )
 
-    result = await turn_execution._check_confirmation(
+    result, _cap = await turn_execution._check_confirmation(
         tool=tool,
         tool_name="risky_tool",
         arguments={"command": "rm -rf /"},
@@ -77,7 +77,7 @@ async def test_denied_returns_error_result():
         requires_confirmation=True,
     )
 
-    result = await turn_execution._check_confirmation(
+    result, _cap = await turn_execution._check_confirmation(
         tool=tool,
         tool_name="risky_tool",
         arguments={"command": "rm -rf /"},
@@ -103,7 +103,7 @@ async def test_no_callback_returns_error_result():
         requires_confirmation=True,
     )
 
-    result = await turn_execution._check_confirmation(
+    result, _cap = await turn_execution._check_confirmation(
         tool=tool,
         tool_name="risky_tool",
         arguments={"command": "rm -rf /"},
@@ -132,7 +132,7 @@ async def test_auto_approve_skips_callback():
         requires_confirmation=True,
     )
 
-    result = await turn_execution._check_confirmation(
+    result, _cap = await turn_execution._check_confirmation(
         tool=tool,
         tool_name="risky_tool",
         arguments={"command": "rm -rf /"},

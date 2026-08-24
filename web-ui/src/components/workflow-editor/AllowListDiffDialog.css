@@ -1,0 +1,38 @@
+.aldiff__section {
+  margin-top: var(--space-4);
+}
+
+.aldiff__heading {
+  display: block;
+  font-size: var(--font-size-small);
+  margin-bottom: var(--space-1);
+}
+
+.aldiff__heading--added {
+  color: var(--color-success);
+}
+
+.aldiff__heading--removed {
+  color: var(--color-danger);
+}
+
+.aldiff__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.aldiff__item {
+  font-size: var(--font-size-sm);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+}
+
+.aldiff__item--added {
+  border-left: 3px solid var(--color-success);
+}
+
+.aldiff__item--removed {
+  border-left: 3px solid var(--color-danger);
+}

@@ -7,7 +7,7 @@ from typing import Any
 import httpx
 
 from hestia.app import AppContext
-from hestia.tools.builtin.http_get import SSRFSafeTransport, _is_url_safe
+from hestia.tools.builtin.http_get import SSRFSafeTransport, is_url_safe
 from hestia.workflows.models import WorkflowNode
 
 
@@ -19,6 +19,7 @@ class HttpRequestNode:
         app: AppContext,
         node: WorkflowNode,
         inputs: dict[str, Any],
+        tool_context: Any = None,
     ) -> Any:
         """Make an HTTP request.
 
@@ -50,7 +51,7 @@ class HttpRequestNode:
                 "HttpRequestNode requires 'url' in config or inputs"
             )
 
-        if error := _is_url_safe(url):
+        if error := is_url_safe(url):
             raise ValueError(f"SSRF blocked: {error}")
 
         async with httpx.AsyncClient(

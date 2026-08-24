@@ -7,7 +7,7 @@
 ## 1. The Action Registry: ADR-042 finished properly
 
 **Motivation:** the gate map (`08` §2) shows Hestia already has one implicit concept — "a side-effecting action with declared capabilities" — expressed four different ways (tool handlers, workflow nodes, delegation, recovery writes). Fix A1 makes the registry the chokepoint; going further, make *every* side effect a registered **Action** with declared capability labels, confirmation semantics, egress/file/scope metadata.
-**Payoff:** uniform audit, dry-run, policy explanation, and permission declarations for external tool modules (ADR-051 plugins could declare "needs: network, filesystem:Documents"). Confirmation UI, blocked-actions digest, and the proposed effective-policy viewer all read from one source of truth.
+**Payoff:** uniform audit, dry-run, policy explanation, and permission declarations for external tool modules (ADR-053, external tool modules - plugins could declare "needs: network, filesystem:Documents"). Confirmation UI, blocked-actions digest, and the proposed effective-policy viewer all read from one source of truth.
 **Risk/effort:** large-ish refactor; do it incrementally by moving existing tools onto the declaration schema first, behaviors second. Only after the roadmap's A1 lands.
 
 ## 2. Unified Execution Journal ("what did Hestia do and why?")

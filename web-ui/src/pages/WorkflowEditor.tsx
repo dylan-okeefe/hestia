@@ -22,6 +22,7 @@ import NodePropertiesPanel from '../components/workflow-editor/NodePropertiesPan
 import TriggerConfigPanel from '../components/workflow-editor/TriggerConfigPanel';
 import ExecutionHistoryPanel from '../components/workflow-editor/ExecutionHistoryPanel';
 import VersionPanel from '../components/workflow-editor/VersionPanel';
+import AllowListDiffDialog from '../components/workflow-editor/AllowListDiffDialog';
 import { useWorkflowEditor } from '../hooks/useWorkflowEditor';
 import ErrorState from '../components/layout/ErrorState';
 import './WorkflowEditor.css';
@@ -318,6 +319,13 @@ export default function WorkflowEditor() {
           </>
         )}
       </div>
+      <AllowListDiffDialog
+        isOpen={editor.pendingActivation !== null}
+        diff={editor.pendingActivation?.diff ?? null}
+        onConfirm={editor.confirmPendingActivation}
+        onCancel={editor.cancelPendingActivation}
+        loading={editor.activating}
+      />
     </div>
   );
 }

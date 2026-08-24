@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 from types import ModuleType
 from typing import Any
 
@@ -24,6 +25,25 @@ class ToolNotFoundError(ToolError):
     pass
 
 
+class ToolBlockedError(ToolError):
+    """CapabilityGate denied the invocation (chokepoint enforcement)."""
+
+    pass
+
+
+class ToolConfirmationRequiredError(ToolError):
+    """Gate escalated the invocation to an interactive confirmation.
+
+    Carries the CapabilityResult (including ``request_token``) so the
+    caller with a confirmation surface can resolve it and re-invoke with a
+    ``pre_gated`` context.
+    """
+
+    def __init__(self, message: str, result: Any = None) -> None:
+        super().__init__(message)
+        self.result = result
+
+
 class ToolRegistry:
     """Registry for tools with meta-tool dispatch.
 
@@ -36,6 +56,15 @@ class ToolRegistry:
         # Insertion-ordered (Python 3.7+); tests rely on registration order for list_names().
         self._tools: dict[str, ToolMetadata] = {}
         self._artifact_store = artifact_store
+        self._gate: Any = None
+
+    def bind_gate(self, gate: Any) -> None:
+        """Bind the CapabilityGate this registry enforces (L245 chokepoint).
+
+        Once bound, every ``call`` with an ``enforce`` context is gated here —
+        callers cannot bypass policy by invoking the handler directly.
+        """
+        self._gate = gate
 
     def register(self, func: Any) -> None:
         """Register a function decorated with @tool.
@@ -90,7 +119,13 @@ class ToolRegistry:
             raise ToolNotFoundError(f"Tool not found: {name}")
         return self._tools[name]
 
-    async def call(self, name: str, arguments: dict[str, Any]) -> ToolCallResult:
+    async def call(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        *,
+        context: Any,
+    ) -> ToolCallResult:
         """Dispatch a tool call.
 
         Handles truncation and auto-promotion to artifacts for large results.
@@ -98,13 +133,96 @@ class ToolRegistry:
         Args:
             name: Tool name
             arguments: Tool arguments
+            context: REQUIRED :class:`~hestia.tools.context.ToolCallContext`
+                describing the caller (L245 strict mode). With a gate bound
+                and ``mode="enforce"`` the registry evaluates the gate here;
+                ``pre_gated`` carries an orchestrator-made decision bound to
+                exactly this tool.
 
         Returns:
             ToolCallResult with status, content, and optional artifact handle
+
+        Raises:
+            ToolBlockedError: Policy denial - gate denied an enforce call,
+                or the pre_gated decision itself is a denial.
+            ToolConfirmationRequiredError: Gate escalated to confirmation.
+            ValueError: Programming error - a pre_gated decision replayed
+                for a tool it was not made for.
+            RuntimeError: No capability gate is bound (every mode requires
+                one; there is no passthrough).
+            TypeError: Context missing or wrong type.
         """
         meta = self.describe(name)
         if meta.handler is None:
             raise ToolError(f"Tool {name!r} has no handler")
+
+        from hestia.tools.context import ToolCallContext  # local: avoids gate<->registry cycle
+
+        if not isinstance(context, ToolCallContext):
+            raise TypeError(
+                f"ToolRegistry.call requires a ToolCallContext (got {type(context).__name__})"
+            )
+
+        # L245 INVARIANT: every mode requires a bound gate. There is no
+        # passthrough configuration - a registry without a gate refuses all
+        # calls. Wiring that wants "no policy" must bind an explicit
+        # permissive fake so the choice is visible in the wiring itself.
+        if self._gate is None:
+            raise RuntimeError(
+                f"ToolRegistry.call('{name}') in {context.mode} mode but no "
+                "capability gate is bound - call bind_gate() at wiring time"
+            )
+
+        if context.mode == "enforce":
+            from hestia.policy.gate import CapabilityRequest
+            from hestia.policy.identity import Identity
+
+            request = CapabilityRequest(
+                actor=Identity(
+                    platform=context.actor_platform,
+                    platform_user=context.actor_platform_user,
+                ),
+                channel=context.channel,
+                tool_name=name,
+                inputs=dict(arguments),
+                session_id=context.session_id,
+                source_workflow_id=context.source_workflow_id,
+            )
+            result = await self._gate.check(
+                request,
+                injection_flagged=context.injection_flagged,
+                allow_list=set(context.allow_list),
+            )
+            if not result.allowed:
+                raise ToolBlockedError(
+                    f"[CATEGORY: BLOCKED] Capability gate denied '{name}': "
+                    f"{result.reason}"
+                )
+            if result.requires_confirmation:
+                raise ToolConfirmationRequiredError(
+                    f"Tool '{name}' requires operator confirmation",
+                    result=result,
+                )
+        elif context.mode == "pre_gated":
+            # Round-2 P3: two distinct failure shapes. A decision replayed
+            # for the wrong tool is a programming error (ValueError); a
+            # decision that says DENY is a policy denial (ToolBlockedError)
+            # so handlers catching that type keep recognizing it.
+            if context.pre_gated_result is None:  # defensive; post_init guards
+                raise ValueError(
+                    f"pre_gated context for '{name}' carries no decision"
+                )
+            if context.pre_gated_tool != name:
+                raise ValueError(
+                    f"pre_gated decision was for "
+                    f"'{context.pre_gated_tool}', not '{name}' - "
+                    "refusing to replay it for a different tool"
+                )
+            if not context.pre_gated_result.allowed:
+                raise ToolBlockedError(
+                    f"[CATEGORY: BLOCKED] pre_gated decision denied '{name}': "
+                    f"{context.pre_gated_result.reason}"
+                )
 
         # The prior handler catch was restricted to (TypeError, ValueError, OSError),
         # so RuntimeError, httpx.HTTPError, application-level exceptions from third-party
@@ -307,10 +425,16 @@ class ToolRegistry:
                 lines.append("  schema: (no explicit schema — infer from description)")
         return "\n".join(lines) if lines else "(no tools)"
 
-    async def meta_call_tool(self, name: str, arguments: dict[str, Any]) -> ToolCallResult:
+    async def meta_call_tool(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        *,
+        context: Any,
+    ) -> ToolCallResult:
         """Handler for the call_tool meta-tool."""
         try:
-            return await self.call(name, arguments)
+            return await self.call(name, arguments, context=context)
         except ToolNotFoundError:
             return ToolCallResult.error(
                 content=f"Tool not found: {name}. Use list_tools to see available tools.",
@@ -319,4 +443,14 @@ class ToolRegistry:
 
 
 # Re-export for convenience
-__all__ = ["ToolRegistry", "ToolMetadata", "tool", "ToolError", "ToolNotFoundError"]
+logger = logging.getLogger(__name__)
+
+__all__ = [
+    "ToolRegistry",
+    "ToolMetadata",
+    "tool",
+    "ToolError",
+    "ToolNotFoundError",
+    "ToolBlockedError",
+    "ToolConfirmationRequiredError",
+]
