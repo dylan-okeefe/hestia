@@ -37,6 +37,7 @@ Be concise."""
 
 
 @pytest.mark.asyncio
+@pytest.mark.live
 async def test_proto_orchestrator_uses_terminal_tool(tmp_path):
     """
     Ask the model: 'List the files in /tmp and tell me how many there are.'

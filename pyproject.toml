@@ -139,4 +139,5 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 markers = [
     "matrix_e2e: Real Matrix homeserver end-to-end tests (requires env vars)",
+    "live: requires a live llama.cpp server on localhost:8001; excluded from CI",
 ]
