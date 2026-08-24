@@ -344,3 +344,12 @@ These are not optional and they exist because of specific, observed failure mode
 ## Cards closed by this loop
 
 #52 (this loop), #33 (security docs), #34 (onboarding honesty), #35 (SOUL.example.md), #50 (changelog). Update all five when the branch is ready; move them to In Review, not Done.
+
+
+## Merged (2026-08-24)
+
+Dylan approved merge. `docs/release-0.16.0` merged into develop as
+4bad5dd7 and pushed. Gates on the merge commit (command reported):
+`uv run pytest -q` -> 2,356 passed / 12 skipped / 0 failed; ruff clean.
+Remaining pre-tag actions are Dylan's: enable GitHub private vulnerability
+reporting, tag v0.16.0, merge develop -> main.
