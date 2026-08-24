@@ -765,7 +765,11 @@ def _warn_on_missing_files(cfg: HestiaConfig, calibration_path: Path) -> None:
     soul_path = cfg.identity.soul_path
     if soul_path is not None and not soul_path.exists():
         click.echo(
-            click.style(f"Warning: personality file not found at {soul_path}", fg="yellow"),
+            click.style(
+                f"Warning: personality file not found at {soul_path}; "
+                "copy SOUL.example.md to SOUL.md to get started",
+                fg="yellow",
+            ),
             err=True,
         )
         logger.warning("SOUL.md not found at %s", soul_path)
