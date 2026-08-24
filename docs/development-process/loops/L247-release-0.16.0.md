@@ -353,3 +353,5 @@ Dylan approved merge. `docs/release-0.16.0` merged into develop as
 `uv run pytest -q` -> 2,356 passed / 12 skipped / 0 failed; ruff clean.
 Remaining pre-tag actions are Dylan's: enable GitHub private vulnerability
 reporting, tag v0.16.0, merge develop -> main.
+
+Handoff updated with the merge record (6892a265).
