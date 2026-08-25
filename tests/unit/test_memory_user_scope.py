@@ -415,3 +415,120 @@ class TestMemoryFTS5Migration:
 
         await db.close()
 
+
+
+class TestMemoryMutationScopeSEC010:
+    """SEC-010: memory mutations must deny when identity is unresolved.
+
+    Default is deny; ``allow_unscoped=True`` is the explicit opt-in for
+    system callers (CLI operator, maintenance with its own scope). Every
+    test here drives the real MemoryStore methods.
+    """
+
+    @pytest.fixture
+    async def scoped_store(self, tmp_path):
+        """Store with one memory each for alice and bob; ContextVars cleared."""
+        current_platform.set(None)
+        current_platform_user.set(None)
+        db = Database("sqlite+aiosqlite:///:memory:")
+        await db.connect()
+        await db.create_tables()
+        store = MemoryStore(db)
+        await store.create_table()
+        alice = await store.save(
+            content="alice private note", platform="cli", platform_user="alice"
+        )
+        bob = await store.save(
+            content="bob private note", platform="cli", platform_user="bob"
+        )
+        yield store, alice, bob
+        await db.close()
+
+    @pytest.mark.asyncio
+    async def test_delete_denies_without_identity(self, scoped_store):
+        store, alice, bob = scoped_store
+        assert await store.delete(bob.id) is False
+
+    @pytest.mark.asyncio
+    async def test_update_denies_without_identity(self, scoped_store):
+        store, alice, bob = scoped_store
+        assert (
+            await store.update(bob.id, content="tampered") is False
+        )
+        mem = await store.get(bob.id)
+        assert mem is not None and mem.content == "bob private note"
+
+    @pytest.mark.asyncio
+    async def test_pin_denies_without_identity(self, scoped_store):
+        store, alice, bob = scoped_store
+        assert await store.pin(bob.id, pinned=True) is False
+        mem = await store.get(bob.id)
+        assert mem is not None and mem.is_pinned is False
+
+    @pytest.mark.asyncio
+    async def test_mark_user_authored_denies_without_identity(self, scoped_store):
+        store, alice, bob = scoped_store
+        assert await store.mark_user_authored(bob.id) is False
+        mem = await store.get(bob.id)
+        assert mem is not None and mem.is_user_authored is False
+
+    @pytest.mark.asyncio
+    async def test_mark_recalled_denies_without_identity(self, scoped_store):
+        store, alice, bob = scoped_store
+        before = (await store.get(bob.id)).last_recalled_at
+        assert await store.mark_recalled(bob.id) is False
+        assert (await store.get(bob.id)).last_recalled_at == before
+
+    @pytest.mark.asyncio
+    async def test_delete_allow_unscoped_deletes_cross_user(self, scoped_store):
+        """The explicit maintenance/operator opt-in still deletes."""
+        store, alice, bob = scoped_store
+        assert await store.delete(bob.id, allow_unscoped=True) is True
+        assert await store.get(bob.id) is None
+
+    @pytest.mark.asyncio
+    async def test_delete_with_identity_scopes_to_owner(self, scoped_store):
+        """Regression guard: resolved identity keeps scoping the statement."""
+        store, alice, bob = scoped_store
+        current_platform.set("cli")
+        current_platform_user.set("alice")
+        # Alice's identity cannot delete Bob's row.
+        assert await store.delete(bob.id) is False
+        assert await store.get(bob.id) is not None
+        # ...and does delete her own.
+        assert await store.delete(alice.id) is True
+        assert await store.get(alice.id) is None
+
+    @pytest.mark.asyncio
+    async def test_partial_identity_denies_rather_than_falling_through(
+        self, scoped_store
+    ):
+        store, alice, bob = scoped_store
+        current_platform.set("cli")
+        current_platform_user.set(None)
+        assert await store.delete(bob.id) is False
+        assert await store.get(bob.id) is not None
+
+    @pytest.mark.asyncio
+    async def test_maintenance_pass_still_updates_without_contextvars(
+        self, scoped_store
+    ):
+        """The real dedupe pass runs with no ContextVars set and its
+        update() still lands - the fix must not break maintenance."""
+        from hestia.memory.maintenance.dedupe import DeterministicDeduper
+
+        store, alice, bob = scoped_store
+        near_dup = await store.save(
+            content="alice private note  ",  # whitespace-normalized duplicate
+            platform="cli",
+            platform_user="alice",
+        )
+        deduper = DeterministicDeduper(store)
+        result = await deduper.run("cli", "alice")
+
+        # The load-bearing assertion: the pass merged the duplicate pair via
+        # store.update() while no runtime identity was present - one of the
+        # two originals ended up soft-deleted or rewritten.
+        assert result.merged_count >= 1
+        post = await store.get(near_dup.id)
+        assert post is None or post.content != "alice private note  "

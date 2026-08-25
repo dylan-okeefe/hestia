@@ -835,11 +835,18 @@ class MemoryStore:
         memory_id: str,
         platform: str | None = None,
         platform_user: str | None = None,
+        *,
+        allow_unscoped: bool = False,
     ) -> bool:
         """Delete a memory by ID.
 
         When platform and platform_user are provided (or available via
         runtime ContextVars), the deletion is scoped to that user.
+
+        SEC-010: an unresolved identity DENIES the operation (returns
+        False) instead of silently deleting across users. System callers
+        with no user identity — the CLI operator, maintenance jobs that
+        carry their own scope — pass ``allow_unscoped=True`` explicitly.
 
         Returns True if the memory was found and deleted.
         """
@@ -851,9 +858,20 @@ class MemoryStore:
                 "AND platform = :platform AND platform_user = :platform_user"
             )
             params = {"id": memory_id, "platform": platform, "platform_user": platform_user}
-        else:
+        elif allow_unscoped:
+            logger.info(
+                "Unscoped memory delete executed for %s (allow_unscoped=True)",
+                memory_id,
+            )
             sql = sa.text("DELETE FROM memory WHERE id = :id")
             params = {"id": memory_id}
+        else:
+            logger.warning(
+                "memory.delete denied for %s: no identity scope "
+                "(pass allow_unscoped=True for privileged system use)",
+                memory_id,
+            )
+            return False
 
         async with self._db.engine.connect() as conn:
             result = await conn.execute(sql, params)
@@ -980,13 +998,31 @@ class MemoryStore:
         topic_ids: list[str] | None = None,
         platform: str | None = None,
         platform_user: str | None = None,
+        allow_unscoped: bool = False,
     ) -> bool:
         """Update content, tags, scope, and/or topic associations of an active memory.
 
         Only active memories can be updated; soft-deleted rows are ignored.
+
+        SEC-010: an unresolved identity DENIES the operation (returns False)
+        unless ``allow_unscoped=True`` is passed explicitly by a privileged
+        system caller.
         Returns True if the memory was found and updated.
         """
         platform, platform_user = self._resolve_scope(platform, platform_user)
+
+        if platform is None or platform_user is None:
+            if not allow_unscoped:
+                logger.warning(
+                    "memory.update denied for %s: no identity scope "
+                    "(pass allow_unscoped=True for privileged system use)",
+                    memory_id,
+                )
+                return False
+            logger.info(
+                "Unscoped memory update executed for %s (allow_unscoped=True)",
+                memory_id,
+            )
 
         set_clauses: list[str] = []
         params: dict[str, Any] = {"id": memory_id, "is_active": 1}
@@ -1045,35 +1081,129 @@ class MemoryStore:
             await conn.commit()
             return True
 
-    async def pin(self, memory_id: str, pinned: bool = True) -> bool:
-        """Set the pinned flag on a memory by ID."""
+    async def pin(
+        self,
+        memory_id: str,
+        pinned: bool = True,
+        *,
+        platform: str | None = None,
+        platform_user: str | None = None,
+        allow_unscoped: bool = False,
+    ) -> bool:
+        """Set the pinned flag on a memory by ID.
+
+        SEC-010: an unresolved identity DENIES the operation (returns False)
+        unless ``allow_unscoped=True`` is passed explicitly by a privileged
+        system caller. With identity resolved, the update is scoped to that
+        user's row.
+        """
+        platform, platform_user = self._resolve_scope(platform, platform_user)
+
+        scope_sql = ""
+        params: dict[str, Any] = {"id": memory_id, "is_pinned": 1 if pinned else 0}
+        if platform is not None and platform_user is not None:
+            scope_sql = " AND platform = :platform AND platform_user = :platform_user"
+            params["platform"] = platform
+            params["platform_user"] = platform_user
+        elif not allow_unscoped:
+            logger.warning(
+                "memory.pin denied for %s: no identity scope "
+                "(pass allow_unscoped=True for privileged system use)",
+                memory_id,
+            )
+            return False
+        else:
+            logger.info(
+                "Unscoped memory pin executed for %s (allow_unscoped=True)",
+                memory_id,
+            )
+
         sql = sa.text(
-            "UPDATE memory SET is_pinned = :is_pinned WHERE id = :id"
+            f"UPDATE memory SET is_pinned = :is_pinned WHERE id = :id{scope_sql}"
         )
-        params = {"id": memory_id, "is_pinned": 1 if pinned else 0}
 
         async with self._db.engine.connect() as conn:
             result = await conn.execute(sql, params)
             await conn.commit()
             return result.rowcount > 0
 
-    async def mark_user_authored(self, memory_id: str) -> bool:
-        """Mark a memory as user-authored by ID."""
+    async def mark_user_authored(
+        self,
+        memory_id: str,
+        *,
+        platform: str | None = None,
+        platform_user: str | None = None,
+        allow_unscoped: bool = False,
+    ) -> bool:
+        """Mark a memory as user-authored by ID.
+
+        SEC-010: deny-on-unresolved-identity, same contract as :meth:`pin`.
+        """
+        platform, platform_user = self._resolve_scope(platform, platform_user)
+
+        scope_sql = ""
+        params: dict[str, Any] = {"id": memory_id}
+        if platform is not None and platform_user is not None:
+            scope_sql = " AND platform = :platform AND platform_user = :platform_user"
+            params["platform"] = platform
+            params["platform_user"] = platform_user
+        elif not allow_unscoped:
+            logger.warning(
+                "memory.mark_user_authored denied for %s: no identity scope",
+                memory_id,
+            )
+            return False
+        else:
+            logger.info(
+                "Unscoped memory mark_user_authored executed for %s "
+                "(allow_unscoped=True)",
+                memory_id,
+            )
+
         sql = sa.text(
-            "UPDATE memory SET is_user_authored = 1 WHERE id = :id"
+            f"UPDATE memory SET is_user_authored = 1 WHERE id = :id{scope_sql}"
         )
 
         async with self._db.engine.connect() as conn:
-            result = await conn.execute(sql, {"id": memory_id})
+            result = await conn.execute(sql, params)
             await conn.commit()
             return result.rowcount > 0
 
-    async def mark_recalled(self, memory_id: str) -> bool:
-        """Set last_recalled_at to now for a memory by ID."""
+    async def mark_recalled(
+        self,
+        memory_id: str,
+        *,
+        platform: str | None = None,
+        platform_user: str | None = None,
+        allow_unscoped: bool = False,
+    ) -> bool:
+        """Set last_recalled_at to now for a memory by ID.
+
+        SEC-010: deny-on-unresolved-identity, same contract as :meth:`pin`.
+        """
+        platform, platform_user = self._resolve_scope(platform, platform_user)
+
+        scope_sql = ""
+        params: dict[str, Any] = {"id": memory_id, "now": utcnow().isoformat()}
+        if platform is not None and platform_user is not None:
+            scope_sql = " AND platform = :platform AND platform_user = :platform_user"
+            params["platform"] = platform
+            params["platform_user"] = platform_user
+        elif not allow_unscoped:
+            logger.warning(
+                "memory.mark_recalled denied for %s: no identity scope",
+                memory_id,
+            )
+            return False
+        else:
+            logger.info(
+                "Unscoped memory mark_recalled executed for %s (allow_unscoped=True)",
+                memory_id,
+            )
+
         sql = sa.text(
-            "UPDATE memory SET last_recalled_at = :now WHERE id = :id"
+            f"UPDATE memory SET last_recalled_at = :now WHERE id = :id{scope_sql}"
         )
-        params = {"id": memory_id, "now": utcnow().isoformat()}
 
         async with self._db.engine.connect() as conn:
             result = await conn.execute(sql, params)
