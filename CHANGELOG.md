@@ -5,22 +5,14 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.16.1] — 2026-08-26
+
 ### Security
 
-### Added
-
-- `hestia serve` now runs the reflection and style-learning tick loops
-  themselves (60s cadence), matching the standalone scheduler daemon.
-  Previously those passes only ran when you launched `hestia schedule
-  daemon` separately.
-
-### Fixed
-
-- Reflection's idle check compared mismatched timestamp formats and could
-  conclude "user is idle" while they were actively chatting (BUG-067).
-- **Memory mutations fail closed without identity (SEC-010).** `delete`,
-  `update`, `pin`, `unpin`, `mark_user_authored`, `mark_recalled`,
-  `soft_delete`, and `restore` on the memory store previously fell through
+- **Memory mutations fail closed without identity (SEC-010).** The seven
+  mutating methods on the memory store — `delete`, `update` (which also
+  covers pin/unpin via `pin(pinned=…)`), `mark_user_authored`,
+  `mark_recalled`, `soft_delete`, and `restore` — previously fell through
   to an unscoped by-ID statement when no user identity could be resolved,
   allowing cross-user access. They now deny (return False, logged) unless
   a system caller passes `allow_unscoped=True` explicitly. Callers with
@@ -28,6 +20,19 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   (maintenance passes, web routes) are unaffected. Known edge: memories
   with a NULL owner cannot be edited through the web UI anymore (reported
   as "not found"); the runtime database currently contains zero such rows.
+
+### Added
+
+- `hestia serve` now runs the reflection and style-learning tick loops
+  itself (60s cadence), matching the standalone scheduler daemon.
+  Previously those passes only ran when you launched `hestia schedule
+  daemon` separately.
+
+### Fixed
+
+- Reflection AND style schedulers: the idle check compared mismatched
+  timestamp formats and could conclude "user is idle" while actively
+  chatting (BUG-067 family, two confirmed instances).
 
 ## [0.16.0] — 2026-08-24
 

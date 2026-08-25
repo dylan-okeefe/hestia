@@ -59,17 +59,39 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
         # (tick_loop); serve just runs it. Gaps between ticks use the same
         # 60s cadence the daemon used.
         tick_tasks: list[asyncio.Task[None]] = []
+        # Safety (R4-5): _is_due only fires within 2 minutes of the cron
+        # match, so the tick interval MUST stay below that or reflection
+        # silently never fires. Warn rather than clamp - operators who
+        # raised it should hear why their reflection stopped.
+        tick_interval = config.scheduler.tick_interval_seconds
+        if tick_interval >= 120:
+            click.echo(
+                click.style(
+                    f"Warning: scheduler.tick_interval_seconds={tick_interval} "
+                    "is >= the 2-minute reflection/style due window - "
+                    "those ticks may silently never fire.",
+                    fg="yellow",
+                ),
+                err=True,
+            )
+
         reflection_scheduler = (
             app.reflection_scheduler if config.reflection.enabled else None
         )
         if reflection_scheduler is not None:
             tick_tasks.append(
-                asyncio.create_task(reflection_scheduler.tick_loop())
+                asyncio.create_task(
+                    reflection_scheduler.tick_loop(interval_seconds=tick_interval)
+                )
             )
 
         style_scheduler = app.style_scheduler
         if style_scheduler is not None:
-            tick_tasks.append(asyncio.create_task(style_scheduler.tick_loop()))
+            tick_tasks.append(
+                asyncio.create_task(
+                    style_scheduler.tick_loop(interval_seconds=tick_interval)
+                )
+            )
 
         if config.telegram.bot_token:
             from hestia.platforms.runners import run_telegram
