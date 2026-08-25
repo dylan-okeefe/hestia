@@ -3,6 +3,21 @@
 All notable changes to this project will be documented in this file.
 Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### Security
+
+- **Memory mutations fail closed without identity (SEC-010).** `delete`,
+  `update`, `pin`, `unpin`, `mark_user_authored`, `mark_recalled`,
+  `soft_delete`, and `restore` on the memory store previously fell through
+  to an unscoped by-ID statement when no user identity could be resolved,
+  allowing cross-user access. They now deny (return False, logged) unless
+  a system caller passes `allow_unscoped=True` explicitly. Callers with
+  runtime identity (chat turns) and callers passing explicit scope
+  (maintenance passes, web routes) are unaffected. Known edge: memories
+  with a NULL owner cannot be edited through the web UI anymore (reported
+  as "not found"); the runtime database currently contains zero such rows.
+
 ## [0.16.0] — 2026-08-24
 
 Two and a half months of work since v0.15.1: allowlist-only authorization

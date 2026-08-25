@@ -160,8 +160,14 @@ async def pin_memory(
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """Pin a memory."""
-    await _require_memory_owner(request, ctx, memory_id)
-    await ctx.app.memory_store.pin(memory_id, pinned=True)
+    mem = await _require_memory_owner(request, ctx, memory_id)
+    # SEC-010: scope the mutation to the memory's owner explicitly.
+    await ctx.app.memory_store.pin(
+        memory_id,
+        pinned=True,
+        platform=mem.platform,
+        platform_user=mem.platform_user,
+    )
     return {"pinned": True}
 
 
@@ -172,8 +178,14 @@ async def unpin_memory(
     ctx: WebContext = _CTX_DEP,
 ) -> dict[str, Any]:
     """Unpin a memory."""
-    await _require_memory_owner(request, ctx, memory_id)
-    await ctx.app.memory_store.pin(memory_id, pinned=False)
+    mem = await _require_memory_owner(request, ctx, memory_id)
+    # SEC-010: scope the mutation to the memory's owner explicitly.
+    await ctx.app.memory_store.pin(
+        memory_id,
+        pinned=False,
+        platform=mem.platform,
+        platform_user=mem.platform_user,
+    )
     return {"pinned": False}
 
 

@@ -107,10 +107,13 @@ class DeterministicPruner:
                 continue
 
             if self._is_junk(memory):
+                # Sweep-all runs carry no user identity by design; the
+                # unscoped opt-in is what makes all-user pruning possible.
                 await self._store.soft_delete(
                     memory.id,
                     platform=platform,
                     platform_user=platform_user,
+                    allow_unscoped=True,
                     reason="junk",
                 )
                 await self._record_prune(platform, platform_user, memory, "junk")
@@ -118,10 +121,13 @@ class DeterministicPruner:
                 continue
 
             if self._is_orphan(memory):
+                # Sweep-all runs carry no user identity by design; the
+                # unscoped opt-in is what makes all-user pruning possible.
                 await self._store.soft_delete(
                     memory.id,
                     platform=platform,
                     platform_user=platform_user,
+                    allow_unscoped=True,
                     reason="orphan",
                 )
                 await self._record_prune(platform, platform_user, memory, "orphan")

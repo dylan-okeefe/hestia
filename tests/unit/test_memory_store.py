@@ -84,7 +84,9 @@ class TestMemoryStore:
         """Can delete a memory."""
         mem = await memory_store.save("Delete me")
         assert await memory_store.count() == 1
-        result = await memory_store.delete(mem.id)
+        # The saved row is itself unscoped (saved outside any identity), so
+        # removing it requires the explicit system-caller opt-in (SEC-010).
+        result = await memory_store.delete(mem.id, allow_unscoped=True)
         assert result is True
         assert await memory_store.count() == 0
 

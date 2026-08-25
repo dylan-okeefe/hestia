@@ -145,7 +145,7 @@ class TestScopeAwareDeterministicDedupe:
             platform="cli",
             platform_user="alice",
         )
-        await memory_store.pin(protected_global.id, pinned=True)
+        await memory_store.pin(protected_global.id, pinned=True, allow_unscoped=True)
 
         await memory_store.save(
             content="Shared duplicate content",
