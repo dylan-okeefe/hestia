@@ -210,6 +210,12 @@ Suspected and CLEARED by writer/cutoff format analysis:
 - `maintenance_trace_store.py` clear_old — created_at writer and cutoff
   both isoformat strings; consistent.
 
-Detector candidate (D11): a lint flagging `.isoformat()` bound as a
-comparison parameter against a known DateTime column. Grep-level over
-sa.text/sa.select comparisons; cheap; would have caught all four sites.
+Detector candidate (D11), wording corrected 2026-08-26 per #58 round-4
+review: the defect is NOT "isoformat in a comparison" - isoformat-written
+AND isoformat-read is consistent (both cleared suspects prove it). The
+defect is A READ FORMAT THAT DISAGREES WITH THE WRITE FORMAT for the same
+column. D11 therefore flags any comparison parameter whose binding format
+differs from how that column's rows are written - today that means
+`.isoformat()` strings bound against columns written via datetime-object
+binding. Grep-level over sa.text/sa.select comparisons; cheap; would have
+caught both scheduler sites.
