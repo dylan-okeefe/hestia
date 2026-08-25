@@ -72,15 +72,13 @@ def test_every_scheduler_class_is_wired_or_exempt() -> None:
 
     problems: list[str] = []
     for dotted, classes in sorted(_discover_tick_classes().items()):
-        short = dotted.rsplit(".", 1)[-1]
         for cls in sorted(classes):
-            wired = False  # generic stem match below is the real check
-            # Generic fallback: any '<name>.tick_loop()' where the variable
-            # mentions the class's stem (reflection_scheduler/style_scheduler).
+            # The wiring check matches on the class stem: a variable named
+            # reflection_scheduler / style_scheduler calling .tick_loop(.
             stem = cls.lower().replace("scheduler", "")
             generic = re.search(rf"\w*{stem}\w*\.tick_loop\(", serve_src)
             daemon_only = cls in DAEMON_ONLY
-            if not (wired or generic or daemon_only):
+            if not (generic or daemon_only):
                 problems.append(
                     f"{dotted}.{cls} defines async tick() but is neither "
                     "started from serve nor listed in DAEMON_ONLY"
