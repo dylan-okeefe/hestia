@@ -165,3 +165,27 @@ one-off measurement; surviving mutants land here as pre-proven instances.
 6. **D5** meta-tool triple-consistency.
 7. **D7** frontend node-palette parity (needs the JSON fixture decision).
 8. **D8** alembic-only table detector (skills; full equivalence stays with #46).
+
+
+## Addendum 2026-08-25 — THE TRANSPORTED COUNT (variant of A9)
+
+Instance: ORPHAN_TRIAGE.md's header stated a tally ("6 FIXED / 33 STILL
+OPEN / 2 / 1") that was true when the reviewer dictated it and false the
+moment the reviewer's own next instruction (reclassify BUG-062 out of
+FIXED) was applied. The implementing run transcribed the dictation,
+labelled it "recomputed from the table", and shipped both. Caught by the
+reviewer re-running the count against the committed file.
+
+Why A9/D1 does not cover it: D1 pins TEST counts to their command. This
+was a prose count over a checked-in table — no test, no command at write
+time, nothing executable to pin.
+
+Detector (new, D10): any stated tally over a checked-in table must be
+GENERATED — a script (or test) recomputes the bucket counts from the file
+and compares them to the header; the header carries the command, not a
+transcription. Landed practice as of 2026-08-25: ORPHAN_TRIAGE.md's header
+is pasted from `grep -oE … | sort | uniq -c` output.
+
+This is the third occurrence in three days (L245 reported count without
+command; this register's 40-vs-39; this transported tally), twice caused
+by the reviewer. The class has its own name now.
