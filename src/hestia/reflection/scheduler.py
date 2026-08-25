@@ -83,7 +83,14 @@ class ReflectionScheduler:
         sql = sa.select(sa.func.count(sessions.c.id)).where(
             sa.and_(
                 sessions.c.state == SessionState.ACTIVE.value,
-                sessions.c.last_active_at >= cutoff.isoformat(),
+                # BUG-067: bind the datetime OBJECT, not an isoformat string.
+                # SessionStore writes last_active_at as datetime objects, so
+                # SQLite TEXT rows carry space separators and microseconds;
+                # an isoformat() cutoff ('T', no microseconds) compared
+                # greater than every same-day row and made the instance look
+                # idle while the user was active. Binding the datetime lets
+                # the driver render both sides in one format.
+                sessions.c.last_active_at >= cutoff,
             )
         )
         async with self._session_store._db.engine.connect() as conn:

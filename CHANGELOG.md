@@ -7,6 +7,17 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Security
 
+### Added
+
+- `hestia serve` now runs the reflection and style-learning tick loops
+  themselves (60s cadence), matching the standalone scheduler daemon.
+  Previously those passes only ran when you launched `hestia schedule
+  daemon` separately.
+
+### Fixed
+
+- Reflection's idle check compared mismatched timestamp formats and could
+  conclude "user is idle" while they were actively chatting (BUG-067).
 - **Memory mutations fail closed without identity (SEC-010).** `delete`,
   `update`, `pin`, `unpin`, `mark_user_authored`, `mark_recalled`,
   `soft_delete`, and `restore` on the memory store previously fell through

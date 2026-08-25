@@ -53,6 +53,37 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
         )
         await scheduler.start()
 
+        # Reflection and style ticks previously ran only in the standalone
+        # scheduler daemon; serve is the primary runtime and must run them.
+        # Same 60s cadence as the daemon's loop, exceptions logged per tick
+        # so one bad pass never kills the loop (BUG-013 lesson).
+        tick_tasks: list[asyncio.Task[None]] = []
+        reflection_scheduler = (
+            app.reflection_scheduler if config.reflection.enabled else None
+        )
+        if reflection_scheduler is not None:
+            async def _reflection_tick_loop() -> None:
+                while True:
+                    await asyncio.sleep(60)
+                    try:
+                        await reflection_scheduler.tick()
+                    except Exception:  # noqa: BLE001 — tick loop survives
+                        logger.exception("Reflection tick failed")
+
+            tick_tasks.append(asyncio.create_task(_reflection_tick_loop()))
+
+        style_scheduler = app.style_scheduler
+        if style_scheduler is not None:
+            async def _style_tick_loop() -> None:
+                while True:
+                    await asyncio.sleep(60)
+                    try:
+                        await style_scheduler.tick()
+                    except Exception:  # noqa: BLE001 — tick loop survives
+                        logger.exception("Style tick failed")
+
+            tick_tasks.append(asyncio.create_task(_style_tick_loop()))
+
         if config.telegram.bot_token:
             from hestia.platforms.runners import run_telegram
             from hestia.platforms.telegram_adapter import TelegramAdapter
@@ -180,6 +211,8 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
                 task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+        for t in tick_tasks:
+            t.cancel()
         if scheduler is not None:
             await scheduler.stop()
         await app.inference.close()
