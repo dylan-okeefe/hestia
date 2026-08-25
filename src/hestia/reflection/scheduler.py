@@ -40,6 +40,18 @@ class ReflectionScheduler:
         self._failure_log.append((datetime.now(UTC), stage, type(exc).__name__, str(exc)[:200]))
         self.failure_count += 1
 
+    async def tick_loop(self, interval_seconds: float = 60.0) -> None:
+        """Run :meth:`tick` every *interval_seconds* until cancelled.
+
+        The one tick site for this scheduler - serve and the standalone
+        daemon both run tasks from this method (#58 round 3).
+        """
+        from hestia.scheduling import run_tick_loop
+
+        await run_tick_loop(
+            self.tick, interval_seconds=interval_seconds, name="ReflectionScheduler"
+        )
+
     def wire_failure_handler(self, runner: ReflectionRunner) -> None:
         runner.set_failure_handler(self._record_failure)
 

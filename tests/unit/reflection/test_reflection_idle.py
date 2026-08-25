@@ -64,3 +64,19 @@ async def test_stale_session_counts_as_idle(db) -> None:
     sched = _scheduler(store, idle_minutes=5)
 
     assert await sched._is_idle(utcnow()) is True
+
+
+@pytest.mark.asyncio
+async def test_style_idle_check_matches_reflection_fix(db) -> None:
+    """R3-1: StyleScheduler had the byte-identical BUG-067 comparison."""
+    from hestia.style.scheduler import StyleScheduler
+
+    store = SessionStore(db)
+    await store.get_or_create_session("test", "user-1")
+    config = SimpleNamespace(cron="0 3 * * *", idle_minutes=5)
+    sched = StyleScheduler(
+        config=config,
+        builder=None,  # type: ignore[arg-type]  # _is_idle never touches it
+        session_store=store,
+    )
+    assert await sched._is_idle(utcnow()) is False

@@ -261,17 +261,24 @@ def cmd_schedule_daemon(ctx: click.Context, tick_interval: float | None) -> None
             memory_maintenance_digest=app.memory_maintenance_digest,
         )
         await scheduler.start()
+        tick_tasks: list[asyncio.Task[None]] = []
+        if app.config.reflection.enabled and app.reflection_scheduler is not None:
+            tick_tasks.append(asyncio.create_task(app.reflection_scheduler.tick_loop()))
+        if app.style_scheduler is not None:
+            tick_tasks.append(asyncio.create_task(app.style_scheduler.tick_loop()))
         click.echo(f"Scheduler daemon started (tick={tick}s). Press Ctrl-C to stop.")
         try:
             while True:
                 await asyncio.sleep(60)
-                if app.config.reflection.enabled and app.reflection_scheduler is not None:
-                    await app.reflection_scheduler.tick()
-                if app.style_scheduler is not None:
-                    await app.style_scheduler.tick()
+                # One tick site per scheduler (#58 round 3): the loops
+                # live on the scheduler objects, started below.
         except asyncio.CancelledError:
             pass
         finally:
+            for t in tick_tasks:
+                t.cancel()
+            if tick_tasks:
+                await asyncio.gather(*tick_tasks, return_exceptions=True)
             click.echo("\nShutting down scheduler...")
             await scheduler.stop()
 
