@@ -189,3 +189,27 @@ is pasted from `grep -oE … | sort | uniq -c` output.
 This is the third occurrence in three days (L245 reported count without
 command; this register's 40-vs-39; this transported tally), twice caused
 by the reviewer. The class has its own name now.
+
+## Addendum 2026-08-26 — CONFIRMED CLASS: comparison bound in the wrong type (BUG-067 family)
+
+A DateTime column compared against a `.isoformat()` STRING does not raise;
+SQLite compares TEXT lexicographically, and 'T' (isoformat separator) sorts
+above the driver's space-separated datetime rendering, so every same-day
+row silently mismatches. mypy is satisfied; the only observable symptom is
+a wrong result set. No gate sees it.
+
+Confirmed instances (both fixed red-green on fix/sec-010-memory-scope):
+- `reflection/scheduler.py` `_is_idle` — reflection could fire while the
+  user was actively chatting.
+- `style/scheduler.py` `_is_idle` — byte-identical copy, found only because
+  review round 3 demanded checking the sibling before assuming clean.
+
+Suspected and CLEARED by writer/cutoff format analysis:
+- `memory/store.py` list_inactive_memories retention window — deleted_at
+  writer and cutoff are both isoformat strings; consistent.
+- `maintenance_trace_store.py` clear_old — created_at writer and cutoff
+  both isoformat strings; consistent.
+
+Detector candidate (D11): a lint flagging `.isoformat()` bound as a
+comparison parameter against a known DateTime column. Grep-level over
+sa.text/sa.select comparisons; cheap; would have caught all four sites.
