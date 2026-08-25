@@ -6,10 +6,12 @@ grepped against the current tree before writing. Commands used were
 targeted `grep -n` / `sed -n` reads of the cited files; counts below state
 their command inline where a number is claimed.
 
-**Totals: 43 classified — 11 FIXED · 26 STILL OPEN · 4 NO LONGER APPLIES · 2 CANNOT DETERMINE.**
+**Totals, recomputed from the table below (`grep -cE '^\| (BUG|SEC|PERF)'`
+per bucket): 42 rows = 41 orphans + BUG-013 → 6 FIXED · 33 STILL OPEN
+(incl. 1 partial: BUG-087) · 2 NO LONGER APPLIES · 1 CANNOT DETERMINE.**
 
-The high CANNOT-DETERMINE count (2) and one register self-undercount
-(SEC-003, below) are statements about the audit register's precision, not
+One CANNOT DETERMINE (PERF-015), plus one register self-undercount
+(SEC-003, below), are statements about the audit register's precision, not
 about this run.
 
 ## ⚠️ ALARMING BUT NOT FIXED HERE (per scope fence)
@@ -50,7 +52,7 @@ first item of the next fix loop.
 | BUG-078 | Low-Med | STILL OPEN | `AWAITING_USER` never entered; confirmation awaits inline `execution.py:1681` |
 | BUG-083 | Low | STILL OPEN | server masks to `"***"` (`config.py:33`); reveal toggles input type only (`ConfigForm.tsx:172`) |
 | BUG-087 | Low | STILL OPEN (partial) | node input fixed (`NodePropertiesPanel.tsx:367`); trigger save still unvalidated (`useWorkflowEditor.ts:457-471`) |
-| BUG-062 | Low | FIXED | download-failure path unlinks temp ogg (`telegram_adapter.py:1015-1019`) |
+| BUG-062 | Low | STILL OPEN | `ogg_path` assigned only AFTER `download_to_drive`; download-failure path sees None and skips cleanup (`telegram_adapter.py:1004-1018`) |
 | BUG-074 | Low | FIXED | tag MATCH routed through `_sanitize_fts5_query` (`store.py:779`, `:1118`), embedded quotes escaped |
 | BUG-076 | Low | FIXED | `bm25(memory, 10.0, 1.0)` content-dominates-tags (`store.py:702`, commit cce2a2ba 2026-08-22) |
 | PERF-001 | High impact | STILL OPEN | no React.lazy/manualChunks (`vite.config.ts`, `App.tsx` grep empty) |
@@ -85,7 +87,7 @@ first item of the next fix loop.
 15. **PERF-010 / PERF-012 / PERF-013** — storage/IO scale items (Medium)
 16. **SEC-024, SEC-016, SEC-019, SEC-020** — lower-severity security (Low–Med-Low)
 17. **BUG-025, BUG-052, BUG-067, BUG-071** — medium-low functional defects
-18. **BUG-077, BUG-078, BUG-083, BUG-087** — low
+18. **BUG-077, BUG-078, BUG-083, BUG-087, BUG-062** — low
 
 ## Per-finding detail
 
@@ -243,9 +245,13 @@ empty/min (`NodePropertiesPanel.tsx:367`); trigger save still writes
 whatever is in triggerConfig with no required-field checks
 (`useWorkflowEditor.ts:457-471`).
 
-**BUG-062 — FIXED.** Download-failure path deletes the temp file
-(`telegram_adapter.py:1015-1019`); conversion path cleans up in finally
-(`:1028-1031`).
+**BUG-062 — STILL OPEN (reclassified 2026-08-25; earlier FIXED was wrong).**
+`telegram_adapter.py:1004-1018`: `ogg_path` is assigned only after
+`download_to_drive` returns, inside the `with` block; on the
+download-failure path the except handler's guard sees None and skips the
+unlink, so the temp .ogg leaks. Reachable path: any voice message whose
+download fails. Fix direction (NOT applied here — docs branch): assign
+`ogg_path = ogg.name` on entering the with-block.
 
 **BUG-074 — FIXED.** Tag filters pass through `_sanitize_fts5_query`
 before MATCH (`store.py:779`, `:1118`), and the sanitizer escapes embedded

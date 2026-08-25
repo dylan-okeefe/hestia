@@ -73,8 +73,10 @@ written — this is the register Dylan reviews before the fix run.
 ### A6. Class 5 — finding-ID comments are documented, not pinned
 - **Location/measurement:** `grep -rhoE '(BUG|SEC|PERF)-[0-9]+' src
   --include='*.py' | sort -u | wc -l` → **59** IDs cited in src comments;
-  same command over tests/ → **20**; set difference → **40 IDs referenced
-  in src with no test anywhere citing them.** Examples: BUG-008 BUG-017
+  same command over tests/ → **20**; set difference via `comm -23 … | wc
+  -l` → **39 IDs referenced in src with no test anywhere citing them.**
+  (Correction 2026-08-25: an earlier draft of this register said 40; its
+  own stated command produces 39.) Examples: BUG-008 BUG-017
   BUG-036 SEC-006 SEC-007 SEC-014 SEC-015 (full list in run notes).
 - **Invisibility:** the comment reads as closure ("BUG-041: excluded from
   aggregates") while the behavior it names may be untested; ruff/mypy/
@@ -116,7 +118,9 @@ written — this is the register Dylan reviews before the fix run.
 - **Detector (D1):** `scripts/gate` wrapper that runs ruff/mypy/pytest,
   then prints `<command> → <counts>` as its final artifact line, and writes
   the same to a file the handoff must reference. Cheap; converts the
-  standing rule from discipline into artifact.
+  standing rule from discipline into artifact. This register is itself the
+  argument for it: A6 stated a count (40), gave the command, and the
+  command produced 39 — caught only because the number was checkable.
 
 ## B. Resolved exemplars (kept as class evidence)
 
