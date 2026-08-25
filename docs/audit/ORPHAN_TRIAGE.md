@@ -6,9 +6,15 @@ grepped against the current tree before writing. Commands used were
 targeted `grep -n` / `sed -n` reads of the cited files; counts below state
 their command inline where a number is claimed.
 
-**Totals, recomputed from the table below (`grep -cE '^\| (BUG|SEC|PERF)'`
-per bucket): 42 rows = 41 orphans + BUG-013 → 6 FIXED · 33 STILL OPEN
-(incl. 1 partial: BUG-087) · 2 NO LONGER APPLIES · 1 CANNOT DETERMINE.**
+**Totals, generated from the table by command AFTER all content edits
+(review round 2 — the previous header transcribed a stale tally):
+
+  grep -oE '\| (FIXED\|STILL OPEN[^|]*\|NO LONGER APPLIES\|CANNOT
+  DETERMINE) \|' docs/audit/ORPHAN_TRIAGE.md | sort | uniq -c
+
+→ 5 FIXED · 34 STILL OPEN (incl. 1 partial: BUG-087) ·
+2 NO LONGER APPLIES · 1 CANNOT DETERMINE. 42 rows = 41 orphans +
+BUG-013.**
 
 One CANNOT DETERMINE (PERF-015), plus one register self-undercount
 (SEC-003, below), are statements about the audit register's precision, not
