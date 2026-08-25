@@ -918,11 +918,16 @@ class MemoryStore:
         platform_user: str | None = None,
         reason: str = "pruned",
         superseded_by: str | None = None,
+        allow_unscoped: bool = False,
     ) -> bool:
         """Soft-delete a memory by ID.
 
         Marks the memory inactive and records deletion metadata. Returns True
         if the memory was found and updated.
+
+        SEC-010: an unresolved identity DENIES the operation (returns False)
+        unless ``allow_unscoped=True`` is passed explicitly by a privileged
+        system caller.
         """
         platform, platform_user = self._resolve_scope(platform, platform_user)
 
@@ -938,6 +943,18 @@ class MemoryStore:
             where_clauses.append("platform = :platform AND platform_user = :platform_user")
             params["platform"] = platform
             params["platform_user"] = platform_user
+        elif not allow_unscoped:
+            logger.warning(
+                "memory.soft_delete denied for %s: no identity scope "
+                "(pass allow_unscoped=True for privileged system use)",
+                memory_id,
+            )
+            return False
+        else:
+            logger.info(
+                "Unscoped memory soft_delete executed for %s (allow_unscoped=True)",
+                memory_id,
+            )
 
         sql = sa.text(
             "UPDATE memory SET is_active = :is_active, deleted_at = :deleted_at, "
@@ -956,11 +973,16 @@ class MemoryStore:
         *,
         platform: str | None = None,
         platform_user: str | None = None,
+        allow_unscoped: bool = False,
     ) -> bool:
         """Restore a soft-deleted memory by ID.
 
         Clears inactive/deleted flags. Returns True if the memory was found
         and updated.
+
+        SEC-010: an unresolved identity DENIES the operation (returns False)
+        unless ``allow_unscoped=True`` is passed explicitly by a privileged
+        system caller.
         """
         platform, platform_user = self._resolve_scope(platform, platform_user)
 
@@ -976,6 +998,18 @@ class MemoryStore:
             where_clauses.append("platform = :platform AND platform_user = :platform_user")
             params["platform"] = platform
             params["platform_user"] = platform_user
+        elif not allow_unscoped:
+            logger.warning(
+                "memory.restore denied for %s: no identity scope "
+                "(pass allow_unscoped=True for privileged system use)",
+                memory_id,
+            )
+            return False
+        else:
+            logger.info(
+                "Unscoped memory restore executed for %s (allow_unscoped=True)",
+                memory_id,
+            )
 
         sql = sa.text(
             "UPDATE memory SET is_active = :is_active, deleted_at = :deleted_at, "

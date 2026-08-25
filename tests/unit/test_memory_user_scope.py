@@ -532,3 +532,82 @@ class TestMemoryMutationScopeSEC010:
         assert result.merged_count >= 1
         post = await store.get(near_dup.id)
         assert post is None or post.content != "alice private note  "
+
+
+class TestSoftDeleteRestoreScopeSEC010:
+    """Review round 2 on #58: soft_delete and restore share the fail-open
+    shape - same contract as the other five mutations."""
+
+    @pytest.fixture
+    async def scoped_store(self, tmp_path):
+        current_platform.set(None)
+        current_platform_user.set(None)
+        db = Database("sqlite+aiosqlite:///:memory:")
+        await db.connect()
+        await db.create_tables()
+        store = MemoryStore(db)
+        await store.create_table()
+        alice = await store.save(
+            content="alice note", platform="cli", platform_user="alice"
+        )
+        bob = await store.save(
+            content="bob note", platform="cli", platform_user="bob"
+        )
+        yield store, alice, bob
+        await db.close()
+
+    @pytest.mark.asyncio
+    async def test_soft_delete_denies_without_identity(self, scoped_store):
+        store, _alice, bob = scoped_store
+        assert await store.soft_delete(bob.id, reason="test") is False
+        mem = await store.get(bob.id)
+        assert mem is not None and mem.is_active
+
+    @pytest.mark.asyncio
+    async def test_restore_denies_without_identity(self, scoped_store):
+        store, alice, bob = scoped_store
+        assert await store.soft_delete(bob.id, platform="cli", platform_user="bob")
+        assert await store.restore(bob.id) is False
+        # Still soft-deleted: the unauthenticated restore did nothing.
+        mem = await store.get(bob.id)
+        assert mem is not None and not mem.is_active
+
+    @pytest.mark.asyncio
+    async def test_prune_pass_still_soft_deletes_with_explicit_scope(
+        self, scoped_store
+    ):
+        """Regression guard: a scoped prune pass still lands its soft_delete
+        under the deny-by-default contract (maintenance threads its own
+        scope).
+
+        NOTE this test passes both pre- and post-fix and is a guard, not a
+        red-green demonstration - the two denial tests above carry that.
+        An UNSCOPED sweep-all prune cannot be tested here at all: the read
+        path (list_active_memories -> list_memories) already fails closed
+        on unresolved identity, so sweep-all sees zero rows both before and
+        after. That read-path design decision is fenced out of #58.
+        """
+        import sqlalchemy as sa
+
+        from hestia.memory.maintenance.prune import DeterministicPruner
+
+        store, _alice, bob = scoped_store
+        stale = await store.save(
+            content="to be emptied",
+            platform="cli",
+            platform_user="bob",
+        )
+        # save() sanitizes, so empty the content below the sanitizer to
+        # manufacture a row the pruner classifies as orphan.
+        async with store._db.engine.begin() as conn:
+            await conn.execute(
+                sa.text("UPDATE memory SET content = '' WHERE id = :id"),
+                {"id": stale.id},
+            )
+
+        pruner = DeterministicPruner(store)
+        result = await pruner.run(platform="cli", platform_user="bob")
+
+        assert result.junk_count + result.orphan_count >= 1
+        mem = await store.get(stale.id)
+        assert mem is not None and not mem.is_active
