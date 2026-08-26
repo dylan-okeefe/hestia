@@ -35,6 +35,12 @@ def test_datetime_object_columns_are_not_compared_to_isoformat_strings() -> None
                 continue
             window = "\n".join(lines[i : i + 15])
             for col in WRITES_AS_OBJECT:
+                # Shape 1: param assigned isoformat(), later compared.
+                # Shape 2: inline `<col> >= expr.isoformat()` in a select.
+                if re.search(rf"{col}\s*(?:>=|<=|<|>)\s*[\w.]*\.isoformat\(\)", window):
+                    rel = path.relative_to(SRC.parent.parent)
+                    problems.append(f"{rel}:{i + 1} compares {col} against an isoformat string")
+                    continue
                 if re.search(rf"{col}\s*(?:>=|<=|<|>|=)\s*:\w+", window):
                     rel = path.relative_to(SRC.parent.parent)
                     problems.append(f"{rel}:{i + 1} compares {col} against an isoformat string")
