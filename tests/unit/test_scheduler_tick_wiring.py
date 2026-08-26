@@ -1,8 +1,9 @@
 """L248/#58 round 4 detector: every scheduler's tick is wired or exempted.
 
 Two guarantees:
-1. ENUMERATION is dynamic - every module under src/hestia whose name ends
-   in ``scheduler.py`` is imported and scanned for classes defining an
+1. ENUMERATION is dynamic - every module under src/hestia matching
+   *scheduler* in any path segment OR living inside the scheduler package
+   is imported (rglob over the whole src tree) and scanned for classes defining an
    ``async def tick``; a newly added scheduler is picked up automatically.
 2. ANCHORING - file targets are resolved from this test's own location,
    not the working directory (the A2 defect shape: right answer from one
@@ -27,18 +28,20 @@ DAEMON_PATH = REPO_ROOT / "src" / "hestia" / "commands" / "scheduler.py"
 # Schedulers that intentionally do NOT run under serve, with the reason.
 DAEMON_ONLY: dict[str, str] = {}
 
-SCHEDULER_GLOB = "src/hestia/**/*scheduler*.py"
-
-
 def _discover_tick_classes() -> dict[str, set[str]]:
     """Return {module_dotted_name: {class names with async tick}}.
 
     Enumeration is filesystem-driven so a new scheduler module is found
     without editing this test.
     """
-    src_root = REPO_ROOT / "src" / "hestia"
+    src_root = REPO_ROOT / "src" / "hestia"  # whole tree, any filename
     discovered: dict[str, set[str]] = {}
-    for path in src_root.rglob("*scheduler*.py"):
+    # Widen the net: match scheduler-named files AND anything inside the
+    # scheduler package (engine.py lives there), so a tick class in an
+    # innocuously-named file is still discovered.
+    for path in list(src_root.rglob("*scheduler*.py")) + list(
+        (src_root / "scheduler").glob("*.py")
+    ):
         if "__pycache__" in path.parts or path.name == "__init__.py":
             continue
         dotted = ".".join(
@@ -75,7 +78,12 @@ def test_every_scheduler_class_is_wired_or_exempt() -> None:
         for cls in sorted(classes):
             # The wiring check matches on the class stem: a variable named
             # reflection_scheduler / style_scheduler calling .tick_loop(.
-            stem = cls.lower().replace("scheduler", "")
+            stem = cls.lower().replace("scheduler", "").strip()
+            # A class named exactly `Scheduler` yields an empty stem whose
+            # \w*\w* pattern would match ANY .tick_loop( call - auto-pass
+            # trap. Fall back to the full lowercase class name.
+            if not stem:
+                stem = cls.lower()
             generic = re.search(rf"\w*{stem}\w*\.tick_loop\(", serve_src)
             daemon_only = cls in DAEMON_ONLY
             if not (generic or daemon_only):

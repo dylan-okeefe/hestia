@@ -21,5 +21,5 @@ def test_every_adr_file_is_indexed() -> None:
 def test_index_links_resolve_to_files() -> None:
     index = INDEX.read_text()
     linked = set(re.findall(r"\(adr/(ADR-[^\)]+)\)", index))
-    broken = sorted(l for l in linked if not (ADR_DIR / l).exists())
+    broken = sorted(link for link in linked if not (ADR_DIR / link).exists())
     assert not broken, f"DECISIONS.md links to nonexistent ADR files: {broken}"

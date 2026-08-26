@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -74,4 +73,4 @@ EXCLUDED_BUILTIN_TOOLS: set[str] = {"search_web"}
 
 def test_exclusions_are_declared_tools(registered_names) -> None:
     """The escape hatch may only hide tools that actually exist."""
-    assert EXCLUDED_BUILTIN_TOOLS <= _declared_tool_names()
+    assert _declared_tool_names() >= EXCLUDED_BUILTIN_TOOLS
