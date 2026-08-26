@@ -10,8 +10,8 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Security
 
 - **Memory mutations fail closed without identity (SEC-010).** The seven
-  mutating methods on the memory store — `delete`, `update` (which also
-  covers pin/unpin via `pin(pinned=…)`), `mark_user_authored`,
+  mutating methods on the memory store — `delete`, `update`, `pin`
+  (which covers unpin via `pin(pinned=False)`), `mark_user_authored`,
   `mark_recalled`, `soft_delete`, and `restore` — previously fell through
   to an unscoped by-ID statement when no user identity could be resolved,
   allowing cross-user access. They now deny (return False, logged) unless
