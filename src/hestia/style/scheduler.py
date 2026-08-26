@@ -44,6 +44,18 @@ class StyleScheduler:
             ],
             "last_run_at": self._last_run_at,
         }
+    async def tick_loop(self, interval_seconds: float = 60.0) -> None:
+        """Run :meth:`tick` every *interval_seconds* until cancelled.
+
+        The one tick site for this scheduler (#58 round 3).
+        """
+
+        from hestia.scheduling import run_tick_loop
+
+        await run_tick_loop(
+            self.tick, interval_seconds=interval_seconds, name="StyleScheduler"
+        )
+
     async def tick(self, now: datetime | None = None) -> None:
         if now is None:
             now = utcnow()
@@ -71,7 +83,10 @@ class StyleScheduler:
         sql = sa.select(sa.func.count(sessions.c.id)).where(
             sa.and_(
                 sessions.c.state == SessionState.ACTIVE.value,
-                sessions.c.last_active_at >= cutoff.isoformat(),
+                # BUG-067: bind the datetime OBJECT - isoformat() text
+                # compares greater than the driver's space-separated format
+                # for same-day rows (see reflection/scheduler.py).
+                sessions.c.last_active_at >= cutoff,
             )
         )
         async with self._session_store._db.engine.connect() as conn:

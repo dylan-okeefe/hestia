@@ -40,6 +40,18 @@ class ReflectionScheduler:
         self._failure_log.append((datetime.now(UTC), stage, type(exc).__name__, str(exc)[:200]))
         self.failure_count += 1
 
+    async def tick_loop(self, interval_seconds: float = 60.0) -> None:
+        """Run :meth:`tick` every *interval_seconds* until cancelled.
+
+        The one tick site for this scheduler - serve and the standalone
+        daemon both run tasks from this method (#58 round 3).
+        """
+        from hestia.scheduling import run_tick_loop
+
+        await run_tick_loop(
+            self.tick, interval_seconds=interval_seconds, name="ReflectionScheduler"
+        )
+
     def wire_failure_handler(self, runner: ReflectionRunner) -> None:
         runner.set_failure_handler(self._record_failure)
 
@@ -83,7 +95,14 @@ class ReflectionScheduler:
         sql = sa.select(sa.func.count(sessions.c.id)).where(
             sa.and_(
                 sessions.c.state == SessionState.ACTIVE.value,
-                sessions.c.last_active_at >= cutoff.isoformat(),
+                # BUG-067: bind the datetime OBJECT, not an isoformat string.
+                # SessionStore writes last_active_at as datetime objects, so
+                # SQLite TEXT rows carry space separators and microseconds;
+                # an isoformat() cutoff ('T', no microseconds) compared
+                # greater than every same-day row and made the instance look
+                # idle while the user was active. Binding the datetime lets
+                # the driver render both sides in one format.
+                sessions.c.last_active_at >= cutoff,
             )
         )
         async with self._session_store._db.engine.connect() as conn:

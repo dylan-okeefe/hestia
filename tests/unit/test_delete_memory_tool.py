@@ -6,6 +6,7 @@ import pytest
 
 from hestia.memory.store import MemoryStore
 from hestia.persistence.db import Database
+from hestia.runtime_context import current_platform, current_platform_user
 from hestia.tools.builtin.memory_tools import make_delete_memory_tool, make_list_memories_tool
 
 
@@ -27,9 +28,16 @@ class TestDeleteMemoryTool:
 
     @pytest.mark.asyncio
     async def test_delete_existing_memory(self, tools):
-        """save → delete by id → list → assert empty."""
+        """save → delete by id → list → assert empty.
+
+        The delete_memory tool runs inside a turn, where runtime identity
+        is set; replicate that so the store's scoping resolves."""
         store, delete_tool, list_tool = tools
-        mem = await store.save(content="To be deleted", tags=["test"])
+        current_platform.set("test")
+        current_platform_user.set("tester")
+        mem = await store.save(
+            content="To be deleted", tags=["test"], platform="test", platform_user="tester"
+        )
 
         result = await delete_tool(mem.id)
         assert "Deleted memory" in result

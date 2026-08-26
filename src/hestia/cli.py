@@ -408,7 +408,9 @@ async def memory_add(app: AppContext, content: str, tags: str) -> None:
 @async_command
 async def memory_remove(app: AppContext, memory_id: str) -> None:
     """Delete a memory by ID."""
-    success = await app.memory_store.delete(memory_id)
+    # Local operator at a trusted console: no runtime identity exists by
+    # design, so the unscoped opt-in is explicit here (SEC-010).
+    success = await app.memory_store.delete(memory_id, allow_unscoped=True)
     if not success:
         click.echo(f"Memory not found: {memory_id}", err=True)
         sys.exit(1)
