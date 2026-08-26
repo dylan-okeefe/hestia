@@ -82,21 +82,21 @@ class TestProtectedSet:
         pinned = await memory_store.save(
             content="Pinned memory", platform="cli", platform_user="alice"
         )
-        await memory_store.pin(pinned.id, pinned=True)
+        await memory_store.pin(pinned.id, pinned=True, allow_unscoped=True)
         pinned = await memory_store.get(pinned.id)
         assert memory_store.is_protected(pinned) is True
 
         authored = await memory_store.save(
             content="User-authored memory", platform="cli", platform_user="alice"
         )
-        await memory_store.mark_user_authored(authored.id)
+        await memory_store.mark_user_authored(authored.id, allow_unscoped=True)
         authored = await memory_store.get(authored.id)
         assert memory_store.is_protected(authored) is True
 
         recalled = await memory_store.save(
             content="Recently recalled memory", platform="cli", platform_user="alice"
         )
-        await memory_store.mark_recalled(recalled.id)
+        await memory_store.mark_recalled(recalled.id, allow_unscoped=True)
         recalled = await memory_store.get(recalled.id)
         assert memory_store.is_protected(recalled) is True
 
@@ -107,15 +107,15 @@ class TestProtectedSet:
             content="Helper test", platform="cli", platform_user="alice"
         )
 
-        assert await memory_store.pin(mem.id, pinned=True) is True
+        assert await memory_store.pin(mem.id, pinned=True, allow_unscoped=True) is True
         fetched = await memory_store.get(mem.id)
         assert fetched.is_pinned is True
 
-        assert await memory_store.mark_user_authored(mem.id) is True
+        assert await memory_store.mark_user_authored(mem.id, allow_unscoped=True) is True
         fetched = await memory_store.get(mem.id)
         assert fetched.is_user_authored is True
 
-        assert await memory_store.mark_recalled(mem.id) is True
+        assert await memory_store.mark_recalled(mem.id, allow_unscoped=True) is True
         fetched = await memory_store.get(mem.id)
         assert fetched.last_recalled_at is not None
 

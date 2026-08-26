@@ -15,6 +15,50 @@ but not implemented as of v0.10.0.
 
 ---
 
+## v0.16.1
+
+**Released:** 2026-08-26  
+**Full notes:** [`CHANGELOG.md`](CHANGELOG.md)
+
+A security patch release: memory mutations now fail closed without user
+identity (SEC-010). No schema migrations; pull, sync, and restart.
+
+### 1. Back up
+
+```bash
+cp -r ~/.hestia ~/.hestia-backup-$(date +%Y%m%d)
+```
+
+### 2. Pull and sync
+
+```bash
+git fetch --tags
+git checkout v0.16.1
+uv sync --all-extras
+```
+
+### 3. Restart services
+
+```bash
+systemctl --user restart hestia-serve.service
+```
+
+### 4. Heads-up
+
+- Memory edit/delete/pin calls with no user identity are now **denied**
+  instead of silently applying across users. Chat turns and the web UI are
+  unaffected for memories that have an owner. Memories with a NULL owner
+  can no longer be edited through the web UI (reported as "not found");
+  if you have such rows and need them changed, edit the database directly
+  or re-save them under a user.
+- If you raised `scheduler.tick_interval_seconds` to 120 or above, a
+  startup warning will tell you reflection/style ticks may silently never
+  fire - keep it below two minutes.
+- Reflection and style passes now run under `hestia serve` without needing
+  the standalone scheduler daemon.
+
+---
+
 ## v0.16.0
 
 **Released:** 2026-08-24  

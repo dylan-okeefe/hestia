@@ -108,7 +108,7 @@ class TestProtectedMemories:
             platform="cli",
             platform_user="alice",
         )
-        await memory_store.pin(protected.id, pinned=True)
+        await memory_store.pin(protected.id, pinned=True, allow_unscoped=True)
         await memory_store.save(
             content="Protected duplicate",
             platform="cli",

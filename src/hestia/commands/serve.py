@@ -33,9 +33,11 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
     adapters: dict[str, Any] = {}
 
     try:
-        # Start a single scheduler for all background tasks (proposals, style
-        # profiles, scheduled messages, memory maintenance). Platform runners are
-        # told not to start their own scheduler since serve owns it.
+        # Start the task-store scheduler. Proposals and style profiles are
+        # NOT this scheduler - their tick loops are wired separately below
+        # (see tick_tasks); this one covers cron tasks and scheduled
+        # messages. Platform runners are told not to start their own since
+        # serve owns scheduling.
         scheduler: Scheduler | None = None
         from hestia.platforms.runners import make_serve_scheduler_callback
 
@@ -52,6 +54,44 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
             memory_maintenance_digest=app.memory_maintenance_digest,
         )
         await scheduler.start()
+
+        # Reflection and style ticks: each scheduler owns its one tick site
+        # (tick_loop); serve just runs it. Gaps between ticks use the same
+        # 60s cadence the daemon used.
+        tick_tasks: list[asyncio.Task[None]] = []
+        # Safety (R4-5): _is_due only fires within 2 minutes of the cron
+        # match, so the tick interval MUST stay below that or reflection
+        # silently never fires. Warn rather than clamp - operators who
+        # raised it should hear why their reflection stopped.
+        tick_interval = config.scheduler.tick_interval_seconds
+        if tick_interval >= 120:
+            click.echo(
+                click.style(
+                    f"Warning: scheduler.tick_interval_seconds={tick_interval} "
+                    "is >= the 2-minute reflection/style due window - "
+                    "those ticks may silently never fire.",
+                    fg="yellow",
+                ),
+                err=True,
+            )
+
+        reflection_scheduler = (
+            app.reflection_scheduler if config.reflection.enabled else None
+        )
+        if reflection_scheduler is not None:
+            tick_tasks.append(
+                asyncio.create_task(
+                    reflection_scheduler.tick_loop(interval_seconds=tick_interval)
+                )
+            )
+
+        style_scheduler = app.style_scheduler
+        if style_scheduler is not None:
+            tick_tasks.append(
+                asyncio.create_task(
+                    style_scheduler.tick_loop(interval_seconds=tick_interval)
+                )
+            )
 
         if config.telegram.bot_token:
             from hestia.platforms.runners import run_telegram
@@ -180,6 +220,10 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
                 task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+        for t in tick_tasks:
+            t.cancel()
+        if tick_tasks:
+            await asyncio.gather(*tick_tasks, return_exceptions=True)
         if scheduler is not None:
             await scheduler.stop()
         await app.inference.close()

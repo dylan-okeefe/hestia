@@ -86,6 +86,11 @@ class DeterministicPruner:
     ) -> PruneResult:
         """Run the deterministic prune pass.
 
+        Contract (L248/#58 round 3): called with no scope this pass reads
+        and soft-deletes across ALL users - a deliberate privileged mode;
+        the store calls carry the unscoped opt-in only in that case. Called
+        with an explicit scope it touches only that user's rows.
+
         Args:
             platform: Optional platform identifier to scope the pass.
             platform_user: Optional user identifier to scope the pass.
@@ -107,10 +112,14 @@ class DeterministicPruner:
                 continue
 
             if self._is_junk(memory):
+                # Sweep-all runs (platform/platform_user None) read across
+                # all users BY DESIGN and therefore need the explicit
+                # unscoped opt-in; scoped passes resolve identity normally.
                 await self._store.soft_delete(
                     memory.id,
                     platform=platform,
                     platform_user=platform_user,
+                    allow_unscoped=platform is None or platform_user is None,
                     reason="junk",
                 )
                 await self._record_prune(platform, platform_user, memory, "junk")
@@ -118,10 +127,14 @@ class DeterministicPruner:
                 continue
 
             if self._is_orphan(memory):
+                # Sweep-all runs (platform/platform_user None) read across
+                # all users BY DESIGN and therefore need the explicit
+                # unscoped opt-in; scoped passes resolve identity normally.
                 await self._store.soft_delete(
                     memory.id,
                     platform=platform,
                     platform_user=platform_user,
+                    allow_unscoped=platform is None or platform_user is None,
                     reason="orphan",
                 )
                 await self._record_prune(platform, platform_user, memory, "orphan")
