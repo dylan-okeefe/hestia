@@ -56,6 +56,8 @@ references the old one rather than editing history.
 | [ADR-048](adr/ADR-048-session-end-fact-extraction.md) | Session-end fact extraction and proactive memory capture | Accepted |
 | [ADR-049](adr/ADR-049-overnight-memory-maintenance.md) | Overnight memory maintenance (dedupe, prune, supersede) | Accepted |
 | [ADR-050](adr/ADR-050-command-registry.md) | Runtime-introspectable command registry | Accepted |
+| [ADR-052](adr/ADR-052-allowlist-only-tool-authorization-for-unattended-channels.md) | Allowlist-only tool authorization for unattended channels | Accepted |
+| [ADR-053](adr/ADR-053-external-tool-modules.md) | External tool modules (opt-in extension point) | Accepted |
 | [ADR-051](adr/ADR-051-two-tier-topic-scoped-memory.md) | Two-tier topic-scoped memory (global + user-named topics) | Accepted |
 
 ---
