@@ -1,0 +1,8 @@
+[
+  "condition",
+  "http_request",
+  "investigate",
+  "llm_decision",
+  "send_message",
+  "tool_call"
+]

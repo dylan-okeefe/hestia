@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# D1: the gate artifact. Runs the full local gate and writes a report whose
+# first line is the exact command that produced every count (standing rule,
+# #45 register A9/D1). Usage: scripts/gate [output-file]
+set -uo pipefail
+cd "$(dirname "$0")/.."
+OUT="${1:-.gate-artifact.txt}"
+{
+  echo "# Gate artifact — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo
+  echo '```'
+  echo "$ uv run ruff check src tests"
+  uv run ruff check src tests && echo "ruff: clean"
+  echo
+  echo "$ uv run mypy src"
+  uv run mypy src | tail -1
+  echo
+  echo '$ uv run pytest -q -m "not live"'
+  uv run pytest -q -m "not live" | tail -1
+  echo '```'
+} > "$OUT" 2>&1
+echo "gate artifact written to $OUT"
+grep -E "passed|clean|error|failed" "$OUT" | head -6
