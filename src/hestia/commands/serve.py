@@ -8,8 +8,10 @@ import logging
 from typing import Any
 
 import click
+import sqlalchemy as sa
 import uvicorn
 
+import hestia
 from hestia.app import AppContext
 from hestia.config import HestiaConfig
 from hestia.persistence.scheduler import SchedulerStore
@@ -79,6 +81,7 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
             app.reflection_scheduler if config.reflection.enabled else None
         )
         if reflection_scheduler is not None:
+            logger.info("Starting reflection tick loop (interval=%ss)", tick_interval)
             tick_tasks.append(
                 asyncio.create_task(
                     reflection_scheduler.tick_loop(interval_seconds=tick_interval)
@@ -87,11 +90,34 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
 
         style_scheduler = app.style_scheduler
         if style_scheduler is not None:
+            logger.info("Starting style tick loop (interval=%ss)", tick_interval)
             tick_tasks.append(
                 asyncio.create_task(
                     style_scheduler.tick_loop(interval_seconds=tick_interval)
                 )
             )
+
+        # Startup health surface (#60): one line that would have caught both the
+        # stale process and the disabled config without a manual DB query.
+        memory_count = await app.memory_store.count()
+        proposal_status_counts = await app.proposal_store.count_by_status()
+        proposal_count = sum(proposal_status_counts.values())
+        async with app.db.engine.connect() as conn:
+            last_memory_at = (
+                await conn.execute(sa.text("SELECT MAX(created_at) FROM memory"))
+            ).scalar()
+            last_session_at = (
+                await conn.execute(sa.text("SELECT MAX(last_active_at) FROM sessions"))
+            ).scalar()
+        click.echo(
+            f"Hestia {hestia.__version__} serve started | "
+            f"reflection={'on' if config.reflection.enabled else 'off'} | "
+            f"style={'on' if config.style.enabled else 'off'} | "
+            f"memories={memory_count} | "
+            f"proposals={proposal_count} | "
+            f"last_memory={last_memory_at or 'never'} | "
+            f"last_session={last_session_at or 'never'}"
+        )
 
         if config.telegram.bot_token:
             from hestia.platforms.runners import run_telegram
