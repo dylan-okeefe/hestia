@@ -11,7 +11,9 @@ from typing import Any
 
 import click
 import httpx
+import sqlalchemy as sa
 
+import hestia
 from hestia.app import AppContext, _require_scheduler_store
 from hestia.core.clock import utcnow
 from hestia.errors import HestiaError
@@ -137,12 +139,80 @@ async def cmd_health(app: AppContext) -> None:
         await app.inference.close()
 
 
+def _find_serve_process() -> tuple[int, datetime] | None:
+    """Return the PID and start time of the running `hestia serve` process."""
+    import subprocess
+
+    try:
+        proc = subprocess.run(
+            ["pgrep", "-f", "hestia.*serve"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError:
+        return None
+    pids = [p.strip() for p in proc.stdout.strip().splitlines() if p.strip()]
+    for pid_str in pids:
+        try:
+            pid = int(pid_str)
+            stat_path = Path(f"/proc/{pid}/stat")
+            if not stat_path.exists():
+                continue
+            stat = stat_path.read_text()
+            # Field 22 (1-indexed) is starttime in clock ticks after boot.
+            starttime_ticks = int(stat.split()[21])
+            with open("/proc/uptime") as f:
+                uptime_sec = float(f.read().split()[0])
+            from os import sysconf
+
+            ticks_per_sec = sysconf("SC_CLK_TCK")
+            process_uptime_sec = uptime_sec - (starttime_ticks / ticks_per_sec)
+            start_dt = datetime.now(UTC) - timedelta(seconds=process_uptime_sec)
+            return pid, start_dt
+        except (ValueError, OSError, IndexError):
+            continue
+    return None
+
+
 async def cmd_status(app: AppContext) -> None:
     """Show system status summary."""
     store = _require_scheduler_store(app)
 
+    # 0. Runtime health surface (#60): version, feature flags, memory/proposal
+    # counts, and process uptime — the things needed to answer "is Hestia still
+    # learning about me" without opening the database by hand.
+    click.echo(f"Version: {hestia.__version__}")
+    click.echo(
+        f"Reflection: {'on' if app.config.features.reflection.enabled else 'off'}"
+    )
+    click.echo(f"Style: {'on' if app.config.features.style.enabled else 'off'}")
+
+    serve_proc = _find_serve_process()
+    if serve_proc:
+        pid, started_at = serve_proc
+        click.echo(f"Serve process: pid={pid} started={_format_utc(started_at)}")
+    else:
+        click.echo("Serve process: not running")
+
+    memory_count = await app.memory_store.count()
+    proposal_status_counts = await app.proposal_store.count_by_status()
+    proposal_count = sum(proposal_status_counts.values())
+    async with app.db.engine.connect() as conn:
+        last_memory_at = (
+            await conn.execute(sa.text("SELECT MAX(created_at) FROM memory"))
+        ).scalar()
+        last_session_at = (
+            await conn.execute(sa.text("SELECT MAX(last_active_at) FROM sessions"))
+        ).scalar()
+
+    click.echo(f"Memories: {memory_count}")
+    click.echo(f"Proposals: {proposal_count}")
+    click.echo(f"Last memory: {last_memory_at or 'never'}")
+    click.echo(f"Last session: {last_session_at or 'never'}")
+
     # 1. Inference health
-    click.echo("Inference:")
+    click.echo("\nInference:")
     try:
         health_info = await app.inference.health()
         click.echo("  Status: ok")
