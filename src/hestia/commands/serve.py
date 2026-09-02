@@ -99,24 +99,37 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
 
         # Startup health surface (#60): one line that would have caught both the
         # stale process and the disabled config without a manual DB query.
-        memory_count = await app.memory_store.count()
-        proposal_status_counts = await app.proposal_store.count_by_status()
-        proposal_count = sum(proposal_status_counts.values())
-        async with app.db.engine.connect() as conn:
-            last_memory_at = (
-                await conn.execute(sa.text("SELECT MAX(created_at) FROM memory"))
-            ).scalar()
-            last_session_at = (
-                await conn.execute(sa.text("SELECT MAX(last_active_at) FROM sessions"))
-            ).scalar()
-        click.echo(
-            f"Hestia {hestia.__version__} serve started | "
-            f"reflection={'on' if config.reflection.enabled else 'off'} | "
-            f"style={'on' if config.style.enabled else 'off'} | "
-            f"memories={memory_count} | "
-            f"proposals={proposal_count} | "
-            f"last_memory={last_memory_at or 'never'} | "
-            f"last_session={last_session_at or 'never'}"
+        # Version and feature flags come from config and cannot fail; gather the
+        # DB-derived counts safely so a locked or freshly-initialized database
+        # does not prevent the server from starting.
+        memory_count: int | str = "unavailable"
+        proposal_count: int | str = "unavailable"
+        last_memory_at: str | None = "unavailable"
+        last_session_at: str | None = "unavailable"
+        try:
+            memory_count = await app.memory_store.count()
+            proposal_status_counts = await app.proposal_store.count_by_status()
+            proposal_count = sum(proposal_status_counts.values())
+            async with app.db.engine.connect() as conn:
+                last_memory_at = (
+                    await conn.execute(sa.text("SELECT MAX(created_at) FROM memory"))
+                ).scalar()
+                last_session_at = (
+                    await conn.execute(sa.text("SELECT MAX(last_active_at) FROM sessions"))
+                ).scalar()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Startup health surface could not read database counts: %s", e)
+
+        logger.info(
+            "Hestia %s serve started | reflection=%s | style=%s | "
+            "memories=%s | proposals=%s | last_memory=%s | last_session=%s",
+            hestia.__version__,
+            "on" if config.reflection.enabled else "off",
+            "on" if config.style.enabled else "off",
+            memory_count,
+            proposal_count,
+            last_memory_at or "never",
+            last_session_at or "never",
         )
 
         if config.telegram.bot_token:
