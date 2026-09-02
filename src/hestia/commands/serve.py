@@ -21,6 +21,38 @@ from hestia.scheduler.cleanup import run_error_resolution_cleanup, run_maintenan
 logger = logging.getLogger(__name__)
 
 
+def _extract_numbered_rules(prompt: str) -> dict[int, str]:
+    """Parse ``N. ...`` rules out of a system prompt."""
+    rules: dict[int, str] = {}
+    for line in prompt.splitlines():
+        stripped = line.strip()
+        parts = stripped.split(None, 1)
+        if len(parts) < 2:
+            continue
+        label, text = parts
+        if not label.endswith("."):
+            continue
+        try:
+            num = int(label[:-1])
+        except ValueError:
+            continue
+        rules[num] = text
+    return rules
+
+
+def _missing_system_prompt_rules(
+    configured_prompt: str, default_prompt: str
+) -> dict[int, str]:
+    """Return default numbered rules that are absent from the configured prompt."""
+    default_rules = _extract_numbered_rules(default_prompt)
+    configured_rules = _extract_numbered_rules(configured_prompt)
+    return {
+        num: text
+        for num, text in sorted(default_rules.items())
+        if num not in configured_rules
+    }
+
+
 async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
     """Run Hestia with all configured platform adapters and the web dashboard."""
     await app.bootstrap_db()
@@ -131,6 +163,26 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
             last_memory_at or "never",
             last_session_at or "never",
         )
+
+        # Detector: a hand-maintained runtime system_prompt (config.runtime.py)
+        # can drift from the default and drop numbered rules such as MEMORY
+        # SCOPE. Warn at startup so the drift is visible in logs.
+        try:
+            default_prompt = HestiaConfig().system_prompt
+            missing_rules = _missing_system_prompt_rules(
+                config.system_prompt, default_prompt
+            )
+            if missing_rules:
+                rule_summary = ", ".join(
+                    f"{num}. {text[:40]}..." for num, text in missing_rules.items()
+                )
+                logger.warning(
+                    "Runtime system_prompt is missing %d default rule(s): %s",
+                    len(missing_rules),
+                    rule_summary,
+                )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Could not compare system_prompt against default: %s", e)
 
         if config.telegram.bot_token:
             from hestia.platforms.runners import run_telegram
