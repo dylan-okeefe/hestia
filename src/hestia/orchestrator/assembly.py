@@ -6,6 +6,7 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from hestia.core.clock import utcnow
+from hestia.core.types import ToolSchema
 from hestia.orchestrator.mappers import message_domain_to_dto, message_dto_to_domain
 from hestia.orchestrator.types import TransitionCallback, TurnContext, TurnState
 from hestia.persistence.message_store import MessageStore
@@ -143,6 +144,25 @@ class TurnAssembly:
             effective_system_prompt = f"{user_context}\n\n{effective_system_prompt}"
 
         ctx.tools = self._tools.meta_tool_schemas()
+        # save_memory is first-class (card #60): durable personal facts
+        # surface inside casual conversation, where the system prompt forbids
+        # the meta-tools (rules 3/4). Direct exposure makes rule 6
+        # ("immediately use save_memory") actionable without describe_tool.
+        save_schema = self._tools.direct_schema(
+            "save_memory",
+            description=(
+                "Persist a durable fact the user shared: identity, family, "
+                "living situation, personal preferences, corrections, or "
+                "anything they will expect you to remember later. Call this "
+                "proactively DURING casual conversation whenever such a fact "
+                "appears, even when you otherwise reply directly without "
+                "tools. scope: 'global' for identity/durable preferences "
+                "(always loaded), 'topic' for conversation-scoped facts "
+                "(default). tags: optional comma-separated categories."
+            ),
+        )
+        if isinstance(save_schema, ToolSchema):
+            ctx.tools = [*ctx.tools, save_schema]
         if not history and _is_greeting_or_smalltalk(ctx.user_message.content):
             logger.debug("First message looks like a greeting; removing tools for direct reply")
             ctx.tools = []
