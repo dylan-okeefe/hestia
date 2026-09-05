@@ -265,3 +265,24 @@ table, not from any count.
 Generalize: **a health metric whose null value is ambiguous needs its
 traffic/denominator reported alongside it** (here: session/trace counts in
 the same health line), or the null will keep being read as a fault.
+
+## Addendum 2026-09-05 — CONFIRMED INSTANCE (card #60): fix verified working, with a reliability boundary
+
+Card #60's fix A (save_memory first-class) verified end-to-end 2026-09-05:
+cold CLI session, factual-phrased personal fact -> model called save_memory
+unprompted, correct global-scope row (mem_de2cfbdbd1de49f8). The request
+path was confirmed by reading: assembly appends the schema (isinstance-
+guarded), execution passes tools=ctx.tools at every call site.
+
+BOUNDARY, observed twice (14:58 cold CLI, 14:54 Telegram): a LONG,
+EMOTIONAL phrasing of the same fact ("That's a lot to hold... it can be
+difficult with my husbands narcolepsy") got an empathetic reply and NO
+save, byte-identical output on restored-slot and cold-slot runs — the
+model treats venting as comfort-first context and drops the persistence
+rule. Short factual phrasing saves immediately after. The plumbing is
+correct; the residual failure is model judgment, not code.
+
+Generalize: **verifying a fix on imperative/factual phrasing does not
+cover emotional phrasing; test the register of language where the bug
+actually lived.** The Sep 1 "Get to know me" session was exactly this
+register — chatty answers to personal questions, never bare facts.
