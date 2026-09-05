@@ -40,17 +40,43 @@ def _extract_numbered_rules(prompt: str) -> dict[int, str]:
     return rules
 
 
+def _rule_heading(text: str) -> str:
+    """Identify a rule by its uppercase heading, falling back to its full text.
+
+    Rules are written ``N. HEADING: body``. The number is positional and
+    meaningless across edits — the heading is the rule's identity. Rules
+    without an uppercase heading (e.g. unit-test fixtures) fall back to
+    their whole text so they still compare exactly.
+    """
+    heading, sep, _ = text.partition(":")
+    if sep and heading.strip().isupper():
+        return heading.strip()
+    return text.strip()
+
+
 def _missing_system_prompt_rules(
     configured_prompt: str, default_prompt: str
-) -> dict[int, str]:
-    """Return default numbered rules that are absent from the configured prompt."""
+) -> dict[str, str]:
+    """Return default rules absent from the configured prompt, keyed by heading.
+
+    Matching is on the rule's heading (see `_rule_heading`), NOT its number:
+    the 2026-08 runtime drift kept every position 1..N occupied while rule 6
+    (USER CORRECTIONS & PREFERENCES) was buried at position 15 and rule 7
+    (MEMORY SCOPE) was gone — number-matching reported nothing missing.
+    Values are the rule body, for display.
+    """
     default_rules = _extract_numbered_rules(default_prompt)
-    configured_rules = _extract_numbered_rules(configured_prompt)
-    return {
-        num: text
-        for num, text in sorted(default_rules.items())
-        if num not in configured_rules
+    configured_headings = {
+        _rule_heading(text) for text in _extract_numbered_rules(configured_prompt).values()
     }
+    missing: dict[str, str] = {}
+    for num in sorted(default_rules):
+        text = default_rules[num]
+        heading = _rule_heading(text)
+        if heading not in configured_headings:
+            _, sep, body = text.partition(":")
+            missing[heading] = body.strip() if sep else ""
+    return missing
 
 
 async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
@@ -173,8 +199,9 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
                 config.system_prompt, default_prompt
             )
             if missing_rules:
-                rule_summary = ", ".join(
-                    f"{num}. {text[:40]}..." for num, text in missing_rules.items()
+                rule_summary = "; ".join(
+                    f"{heading}: {body[:60]}" if body else heading
+                    for heading, body in missing_rules.items()
                 )
                 logger.warning(
                     "Runtime system_prompt is missing %d default rule(s): %s",
