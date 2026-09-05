@@ -369,6 +369,28 @@ class ToolRegistry:
 
         return [list_tools_schema, describe_tool_schema, call_tool_schema]
 
+    def direct_schema(self, name: str, *, description: str | None = None) -> ToolSchema | None:
+        """Return a named tool's schema for first-class (direct) exposure.
+
+        Most tools stay hidden behind the meta-tools (list_tools/describe_tool/
+        call_tool) to keep per-turn token cost down. A tool that must be
+        callable during casual chat — where the system prompt forbids the
+        meta-tools — needs its schema visible directly; this builds it from
+        the tool's registered metadata. Returns None if the tool is not
+        registered.
+        """
+        meta = self._tools.get(name)
+        if meta is None:
+            return None
+        return ToolSchema(
+            type="function",
+            function=FunctionSchema(
+                name=meta.name,
+                description=description or meta.public_description,
+                parameters=meta.parameters_schema,
+            ),
+        )
+
     async def meta_list_tools(
         self,
         tag: str | None = None,

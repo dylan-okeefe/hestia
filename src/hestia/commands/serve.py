@@ -8,8 +8,10 @@ import logging
 from typing import Any
 
 import click
+import sqlalchemy as sa
 import uvicorn
 
+import hestia
 from hestia.app import AppContext
 from hestia.config import HestiaConfig
 from hestia.persistence.scheduler import SchedulerStore
@@ -17,6 +19,64 @@ from hestia.scheduler import Scheduler
 from hestia.scheduler.cleanup import run_error_resolution_cleanup, run_maintenance_trace_cleanup
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_numbered_rules(prompt: str) -> dict[int, str]:
+    """Parse ``N. ...`` rules out of a system prompt."""
+    rules: dict[int, str] = {}
+    for line in prompt.splitlines():
+        stripped = line.strip()
+        parts = stripped.split(None, 1)
+        if len(parts) < 2:
+            continue
+        label, text = parts
+        if not label.endswith("."):
+            continue
+        try:
+            num = int(label[:-1])
+        except ValueError:
+            continue
+        rules[num] = text
+    return rules
+
+
+def _rule_heading(text: str) -> str:
+    """Identify a rule by its uppercase heading, falling back to its full text.
+
+    Rules are written ``N. HEADING: body``. The number is positional and
+    meaningless across edits — the heading is the rule's identity. Rules
+    without an uppercase heading (e.g. unit-test fixtures) fall back to
+    their whole text so they still compare exactly.
+    """
+    heading, sep, _ = text.partition(":")
+    if sep and heading.strip().isupper():
+        return heading.strip()
+    return text.strip()
+
+
+def _missing_system_prompt_rules(
+    configured_prompt: str, default_prompt: str
+) -> dict[str, str]:
+    """Return default rules absent from the configured prompt, keyed by heading.
+
+    Matching is on the rule's heading (see `_rule_heading`), NOT its number:
+    the 2026-08 runtime drift kept every position 1..N occupied while rule 6
+    (USER CORRECTIONS & PREFERENCES) was buried at position 15 and rule 7
+    (MEMORY SCOPE) was gone — number-matching reported nothing missing.
+    Values are the rule body, for display.
+    """
+    default_rules = _extract_numbered_rules(default_prompt)
+    configured_headings = {
+        _rule_heading(text) for text in _extract_numbered_rules(configured_prompt).values()
+    }
+    missing: dict[str, str] = {}
+    for num in sorted(default_rules):
+        text = default_rules[num]
+        heading = _rule_heading(text)
+        if heading not in configured_headings:
+            _, sep, body = text.partition(":")
+            missing[heading] = body.strip() if sep else ""
+    return missing
 
 
 async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
@@ -79,6 +139,7 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
             app.reflection_scheduler if config.reflection.enabled else None
         )
         if reflection_scheduler is not None:
+            logger.info("Starting reflection tick loop (interval=%ss)", tick_interval)
             tick_tasks.append(
                 asyncio.create_task(
                     reflection_scheduler.tick_loop(interval_seconds=tick_interval)
@@ -87,11 +148,68 @@ async def cmd_serve(app: AppContext, config: HestiaConfig) -> None:
 
         style_scheduler = app.style_scheduler
         if style_scheduler is not None:
+            logger.info("Starting style tick loop (interval=%ss)", tick_interval)
             tick_tasks.append(
                 asyncio.create_task(
                     style_scheduler.tick_loop(interval_seconds=tick_interval)
                 )
             )
+
+        # Startup health surface (#60): one line that would have caught both the
+        # stale process and the disabled config without a manual DB query.
+        # Version and feature flags come from config and cannot fail; gather the
+        # DB-derived counts safely so a locked or freshly-initialized database
+        # does not prevent the server from starting.
+        memory_count: int | str = "unavailable"
+        proposal_count: int | str = "unavailable"
+        last_memory_at: str | None = "unavailable"
+        last_session_at: str | None = "unavailable"
+        try:
+            memory_count = await app.memory_store.count()
+            proposal_status_counts = await app.proposal_store.count_by_status()
+            proposal_count = sum(proposal_status_counts.values())
+            async with app.db.engine.connect() as conn:
+                last_memory_at = (
+                    await conn.execute(sa.text("SELECT MAX(created_at) FROM memory"))
+                ).scalar()
+                last_session_at = (
+                    await conn.execute(sa.text("SELECT MAX(last_active_at) FROM sessions"))
+                ).scalar()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Startup health surface could not read database counts: %s", e)
+
+        logger.info(
+            "Hestia %s serve started | reflection=%s | style=%s | "
+            "memories=%s | proposals=%s | last_memory=%s | last_session=%s",
+            hestia.__version__,
+            "on" if config.reflection.enabled else "off",
+            "on" if config.style.enabled else "off",
+            memory_count,
+            proposal_count,
+            last_memory_at or "never",
+            last_session_at or "never",
+        )
+
+        # Detector: a hand-maintained runtime system_prompt (config.runtime.py)
+        # can drift from the default and drop numbered rules such as MEMORY
+        # SCOPE. Warn at startup so the drift is visible in logs.
+        try:
+            default_prompt = HestiaConfig().system_prompt
+            missing_rules = _missing_system_prompt_rules(
+                config.system_prompt, default_prompt
+            )
+            if missing_rules:
+                rule_summary = "; ".join(
+                    f"{heading}: {body[:60]}" if body else heading
+                    for heading, body in missing_rules.items()
+                )
+                logger.warning(
+                    "Runtime system_prompt is missing %d default rule(s): %s",
+                    len(missing_rules),
+                    rule_summary,
+                )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Could not compare system_prompt against default: %s", e)
 
         if config.telegram.bot_token:
             from hestia.platforms.runners import run_telegram
