@@ -39,7 +39,7 @@ config = HestiaConfig(
 
 ### Mode B — Shared with another local LLM service
 
-If you already run a llama-server for another project (e.g. Hermes), you can
+If you already run a llama-server for another project, you can
 point Hestia at it:
 
 ```python
@@ -49,7 +49,7 @@ config = HestiaConfig(
         model_name="Qwen3.5-9B-UD-Q4_K_XL.gguf",
     ),
     slots=SlotConfig(
-        slot_dir=Path.home() / ".hermes" / "cache" / "slots",  # must match --slot-save-path
+        slot_dir=Path("/other-project/slots"),  # must match --slot-save-path
         pool_size=4,
     ),
 )
