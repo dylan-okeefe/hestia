@@ -521,6 +521,13 @@ class VoiceConfig(_ConfigFromEnv):
     tts_voice: str = "en_US-amy-medium"
     tts_speed: float = 1.0
     tts_sample_rate: int = 22050
+    tts_device: str = "cpu"
+    """Device for TTS inference ("cpu", "cuda", or "" for the engine default).
+
+    Defaults to CPU: Kokoro-82M is fast enough on CPU and this keeps TTS off
+    the GPU(s) shared with the inference server. Kokoro auto-selects CUDA when
+    this is left empty, which OOM'd in production when the desktop GPU was
+    already full (2026-09-09)."""
     model_cache_dir: Path = field(default_factory=lambda: Path.home() / ".cache" / "hestia" / "voice")
 
 
