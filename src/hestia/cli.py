@@ -137,6 +137,14 @@ async def chat(app: AppContext, new_session: bool) -> None:
     await _commands.cmd_chat(app, new_session)
 
 
+@cli.command(name="voice-smoke")
+@click.pass_obj
+@async_command
+async def voice_smoke(app: AppContext) -> None:
+    """Smoke-test the voice pipeline (STT + TTS) against the live config."""
+    await _commands.cmd_voice_smoke(app)
+
+
 @cli.command()
 @click.argument("message")
 @click.pass_obj
