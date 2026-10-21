@@ -190,6 +190,11 @@ class TelegramConfig(_ConfigFromEnv):
     """Chat IDs (platform_user, exactly as _handle_message computes) routed to the coding agent."""
     agent_bridge_workspace: str = "~/hestia-tg-agent"
     """Working directory for the Pi coding-agent child (path-fence confines file tools here)."""
+    vision: bool = False  # L234: master switch for Telegram photo → model vision
+    vision_max_images_per_message: int = 4
+    """Cap on images carried per message (history storage + request)."""
+    vision_max_edge_px: int = 1024
+    """Longest-side downscale target for photos before they are sent (pixels)."""
 
     def __repr__(self) -> str:
         fields = []

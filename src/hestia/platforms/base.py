@@ -3,14 +3,44 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Awaitable, Callable
-from typing import Any
+from collections.abc import Awaitable
+from typing import Any, Protocol
 
-# Callback type for incoming messages from the platform
-IncomingMessageCallback = Callable[[str, str, str, str | None, str | None], Awaitable[None]]
-# (platform_name, platform_user, message_text, sender_platform_user, session_title) -> None
-# sender_platform_user is the individual sender's platform ID in group chats; None in private chats.
-# session_title is an optional display name for the conversation (e.g., Telegram group title).
+
+class IncomingMessageCallback(Protocol):
+    """Callback invoked by a platform when a message arrives.
+
+    Signature::
+
+        (platform_name, platform_user, message_text,
+         sender_platform_user=None, session_title=None, images=None) -> None
+
+    - ``sender_platform_user`` is the individual sender's platform ID in group
+      chats; None in private chats.
+    - ``session_title`` is an optional display name for the conversation
+      (e.g., Telegram group title).
+    - ``images`` is an optional list of ``data:image/jpeg;base64,...`` URLs
+      (L234 vision). Callers that predate vision pass ``None`` (or omit the
+      argument at runtime against older 5-parameter callbacks); the defaults
+      on concrete implementations keep them source-compatible.
+
+    NOTE: the parameters are declared without defaults here because mypy
+    rejects function-to-callback-protocol assignability when the protocol's
+    ``__call__`` carries default arguments. Concrete implementations (e.g.
+    ``PlatformRunner.on_message``) provide the defaults. Parameter names
+    intentionally mirror ``PlatformRunner.on_message`` — mypy requires
+    positional names to match for callback-protocol assignability.
+    """
+
+    def __call__(
+        self,
+        platform_name_arg: str,
+        platform_user: str,
+        text: str,
+        sender_platform_user: str | None,
+        session_title: str | None,
+        images: list[str] | None,
+    ) -> Awaitable[None]: ...
 
 
 class Platform(ABC):
@@ -35,9 +65,9 @@ class Platform(ABC):
         Args:
             on_message: Callback to invoke when a message arrives.
                         The platform passes (platform_name, platform_user, text,
-                        sender_platform_user). sender_platform_user is the
-                        individual sender's platform ID in group chats; None in
-                        private chats.
+                        sender_platform_user, session_title, images) — the last
+                        three are optional; images carries JPEG data URLs when
+                        the message had photo attachments (L234 vision).
         """
         ...
 

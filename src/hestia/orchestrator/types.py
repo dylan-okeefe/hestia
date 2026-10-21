@@ -105,6 +105,11 @@ class TurnContext:
     # Per-turn delivery hint (set by platform adapter)
     voice_reply: bool = False
 
+    # Image attachments (JPEG data URLs) for this turn, if any (L234 vision).
+    # Mirrored onto ``user_message.images`` by the engine so assembly persists
+    # them and the context builder carries them into the request.
+    images: list[str] | None = None
+
     # Set by CapabilityGate when a tool requires confirmation.
     request_token: str | None = None
 

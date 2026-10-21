@@ -7,6 +7,7 @@ import pytest
 from hestia.core.types import Message, ToolCall
 from hestia.orchestrator.mappers import message_domain_to_dto, message_dto_to_domain
 from hestia.persistence.db import Database
+from hestia.persistence.dto import MessageDTO
 from hestia.persistence.message_store import MessageStore
 from hestia.persistence.session_store import SessionStore
 
@@ -85,3 +86,76 @@ async def test_message_dto_ignores_non_persisted_fields(message_store, session_s
     assert restored.content == original.content
     assert restored.created_at != original.created_at
     assert loaded.idx == 0
+
+
+@pytest.mark.asyncio
+async def test_message_dto_roundtrip_with_images(message_store, session_store):
+    """L234: a user message with image attachments keeps them through persistence."""
+    session = await session_store.create_session("test", "user1")
+    images = ["data:image/jpeg;base64,QUJD", "data:image/jpeg;base64,RUZH"]
+    original = Message(
+        role="user",
+        content="look at these",
+        images=images,
+        created_at=datetime.now(),
+    )
+    await message_store.append_message(
+        session.id, message_domain_to_dto(original, session.id, idx=0)
+    )
+
+    dtos = await message_store.get_messages(session.id)
+    assert len(dtos) == 1
+    assert dtos[0].images is not None
+
+    restored = message_dto_to_domain(dtos[0])
+    assert restored.images == images
+    assert restored.content == "look at these"
+
+
+@pytest.mark.asyncio
+async def test_message_dto_roundtrip_images_survive_compaction_replace(message_store, session_store):
+    """L234: archive_and_replace preserves images on replacement messages."""
+    session = await session_store.create_session("test", "user1")
+    images = ["data:image/jpeg;base64,QUJD"]
+    await message_store.append_message(
+        session.id,
+        message_domain_to_dto(
+            Message(role="user", content="old", created_at=datetime.now()),
+            session.id,
+            idx=0,
+        ),
+    )
+    await message_store.archive_and_replace_messages(
+        session.id,
+        [
+            message_domain_to_dto(
+                Message(
+                    role="user",
+                    content="summary with photo",
+                    images=images,
+                    created_at=datetime.now(),
+                ),
+                session.id,
+                idx=0,
+            )
+        ],
+        compacted_at=datetime.now(),
+    )
+    restored = [message_dto_to_domain(d) for d in await message_store.get_messages(session.id)]
+    assert len(restored) == 1
+    assert restored[0].images == images
+
+
+def test_message_dto_to_domain_tolerates_malformed_images():
+    """L234: unparseable image JSON degrades to text-only, never raises."""
+    dto = MessageDTO(
+        session_id="s",
+        idx=0,
+        role="user",
+        content="hi",
+        created_at=datetime.now(),
+        images="{not json",
+    )
+    restored = message_dto_to_domain(dto)
+    assert restored.images is None
+    assert restored.content == "hi"

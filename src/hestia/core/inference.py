@@ -15,6 +15,7 @@ import httpx
 from hestia.core.json_repair import repair_json
 from hestia.core.serialization import message_to_dict
 from hestia.core.types import ChatResponse, Message, StreamDelta, ToolCall, ToolSchema
+from hestia.core.vision import estimate_images_tokens
 from hestia.errors import (
     InferenceBusyError,
     InferenceConnectionError,
@@ -307,6 +308,7 @@ class InferenceClient:
         server_type: str = "llamacpp",
         max_inflight_requests: int = 0,
         queue_timeout: float = 120.0,
+        vision_enabled: bool = False,
     ) -> None:
         """Initialize the client.
 
@@ -317,6 +319,10 @@ class InferenceClient:
             server_type: Backend profile — "llamacpp" or "openai-compat"
             max_inflight_requests: Client-side admission limit; 0 = unlimited
             queue_timeout: Seconds to wait for admission before InferenceBusyError
+            vision_enabled: Telegram vision master switch (config.telegram.vision).
+                Images are sent only when this is True AND server_type is
+                "openai-compat"; every other combination strips images with a
+                logged warning (L234 gating, enforced at request-build time).
         """
         if not model_name:
             raise ValueError(
@@ -328,6 +334,16 @@ class InferenceClient:
         self.timeout = timeout
         self.server_type = server_type
         self.queue_timeout = queue_timeout
+        self.vision_enabled = vision_enabled
+        if vision_enabled and server_type != "openai-compat":
+            # L234 §1: vision=True with a non-vision backend must be visible
+            # at startup, not discovered per-request.
+            logger.warning(
+                "telegram.vision=True but inference.server_type=%r — this backend has no "
+                "vision support; images will be stripped from every request. Set "
+                "inference.server_type='openai-compat' to enable vision.",
+                server_type,
+            )
         # Client-side admission control: None when unlimited (zero overhead).
         self._semaphore: asyncio.Semaphore | None = (
             asyncio.Semaphore(max_inflight_requests) if max_inflight_requests > 0 else None
@@ -505,6 +521,44 @@ class InferenceClient:
 
         return counts
 
+    def _apply_vision_gate(self, messages: list[Message]) -> list[Message]:
+        """Enforce the L234 vision gate at request-build time.
+
+        Images flow ONLY when ``vision_enabled`` AND ``server_type ==
+        "openai-compat"``. Any other combination strips the images with a
+        loud warning (misconfig must be visible, never silent) and returns
+        the messages text-only. When the gate passes, the estimated image
+        token cost is logged per request.
+        """
+        image_messages = [m for m in messages if m.images]
+        if not image_messages:
+            return messages
+        total_images = sum(len(m.images or []) for m in image_messages)
+        if self.vision_enabled and self.server_type == "openai-compat":
+            estimated = sum(
+                estimate_images_tokens(m.images or []) for m in image_messages
+            )
+            logger.info(
+                "Vision request: %d image(s) across %d message(s), ~%d estimated image tokens",
+                total_images,
+                len(image_messages),
+                estimated,
+            )
+            return messages
+        if not self.vision_enabled:
+            reason = "telegram.vision is disabled"
+        else:
+            reason = f"server_type={self.server_type!r} has no vision support"
+        logger.warning(
+            "Stripping %d image(s) from inference request: %s. Images are only sent "
+            "when telegram.vision=True and inference.server_type='openai-compat'.",
+            total_images,
+            reason,
+        )
+        return [
+            dataclasses.replace(m, images=None) if m.images else m for m in messages
+        ]
+
     async def count_request(
         self,
         messages: list[Message],
@@ -518,6 +572,7 @@ class InferenceClient:
         """
         # Strip historical reasoning first
         clean_messages = _strip_historical_reasoning(messages)
+        clean_messages = self._apply_vision_gate(clean_messages)
 
         # Build the request body
         request_body: dict[str, Any] = {
@@ -545,7 +600,9 @@ class InferenceClient:
         """POST /v1/chat/completions. Returns a ChatResponse.
 
         Args:
-            messages: List of messages (historical reasoning is stripped automatically)
+            messages: List of messages (historical reasoning is stripped automatically).
+                User messages may carry ``images`` (JPEG data URLs); they are
+                gated per the L234 rule (telegram.vision + openai-compat only).
             tools: Optional list of tools to offer
             slot_id: Optional slot ID for slot-targeted inference
             reasoning_budget: Max reasoning tokens (think block)
@@ -554,6 +611,7 @@ class InferenceClient:
         """
         # Strip historical reasoning before building request
         clean_messages = _strip_historical_reasoning(messages)
+        clean_messages = self._apply_vision_gate(clean_messages)
 
         request_body: dict[str, Any] = {
             "model": self.model_name,
@@ -697,6 +755,7 @@ class InferenceClient:
             temperature: Sampling temperature
         """
         clean_messages = _strip_historical_reasoning(messages)
+        clean_messages = self._apply_vision_gate(clean_messages)
 
         request_body: dict[str, Any] = {
             "model": self.model_name,
