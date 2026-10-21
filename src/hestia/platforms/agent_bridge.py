@@ -655,10 +655,14 @@ class AgentBridge:
             headline = "✅ done"
         if session.status_message_id is not None:
             with contextlib.suppress(Exception):
+                # On success the full answer is posted as its own message right
+                # below — keeping the streamed tail here reads as a duplicate.
+                # On failure/aborted the tail is the only record of what happened.
+                status_text = headline if not failed and not aborted else self._compose_status(session, headline)
                 await self._adapter.edit_message(
                     session.platform_user,
                     session.status_message_id,
-                    self._compose_status(session, headline),
+                    status_text,
                 )
         if session.final_text and not aborted:
             with contextlib.suppress(Exception):
