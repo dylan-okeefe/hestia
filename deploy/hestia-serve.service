@@ -1,7 +1,11 @@
 [Unit]
 Description=Hestia Unified Server (Telegram + Matrix + Web Dashboard)
-After=network.target hestia-llama.service
-Wants=hestia-llama.service
+After=network.target
+# L232: no Wants/After on hestia-llama.service — the inference backend is
+# selected per profile (Strata on 8080 / flashnext on 8002 / Ornith on 8001)
+# and the model services are mutually exclusive on RAM. Auto-starting a
+# llama.cpp service here would OOM the box when a non-llama.cpp backend runs.
+# Start the chosen inference service manually.
 
 [Service]
 Type=simple

@@ -6,6 +6,18 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-10-20 — L232: Inference Backend Profiles (llama.cpp slots vs Strata single-slot queue)
+
+**Outcome:** Hestia's inference stack is now backend-agnostic. A `server_type` profile (`llamacpp` default / `openai-compat`) gates all llama.cpp-specific machinery (slot_id, reasoning_budget, /tokenize, /slots, /health), adds client-side admission control (`max_inflight_requests` + `queue_timeout` -> friendly busy message), and the runtime now serves from Strata (Qwen3.8-Flash-Next IQ3_S on 127.0.0.1:8080). Also removed the `Wants=hestia-llama.service` coupling from hestia-serve.service — it would have OOM'd the box (Ornith 29GB + Strata 54GB RAM) on every reboot.
+
+**Branch:** `feature/l232-inference-backend-profiles` (commits d93b1e18, b2b6ef80, 9e5f32ef, 46bdcf51)
+**Spec:** `docs/development-process/loops/L232-inference-backend-profiles.md`
+**Handoff:** `docs/handoffs/L232-inference-backend-profiles-handoff.md`
+
+**Gates:** runtime pytest 2412 passed/0 failed; dev pytest zero new failures (35 pre-existing on baseline); mypy clean; ruff at baseline (48).
+
+**Deployed:** ~/Hestia-runtime merged (d4712178 + follow-up), config.runtime.py points at Strata, hestia-serve restarted and smoke-tested (health + CLI ask), hestia-llama stays stopped. No Telegram/Matrix messages sent (Dylan asleep).
+
 ## 2026-07-03 — L244: Migrate `job_alert` Subsystem to Private Repo
 
 **Outcome:** Moved the job-alert queue (`JobAlertStore` + `save_job_alert`, `list_pending_alerts`, `mark_alerts_sent`) out of the publishable Hestia core and into the private `hestia-tools` package. The migration uses the L241 `setup(context)` / `register(registry)` seam; the table is created lazily on the first tool call.

@@ -7,6 +7,7 @@ from typing import Any, Literal
 
 import pytest
 
+from hestia.config import InferenceConfig
 from hestia.config_env import _coerce_env_value, _ConfigFromEnv
 
 
@@ -189,3 +190,25 @@ class TestCoerceEnvValue:
     def test_empty_string_literal_sets_empty_string(self):
         cfg = _DummyConfig.from_env(environ={"HESTIA_DUMMY_EMPTY_LITERAL": ""})
         assert cfg.empty_literal == ""
+
+
+class TestInferenceConfigEnvOverrides:
+    """L232 §1: HESTIA_INFERENCE_* env overrides for the backend profile fields."""
+
+    def test_server_type_env_override(self):
+        cfg = InferenceConfig.from_env(environ={"HESTIA_INFERENCE_SERVER_TYPE": "openai-compat"})
+        assert cfg.server_type == "openai-compat"
+
+    def test_max_inflight_requests_env_override(self):
+        cfg = InferenceConfig.from_env(environ={"HESTIA_INFERENCE_MAX_INFLIGHT_REQUESTS": "2"})
+        assert cfg.max_inflight_requests == 2
+
+    def test_queue_timeout_env_override(self):
+        cfg = InferenceConfig.from_env(environ={"HESTIA_INFERENCE_QUEUE_TIMEOUT": "45.5"})
+        assert cfg.queue_timeout == 45.5
+
+    def test_defaults_when_env_absent(self):
+        cfg = InferenceConfig.from_env(environ={})
+        assert cfg.server_type == "llamacpp"
+        assert cfg.max_inflight_requests == 0
+        assert cfg.queue_timeout == 120.0

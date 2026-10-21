@@ -180,7 +180,8 @@ class TurnAssembly:
         ctx.slot_id = session.slot_id
         if self._slot_manager is not None:
             assignment = await self._slot_manager.acquire(session)
-            ctx.slot_id = assignment.slot_id
+            if assignment is not None:
+                ctx.slot_id = assignment.slot_id
             refreshed = await self._store.get_session(session.id)
             if refreshed is not None:
                 session = refreshed
