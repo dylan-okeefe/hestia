@@ -301,6 +301,7 @@ class AppContext:
             server_type=self.config.inference.server_type,
             max_inflight_requests=self.config.inference.max_inflight_requests,
             queue_timeout=self.config.inference.queue_timeout,
+            vision_enabled=self.config.telegram.vision,
         )
 
     @functools.cached_property
