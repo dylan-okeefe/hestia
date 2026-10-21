@@ -405,3 +405,35 @@ class TestWebSecurityGuards:
 
         with pytest.raises(HestiaConfigError, match="web.auth_enabled is False"):
             make_app(cfg)
+
+
+class TestInferenceBackendProfileConfig:
+    """L232 §1: server_type / max_inflight_requests / queue_timeout on InferenceConfig."""
+
+    def test_defaults_reproduce_llamacpp_behavior(self):
+        cfg = InferenceConfig()
+        assert cfg.server_type == "llamacpp"
+        assert cfg.max_inflight_requests == 0
+        assert cfg.queue_timeout == 120.0
+
+    def test_openai_compat_profile_accepted(self):
+        cfg = InferenceConfig(
+            server_type="openai-compat",
+            max_inflight_requests=2,
+            queue_timeout=60.0,
+        )
+        assert cfg.server_type == "openai-compat"
+        assert cfg.max_inflight_requests == 2
+        assert cfg.queue_timeout == 60.0
+
+    def test_unknown_server_type_rejected(self):
+        with pytest.raises(ValueError, match="server_type"):
+            InferenceConfig(server_type="vllm")
+
+    def test_negative_max_inflight_requests_rejected(self):
+        with pytest.raises(ValueError, match="max_inflight_requests"):
+            InferenceConfig(max_inflight_requests=-1)
+
+    def test_negative_queue_timeout_rejected(self):
+        with pytest.raises(ValueError, match="queue_timeout"):
+            InferenceConfig(queue_timeout=-1.0)

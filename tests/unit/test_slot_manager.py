@@ -713,3 +713,72 @@ async def test_acquire_evicts_session_with_mismatched_slot_id(store, slot_dir):
 
     assert assignment_c.slot_id == 0
     assert 1 not in manager._assignments
+
+
+@pytest.mark.asyncio
+async def test_openai_compat_acquire_returns_none_no_http(store, slot_dir):
+    """openai-compat mode: acquire() is a no-op returning None (L232 §3)."""
+    inference = FakeInferenceClient()
+    manager = SlotManager(
+        inference=inference,
+        session_store=store,
+        slot_dir=slot_dir,
+        pool_size=4,
+        server_type="openai-compat",
+    )
+
+    session = await store.get_or_create_session("cli", "user1")
+    assignment = await manager.acquire(session)
+
+    assert assignment is None
+    assert inference.calls == []
+
+    # Session state is untouched — no slot assigned, still COLD.
+    fetched = await store.get_session(session.id)
+    assert fetched.slot_id is None
+    assert fetched.temperature == SessionTemperature.COLD
+
+    # save/erase/evict are all no-ops and make no slot HTTP calls.
+    await manager.save(session)
+    await manager.erase(session)
+    await manager.evict_by_id(session.id)
+    assert inference.calls == []
+
+    # No slot snapshot dir is created when slots are disabled.
+    assert not slot_dir.exists()
+
+
+@pytest.mark.asyncio
+async def test_openai_compat_acquire_never_locks(store, slot_dir):
+    """openai-compat acquire() returns immediately without touching the asyncio lock."""
+    inference = FakeInferenceClient()
+    manager = SlotManager(
+        inference=inference,
+        session_store=store,
+        slot_dir=slot_dir,
+        pool_size=1,
+        server_type="openai-compat",
+    )
+    # Even with a locked mutex, a disabled SlotManager must not block.
+    manager._lock = _LockedForever()
+    session = await store.get_or_create_session("cli", "user1")
+    assignment = await manager.acquire(session)
+    assert assignment is None
+
+
+class _LockedForever:
+    """Stand-in asyncio.Lock that would block forever on acquire."""
+
+    async def acquire(self):
+        import asyncio
+
+        await asyncio.sleep(3600)
+
+    def release(self):
+        raise AssertionError("release must not be called in disabled mode")
+
+    async def __aenter__(self):
+        await self.acquire()
+
+    async def __aexit__(self, *exc):
+        return False
