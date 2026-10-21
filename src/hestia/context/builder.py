@@ -368,8 +368,8 @@ class ContextBuilder:
                     "messages": [message_to_dict(_m1), message_to_dict(_m2)],
                 }
             )
-            _single_count = len(await self._inference.tokenize(_single_body))
-            _combined_count = len(await self._inference.tokenize(_combined_body))
+            _single_count = await self._count_text_tokens(_single_body)
+            _combined_count = await self._count_text_tokens(_combined_body)
             return (
                 _combined_count - _single_count - await self._count_tokens(_m2)
             )
@@ -494,6 +494,25 @@ class ContextBuilder:
         """
         return json.dumps(message_to_dict(message))
 
+    def _supports_tokenize(self) -> bool:
+        """True when the inference client can hit a real /tokenize endpoint.
+
+        Duck-typed clients without a ``supports_tokenize`` attribute are
+        assumed to support tokenize (preserves legacy fake-client behavior).
+        """
+        return bool(getattr(self._inference, "supports_tokenize", True))
+
+    @staticmethod
+    def _estimate_tokens(text: str) -> int:
+        """Char-based fallback estimate for backends without /tokenize."""
+        return max(1, len(text) // 4)
+
+    async def _count_text_tokens(self, text: str) -> int:
+        """Token count for an arbitrary string, with tokenize fallback."""
+        if self._supports_tokenize():
+            return len(await self._inference.tokenize(text))
+        return self._estimate_tokens(text)
+
     async def _count_tokens(self, message: Message) -> int:
         """Count tokens for a single message, with per-builder caching.
 
@@ -519,14 +538,12 @@ class ContextBuilder:
             Token count for the rendered message dict
         """
         if message.tool_calls:
-            tokens = await self._inference.tokenize(self._render_message(message))
-            return len(tokens)
+            return await self._count_text_tokens(self._render_message(message))
         key = (message.role, message.content or "")
         if key in self._tokenize_cache:
             self._tokenize_cache.move_to_end(key)
             return self._tokenize_cache[key]
-        tokens = await self._inference.tokenize(self._render_message(message))
-        count = len(tokens)
+        count = await self._count_text_tokens(self._render_message(message))
         self._tokenize_cache[key] = count
         if len(self._tokenize_cache) > 4096:
             self._tokenize_cache.popitem(last=False)
@@ -558,7 +575,7 @@ class ContextBuilder:
             if key not in self._tokenize_cache:
                 uncached.append(msg)
 
-        if uncached and hasattr(self._inference, "tokenize_batch"):
+        if uncached and self._supports_tokenize() and hasattr(self._inference, "tokenize_batch"):
             rendered = [self._render_message(m) for m in uncached]
             counts = await self._inference.tokenize_batch(rendered)
             for msg, count in zip(uncached, counts, strict=True):
@@ -567,15 +584,15 @@ class ContextBuilder:
                 if len(self._tokenize_cache) > 4096:
                     self._tokenize_cache.popitem(last=False)
         elif uncached:
-            # Fallback for inference clients without tokenize_batch.
+            # Fallback for inference clients without tokenize_batch (or without
+            # tokenize support at all — _count_tokens estimates in that case).
             for msg in uncached:
                 await self._count_tokens(msg)
 
         total = 0
         for m in messages:
             if m.tool_calls:
-                tokens = await self._inference.tokenize(self._render_message(m))
-                total += len(tokens)
+                total += await self._count_text_tokens(self._render_message(m))
             else:
                 total += self._tokenize_cache[(m.role, m.content or "")]
 

@@ -51,6 +51,13 @@ class InferenceConfig(_ConfigFromEnv):
     stream: bool = False
     request_timeout: float = 300.0
     """HTTP timeout (seconds) for chat completion requests to llama-server."""
+    server_type: str = "llamacpp"
+    """Backend profile: "llamacpp" (default; slots, /tokenize, /health) or
+    "openai-compat" (e.g. Strata; llama.cpp-only machinery disabled)."""
+    max_inflight_requests: int = 0
+    """Client-side admission limit; 0 = unlimited (llama.cpp default)."""
+    queue_timeout: float = 120.0
+    """Seconds to wait for admission before raising InferenceBusyError."""
 
     def __post_init__(self) -> None:
         # Reject literal "dummy" at config-load (see H-5).
@@ -69,6 +76,20 @@ class InferenceConfig(_ConfigFromEnv):
         if self.request_timeout < 0:
             raise ValueError(
                 f"InferenceConfig.request_timeout must be non-negative, got {self.request_timeout}"
+            )
+        if self.server_type not in ("llamacpp", "openai-compat"):
+            raise ValueError(
+                f"InferenceConfig.server_type must be 'llamacpp' or 'openai-compat', "
+                f"got {self.server_type!r}"
+            )
+        if self.max_inflight_requests < 0:
+            raise ValueError(
+                "InferenceConfig.max_inflight_requests must be non-negative, "
+                f"got {self.max_inflight_requests}"
+            )
+        if self.queue_timeout < 0:
+            raise ValueError(
+                f"InferenceConfig.queue_timeout must be non-negative, got {self.queue_timeout}"
             )
 
 
