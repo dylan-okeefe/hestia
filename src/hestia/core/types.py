@@ -37,6 +37,13 @@ class Message:
     is_handoff: bool = False
     correction: bool = False
     """True when this user message was injected by the quality monitor as a correction."""
+    images: list[str] | None = None
+    """Optional image attachments as ``data:image/jpeg;base64,...`` URLs (L234 vision).
+
+    Present only on user messages that arrived with photos. Serialized into
+    OpenAI ``image_url`` content parts; counted via an estimated token cost
+    rather than raw base64 tokenization.
+    """
 
 
 class SessionState(Enum):

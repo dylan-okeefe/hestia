@@ -9,10 +9,26 @@ from hestia.core.types import Message
 
 
 def message_to_dict(msg: Message) -> dict[str, Any]:
-    """Convert a Message to an OpenAI-compatible dict."""
+    """Convert a Message to an OpenAI-compatible dict.
+
+    Messages carrying ``images`` serialize ``content`` as an array of parts:
+    a leading text part followed by ``image_url`` parts (standard OpenAI
+    multimodal shape). All other messages keep the plain-string content form.
+    """
+    if msg.images:
+        content: str | list[dict[str, Any]] = [
+            {"type": "text", "text": msg.content},
+            *[
+                {"type": "image_url", "image_url": {"url": url}}
+                for url in msg.images
+            ],
+        ]
+    else:
+        content = msg.content
+
     result: dict[str, Any] = {
         "role": msg.role,
-        "content": msg.content,
+        "content": content,
     }
 
     if msg.tool_calls:
