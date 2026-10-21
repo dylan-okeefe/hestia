@@ -20,6 +20,9 @@ def message_domain_to_dto(msg: Message, session_id: str, idx: int) -> MessageDTO
                 for tc in msg.tool_calls
             ]
         )
+    images_json: str | None = None
+    if msg.images:
+        images_json = json.dumps(msg.images)
     return MessageDTO(
         session_id=session_id,
         idx=idx,
@@ -31,6 +34,7 @@ def message_domain_to_dto(msg: Message, session_id: str, idx: int) -> MessageDTO
         reasoning_content=msg.reasoning_content,
         is_handoff=msg.is_handoff,
         correction=msg.correction,
+        images=images_json,
     )
 
 
@@ -54,6 +58,16 @@ def message_dto_to_domain(dto: MessageDTO) -> Message:
             tool_calls = normalized
         except (json.JSONDecodeError, KeyError) as e:
             raise ValueError(f"Failed to parse tool_calls JSON: {e}") from e
+    images: list[str] | None = None
+    if dto.images:
+        try:
+            parsed = json.loads(dto.images)
+            if isinstance(parsed, list) and all(isinstance(u, str) for u in parsed):
+                images = parsed
+        except json.JSONDecodeError:
+            # Unparseable image payloads never take down history loading;
+            # the text transcript is still coherent without them.
+            images = None
     return Message(
         role=cast(Literal["system", "user", "assistant", "tool"], dto.role),
         content=dto.content,
@@ -62,6 +76,7 @@ def message_dto_to_domain(dto: MessageDTO) -> Message:
         reasoning_content=dto.reasoning_content,
         is_handoff=dto.is_handoff,
         correction=dto.correction,
+        images=images,
     )
 
 

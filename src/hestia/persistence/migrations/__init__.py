@@ -375,6 +375,38 @@ async def m011_workflow_allow_backfill(conn: AsyncConnection) -> None:
         )
 
 
+async def m012_messages_images(conn: AsyncConnection) -> None:
+    """L234: add nullable ``images`` column to the messages table.
+
+    Stores a JSON list of ``data:image/jpeg;base64,...`` URLs on user messages
+    that arrived with photo attachments, so within-session history keeps the
+    images for model coherence.
+
+    Idempotent: checks whether the column already exists before adding it.
+    SQLite does not support ``ALTER TABLE IF NOT EXISTS ADD COLUMN``,
+    so we inspect the table info first (same pattern as m004).
+    """
+    dialect = conn.dialect.name
+    if dialect == "sqlite":
+        result = await conn.execute(
+            sa.text("SELECT 1 FROM pragma_table_info('messages') WHERE name = 'images'")
+        )
+        has_column = result.scalar() is not None
+    else:
+        result = await conn.execute(
+            sa.text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = 'messages' AND column_name = 'images'"
+            )
+        )
+        has_column = result.scalar() is not None
+
+    if not has_column:
+        await conn.execute(
+            sa.text("ALTER TABLE messages ADD COLUMN images TEXT")
+        )
+
+
 MIGRATIONS: list[Migration] = [
     m001_sessions_active_unique,
     m002_session_handoffs,
@@ -387,6 +419,7 @@ MIGRATIONS: list[Migration] = [
     m009_hot_path_indexes,
     m010_execution_is_test,
     m011_workflow_allow_backfill,
+    m012_messages_images,
 ]
 
 
