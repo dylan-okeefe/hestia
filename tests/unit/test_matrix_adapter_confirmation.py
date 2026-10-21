@@ -167,7 +167,7 @@ class TestMatrixConfirmation:
         await adapter._handle_room_message(mock_room, mock_event)
 
         on_message_mock.assert_called_once_with(
-            "matrix", "!room:matrix.org", "Hello bot", "@user:matrix.org", None
+            "matrix", "!room:matrix.org", "Hello bot", "@user:matrix.org", None, None
         )
 
     @pytest.mark.asyncio

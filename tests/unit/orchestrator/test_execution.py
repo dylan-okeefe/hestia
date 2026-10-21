@@ -2348,3 +2348,96 @@ async def test_thinking_budget_enforced_non_streaming():
     # First call tripped the budget; second call ran with thinking_aborted.
     assert ctx.turn.thinking_aborted is True
     assert len(responses) == 0
+
+
+@pytest.mark.asyncio
+async def test_process_turn_attaches_images_to_user_message_and_transcript():
+    """L234 §3: process_turn(images=...) rides the user message into the transcript."""
+    from unittest.mock import AsyncMock as _AsyncMock
+    from unittest.mock import MagicMock as _MagicMock
+    from unittest.mock import patch as _patch
+
+    from hestia.core.types import ChatResponse as _ChatResponse
+    from hestia.orchestrator.engine import Orchestrator as _Orchestrator
+
+    mock_inference = _MagicMock()
+    mock_inference.chat = _AsyncMock(
+        return_value=_ChatResponse(
+            content="I see it.",
+            reasoning_content=None,
+            tool_calls=[],
+            finish_reason="stop",
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+        )
+    )
+    mock_policy = _MagicMock()
+    mock_policy.auto_approve.return_value = True
+    mock_policy.filter_tools.return_value = None
+    mock_policy.reasoning_budget.return_value = 2048
+    mock_policy.turn_token_budget.return_value = 4000
+
+    mock_tool_registry = _MagicMock()
+    mock_tool_registry.list_names.return_value = []
+    mock_tool_registry.meta_tool_schemas.return_value = []
+
+    mock_context_builder = _MagicMock()
+    mock_context_builder.build = _AsyncMock(return_value=_MagicMock(messages=[]))
+
+    mock_message_store = _MagicMock()
+    mock_message_store.get_messages = _AsyncMock(return_value=[])
+    mock_message_store.append_message = _AsyncMock()
+    mock_turn_store = _MagicMock()
+    mock_turn_store.insert_turn = _AsyncMock()
+    mock_turn_store.update_turn = _AsyncMock()
+    mock_turn_store.append_transition = _AsyncMock()
+
+    orchestrator = _Orchestrator(
+        inference=mock_inference,
+        session_store=_MagicMock(),
+        message_store=mock_message_store,
+        turn_store=mock_turn_store,
+        context_builder=mock_context_builder,
+        tool_registry=mock_tool_registry,
+        policy=mock_policy,
+    )
+
+    mock_session = _MagicMock()
+    mock_session.id = "sess-images"
+    mock_session.slot_id = None
+
+    mock_turn = _MagicMock()
+    mock_turn.id = "turn-images"
+    mock_turn.iterations = 0
+    mock_turn.tool_calls_made = 0
+    mock_turn.transitions = []
+    mock_turn.state = TurnState.RECEIVED
+
+    images = ["data:image/jpeg;base64,QUJD"]
+    user_message = Message(role="user", content="what is this?")
+
+    with _patch.object(orchestrator, "_create_turn", return_value=mock_turn), _patch.object(
+        orchestrator, "_persist_turn", _AsyncMock()
+    ):
+        await orchestrator.process_turn(
+            session=mock_session,
+            user_message=user_message,
+            respond_callback=_AsyncMock(),
+            images=images,
+        )
+
+    # Engine mirrors images onto the turn's user message (transcript storage).
+    assert user_message.images == images
+
+    # Assembly persisted the USER message WITH the image payload (the last
+    # append is the assistant reply, so scan all calls).
+    import json as _json
+
+    user_appends = [
+        call.args[1]
+        for call in mock_message_store.append_message.call_args_list
+        if call.args[1].role == "user"
+    ]
+    assert len(user_appends) == 1
+    assert _json.loads(user_appends[0].images) == images

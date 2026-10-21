@@ -571,3 +571,93 @@ class TestRunPlatformStreaming:
 
         assert ("u1", "final response") in adapter.sent_messages
         adapter.edit_message.assert_not_awaited()
+
+
+class TestPlatformRunnerImages:
+    """L234 §3: images ride PlatformRunner.on_message into process_turn."""
+
+    @pytest.mark.asyncio
+    async def test_images_passed_to_process_turn(self):
+        app = _make_app()
+        config = _make_config()
+        adapter = FakePlatform()
+        confirm_callback = AsyncMock(return_value=True)
+        user_var: ContextVar[str] = ContextVar("user", default="")
+        images = ["data:image/jpeg;base64,QUJD"]
+
+        async def single_message_then_stop(*args: Any, **kwargs: Any) -> None:
+            if adapter._on_message is not None:
+                await adapter._on_message(
+                    "fake", "u1", "look", None, None, images=images
+                )
+            raise KeyboardInterrupt()
+
+        with patch("asyncio.sleep", side_effect=single_message_then_stop):
+            await run_platform(
+                app,
+                config,
+                adapter=adapter,
+                confirm_callback=confirm_callback,
+                platform_name="fake",
+                user_context_var=user_var,
+            )
+
+        orchestrator = app.make_orchestrator.return_value
+        call_kwargs = orchestrator.process_turn.call_args.kwargs
+        assert call_kwargs["images"] == images
+
+    @pytest.mark.asyncio
+    async def test_images_capped_at_configured_per_message_limit(self):
+        """§3: stored/carried images are capped at telegram.vision_max_images_per_message."""
+        app = _make_app()
+        config = _make_config()
+        config.telegram.vision_max_images_per_message = 2
+        adapter = FakePlatform()
+        confirm_callback = AsyncMock(return_value=True)
+        images = [f"data:image/jpeg;base64,IMG{i}" for i in range(5)]
+
+        async def single_message_then_stop(*args: Any, **kwargs: Any) -> None:
+            if adapter._on_message is not None:
+                await adapter._on_message(
+                    "fake", "u1", "many", None, None, images=images
+                )
+            raise KeyboardInterrupt()
+
+        with patch("asyncio.sleep", side_effect=single_message_then_stop):
+            await run_platform(
+                app,
+                config,
+                adapter=adapter,
+                confirm_callback=confirm_callback,
+                platform_name="fake",
+            )
+
+        orchestrator = app.make_orchestrator.return_value
+        call_kwargs = orchestrator.process_turn.call_args.kwargs
+        assert call_kwargs["images"] == images[:2]
+
+    @pytest.mark.asyncio
+    async def test_no_images_defaults_to_none(self):
+        """Matrix/web/voice callers pass no images; process_turn sees None."""
+        app = _make_app()
+        config = _make_config()
+        adapter = FakePlatform()
+        confirm_callback = AsyncMock(return_value=True)
+
+        async def single_message_then_stop(*args: Any, **kwargs: Any) -> None:
+            if adapter._on_message is not None:
+                await adapter._on_message("fake", "u1", "hello", None, None)
+            raise KeyboardInterrupt()
+
+        with patch("asyncio.sleep", side_effect=single_message_then_stop):
+            await run_platform(
+                app,
+                config,
+                adapter=adapter,
+                confirm_callback=confirm_callback,
+                platform_name="fake",
+            )
+
+        orchestrator = app.make_orchestrator.return_value
+        call_kwargs = orchestrator.process_turn.call_args.kwargs
+        assert call_kwargs["images"] is None
