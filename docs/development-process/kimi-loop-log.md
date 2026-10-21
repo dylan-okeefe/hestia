@@ -6,6 +6,32 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-10-21 — L234: Telegram vision (photos → Strata Flash-Next)
+
+**Outcome:** Hestia can now see. Telegram photos are downscaled (≤1024px JPEG,
+~400KB) and sent as standard OpenAI `image_url` parts to Strata's Flash-Next
+(vision already loaded). Card #71. Also fixed the silent photo-drop bug —
+disabled vision now replies. Images persist in session history (messages.images,
+migration m012) so follow-up turns keep context; compaction archives drop them.
+
+**Branch:** `feature/l234-telegram-vision` (pushed; carries the L232 merge —
+develop lacks L232)
+**Spec:** `docs/development-process/loops/L234-telegram-vision.md`
+**Handoff:** `docs/handoffs/L234-telegram-vision-handoff.md`
+
+**Changes:** TelegramConfig vision fields; PHOTO handler (ffmpeg downscale,
+no new deps); 6-arg `IncomingMessageCallback` (images); orchestrator +
+persistence carry images; client content arrays with vision×server_type
+gating (llamacpp strips with warning — Ornith has no mmproj); image-token
+estimates via JPEG SOF marker; 46 new tests.
+
+**Gates:** dev 2446 passed/1 pre-existing numpy fail; runtime 2486 passed/0
+after fixing the L233×L234 6-arg callback union; mypy/ruff clean.
+
+**Deployed:** runtime merged, config.runtime.py vision=True, hestia-serve
+restarted clean. **Pending:** Dylan's live photo acceptance test; Strata
+`image_url` acceptance is assumed (fallback = `image_data` payload shape).
+
 ## 2026-10-20 — L232: Inference Backend Profiles (llama.cpp slots vs Strata single-slot queue)
 
 **Outcome:** Hestia's inference stack is now backend-agnostic. A `server_type` profile (`llamacpp` default / `openai-compat`) gates all llama.cpp-specific machinery (slot_id, reasoning_budget, /tokenize, /slots, /health), adds client-side admission control (`max_inflight_requests` + `queue_timeout` -> friendly busy message), and the runtime now serves from Strata (Qwen3.8-Flash-Next IQ3_S on 127.0.0.1:8080). Also removed the `Wants=hestia-llama.service` coupling from hestia-serve.service — it would have OOM'd the box (Ornith 29GB + Strata 54GB RAM) on every reboot.
