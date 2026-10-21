@@ -164,6 +164,11 @@ class TelegramConfig(_ConfigFromEnv):
     read_timeout_seconds: float = 30.0
     long_poll_timeout_seconds: float = 30.0
     voice_messages: bool = False  # Phase A feature flag
+    agent_bridge_enabled: bool = False  # L233: route agent_bridge_chats to a Pi coding-agent child
+    agent_bridge_chats: list[str] = field(default_factory=list)
+    """Chat IDs (platform_user, exactly as _handle_message computes) routed to the coding agent."""
+    agent_bridge_workspace: str = "~/hestia-tg-agent"
+    """Working directory for the Pi coding-agent child (path-fence confines file tools here)."""
 
     def __repr__(self) -> str:
         fields = []
