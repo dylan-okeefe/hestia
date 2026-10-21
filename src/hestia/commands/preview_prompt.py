@@ -42,6 +42,8 @@ class _Report:
 
 
 async def _token_count(client: InferenceClient, text: str) -> int:
+    if not client.supports_tokenize:
+        return max(1, len(text) // 4)
     tokens = await client.tokenize(text)
     return len(tokens)
 

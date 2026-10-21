@@ -37,6 +37,12 @@ class InferenceTimeoutError(HestiaError):
     pass
 
 
+class InferenceBusyError(HestiaError):
+    """Inference backend is at capacity; the request waited past queue_timeout."""
+
+    pass
+
+
 class ContextTooLargeError(HestiaError):
     """Context exceeds budget even after compression."""
 

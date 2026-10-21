@@ -15,7 +15,7 @@ import httpx
 from hestia.core.json_repair import repair_json
 from hestia.core.serialization import message_to_dict
 from hestia.core.types import ChatResponse, Message, StreamDelta, ToolCall, ToolSchema
-from hestia.errors import InferenceServerError, InferenceTimeoutError
+from hestia.errors import InferenceBusyError, InferenceServerError, InferenceTimeoutError
 
 logger = logging.getLogger(__name__)
 
@@ -272,15 +272,35 @@ def _extract_tool_calls_from_text(text: str) -> list[ToolCall]:
 
 
 class InferenceClient:
-    """Thin, opinionated wrapper around llama.cpp HTTP server."""
+    """Thin, opinionated wrapper around an OpenAI-compatible chat server.
 
-    def __init__(self, base_url: str, model_name: str, timeout: float = 300.0) -> None:
+    Supports two backend profiles via ``server_type``:
+      - ``"llamacpp"`` (default): llama.cpp server — slot targeting,
+        ``reasoning_budget``, ``/tokenize``, and ``GET /health`` are used.
+      - ``"openai-compat"``: plain OpenAI-compatible server (e.g. Strata) —
+        llama.cpp-only request fields are omitted, tokenize is unavailable,
+        and health probes ``GET {base_url}/v1/models``.
+    """
+
+    def __init__(
+        self,
+        base_url: str,
+        model_name: str,
+        timeout: float = 300.0,
+        *,
+        server_type: str = "llamacpp",
+        max_inflight_requests: int = 0,
+        queue_timeout: float = 120.0,
+    ) -> None:
         """Initialize the client.
 
         Args:
-            base_url: Base URL of the llama-server (e.g., http://localhost:8001)
+            base_url: Base URL of the inference server (e.g., http://localhost:8001)
             model_name: Model name to use in requests
             timeout: Default timeout for chat requests (seconds)
+            server_type: Backend profile — "llamacpp" or "openai-compat"
+            max_inflight_requests: Client-side admission limit; 0 = unlimited
+            queue_timeout: Seconds to wait for admission before InferenceBusyError
         """
         if not model_name:
             raise ValueError(
@@ -290,8 +310,19 @@ class InferenceClient:
         self.base_url = base_url.rstrip("/")
         self.model_name = model_name
         self.timeout = timeout
+        self.server_type = server_type
+        self.queue_timeout = queue_timeout
+        # Client-side admission control: None when unlimited (zero overhead).
+        self._semaphore: asyncio.Semaphore | None = (
+            asyncio.Semaphore(max_inflight_requests) if max_inflight_requests > 0 else None
+        )
         # Force HTTP/1.1 — some environments have flaky HTTP/2 negotiation
         self._client = httpx.AsyncClient(http2=False)
+
+    @property
+    def supports_tokenize(self) -> bool:
+        """True when the backend exposes llama.cpp's /tokenize endpoint."""
+        return self.server_type == "llamacpp"
 
     async def close(self) -> None:
         """Close the HTTP client."""
@@ -302,6 +333,22 @@ class InferenceClient:
 
     async def __aexit__(self, *_exc: object) -> None:
         await self.close()
+
+    async def _acquire_admission(self) -> None:
+        """Wait for an inflight slot, raising InferenceBusyError on queue timeout."""
+        if self._semaphore is None:
+            return
+        try:
+            await asyncio.wait_for(self._semaphore.acquire(), timeout=self.queue_timeout)
+        except TimeoutError as e:
+            raise InferenceBusyError(
+                f"inference server is at capacity (max_inflight_requests "
+                f"reached); waited {self.queue_timeout}s for admission"
+            ) from e
+
+    def _release_admission(self) -> None:
+        if self._semaphore is not None:
+            self._semaphore.release()
 
     async def _request(
         self,
@@ -316,6 +363,7 @@ class InferenceClient:
         All public HTTP methods should route through here so that error
         handling, retry logic, and request logging live in one place.
         """
+        await self._acquire_admission()
         try:
             response = await self._client.request(
                 method,
@@ -331,18 +379,37 @@ class InferenceClient:
             raise InferenceServerError(
                 f"{method} {path} returned {e.response.status_code}: {e.response.text}"
             ) from e
+        finally:
+            self._release_admission()
 
     async def health(self) -> dict[str, Any]:
-        """GET /health. Returns server health info."""
-        response = await self._request("GET", "/health", timeout=10.0)
-        result: dict[str, Any] = response.json()
+        """Probe server health.
+
+        llamacpp: GET /health (llama-server health payload).
+        openai-compat: GET {base_url}/v1/models; healthy on 2xx with non-empty data.
+        """
+        if self.server_type == "llamacpp":
+            response = await self._request("GET", "/health", timeout=10.0)
+            result: dict[str, Any] = response.json()
+            return result
+        response = await self._request("GET", "/v1/models", timeout=10.0)
+        result = response.json()
+        if not result.get("data"):
+            raise InferenceServerError(
+                f"GET /v1/models returned no models: {response.text}"
+            )
         return result
 
     async def tokenize(self, text: str) -> list[int]:
         """POST /tokenize. Returns token IDs.
 
         Use len(tokenize(text)) for accurate token counts.
+        Only available for server_type "llamacpp".
         """
+        if not self.supports_tokenize:
+            raise InferenceServerError(
+                f"tokenize unsupported for server_type {self.server_type!r}"
+            )
         response = await self._request(
             "POST",
             "/tokenize",
@@ -470,13 +537,15 @@ class InferenceClient:
             "messages": [message_to_dict(m) for m in clean_messages],
             "max_tokens": max_tokens,
             "temperature": temperature,
-            "reasoning_budget": reasoning_budget,
         }
+        if self.server_type == "llamacpp":
+            # llama.cpp-only request fields; omitted for openai-compat backends.
+            request_body["reasoning_budget"] = reasoning_budget
 
         if tools:
             request_body["tools"] = [t.model_dump() for t in tools]
 
-        if slot_id is not None:
+        if slot_id is not None and self.server_type == "llamacpp":
             request_body["slot_id"] = slot_id
 
         response = await self._request(
@@ -611,15 +680,18 @@ class InferenceClient:
             "stream": True,
             "max_tokens": max_tokens,
             "temperature": temperature,
-            "reasoning_budget": reasoning_budget,
         }
+        if self.server_type == "llamacpp":
+            # llama.cpp-only request fields; omitted for openai-compat backends.
+            request_body["reasoning_budget"] = reasoning_budget
 
         if tools:
             request_body["tools"] = [t.model_dump() for t in tools]
 
-        if slot_id is not None:
+        if slot_id is not None and self.server_type == "llamacpp":
             request_body["slot_id"] = slot_id
 
+        await self._acquire_admission()
         try:
             async with self._client.stream(
                 "POST",
@@ -678,6 +750,8 @@ class InferenceClient:
             raise InferenceTimeoutError(
                 "POST /v1/chat/completions timed out"
             ) from e
+        finally:
+            self._release_admission()
 
     async def slot_save(self, slot_id: int, filename: str) -> None:
         """POST /slots/{id}?action=save"""

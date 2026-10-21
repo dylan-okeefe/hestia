@@ -10,6 +10,7 @@ from hestia.core.types import Message, Session
 from hestia.errors import (
     ContextTooLargeError,
     HestiaError,
+    InferenceBusyError,
     InferenceServerError,
     InferenceTimeoutError,
     PersistenceError,
@@ -70,12 +71,15 @@ class TurnFinalization:
         """
         from hestia.errors import (
             ContextTooLargeError,
+            InferenceBusyError,
             InferenceTimeoutError,
             MaxIterationsError,
             PolicyFailureError,
             ToolExecutionError,
         )
 
+        if isinstance(error, InferenceBusyError):
+            return "I'm busy working on another request right now — please try again in a moment."
         if isinstance(error, InferenceTimeoutError):
             return "The AI is taking longer than expected. Try again in a moment."
         if isinstance(error, ContextTooLargeError):
@@ -242,7 +246,12 @@ class TurnFinalization:
             await transition(turn, TurnState.FAILED, "")
             turn.error = str(error)
             sanitized = self.sanitize_user_error(error)
-            await ctx.respond_callback(f"Error: {sanitized}")
+            if isinstance(error, InferenceBusyError):
+                # Capacity signal, not a failure — send the friendly message
+                # verbatim instead of the generic "Error: ..." wrapper.
+                await ctx.respond_callback(sanitized)
+            else:
+                await ctx.respond_callback(f"Error: {sanitized}")
         return await self.record_failure_if_enabled(
             session,
             turn,

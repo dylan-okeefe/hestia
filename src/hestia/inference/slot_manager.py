@@ -56,27 +56,34 @@ class SlotManager:
         session_store: SessionStore,
         slot_dir: Path,
         pool_size: int = 4,
+        server_type: str = "llamacpp",
     ):
         self._inference = inference
         self._store = session_store
         self._slot_dir = slot_dir
         self._pool_size = pool_size
+        # openai-compat backends have no slot concept — all operations no-op.
+        self._enabled = server_type == "llamacpp"
 
         # slot_id -> session_id for currently hot sessions
         self._assignments: dict[int, str] = {}
         self._lock = asyncio.Lock()
 
-        self._slot_dir.mkdir(parents=True, exist_ok=True)
+        if self._enabled:
+            self._slot_dir.mkdir(parents=True, exist_ok=True)
 
-    async def acquire(self, session: Session) -> SlotAssignment:
+    async def acquire(self, session: Session) -> SlotAssignment | None:
         """Ensure `session` has a live slot. Returns the slot id and whether
-        we restored from disk.
+        we restored from disk, or None when slots are disabled
+        (server_type != "llamacpp").
 
         Behavior by session.temperature:
           - HOT: verify slot_id is still assigned to this session, return it
           - WARM: allocate a slot (evicting LRU if needed), restore from disk
           - COLD: allocate a slot, no restore
         """
+        if not self._enabled:
+            return None
         async with self._lock:
             if session.temperature == SessionTemperature.HOT:
                 if session.slot_id is None:
@@ -171,6 +178,8 @@ class SlotManager:
         """Save the session's slot state to disk. Call this after each turn
         completes successfully. The slot stays assigned and HOT.
         """
+        if not self._enabled:
+            return
         if session.slot_id is None:
             logger.warning("save() called on session %s with no slot_id", session.id)
             return
@@ -197,6 +206,8 @@ class SlotManager:
         discard the in-memory slot state rather than checkpoint a potentially
         corrupted turn.
         """
+        if not self._enabled:
+            return
         if session.slot_id is None:
             logger.warning("erase() called on session %s with no slot_id", session.id)
             return
@@ -221,6 +232,8 @@ class SlotManager:
 
     async def evict_by_id(self, session_id: str) -> None:
         """Forcibly evict a specific session from its slot. Saves state to disk first."""
+        if not self._enabled:
+            return
         async with self._lock:
             await self._evict_session_locked(session_id)
 

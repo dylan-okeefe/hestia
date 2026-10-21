@@ -290,6 +290,9 @@ class AppContext:
             self.config.inference.base_url,
             model_name,
             timeout=self.config.inference.request_timeout,
+            server_type=self.config.inference.server_type,
+            max_inflight_requests=self.config.inference.max_inflight_requests,
+            queue_timeout=self.config.inference.queue_timeout,
         )
 
     @functools.cached_property
@@ -315,6 +318,7 @@ class AppContext:
             session_store=self.session_store,
             slot_dir=self.config.slots.slot_dir,
             pool_size=self.config.slots.pool_size,
+            server_type=self.config.inference.server_type,
         )
 
     @functools.cached_property
