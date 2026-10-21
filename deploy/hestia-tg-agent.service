@@ -1,0 +1,27 @@
+[Unit]
+Description=Hestia Telegram Coding-Agent Bridge (Pi RPC + local inference)
+After=network.target
+# L233: deliberately NO Wants/After on hestia-serve.service or any model
+# service. This daemon fronts the coding-agent Telegram bot and must keep
+# working while hestia serve (and any given inference backend) is stopped.
+# The coding agent talks to whatever OpenAI-compatible endpoint Pi is
+# configured for in ~/.pi/agent/models.json.
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Hestia-runtime
+EnvironmentFile=%h/.config/hestia-tg-agent/token.env
+Environment="HESTIA_TG_AGENT_CHATS=8550496999,8569861468"
+ExecStart=%h/.local/bin/uv run --quiet hestia --config config.coder-bot.py coder-bot
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=300
+StartLimitBurst=5
+LimitNOFILE=65536
+KillMode=mixed
+TimeoutStopSec=30
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
