@@ -12,6 +12,9 @@ Type=simple
 WorkingDirectory=%h/Hestia-runtime
 EnvironmentFile=%h/.config/hestia-tg-agent/token.env
 Environment="HESTIA_TG_AGENT_CHATS=8550496999,8569861468"
+# pi (nvm) and kimi (~/.kimi-code/bin) are not on the systemd user PATH —
+# the bridge spawns both as subprocesses.
+Environment="PATH=%h/.nvm/versions/node/v24.18.0/bin:%h/.kimi-code/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 ExecStart=%h/.local/bin/uv run --quiet hestia --config config.coder-bot.py coder-bot
 Restart=on-failure
 RestartSec=5
