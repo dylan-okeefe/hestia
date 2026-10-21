@@ -188,8 +188,17 @@ class PlatformRunner:
         text: str,
         sender_platform_user: str | None = None,
         session_title: str | None = None,
+        images: list[str] | None = None,
     ) -> None:
-        """Handle incoming platform message."""
+        """Handle incoming platform message.
+
+        Args:
+            images: Optional JPEG data URLs riding on a photo message (L234
+                vision, Telegram only today). Capped at the configured
+                per-message limit before entering the turn pipeline.
+        """
+        if images:
+            images = images[: self.config.telegram.vision_max_images_per_message]
         token = None
         requester_token = None
         if self.user_context_var is not None:
@@ -305,6 +314,7 @@ class PlatformRunner:
                 stream_callback=stream_callback,
                 resolved_user=resolved_user,
                 channel=channel,
+                images=images,
             )
 
             # Check for command prefix (e.g., "/workflow ")

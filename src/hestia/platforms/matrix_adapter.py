@@ -433,6 +433,7 @@ class MatrixAdapter(Platform):
             stripped_body,
             event.sender,
             None,
+            None,  # images: Matrix text events carry no attachments (L234)
         )
 
     async def _handle_reset(self, room: MatrixRoom, event: RoomMessageText) -> None:

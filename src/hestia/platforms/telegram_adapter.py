@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import io
 import logging
@@ -53,6 +54,11 @@ if TYPE_CHECKING:
 # a conservative limit and sending/editing in chunks.
 _TELEGRAM_MAX_TEXT_LEN = 4096
 _SAFE_CHUNK_LEN = 3800
+
+# L234 vision: encoded-JPEG output cap (~400KB per image) and a hard guard on
+# the raw Telegram download so a bogus file_size cannot fill the disk.
+_VISION_MAX_JPEG_BYTES = 400_000
+_MAX_PHOTO_DOWNLOAD_BYTES = 10 * 1024 * 1024
 
 
 def _split_long_text(text: str, max_len: int = _SAFE_CHUNK_LEN) -> list[str]:
@@ -265,6 +271,7 @@ class TelegramAdapter(Platform):
         self._app.add_handler(CommandHandler("continue", self._handle_continue))
         self._app.add_handler(CommandHandler("endtour", self._handle_endtour))
         self._app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message))
+        self._app.add_handler(MessageHandler(filters.PHOTO & ~filters.COMMAND, self._handle_photo))
         if self._config.voice_messages:
             self._app.add_handler(MessageHandler(filters.VOICE, self._handle_voice_message))
         self._app.add_handler(CallbackQueryHandler(self._handle_callback_query))
@@ -959,6 +966,105 @@ class TelegramAdapter(Platform):
                 update.effective_message.text,
                 sender_platform_user,
                 session_title,
+                None,  # images: text messages carry no attachments (L234)
+            )
+
+    async def _handle_photo(self, update: Update, context: Any) -> None:
+        """Handle incoming photos: download, downscale, and hand to the orchestrator.
+
+        Before L234 photos were silently dropped (no PHOTO handler existed).
+        When vision is disabled we now reply once per photo so the sender
+        knows; when enabled the largest PhotoSize is downloaded, downscaled
+        to ``vision_max_edge_px`` and JPEG-encoded via ffmpeg, then passed
+        through ``_on_message`` as base64 data URLs with the caption as text.
+        """
+        if update.effective_user is None or update.effective_message is None:
+            return
+        message = update.effective_message
+        if not message.photo:
+            return
+
+        user_id = update.effective_user.id
+        username = update.effective_user.username or str(user_id)
+        chat = update.effective_chat
+        in_group = chat is not None and chat.type in (Chat.GROUP, Chat.SUPERGROUP)
+
+        if not self._is_allowed(user_id, username):
+            # Silently ignore non-allowed users in groups to avoid spam
+            if in_group:
+                return
+            await message.reply_text("Not authorized.")
+            return
+
+        if not self._config.vision:
+            logger.debug("Photo ignored (telegram.vision=False)")
+            await message.reply_text(
+                "I can't see images yet — vision is disabled on this bot. "
+                "Ask the operator to enable telegram.vision."
+            )
+            return
+
+        # In group chats, route replies to the group; in private chats, DM the user
+        if in_group:
+            assert chat is not None
+            platform_user = str(chat.id)
+            sender_platform_user = str(user_id)
+            session_title = chat.title
+        else:
+            platform_user = str(user_id)
+            sender_platform_user = None
+            session_title = None
+
+        caption = message.caption or ""
+
+        # Telegram sends each photo as a list of PhotoSize thumbnails; the
+        # last entry is the largest. Guard the declared size before download
+        # so a bogus payload can't blow up the disk.
+        photo = message.photo[-1]
+        if photo.file_size is not None and photo.file_size > _MAX_PHOTO_DOWNLOAD_BYTES:
+            await message.reply_text("Sorry, that image is too large for me to process.")
+            return
+
+        jpg_path: str | None = None
+        try:
+            photo_file = await photo.get_file(read_timeout=60.0)
+            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+                await photo_file.download_to_drive(
+                    tmp.name, read_timeout=60.0, write_timeout=60.0
+                )
+                jpg_path = tmp.name
+        except Exception as e:  # noqa: BLE001 — photo download boundary
+            logger.warning("Failed to download photo: %s", e)
+            if jpg_path is not None:
+                with contextlib.suppress(OSError):
+                    os.unlink(jpg_path)
+            await message.reply_text("Sorry, I couldn't download that image.")
+            return
+
+        try:
+            data_url = await self._photo_to_jpeg_data_url(
+                jpg_path, max_edge=self._config.vision_max_edge_px
+            )
+        except Exception as e:  # noqa: BLE001 — image conversion boundary
+            logger.warning("Failed to convert photo: %s", e)
+            await message.reply_text("Sorry, I couldn't process that image.")
+            return
+        finally:
+            with contextlib.suppress(OSError):
+                os.unlink(jpg_path)
+
+        # One image per Telegram photo message today; the cap keeps stored
+        # history within the configured per-message limit regardless.
+        data_urls = [data_url][: self._config.vision_max_images_per_message]
+
+        if self._on_message is not None:
+            await self._on_message(
+                self.name,
+                platform_user,
+                caption,
+                sender_platform_user,
+                session_title,
+                images=data_urls,
             )
 
     async def _handle_voice_message(self, update: Update, context: Any) -> None:
@@ -1217,6 +1323,64 @@ class TelegramAdapter(Platform):
     # ------------------------------------------------------------------
     # FFmpeg helpers
     # ------------------------------------------------------------------
+
+    async def _photo_to_jpeg_data_url(self, jpg_path: str, max_edge: int) -> str:
+        """Downscale + JPEG re-encode a photo via ffmpeg, returning a base64 data URL.
+
+        The longest side is capped at ``max_edge`` (aspect preserved). The
+        output is capped at ~400KB: if the default quality exceeds the cap,
+        a lower-quality retry runs, then a smaller-edge retry as a last
+        resort. Raises RuntimeError when the cap still cannot be met.
+        """
+        jpeg_bytes = await self._ffmpeg_jpeg(jpg_path, max_edge=max_edge, quality=4)
+        if len(jpeg_bytes) > _VISION_MAX_JPEG_BYTES:
+            logger.debug(
+                "Encoded JPEG over %d-byte cap (%d bytes); retrying at lower quality",
+                _VISION_MAX_JPEG_BYTES,
+                len(jpeg_bytes),
+            )
+            jpeg_bytes = await self._ffmpeg_jpeg(jpg_path, max_edge=max_edge, quality=8)
+        if len(jpeg_bytes) > _VISION_MAX_JPEG_BYTES:
+            smaller_edge = max(256, int(max_edge * 0.6))
+            logger.debug(
+                "Encoded JPEG still over cap (%d bytes); retrying at edge %d",
+                len(jpeg_bytes),
+                smaller_edge,
+            )
+            jpeg_bytes = await self._ffmpeg_jpeg(jpg_path, max_edge=smaller_edge, quality=8)
+        if len(jpeg_bytes) > _VISION_MAX_JPEG_BYTES:
+            raise RuntimeError(
+                f"encoded JPEG still exceeds {_VISION_MAX_JPEG_BYTES}-byte cap "
+                f"({len(jpeg_bytes)} bytes)"
+            )
+        return "data:image/jpeg;base64," + base64.b64encode(jpeg_bytes).decode("ascii")
+
+    async def _ffmpeg_jpeg(self, src_path: str, max_edge: int, quality: int) -> bytes:
+        """Run ffmpeg once: scale so the longest side fits ``max_edge``, JPEG encode."""
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            src_path,
+            "-vf",
+            (
+                f"scale='min({max_edge},iw)':'min({max_edge},ih)':"
+                "force_original_aspect_ratio=decrease"
+            ),
+            "-q:v",
+            str(quality),
+            "-f",
+            "mjpeg",
+            "-",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            raise RuntimeError(f"ffmpeg photo→jpeg failed: {stderr.decode().strip()}")
+        return stdout
 
     async def _ogg_to_pcm(self, ogg_path: str, sample_rate: int = 16000) -> bytes:
         """Convert an OGG/Opus file to raw PCM16 mono bytes."""
