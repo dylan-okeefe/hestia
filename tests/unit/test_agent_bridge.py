@@ -770,7 +770,12 @@ class TestAdapterBridgeIntegration:
         on_message_called = False
 
         async def on_message(
-            platform: str, user: str, text: str, sender: str | None, title: str | None = None
+            platform: str,
+            user: str,
+            text: str,
+            sender: str | None,
+            title: str | None = None,
+            images: list[str] | None = None,
         ) -> None:
             nonlocal on_message_called
             on_message_called = True
@@ -790,7 +795,12 @@ class TestAdapterBridgeIntegration:
         received: list[str] = []
 
         async def on_message(
-            platform: str, user: str, text: str, sender: str | None, title: str | None = None
+            platform: str,
+            user: str,
+            text: str,
+            sender: str | None,
+            title: str | None = None,
+            images: list[str] | None = None,
         ) -> None:
             received.append(text)
 
