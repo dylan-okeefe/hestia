@@ -323,6 +323,25 @@ def run_matrix(ctx: click.Context) -> None:
         click.echo("\nShutting down.")
 
 
+@cli.command(name="coder-bot")
+@click.pass_context
+def run_coder_bot(ctx: click.Context) -> None:
+    """Run the Telegram coding-agent bridge (blocks until Ctrl-C).
+
+    Routes telegram.agent_bridge_chats to a persistent Pi coding-agent child
+    per chat. Uses no orchestrator, scheduler, or inference client, so it keeps
+    working while `hestia serve` is down. The bot token comes from the
+    HESTIA_TG_BOT_TOKEN env var (or telegram.bot_token).
+    """
+    app: AppContext = ctx.obj
+    from hestia.platforms.agent_bridge_runner import run_coder_bot as _run_coder_bot
+
+    try:
+        asyncio.run(_run_coder_bot(app.config))
+    except KeyboardInterrupt:
+        click.echo("\nShutting down.")
+
+
 @cli.command(name="serve")
 @click.pass_context
 def serve(ctx: click.Context) -> None:
