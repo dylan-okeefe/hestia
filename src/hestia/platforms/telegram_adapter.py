@@ -46,6 +46,7 @@ if TYPE_CHECKING:
     from hestia.orchestrator.engine import Orchestrator
     from hestia.orchestrator.handoff_service import HandoffService
     from hestia.persistence.session_store import SessionStore
+    from hestia.platforms.agent_bridge import AgentBridge
 
 
 # Telegram caps a single message at 4096 characters. We leave headroom for
@@ -193,6 +194,8 @@ class TelegramAdapter(Platform):
         self._voice_config: VoiceConfig | None = None
         self._reset_callback: Callable[[str], Awaitable[None]] | None = None
         self._compactor: SessionCompactor | None = None
+        # L233: optional coding-agent bridge; injected via set_agent_bridge.
+        self._agent_bridge: AgentBridge | None = None
 
         # Validate allowed_users entries (hard-fail at startup)
         for entry in self._config.allowed_users:
@@ -249,7 +252,16 @@ class TelegramAdapter(Platform):
         """Inject the session compactor for /compact handling."""
         self._compactor = compactor
 
-    async def start(self, on_message: IncomingMessageCallback) -> None:
+    def set_agent_bridge(self, bridge: AgentBridge | None) -> None:
+        """Attach (or detach) the coding-agent bridge (L233).
+
+        When attached and ``bridge.should_route(platform_user)`` matches,
+        _handle_message routes the message to the bridge instead of the
+        normal _on_message dispatch.
+        """
+        self._agent_bridge = bridge
+
+    async def start(self, on_message: IncomingMessageCallback | None) -> None:
         """Start polling for Telegram messages."""
         self._on_message = on_message
 
@@ -286,6 +298,8 @@ class TelegramAdapter(Platform):
         for task in self._typing_tasks.values():
             task.cancel()
         self._typing_tasks.clear()
+        if self._agent_bridge is not None:
+            await self._agent_bridge.aclose()
         if self._app is not None:
             if self._app.updater is not None:
                 await self._app.updater.stop()
@@ -951,6 +965,12 @@ class TelegramAdapter(Platform):
             if resolved:
                 # Don't route workflow replies to the orchestrator
                 return
+
+        # L233: coding-agent bridge intercept — allowlisted chats talk to the
+        # Pi coding agent instead of the normal _on_message dispatch.
+        if self._agent_bridge is not None and self._agent_bridge.should_route(platform_user):
+            await self._agent_bridge.handle(platform_user, update.effective_message.text)
+            return
 
         if self._on_message is not None:
             await self._on_message(
