@@ -6,6 +6,45 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-10-21 — L233: Telegram coding-agent bridge (Pi RPC + Strata, Kimi reviewer)
+
+**Outcome:** Card #70 Phases 1–4, 6–7 done and deployed; Phase 5 smoke ladder is
+Dylan's live acceptance step. Dylan can now drive a Pi coding agent from
+Telegram; it talks to frozen Strata (IQ3_S) through a persistent `pi --mode rpc`
+child per chat, confined by path-fence to `~/hestia-tg-agent/`, with Kimi as a
+read-only reviewer on every commit.
+
+**Branch:** `feature/l233-telegram-coding-agent-bridge` (pushed; 8 commits)
+**Spec:** `docs/development-process/loops/L233-telegram-coding-agent-bridge.md`
+**Handoff:** `docs/handoffs/L233-telegram-coding-agent-bridge-handoff.md`
+
+**Changes:**
+- `src/hestia/platforms/agent_bridge.py` (~830 lines): `PiRpcClient`
+  (LF-strict byte framing, correlated commands, backpressure-honoring reader)
+  + `AgentBridge` (per-chat persistent sessions, steering via
+  `streamingBehavior: "steer"`, send-once/edit-progress status, queued-status
+  on retry events, child respawn) + Kimi reviewer loop (fires only when
+  workspace HEAD advanced; `--plan` read-only; two-strikes escalation hands the
+  task to kimi WITHOUT `--plan`).
+- `src/hestia/platforms/agent_bridge_runner.py` + `hestia coder-bot` CLI: runs
+  the adapter with `_on_message=None` — no orchestrator/scheduler/inference.
+- `TelegramConfig`: `agent_bridge_enabled/chats/workspace`; surgical intercept
+  in `_handle_message`; `set_agent_bridge()`; teardown in `stop()`.
+- `tests/unit/test_agent_bridge.py`: 28 tests, all passing; adapter tests no
+  regression.
+- Deploy: `deploy/hestia-tg-agent.service` (user unit, token via
+  EnvironmentFile, no Conflicts with hestia-serve/model services), installed
+  enabled+started; `config.coder-bot.py` (untracked runtime config; carries a
+  valid InferenceConfig because the CLI builds AppContext for every command).
+- Host: `~/.pi/agent/` provider+settings+small-coder+3 custom extensions
+  (path-fence, git-autocommit, network-gate); TaskView MCP in `~/.pi/agent/mcp.json`.
+
+**Gates:** dev pytest 2398 passed / 1 pre-existing fail (numpy missing in dev
+venv, fails on develop too); runtime pytest 2440 passed / 0 failed; mypy 1
+pre-existing error (same numpy); ruff clean.
+
+**Pending:** Phase 5 ladder rungs a–f via Telegram (needs Dylan).
+
 ## 2026-07-03 — L244: Migrate `job_alert` Subsystem to Private Repo
 
 **Outcome:** Moved the job-alert queue (`JobAlertStore` + `save_job_alert`, `list_pending_alerts`, `mark_alerts_sent`) out of the publishable Hestia core and into the private `hestia-tools` package. The migration uses the L241 `setup(context)` / `register(registry)` seam; the table is created lazily on the first tool call.
