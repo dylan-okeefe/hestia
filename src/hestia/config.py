@@ -185,6 +185,11 @@ class TelegramConfig(_ConfigFromEnv):
     read_timeout_seconds: float = 30.0
     long_poll_timeout_seconds: float = 30.0
     voice_messages: bool = False  # Phase A feature flag
+    vision: bool = False  # L234: master switch for Telegram photo → model vision
+    vision_max_images_per_message: int = 4
+    """Cap on images carried per message (history storage + request)."""
+    vision_max_edge_px: int = 1024
+    """Longest-side downscale target for photos before they are sent (pixels)."""
 
     def __repr__(self) -> str:
         fields = []
