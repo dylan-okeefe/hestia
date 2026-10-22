@@ -19,6 +19,7 @@ import time
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
 from hestia.config import TelegramConfig
@@ -42,6 +43,11 @@ _STATUS_EDIT_INTERVAL = 2.0
 
 _YES_REPLIES = {"yes", "y", "yeah", "yep", "sure"}
 _NO_REPLIES = {"no", "n", "nope"}
+
+# Read-only reviewer agent for kimi (--agent-file). kimi 2.2.0 rejects
+# --prompt+--plan, so review mode is enforced by the agent file allowlist
+# (Read/Grep/Glob only; re-checked before every tool execution).
+_DEFAULT_REVIEWER_AGENT = "~/.kimi-code/agents/tg-reviewer.md"
 
 _REVIEW_INSTRUCTIONS = (
     "You are reviewing commits just produced by an automated coding agent in the "
@@ -416,7 +422,6 @@ class AgentBridge:
             lambda pre, head: _git(self._workspace, "diff", f"{pre}..{head}", "--")
         )
         self._kimi_runner = kimi_runner or self._run_kimi
-        self._kimi_slug = _slugify(self._workspace)
 
     def should_route(self, platform_user: str) -> bool:
         """True when this chat is allowlisted for the coding agent."""
@@ -556,9 +561,21 @@ class AgentBridge:
         try:
             response = await session.client.prompt(text)
         except PiRpcError as e:
-            logger.warning("prompt rejected for chat %s: %s", session.platform_user, e)
-            await self._end_run(session, failed=True, note=str(e))
-            return
+            if "already processing" not in str(e).lower():
+                logger.warning("prompt rejected for chat %s: %s", session.platform_user, e)
+                await self._end_run(session, failed=True, note=str(e))
+                return
+            # Race: the child was still processing (e.g. trailing retries after
+            # agent_end) but session.running was already False. Re-queue as
+            # steering instead of dropping the user's message (Pi 1.3.0 rejects
+            # plain prompts mid-stream: "Specify streamingBehavior").
+            logger.info("chat %s message arrived mid-run; re-queuing as steer", session.platform_user)
+            try:
+                response = await session.client.prompt(text, steer=True)
+            except PiRpcError as e2:
+                logger.warning("steer rejected for chat %s: %s", session.platform_user, e2)
+                await self._end_run(session, failed=True, note=str(e2))
+                return
         disposition = (response.get("data") or {}).get("disposition")
         if disposition == "handled":
             # An extension command consumed the prompt: no run will start.
@@ -794,18 +811,28 @@ class AgentBridge:
             logger.exception("Kimi execution failed for chat %s", user)
 
     async def _run_kimi(self, prompt: str, plan: bool) -> str | None:
-        """Spawn kimi (2.2.0, on PATH); None on spawn failure or nonzero exit."""
-        command = [
-            "kimi",
-            "-p",
-            prompt,
-            "--output-format",
-            "stream-json",
-            "--session",
-            f"tg-agent-{self._kimi_slug}" + ("-review" if plan else "-exec"),
-        ]
+        """Spawn kimi (2.2.0, on PATH); None on spawn failure or nonzero exit.
+
+        kimi 2.2.0 rejects ``--prompt`` combined with ``--plan``, and ``--session``
+        only resumes EXISTING sessions (no non-interactive create). So the
+        read-only reviewer is enforced differently: a custom agent file with a
+        Read/Grep/Glob allowlist (no Bash/Edit/Write) passed via ``--agent-file``
+        — kimi re-checks the allowlist before every tool execution. Both paths
+        run sessionless; each invocation is self-contained.
+        """
+        command = ["kimi", "-p", prompt, "--output-format", "stream-json"]
         if plan:
-            command.append("--plan")
+            agent_file = Path(
+                os.environ.get("TG_REVIEWER_AGENT_FILE", _DEFAULT_REVIEWER_AGENT)
+            ).expanduser()
+            if not agent_file.exists():
+                logger.warning(
+                    "reviewer agent file %s missing; skipping review (refusing to "
+                    "run a writable reviewer)",
+                    agent_file,
+                )
+                return None
+            command.extend(["--agent-file", str(agent_file)])
         try:
             proc = await asyncio.create_subprocess_exec(
                 *command,
@@ -831,8 +858,3 @@ class AgentBridge:
             )
             return None
         return _extract_kimi_text(stdout)
-
-
-def _slugify(path: str) -> str:
-    slug = "".join(ch if ch.isalnum() or ch in ("-", "_") else "-" for ch in path)
-    return slug.strip("-") or "default"
