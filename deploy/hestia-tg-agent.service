@@ -20,6 +20,9 @@ Environment="PATH=%h/.nvm/versions/node/v24.18.0/bin:%h/.kimi-code/bin:/usr/loca
 # and client IP go to third-party servers. Self-hosted SearXNG on the Proxmox
 # box is the privacy upgrade path when the voice migration lands.
 Environment="TG_AGENT_ALLOW_NETWORK=1"
+# Compact at 70% of the 96K working window instead of small-coder's 80%
+# default — leaves more headroom for the compaction summary + response.
+Environment="SMALL_CODER_COMPACT_AT_PERCENT=70"
 ExecStart=%h/.local/bin/uv run --quiet hestia --config config.coder-bot.py coder-bot
 Restart=on-failure
 RestartSec=5
