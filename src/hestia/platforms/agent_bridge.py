@@ -595,7 +595,9 @@ class AgentBridge:
 
     async def _on_event(self, session: _ChatSession, record: dict[str, Any]) -> None:
         rtype = record.get("type")
-        if rtype == "agent_start":
+        if rtype == "extension_ui_request":
+            await self._on_extension_ui(session, record)
+        elif rtype == "agent_start":
             self._set_status(session, "🤖 working…")
         elif rtype == "message_update":
             event = record.get("assistantMessageEvent")
@@ -644,6 +646,28 @@ class AgentBridge:
         elif rtype == "agent_settled":
             aborted = bool(record.get("aborted"))
             await self._end_run(session, failed=session.run_failed or aborted, aborted=aborted)
+
+    async def _on_extension_ui(self, session: _ChatSession, record: dict[str, Any]) -> None:
+        """Surface Pi extension UI notifications (e.g. small-coder interventions).
+
+        small-coder's turn-cap aborts with ``ctx.ui.notify("harness intervention:
+        turn limit reached …")`` — without this, the bridge showed a bare
+        "⚠️ run aborted" with no reason. Only fire-and-forget ``notify`` records
+        are handled; interactive requests (confirm/custom) are ignored (v1).
+        """
+        if record.get("method") != "notify":
+            return
+        message = record.get("message")
+        if not isinstance(message, str) or not message.strip():
+            return
+        logger.info("pi extension notify for chat %s: %s", session.platform_user, message)
+        text = f"ℹ️ {message.strip()}"
+        if session.running:
+            # Transient: the next progress event overwrites the status headline.
+            self._set_status(session, text)
+        else:
+            with contextlib.suppress(Exception):
+                await self._adapter.send_message(session.platform_user, text)
 
     async def _end_run(
         self,

@@ -939,3 +939,60 @@ class TestRunKimiCommandShape:
 
         assert result is None
         assert self.commands == []  # never spawned
+
+
+class TestExtensionUiNotify:
+    @pytest.mark.asyncio
+    async def test_notify_during_run_updates_status(self, adapter: FakeAdapter) -> None:
+        bridge = make_bridge(adapter)
+        await bridge.handle("42", "go")
+        client = FakeClient.instances[0]
+        await client.emit(
+            {
+                "type": "extension_ui_request",
+                "id": "n1",
+                "method": "notify",
+                "message": "harness intervention: turn limit reached (50 turns). Agent aborted.",
+                "notifyType": "warning",
+            }
+        )
+        await asyncio.sleep(0)
+        session = bridge._sessions.get("42")
+        assert session is not None
+        assert "turn limit reached" in (session.status_text or "")
+        await settle_run(client)
+        await bridge.aclose()
+
+    @pytest.mark.asyncio
+    async def test_notify_outside_run_sends_message(self, adapter: FakeAdapter) -> None:
+        bridge = make_bridge(adapter)
+        await bridge.handle("42", "go")
+        client = FakeClient.instances[0]
+        await settle_run(client)
+        await client.emit(
+            {
+                "type": "extension_ui_request",
+                "id": "n2",
+                "method": "notify",
+                "message": "some idle notice",
+                "notifyType": "info",
+            }
+        )
+        await asyncio.sleep(0)
+        assert any("some idle notice" in text for _, text in adapter.sent)
+        await bridge.aclose()
+
+    @pytest.mark.asyncio
+    async def test_non_notify_methods_ignored(self, adapter: FakeAdapter) -> None:
+        bridge = make_bridge(adapter)
+        await bridge.handle("42", "go")
+        client = FakeClient.instances[0]
+        await client.emit(
+            {"type": "extension_ui_request", "id": "c1", "method": "confirm", "message": "ok?"}
+        )
+        await asyncio.sleep(0)
+        session = bridge._sessions.get("42")
+        assert session is not None
+        assert "ok?" not in (session.status_text or "")
+        await settle_run(client)
+        await bridge.aclose()
