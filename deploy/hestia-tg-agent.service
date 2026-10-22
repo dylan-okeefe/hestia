@@ -15,6 +15,11 @@ Environment="HESTIA_TG_AGENT_CHATS=8550496999,8569861468"
 # pi (nvm) and kimi (~/.kimi-code/bin) are not on the systemd user PATH —
 # the bridge spawns both as subprocesses.
 Environment="PATH=%h/.nvm/versions/node/v24.18.0/bin:%h/.kimi-code/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+# Unblocks small-coder's websearch/webfetch tools (network-gate extension).
+# Note: websearch queries three hardcoded PUBLIC SearXNG instances — queries
+# and client IP go to third-party servers. Self-hosted SearXNG on the Proxmox
+# box is the privacy upgrade path when the voice migration lands.
+Environment="TG_AGENT_ALLOW_NETWORK=1"
 ExecStart=%h/.local/bin/uv run --quiet hestia --config config.coder-bot.py coder-bot
 Restart=on-failure
 RestartSec=5
