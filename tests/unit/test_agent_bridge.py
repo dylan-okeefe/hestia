@@ -834,3 +834,108 @@ class TestAdapterBridgeIntegration:
 
         assert bridge.handled == []
         DEFAULT_RESPONSE_STORE.cancel(request_id)
+
+
+class _RaceThenSteerClient(FakeClient):
+    """Raises Pi's mid-stream rejection once, then accepts as steer."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.raced = False
+
+    async def prompt(self, message: str, *, steer: bool = False) -> dict[str, Any]:
+        if not steer and not self.raced:
+            self.raced = True
+            raise PiRpcError(
+                "Agent is already processing. Specify streamingBehavior "
+                "('steer' or 'followUp') to queue the message."
+            )
+        return await super().prompt(message, steer=steer)
+
+
+class TestMidRunRace:
+    @pytest.mark.asyncio
+    async def test_already_processing_retries_as_steer(self) -> None:
+        adapter = FakeAdapter()
+        bridge = make_bridge(adapter, workspace="/tmp/fake-ws-race")
+        bridge._client_factory = _RaceThenSteerClient  # type: ignore[assignment]
+        await bridge.handle("42", "fix it")
+        client = _RaceThenSteerClient.instances[-1]
+        # The user's message must survive as a steer, not be dropped.
+        assert client.prompts == [("fix it", True)]
+        await settle_run(client)
+        await bridge.aclose()
+
+
+class _FakeKimiProc:
+    def __init__(self, stdout: bytes, rc: int = 0) -> None:
+        self._stdout = stdout
+        self.returncode = rc
+
+    async def communicate(self) -> tuple[bytes, bytes]:
+        return self._stdout, b""
+
+    async def wait(self) -> int:
+        return self.returncode
+
+    def kill(self) -> None:  # pragma: no cover - timeout path unused here
+        pass
+
+
+class TestRunKimiCommandShape:
+    def _make_bridge(self, monkeypatch: Any, tmp_path: Any, agent_file: Any) -> AgentBridge:
+        adapter = FakeAdapter()
+        bridge = make_bridge(adapter, workspace="/tmp/fake-ws-kimi")
+        commands: list[list[str]] = []
+
+        async def fake_exec(*args: Any, **kwargs: Any) -> _FakeKimiProc:
+            commands.append(list(args))
+            return _FakeKimiProc(b'{"type":"text","text":"LGTM"}\n')
+
+        monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+        monkeypatch.setenv("TG_REVIEWER_AGENT_FILE", str(agent_file))
+        self.commands = commands
+        return bridge
+
+    @pytest.mark.asyncio
+    async def test_review_uses_agent_file_not_plan(self, monkeypatch: Any, tmp_path: Any) -> None:
+        agent_file = tmp_path / "reviewer.md"
+        agent_file.write_text("---\ndescription: d\ntools: [Read]\n---\nbody")
+        bridge = self._make_bridge(monkeypatch, tmp_path, agent_file)
+
+        result = await bridge._run_kimi("review this", plan=True)
+
+        assert result == "LGTM"
+        (cmd,) = self.commands
+        assert "--plan" not in cmd
+        assert "--session" not in cmd
+        assert "--agent-file" in cmd
+        assert cmd[cmd.index("--agent-file") + 1] == str(agent_file)
+
+    @pytest.mark.asyncio
+    async def test_exec_has_no_plan_no_session_no_agent_file(
+        self, monkeypatch: Any, tmp_path: Any
+    ) -> None:
+        agent_file = tmp_path / "reviewer.md"
+        agent_file.write_text("---\ndescription: d\ntools: [Read]\n---\nbody")
+        bridge = self._make_bridge(monkeypatch, tmp_path, agent_file)
+
+        result = await bridge._run_kimi("do this", plan=False)
+
+        assert result == "LGTM"
+        (cmd,) = self.commands
+        assert "--plan" not in cmd
+        assert "--session" not in cmd
+        assert "--agent-file" not in cmd
+
+    @pytest.mark.asyncio
+    async def test_missing_agent_file_refuses_review(
+        self, monkeypatch: Any, tmp_path: Any
+    ) -> None:
+        missing = tmp_path / "nope.md"
+        bridge = self._make_bridge(monkeypatch, tmp_path, missing)
+
+        result = await bridge._run_kimi("review this", plan=True)
+
+        assert result is None
+        assert self.commands == []  # never spawned
