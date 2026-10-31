@@ -7,16 +7,73 @@ args and context defaults.
 
 from __future__ import annotations
 
+import functools
+import os
+import re
+import subprocess
+from pathlib import Path
 from typing import Any
 
 from playwright_stealth import Stealth
 
 STEALTH_VIEWPORT = {"width": 1920, "height": 1080}
 
+# Fallback UA when the installed Chromium version cannot be detected.
+# Must look like a real Chrome release; the actual UA used at runtime is
+# derived from the installed browser (see stealth_user_agent()).
 STEALTH_USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
 )
+
+
+def _detect_chromium_version() -> str | None:
+    """Return the version of the installed Playwright Chromium binary."""
+    browsers_path = Path(
+        os.environ.get("PLAYWRIGHT_BROWSERS_PATH", Path.home() / ".cache" / "ms-playwright")
+    )
+    exe_paths = (
+        ("chrome-linux64", "chrome"),
+        ("chrome-linux64", "headless_shell"),
+        ("chrome-linux", "chrome"),
+        ("chrome-linux", "headless_shell"),
+        ("chrome-mac", "Chromium"),
+        ("chrome-win", "chrome.exe"),
+    )
+    for chromium_dir in sorted(browsers_path.glob("chromium-*"), reverse=True):
+        for rel in exe_paths:
+            exe = chromium_dir.joinpath(*rel)
+            if exe.exists():
+                try:
+                    out = subprocess.run(
+                        [str(exe), "--version"],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                        check=False,
+                    ).stdout
+                except (OSError, subprocess.SubprocessError):
+                    return None
+                match = re.search(r"(\d+\.\d+\.\d+\.\d+)", out)
+                return match.group(1) if match else None
+    return None
+
+
+@functools.lru_cache(maxsize=1)
+def stealth_user_agent() -> str:
+    """Stealth UA matching the installed Chromium version.
+
+    A version mismatch between the UA string / client hints and the actual
+    browser build is an easy automation tell for bot detection (e.g.
+    Cloudflare Turnstile), so derive the UA from the real binary.
+    """
+    version = _detect_chromium_version()
+    if version is None:
+        return STEALTH_USER_AGENT
+    return (
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+        f"(KHTML, like Gecko) Chrome/{version} Safari/537.36"
+    )
 
 STEALTH_LAUNCH_ARGS: list[str] = [
     "--disable-blink-features=AutomationControlled",
@@ -26,22 +83,24 @@ STEALTH_LAUNCH_ARGS: list[str] = [
     "--no-sandbox",
 ]
 
-# Pre-configured Stealth instance matching our environment.
-# chrome_runtime is left at its default (False) because enabling it can break
-# some sites; the other evasions cover the common detection vectors.
-_DEFAULT_STEALTH = Stealth(
-    navigator_languages_override=("en-US", "en"),
-    navigator_platform_override="Linux x86_64",
-    navigator_user_agent_override=STEALTH_USER_AGENT,
-    navigator_vendor_override="Google Inc.",
-    webgl_vendor_override="Google Inc. (NVIDIA)",
-    webgl_renderer_override="NVIDIA GeForce GTX 1660/PCIe/SSE2",
-)
+@functools.lru_cache(maxsize=1)
+def _default_stealth() -> Stealth:
+    # Pre-configured Stealth instance matching our environment.
+    # chrome_runtime is left at its default (False) because enabling it can break
+    # some sites; the other evasions cover the common detection vectors.
+    return Stealth(
+        navigator_languages_override=("en-US", "en"),
+        navigator_platform_override="Linux x86_64",
+        navigator_user_agent_override=stealth_user_agent(),
+        navigator_vendor_override="Google Inc.",
+        webgl_vendor_override="Google Inc. (NVIDIA)",
+        webgl_renderer_override="NVIDIA GeForce GTX 1660/PCIe/SSE2",
+    )
 
 
 async def apply_stealth_async(context_or_page: Any) -> None:
     """Apply all stealth evasions to a Playwright BrowserContext or Page."""
-    await _DEFAULT_STEALTH.apply_stealth_async(context_or_page)
+    await _default_stealth().apply_stealth_async(context_or_page)
 
 
 def stealth_context_kwargs(storage_state: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -55,7 +114,7 @@ def stealth_context_kwargs(storage_state: dict[str, Any] | None = None) -> dict[
     """
     kwargs: dict[str, Any] = {
         "viewport": STEALTH_VIEWPORT,
-        "user_agent": STEALTH_USER_AGENT,
+        "user_agent": stealth_user_agent(),
         "locale": "en-US",
         "timezone_id": "America/New_York",
     }
