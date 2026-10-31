@@ -217,7 +217,7 @@ class TelegramAdapter(Platform):
                 continue
             raise ValueError(
                 f"Invalid allowed_users entry {entry!r}: must be a numeric "
-                "Telegram user ID or a valid username."
+                "Telegram user ID, group chat ID, or a valid username."
             )
 
     @property
