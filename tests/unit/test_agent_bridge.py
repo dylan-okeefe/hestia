@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -110,6 +111,7 @@ def make_bridge(
     head_resolver: Any = None,
     diff_resolver: Any = None,
     kimi_runner: Any = None,
+    command_runner: Any = None,
 ) -> AgentBridge:
     config = TelegramConfig(
         bot_token="test:token",
@@ -120,18 +122,25 @@ def make_bridge(
     )
     if head_resolver is None:
 
-        async def head_resolver() -> str | None:  # type: ignore[no-redef]
+        async def head_resolver(workspace: Path) -> str | None:  # type: ignore[no-redef]
             return None
 
     if diff_resolver is None:
 
-        async def diff_resolver(pre: str, head: str) -> str | None:  # type: ignore[no-redef]
+        async def diff_resolver(workspace: Path, pre: str, head: str) -> str | None:  # type: ignore[no-redef]
             return None
 
     if kimi_runner is None:
 
         async def kimi_runner(prompt: str, plan: bool) -> str | None:  # type: ignore[no-redef]
             return None
+
+    if command_runner is None:
+        command_calls: list[tuple[str, ...]] = []
+
+        async def command_runner(*args: str, **kwargs: Any) -> tuple[int, str]:  # type: ignore[no-redef]
+            command_calls.append(tuple(args))
+            return 0, ""
 
     return AgentBridge(
         adapter=adapter,
@@ -140,6 +149,7 @@ def make_bridge(
         head_resolver=head_resolver,
         diff_resolver=diff_resolver,
         kimi_runner=kimi_runner,
+        command_runner=command_runner,
     )
 
 
@@ -392,7 +402,7 @@ class TestBridgeRouting:
         assert len(FakeClient.instances) == 1
         client = FakeClient.instances[0]
         cwd, name, env = client.start_args  # type: ignore[misc]
-        assert cwd.endswith("hestia-tg-agent")  # expanduser applied
+        assert cwd.endswith("hestia-tg-agent/42")  # expanduser + per-chat subdir applied
         assert "tg-42" in name
         assert env == {"PI_SESSION_ID": "42"}
         assert client.prompts == [("build the thing", False)]
@@ -581,10 +591,10 @@ class TestReviewerLoop:
     ) -> tuple[Any, Any, list[tuple[str, bool]]]:
         head_calls = iter(heads)
 
-        async def head_resolver() -> str | None:
+        async def head_resolver(workspace: Any) -> str | None:
             return next(head_calls)
 
-        async def diff_resolver(pre: str, head: str) -> str | None:
+        async def diff_resolver(workspace: Any, pre: str, head: str) -> str | None:
             return diff
 
         kimi_calls: list[tuple[str, bool]] = []
@@ -636,7 +646,7 @@ class TestReviewerLoop:
         await bridge.aclose()
 
     def _fixed_head(self, value: str | None) -> Any:
-        async def head_resolver() -> str | None:
+        async def head_resolver(workspace: Any) -> str | None:
             return value
 
         return head_resolver
@@ -703,7 +713,7 @@ class TestReviewerLoop:
 
     @pytest.mark.asyncio
     async def test_two_failed_runs_no_reply_clears_offer(self, adapter: FakeAdapter) -> None:
-        bridge = make_bridge(adapter, head_resolver=lambda: _none())
+        bridge = make_bridge(adapter, head_resolver=lambda workspace: _none())
         for task in ("task one", "task two"):
             await bridge.handle("42", task)
             client = FakeClient.instances[0]
@@ -1005,4 +1015,323 @@ class TestExtensionUiNotify:
         assert session is not None
         assert "ok?" not in (session.status_text or "")
         await settle_run(client)
+        await bridge.aclose()
+
+
+# ---------------------------------------------------------------------------
+# Per-chat workspaces (autonomous repair agent)
+# ---------------------------------------------------------------------------
+
+
+class TestPerChatWorkspaces:
+    @pytest.mark.asyncio
+    async def test_spawn_creates_per_chat_workspace_seeded_with_agents_md(
+        self, adapter: FakeAdapter, tmp_path: Any
+    ) -> None:
+        from hestia.platforms.tg_agent_instructions import AGENT_WORKSPACE_AGENTS_MD
+
+        bridge = make_bridge(adapter, workspace=str(tmp_path))
+        await bridge.handle("42", "hi")
+        await asyncio.sleep(0)
+
+        workspace = tmp_path / "42"
+        assert workspace.is_dir()
+        assert (workspace / "AGENTS.md").read_text() == AGENT_WORKSPACE_AGENTS_MD
+        client = FakeClient.instances[0]
+        cwd, _name, _env = client.start_args  # type: ignore[misc]
+        assert cwd == str(workspace)
+        await bridge.aclose()
+
+    @pytest.mark.asyncio
+    async def test_distinct_chats_get_distinct_workspaces(
+        self, adapter: FakeAdapter, tmp_path: Any
+    ) -> None:
+        bridge = make_bridge(adapter, workspace=str(tmp_path), chats=["42", "43"])
+        await bridge.handle("42", "hi")
+        await asyncio.sleep(0)
+        await bridge.handle("43", "hi")
+        await asyncio.sleep(0)
+        assert (tmp_path / "42").is_dir()
+        assert (tmp_path / "43").is_dir()
+        cwds = {c.start_args[0] for c in FakeClient.instances}  # type: ignore[misc]
+        assert cwds == {str(tmp_path / "42"), str(tmp_path / "43")}
+        await bridge.aclose()
+
+    @pytest.mark.asyncio
+    async def test_flat_workspace_env_restores_shared_root(
+        self, adapter: FakeAdapter, tmp_path: Any, monkeypatch: Any
+    ) -> None:
+        monkeypatch.setenv("TG_AGENT_FLAT_WORKSPACE", "1")
+        bridge = make_bridge(adapter, workspace=str(tmp_path))
+        await bridge.handle("42", "hi")
+        await asyncio.sleep(0)
+        client = FakeClient.instances[0]
+        cwd, _name, _env = client.start_args  # type: ignore[misc]
+        assert cwd == str(tmp_path)
+        await bridge.aclose()
+
+
+# ---------------------------------------------------------------------------
+# Autonomous repair deploy pipeline
+# ---------------------------------------------------------------------------
+
+
+_DEPLOY_REQ = {
+    "repo": str(Path.home() / "Hestia-runtime"),
+    "base_ref": "abc123",
+    "commits": ["def456"],
+    "services": ["hestia-serve"],
+    "health_url": "http://localhost:8765/",
+    "summary": "fixed the thing",
+}
+
+
+def _write_marker(session: Any, **overrides: Any) -> Any:
+    req = dict(_DEPLOY_REQ)
+    req.update(overrides)
+    marker_dir = session.workspace / ".repair"
+    marker_dir.mkdir(parents=True, exist_ok=True)
+    path = marker_dir / "deploy-request.json"
+    path.write_text(json.dumps(req))
+    return path
+
+
+def _fast_health_checks(monkeypatch: Any) -> None:
+    monkeypatch.setattr(
+        "hestia.platforms.agent_bridge._DEPLOY_HEALTH_INTERVAL_SECONDS", 0.01
+    )
+    monkeypatch.setattr(
+        "hestia.platforms.agent_bridge._DEPLOY_HEALTH_TIMEOUT_SECONDS", 0.05
+    )
+
+
+class TestDeployPipeline:
+    async def _setup_bridge(
+        self,
+        adapter: FakeAdapter,
+        tmp_path: Any,
+        command_runner: Any,
+        kimi_runner: Any,
+        monkeypatch: Any,
+    ) -> Any:
+        monkeypatch.setenv("TG_AGENT_AUTO_DEPLOY", "1")
+        _fast_health_checks(monkeypatch)
+        bridge = make_bridge(
+            adapter,
+            workspace=str(tmp_path),
+            command_runner=command_runner,
+            kimi_runner=kimi_runner,
+        )
+        await bridge.handle("42", "fix it")
+        await asyncio.sleep(0)
+        return bridge, bridge._sessions["42"]
+
+    @pytest.mark.asyncio
+    async def test_approved_repair_restarts_and_verifies(
+        self, adapter: FakeAdapter, tmp_path: Any, monkeypatch: Any
+    ) -> None:
+        calls: list[tuple[str, ...]] = []
+
+        async def runner(*args: str, **kwargs: Any) -> tuple[int, str]:
+            calls.append(tuple(args))
+            if "status" in args:
+                return 0, ""
+            if "diff" in args:
+                return 0, "diff --git a/x b/x"
+            if "is-active" in args:
+                return 0, "active"
+            return 0, ""
+
+        async def kimi(prompt: str, plan: bool) -> str | None:
+            return "APPROVE — clean fix"
+
+        bridge, session = await self._setup_bridge(adapter, tmp_path, runner, kimi, monkeypatch)
+        path = _write_marker(session)
+        client = FakeClient.instances[0]
+        await settle_run(client, final_text="fixed")
+        await asyncio.sleep(0.2)
+
+        assert ("systemctl", "--user", "restart", "hestia-serve") in calls
+        assert any("curl" in c[0] for c in calls if c)
+        assert any("APPROVED" in t and "verified healthy" in t for _, t in adapter.sent)
+        assert not path.exists()
+        await bridge.aclose()
+
+    @pytest.mark.asyncio
+    async def test_request_changes_blocks_deploy(
+        self, adapter: FakeAdapter, tmp_path: Any, monkeypatch: Any
+    ) -> None:
+        calls: list[tuple[str, ...]] = []
+
+        async def runner(*args: str, **kwargs: Any) -> tuple[int, str]:
+            calls.append(tuple(args))
+            if "status" in args:
+                return 0, ""
+            if "diff" in args:
+                return 0, "diff --git a/x b/x"
+            return 0, ""
+
+        async def kimi(prompt: str, plan: bool) -> str | None:
+            return "REQUEST_CHANGES — missing test"
+
+        bridge, session = await self._setup_bridge(adapter, tmp_path, runner, kimi, monkeypatch)
+        _write_marker(session)
+        client = FakeClient.instances[0]
+        await settle_run(client, final_text="fixed")
+        await asyncio.sleep(0.2)
+
+        assert not any("systemctl" in c for c in calls)
+        assert any("requested changes" in t for _, t in adapter.sent)
+        await bridge.aclose()
+
+    @pytest.mark.asyncio
+    async def test_deploy_disabled_without_env_flag(
+        self, adapter: FakeAdapter, tmp_path: Any, monkeypatch: Any
+    ) -> None:
+        monkeypatch.delenv("TG_AGENT_AUTO_DEPLOY", raising=False)
+        _fast_health_checks(monkeypatch)
+        calls: list[tuple[str, ...]] = []
+
+        async def runner(*args: str, **kwargs: Any) -> tuple[int, str]:
+            calls.append(tuple(args))
+            return 0, ""
+
+        async def kimi(prompt: str, plan: bool) -> str | None:
+            return "APPROVE"
+
+        bridge = make_bridge(
+            adapter,
+            workspace=str(tmp_path),
+            command_runner=runner,
+            kimi_runner=kimi,
+        )
+        await bridge.handle("42", "fix it")
+        await asyncio.sleep(0)
+        session = bridge._sessions["42"]
+        _write_marker(session)
+        client = FakeClient.instances[0]
+        await settle_run(client, final_text="fixed")
+        await asyncio.sleep(0.2)
+
+        assert not any("systemctl" in c for c in calls)
+        assert any("auto-deploy is disabled" in t for _, t in adapter.sent)
+        await bridge.aclose()
+
+    @pytest.mark.asyncio
+    async def test_dirty_tree_blocks_deploy(
+        self, adapter: FakeAdapter, tmp_path: Any, monkeypatch: Any
+    ) -> None:
+        calls: list[tuple[str, ...]] = []
+
+        async def runner(*args: str, **kwargs: Any) -> tuple[int, str]:
+            calls.append(tuple(args))
+            if "status" in args:
+                return 0, " M src/hestia/other.py"
+            return 0, ""
+
+        async def kimi(prompt: str, plan: bool) -> str | None:
+            return "APPROVE"
+
+        bridge, session = await self._setup_bridge(adapter, tmp_path, runner, kimi, monkeypatch)
+        _write_marker(session)
+        client = FakeClient.instances[0]
+        await settle_run(client, final_text="fixed")
+        await asyncio.sleep(0.2)
+
+        assert not any("systemctl" in c for c in calls)
+        assert any("uncommitted changes" in t for _, t in adapter.sent)
+        await bridge.aclose()
+
+    @pytest.mark.asyncio
+    async def test_failed_health_triggers_rollback(
+        self, adapter: FakeAdapter, tmp_path: Any, monkeypatch: Any
+    ) -> None:
+        calls: list[tuple[str, ...]] = []
+        state = {"reverted": False}
+
+        async def runner(*args: str, **kwargs: Any) -> tuple[int, str]:
+            calls.append(tuple(args))
+            if "status" in args:
+                return 0, ""
+            if "diff" in args:
+                return 0, "diff --git a/x b/x"
+            if "revert" in args:
+                state["reverted"] = True
+                return 0, ""
+            if "is-active" in args:
+                # Unhealthy until the revert lands, then healthy.
+                return (0, "active") if state["reverted"] else (0, "failed")
+            return 0, ""
+
+        async def kimi(prompt: str, plan: bool) -> str | None:
+            return "APPROVE"
+
+        bridge, session = await self._setup_bridge(adapter, tmp_path, runner, kimi, monkeypatch)
+        _write_marker(session)
+        client = FakeClient.instances[0]
+        await settle_run(client, final_text="fixed")
+        await asyncio.sleep(0.3)
+
+        assert any("revert" in c for c in calls)
+        assert any("rolled the commits back" in t for _, t in adapter.sent)
+        await bridge.aclose()
+
+    @pytest.mark.asyncio
+    async def test_refuses_to_restart_own_service(
+        self, adapter: FakeAdapter, tmp_path: Any, monkeypatch: Any
+    ) -> None:
+        async def runner(*args: str, **kwargs: Any) -> tuple[int, str]:
+            return 0, ""
+
+        async def kimi(prompt: str, plan: bool) -> str | None:
+            return "APPROVE"
+
+        bridge, session = await self._setup_bridge(adapter, tmp_path, runner, kimi, monkeypatch)
+        _write_marker(session, services=["hestia-tg-agent"])
+        client = FakeClient.instances[0]
+        await settle_run(client, final_text="fixed")
+        await asyncio.sleep(0.2)
+
+        assert any("refusing to restart hestia-tg-agent" in t for _, t in adapter.sent)
+        await bridge.aclose()
+
+    @pytest.mark.asyncio
+    async def test_repo_outside_allowlist_rejected(
+        self, adapter: FakeAdapter, tmp_path: Any, monkeypatch: Any
+    ) -> None:
+        async def runner(*args: str, **kwargs: Any) -> tuple[int, str]:
+            return 0, ""
+
+        async def kimi(prompt: str, plan: bool) -> str | None:
+            return "APPROVE"
+
+        bridge, session = await self._setup_bridge(adapter, tmp_path, runner, kimi, monkeypatch)
+        _write_marker(session, repo=str(Path.home() / ".ssh"))
+        client = FakeClient.instances[0]
+        await settle_run(client, final_text="fixed")
+        await asyncio.sleep(0.2)
+
+        assert any("deploy request invalid" in t for _, t in adapter.sent)
+        await bridge.aclose()
+
+    @pytest.mark.asyncio
+    async def test_crashing_command_runner_reports_and_cleans_up(
+        self, adapter: FakeAdapter, tmp_path: Any, monkeypatch: Any
+    ) -> None:
+        async def runner(*args: str, **kwargs: Any) -> tuple[int, str]:
+            if "init" in args:
+                return 0, ""
+            raise RuntimeError("disk on fire")
+
+        async def kimi(prompt: str, plan: bool) -> str | None:
+            return "APPROVE"
+
+        bridge, session = await self._setup_bridge(adapter, tmp_path, runner, kimi, monkeypatch)
+        path = _write_marker(session)
+        client = FakeClient.instances[0]
+        await settle_run(client, final_text="fixed")
+        await asyncio.sleep(0.2)
+
+        assert any("deploy pipeline crashed" in t for _, t in adapter.sent)
+        assert not path.exists()
         await bridge.aclose()

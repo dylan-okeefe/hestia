@@ -15,6 +15,7 @@ import contextlib
 import json
 import logging
 import os
+import re
 import time
 import uuid
 from collections.abc import Awaitable, Callable
@@ -23,6 +24,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
 from hestia.config import TelegramConfig
+from hestia.platforms.tg_agent_instructions import AGENT_WORKSPACE_AGENTS_MD
 
 if TYPE_CHECKING:
     from hestia.platforms.telegram_adapter import TelegramAdapter
@@ -86,9 +88,58 @@ class PiProcess(Protocol):
 
 SpawnFn = Callable[..., Awaitable[PiProcess]]
 EventHandler = Callable[[dict[str, Any]], Awaitable[None]]
-HeadResolver = Callable[[], Awaitable[str | None]]
-DiffResolver = Callable[[str, str], Awaitable[str | None]]
+HeadResolver = Callable[[Path], Awaitable[str | None]]
+DiffResolver = Callable[[Path, str, str], Awaitable[str | None]]
 KimiRunner = Callable[[str, bool], Awaitable[str | None]]
+CommandRunner = Callable[..., Awaitable[tuple[int, str]]]
+
+# Deploy-request marker the agent writes into its own workspace to ask the
+# bridge to review + deploy a repair. See tg_agent_instructions.AGENTS_MD.
+_DEPLOY_REQUEST_REL = Path(".repair") / "deploy-request.json"
+# Auto-deploy is off unless the service environment explicitly enables it.
+_DEPLOY_ENV_FLAG = "TG_AGENT_AUTO_DEPLOY"
+# Escape hatch for tests/legacy: all chats share the configured workspace root.
+_FLAT_WORKSPACE_ENV = "TG_AGENT_FLAT_WORKSPACE"
+_DEPLOY_ALLOWED_REPOS = (
+    os.path.expanduser("~/Hestia-runtime"),
+    os.path.expanduser("~/Hestia"),
+)
+_DEPLOY_HEALTH_TIMEOUT_SECONDS = 60.0
+_DEPLOY_HEALTH_INTERVAL_SECONDS = 3.0
+_APPROVE_RE = re.compile(r"^\W*APPROVE", re.IGNORECASE | re.DOTALL)
+
+_REPAIR_REVIEW_INSTRUCTIONS = (
+    "You are reviewing an autonomous repair to the Hestia codebase.\n"
+    "Repo: {repo!r}\n"
+    "Agent's summary: {summary}\n\n"
+    "The diff below spans exactly the repair commits. Review for correctness, "
+    "security issues (especially credential exposure), and whether the change "
+    "plausibly fixes the summarized problem without obvious regressions. "
+    "Verdict first (APPROVE or REQUEST_CHANGES), then concise bullets.\n\n"
+    "```diff\n{diff}\n```"
+)
+
+
+def _verdict_is_approval(verdict: str) -> bool:
+    """True when the reviewer's verdict starts with APPROVE (markdown-tolerant)."""
+    return bool(_APPROVE_RE.match(verdict.strip()))
+
+
+async def _run_command(*args: str, timeout: float = 60.0) -> tuple[int, str]:
+    """Run a command, merging stderr into stdout. Returns (rc, output)."""
+    proc = await asyncio.create_subprocess_exec(
+        *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+    )
+    try:
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout)
+    except TimeoutError:
+        proc.kill()
+        with contextlib.suppress(Exception):
+            await proc.wait()
+        return 124, "command timed out"
+    return proc.returncode or 0, stdout.decode("utf-8", "replace")
 
 
 async def _default_spawn(cwd: str, name: str, env: dict[str, str]) -> PiProcess:
@@ -342,31 +393,13 @@ def _extract_kimi_text(data: bytes) -> str | None:
     return result or None
 
 
-async def _git(workspace: str, *args: str) -> str | None:
-    """Run ``git -C <workspace> <args>``; None on any failure (not a repo, etc.)."""
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            "git",
-            "-C",
-            workspace,
-            *args,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, _stderr = await asyncio.wait_for(proc.communicate(), timeout=30.0)
-    except (OSError, TimeoutError):
-        return None
-    if proc.returncode != 0:
-        return None
-    return stdout.decode("utf-8", "replace").strip()
-
-
 @dataclass
 class _ChatSession:
     """Per-chat bridge state: one Pi child plus run bookkeeping."""
 
     client: PiRpcClient
     platform_user: str
+    workspace: Path
     running: bool = False
     broken: bool = False
     closing: bool = False
@@ -389,8 +422,9 @@ class _ChatSession:
 class AgentBridge:
     """Routes allowlisted Telegram chats to persistent Pi coding-agent children.
 
-    - First message for a chat spawns ``pi --mode rpc`` (cwd=agent_bridge_workspace,
-      env PI_SESSION_ID=<platform_user>); later messages reuse the same child.
+    - First message for a chat spawns ``pi --mode rpc`` in a per-chat workspace
+      (``<agent_bridge_workspace>/<chat-id>``, git-initialized and seeded with
+      the repair-agent AGENTS.md on first use); later messages reuse the child.
     - A message arriving while a run is active is sent as a steering prompt.
     - Status UX: one status message per run, edited on progress; the final
       assistant answer is delivered as a new message.
@@ -399,6 +433,9 @@ class AgentBridge:
     - §4: after ``agent_settled``, if workspace HEAD advanced, a Kimi reviewer
       spawns once (read-only, fire-and-forget). Two consecutive failed runs in a
       chat offer to hand the task to Kimi for execution.
+    - Repairs: after a successful run, a deploy-request marker in the chat
+      workspace triggers the gated deploy pipeline — Kimi must APPROVE the
+      repo diff before services restart and health is verified.
     """
 
     def __init__(
@@ -410,18 +447,43 @@ class AgentBridge:
         head_resolver: HeadResolver | None = None,
         diff_resolver: DiffResolver | None = None,
         kimi_runner: KimiRunner | None = None,
+        command_runner: CommandRunner | None = None,
     ) -> None:
         self._adapter = adapter
         self._config = config
         self._client_factory = client_factory or (lambda: PiRpcClient())
-        self._workspace = os.path.expanduser(config.agent_bridge_workspace)
+        self._workspace_root = Path(os.path.expanduser(config.agent_bridge_workspace))
         self._sessions: dict[str, _ChatSession] = {}
         self._closed = False
-        self._head_resolver = head_resolver or (lambda: _git(self._workspace, "rev-parse", "HEAD"))
-        self._diff_resolver = diff_resolver or (
-            lambda pre, head: _git(self._workspace, "diff", f"{pre}..{head}", "--")
-        )
+        self._command_runner = command_runner or _run_command
+        self._head_resolver = head_resolver or self._default_head
+        self._diff_resolver = diff_resolver or self._default_diff
         self._kimi_runner = kimi_runner or self._run_kimi
+
+    async def _default_head(self, workspace: Path) -> str | None:
+        rc, out = await self._command_runner("git", "-C", str(workspace), "rev-parse", "HEAD")
+        head = out.strip()
+        return head if rc == 0 and head else None
+
+    async def _default_diff(self, workspace: Path, pre: str, head: str) -> str | None:
+        rc, out = await self._command_runner("git", "-C", str(workspace), "diff", f"{pre}..{head}", "--")
+        return out if rc == 0 else None
+
+    def _workspace_for(self, platform_user: str) -> Path:
+        """Per-chat workspace path (flat layout only when explicitly requested)."""
+        if os.environ.get(_FLAT_WORKSPACE_ENV) == "1":
+            return self._workspace_root
+        safe = re.sub(r"[^A-Za-z0-9_.-]", "_", platform_user)
+        return self._workspace_root / safe
+
+    async def _ensure_workspace(self, workspace: Path) -> None:
+        """Create the chat workspace if needed: git init + seed AGENTS.md once."""
+        workspace.mkdir(parents=True, exist_ok=True)
+        if not (workspace / ".git").exists():
+            await self._command_runner("git", "-C", str(workspace), "init", "-q")
+        agents_md = workspace / "AGENTS.md"
+        if not agents_md.exists():
+            agents_md.write_text(AGENT_WORKSPACE_AGENTS_MD, encoding="utf-8")
 
     def should_route(self, platform_user: str) -> bool:
         """True when this chat is allowlisted for the coding agent."""
@@ -491,20 +553,24 @@ class AgentBridge:
 
     async def _spawn_session(self, platform_user: str) -> _ChatSession:
         client = self._client_factory()
-        session = _ChatSession(client=client, platform_user=platform_user)
+        workspace = self._workspace_for(platform_user)
+        await self._ensure_workspace(workspace)
+        session = _ChatSession(client=client, platform_user=platform_user, workspace=workspace)
 
         async def _handler(record: dict[str, Any], s: _ChatSession = session) -> None:
             await self._on_event(s, record)
 
         client.set_event_handler(_handler)
         await client.start(
-            cwd=self._workspace,
+            cwd=str(workspace),
             name=f"tg-{platform_user}",
             env={"PI_SESSION_ID": platform_user},
         )
         session.exit_task = asyncio.create_task(self._watch_exit(session))
         self._sessions[platform_user] = session
-        logger.info("spawned pi coding agent for chat %s (workspace=%s)", platform_user, self._workspace)
+        logger.info(
+            "spawned pi coding agent for chat %s (workspace=%s)", platform_user, workspace
+        )
         return session
 
     async def _drop_session(self, session: _ChatSession) -> None:
@@ -545,7 +611,7 @@ class AgentBridge:
         session.final_text = None
         session.streamed.clear()
         session.last_stream_edit = 0.0
-        session.pre_head = await self._head_resolver()
+        session.pre_head = await self._head_resolver(session.workspace)
         try:
             session.status_message_id = await self._adapter.send_message(
                 session.platform_user, "🤖 working…"
@@ -725,6 +791,192 @@ class AgentBridge:
 
         # §4 reviewer: fire-and-forget, gated on HEAD advancing during the run.
         self._maybe_review(session)
+        # Autonomous repair: a successful run may have left a deploy request.
+        if not failed and not aborted:
+            self._maybe_deploy(session)
+
+    # ------------------------------------------------------------------
+    # Autonomous repair deploy pipeline
+    # (marker -> dirty-tree gate -> Kimi gate -> restart -> verify -> rollback)
+    # ------------------------------------------------------------------
+
+    def _maybe_deploy(self, session: _ChatSession) -> None:
+        if self._deploy_request_path(session).exists():
+            asyncio.ensure_future(self._deploy_task(session))
+
+    def _deploy_request_path(self, session: _ChatSession) -> Path:
+        return session.workspace / _DEPLOY_REQUEST_REL
+
+    def _validate_deploy_request(self, req: Any) -> str | None:
+        """Return an error string, or None when the request is well-formed."""
+        if not isinstance(req, dict):
+            return "request is not a JSON object"
+        repo = req.get("repo")
+        if isinstance(repo, str):
+            # Accept $HOME/~ forms written by repair agents; compare resolved.
+            repo = os.path.expandvars(os.path.expanduser(repo))
+            req["repo"] = repo
+        if not isinstance(repo, str) or repo not in _DEPLOY_ALLOWED_REPOS:
+            return f"repo must be one of {_DEPLOY_ALLOWED_REPOS}"
+        for key in ("base_ref", "summary"):
+            value = req.get(key)
+            if not isinstance(value, str) or not value.strip():
+                return f"{key} must be a non-empty string"
+        commits = req.get("commits")
+        if not isinstance(commits, list) or not all(isinstance(c, str) and c for c in commits):
+            return "commits must be a list of commit shas"
+        services = req.get("services", [])
+        if not isinstance(services, list) or not all(isinstance(s, str) for s in services):
+            return "services must be a list of unit names"
+        for svc in services:
+            if not re.fullmatch(r"[a-z0-9][a-z0-9.-]*", svc):
+                return f"invalid service name {svc!r}"
+            if svc == "hestia-tg-agent":
+                return "refusing to restart hestia-tg-agent (that is this bot)"
+        health_url = req.get("health_url")
+        if health_url is not None and not isinstance(health_url, str):
+            return "health_url must be a string or omitted"
+        return None
+
+    async def _notify(self, user: str, text: str) -> None:
+        with contextlib.suppress(Exception):
+            await self._adapter.send_message(user, text)
+
+    async def _deploy_task(self, session: _ChatSession) -> None:
+        """Review, deploy, and verify a repair requested by the agent.
+
+        Runs only after a successful run that left a deploy-request marker in
+        the chat workspace. Kimi (read-only reviewer) must APPROVE the repo
+        diff before any service is restarted; a rejected or unavailable
+        review means no deploy. Uncommitted changes in the target repo block
+        deployment — the tree must belong to the committed fix alone.
+        """
+        user = session.platform_user
+        path = self._deploy_request_path(session)
+
+        async def _finish(message: str) -> None:
+            with contextlib.suppress(Exception):
+                path.unlink()
+            if message:
+                await self._notify(user, message)
+
+        try:
+            try:
+                req = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as exc:
+                await _finish(f"⚠️ deploy request unreadable ({exc}); not deploying.")
+                return
+            error = self._validate_deploy_request(req)
+            if error:
+                await _finish(f"⚠️ deploy request invalid: {error}. Not deploying.")
+                return
+            if os.environ.get(_DEPLOY_ENV_FLAG) != "1":
+                await _finish(
+                    f"🔒 Fix committed, but auto-deploy is disabled "
+                    f"(set {_DEPLOY_ENV_FLAG}=1 for hestia-tg-agent); not deploying. "
+                    f"Summary: {req['summary']}"
+                )
+                return
+
+            repo = req["repo"]
+            summary = req["summary"].strip()
+
+            rc, status = await self._command_runner("git", "-C", repo, "status", "--porcelain")
+            if rc != 0:
+                await _finish(f"⚠️ cannot inspect {repo} (git status failed); not deploying.")
+                return
+            if status.strip():
+                await _finish(
+                    f"⚠️ {summary}\nNot deploying: {repo} has uncommitted changes. "
+                    "The tree must contain only the committed repair. Left as-is."
+                )
+                return
+
+            rc, diff = await self._command_runner(
+                "git", "-C", repo, "diff", f"{req['base_ref']}..HEAD", "--"
+            )
+            if rc != 0 or not diff.strip():
+                await _finish(
+                    f"⚠️ could not produce a diff from {req['base_ref']} in {repo}; not deploying."
+                )
+                return
+            if len(diff) > _DIFF_MAX_CHARS:
+                diff = diff[:_DIFF_MAX_CHARS] + "\n… (diff truncated)"
+            review_prompt = _REPAIR_REVIEW_INSTRUCTIONS.format(
+                repo=repo, summary=summary, diff=diff
+            )
+            verdict = await self._kimi_runner(review_prompt, True)
+            if verdict is None:
+                await _finish(
+                    f"⚠️ {summary}\nKimi review unavailable; safeguard says do not deploy "
+                    "unaudited. The fix is committed — restart the service to apply, "
+                    "or ask me to retry the deploy."
+                )
+                return
+            if not _verdict_is_approval(verdict):
+                await _finish(f"📝 {summary}\nKimi requested changes — not deployed.\n\n{verdict}")
+                return
+
+            healthy = await self._restart_and_verify(req["services"], req.get("health_url"))
+            if healthy:
+                await _finish(
+                    f"✅ {summary}\nKimi review: APPROVED. Deployed and verified healthy."
+                )
+                return
+            rolled_back = await self._rollback(req)
+            if rolled_back:
+                await _finish(
+                    f"⚠️ {summary}\nKimi review: APPROVED, but the deploy failed health "
+                    "checks — rolled the commits back and restarted. Still unhealthy; "
+                    "Dylan should take a look."
+                )
+            else:
+                await _finish(
+                    f"⚠️ {summary}\nKimi review: APPROVED, but the deploy failed health "
+                    "checks and the rollback did not complete cleanly. Dylan should look."
+                )
+        except Exception:
+            logger.exception("deploy pipeline failed for chat %s", user)
+            await _finish("⚠️ the deploy pipeline crashed; the fix is committed but not deployed.")
+
+    async def _restart_and_verify(
+        self, services: list[str], health_url: str | None
+    ) -> bool:
+        """Restart services, then poll until all are active (and health URL
+        responds, when given). True = healthy."""
+        for svc in services:
+            rc, out = await self._command_runner("systemctl", "--user", "restart", svc)
+            if rc != 0:
+                logger.warning("systemctl restart %s failed: %s", svc, out.strip()[-300:])
+                return False
+        deadline = time.monotonic() + _DEPLOY_HEALTH_TIMEOUT_SECONDS
+        while True:
+            await asyncio.sleep(_DEPLOY_HEALTH_INTERVAL_SECONDS)
+            ok = True
+            for svc in services:
+                rc, out = await self._command_runner("systemctl", "--user", "is-active", svc)
+                if rc != 0 or out.strip() != "active":
+                    ok = False
+            if ok and health_url:
+                rc, _ = await self._command_runner(
+                    "curl", "-sf", "-o", "/dev/null", "-m", "5", health_url
+                )
+                ok = rc == 0
+            if ok:
+                return True
+            if time.monotonic() >= deadline:
+                return False
+
+    async def _rollback(self, req: dict[str, Any]) -> bool:
+        """git revert the repair commits and restart services. True when the
+        revert landed and every service came back active."""
+        repo: str = req["repo"]
+        rc, _ = await self._command_runner(
+            "git", "-C", repo, "revert", "--no-edit", *req["commits"]
+        )
+        if rc != 0:
+            return False
+        return await self._restart_and_verify(req["services"], req.get("health_url"))
 
     # ------------------------------------------------------------------
     # Status UX
@@ -783,15 +1035,15 @@ class AgentBridge:
         if not pre_head:
             return
         try:
-            head = await self._head_resolver()
+            head = await self._head_resolver(session.workspace)
             if head is None or head == pre_head:
                 return
-            diff = await self._diff_resolver(pre_head, head)
+            diff = await self._diff_resolver(session.workspace, pre_head, head)
             if not diff:
                 return
             if len(diff) > _DIFF_MAX_CHARS:
                 diff = diff[:_DIFF_MAX_CHARS] + "\n… (diff truncated)"
-            prompt = _REVIEW_INSTRUCTIONS.format(workspace=self._workspace, diff=diff)
+            prompt = _REVIEW_INSTRUCTIONS.format(workspace=str(session.workspace), diff=diff)
             verdict = await self._kimi_runner(prompt, True)
             if verdict:
                 with contextlib.suppress(Exception):
@@ -821,7 +1073,7 @@ class AgentBridge:
     async def _kimi_exec(self, session: _ChatSession, task: str) -> None:
         user = session.platform_user
         try:
-            prompt = _EXEC_INSTRUCTIONS.format(workspace=self._workspace, task=task)
+            prompt = _EXEC_INSTRUCTIONS.format(workspace=str(session.workspace), task=task)
             result = await self._kimi_runner(prompt, False)
             if result:
                 with contextlib.suppress(Exception):
