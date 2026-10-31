@@ -20,11 +20,15 @@ from telegram import Chat, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import RetryAfter, TelegramError
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
+from hestia.commands.intro import (
+    get_intro_store,
+    render_continue,
+    render_end,
+    render_intro_start,
+)
 from hestia.commands.meta import get_default_registry, render_commands_reference
 from hestia.commands.tour import (
     get_tour_store,
-    render_tour_continue,
-    render_tour_end,
     render_tour_start,
 )
 from hestia.config import TelegramConfig
@@ -280,6 +284,7 @@ class TelegramAdapter(Platform):
         self._app.add_handler(CommandHandler("commands", self._handle_commands))
         self._app.add_handler(CommandHandler("help", self._handle_help))
         self._app.add_handler(CommandHandler("tour", self._handle_tour))
+        self._app.add_handler(CommandHandler("intro", self._handle_intro))
         self._app.add_handler(CommandHandler("continue", self._handle_continue))
         self._app.add_handler(CommandHandler("endtour", self._handle_endtour))
         self._app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message))
@@ -877,8 +882,8 @@ class TelegramAdapter(Platform):
         )
         await update.effective_message.reply_text(text)
 
-    async def _handle_continue(self, update: Update, context: Any) -> None:
-        """Handle /continue: advance the narrated tour by one step."""
+    async def _handle_intro(self, update: Update, context: Any) -> None:
+        """Handle /intro: start the detailed intro; allowed in group chats."""
         if update.effective_user is None or update.effective_message is None:
             return
 
@@ -898,8 +903,36 @@ class TelegramAdapter(Platform):
             platform_user = str(chat.id)
         else:
             platform_user = str(user_id)
-        text = render_tour_continue(
-            get_tour_store(), "telegram", platform_user, group_room=in_group
+        text = render_intro_start(get_intro_store(), "telegram", platform_user)
+        await update.effective_message.reply_text(text)
+
+    async def _handle_continue(self, update: Update, context: Any) -> None:
+        """Handle /continue: advance the active narrated routine by one step."""
+        if update.effective_user is None or update.effective_message is None:
+            return
+
+        user_id = update.effective_user.id
+        username = update.effective_user.username or str(user_id)
+        chat = update.effective_chat
+        in_group = chat is not None and chat.type in (Chat.GROUP, Chat.SUPERGROUP)
+
+        if not self._is_allowed(user_id, username):
+            if in_group:
+                return
+            await update.effective_message.reply_text("Not authorized.")
+            return
+
+        if in_group:
+            assert chat is not None
+            platform_user = str(chat.id)
+        else:
+            platform_user = str(user_id)
+        text = render_continue(
+            get_intro_store(),
+            get_tour_store(),
+            "telegram",
+            platform_user,
+            group_room=in_group,
         )
         await update.effective_message.reply_text(text)
 
@@ -924,8 +957,12 @@ class TelegramAdapter(Platform):
             platform_user = str(chat.id)
         else:
             platform_user = str(user_id)
-        text = render_tour_end(
-            get_tour_store(), "telegram", platform_user, group_room=in_group
+        text = render_end(
+            get_intro_store(),
+            get_tour_store(),
+            "telegram",
+            platform_user,
+            group_room=in_group,
         )
         await update.effective_message.reply_text(text)
 

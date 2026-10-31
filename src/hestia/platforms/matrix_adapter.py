@@ -17,11 +17,15 @@ from nio import (
     SyncResponse,
 )
 
+from hestia.commands.intro import (
+    get_intro_store,
+    render_continue,
+    render_end,
+    render_intro_start,
+)
 from hestia.commands.meta import get_default_registry, render_commands_reference
 from hestia.commands.tour import (
     get_tour_store,
-    render_tour_continue,
-    render_tour_end,
     render_tour_start,
 )
 from hestia.config import MatrixConfig
@@ -377,6 +381,7 @@ class MatrixAdapter(Platform):
             "/commands": self._handle_commands,
             "/help": self._handle_commands,
             "/tour": self._handle_tour,
+            "/intro": self._handle_intro,
             "/continue": self._handle_continue,
             "/endtour": self._handle_endtour,
         }
@@ -518,19 +523,33 @@ class MatrixAdapter(Platform):
         )
         await self.send_message(platform_user, text)
 
-    async def _handle_continue(self, room: MatrixRoom, event: RoomMessageText) -> None:
-        """Handle /continue: behaves as outside a tour in a Matrix room."""
+    async def _handle_intro(self, room: MatrixRoom, event: RoomMessageText) -> None:
+        """Handle /intro: start the detailed intro (allowed in Matrix rooms)."""
         platform_user = room.room_id
-        text = render_tour_continue(
-            get_tour_store(), "matrix", platform_user, group_room=True
+        text = render_intro_start(get_intro_store(), "matrix", platform_user)
+        await self.send_message(platform_user, text)
+
+    async def _handle_continue(self, room: MatrixRoom, event: RoomMessageText) -> None:
+        """Handle /continue: advance whichever narrated routine is active."""
+        platform_user = room.room_id
+        text = render_continue(
+            get_intro_store(),
+            get_tour_store(),
+            "matrix",
+            platform_user,
+            group_room=True,
         )
         await self.send_message(platform_user, text)
 
     async def _handle_endtour(self, room: MatrixRoom, event: RoomMessageText) -> None:
-        """Handle /endtour: behaves as outside a tour in a Matrix room."""
+        """Handle /endtour: end whichever narrated routine is active."""
         platform_user = room.room_id
-        text = render_tour_end(
-            get_tour_store(), "matrix", platform_user, group_room=True
+        text = render_end(
+            get_intro_store(),
+            get_tour_store(),
+            "matrix",
+            platform_user,
+            group_room=True,
         )
         await self.send_message(platform_user, text)
 
