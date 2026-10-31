@@ -77,8 +77,12 @@ class Platform(ABC):
         ...
 
     @abstractmethod
-    async def send_message(self, user: str, text: str) -> str:
-        """Send a message to a user. Returns a message ID for editing."""
+    async def send_message(self, user: str, text: str) -> str | None:
+        """Send a message to a user.
+
+        Returns the platform message ID (str) for editing or later deletion,
+        or None where the platform cannot provide one.
+        """
         ...
 
     @abstractmethod

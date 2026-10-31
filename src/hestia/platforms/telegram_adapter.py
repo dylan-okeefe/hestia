@@ -17,7 +17,7 @@ from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from telegram import Chat, InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.error import RetryAfter, TelegramError
+from telegram.error import BadRequest, RetryAfter, TelegramError
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
 from hestia.commands.intro import (
@@ -388,6 +388,22 @@ class TelegramAdapter(Platform):
                 first_msg = msg
         assert first_msg is not None
         return str(first_msg.message_id)
+
+    async def delete_message(self, user: str, msg_id: str) -> None:
+        """Delete a previously sent message.
+
+        BadRequest (message already deleted or not found) is logged at debug
+        and swallowed — deletion is best-effort.
+        """
+        if self._app is None:
+            return
+        try:
+            await self._app.bot.delete_message(
+                chat_id=int(user),
+                message_id=int(msg_id),
+            )
+        except BadRequest as e:
+            logger.debug("Could not delete message %s in chat %s: %s", msg_id, user, e)
 
     def _prune_last_edit_times(self) -> None:
         """Evict entries older than _last_edit_max_age to prevent unbounded growth."""

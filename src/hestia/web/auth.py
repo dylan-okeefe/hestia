@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import ipaddress
+import logging
 import secrets
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -15,6 +17,12 @@ from starlette.responses import JSONResponse, Response
 from hestia.config import WebConfig
 from hestia.persistence.users import UserStore
 from hestia.platforms.base import Platform
+
+logger = logging.getLogger(__name__)
+
+# Login-code messages self-delete this many seconds after being sent so the
+# one-time code does not persist in the chat history.
+LOGIN_CODE_TTL_S = 300
 
 
 def is_loopback_host(host: str) -> bool:
@@ -118,6 +126,7 @@ class AuthManager:
         self._sessions: dict[str, WebSession] = {}
         self._rate_limits: dict[str, RateLimitWindow] = {}
         self._code_request_limits: dict[str, list[datetime]] = {}
+        self._deletion_tasks: set[asyncio.Task[None]] = set()
 
     def generate_code(self) -> str:
         """Generate a cryptographically random numeric code."""
@@ -251,13 +260,52 @@ class AuthManager:
             expires_at=expires_at,
         )
 
-        await adapter.send_message(platform_user, f"Your Hestia dashboard code is: {code}")
+        msg_id = await adapter.send_message(platform_user, f"Your Hestia dashboard code is: {code}")
+        self._schedule_login_code_deletion(adapter, platform_user, msg_id)
 
         return {
             "status": "sent",
             "platform": platform,
             "expires_in": self.config.code_expiry_seconds,
         }
+
+    def _schedule_login_code_deletion(
+        self,
+        adapter: Platform,
+        platform_user: str,
+        msg_id: str | None,
+    ) -> None:
+        """Self-delete the login-code message after LOGIN_CODE_TTL_S seconds.
+
+        Skips silently when the send yielded no message ID or the adapter
+        does not implement deletion (base no-op). Timer failures are logged,
+        never raised into the request path.
+        """
+        delete_fn = getattr(type(adapter), "delete_message", None)
+        if not msg_id or delete_fn is None or delete_fn is Platform.delete_message:
+            return
+        task = asyncio.create_task(self._delete_login_code_later(adapter, platform_user, msg_id))
+        self._deletion_tasks.add(task)
+        task.add_done_callback(self._deletion_tasks.discard)
+
+    async def _delete_login_code_later(
+        self,
+        adapter: Platform,
+        platform_user: str,
+        msg_id: str,
+    ) -> None:
+        """Sleep out the TTL, then delete the code message (best-effort)."""
+        try:
+            await asyncio.sleep(LOGIN_CODE_TTL_S)
+            await adapter.delete_message(platform_user, msg_id)
+            logger.debug("Self-deleted login code message %s for %s", msg_id, platform_user)
+        except Exception:
+            logger.warning(
+                "Failed to self-delete login code message %s for %s",
+                msg_id,
+                platform_user,
+                exc_info=True,
+            )
 
     def is_rate_limited(self, ip: str) -> bool:
         """Check if the IP is currently rate-limited."""

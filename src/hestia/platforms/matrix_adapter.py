@@ -158,8 +158,8 @@ class MatrixAdapter(Platform):
 
         logger.info("Matrix adapter stopped")
 
-    async def send_message(self, user: str, text: str) -> str:
-        """Send a message to a Matrix room. Returns event ID."""
+    async def send_message(self, user: str, text: str) -> str | None:
+        """Send a message to a Matrix room. Returns event ID, or None if unavailable."""
         if self._client is None:
             raise RuntimeError("Matrix adapter not started")
 
@@ -198,7 +198,7 @@ class MatrixAdapter(Platform):
                 )
                 raise PlatformError(f"Failed to send message: {response}")
 
-        return first_event_id or ""
+        return first_event_id
 
     async def edit_message(
         self, user: str, msg_id: str, text: str, **kwargs: Any
@@ -292,7 +292,7 @@ class MatrixAdapter(Platform):
             f"Reply 'yes' or 'no' within {int(self._confirmation_timeout_seconds)}s."
         )
 
-        event_id = await self.send_message(user, text)
+        event_id = await self.send_message(user, text) or ""
 
         req = self._confirmation_store.create(
             tool_name=tool_name,
