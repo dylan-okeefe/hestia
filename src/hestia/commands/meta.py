@@ -7,13 +7,19 @@ from typing import TYPE_CHECKING
 import click
 
 from hestia.commands._shared import _format_token_usage, _format_utc
+from hestia.commands.intro import (
+    get_intro_store,
+    render_continue,
+    render_end,
+    render_intro_start,
+)
 from hestia.commands.registry import (
     Command,
     CommandContext,
     CommandRegistry,
     command_from_handler,
 )
-from hestia.commands.tour import _cmd_continue, _cmd_endtour, _cmd_tour
+from hestia.commands.tour import _cmd_tour, get_tour_store
 from hestia.memory.topics import TopicStore, implicit_topic_name
 
 if TYPE_CHECKING:
@@ -26,6 +32,43 @@ if TYPE_CHECKING:
 async def _cmd_quit(ctx: CommandContext) -> tuple[bool, Session]:
     """Exit the REPL."""
     return True, ctx.session
+
+
+async def _cmd_intro(ctx: CommandContext) -> tuple[bool, Session]:
+    """Start the detailed narrated intro from step 1."""
+    text = render_intro_start(
+        get_intro_store(),
+        ctx.session.platform,
+        ctx.session.platform_user,
+    )
+    click.echo(text)
+    return False, ctx.session
+
+
+async def _cmd_continue(ctx: CommandContext) -> tuple[bool, Session]:
+    """Advance whichever narrated routine is active (intro or tour)."""
+    text = render_continue(
+        get_intro_store(),
+        get_tour_store(),
+        ctx.session.platform,
+        ctx.session.platform_user,
+        group_room=ctx.group_room,
+    )
+    click.echo(text)
+    return False, ctx.session
+
+
+async def _cmd_endtour(ctx: CommandContext) -> tuple[bool, Session]:
+    """End whichever narrated routine is active (intro or tour)."""
+    text = render_end(
+        get_intro_store(),
+        get_tour_store(),
+        ctx.session.platform,
+        ctx.session.platform_user,
+        group_room=ctx.group_room,
+    )
+    click.echo(text)
+    return False, ctx.session
 
 
 async def _cmd_session(ctx: CommandContext) -> tuple[bool, Session]:
@@ -337,6 +380,13 @@ def _build_default_registry() -> CommandRegistry:
         command_from_handler(
             name="/tour",
             handler=_cmd_tour,
+            category="meta",
+        )
+    )
+    reg.register(
+        command_from_handler(
+            name="/intro",
+            handler=_cmd_intro,
             category="meta",
         )
     )

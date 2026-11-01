@@ -295,3 +295,48 @@ async def test_prepare_greeting_strips_first_class_save_memory_too():
     await assembly.prepare(session, ctx, AsyncMock())
 
     assert ctx.tools == []
+
+
+@pytest.mark.asyncio
+async def test_prepare_persists_and_builds_with_images():
+    """L234 §3: image attachments on the user message persist and ride into the build."""
+    images = ["data:image/jpeg;base64,QUJD"]
+
+    mock_builder = MagicMock()
+    mock_builder.build = AsyncMock(
+        return_value=MagicMock(
+            messages=[], tokens_used=0, tokens_budget=1000,
+            truncated_count=0, kept_first_user=False,
+        )
+    )
+    mock_tools = MagicMock()
+    mock_tools.list_names.return_value = []
+    mock_tools.meta_tool_schemas.return_value = []
+    policy = DefaultPolicyEngine(ctx_window=4096)
+    mock_message_store = MagicMock()
+    mock_message_store.get_messages = AsyncMock(return_value=[])
+    mock_message_store.append_message = AsyncMock()
+
+    assembly = TurnAssembly(
+        context_builder=mock_builder,
+        tool_registry=mock_tools,
+        policy=policy,
+        session_store=MagicMock(),
+        message_store=mock_message_store,
+    )
+
+    session = _make_session()
+    ctx = _make_turn_context(session)
+    ctx.user_message.images = images
+    await assembly.prepare(session, ctx, AsyncMock())
+
+    # The transcript entry persisted for this turn carries the images (§3).
+    appended = mock_message_store.append_message.call_args.args[1]
+    assert appended.images is not None
+    import json as _json
+
+    assert _json.loads(appended.images) == images
+
+    # The context builder sees the image-bearing user message as the new message.
+    build_kwargs = mock_builder.build.call_args.kwargs
+    assert build_kwargs["new_user_message"].images == images

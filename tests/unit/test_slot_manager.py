@@ -640,3 +640,145 @@ async def test_concurrent_acquire_no_double_eviction(store, slot_dir):
     assert len(save_calls_for_a) == 1
 
     # No KeyError / exception should have occurred (test passes if we get here)
+
+
+@pytest.mark.asyncio
+async def test_acquire_evicts_session_with_stale_assignment(store, slot_dir):
+    """If the assignment map is stale (DB has no slot_id), eviction succeeds."""
+    inference = FakeInferenceClient()
+    manager = SlotManager(
+        inference=inference,
+        session_store=store,
+        slot_dir=slot_dir,
+        pool_size=1,
+    )
+
+    # Acquire session A normally.
+    session_a = await store.get_or_create_session("cli", "user1")
+    assignment_a = await manager.acquire(session_a)
+    assert assignment_a.slot_id == 0
+
+    # Simulate stale state: release A in the DB but leave it in _assignments.
+    # This can happen after a crash or when DB state is rolled back externally.
+    await store.release_slot(
+        session_a.id,
+        demote_to=SessionTemperature.COLD,
+        saved_path=None,
+    )
+
+    # Acquire session B. The LRU victim (A) has no slot_id in DB, but the
+    # assignment map still claims slot 0. Eviction should clear the stale entry
+    # and give slot 0 to B without raising.
+    session_b = await store.get_or_create_session("cli", "user2")
+    assignment_b = await manager.acquire(session_b)
+    assert assignment_b.slot_id == 0
+
+    # A should still be COLD with no slot.
+    fetched_a = await store.get_session(session_a.id)
+    assert fetched_a.temperature == SessionTemperature.COLD
+    assert fetched_a.slot_id is None
+
+    # B should be HOT.
+    fetched_b = await store.get_session(session_b.id)
+    assert fetched_b.temperature == SessionTemperature.HOT
+    assert fetched_b.slot_id == 0
+
+
+@pytest.mark.asyncio
+async def test_acquire_evicts_session_with_mismatched_slot_id(store, slot_dir):
+    """If the assignment map disagrees with the DB slot_id, eviction uses DB."""
+    inference = FakeInferenceClient()
+    manager = SlotManager(
+        inference=inference,
+        session_store=store,
+        slot_dir=slot_dir,
+        pool_size=2,
+    )
+
+    # Create and acquire two sessions so both slots are occupied.
+    # A is created first, so it is the LRU victim.
+    session_a = await store.get_or_create_session("cli", "user1")
+    session_b = await store.get_or_create_session("cli", "user2")
+    await manager.acquire(session_a)  # slot 0
+    await manager.acquire(session_b)  # slot 1
+
+    # Corrupt the in-memory assignment map: swap A and B.
+    # Keep the DB truthful (A=slot0, B=slot1).
+    manager._assignments = {0: session_b.id, 1: session_a.id}
+
+    # Acquire session C. The LRU victim is A, which the DB says owns slot 0.
+    # Eviction should use slot 0 from the DB and clear the stale slot 1 entry.
+    session_c = await store.get_or_create_session("cli", "user3")
+    assignment_c = await manager.acquire(session_c)
+
+    assert assignment_c.slot_id == 0
+    assert 1 not in manager._assignments
+
+
+@pytest.mark.asyncio
+async def test_openai_compat_acquire_returns_none_no_http(store, slot_dir):
+    """openai-compat mode: acquire() is a no-op returning None (L232 §3)."""
+    inference = FakeInferenceClient()
+    manager = SlotManager(
+        inference=inference,
+        session_store=store,
+        slot_dir=slot_dir,
+        pool_size=4,
+        server_type="openai-compat",
+    )
+
+    session = await store.get_or_create_session("cli", "user1")
+    assignment = await manager.acquire(session)
+
+    assert assignment is None
+    assert inference.calls == []
+
+    # Session state is untouched — no slot assigned, still COLD.
+    fetched = await store.get_session(session.id)
+    assert fetched.slot_id is None
+    assert fetched.temperature == SessionTemperature.COLD
+
+    # save/erase/evict are all no-ops and make no slot HTTP calls.
+    await manager.save(session)
+    await manager.erase(session)
+    await manager.evict_by_id(session.id)
+    assert inference.calls == []
+
+    # No slot snapshot dir is created when slots are disabled.
+    assert not slot_dir.exists()
+
+
+@pytest.mark.asyncio
+async def test_openai_compat_acquire_never_locks(store, slot_dir):
+    """openai-compat acquire() returns immediately without touching the asyncio lock."""
+    inference = FakeInferenceClient()
+    manager = SlotManager(
+        inference=inference,
+        session_store=store,
+        slot_dir=slot_dir,
+        pool_size=1,
+        server_type="openai-compat",
+    )
+    # Even with a locked mutex, a disabled SlotManager must not block.
+    manager._lock = _LockedForever()
+    session = await store.get_or_create_session("cli", "user1")
+    assignment = await manager.acquire(session)
+    assert assignment is None
+
+
+class _LockedForever:
+    """Stand-in asyncio.Lock that would block forever on acquire."""
+
+    async def acquire(self):
+        import asyncio
+
+        await asyncio.sleep(3600)
+
+    def release(self):
+        raise AssertionError("release must not be called in disabled mode")
+
+    async def __aenter__(self):
+        await self.acquire()
+
+    async def __aexit__(self, *exc):
+        return False

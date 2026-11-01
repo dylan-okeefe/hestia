@@ -322,7 +322,12 @@ def _make_on_message(
     responded = asyncio.Event()
 
     async def on_message(
-        platform_name: str, platform_user: str, text: str, sender: str | None = None, session_title: str | None = None
+        platform_name: str,
+        platform_user: str,
+        text: str,
+        sender: str | None = None,
+        session_title: str | None = None,
+        images: list[str] | None = None,
     ) -> None:
         if gate_phrase and not text.strip().startswith(gate_phrase):
             return

@@ -28,6 +28,7 @@ class MessageDTO:
     reasoning_content: str | None = None
     is_handoff: bool = False
     correction: bool = False
+    images: str | None = None  # JSON list of data URLs (L234 vision)
 
 
 @dataclass

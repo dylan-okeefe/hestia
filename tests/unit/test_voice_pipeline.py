@@ -136,11 +136,66 @@ class TestSynthesizeKokoro:
             pipeline = VoicePipeline(config=voice_config)
             chunks = [chunk async for chunk in pipeline.synthesize("Hello.")]
 
-        mock_kpipeline.assert_called_once_with(lang_code="a")
+        mock_kpipeline.assert_called_once_with(lang_code="a", device="cpu")
         assert len(chunks) == 1
         # float32 [-1, 1] -> int16 PCM via truncation toward zero.
         expected = np.array([0, 16383, -16383, 32767, -32767], dtype=np.int16).tobytes()
         assert chunks[0] == expected
+
+    @pytest.mark.anyio
+    async def test_kokoro_honors_configured_device(self, tmp_path: Any) -> None:
+        voice_config = VoiceConfig(
+            tts_engine="kokoro",
+            tts_voice="am_puck",
+            tts_device="cuda",
+            model_cache_dir=tmp_path / "voice_cache",
+        )
+
+        import numpy as np
+
+        fake_pipeline = MagicMock()
+        fake_pipeline.return_value = [
+            ("", "", np.array([0.0], dtype=np.float32)),
+        ]
+
+        with patch(
+            "hestia.voice.pipeline.KPipeline", return_value=fake_pipeline
+        ) as mock_kpipeline:
+            pipeline = VoicePipeline(config=voice_config)
+            _ = [chunk async for chunk in pipeline.synthesize("Hi.")]
+
+        mock_kpipeline.assert_called_once_with(lang_code="a", device="cuda")
+
+    @pytest.mark.anyio
+    async def test_kokoro_empty_device_uses_engine_default(
+        self, tmp_path: Any
+    ) -> None:
+        """Empty tts_device maps to None so Kokoro picks its own default."""
+        voice_config = VoiceConfig(
+            tts_engine="kokoro",
+            tts_voice="am_puck",
+            tts_device="",
+            model_cache_dir=tmp_path / "voice_cache",
+        )
+
+        import numpy as np
+
+        fake_pipeline = MagicMock()
+        fake_pipeline.return_value = [
+            ("", "", np.array([0.0], dtype=np.float32)),
+        ]
+
+        with patch(
+            "hestia.voice.pipeline.KPipeline", return_value=fake_pipeline
+        ) as mock_kpipeline:
+            pipeline = VoicePipeline(config=voice_config)
+            _ = [chunk async for chunk in pipeline.synthesize("Hi.")]
+
+        mock_kpipeline.assert_called_once_with(lang_code="a", device=None)
+
+    def test_tts_device_defaults_to_cpu(self) -> None:
+        """Default keeps TTS off the GPU shared with the inference server."""
+        assert VoiceConfig().tts_device == "cpu"
 
 
 class TestSingleton:

@@ -17,11 +17,15 @@ from nio import (
     SyncResponse,
 )
 
+from hestia.commands.intro import (
+    get_intro_store,
+    render_continue,
+    render_end,
+    render_intro_start,
+)
 from hestia.commands.meta import get_default_registry, render_commands_reference
 from hestia.commands.tour import (
     get_tour_store,
-    render_tour_continue,
-    render_tour_end,
     render_tour_start,
 )
 from hestia.config import MatrixConfig
@@ -154,8 +158,8 @@ class MatrixAdapter(Platform):
 
         logger.info("Matrix adapter stopped")
 
-    async def send_message(self, user: str, text: str) -> str:
-        """Send a message to a Matrix room. Returns event ID."""
+    async def send_message(self, user: str, text: str) -> str | None:
+        """Send a message to a Matrix room. Returns event ID, or None if unavailable."""
         if self._client is None:
             raise RuntimeError("Matrix adapter not started")
 
@@ -194,7 +198,7 @@ class MatrixAdapter(Platform):
                 )
                 raise PlatformError(f"Failed to send message: {response}")
 
-        return first_event_id or ""
+        return first_event_id
 
     async def edit_message(
         self, user: str, msg_id: str, text: str, **kwargs: Any
@@ -288,7 +292,7 @@ class MatrixAdapter(Platform):
             f"Reply 'yes' or 'no' within {int(self._confirmation_timeout_seconds)}s."
         )
 
-        event_id = await self.send_message(user, text)
+        event_id = await self.send_message(user, text) or ""
 
         req = self._confirmation_store.create(
             tool_name=tool_name,
@@ -377,6 +381,7 @@ class MatrixAdapter(Platform):
             "/commands": self._handle_commands,
             "/help": self._handle_commands,
             "/tour": self._handle_tour,
+            "/intro": self._handle_intro,
             "/continue": self._handle_continue,
             "/endtour": self._handle_endtour,
         }
@@ -433,6 +438,7 @@ class MatrixAdapter(Platform):
             stripped_body,
             event.sender,
             None,
+            None,  # images: Matrix text events carry no attachments (L234)
         )
 
     async def _handle_reset(self, room: MatrixRoom, event: RoomMessageText) -> None:
@@ -517,19 +523,33 @@ class MatrixAdapter(Platform):
         )
         await self.send_message(platform_user, text)
 
-    async def _handle_continue(self, room: MatrixRoom, event: RoomMessageText) -> None:
-        """Handle /continue: behaves as outside a tour in a Matrix room."""
+    async def _handle_intro(self, room: MatrixRoom, event: RoomMessageText) -> None:
+        """Handle /intro: start the detailed intro (allowed in Matrix rooms)."""
         platform_user = room.room_id
-        text = render_tour_continue(
-            get_tour_store(), "matrix", platform_user, group_room=True
+        text = render_intro_start(get_intro_store(), "matrix", platform_user)
+        await self.send_message(platform_user, text)
+
+    async def _handle_continue(self, room: MatrixRoom, event: RoomMessageText) -> None:
+        """Handle /continue: advance whichever narrated routine is active."""
+        platform_user = room.room_id
+        text = render_continue(
+            get_intro_store(),
+            get_tour_store(),
+            "matrix",
+            platform_user,
+            group_room=True,
         )
         await self.send_message(platform_user, text)
 
     async def _handle_endtour(self, room: MatrixRoom, event: RoomMessageText) -> None:
-        """Handle /endtour: behaves as outside a tour in a Matrix room."""
+        """Handle /endtour: end whichever narrated routine is active."""
         platform_user = room.room_id
-        text = render_tour_end(
-            get_tour_store(), "matrix", platform_user, group_room=True
+        text = render_end(
+            get_intro_store(),
+            get_tour_store(),
+            "matrix",
+            platform_user,
+            group_room=True,
         )
         await self.send_message(platform_user, text)
 

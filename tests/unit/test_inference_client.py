@@ -1,5 +1,7 @@
 """Unit tests for InferenceClient."""
 
+import asyncio
+import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -9,6 +11,7 @@ import pytest
 from hestia.core.inference import InferenceClient
 from hestia.core.types import FunctionSchema, Message, StreamDelta, ToolSchema
 from hestia.errors import (
+    InferenceBusyError,
     InferenceConnectionError,
     InferenceServerError,
     InferenceTimeoutError,
@@ -716,3 +719,247 @@ class TestChatMalformedOutput:
             "path": "/home/<user>/docs",
             "pattern": "TODO",
         }
+
+
+def _chat_payload() -> dict[str, Any]:
+    """Minimal valid /v1/chat/completions response body."""
+    return {"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]}
+
+
+class TestServerTypeProfiles:
+    """L232 §2: backend profile gating of llama.cpp-only request fields."""
+
+    def _mocked_client(self, client: InferenceClient, body: dict[str, Any]) -> list[httpx.Request]:
+        """Attach a MockTransport to the client and record requests."""
+        recorded: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            recorded.append(request)
+            return httpx.Response(200, json=body)
+
+        client._client = httpx.AsyncClient(  # type: ignore[method-assign]
+            transport=httpx.MockTransport(handler)
+        )
+        return recorded
+
+    def test_defaults_are_llamacpp(self) -> None:
+        client = InferenceClient("http://localhost:8001", "my-model.gguf")
+        assert client.server_type == "llamacpp"
+        assert client.supports_tokenize is True
+        assert client._semaphore is None
+
+    @pytest.mark.asyncio
+    async def test_llamacpp_body_includes_reasoning_budget_and_slot_id(self) -> None:
+        client = InferenceClient("http://localhost:8001", "my-model.gguf")
+        recorded = self._mocked_client(client, _chat_payload())
+
+        await client.chat(
+            [Message(role="user", content="hi")], slot_id=2, reasoning_budget=512
+        )
+
+        body = json.loads(recorded[0].content)
+        assert body["reasoning_budget"] == 512
+        assert body["slot_id"] == 2
+
+    @pytest.mark.asyncio
+    async def test_openai_compat_body_omits_llamacpp_fields(self) -> None:
+        client = InferenceClient(
+            "http://127.0.0.1:8080", "qwen3.8", server_type="openai-compat"
+        )
+        assert client.supports_tokenize is False
+        recorded = self._mocked_client(client, _chat_payload())
+
+        await client.chat(
+            [Message(role="user", content="hi")], slot_id=2, reasoning_budget=512
+        )
+
+        body = json.loads(recorded[0].content)
+        assert "reasoning_budget" not in body
+        assert "slot_id" not in body
+        assert body["model"] == "qwen3.8"
+
+    @pytest.mark.asyncio
+    async def test_openai_compat_stream_omits_llamacpp_fields(self) -> None:
+        client = InferenceClient(
+            "http://127.0.0.1:8080", "qwen3.8", server_type="openai-compat"
+        )
+        recorded = self._mocked_client(
+            client, {"choices": [{"delta": {"content": "hi"}}]}
+        )
+
+        async for _delta in client.chat_stream(
+            [Message(role="user", content="hi")], slot_id=1, reasoning_budget=256
+        ):
+            pass
+
+        body = json.loads(recorded[0].content)
+        assert body["stream"] is True
+        assert "reasoning_budget" not in body
+        assert "slot_id" not in body
+
+    @pytest.mark.asyncio
+    async def test_health_llamacpp_uses_health_endpoint(self) -> None:
+        client = InferenceClient("http://localhost:8001", "my-model.gguf")
+        recorded = self._mocked_client(client, {"status": "ok"})
+
+        result = await client.health()
+
+        assert recorded[0].url.path == "/health"
+        assert result == {"status": "ok"}
+
+    @pytest.mark.asyncio
+    async def test_health_openai_compat_uses_models_endpoint(self) -> None:
+        client = InferenceClient(
+            "http://127.0.0.1:8080", "qwen3.8", server_type="openai-compat"
+        )
+        recorded = self._mocked_client(client, {"data": [{"id": "qwen3.8"}]})
+
+        result = await client.health()
+
+        assert recorded[0].url.path == "/v1/models"
+        assert result["data"] == [{"id": "qwen3.8"}]
+
+    @pytest.mark.asyncio
+    async def test_health_openai_compat_empty_data_raises(self) -> None:
+        client = InferenceClient(
+            "http://127.0.0.1:8080", "qwen3.8", server_type="openai-compat"
+        )
+        self._mocked_client(client, {"data": []})
+
+        with pytest.raises(InferenceServerError, match="no models"):
+            await client.health()
+
+    @pytest.mark.asyncio
+    async def test_tokenize_openai_compat_raises(self) -> None:
+        client = InferenceClient(
+            "http://127.0.0.1:8080", "qwen3.8", server_type="openai-compat"
+        )
+
+        with pytest.raises(InferenceServerError, match="tokenize unsupported"):
+            await client.tokenize("hello")
+
+    @pytest.mark.asyncio
+    async def test_tokenize_llamacpp_hits_endpoint(self) -> None:
+        client = InferenceClient("http://localhost:8001", "my-model.gguf")
+        recorded = self._mocked_client(client, {"tokens": [1, 2, 3]})
+
+        tokens = await client.tokenize("hello")
+
+        assert tokens == [1, 2, 3]
+        assert recorded[0].url.path == "/tokenize"
+
+
+class TestAdmissionControl:
+    """L232 §2: client-side admission semaphore for single-slot backends."""
+
+    def _gated_client(
+        self,
+        handler: Any,
+        *,
+        queue_timeout: float = 5.0,
+    ) -> InferenceClient:
+        client = InferenceClient(
+            "http://127.0.0.1:8080",
+            "qwen3.8",
+            server_type="openai-compat",
+            max_inflight_requests=1,
+            queue_timeout=queue_timeout,
+        )
+        client._client = httpx.AsyncClient(  # type: ignore[method-assign]
+            transport=httpx.MockTransport(handler)
+        )
+        return client
+
+    @pytest.mark.asyncio
+    async def test_second_request_waits_for_first(self) -> None:
+        gate = asyncio.Event()
+        order: list[str] = []
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            order.append("start")
+            await gate.wait()
+            order.append("end")
+            return httpx.Response(200, json=_chat_payload())
+
+        client = self._gated_client(handler)
+        messages = [Message(role="user", content="hi")]
+
+        first = asyncio.create_task(client.chat(messages))
+        await asyncio.sleep(0.05)
+        second = asyncio.create_task(client.chat(messages))
+        await asyncio.sleep(0.05)
+
+        # First holds the only permit; second must be queued.
+        assert not first.done()
+        assert not second.done()
+        assert order == ["start"]
+
+        gate.set()
+        await asyncio.gather(first, second)
+        assert order == ["start", "end", "start", "end"]
+
+    @pytest.mark.asyncio
+    async def test_queue_timeout_raises_busy_error(self) -> None:
+        gate = asyncio.Event()
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            await gate.wait()
+            return httpx.Response(200, json=_chat_payload())
+
+        client = self._gated_client(handler, queue_timeout=0.05)
+        messages = [Message(role="user", content="hi")]
+
+        first = asyncio.create_task(client.chat(messages))
+        await asyncio.sleep(0.05)
+        with pytest.raises(InferenceBusyError):
+            await client.chat(messages)
+
+        gate.set()
+        await first  # the admitted request still completes
+
+    @pytest.mark.asyncio
+    async def test_semaphore_released_on_http_error(self) -> None:
+        calls = 0
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                return httpx.Response(500, text="boom")
+            return httpx.Response(200, json=_chat_payload())
+
+        client = self._gated_client(handler, queue_timeout=0.5)
+        messages = [Message(role="user", content="hi")]
+
+        with pytest.raises(InferenceServerError):
+            await client.chat(messages)
+        # Permit was released despite the error — a follow-up succeeds.
+        response = await client.chat(messages)
+        assert response.content == "ok"
+
+    @pytest.mark.asyncio
+    async def test_streaming_goes_through_admission(self) -> None:
+        gate = asyncio.Event()
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            await gate.wait()
+            return httpx.Response(
+                200,
+                content='data: {"choices": [{"delta": {"content": "hi"}}]}\n\ndata: [DONE]\n\n',
+                headers={"content-type": "text/event-stream"},
+            )
+
+        client = self._gated_client(handler, queue_timeout=0.05)
+        messages = [Message(role="user", content="hi")]
+
+        async def consume() -> list[StreamDelta]:
+            return [delta async for delta in client.chat_stream(messages)]
+
+        first = asyncio.create_task(consume())
+        await asyncio.sleep(0.05)
+        with pytest.raises(InferenceBusyError):
+            await consume()
+
+        gate.set()
+        deltas = await first
+        assert deltas[0].content == "hi"

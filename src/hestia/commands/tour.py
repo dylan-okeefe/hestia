@@ -130,7 +130,8 @@ def _step_platforms_and_voice() -> str:
 
 def _step_wrap_up() -> str:
     return (
-        "That's the tour. You can restart it any time with /tour, list "
+        "That's the tour. You can restart it any time with /tour, take the "
+        "detailed guided intro with /intro, list "
         "commands with /commands, reset the conversation with /reset, or end "
         "the session with /quit (or /exit)."
     )
@@ -271,30 +272,6 @@ def render_tour_end(
 async def _cmd_tour(ctx: CommandContext) -> tuple[bool, Session]:
     """Start the narrated Hestia tour from step 1."""
     text = render_tour_start(
-        get_tour_store(),
-        ctx.session.platform,
-        ctx.session.platform_user,
-        group_room=ctx.group_room,
-    )
-    click.echo(text)
-    return False, ctx.session
-
-
-async def _cmd_continue(ctx: CommandContext) -> tuple[bool, Session]:
-    """Continue the narrated Hestia tour by one step."""
-    text = render_tour_continue(
-        get_tour_store(),
-        ctx.session.platform,
-        ctx.session.platform_user,
-        group_room=ctx.group_room,
-    )
-    click.echo(text)
-    return False, ctx.session
-
-
-async def _cmd_endtour(ctx: CommandContext) -> tuple[bool, Session]:
-    """End the narrated Hestia tour and clear the cursor."""
-    text = render_tour_end(
         get_tour_store(),
         ctx.session.platform,
         ctx.session.platform_user,

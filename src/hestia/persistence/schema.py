@@ -50,6 +50,7 @@ messages = sa.Table(
     sa.Column("reasoning_content", sa.Text, nullable=True),  # stored but stripped on send
     sa.Column("is_handoff", sa.Boolean, nullable=False, default=False),
     sa.Column("correction", sa.Boolean, nullable=False, default=False),
+    sa.Column("images", sa.Text, nullable=True),  # JSON list of data URLs (L234 vision); capped per message
     sa.Column("created_at", sa.DateTime, nullable=False),
     sa.PrimaryKeyConstraint("session_id", "idx"),
 )
