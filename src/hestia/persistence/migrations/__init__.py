@@ -407,6 +407,28 @@ async def m012_messages_images(conn: AsyncConnection) -> None:
         )
 
 
+async def m013_chat_settings(conn: AsyncConnection) -> None:
+    """L250: add per-chat settings table (thinking display toggle and future
+    per-chat preferences).
+
+    Idempotent: ``CREATE TABLE IF NOT EXISTS`` is supported by both
+    SQLite (>= 3.3.0) and PostgreSQL (>= 9.1). Fresh databases already
+    have the table from ``metadata.create_all``; this covers existing ones.
+    """
+    await conn.execute(
+        sa.text(
+            "CREATE TABLE IF NOT EXISTS chat_settings ("
+            "platform TEXT NOT NULL,"
+            "platform_user TEXT NOT NULL,"
+            "key TEXT NOT NULL,"
+            "value TEXT NOT NULL,"
+            "updated_at DATETIME NOT NULL,"
+            "PRIMARY KEY (platform, platform_user, key)"
+            ")"
+        )
+    )
+
+
 MIGRATIONS: list[Migration] = [
     m001_sessions_active_unique,
     m002_session_handoffs,
@@ -420,6 +442,7 @@ MIGRATIONS: list[Migration] = [
     m010_execution_is_test,
     m011_workflow_allow_backfill,
     m012_messages_images,
+    m013_chat_settings,
 ]
 
 
