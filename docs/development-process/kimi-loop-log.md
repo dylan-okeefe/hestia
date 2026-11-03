@@ -6,6 +6,34 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-11-03 — L248–L250: error UX, stream-state guard, /thinking toggle
+
+**Outcome:** Three cards built after the 2026-11-03 production `KeyError:
+'message_id'` turn failure (depop-channel session) and its fully generic
+user-facing error. L248 makes unknown-error chat messages descriptive
+(exception class + sanitized detail, 200-char cap, path/URL placeholders,
+turn-id ref at the engine path). L249 cherry-picks the stream-state hotfix
+(`7023e801`) onto develop, adds an adapter-level regression test, and adds an
+AST scan that fails CI on `del state[k]` / `state.pop(k` under
+`src/hestia/platforms/` (allowlist escape hatch). L250 adds `/thinking
+[on|off]` — a per-chat, DB-persisted (`chat_settings`, migration m013) toggle
+for the 💭 reasoning display; operator chats (new
+`TelegramConfig.operator_user_id`) default to show, everyone else to hide;
+`/tour` updated.
+
+**Branches (pushed, based on develop, awaiting merge):**
+`feature/l248-descriptive-error-messages` @ `82799639` ·
+`feature/l249-stream-state-guard-scan` @ `3365534b` ·
+`feature/l250-thinking-toggle` @ `267b836e`
+
+**Handoff:** `docs/handoffs/L248-250-error-ux-handoff.md`
+**Cards:** #86 (L248), #87 (L249), #88 (L250) — all In Review with SHAs.
+
+**Gates:** L248 2536 passed; L249 2529 passed; L250 2558 passed (unit+int);
+mypy/ruff clean on all three. Hotfix deployed to runtime via service restart
+before loop work began; full runtime sync pending merge (see handoff
+deployment notes).
+
 ## 2026-10-21 — L234: Telegram vision (photos → Strata Flash-Next)
 
 **Outcome:** Hestia can now see. Telegram photos are downscaled (≤1024px JPEG,
