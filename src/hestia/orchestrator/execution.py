@@ -22,7 +22,13 @@ from hestia.errors import (
 )
 from hestia.orchestrator.mappers import message_domain_to_dto
 from hestia.orchestrator.quality import Correction, DegeneratePattern, classify_turn
-from hestia.orchestrator.types import TransitionCallback, Turn, TurnContext, TurnState
+from hestia.orchestrator.types import (
+    ThinkingDisplayGate,
+    TransitionCallback,
+    Turn,
+    TurnContext,
+    TurnState,
+)
 from hestia.policy.channel import Channel
 from hestia.policy.engine import PolicyEngine, RetryAction
 from hestia.policy.gate import CapabilityGate, CapabilityRequest
@@ -283,6 +289,7 @@ class TurnExecution:
         max_tokens: int = 1024,
         stream: bool = False,
         event_bus: "EventBus | None" = None,
+        reasoning_gate: "ThinkingDisplayGate | None" = None,
     ) -> None:
         self._tools = tool_registry
         self._inference = inference_client
@@ -299,6 +306,7 @@ class TurnExecution:
         self._max_tokens = max_tokens
         self._stream = stream
         self._event_bus = event_bus
+        self._reasoning_gate = reasoning_gate
 
         # Meta-tool dispatch table — adding a new meta-tool is one line.
         self._meta_tools: dict[
@@ -308,6 +316,29 @@ class TurnExecution:
             "describe_tool": self._meta_describe_tool,
             "call_tool": self._meta_call_tool,
         }
+
+    def set_reasoning_gate(self, gate: ThinkingDisplayGate | None) -> None:
+        """Install (or replace) the per-chat reasoning display gate."""
+        self._reasoning_gate = gate
+
+    async def _resolve_show_reasoning(self, ctx: TurnContext) -> bool:
+        """Resolve whether this chat sees the "💭" reasoning display.
+
+        A missing gate means "show" (CLI, Matrix, and tests keep the
+        historical behavior). Gate failures must never fail a turn over a
+        display preference, so they fall back to showing.
+        """
+        if self._reasoning_gate is None:
+            return True
+        try:
+            return await self._reasoning_gate(ctx.session.platform, ctx.session.platform_user)
+        except Exception:  # noqa: BLE001 — display preference must not fail the turn
+            logger.warning(
+                "Reasoning display gate failed for %s/%s; defaulting to show",
+                ctx.session.platform,
+                ctx.session.platform_user,
+            )
+            return True
 
     async def run(
         self,
@@ -322,6 +353,7 @@ class TurnExecution:
             raise RuntimeError("TurnContext not prepared before TurnExecution.run")
 
         content = ""
+        show_reasoning = await self._resolve_show_reasoning(ctx)
         while turn.iterations < self._max_iterations:
             await transition(turn, TurnState.AWAITING_MODEL, "")
             await set_typing(True)
@@ -474,7 +506,8 @@ class TurnExecution:
 
             if chat_response.finish_reason == "tool_calls":
                 await self._handle_tool_calls(
-                    ctx, turn, chat_response, transition, set_typing, assistant_msg
+                    ctx, turn, chat_response, transition, set_typing, assistant_msg,
+                    show_reasoning,
                 )
                 await self._classify_and_maybe_correct(
                     ctx, turn, assistant_msg, history_includes_current=True
@@ -494,7 +527,8 @@ class TurnExecution:
                         len(chat_response.tool_calls),
                     )
                     await self._handle_tool_calls(
-                        ctx, turn, chat_response, transition, set_typing, assistant_msg
+                        ctx, turn, chat_response, transition, set_typing, assistant_msg,
+                        show_reasoning,
                     )
                     await self._classify_and_maybe_correct(
                         ctx, turn, assistant_msg, history_includes_current=True
@@ -534,7 +568,7 @@ class TurnExecution:
                 await transition(turn, TurnState.DONE, "")
                 turn.final_response = content
                 # Surface reasoning to user (does not affect stored message or prompt)
-                if chat_response.reasoning_content:
+                if chat_response.reasoning_content and show_reasoning:
                     reasoning_text = chat_response.reasoning_content[:2000]
                     if len(chat_response.reasoning_content) > 2000:
                         reasoning_text += "\n\n... (reasoning truncated)"
@@ -725,6 +759,7 @@ class TurnExecution:
         transition: TransitionCallback,
         set_typing: TypingCallback,
         assistant_msg: Message,
+        show_reasoning: bool = True,
     ) -> TurnState:
         """Dispatch tool calls, handle delegation, rebuild context, and advance the turn."""
         await transition(turn, TurnState.EXECUTING_TOOLS, "")
@@ -762,7 +797,8 @@ class TurnExecution:
         await set_typing(True)
 
         # Show reasoning before tool status so user can see model's thinking
-        if chat_response.reasoning_content:
+        # (gated per chat: L250 /thinking setting).
+        if chat_response.reasoning_content and show_reasoning:
             try:
                 reasoning_display = f"💭 {chat_response.reasoning_content[:2000]}"
                 if len(chat_response.reasoning_content) > 2000:

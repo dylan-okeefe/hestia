@@ -15,11 +15,13 @@ from hestia.config import HestiaConfig
 from hestia.core.types import Message, ScheduledTask, Session, SessionState
 from hestia.orchestrator.engine import ConfirmCallback
 from hestia.orchestrator.finalization import sanitize_user_error
+from hestia.persistence.chat_settings import ChatSettingsStore
 from hestia.persistence.scheduler import SchedulerStore
 from hestia.persistence.session_store import SessionStore
 from hestia.platforms.base import Platform
 from hestia.platforms.matrix_adapter import MatrixAdapter
 from hestia.platforms.telegram_adapter import TelegramAdapter
+from hestia.platforms.thinking_display import make_thinking_display_gate
 from hestia.policy.channel import Channel
 from hestia.scheduler import Scheduler
 
@@ -430,6 +432,15 @@ async def run_platform(
         )
         adapter.register_reset_callback(_reset_callback)
         adapter.set_compactor(app.compactor)
+        # L250: /thinking per-chat display setting — one shared store backs
+        # both the command handler and the execution-time display gate.
+        chat_settings_store = ChatSettingsStore(app.db)
+        adapter.set_chat_settings_store(chat_settings_store)
+        orchestrator.set_reasoning_display_gate(
+            make_thinking_display_gate(
+                chat_settings_store, config.telegram.operator_user_id
+            )
+        )
     elif isinstance(adapter, MatrixAdapter):
         adapter.set_session_store(app.session_store)
         adapter.set_handoff_service(app.handoff_service)

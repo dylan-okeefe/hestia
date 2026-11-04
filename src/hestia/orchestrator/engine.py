@@ -32,6 +32,7 @@ from hestia.orchestrator.transitions import assert_transition
 from hestia.orchestrator.types import (
     ResponseCallback,
     StreamCallback,
+    ThinkingDisplayGate,
     Turn,
     TurnContext,
     TurnState,
@@ -96,6 +97,7 @@ class Orchestrator:
         rate_limiter: SessionRateLimiter | None = None,
         stream: bool = False,
         event_bus: "EventBus | None" = None,
+        reasoning_gate: ThinkingDisplayGate | None = None,
         checkpoint_manager: CheckpointManager | None = None,
         checkpoint_scope: list[str] | None = None,
         auto_rollback_on_failure: bool = False,
@@ -163,6 +165,7 @@ class Orchestrator:
             max_tokens=max_tokens,
             stream=stream,
             event_bus=event_bus,
+            reasoning_gate=reasoning_gate,
         )
 
         self._finalization = TurnFinalization(
@@ -176,6 +179,14 @@ class Orchestrator:
             checkpoint_manager=checkpoint_manager,
             auto_rollback_on_failure=auto_rollback_on_failure,
         )
+
+    def set_reasoning_display_gate(self, gate: ThinkingDisplayGate | None) -> None:
+        """Install (or replace) the per-chat reasoning display gate (L250).
+
+        Called by platform runner wiring after ``make_orchestrator`` when the
+        platform supports per-chat display settings (currently Telegram).
+        """
+        self._execution.set_reasoning_gate(gate)
 
     async def recover_stale_turns(self) -> int:
         """Mark any turns in non-terminal states as FAILED."""

@@ -81,7 +81,9 @@ def _step_chat_and_session() -> str:
         "Every conversation lives in a session. You can chat naturally, and "
         "Hestia keeps context across turns. Use /session to see the current "
         "session details, /history to review the message history, and /reset "
-        "to archive the current session and start fresh."
+        "to archive the current session and start fresh. If the model's "
+        "reasoning messages (the ones starting with 💭) get noisy, /thinking "
+        "toggles them on or off for the current chat."
     )
 
 

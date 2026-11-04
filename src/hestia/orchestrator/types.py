@@ -74,6 +74,9 @@ class Turn:
 ResponseCallback = Callable[[str], Awaitable[None]]
 StreamCallback = Callable[[str], Awaitable[None]]
 TransitionCallback = Callable[[Turn, TurnState, str], Awaitable[None]]
+# (platform, platform_user) -> whether to show the model's reasoning display.
+# Installed per-platform (currently Telegram only); None means always show.
+ThinkingDisplayGate = Callable[[str, str], Awaitable[bool]]
 
 
 @dataclass

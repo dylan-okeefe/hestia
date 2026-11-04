@@ -35,6 +35,7 @@ config = HestiaConfig(
     telegram=TelegramConfig(
         bot_token="YOUR_BOT_TOKEN_HERE",
         allowed_users=["YOUR_TELEGRAM_USER_ID"],
+        operator_user_id="YOUR_TELEGRAM_USER_ID",
         rate_limit_edits_seconds=1.5,
     ),
     identity=IdentityConfig(

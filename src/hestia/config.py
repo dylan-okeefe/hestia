@@ -195,6 +195,15 @@ class TelegramConfig(_ConfigFromEnv):
     """Cap on images carried per message (history storage + request)."""
     vision_max_edge_px: int = 1024
     """Longest-side downscale target for photos before they are sent (pixels)."""
+    operator_user_id: str = ""
+    """Telegram user ID of the bot's owner/primary user (L250).
+
+    Used to default the per-chat /thinking display setting: the operator's
+    own chats show model reasoning unless toggled off, everyone else's are
+    hidden unless toggled on. Empty means "no operator configured" and every
+    chat defaults to hidden. Set via config file or
+    HESTIA_TELEGRAM_OPERATOR_USER_ID.
+    """
 
     def __repr__(self) -> str:
         fields = []

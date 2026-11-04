@@ -400,3 +400,20 @@ memory_topics = sa.Table(
     sa.Index("idx_memory_topics_memory", "memory_id"),
     sa.Index("idx_memory_topics_topic", "topic_id"),
 )
+
+# Per-chat display preferences (L250), keyed by (platform, platform_user)
+# where platform_user is the chat id the platform adapter dispatches on
+# (a Telegram DM user id or group chat id). Absent rows mean "no explicit
+# override" — callers apply their per-platform default. Values are TEXT so
+# future settings can reuse the table without schema changes; typed
+# accessors live on ChatSettingsStore.
+chat_settings = sa.Table(
+    "chat_settings",
+    metadata,
+    sa.Column("platform", sa.String, nullable=False),
+    sa.Column("platform_user", sa.String, nullable=False),
+    sa.Column("key", sa.String, nullable=False),
+    sa.Column("value", sa.String, nullable=False),
+    sa.Column("updated_at", sa.DateTime, nullable=False),
+    sa.PrimaryKeyConstraint("platform", "platform_user", "key"),
+)

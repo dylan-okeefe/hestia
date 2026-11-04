@@ -42,6 +42,7 @@ from hestia.platforms.allowlist import (
 )
 from hestia.platforms.base import IncomingMessageCallback, Platform
 from hestia.platforms.confirmation import ConfirmationStore, render_args_for_human_review
+from hestia.platforms.thinking_display import resolve_show_thinking
 from hestia.policy.channel import Channel
 from hestia.voice.pipeline import get_voice_pipeline
 
@@ -50,6 +51,7 @@ if TYPE_CHECKING:
     from hestia.orchestrator.compaction import SessionCompactor
     from hestia.orchestrator.engine import Orchestrator
     from hestia.orchestrator.handoff_service import HandoffService
+    from hestia.persistence.chat_settings import ChatSettingsStore
     from hestia.persistence.session_store import SessionStore
     from hestia.platforms.agent_bridge import AgentBridge
 
@@ -206,6 +208,9 @@ class TelegramAdapter(Platform):
         self._compactor: SessionCompactor | None = None
         # L233: optional coding-agent bridge; injected via set_agent_bridge.
         self._agent_bridge: AgentBridge | None = None
+        # L250: per-chat settings store for /thinking; injected via
+        # set_chat_settings_store by the runner wiring.
+        self._chat_settings_store: ChatSettingsStore | None = None
 
         # Validate allowed_users entries (hard-fail at startup)
         for entry in self._config.allowed_users:
@@ -271,6 +276,10 @@ class TelegramAdapter(Platform):
         """
         self._agent_bridge = bridge
 
+    def set_chat_settings_store(self, store: ChatSettingsStore) -> None:
+        """Inject the per-chat settings store backing /thinking (L250)."""
+        self._chat_settings_store = store
+
     async def start(self, on_message: IncomingMessageCallback | None) -> None:
         """Start polling for Telegram messages."""
         self._on_message = on_message
@@ -287,6 +296,7 @@ class TelegramAdapter(Platform):
         self._app.add_handler(CommandHandler("intro", self._handle_intro))
         self._app.add_handler(CommandHandler("continue", self._handle_continue))
         self._app.add_handler(CommandHandler("endtour", self._handle_endtour))
+        self._app.add_handler(CommandHandler("thinking", self._handle_thinking))
         self._app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message))
         self._app.add_handler(MessageHandler(filters.PHOTO & ~filters.COMMAND, self._handle_photo))
         if self._config.voice_messages:
@@ -981,6 +991,59 @@ class TelegramAdapter(Platform):
             group_room=in_group,
         )
         await update.effective_message.reply_text(text)
+
+    async def _handle_thinking(self, update: Update, context: Any) -> None:
+        """Handle /thinking: show/hide the model's reasoning for this chat (L250)."""
+        if update.effective_user is None or update.effective_message is None:
+            return
+
+        user_id = update.effective_user.id
+        username = update.effective_user.username or str(user_id)
+        chat = update.effective_chat
+        in_group = chat is not None and chat.type in (Chat.GROUP, Chat.SUPERGROUP)
+
+        if not self._is_allowed(user_id, username):
+            if in_group:
+                return
+            await update.effective_message.reply_text("Not authorized.")
+            return
+
+        if in_group:
+            assert chat is not None
+            platform_user = str(chat.id)
+        else:
+            platform_user = str(user_id)
+
+        if self._chat_settings_store is None:
+            await update.effective_message.reply_text(
+                "Thinking display is not available right now."
+            )
+            return
+
+        store = self._chat_settings_store
+        current = await resolve_show_thinking(
+            store, "telegram", platform_user, self._config.operator_user_id
+        )
+
+        args = context.args if context and context.args else None
+        arg = args[0].lower() if args else None
+        if arg is None:
+            enabled = not current
+        elif arg == "on":
+            enabled = True
+        elif arg == "off":
+            enabled = False
+        else:
+            await update.effective_message.reply_text(
+                "Usage: /thinking [on|off] — a bare /thinking toggles."
+            )
+            return
+
+        await store.set_show_thinking("telegram", platform_user, enabled)
+        state = "on" if enabled else "off"
+        await update.effective_message.reply_text(
+            f"Thinking display: {state} for this chat."
+        )
 
     async def _handle_message(self, update: Update, context: Any) -> None:
         """Handle incoming text messages."""
