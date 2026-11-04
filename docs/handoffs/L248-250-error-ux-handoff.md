@@ -64,17 +64,31 @@ the old text updated. Gates: 2536 passed, mypy/ruff clean.
   coding agent). 33 new tests. Gates: 2558 passed (unit+integration), mypy/ruff
   clean.
 
-## Deployment notes (for Dylan)
+## Deployment notes (EXECUTED 2026-11-03)
 
-1. Merge the three branches to `develop` (L249 carries the stream-state fix;
-   merge it even if only for `5cbce511`).
-2. Runtime sync: `~/Hestia-runtime` is on `fix/65-tts-device-cpu` with working
-   tree content equal to develop. After merging: `git checkout develop &&
-   git merge --ff-only origin/develop` (or pull), then restart
-   `hestia-serve.service`.
-3. Set `operator_user_id` (or `HESTIA_TELEGRAM_OPERATOR_USER_ID`) in the runtime
-   config so the operator default resolves; with it empty every chat defaults
-   to hidden (conservative but not the intent).
-4. The runtime worktree has an uncommitted 11-line telegram_adapter.py hunk
-   (coder-bot non-routed-chat logging) that predates this work — review or drop
-   it during the sync; it is NOT in develop.
+1. ✅ All branches merged to `develop` (L249 carries the stream-state fix via
+   cherry-pick `5cbce511`); develop pushed to origin (`b5754a1a..c83ec826`).
+   Also merged: `fix/coderbot-nonrouted-chat-log` @ `65c8348d` (card #89 — the
+   previously uncommitted runtime-worktree hunk; reviewed, tested, landed).
+   Post-merge fix: `c83ec826` pins the L249 scan's pre-fix reference to the fix
+   commit's parent (the `develop:` reference self-invalidated once the fix
+   merged). Merged-develop gates: 2573 passed, mypy/ruff clean.
+2. ✅ Runtime synced: worktrees share one git dir, so the runtime now runs a
+   dedicated `runtime` branch tracking `origin/develop` (fast-forwardable;
+   `develop` itself is checked out in `~/Hestia`). Preserved uncommitted WIP
+   (card #65 TTS, card #83 browser-stream) via stash across the move.
+3. ✅ `operator_user_id` set in `config.runtime.py` (env override
+   `HESTIA_TELEGRAM_OPERATOR_USER_ID`, default 8550496999 = operator's Telegram
+   id per DB identities; Timo = 8569861468 defaults to hidden thinking).
+4. ✅ Runtime gates green (2584 passed, 6 skipped — extra WIP tests included);
+   `hestia-serve` + `hestia-tg-agent` restarted, health 200, `chat_settings`
+   table created by migration m013, both bots polling.
+
+## Release state
+
+`docs/development-process/v0.17.0-release-prep.md`: integration merge EXECUTED
+2026-10-31; the release step (PR develop→main, tag v0.17.0) still awaits Dylan.
+Note: develop now contains v0.17.0 content PLUS L248–L250 + #89, so tagging
+v0.17.0 today would include them (or cut the tag at the pre-L248 merge commit
+`78a262da^` to keep v0.17.0 scoped as originally prepped).
+
