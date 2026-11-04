@@ -347,7 +347,8 @@ class TestRunPlatformLifecycle:
             )
 
         assert any(
-            "ERROR:Something went wrong" in msg for _user, msg in adapter.sent_messages
+            "ERROR:Unexpected error: RuntimeError: boom." in msg
+            for _user, msg in adapter.sent_messages
         )
 
     @pytest.mark.asyncio
