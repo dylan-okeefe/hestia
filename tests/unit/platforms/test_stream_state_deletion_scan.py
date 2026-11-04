@@ -111,9 +111,15 @@ def test_platforms_never_delete_state_keys() -> None:
 
 
 def test_scan_flags_pre_fix_runners(tmp_path: Path) -> None:
-    """The pre-fix runners.py (``state.pop("message_id", None)``) must be flagged."""
+    """The pre-fix runners.py (``state.pop("message_id", None)``) must be flagged.
+
+    Pinned to the parent of the fix commit (5cbce511 = cherry-pick of 7023e801)
+    rather than a branch name: ``develop`` no longer contains the pre-fix code
+    now that the fix is merged, and the test must keep failing loudly if the
+    pinned reference is ever garbage-collected away.
+    """
     result = subprocess.run(
-        ["git", "show", "develop:src/hestia/platforms/runners.py"],
+        ["git", "show", "5cbce511^:src/hestia/platforms/runners.py"],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
