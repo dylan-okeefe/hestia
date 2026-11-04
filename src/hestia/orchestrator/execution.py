@@ -447,6 +447,16 @@ class TurnExecution:
                     await transition(turn, TurnState.RETRYING, "")
                     await asyncio.sleep(delay)
 
+            # Both inline retry paths above transition the turn to RETRYING and
+            # retry the model call within this same outer iteration. On success
+            # the loop breaks here with the turn still in RETRYING, so return
+            # through AWAITING_MODEL (the only legal exit from RETRYING besides
+            # FAILED) before falling through to EXECUTING_TOOLS or DONE — the
+            # transition table deliberately has no RETRYING → {EXECUTING_TOOLS,
+            # DONE} edges.
+            if turn.state is TurnState.RETRYING:
+                await transition(turn, TurnState.AWAITING_MODEL, "")
+
             ctx.total_prompt_tokens += getattr(chat_response, "prompt_tokens", 0) or 0
             ctx.total_completion_tokens += getattr(chat_response, "completion_tokens", 0) or 0
             # BUG-079: accumulate server-reported reasoning tokens so trace
