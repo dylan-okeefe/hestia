@@ -8,6 +8,15 @@
 
 ## 2026-11-03 — L248–L250: error UX, stream-state guard, /thinking toggle
 
+**Addendum (same day):** card #90 fixed and deployed — inline retry recovery
+(thinking-budget / transient inference error) left turns stuck in RETRYING,
+and the fallthrough to EXECUTING_TOOLS/DONE hit illegal state-machine edges,
+failing turns ("Cannot transition from retrying to …"). Fix: hop
+RETRYING→AWAITING_MODEL after the inner retry loop exits; two strict-journal
+regression tests. Branch `fix/retrying-state-recovery` @ `f512cdca`, merged to
+develop and live on the runtime. First post-v0.17.0-tag merge (release
+discipline: belongs to the next prep doc, v0.17.1).
+
 **Outcome:** Three cards built after the 2026-11-03 production `KeyError:
 'message_id'` turn failure (depop-channel session) and its fully generic
 user-facing error. L248 makes unknown-error chat messages descriptive
