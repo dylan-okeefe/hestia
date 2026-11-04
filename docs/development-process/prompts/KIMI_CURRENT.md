@@ -7,29 +7,30 @@
 
 ## Status
 
-L248–L250 complete and pushed, all three cards (#86, #87, #88) in **In
-Review** with branch + SHA links:
+L248–L250 + #89 are **merged to develop, deployed to runtime, and released as
+v0.17.0** (tag on develop @ `70e2147e`, pushed; CHANGELOG + release notes
+landed). Cards #86–#89 are In Review awaiting Dylan's Done.
 
-- `feature/l248-descriptive-error-messages` @ `82799639`
-- `feature/l249-stream-state-guard-scan` @ `3365534b` (carries cherry-picked stream-state hotfix `5cbce511`)
-- `feature/l250-thinking-toggle` @ `267b836e`
-
-Handoff: `docs/handoffs/L248-250-error-ux-handoff.md`. Trigger was the
-2026-11-03 production `KeyError: 'message_id'` turn failure + generic error
-message in a Telegram channel. The hotfix itself was live-deployed via service
-restart before loop work began.
+- Merged develop: stream-state fix, descriptive error messages, `/thinking`
+  toggle, coder-bot non-routed-chat logging, plus the prepped v0.17.0 content
+  (L232–L234, TTS device, `/intro`, etc.). Merged-develop gates: 2573 passed.
+- Runtime (`~/Hestia-runtime`) now runs a dedicated `runtime` branch tracking
+  `origin/develop` (shared git dir with `~/Hestia`; develop stays checked out
+  in `~/Hestia`). Uncommitted WIP preserved across the move: card #65 (TTS)
+  and card #83 (browser-stream) — both deliberately uncommitted per the
+  v0.17.0 release prep.
+- `operator_user_id=8550496999` set in `config.runtime.py` (env-overridable);
+  Timo (8569861468) defaults to hidden thinking.
+- Runtime gates green (2584 passed); `hestia-serve` + `hestia-tg-agent`
+  restarted healthy; migration m013 applied.
 
 ## Next
 
-**Dylan's call:** merge the three branches to `develop`, then runtime sync
-(handoff §Deployment notes): `~/Hestia-runtime` is on
-`fix/65-tts-device-cpu` with working-tree content equal to develop; after the
-merges it can fast-forward to develop, then restart `hestia-serve.service`.
-Set `operator_user_id` (or `HESTIA_TELEGRAM_OPERATOR_USER_ID`) in runtime
-config so `/thinking` defaults to show for the operator. Also review/drop the
-pre-existing uncommitted 11-line telegram_adapter.py hunk in the runtime
-worktree (coder-bot non-routed-chat logging; not in develop).
-
-After merge: smoke-test in Telegram — descriptive error format, `/thinking`
-toggle persistence across restart, and a turn that streams narration before
-its first tool call (the L249 regression shape).
+- **Dylan:** open the develop→main PR and merge to finalize v0.17.0 on main
+  (gh isn't authenticated in the agent shell; tag v0.17.0 is already pushed).
+- **Post-release rule:** v0.17.0 is tagged on develop — no feature merges to
+  develop until a new release-prep doc exists (release discipline).
+- Smoke-test live: `/thinking` toggle persistence, descriptive error format,
+  and a turn that streams narration before its first tool call (L249 shape).
+- Outstanding WIP: card #65 (TTS) and card #83 (browser-stream) remain
+  uncommitted in the runtime worktree.
