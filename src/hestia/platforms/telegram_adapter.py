@@ -1032,6 +1032,17 @@ class TelegramAdapter(Platform):
             await self._agent_bridge.handle(platform_user, update.effective_message.text)
             return
 
+        if self._agent_bridge is not None and self._on_message is None:
+            # Coder-bot mode: the sender is allowlisted but the chat is not in
+            # agent_bridge_chats (e.g. a group that has not been onboarded
+            # yet). Log the chat id so onboarding only requires sending one
+            # message in the chat; the operator reads it from the journal.
+            logger.info(
+                "coder bot: message in non-routed chat %s (%r) ignored",
+                platform_user,
+                session_title,
+            )
+
         if self._on_message is not None:
             await self._on_message(
                 self.name,
