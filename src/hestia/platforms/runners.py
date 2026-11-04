@@ -31,6 +31,23 @@ logger = logging.getLogger(__name__)
 current_requester: ContextVar[str | None] = ContextVar("current_requester", default=None)
 
 
+def _reset_stream_segment(state: dict[str, Any]) -> None:
+    """Close the current streamed segment so the next one opens a new message.
+
+    The adapter's stream callback closes over *this exact dict*, so every key it
+    reads has to stay present: deleting ``message_id`` (the previous behaviour
+    here) made the callback raise ``KeyError: 'message_id'`` on the next
+    streamed chunk and failed the whole turn mid-tool-loop. Re-seeding the keys
+    keeps the "fresh message for the next segment" intent without pulling keys
+    out from under the callback.
+    """
+    state["message_id"] = None
+    state["accumulated"] = ""
+    state["last_text"] = ""
+    state["first_chunk_time"] = None
+    state["last_edit"] = 0.0
+
+
 def make_telegram_confirm_callback(
     adapter: TelegramAdapter, current_user_var: ContextVar[str]
 ) -> ConfirmCallback:
@@ -296,9 +313,11 @@ class PlatformRunner:
                             e,
                         )
                     finally:
-                        # Clear the streamed message id so the next turn starts
-                        # fresh even if this edit or send raises.
-                        state.pop("message_id", None)
+                        # Re-seed the segment so the next streamed chunk opens a
+                        # fresh message, even if this edit or send raised. Never
+                        # delete keys: the in-flight stream callback still reads
+                        # them (see _reset_stream_segment).
+                        _reset_stream_segment(state)
                 await self.adapter.send_message(platform_user, response_text)
 
             channel = (

@@ -16,6 +16,7 @@ from telegram.error import TelegramError
 from telegram.ext import Application
 
 from hestia.config import TelegramConfig
+from hestia.platforms.runners import _reset_stream_segment
 from hestia.platforms.telegram_adapter import TelegramAdapter, _split_long_text
 
 
@@ -747,6 +748,49 @@ class TestTelegramAdapterStreaming:
             text="First message is long enough. Added text.",
             parse_mode="HTML",
         )
+
+    @pytest.mark.asyncio
+    async def test_stream_callback_survives_segment_reset_between_segments(
+        self,
+        adapter: TelegramAdapter,
+    ) -> None:
+        """Regression (L249): an interim respond resets the shared stream state.
+
+        Between streamed segments the runner calls ``_reset_stream_segment`` on
+        the adapter's shared state dict. The callback closes over that same
+        dict and reads ``state["message_id"]`` on every chunk, so the previous
+        ``state.pop("message_id", None)`` made the next chunk raise
+        ``KeyError: 'message_id'`` and killed the turn mid-tool-loop. After a
+        reset the next chunk must instead open a fresh message.
+        """
+        mock_app = MagicMock(spec=Application)
+        mock_bot = AsyncMock(spec=Bot)
+        sent_messages = [
+            MagicMock(spec=Message, message_id=42),
+            MagicMock(spec=Message, message_id=43),
+        ]
+        mock_bot.send_message = AsyncMock(side_effect=sent_messages)
+        mock_app.bot = mock_bot
+        adapter._app = mock_app
+
+        callback = adapter._make_stream_callback("12345")
+        state = adapter._stream_states["12345"]
+
+        # First streamed segment opens message 42.
+        await callback("First narration from the model.")
+        assert state["message_id"] == "42"
+        assert mock_bot.send_message.call_count == 1
+
+        # Interim respond between segments: re-seed keys instead of deleting them.
+        _reset_stream_segment(state)
+
+        # Second streamed segment opens a fresh message; the old pop() shape
+        # raised KeyError: 'message_id' right here.
+        await callback("Second narration after the tool call.")
+        assert state["message_id"] == "43"
+        assert mock_bot.send_message.call_count == 2
+        last_call = mock_bot.send_message.call_args
+        assert last_call.kwargs["text"] == "Second narration after the tool call."
 
 
 class TestTelegramAdapterLongMessages:
