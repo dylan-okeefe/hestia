@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -284,6 +285,37 @@ class TestTelegramAdapterAsync:
         assert received_args[3] is None  # sender_platform_user in private chat
         assert received_args[4] is None  # session_title in private chat
         assert received_args[5] is None  # images: text messages carry no attachments
+
+    @pytest.mark.asyncio
+    async def test_handle_message_logs_non_routed_chat_in_coder_bot_mode(
+        self,
+        telegram_config: TelegramConfig,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Coder-bot mode: an allowlisted but non-routed chat is logged, not silently dropped."""
+        telegram_config.allowed_users = ["12345"]
+        adapter = TelegramAdapter(telegram_config)
+
+        bridge = MagicMock()
+        bridge.should_route.return_value = False
+        adapter.set_agent_bridge(bridge)
+        # Coder-bot runs without the normal orchestrator dispatch.
+        assert adapter._on_message is None
+
+        mock_update = MagicMock(spec=Update)
+        mock_user = MagicMock(spec=User)
+        mock_user.id = 12345
+        mock_user.username = "testuser"
+        mock_update.effective_user = mock_user
+        mock_message = MagicMock(spec=Message)
+        mock_message.text = "Hello"
+        mock_update.effective_message = mock_message
+
+        with caplog.at_level(logging.INFO, logger="hestia.platforms.telegram_adapter"):
+            await adapter._handle_message(mock_update, None)
+
+        assert any("non-routed chat 12345" in rec.message for rec in caplog.records)
+        bridge.handle.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_start_initializes_application(
