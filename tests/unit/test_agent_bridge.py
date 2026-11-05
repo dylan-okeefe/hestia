@@ -112,6 +112,10 @@ def make_bridge(
     diff_resolver: Any = None,
     kimi_runner: Any = None,
     command_runner: Any = None,
+    chat_settings_store: Any = None,
+    kimi_workdir: str = "",
+    kimi_bin: str = "kimi",
+    kimi_timeout: float = 1800.0,
 ) -> AgentBridge:
     config = TelegramConfig(
         bot_token="test:token",
@@ -119,6 +123,9 @@ def make_bridge(
         agent_bridge_enabled=enabled,
         agent_bridge_chats=chats if chats is not None else ["42"],
         agent_bridge_workspace=workspace,
+        agent_bridge_kimi_workdir=kimi_workdir,
+        agent_bridge_kimi_bin=kimi_bin,
+        agent_bridge_kimi_timeout_seconds=kimi_timeout,
     )
     if head_resolver is None:
 
@@ -150,6 +157,7 @@ def make_bridge(
         diff_resolver=diff_resolver,
         kimi_runner=kimi_runner,
         command_runner=command_runner,
+        chat_settings_store=chat_settings_store,
     )
 
 
@@ -1335,3 +1343,342 @@ class TestDeployPipeline:
         assert any("deploy pipeline crashed" in t for _, t in adapter.sent)
         assert not path.exists()
         await bridge.aclose()
+
+
+# ---------------------------------------------------------------------------
+# L251 per-chat Kimi CLI backend
+# ---------------------------------------------------------------------------
+
+from hestia.config import HestiaConfig, StorageConfig  # noqa: E402
+from hestia.persistence.chat_settings import ChatSettingsStore  # noqa: E402
+from hestia.persistence.db import Database  # noqa: E402
+from hestia.platforms.agent_bridge import (  # noqa: E402
+    BACKEND_KIMI,
+    BACKEND_PI,
+    _extract_kimi_resume_id,
+)
+from hestia.platforms.agent_bridge_runner import _build_coder_bot  # noqa: E402
+
+_KIMI_SESSION_TOKEN = "session_c51df6d0-1234-5678-90ab-cdef12345678"
+_KIMI_STDOUT = (
+    "kimi version 2.4.1\n"
+    "\n"
+    "• pong\n"
+    "\n"
+    f"To resume this session: kimi -r {_KIMI_SESSION_TOKEN}\n"
+)
+
+
+@pytest.fixture
+async def chat_store(tmp_path: Any) -> Any:
+    db = Database(f"sqlite+aiosqlite:///{tmp_path}/chat-settings.db")
+    await db.connect()
+    await db.create_tables()
+    yield ChatSettingsStore(db)
+    await db.close()
+
+
+class _FakeKimiChatProc:
+    """Stand-in for the asyncio subprocess handle the kimi backend drives."""
+
+    def __init__(self, stdout: bytes = _KIMI_STDOUT.encode(), rc: int = 0) -> None:
+        self._stdout = stdout
+        self.returncode = rc
+        self.killed = False
+
+    async def communicate(self) -> tuple[bytes, bytes]:
+        return self._stdout, b""
+
+    async def wait(self) -> int:
+        return self.returncode
+
+    def kill(self) -> None:
+        self.killed = True
+
+
+class _GatedKimiChatProc(_FakeKimiChatProc):
+    """communicate() blocks until the gate is set (one-in-flight tests)."""
+
+    def __init__(self, gate: asyncio.Event) -> None:
+        super().__init__()
+        self._gate = gate
+
+    async def communicate(self) -> tuple[bytes, bytes]:
+        await self._gate.wait()
+        return await super().communicate()
+
+
+def _patch_kimi_subprocess(monkeypatch: Any, factory: Any) -> list[dict[str, Any]]:
+    """Intercept asyncio.create_subprocess_exec; returns recorded call dicts."""
+    calls: list[dict[str, Any]] = []
+
+    async def fake_exec(*args: Any, **kwargs: Any) -> Any:
+        calls.append({"args": list(args), "kwargs": kwargs})
+        return factory()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+    return calls
+
+
+class TestBackendResolution:
+    @pytest.mark.asyncio
+    async def test_default_pi_when_no_setting(self, adapter: FakeAdapter, chat_store: Any) -> None:
+        bridge = make_bridge(adapter, chat_settings_store=chat_store)
+        assert await bridge._resolve_backend("42") == BACKEND_PI
+        await bridge.handle("42", "hi")
+        await asyncio.sleep(0)
+        # pi path: a Pi child spawned, no kimi subprocess.
+        assert len(FakeClient.instances) == 1
+        await bridge.aclose()
+
+    @pytest.mark.asyncio
+    async def test_stored_kimi_wins_and_routes_to_kimi(
+        self, adapter: FakeAdapter, chat_store: Any, monkeypatch: Any
+    ) -> None:
+        await chat_store.set_agent_backend("telegram", "42", BACKEND_KIMI)
+        bridge = make_bridge(adapter, chat_settings_store=chat_store, kimi_workdir="/tmp/kimi-ws")
+        calls = _patch_kimi_subprocess(monkeypatch, _FakeKimiChatProc)
+        await bridge.handle("42", "hi")
+        await asyncio.sleep(0)
+        assert len(FakeClient.instances) == 0, "kimi chat must not spawn a pi child"
+        assert len(calls) == 1
+        await bridge.aclose()
+
+    @pytest.mark.asyncio
+    async def test_stored_pi_keeps_pi_path(self, adapter: FakeAdapter, chat_store: Any) -> None:
+        await chat_store.set_agent_backend("telegram", "42", BACKEND_PI)
+        bridge = make_bridge(adapter, chat_settings_store=chat_store, kimi_workdir="/tmp/kimi-ws")
+        assert await bridge._resolve_backend("42") == BACKEND_PI
+        await bridge.handle("42", "hi")
+        await asyncio.sleep(0)
+        assert len(FakeClient.instances) == 1
+        await bridge.aclose()
+
+    @pytest.mark.asyncio
+    async def test_missing_store_falls_back_to_pi(self, adapter: FakeAdapter) -> None:
+        bridge = make_bridge(adapter, kimi_workdir="/tmp/kimi-ws")
+        assert await bridge._resolve_backend("42") == BACKEND_PI
+        await bridge.handle("42", "hi")
+        await asyncio.sleep(0)
+        assert len(FakeClient.instances) == 1
+        await bridge.aclose()
+
+    @pytest.mark.asyncio
+    async def test_unknown_stored_backend_falls_back_to_pi(
+        self, adapter: FakeAdapter, chat_store: Any
+    ) -> None:
+        await chat_store.set("telegram", "42", "agent_backend", "bogus")
+        bridge = make_bridge(adapter, chat_settings_store=chat_store)
+        assert await bridge._resolve_backend("42") == BACKEND_PI
+        await bridge.aclose()
+
+    @pytest.mark.asyncio
+    async def test_kimi_without_workdir_replies_unavailable(
+        self, adapter: FakeAdapter, chat_store: Any
+    ) -> None:
+        await chat_store.set_agent_backend("telegram", "42", BACKEND_KIMI)
+        bridge = make_bridge(adapter, chat_settings_store=chat_store, kimi_workdir="")
+        await bridge.handle("42", "hi")
+        await asyncio.sleep(0)
+        assert any("not configured" in text for _, text in adapter.sent)
+        assert len(FakeClient.instances) == 0
+        await bridge.aclose()
+
+
+class TestKimiSessionParsing:
+    def test_resume_line_exact_observed_format(self) -> None:
+        output = (
+            "kimi version 2.4.1\n\n• pong\n\n"
+            "To resume this session: kimi -r session_c51df6d0-1234-5678-90ab-cdef12345678\n"
+        )
+        assert _extract_kimi_resume_id(output) == "session_c51df6d0-1234-5678-90ab-cdef12345678"
+
+    def test_no_resume_line_returns_none(self) -> None:
+        assert _extract_kimi_resume_id("just some text\nno trailer here") is None
+
+
+class TestKimiChatBackend:
+    @pytest.mark.asyncio
+    async def test_first_run_argv_and_session_persisted(
+        self, adapter: FakeAdapter, chat_store: Any, monkeypatch: Any
+    ) -> None:
+        await chat_store.set_agent_backend("telegram", "42", BACKEND_KIMI)
+        bridge = make_bridge(adapter, chat_settings_store=chat_store, kimi_workdir="/tmp/kimi-ws")
+        calls = _patch_kimi_subprocess(monkeypatch, _FakeKimiChatProc)
+        await bridge.handle("42", "hi")
+        await asyncio.sleep(0)
+
+        (call,) = calls
+        assert call["args"] == ["kimi", "-p", "hi"]
+        assert call["kwargs"]["cwd"] == "/tmp/kimi-ws"
+        # Resume token captured and persisted for chat continuity.
+        assert await chat_store.get_kimi_session_id("telegram", "42") == _KIMI_SESSION_TOKEN
+        # Delivered reply has the version banner and resume trailer stripped.
+        assert ("42", "• pong") in adapter.sent
+        assert not any(_KIMI_SESSION_TOKEN in text for _, text in adapter.sent)
+        # Status UX: working indicator edited to done.
+        assert adapter.edits, "expected a status edit"
+        assert any("done" in text for _, _, text in adapter.edits)
+        await bridge.aclose()
+
+    @pytest.mark.asyncio
+    async def test_resume_run_uses_dash_s_with_stored_id(
+        self, adapter: FakeAdapter, chat_store: Any, monkeypatch: Any
+    ) -> None:
+        await chat_store.set_agent_backend("telegram", "42", BACKEND_KIMI)
+        await chat_store.set_kimi_session_id("telegram", "42", _KIMI_SESSION_TOKEN)
+        bridge = make_bridge(adapter, chat_settings_store=chat_store, kimi_workdir="/tmp/kimi-ws")
+        calls = _patch_kimi_subprocess(monkeypatch, _FakeKimiChatProc)
+        await bridge.handle("42", "second turn")
+        await asyncio.sleep(0)
+
+        (call,) = calls
+        assert call["args"] == ["kimi", "-S", _KIMI_SESSION_TOKEN, "-p", "second turn"]
+        await bridge.aclose()
+
+    @pytest.mark.asyncio
+    async def test_custom_bin_and_timeout_are_wired(
+        self, adapter: FakeAdapter, chat_store: Any, monkeypatch: Any
+    ) -> None:
+        await chat_store.set_agent_backend("telegram", "42", BACKEND_KIMI)
+        bridge = make_bridge(
+            adapter,
+            chat_settings_store=chat_store,
+            kimi_workdir="/tmp/kimi-ws",
+            kimi_bin="/opt/kimi",
+            kimi_timeout=5.0,
+        )
+        calls = _patch_kimi_subprocess(monkeypatch, _FakeKimiChatProc)
+        await bridge.handle("42", "hi")
+        await asyncio.sleep(0)
+        (call,) = calls
+        assert call["args"][0] == "/opt/kimi"
+        assert bridge._config.agent_bridge_kimi_timeout_seconds == 5.0
+        await bridge.aclose()
+
+    @pytest.mark.asyncio
+    async def test_second_message_while_running_gets_busy_reply(
+        self, adapter: FakeAdapter, chat_store: Any, monkeypatch: Any
+    ) -> None:
+        await chat_store.set_agent_backend("telegram", "42", BACKEND_KIMI)
+        bridge = make_bridge(adapter, chat_settings_store=chat_store, kimi_workdir="/tmp/kimi-ws")
+        gate = asyncio.Event()
+        calls = _patch_kimi_subprocess(monkeypatch, lambda: _GatedKimiChatProc(gate))
+        run_task = asyncio.create_task(bridge.handle("42", "long task"))
+        await asyncio.sleep(0.1)
+        assert len(calls) == 1
+
+        await bridge.handle("42", "follow up")
+        await asyncio.sleep(0)
+        # No second subprocess; the chat got the one-in-flight notice instead.
+        assert len(calls) == 1
+        assert any("still working on your previous message" in text for _, text in adapter.sent)
+
+        gate.set()
+        await asyncio.wait_for(run_task, timeout=1.0)
+        assert ("42", "• pong") in adapter.sent
+        await bridge.aclose()
+
+    @pytest.mark.asyncio
+    async def test_nonzero_exit_gets_sanitized_reply(
+        self, adapter: FakeAdapter, chat_store: Any, monkeypatch: Any
+    ) -> None:
+        await chat_store.set_agent_backend("telegram", "42", BACKEND_KIMI)
+        bridge = make_bridge(adapter, chat_settings_store=chat_store, kimi_workdir="/tmp/kimi-ws")
+        _patch_kimi_subprocess(
+            monkeypatch, lambda: _FakeKimiChatProc(b"secret path /home/user/.ssh\n", rc=2)
+        )
+        await bridge.handle("42", "hi")
+        await asyncio.sleep(0)
+        reply = next(text for user, text in adapter.sent if user == "42" and "exited" in text)
+        assert "code 2" in reply
+        assert "/home/user" not in reply, "error must be sanitized (no paths)"
+        await bridge.aclose()
+
+    @pytest.mark.asyncio
+    async def test_timeout_gets_sanitized_reply(
+        self, adapter: FakeAdapter, chat_store: Any, monkeypatch: Any
+    ) -> None:
+        await chat_store.set_agent_backend("telegram", "42", BACKEND_KIMI)
+
+        class _SlowProc(_FakeKimiChatProc):
+            async def communicate(self) -> tuple[bytes, bytes]:
+                await asyncio.sleep(5)
+                return b"", b""
+
+        bridge = make_bridge(
+            adapter, chat_settings_store=chat_store, kimi_workdir="/tmp/kimi-ws", kimi_timeout=0.05
+        )
+        _patch_kimi_subprocess(monkeypatch, _SlowProc)
+        await bridge.handle("42", "hi")
+        await asyncio.sleep(0.2)
+        assert any("timed out" in text for _, text in adapter.sent)
+        await bridge.aclose()
+
+    @pytest.mark.asyncio
+    async def test_empty_output_gets_sanitized_reply(
+        self, adapter: FakeAdapter, chat_store: Any, monkeypatch: Any
+    ) -> None:
+        await chat_store.set_agent_backend("telegram", "42", BACKEND_KIMI)
+        bridge = make_bridge(adapter, chat_settings_store=chat_store, kimi_workdir="/tmp/kimi-ws")
+        _patch_kimi_subprocess(monkeypatch, lambda: _FakeKimiChatProc(b"kimi version 2.4.1\n"))
+        await bridge.handle("42", "hi")
+        await asyncio.sleep(0)
+        assert any("without producing any output" in text for _, text in adapter.sent)
+        await bridge.aclose()
+
+    @pytest.mark.asyncio
+    async def test_spawn_failure_gets_sanitized_reply(
+        self, adapter: FakeAdapter, chat_store: Any, monkeypatch: Any
+    ) -> None:
+        await chat_store.set_agent_backend("telegram", "42", BACKEND_KIMI)
+        bridge = make_bridge(adapter, chat_settings_store=chat_store, kimi_workdir="/tmp/kimi-ws")
+
+        async def failing_exec(*args: Any, **kwargs: Any) -> Any:
+            raise OSError("no such binary")
+
+        monkeypatch.setattr(asyncio, "create_subprocess_exec", failing_exec)
+        await bridge.handle("42", "hi")
+        await asyncio.sleep(0)
+        assert any("could not start the Kimi CLI" in text for _, text in adapter.sent)
+        await bridge.aclose()
+
+    @pytest.mark.asyncio
+    async def test_session_survives_bridge_restart_via_store(
+        self, adapter: FakeAdapter, chat_store: Any, monkeypatch: Any
+    ) -> None:
+        """A new bridge over the same store resumes the persisted kimi session."""
+        await chat_store.set_agent_backend("telegram", "42", BACKEND_KIMI)
+        await chat_store.set_kimi_session_id("telegram", "42", _KIMI_SESSION_TOKEN)
+        bridge = make_bridge(adapter, chat_settings_store=chat_store, kimi_workdir="/tmp/kimi-ws")
+        calls = _patch_kimi_subprocess(monkeypatch, _FakeKimiChatProc)
+        await bridge.handle("42", "hi")
+        await asyncio.sleep(0)
+        (call,) = calls
+        assert "-S" in call["args"] and _KIMI_SESSION_TOKEN in call["args"]
+        await bridge.aclose()
+
+
+class TestCoderBotStoreInjection:
+    @pytest.mark.asyncio
+    async def test_build_injects_shared_store_into_adapter_and_bridge(
+        self, tmp_path: Any
+    ) -> None:
+        config = HestiaConfig(
+            storage=StorageConfig(database_url=f"sqlite+aiosqlite:///{tmp_path}/coder-bot.db"),
+            telegram=TelegramConfig(
+                bot_token="test:token",
+                agent_bridge_enabled=True,
+                agent_bridge_chats=["42"],
+            ),
+        )
+        adapter, bridge, db = await _build_coder_bot(config, "test:token")
+        try:
+            assert adapter._chat_settings_store is bridge._chat_settings_store
+            assert bridge._chat_settings_store is not None
+            # The /agent command handler can persist a backend the bridge then reads.
+            await bridge._chat_settings_store.set_agent_backend("telegram", "42", BACKEND_KIMI)
+            assert await bridge._resolve_backend("42") == BACKEND_KIMI
+        finally:
+            await bridge.aclose()
+            await db.close()

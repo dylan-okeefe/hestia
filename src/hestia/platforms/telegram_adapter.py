@@ -297,6 +297,7 @@ class TelegramAdapter(Platform):
         self._app.add_handler(CommandHandler("continue", self._handle_continue))
         self._app.add_handler(CommandHandler("endtour", self._handle_endtour))
         self._app.add_handler(CommandHandler("thinking", self._handle_thinking))
+        self._app.add_handler(CommandHandler("agent", self._handle_agent))
         self._app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message))
         self._app.add_handler(MessageHandler(filters.PHOTO & ~filters.COMMAND, self._handle_photo))
         if self._config.voice_messages:
@@ -1044,6 +1045,67 @@ class TelegramAdapter(Platform):
         await update.effective_message.reply_text(
             f"Thinking display: {state} for this chat."
         )
+
+    async def _handle_agent(self, update: Update, context: Any) -> None:
+        """Handle /agent: select the coding-agent backend for this chat (L251).
+
+        Coder-bot mode only (requires the agent bridge); operator-gated like
+        the L250 settings commands. The choice persists per chat in the chat
+        settings store (``agent_backend`` key; absent = pi).
+        """
+        if update.effective_user is None or update.effective_message is None:
+            return
+
+        user_id = update.effective_user.id
+        chat = update.effective_chat
+        in_group = chat is not None and chat.type in (Chat.GROUP, Chat.SUPERGROUP)
+
+        operator = self._config.operator_user_id
+        if not operator or str(user_id) != operator:
+            if in_group:
+                return
+            await update.effective_message.reply_text("Not authorized.")
+            return
+
+        if in_group:
+            assert chat is not None
+            platform_user = str(chat.id)
+        else:
+            platform_user = str(user_id)
+
+        if self._agent_bridge is None:
+            await update.effective_message.reply_text(
+                "/agent is only available in coder-bot mode (agent bridge is not running here)."
+            )
+            return
+
+        if self._chat_settings_store is None:
+            await update.effective_message.reply_text("Chat settings are not available right now.")
+            return
+
+        store = self._chat_settings_store
+        args = context.args if context and context.args else None
+        arg = args[0].lower() if args else None
+
+        if arg is None:
+            current = await store.get_agent_backend("telegram", platform_user) or "pi"
+            await update.effective_message.reply_text(
+                f"Agent backend for this chat: {current}. Switch with /agent pi or /agent kimi."
+            )
+            return
+        if arg not in ("pi", "kimi"):
+            await update.effective_message.reply_text(
+                "Usage: /agent [pi|kimi] — a bare /agent reports the current backend."
+            )
+            return
+        if arg == "kimi" and not self._config.agent_bridge_kimi_workdir:
+            await update.effective_message.reply_text(
+                "The Kimi backend is not configured (agent_bridge_kimi_workdir is empty); "
+                "staying on pi."
+            )
+            return
+        await store.set_agent_backend("telegram", platform_user, arg)
+        await update.effective_message.reply_text(f"Agent backend for this chat: {arg}.")
 
     async def _handle_message(self, update: Update, context: Any) -> None:
         """Handle incoming text messages."""

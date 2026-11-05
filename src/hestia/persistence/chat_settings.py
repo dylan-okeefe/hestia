@@ -21,6 +21,10 @@ if TYPE_CHECKING:
     from hestia.persistence.db import Database
 
 SHOW_THINKING_KEY = "show_thinking"
+AGENT_BACKEND_KEY = "agent_backend"
+"""Per-chat coding-agent backend override for the Telegram bridge (L251)."""
+KIMI_SESSION_ID_KEY = "kimi_session_id"
+"""Persisted Kimi CLI session id for chat continuity (L251)."""
 
 
 class ChatSettingsStore:
@@ -84,6 +88,22 @@ class ChatSettingsStore:
     ) -> None:
         """Persist the thinking-display override for a chat."""
         await self.set(platform, platform_user, SHOW_THINKING_KEY, "1" if enabled else "0")
+
+    async def get_agent_backend(self, platform: str, platform_user: str) -> str | None:
+        """Return the stored agent-bridge backend override (``pi``/``kimi``), if any."""
+        return await self.get(platform, platform_user, AGENT_BACKEND_KEY)
+
+    async def set_agent_backend(self, platform: str, platform_user: str, backend: str) -> None:
+        """Persist the agent-bridge backend override for a chat."""
+        await self.set(platform, platform_user, AGENT_BACKEND_KEY, backend)
+
+    async def get_kimi_session_id(self, platform: str, platform_user: str) -> str | None:
+        """Return the persisted Kimi CLI session id for a chat, if any."""
+        return await self.get(platform, platform_user, KIMI_SESSION_ID_KEY)
+
+    async def set_kimi_session_id(self, platform: str, platform_user: str, session_id: str) -> None:
+        """Persist the Kimi CLI session id so later turns resume the same session."""
+        await self.set(platform, platform_user, KIMI_SESSION_ID_KEY, session_id)
 
     def clear_cache(self) -> None:
         """Drop all cached values so the next read re-queries the DB."""

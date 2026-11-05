@@ -18,6 +18,8 @@ import signal
 import click
 
 from hestia.config import HestiaConfig
+from hestia.persistence.chat_settings import ChatSettingsStore
+from hestia.persistence.db import Database
 from hestia.platforms.agent_bridge import AgentBridge
 from hestia.platforms.telegram_adapter import TelegramAdapter
 
@@ -25,6 +27,31 @@ logger = logging.getLogger(__name__)
 
 # Provided at runtime via a systemd EnvironmentFile (mode 600); never logged.
 _BOT_TOKEN_ENV = "HESTIA_TG_BOT_TOKEN"
+
+
+async def _build_coder_bot(
+    config: HestiaConfig, token: str
+) -> tuple[TelegramAdapter, AgentBridge, Database]:
+    """Compose the coder-bot adapter + bridge backed by a per-chat settings store.
+
+    The store persists /agent backend selections and kimi session ids across
+    restarts; both the adapter (command handler) and the bridge (dispatch)
+    share one instance, mirroring the serve-mode wiring in runners.py.
+    """
+    eff_cfg = dataclasses.replace(config.telegram, bot_token=token, agent_bridge_enabled=True)
+    db = Database(config.storage.database_url)
+    await db.connect()
+    try:
+        await db.create_tables()
+    except Exception:
+        await db.close()
+        raise
+    chat_settings_store = ChatSettingsStore(db)
+    adapter = TelegramAdapter(eff_cfg)
+    adapter.set_chat_settings_store(chat_settings_store)
+    bridge = AgentBridge(adapter=adapter, config=eff_cfg, chat_settings_store=chat_settings_store)
+    adapter.set_agent_bridge(bridge)
+    return adapter, bridge, db
 
 
 async def run_coder_bot(config: HestiaConfig) -> None:
@@ -52,10 +79,7 @@ async def run_coder_bot(config: HestiaConfig) -> None:
         )
         logger.warning("agent_bridge_chats is empty; all messages fall through")
 
-    eff_cfg = dataclasses.replace(tg_cfg, bot_token=token, agent_bridge_enabled=True)
-    adapter = TelegramAdapter(eff_cfg)
-    bridge = AgentBridge(adapter=adapter, config=eff_cfg)
-    adapter.set_agent_bridge(bridge)
+    adapter, bridge, db = await _build_coder_bot(config, token)
 
     await adapter.start(None)
     click.echo("Coder bot started (agent bridge mode). Press Ctrl-C to stop.")
@@ -69,3 +93,4 @@ async def run_coder_bot(config: HestiaConfig) -> None:
         await stop_event.wait()
     finally:
         await adapter.stop()
+        await db.close()
