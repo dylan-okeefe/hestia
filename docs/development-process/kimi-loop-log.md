@@ -6,6 +6,20 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-11-05 — L251: per-chat Kimi backend for the Telegram agent bridge
+
+**Outcome:** The coder bot's agent bridge (card #70) now has a per-chat
+selectable backend: `pi` (existing agent, default) or `kimi` (Kimi Code CLI
+subprocess). Operator switches with `/agent [pi|kimi]`; persisted per chat in
+the L250 `chat_settings` table. Kimi mode runs one persistent session per chat
+(`kimi -p`, resume via `-S`, session id captured from the run's resume
+trailer), workdir configurable via `agent_bridge_kimi_workdir` (runtime set to
+the Hestia runtime dir), one in-flight run per chat, 30-min timeout, status
+edits and chunked replies like the pi path. Card #93 In Review.
+
+**Branch:** `feature/l251-kimi-bridge-backend` @ `a052675f` (merged to develop,
+deployed on tg-agent). **Gates:** 2606 passed, mypy/ruff clean, 30 new tests.
+
 ## 2026-11-03 — L248–L250: error UX, stream-state guard, /thinking toggle
 
 **Addendum (same day):** card #90 fixed and deployed — inline retry recovery
