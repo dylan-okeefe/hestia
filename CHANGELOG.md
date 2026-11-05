@@ -49,10 +49,26 @@ error-UX hardening.
 - **Generic turn-failure message (L248).** Unexpected errors now surface
   the exception class and a sanitized message (paths/URLs collapsed,
   200-char cap, no stack traces) instead of "Something went wrong."
+- **Illegal state transitions after inline retry recovery (#90).** Turns
+  that recovered from a thinking-budget abort or transient inference
+  error were left in the `retrying` state, and the next state transition
+  (`executing_tools`/`done`) was illegal — failing the turn with "An
+  internal error occurred." Recovery now routes back through
+  `awaiting_model`, with strict-journal regression tests.
 - **TTS device selection.** The voice pipeline works on CPU-only hosts
   (no CUDA assumption); the TTS service unit can pin a device.
 - Browser automation derives a realistic User-Agent from the installed
   Chromium build instead of a hardcoded one.
+
+### Agent bridge
+
+- **Per-chat backend selection for the Telegram coding agent (L251).**
+  Chats routed to the coding-agent bridge can be switched between the
+  default Pi agent and a Kimi Code CLI session with an operator-only
+  `/agent [pi|kimi]` command, persisted per chat in `chat_settings`. Kimi
+  mode runs one persistent CLI session per chat (resume via `-S`) in a
+  configured working directory, one in-flight run per chat, with
+  per-run status updates and chunked replies.
 
 ## [0.16.1] — 2026-08-26
 
