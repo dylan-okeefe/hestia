@@ -1,8 +1,10 @@
-"""Telegram ↔ Pi coding-agent bridge (L233).
+"""Telegram ↔ coding-agent bridge (L233; L251 adds a per-chat Kimi CLI backend).
 
-Spawns one persistent ``pi --mode rpc`` child per allowlisted chat and routes
-messages to it, with progressive status UX on Telegram and a Kimi reviewer
-loop (§4). The Pi RPC protocol is version-exact per the installed
+Spawns one persistent ``pi --mode rpc`` child per allowlisted chat (or, when
+the chat's stored backend is ``kimi``, one-shot ``kimi -p`` subprocess runs
+resumed via a persisted session id) and routes messages to it, with
+progressive status UX on Telegram and a Kimi reviewer loop (§4). The Pi RPC
+protocol is version-exact per the installed
 ``@earendil-works/pi-coding-agent`` docs (rpc.md / rpc-commands.md / json.md):
 strict LF-delimited JSONL on byte streams, correlated command ids, and
 ``agent_settled`` as the run-completion signal.
@@ -27,6 +29,7 @@ from hestia.config import TelegramConfig
 from hestia.platforms.tg_agent_instructions import AGENT_WORKSPACE_AGENTS_MD
 
 if TYPE_CHECKING:
+    from hestia.persistence.chat_settings import ChatSettingsStore
     from hestia.platforms.telegram_adapter import TelegramAdapter
 
 logger = logging.getLogger(__name__)
@@ -45,6 +48,14 @@ _STATUS_EDIT_INTERVAL = 2.0
 
 _YES_REPLIES = {"yes", "y", "yeah", "yep", "sure"}
 _NO_REPLIES = {"no", "n", "nope"}
+
+# Per-chat selectable coding-agent backends (L251).
+BACKEND_PI = "pi"
+BACKEND_KIMI = "kimi"
+# Printed by ``kimi -p`` on stdout as the last line of a run; the captured
+# token (e.g. "session_<uuid>") is passed verbatim to ``-S`` on later turns.
+_KIMI_RESUME_RE = re.compile(r"^To resume this session:\s+\S+\s+-r\s+(\S+)\s*$")
+_KIMI_VERSION_RE = re.compile(r"^kimi version \S+\s*$")
 
 # Read-only reviewer agent for kimi (--agent-file). kimi 2.2.0 rejects
 # --prompt+--plan, so review mode is enforced by the agent file allowlist
@@ -393,6 +404,36 @@ def _extract_kimi_text(data: bytes) -> str | None:
     return result or None
 
 
+def _extract_kimi_resume_id(output: str) -> str | None:
+    """Parse the resume token (``session_<uuid>``) from kimi's stdout trailer."""
+    for line in output.splitlines():
+        match = _KIMI_RESUME_RE.match(line.strip())
+        if match:
+            return match.group(1)
+    return None
+
+
+def _clean_kimi_output(output: str) -> str:
+    """Strip the version banner and resume trailer from kimi ``-p`` stdout."""
+    lines = [
+        line
+        for line in output.splitlines()
+        if not _KIMI_RESUME_RE.match(line.strip()) and not _KIMI_VERSION_RE.match(line.strip())
+    ]
+    return "\n".join(lines).strip()
+
+
+@dataclass
+class _KimiChatSession:
+    """Per-chat state for the Kimi CLI backend (L251): one in-flight run."""
+
+    platform_user: str
+    running: bool = False
+    session_id: str | None = None  # cached; persisted via the chat settings store
+    proc: asyncio.subprocess.Process | None = None
+    status_message_id: str | None = None
+
+
 @dataclass
 class _ChatSession:
     """Per-chat bridge state: one Pi child plus run bookkeeping."""
@@ -433,6 +474,9 @@ class AgentBridge:
     - §4: after ``agent_settled``, if workspace HEAD advanced, a Kimi reviewer
       spawns once (read-only, fire-and-forget). Two consecutive failed runs in a
       chat offer to hand the task to Kimi for execution.
+    - L251: a per-chat selectable backend (``pi`` default, ``kimi`` for the Kimi
+      Code CLI) resolved from the chat settings store before dispatch. Kimi runs
+      are one-shot subprocess invocations resumed via a persisted session id.
     - Repairs: after a successful run, a deploy-request marker in the chat
       workspace triggers the gated deploy pipeline — Kimi must APPROVE the
       repo diff before services restart and health is verified.
@@ -448,17 +492,20 @@ class AgentBridge:
         diff_resolver: DiffResolver | None = None,
         kimi_runner: KimiRunner | None = None,
         command_runner: CommandRunner | None = None,
+        chat_settings_store: ChatSettingsStore | None = None,
     ) -> None:
         self._adapter = adapter
         self._config = config
         self._client_factory = client_factory or (lambda: PiRpcClient())
         self._workspace_root = Path(os.path.expanduser(config.agent_bridge_workspace))
         self._sessions: dict[str, _ChatSession] = {}
+        self._kimi_sessions: dict[str, _KimiChatSession] = {}
         self._closed = False
         self._command_runner = command_runner or _run_command
         self._head_resolver = head_resolver or self._default_head
         self._diff_resolver = diff_resolver or self._default_diff
         self._kimi_runner = kimi_runner or self._run_kimi
+        self._chat_settings_store = chat_settings_store
 
     async def _default_head(self, workspace: Path) -> str | None:
         rc, out = await self._command_runner("git", "-C", str(workspace), "rev-parse", "HEAD")
@@ -493,6 +540,9 @@ class AgentBridge:
         """Route one incoming chat message to the coding agent."""
         if self._closed:
             logger.debug("bridge closed; dropping message from %s", platform_user)
+            return
+        if await self._resolve_backend(platform_user) == BACKEND_KIMI:
+            await self._handle_kimi(platform_user, text)
             return
         session = self._sessions.get(platform_user)
 
@@ -529,6 +579,13 @@ class AgentBridge:
         self._closed = True
         sessions = list(self._sessions.values())
         self._sessions.clear()
+        kimi_sessions = list(self._kimi_sessions.values())
+        self._kimi_sessions.clear()
+        for kimi_session in kimi_sessions:
+            kimi_session.running = False
+            if kimi_session.proc is not None:
+                with contextlib.suppress(ProcessLookupError, RuntimeError):
+                    kimi_session.proc.kill()
         for session in sessions:
             session.closing = True
             for task in (session.editor_task, session.exit_task):
@@ -599,6 +656,147 @@ class AgentBridge:
                 session.platform_user,
                 "⚠️ the coding agent exited unexpectedly — I'll restart it on your next message.",
             )
+
+    # ------------------------------------------------------------------
+    # L251 Kimi CLI backend (per-chat selectable via /agent)
+    # ------------------------------------------------------------------
+
+    async def _resolve_backend(self, platform_user: str) -> str:
+        """Resolve the chat's backend: stored override, else pi; no store → pi."""
+        store = self._chat_settings_store
+        if store is None:
+            return BACKEND_PI
+        try:
+            backend = await store.get_agent_backend("telegram", platform_user)
+        except Exception:
+            logger.exception("failed to read agent backend for chat %s", platform_user)
+            return BACKEND_PI
+        if backend in (BACKEND_PI, BACKEND_KIMI):
+            return backend
+        if backend:
+            logger.warning(
+                "unknown agent backend %r for chat %s; falling back to pi", backend, platform_user
+            )
+        return BACKEND_PI
+
+    async def _handle_kimi(self, platform_user: str, text: str) -> None:
+        if not self._config.agent_bridge_kimi_workdir:
+            with contextlib.suppress(Exception):
+                await self._adapter.send_message(
+                    platform_user,
+                    "⚠️ the Kimi backend is not configured (no workdir set) — staying on pi.",
+                )
+            return
+        session = self._kimi_sessions.get(platform_user)
+        if session is None:
+            session = _KimiChatSession(platform_user=platform_user)
+            store = self._chat_settings_store
+            if store is not None:
+                with contextlib.suppress(Exception):
+                    session.session_id = await store.get_kimi_session_id("telegram", platform_user)
+            self._kimi_sessions[platform_user] = session
+        if session.running:
+            with contextlib.suppress(Exception):
+                await self._adapter.send_message(
+                    platform_user,
+                    "⏳ still working on your previous message — one Kimi run at a time per chat.",
+                )
+            return
+        await self._run_kimi_chat(session, text)
+
+    async def _run_kimi_chat(self, session: _KimiChatSession, text: str) -> None:
+        """Drive one kimi run end-to-end: status, subprocess, delivery."""
+        user = session.platform_user
+        session.running = True
+        try:
+            session.status_message_id = await self._adapter.send_message(user, "🤖 working… (kimi)")
+        except Exception as e:  # noqa: BLE001 — status UX is best effort
+            logger.warning("failed to send status message to %s: %s", user, e)
+            session.status_message_id = None
+        with contextlib.suppress(Exception):
+            await self._adapter.set_typing(user, True)
+        reply: str | None = None
+        error: str | None = None
+        try:
+            reply, session_id, error = await self._run_kimi_turn(session, text)
+        except Exception:  # noqa: BLE001 — report, never crash the bot
+            logger.exception("kimi run crashed for chat %s", user)
+            error = "⚠️ the Kimi run crashed unexpectedly — check the logs and try again."
+        finally:
+            session.running = False
+            with contextlib.suppress(Exception):
+                await self._adapter.set_typing(user, False)
+        store = self._chat_settings_store
+        if session_id:
+            session.session_id = session_id
+            if store is not None:
+                with contextlib.suppress(Exception):
+                    await store.set_kimi_session_id("telegram", user, session_id)
+        if session.status_message_id is not None:
+            headline = "✅ done" if reply is not None and error is None else (error or "⚠️ run failed")
+            with contextlib.suppress(Exception):
+                await self._adapter.edit_message(user, session.status_message_id, headline)
+        if reply is not None:
+            with contextlib.suppress(Exception):
+                await self._adapter.send_message(user, reply)
+        elif error is not None:
+            with contextlib.suppress(Exception):
+                await self._adapter.send_message(user, error)
+
+    async def _run_kimi_turn(
+        self, session: _KimiChatSession, text: str
+    ) -> tuple[str | None, str | None, str | None]:
+        """Run one ``kimi -p`` invocation. Returns (reply, session_id, error).
+
+        The first run starts a fresh kimi session; later turns pass the persisted
+        session id via ``-S`` so the whole chat shares one kimi session. Errors
+        returned here are sanitized for chat delivery (no paths or stack traces).
+        """
+        workdir = os.path.expanduser(self._config.agent_bridge_kimi_workdir)
+        command = [self._config.agent_bridge_kimi_bin]
+        if session.session_id:
+            command.extend(["-S", session.session_id])
+        command.extend(["-p", text])
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *command,
+                cwd=workdir,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except OSError as e:
+            logger.warning("failed to spawn kimi for chat %s: %s", session.platform_user, e)
+            return None, None, "⚠️ could not start the Kimi CLI (is it installed and on PATH?)."
+        session.proc = proc
+        try:
+            try:
+                stdout, _stderr = await asyncio.wait_for(
+                    proc.communicate(), timeout=self._config.agent_bridge_kimi_timeout_seconds
+                )
+            except TimeoutError:
+                proc.kill()
+                with contextlib.suppress(Exception):
+                    await proc.wait()
+                logger.warning("kimi run for chat %s timed out", session.platform_user)
+                return (
+                    None,
+                    None,
+                    f"⚠️ the Kimi run timed out after "
+                    f"{int(self._config.agent_bridge_kimi_timeout_seconds)}s — try again, "
+                    "or switch back with /agent pi.",
+                )
+        finally:
+            session.proc = None
+        output = stdout.decode("utf-8", "replace")
+        session_id = _extract_kimi_resume_id(output)
+        rc = proc.returncode or 0
+        if rc != 0:
+            logger.warning("kimi exited %s for chat %s", rc, session.platform_user)
+            return None, session_id, f"⚠️ Kimi exited with code {rc}; no reply was produced."
+        reply = _clean_kimi_output(output)
+        if not reply:
+            return None, session_id, "⚠️ Kimi finished without producing any output."
+        return reply, session_id, None
 
     # ------------------------------------------------------------------
     # Runs

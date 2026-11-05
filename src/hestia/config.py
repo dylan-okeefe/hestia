@@ -190,6 +190,12 @@ class TelegramConfig(_ConfigFromEnv):
     """Chat IDs (platform_user, exactly as _handle_message computes) routed to the coding agent."""
     agent_bridge_workspace: str = "~/hestia-tg-agent"
     """Working directory for the Pi coding-agent child (path-fence confines file tools here)."""
+    agent_bridge_kimi_workdir: str = ""
+    """Working directory for the Kimi CLI backend (L251); empty disables the kimi backend."""
+    agent_bridge_kimi_bin: str = "kimi"
+    """Executable name/path for the Kimi CLI backend."""
+    agent_bridge_kimi_timeout_seconds: float = 1800.0
+    """Per-run timeout for one Kimi CLI invocation (agentic runs can take minutes)."""
     vision: bool = False  # L234: master switch for Telegram photo → model vision
     vision_max_images_per_message: int = 4
     """Cap on images carried per message (history storage + request)."""
