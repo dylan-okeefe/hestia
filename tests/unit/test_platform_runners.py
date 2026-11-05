@@ -22,6 +22,7 @@ from hestia.platforms.runners import (
     run_platform,
     run_telegram,
 )
+from hestia.platforms.telegram_adapter import TelegramAdapter
 
 _IncomingMessageCallback = Callable[
     [str, str, str, str | None, str | None], Coroutine[Any, Any, None]
@@ -346,7 +347,8 @@ class TestRunPlatformLifecycle:
             )
 
         assert any(
-            "ERROR:Something went wrong" in msg for _user, msg in adapter.sent_messages
+            "ERROR:Unexpected error: RuntimeError: boom." in msg
+            for _user, msg in adapter.sent_messages
         )
 
     @pytest.mark.asyncio
@@ -571,3 +573,156 @@ class TestRunPlatformStreaming:
 
         assert ("u1", "final response") in adapter.sent_messages
         adapter.edit_message.assert_not_awaited()
+
+
+    @pytest.mark.asyncio
+    async def test_stream_callback_survives_interim_respond(self):
+        """Regression: an interim respond() must not break the live stream.
+
+        The runner used to ``pop("message_id")`` from the adapter's shared
+        stream state after delivering an interim message (tool status,
+        surfaced reasoning). The adapter's stream callback closes over that
+        same dict and reads ``state["message_id"]`` on every chunk, so the next
+        chunk after an interim respond raised ``KeyError: 'message_id'`` and
+        failed the whole turn mid-tool-loop.
+        """
+        app = _make_app()
+        config = _make_config()
+        config.inference.stream = True
+
+        app.event_bus.publish = AsyncMock()
+
+        adapter = FakePlatform()
+        adapter._stream_states = {}
+        adapter._config = MagicMock()
+        adapter._config.rate_limit_edits_seconds = 1.5
+        adapter.edit_message = AsyncMock()
+        # Real Telegram stream callback (the one that reads the shared state).
+        adapter._make_stream_callback = TelegramAdapter._make_stream_callback.__get__(
+            adapter
+        )
+
+        async def fake_process_turn(*args, **kwargs):
+            stream_cb = kwargs["stream_callback"]
+            # Iteration 1: model narrates, so a streamed message is created.
+            await stream_cb("This is the first narration")
+            assert adapter._stream_states["u1"]["message_id"] == "msg-id"
+            # Orchestrator delivers an interim status message.
+            await kwargs["respond_callback"]("\u2699\ufe0f Running list_dir, read_file")
+            # Iteration 2 streams again — this used to raise KeyError.
+            await stream_cb("Now verifying the files on disk")
+
+        orchestrator = app.make_orchestrator.return_value
+        orchestrator.process_turn = AsyncMock(side_effect=fake_process_turn)
+        confirm_callback = AsyncMock(return_value=True)
+
+        async def single_message_then_stop(*args, **kwargs):
+            if adapter._on_message is not None:
+                await adapter._on_message("fake", "u1", "hello", None, None)
+            raise KeyboardInterrupt()
+
+        with patch("asyncio.sleep", side_effect=single_message_then_stop):
+            await run_platform(
+                app,
+                config,
+                adapter=adapter,
+                confirm_callback=confirm_callback,
+                platform_name="fake",
+            )
+
+        # Status edit landed on the streamed message; the interim respond then
+        # re-seeded the segment, so iteration 2 opened a second message.
+        adapter.edit_message.assert_awaited_once()
+        assert len(adapter.sent_messages) == 2
+        assert adapter.sent_messages[0][1] == "This is the first narration"
+        assert adapter.sent_messages[1][1] == "Now verifying the files on disk"
+
+
+class TestPlatformRunnerImages:
+    """L234 §3: images ride PlatformRunner.on_message into process_turn."""
+
+    @pytest.mark.asyncio
+    async def test_images_passed_to_process_turn(self):
+        app = _make_app()
+        config = _make_config()
+        adapter = FakePlatform()
+        confirm_callback = AsyncMock(return_value=True)
+        user_var: ContextVar[str] = ContextVar("user", default="")
+        images = ["data:image/jpeg;base64,QUJD"]
+
+        async def single_message_then_stop(*args: Any, **kwargs: Any) -> None:
+            if adapter._on_message is not None:
+                await adapter._on_message(
+                    "fake", "u1", "look", None, None, images=images
+                )
+            raise KeyboardInterrupt()
+
+        with patch("asyncio.sleep", side_effect=single_message_then_stop):
+            await run_platform(
+                app,
+                config,
+                adapter=adapter,
+                confirm_callback=confirm_callback,
+                platform_name="fake",
+                user_context_var=user_var,
+            )
+
+        orchestrator = app.make_orchestrator.return_value
+        call_kwargs = orchestrator.process_turn.call_args.kwargs
+        assert call_kwargs["images"] == images
+
+    @pytest.mark.asyncio
+    async def test_images_capped_at_configured_per_message_limit(self):
+        """§3: stored/carried images are capped at telegram.vision_max_images_per_message."""
+        app = _make_app()
+        config = _make_config()
+        config.telegram.vision_max_images_per_message = 2
+        adapter = FakePlatform()
+        confirm_callback = AsyncMock(return_value=True)
+        images = [f"data:image/jpeg;base64,IMG{i}" for i in range(5)]
+
+        async def single_message_then_stop(*args: Any, **kwargs: Any) -> None:
+            if adapter._on_message is not None:
+                await adapter._on_message(
+                    "fake", "u1", "many", None, None, images=images
+                )
+            raise KeyboardInterrupt()
+
+        with patch("asyncio.sleep", side_effect=single_message_then_stop):
+            await run_platform(
+                app,
+                config,
+                adapter=adapter,
+                confirm_callback=confirm_callback,
+                platform_name="fake",
+            )
+
+        orchestrator = app.make_orchestrator.return_value
+        call_kwargs = orchestrator.process_turn.call_args.kwargs
+        assert call_kwargs["images"] == images[:2]
+
+    @pytest.mark.asyncio
+    async def test_no_images_defaults_to_none(self):
+        """Matrix/web/voice callers pass no images; process_turn sees None."""
+        app = _make_app()
+        config = _make_config()
+        adapter = FakePlatform()
+        confirm_callback = AsyncMock(return_value=True)
+
+        async def single_message_then_stop(*args: Any, **kwargs: Any) -> None:
+            if adapter._on_message is not None:
+                await adapter._on_message("fake", "u1", "hello", None, None)
+            raise KeyboardInterrupt()
+
+        with patch("asyncio.sleep", side_effect=single_message_then_stop):
+            await run_platform(
+                app,
+                config,
+                adapter=adapter,
+                confirm_callback=confirm_callback,
+                platform_name="fake",
+            )
+
+        orchestrator = app.make_orchestrator.return_value
+        call_kwargs = orchestrator.process_turn.call_args.kwargs
+        assert call_kwargs["images"] is None

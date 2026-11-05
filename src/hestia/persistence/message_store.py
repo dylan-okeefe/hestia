@@ -57,6 +57,7 @@ class MessageStore:
                         reasoning_content=msg.reasoning_content,
                         is_handoff=msg.is_handoff,
                         correction=msg.correction,
+                        images=msg.images,
                         created_at=msg.created_at,
                     )
                     await conn.execute(insert)
@@ -148,6 +149,7 @@ class MessageStore:
                         reasoning_content=msg.reasoning_content,
                         is_handoff=msg.is_handoff,
                         correction=msg.correction,
+                        images=msg.images,
                         created_at=msg.created_at,
                     )
                 )
@@ -195,4 +197,5 @@ class MessageStore:
             reasoning_content=row.reasoning_content,
             is_handoff=bool(row.is_handoff),
             correction=bool(row.correction),
+            images=row.images,
         )

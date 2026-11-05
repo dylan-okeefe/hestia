@@ -50,11 +50,12 @@ def match_allowlist(
 
 
 def validate_telegram_user_id(user_id: str) -> bool:
-    """Validate a Telegram numeric user ID.
+    """Validate a Telegram numeric ID (user or group chat).
 
-    Telegram user IDs are positive integers.
+    User IDs are positive integers; group chats are negative (supergroups
+    and channels use the ``-100xxxxxxxxxx`` form).
     """
-    return user_id.isdigit()
+    return user_id.removeprefix("-").isdigit()
 
 
 def validate_telegram_username(username: str) -> bool:

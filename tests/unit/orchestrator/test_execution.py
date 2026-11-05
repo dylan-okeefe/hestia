@@ -20,6 +20,7 @@ from hestia.orchestrator.execution import (
     _normalize_tool_arguments,
 )
 from hestia.orchestrator.quality import Correction, DegeneratePattern
+from hestia.orchestrator.transitions import assert_transition
 from hestia.orchestrator.types import Turn, TurnContext, TurnState
 from hestia.tools.metadata import ToolMetadata
 from hestia.tools.registry import ToolRegistry
@@ -2348,3 +2349,247 @@ async def test_thinking_budget_enforced_non_streaming():
     # First call tripped the budget; second call ran with thinking_aborted.
     assert ctx.turn.thinking_aborted is True
     assert len(responses) == 0
+
+
+def _strict_transition(turn: Turn) -> tuple:
+    """Engine-faithful transition callback: validates every edge against the
+    transition table (raising IllegalTransitionError on illegal edges), mutates
+    turn.state, and records the journaled state sequence. Primes the turn into
+    BUILDING_CONTEXT, mirroring TurnAssembly.prepare before run() is entered."""
+    assert_transition(turn.state, TurnState.BUILDING_CONTEXT)
+    turn.state = TurnState.BUILDING_CONTEXT
+
+    async def _transition(t: Turn, to_state: TurnState, note: str = "") -> None:
+        assert t is turn
+        assert_transition(t.state, to_state)
+        t.state = to_state
+        journal.append(to_state)
+
+    journal: list[TurnState] = []
+    return _transition, journal
+
+
+@pytest.mark.asyncio
+async def test_thinking_budget_retry_recovers_through_awaiting_model(make_chat_response):
+    """TaskView #90 (thinking-budget shape): an inline retry that recovers must
+    return through AWAITING_MODEL — RETRYING → EXECUTING_TOOLS is not a legal
+    edge, and the engine's strict transition would otherwise fail the turn."""
+    store = MagicMock()
+    store.append_message = AsyncMock()
+    builder = MagicMock()
+    builder.build = AsyncMock(return_value=MagicMock(messages=[]))
+
+    execution = TurnExecution(
+        tool_registry=MagicMock(),
+        inference_client=MagicMock(),
+        policy=MagicMock(),
+        context_builder=builder,
+        session_store=store,
+        max_iterations=1,
+    )
+    execution._policy.filter_tools.return_value = []
+    # Tiny budget so the oversized reasoning trips the guard on attempt one.
+    execution._policy.reasoning_budget.return_value = 100
+    execution._policy.turn_token_budget.return_value = 40000
+
+    runaway = make_chat_response(reasoning_content="x" * 5000, finish_reason="stop")
+    recovered = make_chat_response(
+        finish_reason="tool_calls",
+        tool_calls=[ToolCall(id="tc1", name="test_tool", arguments={})],
+        prompt_tokens=1,
+        completion_tokens=1,
+    )
+    responses = [runaway, recovered]
+
+    async def _chat(*args, **kwargs):
+        return responses.pop(0)
+
+    execution._inference.chat = _chat
+
+    ctx = TurnContext(
+        turn=_make_turn(),
+        user_message=Message(role="user", content="hello"),
+        system_prompt="",
+        respond_callback=AsyncMock(),
+        session=_make_session(),
+        build_result=MagicMock(messages=[]),
+    )
+
+    transition, journal = _strict_transition(ctx.turn)
+
+    with patch.object(execution, "_handle_tool_calls", new_callable=AsyncMock) as mock_handle:
+        async def _side_effect(*args, **kwargs):
+            # Mirror the real handler's first act: RETRYING must not reach
+            # EXECUTING_TOOLS directly.
+            await transition(ctx.turn, TurnState.EXECUTING_TOOLS, "")
+            ctx.turn.iterations += 1
+            return TurnState.BUILDING_CONTEXT
+
+        mock_handle.side_effect = _side_effect
+        with pytest.raises(MaxIterationsError):
+            await execution.run(ctx, transition, AsyncMock())
+
+    # Inline retry recovery journaled RETRYING → AWAITING_MODEL (legal edge).
+    assert TurnState.RETRYING in journal
+    retry_idx = journal.index(TurnState.RETRYING)
+    assert journal[retry_idx + 1] is TurnState.AWAITING_MODEL
+    assert TurnState.EXECUTING_TOOLS in journal
+
+
+@pytest.mark.asyncio
+async def test_inference_timeout_retry_completes_done_legally(make_chat_response):
+    """TaskView #90 (inference-error shape): a backoff retry that recovers with
+    a plain content response must reach DONE without an illegal
+    RETRYING → DONE edge in the journaled state machine."""
+    from hestia.errors import InferenceTimeoutError
+    from hestia.policy.engine import RetryAction, RetryDecision
+
+    store = MagicMock()
+    store.append_message = AsyncMock()
+    builder = MagicMock()
+    builder.build = AsyncMock(return_value=MagicMock(messages=[]))
+
+    execution = TurnExecution(
+        tool_registry=MagicMock(),
+        inference_client=MagicMock(),
+        policy=MagicMock(),
+        context_builder=builder,
+        session_store=store,
+        max_iterations=3,
+    )
+    execution._policy.filter_tools.return_value = []
+    execution._policy.reasoning_budget.return_value = 2048
+    execution._policy.turn_token_budget.return_value = 40000
+    # Zero backoff keeps the retry path fast.
+    execution._policy.retry_after_error.return_value = RetryDecision(
+        action=RetryAction.RETRY_WITH_BACKOFF, backoff_seconds=0.0
+    )
+
+    ok = make_chat_response(
+        content="recovered", finish_reason="stop", prompt_tokens=1, completion_tokens=1
+    )
+
+    calls = {"n": 0}
+
+    async def _flaky_chat(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise InferenceTimeoutError("inference timed out")
+        return ok
+
+    execution._inference.chat = _flaky_chat
+
+    ctx = TurnContext(
+        turn=_make_turn(),
+        user_message=Message(role="user", content="hello"),
+        system_prompt="",
+        respond_callback=AsyncMock(),
+        session=_make_session(),
+        build_result=MagicMock(messages=[]),
+    )
+
+    transition, journal = _strict_transition(ctx.turn)
+
+    state = await execution.run(ctx, transition, AsyncMock())
+
+    assert state == "recovered"
+    assert ctx.turn.state is TurnState.DONE
+    assert calls["n"] == 2
+    # Every journaled edge was legal; recovery passed through AWAITING_MODEL.
+    assert TurnState.RETRYING in journal
+    retry_idx = journal.index(TurnState.RETRYING)
+    assert journal[retry_idx + 1] is TurnState.AWAITING_MODEL
+    assert journal[-1] is TurnState.DONE
+
+
+@pytest.mark.asyncio
+async def test_process_turn_attaches_images_to_user_message_and_transcript():
+    """L234 §3: process_turn(images=...) rides the user message into the transcript."""
+    from unittest.mock import AsyncMock as _AsyncMock
+    from unittest.mock import MagicMock as _MagicMock
+    from unittest.mock import patch as _patch
+
+    from hestia.core.types import ChatResponse as _ChatResponse
+    from hestia.orchestrator.engine import Orchestrator as _Orchestrator
+
+    mock_inference = _MagicMock()
+    mock_inference.chat = _AsyncMock(
+        return_value=_ChatResponse(
+            content="I see it.",
+            reasoning_content=None,
+            tool_calls=[],
+            finish_reason="stop",
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+        )
+    )
+    mock_policy = _MagicMock()
+    mock_policy.auto_approve.return_value = True
+    mock_policy.filter_tools.return_value = None
+    mock_policy.reasoning_budget.return_value = 2048
+    mock_policy.turn_token_budget.return_value = 4000
+
+    mock_tool_registry = _MagicMock()
+    mock_tool_registry.list_names.return_value = []
+    mock_tool_registry.meta_tool_schemas.return_value = []
+
+    mock_context_builder = _MagicMock()
+    mock_context_builder.build = _AsyncMock(return_value=_MagicMock(messages=[]))
+
+    mock_message_store = _MagicMock()
+    mock_message_store.get_messages = _AsyncMock(return_value=[])
+    mock_message_store.append_message = _AsyncMock()
+    mock_turn_store = _MagicMock()
+    mock_turn_store.insert_turn = _AsyncMock()
+    mock_turn_store.update_turn = _AsyncMock()
+    mock_turn_store.append_transition = _AsyncMock()
+
+    orchestrator = _Orchestrator(
+        inference=mock_inference,
+        session_store=_MagicMock(),
+        message_store=mock_message_store,
+        turn_store=mock_turn_store,
+        context_builder=mock_context_builder,
+        tool_registry=mock_tool_registry,
+        policy=mock_policy,
+    )
+
+    mock_session = _MagicMock()
+    mock_session.id = "sess-images"
+    mock_session.slot_id = None
+
+    mock_turn = _MagicMock()
+    mock_turn.id = "turn-images"
+    mock_turn.iterations = 0
+    mock_turn.tool_calls_made = 0
+    mock_turn.transitions = []
+    mock_turn.state = TurnState.RECEIVED
+
+    images = ["data:image/jpeg;base64,QUJD"]
+    user_message = Message(role="user", content="what is this?")
+
+    with _patch.object(orchestrator, "_create_turn", return_value=mock_turn), _patch.object(
+        orchestrator, "_persist_turn", _AsyncMock()
+    ):
+        await orchestrator.process_turn(
+            session=mock_session,
+            user_message=user_message,
+            respond_callback=_AsyncMock(),
+            images=images,
+        )
+
+    # Engine mirrors images onto the turn's user message (transcript storage).
+    assert user_message.images == images
+
+    # Assembly persisted the USER message WITH the image payload (the last
+    # append is the assistant reply, so scan all calls).
+    import json as _json
+
+    user_appends = [
+        call.args[1]
+        for call in mock_message_store.append_message.call_args_list
+        if call.args[1].role == "user"
+    ]
+    assert len(user_appends) == 1
+    assert _json.loads(user_appends[0].images) == images

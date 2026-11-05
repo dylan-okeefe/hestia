@@ -5,6 +5,71 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.17.0] — 2026-11-03
+
+Two months of work since v0.16.1: inference backend profiles, a Telegram
+coding-agent bridge, Telegram vision, a guided `/intro`, and a round of
+error-UX hardening.
+
+### Added
+
+- **Inference backend profiles (L232).** Named backend profiles with
+  admission control; `hestia serve` is decoupled from the `hestia-llama`
+  unit and can target any compatible inference server.
+- **Telegram coding-agent bridge (L233).** A separate `tg-agent` service
+  routes allowlisted Telegram chats to a sandboxed Pi coding agent with a
+  reviewer pass and deploy pipeline.
+- **Telegram vision (L234).** Incoming photos are downscaled (≤1024px
+  JPEG) and sent to the vision-capable model; images persist in session
+  history so follow-up turns keep context. When vision is disabled the
+  bot says so instead of silently dropping photos.
+- **Guided `/intro`.** A narrated first-run walkthrough, complementing
+  `/tour`.
+- **`/thinking` per-chat reasoning toggle (L250).** Chats can hide or show
+  the model's 💭 reasoning output; the setting is persisted per chat
+  (new `chat_settings` table, runtime migration m013). Operator chats
+  default to showing reasoning, all other chats default to hidden;
+  overridable with `/thinking [on|off]`.
+- Group-chat IDs are accepted in Telegram allowlist validation.
+- Autonomous repair pipeline with a feature-request flow surfaced through
+  the project board.
+- Login codes for Telegram web auth self-delete after 5 minutes.
+- Coder-bot mode now logs the chat id when an allowlisted chat is not
+  routed to the coding agent, so onboarding a new chat takes one message.
+
+### Fixed
+
+- **Stream-state `KeyError` killing turns mid-tool-loop (L249).** The
+  runner's interim respond callback deleted `message_id` from the shared
+  stream-state dict while the adapter's streaming callback still read it;
+  the next streamed chunk raised `KeyError: 'message_id'` and failed the
+  turn. The segment is now re-seeded instead of deleting keys, covered by
+  a regression test plus an AST scan that fails CI if a key is deleted
+  from a shared `state` dict under `src/hestia/platforms/`.
+- **Generic turn-failure message (L248).** Unexpected errors now surface
+  the exception class and a sanitized message (paths/URLs collapsed,
+  200-char cap, no stack traces) instead of "Something went wrong."
+- **Illegal state transitions after inline retry recovery (#90).** Turns
+  that recovered from a thinking-budget abort or transient inference
+  error were left in the `retrying` state, and the next state transition
+  (`executing_tools`/`done`) was illegal — failing the turn with "An
+  internal error occurred." Recovery now routes back through
+  `awaiting_model`, with strict-journal regression tests.
+- **TTS device selection.** The voice pipeline works on CPU-only hosts
+  (no CUDA assumption); the TTS service unit can pin a device.
+- Browser automation derives a realistic User-Agent from the installed
+  Chromium build instead of a hardcoded one.
+
+### Agent bridge
+
+- **Per-chat backend selection for the Telegram coding agent (L251).**
+  Chats routed to the coding-agent bridge can be switched between the
+  default Pi agent and a Kimi Code CLI session with an operator-only
+  `/agent [pi|kimi]` command, persisted per chat in `chat_settings`. Kimi
+  mode runs one persistent CLI session per chat (resume via `-S`) in a
+  configured working directory, one in-flight run per chat, with
+  per-run status updates and chunked replies.
+
 ## [0.16.1] — 2026-08-26
 
 ### Security

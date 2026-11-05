@@ -6,6 +6,134 @@
 
 **How to append:** Add a new `## YYYY-MM-DD — …` section at the **top** (below this preamble), so the newest loop is always first.
 
+## 2026-11-05 — L251: per-chat Kimi backend for the Telegram agent bridge
+
+**Outcome:** The coder bot's agent bridge (card #70) now has a per-chat
+selectable backend: `pi` (existing agent, default) or `kimi` (Kimi Code CLI
+subprocess). Operator switches with `/agent [pi|kimi]`; persisted per chat in
+the L250 `chat_settings` table. Kimi mode runs one persistent session per chat
+(`kimi -p`, resume via `-S`, session id captured from the run's resume
+trailer), workdir configurable via `agent_bridge_kimi_workdir` (runtime set to
+the Hestia runtime dir), one in-flight run per chat, 30-min timeout, status
+edits and chunked replies like the pi path. Card #93 In Review.
+
+**Branch:** `feature/l251-kimi-bridge-backend` @ `a052675f` (merged to develop,
+deployed on tg-agent). **Gates:** 2606 passed, mypy/ruff clean, 30 new tests.
+
+## 2026-11-03 — L248–L250: error UX, stream-state guard, /thinking toggle
+
+**Addendum (same day):** card #90 fixed and deployed — inline retry recovery
+(thinking-budget / transient inference error) left turns stuck in RETRYING,
+and the fallthrough to EXECUTING_TOOLS/DONE hit illegal state-machine edges,
+failing turns ("Cannot transition from retrying to …"). Fix: hop
+RETRYING→AWAITING_MODEL after the inner retry loop exits; two strict-journal
+regression tests. Branch `fix/retrying-state-recovery` @ `f512cdca`, merged to
+develop and live on the runtime. First post-v0.17.0-tag merge (release
+discipline: belongs to the next prep doc, v0.17.1).
+
+**Outcome:** Three cards built after the 2026-11-03 production `KeyError:
+'message_id'` turn failure (depop-channel session) and its fully generic
+user-facing error. L248 makes unknown-error chat messages descriptive
+(exception class + sanitized detail, 200-char cap, path/URL placeholders,
+turn-id ref at the engine path). L249 cherry-picks the stream-state hotfix
+(`7023e801`) onto develop, adds an adapter-level regression test, and adds an
+AST scan that fails CI on `del state[k]` / `state.pop(k` under
+`src/hestia/platforms/` (allowlist escape hatch). L250 adds `/thinking
+[on|off]` — a per-chat, DB-persisted (`chat_settings`, migration m013) toggle
+for the 💭 reasoning display; operator chats (new
+`TelegramConfig.operator_user_id`) default to show, everyone else to hide;
+`/tour` updated.
+
+**Branches (pushed, based on develop, awaiting merge):**
+`feature/l248-descriptive-error-messages` @ `82799639` ·
+`feature/l249-stream-state-guard-scan` @ `3365534b` ·
+`feature/l250-thinking-toggle` @ `267b836e`
+
+**Handoff:** `docs/handoffs/L248-250-error-ux-handoff.md`
+**Cards:** #86 (L248), #87 (L249), #88 (L250) — all In Review with SHAs.
+
+**Gates:** L248 2536 passed; L249 2529 passed; L250 2558 passed (unit+int);
+mypy/ruff clean on all three. Hotfix deployed to runtime via service restart
+before loop work began; full runtime sync pending merge (see handoff
+deployment notes).
+
+## 2026-10-21 — L234: Telegram vision (photos → Strata Flash-Next)
+
+**Outcome:** Hestia can now see. Telegram photos are downscaled (≤1024px JPEG,
+~400KB) and sent as standard OpenAI `image_url` parts to Strata's Flash-Next
+(vision already loaded). Card #71. Also fixed the silent photo-drop bug —
+disabled vision now replies. Images persist in session history (messages.images,
+migration m012) so follow-up turns keep context; compaction archives drop them.
+
+**Branch:** `feature/l234-telegram-vision` (pushed; carries the L232 merge —
+develop lacks L232)
+**Spec:** `docs/development-process/loops/L234-telegram-vision.md`
+**Handoff:** `docs/handoffs/L234-telegram-vision-handoff.md`
+
+**Changes:** TelegramConfig vision fields; PHOTO handler (ffmpeg downscale,
+no new deps); 6-arg `IncomingMessageCallback` (images); orchestrator +
+persistence carry images; client content arrays with vision×server_type
+gating (llamacpp strips with warning — Ornith has no mmproj); image-token
+estimates via JPEG SOF marker; 46 new tests.
+
+**Gates:** dev 2446 passed/1 pre-existing numpy fail; runtime 2486 passed/0
+after fixing the L233×L234 6-arg callback union; mypy/ruff clean.
+
+**Deployed:** runtime merged, config.runtime.py vision=True, hestia-serve
+restarted clean. **Pending:** Dylan's live photo acceptance test; Strata
+`image_url` acceptance is assumed (fallback = `image_data` payload shape).
+
+## 2026-10-21 — L233: Telegram coding-agent bridge (Pi RPC + Strata, Kimi reviewer)
+
+**Outcome:** Card #70 Phases 1–4, 6–7 done and deployed; Phase 5 smoke ladder is
+Dylan's live acceptance step. Dylan can now drive a Pi coding agent from
+Telegram; it talks to frozen Strata (IQ3_S) through a persistent `pi --mode rpc`
+child per chat, confined by path-fence to `~/hestia-tg-agent/`, with Kimi as a
+read-only reviewer on every commit.
+
+**Branch:** `feature/l233-telegram-coding-agent-bridge` (pushed; 8 commits)
+**Spec:** `docs/development-process/loops/L233-telegram-coding-agent-bridge.md`
+**Handoff:** `docs/handoffs/L233-telegram-coding-agent-bridge-handoff.md`
+
+**Changes:**
+- `src/hestia/platforms/agent_bridge.py` (~830 lines): `PiRpcClient`
+  (LF-strict byte framing, correlated commands, backpressure-honoring reader)
+  + `AgentBridge` (per-chat persistent sessions, steering via
+  `streamingBehavior: "steer"`, send-once/edit-progress status, queued-status
+  on retry events, child respawn) + Kimi reviewer loop (fires only when
+  workspace HEAD advanced; `--plan` read-only; two-strikes escalation hands the
+  task to kimi WITHOUT `--plan`).
+- `src/hestia/platforms/agent_bridge_runner.py` + `hestia coder-bot` CLI: runs
+  the adapter with `_on_message=None` — no orchestrator/scheduler/inference.
+- `TelegramConfig`: `agent_bridge_enabled/chats/workspace`; surgical intercept
+  in `_handle_message`; `set_agent_bridge()`; teardown in `stop()`.
+- `tests/unit/test_agent_bridge.py`: 28 tests, all passing; adapter tests no
+  regression.
+- Deploy: `deploy/hestia-tg-agent.service` (user unit, token via
+  EnvironmentFile, no Conflicts with hestia-serve/model services), installed
+  enabled+started; `config.coder-bot.py` (untracked runtime config; carries a
+  valid InferenceConfig because the CLI builds AppContext for every command).
+- Host: `~/.pi/agent/` provider+settings+small-coder+3 custom extensions
+  (path-fence, git-autocommit, network-gate); TaskView MCP in `~/.pi/agent/mcp.json`.
+
+**Gates:** dev pytest 2398 passed / 1 pre-existing fail (numpy missing in dev
+venv, fails on develop too); runtime pytest 2440 passed / 0 failed; mypy 1
+pre-existing error (same numpy); ruff clean.
+
+**Pending:** Phase 5 ladder rungs a–f via Telegram (needs Dylan).
+
+## 2026-10-20 — L232: Inference Backend Profiles (llama.cpp slots vs Strata single-slot queue)
+
+**Outcome:** Hestia's inference stack is now backend-agnostic. A `server_type` profile (`llamacpp` default / `openai-compat`) gates all llama.cpp-specific machinery (slot_id, reasoning_budget, /tokenize, /slots, /health), adds client-side admission control (`max_inflight_requests` + `queue_timeout` -> friendly busy message), and the runtime now serves from Strata (Qwen3.8-Flash-Next IQ3_S on 127.0.0.1:8080). Also removed the `Wants=hestia-llama.service` coupling from hestia-serve.service — it would have OOM'd the box (Ornith 29GB + Strata 54GB RAM) on every reboot.
+
+**Branch:** `feature/l232-inference-backend-profiles` (commits d93b1e18, b2b6ef80, 9e5f32ef, 46bdcf51)
+**Spec:** `docs/development-process/loops/L232-inference-backend-profiles.md`
+**Handoff:** `docs/handoffs/L232-inference-backend-profiles-handoff.md`
+
+**Gates:** runtime pytest 2412 passed/0 failed; dev pytest zero new failures (35 pre-existing on baseline); mypy clean; ruff at baseline (48).
+
+**Deployed:** ~/Hestia-runtime merged (d4712178 + follow-up), config.runtime.py points at Strata, hestia-serve restarted and smoke-tested (health + CLI ask), hestia-llama stays stopped. No Telegram/Matrix messages sent (Dylan asleep).
+
 ## 2026-07-03 — L244: Migrate `job_alert` Subsystem to Private Repo
 
 **Outcome:** Moved the job-alert queue (`JobAlertStore` + `save_job_alert`, `list_pending_alerts`, `mark_alerts_sent`) out of the publishable Hestia core and into the private `hestia-tools` package. The migration uses the L241 `setup(context)` / `register(registry)` seam; the table is created lazily on the first tool call.

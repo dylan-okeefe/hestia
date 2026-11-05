@@ -219,3 +219,70 @@ differs from how that column's rows are written - today that means
 `.isoformat()` strings bound against columns written via datetime-object
 binding. Grep-level over sa.text/sa.select comparisons; cheap; would have
 caught both scheduler sites.
+
+## Addendum 2026-09-04 — two entries from card #60 (observability)
+
+### B1. CONFIRMED CLASS: detector matched the token the code can see, not the thing the rule is about
+
+Card #60's prompt-drift detector (serve.py `_missing_system_prompt_rules`,
+landed 2026-09-03) compared default vs runtime `system_prompt` rules by
+their NUMBERS. The incident it was written for — three and a half months
+of Hestia not choosing to remember — had every number 1..N still present:
+rule 6 (USER CORRECTIONS & PREFERENCES) was buried at position 15 among
+browser/search rules and rule 7 (MEMORY SCOPE) was absent. Number-matching
+returned `{}` against exactly that shape. A unit test
+(`test_reordered_rules_are_not_missing`) froze the blind spot as intended
+behaviour.
+
+Fixed 2026-09-04 on feat/60-observability-onto-develop: match the rule's
+uppercase HEADING before the colon, not its position; demonstrated red
+against a reconstruction of the pre-fix runtime prompt (old logic → `{}`,
+new logic → names MEMORY SCOPE). Same shape as the register's standing
+lesson: the first version of a detector tends to match what the code can
+see (positions, tokens) rather than what the rule is about (identity,
+semantics) — and a test written to the first version cements it.
+
+Generalize: **any detector that compares two artifacts must key on
+content identity, not on positional/index artifacts of the representation.**
+
+### B2. CONFIRMED CLASS: health metric whose null value is ambiguous
+
+Card #60 spent a week treating `proposals=0` as evidence of breakage.
+The count was CORRECT: reflection ticks fired, inference calls landed,
+the idle guard passed — there was simply near-zero conversation traffic,
+so the pattern miners (frustration, correction, slow_turn, repeated_chain,
+tool_failure) found nothing. Zero under near-zero usage is correct
+behaviour; zero under normal usage would be a fault. The number alone
+cannot distinguish the two, and the startup health surface (also #60)
+now reports it every boot — a value that still needs interpreting.
+
+The Sep 1 Telegram session is the exemplar: a twenty-turn conversation
+titled "Get to know me", all traces successful, no tools called, no
+memories saved. Someone explicitly invited Hestia to learn about them and
+it learned nothing — visible only by cross-reading traces and the memory
+table, not from any count.
+
+Generalize: **a health metric whose null value is ambiguous needs its
+traffic/denominator reported alongside it** (here: session/trace counts in
+the same health line), or the null will keep being read as a fault.
+
+## Addendum 2026-09-05 — CONFIRMED INSTANCE (card #60): fix verified working, with a reliability boundary
+
+Card #60's fix A (save_memory first-class) verified end-to-end 2026-09-05:
+cold CLI session, factual-phrased personal fact -> model called save_memory
+unprompted, correct global-scope row (mem_de2cfbdbd1de49f8). The request
+path was confirmed by reading: assembly appends the schema (isinstance-
+guarded), execution passes tools=ctx.tools at every call site.
+
+BOUNDARY, observed twice (14:58 cold CLI, 14:54 Telegram): a LONG,
+EMOTIONAL phrasing of the same fact ("That's a lot to hold... it can be
+difficult with my husbands narcolepsy") got an empathetic reply and NO
+save, byte-identical output on restored-slot and cold-slot runs — the
+model treats venting as comfort-first context and drops the persistence
+rule. Short factual phrasing saves immediately after. The plumbing is
+correct; the residual failure is model judgment, not code.
+
+Generalize: **verifying a fix on imperative/factual phrasing does not
+cover emotional phrasing; test the register of language where the bug
+actually lived.** The Sep 1 "Get to know me" session was exactly this
+register — chatty answers to personal questions, never bare facts.

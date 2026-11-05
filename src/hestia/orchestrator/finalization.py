@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 import uuid
 from typing import TYPE_CHECKING, Any
 
@@ -10,6 +11,7 @@ from hestia.core.types import Message, Session
 from hestia.errors import (
     ContextTooLargeError,
     HestiaError,
+    InferenceBusyError,
     InferenceServerError,
     InferenceTimeoutError,
     PersistenceError,
@@ -30,6 +32,14 @@ if TYPE_CHECKING:
     from hestia.policy.engine import PolicyEngine
 
 logger = logging.getLogger(__name__)
+
+# Detail-sanitization patterns for the unknown-error fallback: absolute
+# filesystem paths and URLs (which can carry hostnames/tokens) are collapsed
+# to placeholders before anything reaches the user.
+_ABSOLUTE_PATH_RE = re.compile(r"(?:/[\w.~-]+){2,}")
+_URL_RE = re.compile(r"https?://[^\s]+")
+_MAX_ERROR_DETAIL_CHARS = 200
+
 
 class TurnFinalization:
     """Handles turn finalization concerns: slot save, trace recording,
@@ -64,12 +74,15 @@ class TurnFinalization:
         """Return a user-facing message for an unexpected error.
 
         HestiaError subclasses are intentionally raised with user-friendly
-        messages, so they pass through. Everything else is sanitized to a
-        generic message to avoid leaking internal details (SQL errors,
-        file paths, stack traces) to end users.
+        messages, so they pass through. Everything else still gets its
+        detail sanitized — filesystem paths and URLs collapse to
+        placeholders, the detail is capped at 200 chars on a single line,
+        and no stack traces leak — but the exception class name and message
+        are surfaced so users (and the operator) can tell failures apart.
         """
         from hestia.errors import (
             ContextTooLargeError,
+            InferenceBusyError,
             InferenceConnectionError,
             InferenceTimeoutError,
             MaxIterationsError,
@@ -86,6 +99,8 @@ class TurnFinalization:
                 f"({error.detail}). It may have crashed or be restarting — "
                 "try again in a few seconds."
             )
+        if isinstance(error, InferenceBusyError):
+            return "I'm busy working on another request right now — please try again in a moment."
         if isinstance(error, InferenceTimeoutError):
             return "The AI is taking longer than expected. Try again in a moment."
         if isinstance(error, ContextTooLargeError):
@@ -108,7 +123,15 @@ class TurnFinalization:
             return "I'm having trouble responding right now. Please try again."
         if isinstance(error, HestiaError):
             return str(error)
-        return "Something went wrong. The operator has been notified."
+        detail = " ".join(str(error).split())
+        detail = _URL_RE.sub("[url]", detail)
+        detail = _ABSOLUTE_PATH_RE.sub("[path]", detail)
+        if len(detail) > _MAX_ERROR_DETAIL_CHARS:
+            detail = detail[:_MAX_ERROR_DETAIL_CHARS].rstrip() + "..."
+        name = type(error).__name__
+        if detail:
+            return f"Unexpected error: {name}: {detail}. The operator has been notified."
+        return f"Unexpected error: {name}. The operator has been notified."
 
     async def finalize_turn(
         self,
@@ -252,7 +275,16 @@ class TurnFinalization:
             await transition(turn, TurnState.FAILED, "")
             turn.error = str(error)
             sanitized = self.sanitize_user_error(error)
-            await ctx.respond_callback(f"Error: {sanitized}")
+            if isinstance(error, InferenceBusyError):
+                # Capacity signal, not a failure — send the friendly message
+                # verbatim instead of the generic "Error: ..." wrapper.
+                await ctx.respond_callback(sanitized)
+            else:
+                # turn.id is in scope here; the short ref lets the operator
+                # grep logs for the full failure.
+                await ctx.respond_callback(
+                    f"Error: {sanitized} (ref {turn.id[:8]})"
+                )
         return await self.record_failure_if_enabled(
             session,
             turn,

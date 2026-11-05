@@ -15,11 +15,13 @@ from hestia.config import HestiaConfig
 from hestia.core.types import Message, ScheduledTask, Session, SessionState
 from hestia.orchestrator.engine import ConfirmCallback
 from hestia.orchestrator.finalization import sanitize_user_error
+from hestia.persistence.chat_settings import ChatSettingsStore
 from hestia.persistence.scheduler import SchedulerStore
 from hestia.persistence.session_store import SessionStore
 from hestia.platforms.base import Platform
 from hestia.platforms.matrix_adapter import MatrixAdapter
 from hestia.platforms.telegram_adapter import TelegramAdapter
+from hestia.platforms.thinking_display import make_thinking_display_gate
 from hestia.policy.channel import Channel
 from hestia.scheduler import Scheduler
 
@@ -29,6 +31,23 @@ logger = logging.getLogger(__name__)
 # to bind interactive confirmations to the requester (especially important in
 # group/room chats where the destination is a chat/room id, not the sender).
 current_requester: ContextVar[str | None] = ContextVar("current_requester", default=None)
+
+
+def _reset_stream_segment(state: dict[str, Any]) -> None:
+    """Close the current streamed segment so the next one opens a new message.
+
+    The adapter's stream callback closes over *this exact dict*, so every key it
+    reads has to stay present: deleting ``message_id`` (the previous behaviour
+    here) made the callback raise ``KeyError: 'message_id'`` on the next
+    streamed chunk and failed the whole turn mid-tool-loop. Re-seeding the keys
+    keeps the "fresh message for the next segment" intent without pulling keys
+    out from under the callback.
+    """
+    state["message_id"] = None
+    state["accumulated"] = ""
+    state["last_text"] = ""
+    state["first_chunk_time"] = None
+    state["last_edit"] = 0.0
 
 
 def make_telegram_confirm_callback(
@@ -188,8 +207,17 @@ class PlatformRunner:
         text: str,
         sender_platform_user: str | None = None,
         session_title: str | None = None,
+        images: list[str] | None = None,
     ) -> None:
-        """Handle incoming platform message."""
+        """Handle incoming platform message.
+
+        Args:
+            images: Optional JPEG data URLs riding on a photo message (L234
+                vision, Telegram only today). Capped at the configured
+                per-message limit before entering the turn pipeline.
+        """
+        if images:
+            images = images[: self.config.telegram.vision_max_images_per_message]
         token = None
         requester_token = None
         if self.user_context_var is not None:
@@ -287,9 +315,11 @@ class PlatformRunner:
                             e,
                         )
                     finally:
-                        # Clear the streamed message id so the next turn starts
-                        # fresh even if this edit or send raises.
-                        state.pop("message_id", None)
+                        # Re-seed the segment so the next streamed chunk opens a
+                        # fresh message, even if this edit or send raised. Never
+                        # delete keys: the in-flight stream callback still reads
+                        # them (see _reset_stream_segment).
+                        _reset_stream_segment(state)
                 await self.adapter.send_message(platform_user, response_text)
 
             channel = (
@@ -305,6 +335,7 @@ class PlatformRunner:
                 stream_callback=stream_callback,
                 resolved_user=resolved_user,
                 channel=channel,
+                images=images,
             )
 
             # Check for command prefix (e.g., "/workflow ")
@@ -401,6 +432,15 @@ async def run_platform(
         )
         adapter.register_reset_callback(_reset_callback)
         adapter.set_compactor(app.compactor)
+        # L250: /thinking per-chat display setting — one shared store backs
+        # both the command handler and the execution-time display gate.
+        chat_settings_store = ChatSettingsStore(app.db)
+        adapter.set_chat_settings_store(chat_settings_store)
+        orchestrator.set_reasoning_display_gate(
+            make_thinking_display_gate(
+                chat_settings_store, config.telegram.operator_user_id
+            )
+        )
     elif isinstance(adapter, MatrixAdapter):
         adapter.set_session_store(app.session_store)
         adapter.set_handoff_service(app.handoff_service)

@@ -74,6 +74,9 @@ class Turn:
 ResponseCallback = Callable[[str], Awaitable[None]]
 StreamCallback = Callable[[str], Awaitable[None]]
 TransitionCallback = Callable[[Turn, TurnState, str], Awaitable[None]]
+# (platform, platform_user) -> whether to show the model's reasoning display.
+# Installed per-platform (currently Telegram only); None means always show.
+ThinkingDisplayGate = Callable[[str, str], Awaitable[bool]]
 
 
 @dataclass
@@ -104,6 +107,11 @@ class TurnContext:
 
     # Per-turn delivery hint (set by platform adapter)
     voice_reply: bool = False
+
+    # Image attachments (JPEG data URLs) for this turn, if any (L234 vision).
+    # Mirrored onto ``user_message.images`` by the engine so assembly persists
+    # them and the context builder carries them into the request.
+    images: list[str] | None = None
 
     # Set by CapabilityGate when a tool requires confirmation.
     request_token: str | None = None

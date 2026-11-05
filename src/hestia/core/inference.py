@@ -15,7 +15,9 @@ import httpx
 from hestia.core.json_repair import repair_json
 from hestia.core.serialization import message_to_dict
 from hestia.core.types import ChatResponse, Message, StreamDelta, ToolCall, ToolSchema
+from hestia.core.vision import estimate_images_tokens
 from hestia.errors import (
+    InferenceBusyError,
     InferenceConnectionError,
     InferenceServerError,
     InferenceTimeoutError,
@@ -287,15 +289,40 @@ def _extract_tool_calls_from_text(text: str) -> list[ToolCall]:
 
 
 class InferenceClient:
-    """Thin, opinionated wrapper around llama.cpp HTTP server."""
+    """Thin, opinionated wrapper around an OpenAI-compatible chat server.
 
-    def __init__(self, base_url: str, model_name: str, timeout: float = 300.0) -> None:
+    Supports two backend profiles via ``server_type``:
+      - ``"llamacpp"`` (default): llama.cpp server — slot targeting,
+        ``reasoning_budget``, ``/tokenize``, and ``GET /health`` are used.
+      - ``"openai-compat"``: plain OpenAI-compatible server (e.g. Strata) —
+        llama.cpp-only request fields are omitted, tokenize is unavailable,
+        and health probes ``GET {base_url}/v1/models``.
+    """
+
+    def __init__(
+        self,
+        base_url: str,
+        model_name: str,
+        timeout: float = 300.0,
+        *,
+        server_type: str = "llamacpp",
+        max_inflight_requests: int = 0,
+        queue_timeout: float = 120.0,
+        vision_enabled: bool = False,
+    ) -> None:
         """Initialize the client.
 
         Args:
-            base_url: Base URL of the llama-server (e.g., http://localhost:8001)
+            base_url: Base URL of the inference server (e.g., http://localhost:8001)
             model_name: Model name to use in requests
             timeout: Default timeout for chat requests (seconds)
+            server_type: Backend profile — "llamacpp" or "openai-compat"
+            max_inflight_requests: Client-side admission limit; 0 = unlimited
+            queue_timeout: Seconds to wait for admission before InferenceBusyError
+            vision_enabled: Telegram vision master switch (config.telegram.vision).
+                Images are sent only when this is True AND server_type is
+                "openai-compat"; every other combination strips images with a
+                logged warning (L234 gating, enforced at request-build time).
         """
         if not model_name:
             raise ValueError(
@@ -305,8 +332,29 @@ class InferenceClient:
         self.base_url = base_url.rstrip("/")
         self.model_name = model_name
         self.timeout = timeout
+        self.server_type = server_type
+        self.queue_timeout = queue_timeout
+        self.vision_enabled = vision_enabled
+        if vision_enabled and server_type != "openai-compat":
+            # L234 §1: vision=True with a non-vision backend must be visible
+            # at startup, not discovered per-request.
+            logger.warning(
+                "telegram.vision=True but inference.server_type=%r — this backend has no "
+                "vision support; images will be stripped from every request. Set "
+                "inference.server_type='openai-compat' to enable vision.",
+                server_type,
+            )
+        # Client-side admission control: None when unlimited (zero overhead).
+        self._semaphore: asyncio.Semaphore | None = (
+            asyncio.Semaphore(max_inflight_requests) if max_inflight_requests > 0 else None
+        )
         # Force HTTP/1.1 — some environments have flaky HTTP/2 negotiation
         self._client = httpx.AsyncClient(http2=False)
+
+    @property
+    def supports_tokenize(self) -> bool:
+        """True when the backend exposes llama.cpp's /tokenize endpoint."""
+        return self.server_type == "llamacpp"
 
     async def close(self) -> None:
         """Close the HTTP client."""
@@ -317,6 +365,22 @@ class InferenceClient:
 
     async def __aexit__(self, *_exc: object) -> None:
         await self.close()
+
+    async def _acquire_admission(self) -> None:
+        """Wait for an inflight slot, raising InferenceBusyError on queue timeout."""
+        if self._semaphore is None:
+            return
+        try:
+            await asyncio.wait_for(self._semaphore.acquire(), timeout=self.queue_timeout)
+        except TimeoutError as e:
+            raise InferenceBusyError(
+                f"inference server is at capacity (max_inflight_requests "
+                f"reached); waited {self.queue_timeout}s for admission"
+            ) from e
+
+    def _release_admission(self) -> None:
+        if self._semaphore is not None:
+            self._semaphore.release()
 
     async def _request(
         self,
@@ -331,6 +395,7 @@ class InferenceClient:
         All public HTTP methods should route through here so that error
         handling, retry logic, and request logging live in one place.
         """
+        await self._acquire_admission()
         try:
             response = await self._client.request(
                 method,
@@ -353,18 +418,37 @@ class InferenceClient:
             raise InferenceConnectionError(
                 f"{method} {path}", f"{type(e).__name__}: {e}"
             ) from e
+        finally:
+            self._release_admission()
 
     async def health(self) -> dict[str, Any]:
-        """GET /health. Returns server health info."""
-        response = await self._request("GET", "/health", timeout=10.0)
-        result: dict[str, Any] = response.json()
+        """Probe server health.
+
+        llamacpp: GET /health (llama-server health payload).
+        openai-compat: GET {base_url}/v1/models; healthy on 2xx with non-empty data.
+        """
+        if self.server_type == "llamacpp":
+            response = await self._request("GET", "/health", timeout=10.0)
+            result: dict[str, Any] = response.json()
+            return result
+        response = await self._request("GET", "/v1/models", timeout=10.0)
+        result = response.json()
+        if not result.get("data"):
+            raise InferenceServerError(
+                f"GET /v1/models returned no models: {response.text}"
+            )
         return result
 
     async def tokenize(self, text: str) -> list[int]:
         """POST /tokenize. Returns token IDs.
 
         Use len(tokenize(text)) for accurate token counts.
+        Only available for server_type "llamacpp".
         """
+        if not self.supports_tokenize:
+            raise InferenceServerError(
+                f"tokenize unsupported for server_type {self.server_type!r}"
+            )
         response = await self._request(
             "POST",
             "/tokenize",
@@ -437,6 +521,44 @@ class InferenceClient:
 
         return counts
 
+    def _apply_vision_gate(self, messages: list[Message]) -> list[Message]:
+        """Enforce the L234 vision gate at request-build time.
+
+        Images flow ONLY when ``vision_enabled`` AND ``server_type ==
+        "openai-compat"``. Any other combination strips the images with a
+        loud warning (misconfig must be visible, never silent) and returns
+        the messages text-only. When the gate passes, the estimated image
+        token cost is logged per request.
+        """
+        image_messages = [m for m in messages if m.images]
+        if not image_messages:
+            return messages
+        total_images = sum(len(m.images or []) for m in image_messages)
+        if self.vision_enabled and self.server_type == "openai-compat":
+            estimated = sum(
+                estimate_images_tokens(m.images or []) for m in image_messages
+            )
+            logger.info(
+                "Vision request: %d image(s) across %d message(s), ~%d estimated image tokens",
+                total_images,
+                len(image_messages),
+                estimated,
+            )
+            return messages
+        if not self.vision_enabled:
+            reason = "telegram.vision is disabled"
+        else:
+            reason = f"server_type={self.server_type!r} has no vision support"
+        logger.warning(
+            "Stripping %d image(s) from inference request: %s. Images are only sent "
+            "when telegram.vision=True and inference.server_type='openai-compat'.",
+            total_images,
+            reason,
+        )
+        return [
+            dataclasses.replace(m, images=None) if m.images else m for m in messages
+        ]
+
     async def count_request(
         self,
         messages: list[Message],
@@ -450,6 +572,7 @@ class InferenceClient:
         """
         # Strip historical reasoning first
         clean_messages = _strip_historical_reasoning(messages)
+        clean_messages = self._apply_vision_gate(clean_messages)
 
         # Build the request body
         request_body: dict[str, Any] = {
@@ -477,7 +600,9 @@ class InferenceClient:
         """POST /v1/chat/completions. Returns a ChatResponse.
 
         Args:
-            messages: List of messages (historical reasoning is stripped automatically)
+            messages: List of messages (historical reasoning is stripped automatically).
+                User messages may carry ``images`` (JPEG data URLs); they are
+                gated per the L234 rule (telegram.vision + openai-compat only).
             tools: Optional list of tools to offer
             slot_id: Optional slot ID for slot-targeted inference
             reasoning_budget: Max reasoning tokens (think block)
@@ -486,19 +611,22 @@ class InferenceClient:
         """
         # Strip historical reasoning before building request
         clean_messages = _strip_historical_reasoning(messages)
+        clean_messages = self._apply_vision_gate(clean_messages)
 
         request_body: dict[str, Any] = {
             "model": self.model_name,
             "messages": [message_to_dict(m) for m in clean_messages],
             "max_tokens": max_tokens,
             "temperature": temperature,
-            "reasoning_budget": reasoning_budget,
         }
+        if self.server_type == "llamacpp":
+            # llama.cpp-only request fields; omitted for openai-compat backends.
+            request_body["reasoning_budget"] = reasoning_budget
 
         if tools:
             request_body["tools"] = [t.model_dump() for t in tools]
 
-        if slot_id is not None:
+        if slot_id is not None and self.server_type == "llamacpp":
             request_body["slot_id"] = slot_id
 
         response = await self._request(
@@ -627,6 +755,7 @@ class InferenceClient:
             temperature: Sampling temperature
         """
         clean_messages = _strip_historical_reasoning(messages)
+        clean_messages = self._apply_vision_gate(clean_messages)
 
         request_body: dict[str, Any] = {
             "model": self.model_name,
@@ -634,19 +763,22 @@ class InferenceClient:
             "stream": True,
             "max_tokens": max_tokens,
             "temperature": temperature,
-            "reasoning_budget": reasoning_budget,
         }
         # OpenAI-compatible servers (incl. llama.cpp) return a final usage
         # chunk when this is set, making streaming token accounting truthful
         # (PERF-004). Servers that don't support it ignore the field.
         request_body["stream_options"] = {"include_usage": True}
+        if self.server_type == "llamacpp":
+            # llama.cpp-only request fields; omitted for openai-compat backends.
+            request_body["reasoning_budget"] = reasoning_budget
 
         if tools:
             request_body["tools"] = [t.model_dump() for t in tools]
 
-        if slot_id is not None:
+        if slot_id is not None and self.server_type == "llamacpp":
             request_body["slot_id"] = slot_id
 
+        await self._acquire_admission()
         try:
             async with self._client.stream(
                 "POST",
@@ -729,6 +861,8 @@ class InferenceClient:
             raise InferenceConnectionError(
                 "POST /v1/chat/completions", f"{type(e).__name__}: {e}"
             ) from e
+        finally:
+            self._release_admission()
 
     async def slot_save(self, slot_id: int, filename: str) -> None:
         """POST /slots/{id}?action=save"""

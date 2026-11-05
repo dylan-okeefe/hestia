@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import io
 import logging
@@ -16,14 +17,18 @@ from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from telegram import Chat, InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.error import RetryAfter, TelegramError
+from telegram.error import BadRequest, RetryAfter, TelegramError
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
+from hestia.commands.intro import (
+    get_intro_store,
+    render_continue,
+    render_end,
+    render_intro_start,
+)
 from hestia.commands.meta import get_default_registry, render_commands_reference
 from hestia.commands.tour import (
     get_tour_store,
-    render_tour_continue,
-    render_tour_end,
     render_tour_start,
 )
 from hestia.config import TelegramConfig
@@ -37,6 +42,7 @@ from hestia.platforms.allowlist import (
 )
 from hestia.platforms.base import IncomingMessageCallback, Platform
 from hestia.platforms.confirmation import ConfirmationStore, render_args_for_human_review
+from hestia.platforms.thinking_display import resolve_show_thinking
 from hestia.policy.channel import Channel
 from hestia.voice.pipeline import get_voice_pipeline
 
@@ -45,7 +51,9 @@ if TYPE_CHECKING:
     from hestia.orchestrator.compaction import SessionCompactor
     from hestia.orchestrator.engine import Orchestrator
     from hestia.orchestrator.handoff_service import HandoffService
+    from hestia.persistence.chat_settings import ChatSettingsStore
     from hestia.persistence.session_store import SessionStore
+    from hestia.platforms.agent_bridge import AgentBridge
 
 
 # Telegram caps a single message at 4096 characters. We leave headroom for
@@ -53,6 +61,11 @@ if TYPE_CHECKING:
 # a conservative limit and sending/editing in chunks.
 _TELEGRAM_MAX_TEXT_LEN = 4096
 _SAFE_CHUNK_LEN = 3800
+
+# L234 vision: encoded-JPEG output cap (~400KB per image) and a hard guard on
+# the raw Telegram download so a bogus file_size cannot fill the disk.
+_VISION_MAX_JPEG_BYTES = 400_000
+_MAX_PHOTO_DOWNLOAD_BYTES = 10 * 1024 * 1024
 
 
 def _split_long_text(text: str, max_len: int = _SAFE_CHUNK_LEN) -> list[str]:
@@ -193,6 +206,11 @@ class TelegramAdapter(Platform):
         self._voice_config: VoiceConfig | None = None
         self._reset_callback: Callable[[str], Awaitable[None]] | None = None
         self._compactor: SessionCompactor | None = None
+        # L233: optional coding-agent bridge; injected via set_agent_bridge.
+        self._agent_bridge: AgentBridge | None = None
+        # L250: per-chat settings store for /thinking; injected via
+        # set_chat_settings_store by the runner wiring.
+        self._chat_settings_store: ChatSettingsStore | None = None
 
         # Validate allowed_users entries (hard-fail at startup)
         for entry in self._config.allowed_users:
@@ -204,7 +222,7 @@ class TelegramAdapter(Platform):
                 continue
             raise ValueError(
                 f"Invalid allowed_users entry {entry!r}: must be a numeric "
-                "Telegram user ID or a valid username."
+                "Telegram user ID, group chat ID, or a valid username."
             )
 
     @property
@@ -249,7 +267,20 @@ class TelegramAdapter(Platform):
         """Inject the session compactor for /compact handling."""
         self._compactor = compactor
 
-    async def start(self, on_message: IncomingMessageCallback) -> None:
+    def set_agent_bridge(self, bridge: AgentBridge | None) -> None:
+        """Attach (or detach) the coding-agent bridge (L233).
+
+        When attached and ``bridge.should_route(platform_user)`` matches,
+        _handle_message routes the message to the bridge instead of the
+        normal _on_message dispatch.
+        """
+        self._agent_bridge = bridge
+
+    def set_chat_settings_store(self, store: ChatSettingsStore) -> None:
+        """Inject the per-chat settings store backing /thinking (L250)."""
+        self._chat_settings_store = store
+
+    async def start(self, on_message: IncomingMessageCallback | None) -> None:
         """Start polling for Telegram messages."""
         self._on_message = on_message
 
@@ -262,9 +293,13 @@ class TelegramAdapter(Platform):
         self._app.add_handler(CommandHandler("commands", self._handle_commands))
         self._app.add_handler(CommandHandler("help", self._handle_help))
         self._app.add_handler(CommandHandler("tour", self._handle_tour))
+        self._app.add_handler(CommandHandler("intro", self._handle_intro))
         self._app.add_handler(CommandHandler("continue", self._handle_continue))
         self._app.add_handler(CommandHandler("endtour", self._handle_endtour))
+        self._app.add_handler(CommandHandler("thinking", self._handle_thinking))
+        self._app.add_handler(CommandHandler("agent", self._handle_agent))
         self._app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message))
+        self._app.add_handler(MessageHandler(filters.PHOTO & ~filters.COMMAND, self._handle_photo))
         if self._config.voice_messages:
             self._app.add_handler(MessageHandler(filters.VOICE, self._handle_voice_message))
         self._app.add_handler(CallbackQueryHandler(self._handle_callback_query))
@@ -286,6 +321,8 @@ class TelegramAdapter(Platform):
         for task in self._typing_tasks.values():
             task.cancel()
         self._typing_tasks.clear()
+        if self._agent_bridge is not None:
+            await self._agent_bridge.aclose()
         if self._app is not None:
             if self._app.updater is not None:
                 await self._app.updater.stop()
@@ -362,6 +399,22 @@ class TelegramAdapter(Platform):
                 first_msg = msg
         assert first_msg is not None
         return str(first_msg.message_id)
+
+    async def delete_message(self, user: str, msg_id: str) -> None:
+        """Delete a previously sent message.
+
+        BadRequest (message already deleted or not found) is logged at debug
+        and swallowed — deletion is best-effort.
+        """
+        if self._app is None:
+            return
+        try:
+            await self._app.bot.delete_message(
+                chat_id=int(user),
+                message_id=int(msg_id),
+            )
+        except BadRequest as e:
+            logger.debug("Could not delete message %s in chat %s: %s", msg_id, user, e)
 
     def _prune_last_edit_times(self) -> None:
         """Evict entries older than _last_edit_max_age to prevent unbounded growth."""
@@ -856,8 +909,8 @@ class TelegramAdapter(Platform):
         )
         await update.effective_message.reply_text(text)
 
-    async def _handle_continue(self, update: Update, context: Any) -> None:
-        """Handle /continue: advance the narrated tour by one step."""
+    async def _handle_intro(self, update: Update, context: Any) -> None:
+        """Handle /intro: start the detailed intro; allowed in group chats."""
         if update.effective_user is None or update.effective_message is None:
             return
 
@@ -877,8 +930,36 @@ class TelegramAdapter(Platform):
             platform_user = str(chat.id)
         else:
             platform_user = str(user_id)
-        text = render_tour_continue(
-            get_tour_store(), "telegram", platform_user, group_room=in_group
+        text = render_intro_start(get_intro_store(), "telegram", platform_user)
+        await update.effective_message.reply_text(text)
+
+    async def _handle_continue(self, update: Update, context: Any) -> None:
+        """Handle /continue: advance the active narrated routine by one step."""
+        if update.effective_user is None or update.effective_message is None:
+            return
+
+        user_id = update.effective_user.id
+        username = update.effective_user.username or str(user_id)
+        chat = update.effective_chat
+        in_group = chat is not None and chat.type in (Chat.GROUP, Chat.SUPERGROUP)
+
+        if not self._is_allowed(user_id, username):
+            if in_group:
+                return
+            await update.effective_message.reply_text("Not authorized.")
+            return
+
+        if in_group:
+            assert chat is not None
+            platform_user = str(chat.id)
+        else:
+            platform_user = str(user_id)
+        text = render_continue(
+            get_intro_store(),
+            get_tour_store(),
+            "telegram",
+            platform_user,
+            group_room=in_group,
         )
         await update.effective_message.reply_text(text)
 
@@ -903,10 +984,128 @@ class TelegramAdapter(Platform):
             platform_user = str(chat.id)
         else:
             platform_user = str(user_id)
-        text = render_tour_end(
-            get_tour_store(), "telegram", platform_user, group_room=in_group
+        text = render_end(
+            get_intro_store(),
+            get_tour_store(),
+            "telegram",
+            platform_user,
+            group_room=in_group,
         )
         await update.effective_message.reply_text(text)
+
+    async def _handle_thinking(self, update: Update, context: Any) -> None:
+        """Handle /thinking: show/hide the model's reasoning for this chat (L250)."""
+        if update.effective_user is None or update.effective_message is None:
+            return
+
+        user_id = update.effective_user.id
+        username = update.effective_user.username or str(user_id)
+        chat = update.effective_chat
+        in_group = chat is not None and chat.type in (Chat.GROUP, Chat.SUPERGROUP)
+
+        if not self._is_allowed(user_id, username):
+            if in_group:
+                return
+            await update.effective_message.reply_text("Not authorized.")
+            return
+
+        if in_group:
+            assert chat is not None
+            platform_user = str(chat.id)
+        else:
+            platform_user = str(user_id)
+
+        if self._chat_settings_store is None:
+            await update.effective_message.reply_text(
+                "Thinking display is not available right now."
+            )
+            return
+
+        store = self._chat_settings_store
+        current = await resolve_show_thinking(
+            store, "telegram", platform_user, self._config.operator_user_id
+        )
+
+        args = context.args if context and context.args else None
+        arg = args[0].lower() if args else None
+        if arg is None:
+            enabled = not current
+        elif arg == "on":
+            enabled = True
+        elif arg == "off":
+            enabled = False
+        else:
+            await update.effective_message.reply_text(
+                "Usage: /thinking [on|off] — a bare /thinking toggles."
+            )
+            return
+
+        await store.set_show_thinking("telegram", platform_user, enabled)
+        state = "on" if enabled else "off"
+        await update.effective_message.reply_text(
+            f"Thinking display: {state} for this chat."
+        )
+
+    async def _handle_agent(self, update: Update, context: Any) -> None:
+        """Handle /agent: select the coding-agent backend for this chat (L251).
+
+        Coder-bot mode only (requires the agent bridge); operator-gated like
+        the L250 settings commands. The choice persists per chat in the chat
+        settings store (``agent_backend`` key; absent = pi).
+        """
+        if update.effective_user is None or update.effective_message is None:
+            return
+
+        user_id = update.effective_user.id
+        chat = update.effective_chat
+        in_group = chat is not None and chat.type in (Chat.GROUP, Chat.SUPERGROUP)
+
+        operator = self._config.operator_user_id
+        if not operator or str(user_id) != operator:
+            if in_group:
+                return
+            await update.effective_message.reply_text("Not authorized.")
+            return
+
+        if in_group:
+            assert chat is not None
+            platform_user = str(chat.id)
+        else:
+            platform_user = str(user_id)
+
+        if self._agent_bridge is None:
+            await update.effective_message.reply_text(
+                "/agent is only available in coder-bot mode (agent bridge is not running here)."
+            )
+            return
+
+        if self._chat_settings_store is None:
+            await update.effective_message.reply_text("Chat settings are not available right now.")
+            return
+
+        store = self._chat_settings_store
+        args = context.args if context and context.args else None
+        arg = args[0].lower() if args else None
+
+        if arg is None:
+            current = await store.get_agent_backend("telegram", platform_user) or "pi"
+            await update.effective_message.reply_text(
+                f"Agent backend for this chat: {current}. Switch with /agent pi or /agent kimi."
+            )
+            return
+        if arg not in ("pi", "kimi"):
+            await update.effective_message.reply_text(
+                "Usage: /agent [pi|kimi] — a bare /agent reports the current backend."
+            )
+            return
+        if arg == "kimi" and not self._config.agent_bridge_kimi_workdir:
+            await update.effective_message.reply_text(
+                "The Kimi backend is not configured (agent_bridge_kimi_workdir is empty); "
+                "staying on pi."
+            )
+            return
+        await store.set_agent_backend("telegram", platform_user, arg)
+        await update.effective_message.reply_text(f"Agent backend for this chat: {arg}.")
 
     async def _handle_message(self, update: Update, context: Any) -> None:
         """Handle incoming text messages."""
@@ -952,6 +1151,23 @@ class TelegramAdapter(Platform):
                 # Don't route workflow replies to the orchestrator
                 return
 
+        # L233: coding-agent bridge intercept — allowlisted chats talk to the
+        # Pi coding agent instead of the normal _on_message dispatch.
+        if self._agent_bridge is not None and self._agent_bridge.should_route(platform_user):
+            await self._agent_bridge.handle(platform_user, update.effective_message.text)
+            return
+
+        if self._agent_bridge is not None and self._on_message is None:
+            # Coder-bot mode: the sender is allowlisted but the chat is not in
+            # agent_bridge_chats (e.g. a group that has not been onboarded
+            # yet). Log the chat id so onboarding only requires sending one
+            # message in the chat; the operator reads it from the journal.
+            logger.info(
+                "coder bot: message in non-routed chat %s (%r) ignored",
+                platform_user,
+                session_title,
+            )
+
         if self._on_message is not None:
             await self._on_message(
                 self.name,
@@ -959,6 +1175,105 @@ class TelegramAdapter(Platform):
                 update.effective_message.text,
                 sender_platform_user,
                 session_title,
+                None,  # images: text messages carry no attachments (L234)
+            )
+
+    async def _handle_photo(self, update: Update, context: Any) -> None:
+        """Handle incoming photos: download, downscale, and hand to the orchestrator.
+
+        Before L234 photos were silently dropped (no PHOTO handler existed).
+        When vision is disabled we now reply once per photo so the sender
+        knows; when enabled the largest PhotoSize is downloaded, downscaled
+        to ``vision_max_edge_px`` and JPEG-encoded via ffmpeg, then passed
+        through ``_on_message`` as base64 data URLs with the caption as text.
+        """
+        if update.effective_user is None or update.effective_message is None:
+            return
+        message = update.effective_message
+        if not message.photo:
+            return
+
+        user_id = update.effective_user.id
+        username = update.effective_user.username or str(user_id)
+        chat = update.effective_chat
+        in_group = chat is not None and chat.type in (Chat.GROUP, Chat.SUPERGROUP)
+
+        if not self._is_allowed(user_id, username):
+            # Silently ignore non-allowed users in groups to avoid spam
+            if in_group:
+                return
+            await message.reply_text("Not authorized.")
+            return
+
+        if not self._config.vision:
+            logger.debug("Photo ignored (telegram.vision=False)")
+            await message.reply_text(
+                "I can't see images yet — vision is disabled on this bot. "
+                "Ask the operator to enable telegram.vision."
+            )
+            return
+
+        # In group chats, route replies to the group; in private chats, DM the user
+        if in_group:
+            assert chat is not None
+            platform_user = str(chat.id)
+            sender_platform_user = str(user_id)
+            session_title = chat.title
+        else:
+            platform_user = str(user_id)
+            sender_platform_user = None
+            session_title = None
+
+        caption = message.caption or ""
+
+        # Telegram sends each photo as a list of PhotoSize thumbnails; the
+        # last entry is the largest. Guard the declared size before download
+        # so a bogus payload can't blow up the disk.
+        photo = message.photo[-1]
+        if photo.file_size is not None and photo.file_size > _MAX_PHOTO_DOWNLOAD_BYTES:
+            await message.reply_text("Sorry, that image is too large for me to process.")
+            return
+
+        jpg_path: str | None = None
+        try:
+            photo_file = await photo.get_file(read_timeout=60.0)
+            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+                await photo_file.download_to_drive(
+                    tmp.name, read_timeout=60.0, write_timeout=60.0
+                )
+                jpg_path = tmp.name
+        except Exception as e:  # noqa: BLE001 — photo download boundary
+            logger.warning("Failed to download photo: %s", e)
+            if jpg_path is not None:
+                with contextlib.suppress(OSError):
+                    os.unlink(jpg_path)
+            await message.reply_text("Sorry, I couldn't download that image.")
+            return
+
+        try:
+            data_url = await self._photo_to_jpeg_data_url(
+                jpg_path, max_edge=self._config.vision_max_edge_px
+            )
+        except Exception as e:  # noqa: BLE001 — image conversion boundary
+            logger.warning("Failed to convert photo: %s", e)
+            await message.reply_text("Sorry, I couldn't process that image.")
+            return
+        finally:
+            with contextlib.suppress(OSError):
+                os.unlink(jpg_path)
+
+        # One image per Telegram photo message today; the cap keeps stored
+        # history within the configured per-message limit regardless.
+        data_urls = [data_url][: self._config.vision_max_images_per_message]
+
+        if self._on_message is not None:
+            await self._on_message(
+                self.name,
+                platform_user,
+                caption,
+                sender_platform_user,
+                session_title,
+                images=data_urls,
             )
 
     async def _handle_voice_message(self, update: Update, context: Any) -> None:
@@ -1217,6 +1532,64 @@ class TelegramAdapter(Platform):
     # ------------------------------------------------------------------
     # FFmpeg helpers
     # ------------------------------------------------------------------
+
+    async def _photo_to_jpeg_data_url(self, jpg_path: str, max_edge: int) -> str:
+        """Downscale + JPEG re-encode a photo via ffmpeg, returning a base64 data URL.
+
+        The longest side is capped at ``max_edge`` (aspect preserved). The
+        output is capped at ~400KB: if the default quality exceeds the cap,
+        a lower-quality retry runs, then a smaller-edge retry as a last
+        resort. Raises RuntimeError when the cap still cannot be met.
+        """
+        jpeg_bytes = await self._ffmpeg_jpeg(jpg_path, max_edge=max_edge, quality=4)
+        if len(jpeg_bytes) > _VISION_MAX_JPEG_BYTES:
+            logger.debug(
+                "Encoded JPEG over %d-byte cap (%d bytes); retrying at lower quality",
+                _VISION_MAX_JPEG_BYTES,
+                len(jpeg_bytes),
+            )
+            jpeg_bytes = await self._ffmpeg_jpeg(jpg_path, max_edge=max_edge, quality=8)
+        if len(jpeg_bytes) > _VISION_MAX_JPEG_BYTES:
+            smaller_edge = max(256, int(max_edge * 0.6))
+            logger.debug(
+                "Encoded JPEG still over cap (%d bytes); retrying at edge %d",
+                len(jpeg_bytes),
+                smaller_edge,
+            )
+            jpeg_bytes = await self._ffmpeg_jpeg(jpg_path, max_edge=smaller_edge, quality=8)
+        if len(jpeg_bytes) > _VISION_MAX_JPEG_BYTES:
+            raise RuntimeError(
+                f"encoded JPEG still exceeds {_VISION_MAX_JPEG_BYTES}-byte cap "
+                f"({len(jpeg_bytes)} bytes)"
+            )
+        return "data:image/jpeg;base64," + base64.b64encode(jpeg_bytes).decode("ascii")
+
+    async def _ffmpeg_jpeg(self, src_path: str, max_edge: int, quality: int) -> bytes:
+        """Run ffmpeg once: scale so the longest side fits ``max_edge``, JPEG encode."""
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            src_path,
+            "-vf",
+            (
+                f"scale='min({max_edge},iw)':'min({max_edge},ih)':"
+                "force_original_aspect_ratio=decrease"
+            ),
+            "-q:v",
+            str(quality),
+            "-f",
+            "mjpeg",
+            "-",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            raise RuntimeError(f"ffmpeg photo→jpeg failed: {stderr.decode().strip()}")
+        return stdout
 
     async def _ogg_to_pcm(self, ogg_path: str, sample_rate: int = 16000) -> bytes:
         """Convert an OGG/Opus file to raw PCM16 mono bytes."""

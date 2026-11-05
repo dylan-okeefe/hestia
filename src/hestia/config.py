@@ -51,6 +51,13 @@ class InferenceConfig(_ConfigFromEnv):
     stream: bool = False
     request_timeout: float = 300.0
     """HTTP timeout (seconds) for chat completion requests to llama-server."""
+    server_type: str = "llamacpp"
+    """Backend profile: "llamacpp" (default; slots, /tokenize, /health) or
+    "openai-compat" (e.g. Strata; llama.cpp-only machinery disabled)."""
+    max_inflight_requests: int = 0
+    """Client-side admission limit; 0 = unlimited (llama.cpp default)."""
+    queue_timeout: float = 120.0
+    """Seconds to wait for admission before raising InferenceBusyError."""
 
     def __post_init__(self) -> None:
         # Reject literal "dummy" at config-load (see H-5).
@@ -69,6 +76,20 @@ class InferenceConfig(_ConfigFromEnv):
         if self.request_timeout < 0:
             raise ValueError(
                 f"InferenceConfig.request_timeout must be non-negative, got {self.request_timeout}"
+            )
+        if self.server_type not in ("llamacpp", "openai-compat"):
+            raise ValueError(
+                f"InferenceConfig.server_type must be 'llamacpp' or 'openai-compat', "
+                f"got {self.server_type!r}"
+            )
+        if self.max_inflight_requests < 0:
+            raise ValueError(
+                "InferenceConfig.max_inflight_requests must be non-negative, "
+                f"got {self.max_inflight_requests}"
+            )
+        if self.queue_timeout < 0:
+            raise ValueError(
+                f"InferenceConfig.queue_timeout must be non-negative, got {self.queue_timeout}"
             )
 
 
@@ -164,6 +185,31 @@ class TelegramConfig(_ConfigFromEnv):
     read_timeout_seconds: float = 30.0
     long_poll_timeout_seconds: float = 30.0
     voice_messages: bool = False  # Phase A feature flag
+    agent_bridge_enabled: bool = False  # L233: route agent_bridge_chats to a Pi coding-agent child
+    agent_bridge_chats: list[str] = field(default_factory=list)
+    """Chat IDs (platform_user, exactly as _handle_message computes) routed to the coding agent."""
+    agent_bridge_workspace: str = "~/hestia-tg-agent"
+    """Working directory for the Pi coding-agent child (path-fence confines file tools here)."""
+    agent_bridge_kimi_workdir: str = ""
+    """Working directory for the Kimi CLI backend (L251); empty disables the kimi backend."""
+    agent_bridge_kimi_bin: str = "kimi"
+    """Executable name/path for the Kimi CLI backend."""
+    agent_bridge_kimi_timeout_seconds: float = 1800.0
+    """Per-run timeout for one Kimi CLI invocation (agentic runs can take minutes)."""
+    vision: bool = False  # L234: master switch for Telegram photo → model vision
+    vision_max_images_per_message: int = 4
+    """Cap on images carried per message (history storage + request)."""
+    vision_max_edge_px: int = 1024
+    """Longest-side downscale target for photos before they are sent (pixels)."""
+    operator_user_id: str = ""
+    """Telegram user ID of the bot's owner/primary user (L250).
+
+    Used to default the per-chat /thinking display setting: the operator's
+    own chats show model reasoning unless toggled off, everyone else's are
+    hidden unless toggled on. Empty means "no operator configured" and every
+    chat defaults to hidden. Set via config file or
+    HESTIA_TELEGRAM_OPERATOR_USER_ID.
+    """
 
     def __repr__(self) -> str:
         fields = []
@@ -521,6 +567,13 @@ class VoiceConfig(_ConfigFromEnv):
     tts_voice: str = "en_US-amy-medium"
     tts_speed: float = 1.0
     tts_sample_rate: int = 22050
+    tts_device: str = "cpu"
+    """Device for TTS inference ("cpu", "cuda", or "" for the engine default).
+
+    Defaults to CPU: Kokoro-82M is fast enough on CPU and this keeps TTS off
+    the GPU(s) shared with the inference server. Kokoro auto-selects CUDA when
+    this is left empty, which OOM'd in production when the desktop GPU was
+    already full (2026-09-09)."""
     model_cache_dir: Path = field(default_factory=lambda: Path.home() / ".cache" / "hestia" / "voice")
 
 
@@ -660,7 +713,10 @@ class HestiaConfig(_ConfigFromEnv):
         "instructions provide.\n"
         "2. If a tool is unavailable, blocked, or returns an error, STOP and tell the user "
         "or choose a different action. Do not keep retrying the same call.\n"
-        "3. When the user asks a conversational question, reply directly without calling tools.\n"
+        "3. When the user asks a conversational question, reply directly without calling "
+        "tools — EXCEPT: if the user shares a durable personal fact (identity, family, "
+        "living situation, preferences, corrections — rule 6), call save_memory first, "
+        "then reply.\n"
         "4. For greetings, casual chat, or anything that does not require a tool, "
         "reply directly. Do not call list_tools, describe_tool, or call_tool.\n"
         "5. FILE WRITING: If you need to write more than 2000 characters, create the file "
@@ -668,7 +724,8 @@ class HestiaConfig(_ConfigFromEnv):
         "append_to_file. Do NOT try to fit an entire long document into one tool call.\n"
         "6. USER CORRECTIONS & PREFERENCES: If the user corrects you, changes a "
         "preference, or states a durable fact (e.g. location filters, scheduling rules, "
-        "what to include/exclude), immediately use save_memory to persist it. These "
+        "what to include/exclude, family, living situation), immediately use save_memory "
+        "to persist it. These "
         "memories are loaded into future context, so corrections survive compaction and "
         "new sessions.\n"
         "7. MEMORY SCOPE: When persisting identity or durable preferences with "
@@ -700,7 +757,10 @@ class HestiaConfig(_ConfigFromEnv):
             "instructions provide.\n"
             "2. If a tool is unavailable, blocked, or returns an error, STOP and tell the user "
             "or choose a different action. Do not keep retrying the same call.\n"
-            "3. When the user asks a conversational question, reply directly without calling tools.\n"
+            "3. When the user asks a conversational question, reply directly without calling "
+        "tools — EXCEPT: if the user shares a durable personal fact (identity, family, "
+        "living situation, preferences, corrections — rule 6), call save_memory first, "
+        "then reply.\n"
             "4. For greetings, casual chat, or anything that does not require a tool, "
             "reply directly. Do not call list_tools, describe_tool, or call_tool.\n"
             "5. FILE WRITING: If you need to write more than 2000 characters, create the file "
@@ -708,7 +768,8 @@ class HestiaConfig(_ConfigFromEnv):
             "append_to_file. Do NOT try to fit an entire long document into one tool call.\n"
             "6. USER CORRECTIONS & PREFERENCES: If the user corrects you, changes a "
             "preference, or states a durable fact (e.g. location filters, scheduling rules, "
-            "what to include/exclude), immediately use save_memory to persist it. These "
+            "what to include/exclude, family, living situation), immediately use save_memory "
+            "to persist it. These "
             "memories are loaded into future context, so corrections survive compaction and "
             "new sessions.\n"
             "7. MEMORY SCOPE: When persisting identity or durable preferences with "

@@ -36,7 +36,7 @@ class TestTelegramGroupChatRouting:
         telegram_config.allowed_users = ["12345"]
         adapter = TelegramAdapter(telegram_config)
 
-        received_args: tuple[str, str, str, str | None, str | None] | None = None
+        received_args: tuple[str, str, str, str | None, str | None, list[str] | None] | None = None
 
         async def on_message(
             platform: str,
@@ -44,9 +44,10 @@ class TestTelegramGroupChatRouting:
             text: str,
             sender: str | None,
             session_title: str | None = None,
+            images: list[str] | None = None,
         ) -> None:
             nonlocal received_args
-            received_args = (platform, user, text, sender, session_title)
+            received_args = (platform, user, text, sender, session_title, images)
 
         adapter._on_message = on_message
 
@@ -75,6 +76,7 @@ class TestTelegramGroupChatRouting:
         assert received_args[2] == "Hello group"
         assert received_args[3] == "12345"  # sender_platform_user
         assert received_args[4] == "Test Group"  # session_title from group chat
+        assert received_args[5] is None  # images: text messages carry no attachments
 
     @pytest.mark.asyncio
     async def test_private_chat_passes_none_sender(
@@ -86,7 +88,7 @@ class TestTelegramGroupChatRouting:
         telegram_config.allowed_users = ["12345"]
         adapter = TelegramAdapter(telegram_config)
 
-        received_args: tuple[str, str, str, str | None, str | None] | None = None
+        received_args: tuple[str, str, str, str | None, str | None, list[str] | None] | None = None
 
         async def on_message(
             platform: str,
@@ -94,9 +96,10 @@ class TestTelegramGroupChatRouting:
             text: str,
             sender: str | None,
             session_title: str | None = None,
+            images: list[str] | None = None,
         ) -> None:
             nonlocal received_args
-            received_args = (platform, user, text, sender, session_title)
+            received_args = (platform, user, text, sender, session_title, images)
 
         adapter._on_message = on_message
 
@@ -123,6 +126,7 @@ class TestTelegramGroupChatRouting:
         assert received_args[2] == "Hello private"
         assert received_args[3] is None
         assert received_args[4] is None  # session_title in private chat
+        assert received_args[5] is None  # images: text messages carry no attachments
 
     @pytest.mark.asyncio
     async def test_group_chat_ignores_disallowed_user(

@@ -1,6 +1,7 @@
 """ContextBuilder assembles the message list for a turn under a token budget."""
 
 import asyncio
+import dataclasses
 import json
 import logging
 from collections import OrderedDict
@@ -16,6 +17,7 @@ from hestia.context.sequence_validator import validate_chat_template_sequence
 from hestia.core.inference import InferenceClient
 from hestia.core.serialization import message_to_dict
 from hestia.core.types import Message, Session, ToolCall, ToolSchema
+from hestia.core.vision import estimate_images_tokens
 from hestia.errors import ContextTooLargeError
 from hestia.policy.engine import PolicyEngine
 
@@ -368,8 +370,8 @@ class ContextBuilder:
                     "messages": [message_to_dict(_m1), message_to_dict(_m2)],
                 }
             )
-            _single_count = len(await self._inference.tokenize(_single_body))
-            _combined_count = len(await self._inference.tokenize(_combined_body))
+            _single_count = await self._count_text_tokens(_single_body)
+            _combined_count = await self._count_text_tokens(_combined_body)
             return (
                 _combined_count - _single_count - await self._count_tokens(_m2)
             )
@@ -491,8 +493,33 @@ class ContextBuilder:
     def _render_message(self, message: Message) -> str:
         """Render a single message to the same JSON representation used by
         :meth:`InferenceClient.count_request`.
+
+        Image attachments are rendered WITHOUT their base64 payloads — token
+        counting uses :func:`~hestia.core.vision.estimate_images_tokens`
+        instead, so the multi-hundred-KB data URLs never reach the tokenizer.
         """
+        if message.images:
+            message = dataclasses.replace(message, images=None)
         return json.dumps(message_to_dict(message))
+
+    def _supports_tokenize(self) -> bool:
+        """True when the inference client can hit a real /tokenize endpoint.
+
+        Duck-typed clients without a ``supports_tokenize`` attribute are
+        assumed to support tokenize (preserves legacy fake-client behavior).
+        """
+        return bool(getattr(self._inference, "supports_tokenize", True))
+
+    @staticmethod
+    def _estimate_tokens(text: str) -> int:
+        """Char-based fallback estimate for backends without /tokenize."""
+        return max(1, len(text) // 4)
+
+    async def _count_text_tokens(self, text: str) -> int:
+        """Token count for an arbitrary string, with tokenize fallback."""
+        if self._supports_tokenize():
+            return len(await self._inference.tokenize(text))
+        return self._estimate_tokens(text)
 
     async def _count_tokens(self, message: Message) -> int:
         """Count tokens for a single message, with per-builder caching.
@@ -510,7 +537,10 @@ class ContextBuilder:
 
         Messages with ``tool_calls`` bypass the cache entirely because
         the serialized tool-call signature varies independently of
-        ``content``.
+        ``content``. Messages with ``images`` also bypass the cache: their
+        rendered form omits the base64 payload and the estimated image-token
+        cost is added on top, so the cache key (role, content) would collide
+        with an identical text-only message.
 
         Args:
             message: Message to count
@@ -519,14 +549,15 @@ class ContextBuilder:
             Token count for the rendered message dict
         """
         if message.tool_calls:
-            tokens = await self._inference.tokenize(self._render_message(message))
-            return len(tokens)
+            return await self._count_text_tokens(self._render_message(message))
+        if message.images:
+            text_count = await self._count_text_tokens(self._render_message(message))
+            return text_count + estimate_images_tokens(message.images)
         key = (message.role, message.content or "")
         if key in self._tokenize_cache:
             self._tokenize_cache.move_to_end(key)
             return self._tokenize_cache[key]
-        tokens = await self._inference.tokenize(self._render_message(message))
-        count = len(tokens)
+        count = await self._count_text_tokens(self._render_message(message))
         self._tokenize_cache[key] = count
         if len(self._tokenize_cache) > 4096:
             self._tokenize_cache.popitem(last=False)
@@ -549,16 +580,18 @@ class ContextBuilder:
         if cache_key == self._last_system_cache_key and self._system_token_count is not None:
             return self._system_token_count
 
-        # Collect uncached messages and batch-tokenize them.
+        # Collect uncached messages and batch-tokenize them. Image-carrying
+        # messages are excluded: their rendered form omits the base64 payload
+        # and their estimated image-token cost is added by _count_tokens.
         uncached: list[Message] = []
         for msg in messages:
-            if msg.tool_calls:
+            if msg.tool_calls or msg.images:
                 continue
             key = (msg.role, msg.content or "")
             if key not in self._tokenize_cache:
                 uncached.append(msg)
 
-        if uncached and hasattr(self._inference, "tokenize_batch"):
+        if uncached and self._supports_tokenize() and hasattr(self._inference, "tokenize_batch"):
             rendered = [self._render_message(m) for m in uncached]
             counts = await self._inference.tokenize_batch(rendered)
             for msg, count in zip(uncached, counts, strict=True):
@@ -567,15 +600,15 @@ class ContextBuilder:
                 if len(self._tokenize_cache) > 4096:
                     self._tokenize_cache.popitem(last=False)
         elif uncached:
-            # Fallback for inference clients without tokenize_batch.
+            # Fallback for inference clients without tokenize_batch (or without
+            # tokenize support at all — _count_tokens estimates in that case).
             for msg in uncached:
                 await self._count_tokens(msg)
 
         total = 0
         for m in messages:
-            if m.tool_calls:
-                tokens = await self._inference.tokenize(self._render_message(m))
-                total += len(tokens)
+            if m.tool_calls or m.images:
+                total += await self._count_tokens(m)
             else:
                 total += self._tokenize_cache[(m.role, m.content or "")]
 

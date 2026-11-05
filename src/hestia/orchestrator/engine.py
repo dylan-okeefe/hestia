@@ -32,6 +32,7 @@ from hestia.orchestrator.transitions import assert_transition
 from hestia.orchestrator.types import (
     ResponseCallback,
     StreamCallback,
+    ThinkingDisplayGate,
     Turn,
     TurnContext,
     TurnState,
@@ -96,6 +97,7 @@ class Orchestrator:
         rate_limiter: SessionRateLimiter | None = None,
         stream: bool = False,
         event_bus: "EventBus | None" = None,
+        reasoning_gate: ThinkingDisplayGate | None = None,
         checkpoint_manager: CheckpointManager | None = None,
         checkpoint_scope: list[str] | None = None,
         auto_rollback_on_failure: bool = False,
@@ -163,6 +165,7 @@ class Orchestrator:
             max_tokens=max_tokens,
             stream=stream,
             event_bus=event_bus,
+            reasoning_gate=reasoning_gate,
         )
 
         self._finalization = TurnFinalization(
@@ -176,6 +179,14 @@ class Orchestrator:
             checkpoint_manager=checkpoint_manager,
             auto_rollback_on_failure=auto_rollback_on_failure,
         )
+
+    def set_reasoning_display_gate(self, gate: ThinkingDisplayGate | None) -> None:
+        """Install (or replace) the per-chat reasoning display gate (L250).
+
+        Called by platform runner wiring after ``make_orchestrator`` when the
+        platform supports per-chat display settings (currently Telegram).
+        """
+        self._execution.set_reasoning_gate(gate)
 
     async def recover_stale_turns(self) -> int:
         """Mark any turns in non-terminal states as FAILED."""
@@ -219,8 +230,17 @@ class Orchestrator:
         stream_callback: StreamCallback | None = None,
         resolved_user: User | None = None,
         channel: Channel | None = None,
+        images: list[str] | None = None,
     ) -> Turn:
-        """Process a single user turn through the state machine."""
+        """Process a single user turn through the state machine.
+
+        Args:
+            images: Optional image attachments (JPEG data URLs) for this turn
+                (L234 vision). Attached to ``user_message`` so the turn's
+                transcript entry keeps them for within-session coherence.
+        """
+        if images is not None:
+            user_message.images = images
         if self._rate_limiter is not None and not self._rate_limiter.allow(session.id):
             await respond_callback(
                 "Rate limit exceeded. Please wait a moment before sending another message."
@@ -268,6 +288,7 @@ class Orchestrator:
                     stream_callback=stream_callback,
                     resolved_user=resolved_user,
                     channel=channel,
+                    images=images,
                 )
 
                 try:

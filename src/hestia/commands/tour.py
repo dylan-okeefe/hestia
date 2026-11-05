@@ -81,7 +81,9 @@ def _step_chat_and_session() -> str:
         "Every conversation lives in a session. You can chat naturally, and "
         "Hestia keeps context across turns. Use /session to see the current "
         "session details, /history to review the message history, and /reset "
-        "to archive the current session and start fresh."
+        "to archive the current session and start fresh. If the model's "
+        "reasoning messages (the ones starting with 💭) get noisy, /thinking "
+        "toggles them on or off for the current chat."
     )
 
 
@@ -130,7 +132,8 @@ def _step_platforms_and_voice() -> str:
 
 def _step_wrap_up() -> str:
     return (
-        "That's the tour. You can restart it any time with /tour, list "
+        "That's the tour. You can restart it any time with /tour, take the "
+        "detailed guided intro with /intro, list "
         "commands with /commands, reset the conversation with /reset, or end "
         "the session with /quit (or /exit)."
     )
@@ -271,30 +274,6 @@ def render_tour_end(
 async def _cmd_tour(ctx: CommandContext) -> tuple[bool, Session]:
     """Start the narrated Hestia tour from step 1."""
     text = render_tour_start(
-        get_tour_store(),
-        ctx.session.platform,
-        ctx.session.platform_user,
-        group_room=ctx.group_room,
-    )
-    click.echo(text)
-    return False, ctx.session
-
-
-async def _cmd_continue(ctx: CommandContext) -> tuple[bool, Session]:
-    """Continue the narrated Hestia tour by one step."""
-    text = render_tour_continue(
-        get_tour_store(),
-        ctx.session.platform,
-        ctx.session.platform_user,
-        group_room=ctx.group_room,
-    )
-    click.echo(text)
-    return False, ctx.session
-
-
-async def _cmd_endtour(ctx: CommandContext) -> tuple[bool, Session]:
-    """End the narrated Hestia tour and clear the cursor."""
-    text = render_tour_end(
         get_tour_store(),
         ctx.session.platform,
         ctx.session.platform_user,

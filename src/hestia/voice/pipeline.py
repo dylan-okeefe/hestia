@@ -132,8 +132,12 @@ class VoicePipeline:
                     raise MissingExtraError("Install kokoro for Kokoro TTS support")
                 # Language code is the first letter of the voice id (e.g. am_puck -> a).
                 lang_code = self.config.tts_voice[0] if self.config.tts_voice else "a"
+                # Kokoro defaults to CUDA when available; pin the configured
+                # device so TTS doesn't grab a GPU shared with the inference
+                # server (VRAM OOM in production, 2026-09-09). Empty means
+                # engine default.
                 self._tts_voice = await asyncio.to_thread(
-                    KPipeline, lang_code=lang_code
+                    KPipeline, lang_code=lang_code, device=self.config.tts_device or None
                 )
             else:
                 raise MissingExtraError(

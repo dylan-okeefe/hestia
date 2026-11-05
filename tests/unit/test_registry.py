@@ -405,3 +405,26 @@ class TestMetaTools:
         result = await registry.meta_call_tool("greet", {"name": "Bob"}, context=_ctx())
         assert result.status == "ok"
         assert "Bob" in result.content
+
+
+class TestDirectSchema:
+    """Tests for first-class (direct) tool schema exposure."""
+
+    def test_returns_schema_from_metadata(self, registry):
+        registry.register(greet)
+        schema = registry.direct_schema("greet")
+        assert schema is not None
+        assert schema.function.name == "greet"
+        assert schema.function.description == "Greet someone by name"
+        assert schema.function.parameters["required"] == ["name"]
+
+    def test_unknown_tool_returns_none(self, registry):
+        assert registry.direct_schema("does_not_exist") is None
+
+    def test_description_override(self, registry):
+        registry.register(greet)
+        schema = registry.direct_schema("greet", description="Custom guidance.")
+        assert schema is not None
+        assert schema.function.description == "Custom guidance."
+        # Parameters still come from the registered metadata.
+        assert schema.function.parameters["required"] == ["name"]
