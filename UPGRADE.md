@@ -15,6 +15,55 @@ but not implemented as of v0.10.0.
 
 ---
 
+## v0.17.0
+
+**Released:** 2026-11-03  
+**Full notes:** [`CHANGELOG.md`](CHANGELOG.md)
+
+A feature release: inference backend profiles, a Telegram coding-agent
+bridge, Telegram vision, a guided `/intro`, and error-UX hardening. One
+new table (`chat_settings`) is created automatically by an idempotent
+runtime migration at startup — no manual migration step.
+
+### 1. Back up
+
+```bash
+cp -r ~/.hestia ~/.hestia-backup-$(date +%Y%m%d)
+```
+
+### 2. Pull and sync
+
+```bash
+git fetch --tags
+git checkout v0.17.0
+uv sync --all-extras
+```
+
+### 3. Restart services
+
+```bash
+systemctl --user restart hestia-serve.service
+```
+
+### 4. Heads-up
+
+- **Backend profiles.** `hestia serve` no longer assumes the local
+  `hestia-llama` unit; it targets named backend profiles with admission
+  control. Existing single-server configs keep working unchanged — the
+  default profile points at the same local server as before.
+- **Telegram vision.** Incoming photos are now downscaled and answered by
+  the vision-capable model. Vision is config-gated; when disabled the bot
+  says so instead of silently dropping photos.
+- **New bot commands.** `/intro` (guided first-run walkthrough),
+  `/thinking [on|off]` (per-chat reasoning display, persisted in the new
+  `chat_settings` table), and operator-only `/agent [pi|kimi]` on the
+  coding-agent bridge.
+- **Coding-agent bridge.** The optional `tg-agent` service routes
+  allowlisted Telegram chats to a sandboxed coding agent; it runs as a
+  separate unit and is not required for `hestia serve`.
+
+---
+
 ## v0.16.1
 
 **Released:** 2026-08-26  
