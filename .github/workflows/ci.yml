@@ -4,6 +4,8 @@ on:
   push:
     branches: [main, develop]
   pull_request:
+  # Lets us verify the pipeline after re-enabling Actions without a code push.
+  workflow_dispatch:
 
 jobs:
   test:
@@ -17,20 +19,28 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: npm
+          cache-dependency-path: web-ui/package-lock.json
       - name: Install uv
         uses: astral-sh/setup-uv@v4
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
       - name: Install dependencies
-        run: uv sync
+        # --all-extras: the test tree imports the optional extras (voice,
+        # browser, web) at module import time; a default-only sync starves
+        # pytest collection. --locked: fail loudly if uv.lock drifts from
+        # pyproject instead of silently rewriting it.
+        run: uv sync --all-extras --locked
+      - name: Install SPA deps
+        run: cd web-ui && npm ci
       - name: Build SPA
-        run: cd web-ui && npm ci && npm run build
+        run: cd web-ui && npm run build
       - name: Lint
         run: uv run ruff check src tests
       - name: Type check
         run: uv run mypy src/hestia
       - name: Test frontend
-        run: cd web-ui && npm ci && npx vitest run
+        run: cd web-ui && npx vitest run
       - name: Test
         # Whole tree, minus tests that need a live llama.cpp server on
         # localhost:8001 (marked `live`). Keep this whole-tree: scoped runs
