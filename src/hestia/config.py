@@ -560,8 +560,14 @@ class VoiceConfig(_ConfigFromEnv):
     stt_device: str = "cuda"
     stt_device_index: int = 0
     stt_compute_type: str = "int8"
+    stt_cpu_threads: int = 0
+    # Set a positive cap for CPU deployments that share cores with inference.
+    stt_num_workers: int = 1
+    # The pipeline is serial by default. Each additional worker uses memory.
     stt_language: str = "en"
     stt_beam_size: int = 5
+    stt_condition_on_previous_text: bool = True
+    # Disabling prior text can help when short voice notes repeat.
     stt_vad_filter: bool = True
     tts_engine: str = "piper"
     tts_voice: str = "en_US-amy-medium"

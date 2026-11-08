@@ -59,6 +59,7 @@ class VoicePipeline:
             language=self.config.stt_language,
             beam_size=self.config.stt_beam_size,
             vad_filter=self.config.stt_vad_filter,
+            condition_on_previous_text=self.config.stt_condition_on_previous_text,
         )
         return "".join(seg.text for seg in segments).strip()
 
@@ -116,6 +117,8 @@ class VoicePipeline:
                 device=self.config.stt_device,
                 device_index=self.config.stt_device_index,
                 compute_type=self.config.stt_compute_type,
+                cpu_threads=self.config.stt_cpu_threads,
+                num_workers=self.config.stt_num_workers,
                 download_root=str(self.config.model_cache_dir),
             )
 

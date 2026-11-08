@@ -220,6 +220,7 @@ def mode_stt(args: argparse.Namespace) -> None:
     model = WhisperModel(
         args.model, device=args.device, compute_type=args.compute_type,
         device_index=args.device_index,
+        cpu_threads=args.cpu_threads,
         download_root=str(args.model_cache_dir),
     )
     load_s = time.monotonic() - t0
@@ -391,6 +392,8 @@ def main() -> int:
     ap.add_argument("--compute-type", default="int8")
     ap.add_argument("--language", default="en")
     ap.add_argument("--beam-size", type=int, default=5)
+    ap.add_argument("--cpu-threads", type=int, default=0,
+                    help="CTranslate2 CPU thread cap (0 = engine default)")
     # TTS options
     ap.add_argument("--tts-engine", default="piper",
                     choices=["piper", "kokoro"],

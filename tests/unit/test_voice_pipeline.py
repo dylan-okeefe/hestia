@@ -66,6 +66,8 @@ class TestTranscribe:
             device="cpu",
             device_index=0,
             compute_type="int8",
+            cpu_threads=0,
+            num_workers=1,
             download_root=str(voice_config.model_cache_dir),
         )
 
@@ -77,6 +79,44 @@ class TestTranscribe:
 
         assert result2 == "hello world"
         mock_whisper2.assert_not_called()
+
+    @pytest.mark.anyio
+    async def test_stt_thread_knobs_are_ctor_args_not_transcribe_args(
+        self, voice_config: VoiceConfig
+    ) -> None:
+        """faster-whisper 1.2.1: cpu_threads/num_workers belong to WhisperModel().
+
+        Passing them to transcribe() raises TypeError on the first real voice
+        note, so pin both the constructor call and the transcribe() kwargs.
+        """
+        fake_model = MagicMock()
+        fake_model.transcribe.return_value = ([FakeSegment("hi")], None)
+        cfg = VoiceConfig(
+            stt_model="tiny",
+            stt_device="cpu",
+            stt_compute_type="int8",
+            stt_cpu_threads=8,
+            stt_num_workers=1,
+            stt_beam_size=1,
+            stt_condition_on_previous_text=False,
+            stt_vad_filter=True,
+            tts_engine="piper",
+            model_cache_dir=voice_config.model_cache_dir,
+        )
+        with patch("hestia.voice.pipeline.WhisperModel", return_value=fake_model) as mw:
+            pipeline = VoicePipeline(config=cfg)
+            assert await pipeline.transcribe(b"\x00\x01" * 16000) == "hi"
+
+        ctor = mw.call_args.kwargs
+        assert ctor["cpu_threads"] == 8
+        assert ctor["num_workers"] == 1
+
+        kw = fake_model.transcribe.call_args.kwargs
+        for wrong in ("cpu_threads", "num_workers"):
+            assert wrong not in kw, f"{wrong} is a WhisperModel ctor arg, not transcribe()"
+        assert kw["beam_size"] == 1
+        assert kw["vad_filter"] is True
+        assert kw["condition_on_previous_text"] is False
 
 
 class TestSynthesize:
