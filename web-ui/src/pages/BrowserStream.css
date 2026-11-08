@@ -15,8 +15,7 @@
   display: block;
   width: 100%;
   height: auto;
-  aspect-ratio: 16 / 9;
-  border: var(--border-thin);
+  outline: var(--border-thin);
   border-radius: var(--radius-md);
   cursor: crosshair;
   background: var(--color-surface);

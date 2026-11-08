@@ -30,6 +30,25 @@ _HEADED_LAUNCH_TIMEOUT_SECONDS = 30  # headed launch can hang without a display
 _IDLE_TIMEOUT_SECONDS = 60  # stop if no WebSocket client is connected
 
 
+def parse_viewport_coords(
+    x: Any, y: Any, width: int = 1920, height: int = 1080
+) -> tuple[int, int] | None:
+    """Validate and round raw pointer coordinates for ``page.mouse``.
+
+    The frontend sends coordinates in CSS pixels of the streamed viewport.
+    Returns the rounded ``(x, y)`` tuple, or None when the input is not a
+    finite number inside the viewport bounds (clicks outside the streamed
+    frame, malformed messages, or the letterboxed black bars).
+    """
+    if not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
+        return None
+    if isinstance(x, bool) or isinstance(y, bool):
+        return None
+    if not (0 <= x <= width and 0 <= y <= height):
+        return None
+    return round(x), round(y)
+
+
 @dataclass
 class _StreamSession:
     session_id: str
@@ -470,10 +489,13 @@ class SessionStreamManager:
 
         x = y = -1
         if event_type in ("click", "mousemove", "scroll"):
-            x = event.get("x", -1)
-            y = event.get("y", -1)
-            if not (0 <= x <= 1920 and 0 <= y <= 1080):
+            coords = parse_viewport_coords(
+                event.get("x"), event.get("y"),
+                _VIEWPORT["width"], _VIEWPORT["height"],
+            )
+            if coords is None:
                 return
+            x, y = coords
 
         try:
             if event_type == "click":

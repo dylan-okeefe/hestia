@@ -17,8 +17,38 @@ from starlette.websockets import WebSocketDisconnect
 
 from hestia.tools.browser.session_store import BrowserSessionStore
 from hestia.web.api import create_web_app
-from hestia.web.browser_stream import SessionStreamManager
+from hestia.web.browser_stream import SessionStreamManager, parse_viewport_coords
 from hestia.web.context import WebContext, set_web_context
+
+
+class TestParseViewportCoords:
+    def test_returns_rounded_ints_for_valid_numbers(self) -> None:
+        assert parse_viewport_coords(100, 200) == (100, 200)
+        assert parse_viewport_coords(100.4, 200.6) == (100, 201)
+
+    def test_accepts_viewport_boundaries(self) -> None:
+        assert parse_viewport_coords(0, 0) == (0, 0)
+        assert parse_viewport_coords(1920, 1080) == (1920, 1080)
+
+    def test_rejects_out_of_bounds(self) -> None:
+        assert parse_viewport_coords(-1, 100) is None
+        assert parse_viewport_coords(100, -1) is None
+        assert parse_viewport_coords(1921, 100) is None
+        assert parse_viewport_coords(100, 1081) is None
+        assert parse_viewport_coords(10**1000, 100) is None
+
+    def test_rejects_non_numeric_and_bool(self) -> None:
+        assert parse_viewport_coords("100", 100) is None
+        assert parse_viewport_coords(100, None) is None
+        assert parse_viewport_coords(True, 100) is None
+        assert parse_viewport_coords(100, False) is None
+
+    def test_rejects_nan_and_infinity(self) -> None:
+        # Comparisons against NaN/inf are always False, so the bounds check
+        # rejects them.
+        assert parse_viewport_coords(float("nan"), 100) is None
+        assert parse_viewport_coords(100, float("inf")) is None
+        assert parse_viewport_coords(float("nan"), float("nan")) is None
 
 
 @pytest.fixture(autouse=True)
@@ -351,6 +381,22 @@ class TestForwardInput:
         # Y out of bounds
         await manager.forward_input(
             session_id, {"type": "click", "x": 100, "y": 2000}
+        )
+        mock_page.mouse.click.assert_not_called()
+
+
+    @pytest.mark.asyncio
+    async def test_forward_input_ignores_non_numeric_coordinates(
+        self, manager: SessionStreamManager
+    ) -> None:
+        mock_cm, *_rest = _make_mock_playwright()
+        mock_page = _rest[3]
+        _inject_playwright_module(mock_cm)
+
+        session_id = await manager.start("https://example.com/login")
+
+        await manager.forward_input(
+            session_id, {"type": "click", "x": "100", "y": 100}
         )
         mock_page.mouse.click.assert_not_called()
 

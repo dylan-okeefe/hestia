@@ -4,6 +4,7 @@ import { startBrowserStream, stopBrowserStream, restartHeadedBrowserStream, getA
 import { useApiMutation } from '../hooks/useApi';
 import { useToast } from '../hooks/useToast';
 import PageCard from '../components/layout/PageCard';
+import { fitContain, pointerToFrameCoords } from './browserStreamCoords';
 import './BrowserStream.css';
 
 const DEFAULT_WIDTH = 960;
@@ -124,10 +125,16 @@ export default function BrowserStream() {
           if (canvas) {
             const ctx = canvas.getContext('2d');
             if (ctx) {
-              // BUG-085: draw against the live element size, not the size
-              // captured when the WebSocket memoized closure was created.
-              const rect = canvas.getBoundingClientRect();
-              ctx.drawImage(img, 0, 0, rect.width || canvas.width, rect.height || canvas.height);
+              // Draw the frame into the backing buffer using the same
+              // contain-fit mapping the pointer handlers invert, so a click
+              // at a visible point dispatches to the drawn viewport pixel.
+              const fit = fitContain(
+                { width: canvas.width, height: canvas.height },
+                { width: SERVER_WIDTH, height: SERVER_HEIGHT },
+              );
+              ctx.fillStyle = '#000';
+              ctx.fillRect(0, 0, canvas.width, canvas.height);
+              ctx.drawImage(img, fit.offsetX, fit.offsetY, fit.width, fit.height);
             }
           }
           URL.revokeObjectURL(blobUrl);
@@ -235,31 +242,33 @@ export default function BrowserStream() {
     }
   }, []);
 
-  const getScaledCoords = (clientX: number, clientY: number) => {
+  const getFrameCoords = (clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = SERVER_WIDTH / canvasSize.width;
-    const scaleY = SERVER_HEIGHT / canvasSize.height;
-    const x = Math.round(((clientX - rect.left) / rect.width) * canvasSize.width * scaleX);
-    const y = Math.round(((clientY - rect.top) / rect.height) * canvasSize.height * scaleY);
-    return { x, y };
+    if (!canvas) return null;
+    // Map viewport-relative pointer CSS pixels onto the streamed frame,
+    // inverting the contain-fit letterboxing applied when drawing.
+    return pointerToFrameCoords(
+      clientX,
+      clientY,
+      canvas.getBoundingClientRect(),
+      { width: SERVER_WIDTH, height: SERVER_HEIGHT },
+    );
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const { x, y } = getScaledCoords(e.clientX, e.clientY);
-    sendWsMessage({ type: 'click', x, y });
+    const coords = getFrameCoords(e.clientX, e.clientY);
+    if (coords) sendWsMessage({ type: 'click', x: coords.x, y: coords.y });
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const { x, y } = getScaledCoords(e.clientX, e.clientY);
-    sendWsMessage({ type: 'mousemove', x, y });
+    const coords = getFrameCoords(e.clientX, e.clientY);
+    if (coords) sendWsMessage({ type: 'mousemove', x: coords.x, y: coords.y });
   };
 
   const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
     e.preventDefault();
-    const { x, y } = getScaledCoords(e.clientX, e.clientY);
-    sendWsMessage({ type: 'scroll', x, y, deltaX: e.deltaX, deltaY: e.deltaY });
+    const coords = getFrameCoords(e.clientX, e.clientY);
+    if (coords) sendWsMessage({ type: 'scroll', x: coords.x, y: coords.y, deltaX: e.deltaX, deltaY: e.deltaY });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLCanvasElement>) => {
