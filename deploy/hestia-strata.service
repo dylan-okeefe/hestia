@@ -22,9 +22,15 @@ ExecStart=/bin/bash -c 'strata launch --model iq3_s --context 256k --vision cpu 
 # Graceful stop, then the known stale-supervisor kill (card-#67 lesson: the
 # runtime supervisor survives --stop and blocks the next launch).
 ExecStop=%h/.local/bin/strata launch --stop --preset "IQ3_S 256K"
-ExecStopPost=/bin/sh -c 'STALE=$(pgrep -f "strata_control.runtime --host launch-iq3_s-256k" || true); [ -n "$STALE" ] && kill $STALE 2>/dev/null; exit 0'
+# Known stale-supervisor kill (card-#67 lesson). The [s] bracket trick stops
+# pgrep matching its own ExecStopPost shell.
+ExecStopPost=/bin/sh -c 'STALE=$(pgrep -f "[s]trata_control.runtime --host launch-iq3_s-256k" || true); [ -n "$STALE" ] && kill $STALE 2>/dev/null; exit 0'
 Restart=always
 RestartSec=10
+# The shim exits 1 both when the server dies (want Restart) and on deliberate
+# stops (want clean state); Restart=always still restarts exit-1 trips — only
+# systemctl stop prevents that — while this keeps "stopped" from showing failed.
+SuccessExitStatus=1
 LimitNOFILE=65536
 LimitMEMLOCK=infinity
 TimeoutStopSec=60
