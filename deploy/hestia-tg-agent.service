@@ -1,6 +1,8 @@
 [Unit]
 Description=Hestia Telegram Coding-Agent Bridge (Pi RPC + local inference)
 After=network.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
 # L233: deliberately NO Wants/After on hestia-serve.service or any model
 # service. This daemon fronts the coding-agent Telegram bot and must keep
 # working while hestia serve (and any given inference backend) is stopped.
@@ -26,8 +28,6 @@ Environment="SMALL_CODER_COMPACT_AT_PERCENT=70"
 ExecStart=%h/.local/bin/uv run --quiet hestia --config config.coder-bot.py coder-bot
 Restart=on-failure
 RestartSec=5
-StartLimitIntervalSec=300
-StartLimitBurst=5
 LimitNOFILE=65536
 KillMode=mixed
 TimeoutStopSec=30

@@ -1,0 +1,35 @@
+[Unit]
+Description=Strata inference server (Qwen3.8-Flash-Next IQ3_S, 256K, frozen tuned config)
+After=network.target
+# Mutually exclusive with Ornith on VRAM/RAM: starting one stops the other.
+Conflicts=hestia-llama.service
+# Strata is Hestia's production inference backend (config.runtime.py points at
+# 8080). This unit exists because Strata otherwise has no auto-start and a
+# reboot silently leaves hestia without inference (2026-11-09 incident).
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=simple
+Environment="PATH=%h/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+# `strata launch` self-detaches (a runtime supervisor owns the server), so this
+# unit supervises via a shim: launch, then hold the unit alive while 8080
+# serves; when the server dies the shim exits nonzero and Restart kicks in.
+# --restart makes a re-launch stop a stale server holding the port (boot
+# path: nothing holds it; crash-restart path: it does).
+ExecStartPre=/bin/sh -c 'for i in $(seq 1 30); do /usr/bin/nvidia-smi -L >/dev/null 2>&1 && exit 0; sleep 2; done; echo "nvidia-smi never succeeded; refusing CPU fallback" >&2; exit 1'
+ExecStart=/bin/bash -c 'strata launch --model iq3_s --context 256k --vision cpu --tune skip --access local --port 8080 --gpu 0,1 --no-tui --yes --restart --set vram-reserve-mib=1800 --set vram-reserve-later-mib=700 --set layer-split=27 --set kv-resident=8192 --set trim-stage-weights=1 --set STRATA_SPLIT_MTP_BATCH=1 || exit 1; while curl -sf -m 5 http://127.0.0.1:8080/v1/models >/dev/null 2>&1; do sleep 15; done; echo "strata server left 8080; restarting unit" >&2; exit 1'
+# Graceful stop, then the known stale-supervisor kill (card-#67 lesson: the
+# runtime supervisor survives --stop and blocks the next launch).
+ExecStop=strata launch --stop --preset "IQ3_S 256K"
+ExecStopPost=/bin/sh -c 'STALE=$(pgrep -f "strata_control.runtime --host launch-iq3_s-256k" || true); [ -n "$STALE" ] && kill $STALE 2>/dev/null; exit 0'
+Restart=always
+RestartSec=10
+LimitNOFILE=65536
+LimitMEMLOCK=infinity
+TimeoutStopSec=60
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
