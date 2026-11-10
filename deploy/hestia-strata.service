@@ -21,7 +21,7 @@ ExecStartPre=/bin/sh -c 'for i in $(seq 1 30); do /usr/bin/nvidia-smi -L >/dev/n
 ExecStart=/bin/bash -c 'strata launch --model iq3_s --context 256k --vision cpu --tune skip --access local --port 8080 --gpu 0,1 --no-tui --yes --restart --set vram-reserve-mib=1800 --set vram-reserve-later-mib=700 --set layer-split=27 --set kv-resident=8192 --set trim-stage-weights=1 --set STRATA_SPLIT_MTP_BATCH=1 || exit 1; while curl -sf -m 5 http://127.0.0.1:8080/v1/models >/dev/null 2>&1; do sleep 15; done; echo "strata server left 8080; restarting unit" >&2; exit 1'
 # Graceful stop, then the known stale-supervisor kill (card-#67 lesson: the
 # runtime supervisor survives --stop and blocks the next launch).
-ExecStop=strata launch --stop --preset "IQ3_S 256K"
+ExecStop=%h/.local/bin/strata launch --stop --preset "IQ3_S 256K"
 ExecStopPost=/bin/sh -c 'STALE=$(pgrep -f "strata_control.runtime --host launch-iq3_s-256k" || true); [ -n "$STALE" ] && kill $STALE 2>/dev/null; exit 0'
 Restart=always
 RestartSec=10
