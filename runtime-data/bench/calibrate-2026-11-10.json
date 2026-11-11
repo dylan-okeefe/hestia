@@ -1,0 +1,226 @@
+{
+  "applicable": true,
+  "body_sha256": "eedcd56fb4bfbfbcd1846981a330d6fc9deea084933f80209d6b415e5ff4eaca",
+  "created_at": 1794370980.35423,
+  "identity": {
+    "backend": null,
+    "engine_sha256": "9d415609c6abf40352345e20c75fc2205db0bc7acb804a75d12ab4ac10ee16ad",
+    "gpu": [
+      0,
+      1
+    ],
+    "hardware_key": "NVIDIA GeForce RTX 3060 + NVIDIA GeForce RTX 3060|24GB|AMD Ryzen 9 5900X 12-Core Processor|126GB|qwen3.8-flash-next-iq3_s|262144|images",
+    "model_integrity": "metadata_only_unverified",
+    "model_name": "qwen3.8-flash-next-iq3_s",
+    "profile_id": "launch-iq3_s-256k",
+    "profile_revision": "717f34e3ec261d76",
+    "required_file_metadata": [
+      {
+        "modified_ns": 1792536917932773703,
+        "name": "tokenizer/vocab.json",
+        "path": "/home/dylan/.local/share/strata/Strata-data/packs/iq3_s/tokenizer/vocab.json",
+        "size": 5737005
+      },
+      {
+        "modified_ns": 1792536917999779450,
+        "name": "tokenizer/merges.txt",
+        "path": "/home/dylan/.local/share/strata/Strata-data/packs/iq3_s/tokenizer/merges.txt",
+        "size": 3353258
+      },
+      {
+        "modified_ns": 1792536918009624237,
+        "name": "tokenizer/token_type.json",
+        "path": "/home/dylan/.local/share/strata/Strata-data/packs/iq3_s/tokenizer/token_type.json",
+        "size": 744960
+      },
+      {
+        "modified_ns": 1792536545039734600,
+        "name": "native",
+        "path": "/home/dylan/.local/share/strata/Strata-data/models/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf",
+        "size": 54817524224
+      },
+      {
+        "modified_ns": 1792536886010389894,
+        "name": "ple-gguf",
+        "path": "/home/dylan/.local/share/strata/Strata-data/models/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00002-of-00002.gguf",
+        "size": 28800138432
+      },
+      {
+        "modified_ns": 0,
+        "name": "expert-profile",
+        "path": "/home/dylan/.local/share/strata/terminal/0.1.46.2/data/expert-profile.bin",
+        "size": 196632
+      },
+      {
+        "modified_ns": 1792535946189923597,
+        "name": "vision/exe",
+        "path": "/home/dylan/.local/share/strata/components/engine/0.1.46-linux-x86_64-cuda-cuda13/strata-vision",
+        "size": 124767240
+      },
+      {
+        "modified_ns": 1792536915240118833,
+        "name": "vision/mmproj",
+        "path": "/home/dylan/.local/share/strata/Strata-data/models/mmproj-Qwen3.8-Flash-Next-BF16.gguf",
+        "size": 907543008
+      },
+      {
+        "modified_ns": 1792536545039734600,
+        "name": "vision/model",
+        "path": "/home/dylan/.local/share/strata/Strata-data/models/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf",
+        "size": 54817524224
+      }
+    ],
+    "source_sha256": "ceb06a079d79c5ba4d7059590a38ec2f44ec1cd345f4324ab9a6a64785455294",
+    "suite_sha256": "6b2ef58ed18f0b625256cd613058edebd375868cd05e7974b22838cf72edf40b"
+  },
+  "kind": "strata.engine.calibration",
+  "measurements": {
+    "adapt": {
+      "1/160/0.97": [
+        72.05587878214529,
+        73.03534910896875
+      ],
+      "1/80/0.97": [
+        71.93784570131406,
+        75.04449753860462
+      ],
+      "default": [
+        78.3219113879226,
+        74.06042123959048
+      ]
+    },
+    "confirm": {
+      "0.17/0.5": [
+        78.9684743043988,
+        78.75469144158002,
+        76.23585467540202
+      ],
+      "0.35/0.7": [
+        76.4955477200741,
+        76.06822368812028,
+        75.65458951474673
+      ]
+    },
+    "default": {
+      "pcie_frac": 0.17,
+      "pool_workers": 11,
+      "spec_min_p": 0.5
+    },
+    "min_p_sweep": {
+      "0.3": [
+        71.75692342190828,
+        71.89395641428892,
+        63.894573952977595
+      ],
+      "0.5": [
+        74.51391314472,
+        71.69663361899961,
+        74.99853518485966
+      ],
+      "0.7": [
+        75.17913778926348,
+        76.43616386002628,
+        78.14407814407815
+      ]
+    },
+    "pcie_sweep": {
+      "0.0": [
+        71.28536422365784,
+        74.35808063204368,
+        73.37766567301077
+      ],
+      "0.17": [
+        70.2871890615562,
+        78.16793893129771,
+        73.25588050134493
+      ],
+      "0.2": [
+        66.61809097533049,
+        73.36084364970198,
+        74.68347044751735
+      ],
+      "0.35": [
+        63.504663623734864,
+        73.92007392007393,
+        74.48789571694599
+      ],
+      "0.55": [
+        62.79742923024089,
+        69.08835753225023,
+        74.8494240102918
+      ],
+      "0.75": [
+        74.10838351088466,
+        72.8058699732666,
+        72.85145133750711
+      ],
+      "0.9": [
+        62.87145734073382,
+        68.43455945252352,
+        70.99278979478647
+      ],
+      "1.0": [
+        69.11447084233261,
+        65.48654456154712,
+        71.7891194615816
+      ]
+    },
+    "pipe_confirm": {
+      "0": [
+        868.2152228756569,
+        869.6019606186089,
+        869.9916298181389
+      ],
+      "1": [
+        863.8202850858785,
+        862.3940864405502,
+        867.4247852512497
+      ]
+    },
+    "pipe_sweep": {
+      "0": [
+        863.1596610453897
+      ],
+      "1": [
+        870.9344259519496
+      ],
+      "1536": [
+        733.7597968949459
+      ],
+      "3072": [
+        734.035267933573
+      ],
+      "6144": [
+        733.9724385859796
+      ],
+      "768": [
+        588.6290687096276
+      ]
+    },
+    "seconds": 1104,
+    "tok_s": 76.2,
+    "workers": {
+      "11": [
+        75.4895022410946,
+        71.92223408439624
+      ],
+      "3": [
+        74.46622840188492,
+        74.57903629901533
+      ],
+      "6": [
+        71.63644504141482,
+        69.5123275768437
+      ],
+      "7": [
+        73.61398665746492,
+        70.65577390152352
+      ]
+    }
+  },
+  "report_id": "1ce050f201eb472a9037b9be33690af6",
+  "schema_version": 1,
+  "settings": {},
+  "source_config": "/home/dylan/.local/state/strata/launch/iq3_s-256k.json",
+  "suite": "legacy-decode-v1"
+}

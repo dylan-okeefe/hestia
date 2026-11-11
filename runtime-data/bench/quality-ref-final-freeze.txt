@@ -1,0 +1,5 @@
+The orchestrator first interprets the resident’s message to determine what kind of task is being requested. It then considers which agent is best suited to handle that task based on the agents’ roles and available context. For example, a scheduling or obligation agent would be chosen for reminders, appointments, or household duties, while a memory or facts agent would be chosen when the answer depends on stored personal information or prior conversation.
+
+Before responding, the orchestrator gathers the relevant context from the selected agent’s short-term memory, long-term facts, and schedule of obligations. This allows the assistant to answer using the most appropriate and current information rather than relying on a single agent’s limited view. The chosen agent then produces a reply that is streamed back to the resident, keeping the interaction responsive and grounded in the household’s shared state.
+
+Reliability is emphasized over

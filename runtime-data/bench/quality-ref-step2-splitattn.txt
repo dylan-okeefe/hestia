@@ -1,0 +1,7 @@
+The orchestrator chooses which agent responds by first interpreting the resident’s message and identifying the task or intent behind it. It then considers the agents’ roles and the context each agent maintains, including short-term memory, long-term facts, and scheduled obligations. If the message concerns a reminder, appointment, household task, or personal preference, the orchestrator selects the agent whose memory and responsibilities best match the request.
+
+It also gathers the relevant context before responding, so the chosen agent can answer with accurate and timely information. For example, if a resident asks about an upcoming obligation, the orchestrator may route the message to the agent that tracks schedules and reminders. If the question depends on a stored household fact or recent conversation, it may use long-term facts or short-term memory to provide the right context.
+
+Reliability is emphasized over cleverness because household assistance depends on dependable behavior. A missed reminder, incorrect task assignment, or forgotten obligation can have real consequences for the household. A plain, accurate response that consistently follows through is more valuable than a witty or sophisticated answer that risks being wrong or incomplete.
+
+In this system, the goal is not to impress the resident but to support them safely and predictably. The orchestrator should therefore prioritize correct routing, clear context gathering, and consistent follow-through, especially when reminders and obligations are involved.

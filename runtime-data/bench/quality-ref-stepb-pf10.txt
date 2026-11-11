@@ -1,0 +1,5 @@
+The orchestrator chooses which agent responds by first interpreting the resident’s message and identifying the task type. It looks for cues such as whether the request involves scheduling, household coordination, memory recall, reminders, or general assistance. Based on that intent, it selects the agent whose responsibilities and capabilities best match the task.
+
+It then gathers relevant context from the agent’s short-term memory, long-term facts, and schedule of obligations. This context helps the orchestrator understand what the resident means, what has already been discussed, and what commitments are already in place. The chosen agent is the one most likely to have the right information and the right authority to act on the request.
+
+Reliability is emphasized over cleverness because household tasks often depend on predictable, correct behavior. A reminder that is missed, a schedule that is misunderstood, or a task that is handled in an overly creative but inconsistent way can cause real problems for residents. In this setting, a plain but dependable response is safer and more useful than a clever one that might fail.
