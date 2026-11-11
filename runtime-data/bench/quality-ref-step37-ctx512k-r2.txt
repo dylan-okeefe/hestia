@@ -1,0 +1,5 @@
+The orchestrator chooses an agent by first interpreting the resident’s message and identifying the task it implies. It looks for cues such as the subject matter, timing, and whether the request involves remembering a fact, tracking a household activity, or acting on a scheduled obligation. Based on that interpretation, it selects the agent whose responsibilities and memory best match the request.
+
+It also gathers relevant context before responding. This may include short-term memory from recent interactions, long-term facts about the household, and the schedule of obligations. By combining these sources, the orchestrator can route the message to the most appropriate agent and give that agent the information it needs to answer correctly.
+
+Reliability is emphasized over cleverness because the assistant’s main value is in consistently handling household tasks without failure. A missed reminder, wrong appointment, or forgotten obligation can cause real disruption, while a simple but correct response is usually acceptable. In this setting, predictability and accuracy matter more than producing an impressive or creative answer.

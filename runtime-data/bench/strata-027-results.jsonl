@@ -36,3 +36,15 @@
 {"arm": "stepb-prefill2048", "ts": "2026-11-10T22:57:30", "pp_short": 538.7, "tg": 72.44999999999999, "pp_16k": 774.75, "short_tok": 3054, "long_tok": 24506, "ttft_32k_s": 40.67, "ttft_method": "stream_first_token", "ttft_tok": 31906}
 {"arm": "final-freeze", "ts": "2026-11-10T23:02:16", "pp_short": 557.75, "tg": 68.005, "pp_16k": 1374.6, "short_tok": 3048, "long_tok": 24500, "ttft_32k_s": 22.085, "ttft_method": "stream_first_token", "ttft_tok": 31900}
 {"arm": "final-freeze-ttft64", "ts": "2026-11-10T23:03:45", "ttft_64k_s": 40.32, "ttft_method": "stream_first_token", "ttft_tok": 63723}
+{"arm": "step37-ctx384k", "ts": "2026-11-11T06:30:10", "pp_short": 514.95, "tg": 71.67, "pp_16k": 1283.2, "short_tok": 3054, "long_tok": 24506, "ttft_32k_s": 23.85, "ttft_method": "stream_first_token", "ttft_tok": 31906}
+{"arm": "step37-ctx384k-decode3450", "ts": "2026-11-11T06:35:07", "pp": 1398.4, "tg": 60.43, "tg_med": 58.825, "prompt_tokens": 255389}
+{"arm": "step37-ctx512k", "ts": "2026-11-11T06:37:25", "pp_short": 505.0, "tg": 63.115, "pp_16k": 1304.3000000000002, "short_tok": 3054, "long_tok": 24506, "ttft_32k_s": 23.485, "ttft_method": "stream_first_token", "ttft_tok": 31906}
+{"arm": "step37-ctx512k-ttft1725", "ts": "2026-11-11T06:40:29", "ttft_s": 87.36000000000001, "ttft_method": "stream_first_token", "ttft_tok": 127743}
+{"arm": "step37-ctx512k-ttft3450", "ts": "2026-11-11T06:46:40", "ttft_s": 184.98000000000002, "ttft_method": "stream_first_token", "ttft_tok": 255393}
+{"arm": "step37-ctx512k-r2", "ts": "2026-11-11T06:52:46", "pp_short": 510.5, "tg": 64.95, "pp_16k": 1269.2, "short_tok": 3056, "long_tok": 24508, "ttft_32k_s": 23.965, "ttft_method": "stream_first_token", "ttft_tok": 31908}
+{"arm": "step37-ctx512k-r2-ttft1725", "ts": "2026-11-11T06:55:52", "ttft_s": 88.86, "ttft_method": "stream_first_token", "ttft_tok": 127745}
+{"arm": "step37-ctx512k-r2-ttft3450", "ts": "2026-11-11T07:02:05", "ttft_s": 186.23000000000002, "ttft_method": "stream_first_token", "ttft_tok": 255395}
+{"arm": "step37-ctx512k-r2-needle", "ts": "2026-11-11T07:13:23", "prompt_tokens": 410080, "recall": true, "answer": "PURPLE-FALCON-7741 We need answer user's request. Need analyze in English (same language as user request? User request i"}
+{"arm": "final-freeze-512k", "ts": "2026-11-11T07:25:03", "pp_short": 550.35, "tg": 71.37, "pp_16k": 1355.05, "short_tok": 3053, "long_tok": 24505, "ttft_32k_s": 22.71, "ttft_method": "stream_first_token", "ttft_tok": 31905}
+{"arm": "final-freeze-512k-ttft64", "ts": "2026-11-11T07:26:34", "ttft_64k_s": 41.260000000000005, "ttft_method": "stream_first_token", "ttft_tok": 63728}
+{"arm": "final-freeze-512k-ttft3450", "ts": "2026-11-11T07:32:12", "ttft_s": 168.695, "ttft_method": "stream_first_token", "ttft_tok": 255392}

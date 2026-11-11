@@ -169,3 +169,85 @@ prints no reason); (2) layer-major prefill disables itself on long prompts
 "layers 27..48: no VRAM for a super-chunk (231 MiB free)" — GPU1 headroom;
 (3) engine persistently warns CUDA1 333 MiB free LOW, suggests
 --vram-reserve-later-mib 1135 (left at 700 per card scope).
+
+## Step 3.7 — context-size arms (2026-11-11; base = frozen line + TAIL_SKIP=0)
+
+Memory header: free 125 total / 60 used / 65 avail pre-arm; EDAC not exposed;
+kernel log clean; RAM 3600 per Dylan. sudo unavailable (non-interactive).
+
+| arm | pp_short | tg | pp_16k | TTFT@32K | slots | verdict |
+|---|---|---|---|---|---|---|
+| step37-ctx384k (--context 393216) | 514.95 | 71.67 | 1283.2 | 23.85 | 3887 (unchanged) | NEUTRAL vs matched Step-1 base (520.6/64.5/1289.4/23.6): pp -1.1%, pp16k -0.5%, TTFT +0.9% all noise; tg +11% is a high noise draw, not a context effect |
+
+decode @256K context (384K arm, prompt 255389 tok, median 2): tg 58.8
+(60.4/57.2), pp 1398 — the streamed-KV tax: everything past the 20480-cell
+resident window reads from DDR4; -13.5% vs short-context decode. RAM after:
+69 used / 55 avail, no pressure.
+
+### Step 3.7 driver incident (fixed, rerun in progress)
+
+First step37-ctx512k attempt benched the STILL-LIVE 384K server: the arm
+driver's stop used the hardcoded preset "IQ3_S 256K", but context arms run
+under launch names iq3_s-384k/-512k, so the stop missed; the 512K launch
+refused (port held) and the driver's readiness loop saw 8080 serving (the
+384K server) and benched it. Discarded: the "step37-ctx512k" battery numbers
+(505.0/63.1/1304.3/23.49) are a 384K second draw; TTFT@128K (87.36s,
+127743 tok) and TTFT@256K (184.98s, 255393 tok) below are VALID 384K numbers;
+the needle 400'd (411K prompt > 393216 real n_ctx) which exposed the trap.
+Driver fixed: stops any model, kills all supervisors, hard-fails if 8080 is
+still held, prints live n_ctx per arm. Also learned: context arms run YaRN
+rope scaling (--rope-scaling yarn --rope-scale 1.5 at 384K) — the model was
+trained on 262144; CLI warns answers may get less reliable. The needle probe
+is exactly the test of that.
+
+| step37-ctx512k-r2 (--context 524288, n_ctx VERIFIED) | 510.5 | 64.95 | 1269.2 | 23.97 | 3887 (unchanged) | NEUTRAL vs matched base: pp -1.9%, tg +0.7%, pp16k -1.6%, TTFT +1.5% — all noise |
+| TTFT@128K (512K) | | | | 88.86s (127745 tok) | | same as 384K (87.4) — prefill speed is context-size-independent |
+| TTFT@256K (512K) | | | | 186.23s (255395 tok) | | ~1371 t/s sustained at 256K |
+| needle @ ~400K (512K, YaRN 2.0) | RECALL=TRUE | | | prompt 410080 tok | | codeword PURPLE-FALCON-7741 correctly retrieved first try; 3.7c criteria MET (decode regression <2%: 64.95 vs 64.5 base; needle recalls) -> **512K KEPT**, q4_0 fallback not needed |
+
+## Step 8 — quant_quality yardstick (tools/quant_quality.py from upstream @ 0.1.52 tools/)
+
+Two runs of the fixed yardstick (experts on CPU, fp16 KV, TAIL_SKIP=0,
+CPU_SHARE=0 forced; MTP dropped from config: draft head does not fit the
+yardstick's expert-cache-1 VRAM picture — startup failure, noted):
+- REF qq-ref-baseline.tsv (Step-1 baseline env)
+- RUN qq-run-stack.tsv (+EMB_REUSE_ACCOUNT +PREFILL_HELP +KV_PREFETCH)
+compare: **top-1 agreement 100.00% (4995 pos), mean KL 0.00000, p99 0.0000,
+PPL 4.644 vs 4.644** — distribution-identical; far inside the DETAILS.md
+noise band (SPLIT_ATTN reference 0.0016). Caveat recorded: the yardstick
+scores decode windows, so prompt-path-only switches (chunk accounting, peer
+helper) are exercised by the 20 greedy refs + the 400K needle instead.
+
+## Step 9 — final freeze battery at 512K (n_ctx verified 524288, median of 2)
+
+**pp_short 550.4 (3053 tok) · tg 71.37 · pp_16k 1355.1 (24505 tok) ·
+TTFT@32K 22.71 s (31905 tok) · TTFT@64K 41.26 s (63728 tok) ·
+TTFT@256K 168.70 s (255392 tok)**
+Quality ref: quality-ref-final-freeze-512k.txt (1685 chars, complete,
+coherent — gate PASS).
+vs 256K freeze (557.8/68.0/1374.6/22.1/40.3): pp_short -1.3%, tg +5.0%
+(band-noise draw), pp_16k -1.4%, TTFT@32K +2.8%, TTFT@64K +2.4% —
+performance parity, double the context.
+
+## Step 10 — frozen config at 512K (unit hestia-strata.service updated)
+
+strata launch --model iq3_s --context 524288 --vision cpu --tune skip \
+  --access local --port 8080 --gpu 0,1 --no-tui --yes --restart \
+  --set vram-reserve-mib=1800 --set vram-reserve-later-mib=700 \
+  --set layer-split=27 --set kv-resident=8192 --set trim-stage-weights=1 \
+  --set STRATA_SPLIT_MTP_BATCH=1 --set STRATA_ROUTE_TAIL_SKIP=0 \
+  --set STRATA_EMB_REUSE_ACCOUNT=1 --set STRATA_PREFILL_CPU_SHARE=1 \
+  --set STRATA_PREFILL_CPU_SHARE_MAX=3072 --set STRATA_PREFILL_HELP=1 \
+  --set STRATA_KV_PREFETCH=1
+
+## Memory-health summary (whole card, 2026-11-10 + 2026-11-11)
+
+- RAM: 128 GB @ 3600 MT/s (Dylan-stated 11-10; dmidecode sudo-gated,
+  UNAVAILABLE non-interactively). 25 engine launches + 2 yardstick runs.
+- MCE/EDAC: edac_mce_amd loaded, no mc* sysfs counters exposed ("EDAC not
+  exposed"); rasdaemon never installed (Dylan waived 11-10); journalctl -k
+  clean every session (no mce/ecc/edac lines). UE: 0 observed, CE: 0
+  observed. Unavailable checks: dmidecode speed read, rasdaemon counters.
+- Quality canaries: 25 greedy temp-0 refs across the card, all same-class
+  coherent; quant_quality KL 0.00000 top-1 100% stack-vs-baseline; needle
+  recall at 410K tokens TRUE. No memory-incident signature at any point.
