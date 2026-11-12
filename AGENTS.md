@@ -43,12 +43,14 @@ Anything explicitly called for in the planning document, spec, decision record, 
 
 Before declaring a loop done, compare the diff against the spec/decision/loop docs item by item. Every item must be either **done** or **deferred to a named follow-up loop**. An item that is neither is a blocker.
 
-## TaskView board discipline
+## YouTrack board discipline
 
-The project board is the source of truth for what is queued, in flight, and under review. Treat it as part of the handoff, not an afterthought.
+Track new development work in the **HES** project in YouTrack. Keep TaskView card IDs for historical references.
 
-- **Ready is the work queue.** Kimi only starts work on cards Dylan has moved to **Ready**. Do not self-assign from Backlog (no status) or Spec'd.
-- **Move cards through the columns:** Backlog → Spec'd → Ready → In Progress → In Review → Done. Keep the card's column current with the actual state of the work.
-- **Do not mark cards complete/Done yourself.** When a branch is ready and quality gates are green, move it to **In Review** and stop. Dylan moves it to **Done** after approving and merging to `main`. (A completed card also locks programmatically in the TaskView API, so In Review is the correct terminal state for branch-ready work.)
-- **Link the work.** When moving a card to In Review, record the branch name and commit SHA(s) in the card note or source URL so the board links back to the repo.
-- **Every chunk of work gets a card.** If unplanned work is needed mid-loop, create a card for it rather than landing it silently.
+- **Work starts from an explicit assignment.** Begin work only on a YouTrack issue explicitly assigned to you or on direct operator direction. Do not self-assign from the backlog.
+- **Read before editing.** Read the issue's Intent and Acceptance Criteria before making any changes.
+- **Use In Progress when you begin.** Move the issue to **In Progress** only when you are starting explicitly assigned work, and keep its state current with the actual state of the work.
+- **Record evidence for review.** Before handing work back, record the branch name, commit SHA(s), and verification evidence (commands run, results observed) on the issue. Review is evidence-based: without recorded evidence, the work is not ready for review.
+- **Review and promotion belong to the operator.** When the branch is ready and evidence is recorded, stop and move the issue to **To be discussed** for review. Do not mark issues complete yourself. The operator reviews the evidence, compares the diff against the spec, and promotes the issue using the existing issue states after approving and merging.
+- **Keep the pilot isolated.** Pilot changes are made in a separate worktree based on `develop`, and review evidence for the change is recorded in an issue comment.
+- **Every chunk of work gets an issue.** If unplanned work is needed mid-loop, raise it as a HES issue rather than landing it silently.
